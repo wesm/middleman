@@ -313,3 +313,43 @@ func TestHandleSyncStatus(t *testing.T) {
 	}
 }
 
+func TestHandleTriggerSyncIgnoresRequestCancellation(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	mock := &mockGH{}
+	syncer := ghclient.NewSyncer(mock, database, []ghclient.RepoRef{{
+		Owner: "acme",
+		Name:  "widget",
+	}}, time.Minute)
+	srv := New(database, mock, syncer, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil).WithContext(ctx)
+	cancel()
+
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		repos, err := database.ListRepos(context.Background())
+		if err != nil {
+			t.Fatalf("list repos: %v", err)
+		}
+		if len(repos) == 1 && repos[0].Owner == "acme" && repos[0].Name == "widget" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("expected sync to complete despite request context cancellation")
+}

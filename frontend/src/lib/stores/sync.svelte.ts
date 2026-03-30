@@ -43,8 +43,29 @@ export async function refreshSyncStatus(): Promise<void> {
 }
 
 export async function triggerSync(): Promise<void> {
-  await apiTriggerSync();
-  await refreshSyncStatus();
+  const previous = status;
+
+  status = {
+    running: true,
+    last_run_at: previous?.last_run_at ?? "",
+    last_error: "",
+  };
+  wasRunning = true;
+  adjustPollingSpeed(true);
+
+  try {
+    await apiTriggerSync();
+    await refreshSyncStatus();
+  } catch (err) {
+    status = {
+      running: false,
+      last_run_at: previous?.last_run_at ?? "",
+      last_error: err instanceof Error ? err.message : "failed to trigger sync",
+    };
+    wasRunning = false;
+    adjustPollingSpeed(false);
+    throw err;
+  }
 }
 
 let currentIntervalMs = 30_000;
