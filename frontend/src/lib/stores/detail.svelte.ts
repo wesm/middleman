@@ -1,5 +1,6 @@
 import { getPull, postComment, setKanbanState, setStarred, unsetStarred } from "../api/client.js";
 import type { KanbanStatus, PullDetail } from "../api/types.js";
+import { getPage } from "./router.svelte.js";
 import { loadPulls } from "./pulls.svelte.js";
 
 // --- state ---
@@ -41,6 +42,13 @@ export async function loadDetail(owner: string, name: string, number: number): P
   }
 }
 
+/** Refreshes the pulls list only when the pulls list view is active. */
+async function refreshPullsIfActive(): Promise<void> {
+  if (getPage() === "pulls") {
+    await loadPulls();
+  }
+}
+
 /** Optimistically updates the kanban state, then refreshes the pulls list. */
 export async function updateKanbanState(
   owner: string,
@@ -63,8 +71,7 @@ export async function updateKanbanState(
     await loadDetail(owner, name, number);
     return;
   }
-  // Refresh the pulls list so the board/list view stays current.
-  await loadPulls();
+  await refreshPullsIfActive();
 }
 
 // --- polling ---
@@ -113,7 +120,7 @@ export async function toggleDetailPRStar(
     }
     return;
   }
-  await loadPulls();
+  await refreshPullsIfActive();
 }
 
 /** Posts a comment to GitHub, then reloads the detail to show the new event. */

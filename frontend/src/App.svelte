@@ -5,31 +5,122 @@
   import PullDetail from "./lib/components/detail/PullDetail.svelte";
   import IssueList from "./lib/components/sidebar/IssueList.svelte";
   import IssueDetail from "./lib/components/detail/IssueDetail.svelte";
-  import { getView, setView, getTab } from "./lib/stores/router.svelte.ts";
+  import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
+  import ActivityFeed from "./lib/components/ActivityFeed.svelte";
+  import DetailDrawer from "./lib/components/DetailDrawer.svelte";
+  import { getRoute, getPage, navigate } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import {
     getSelectedPR,
     selectNextPR,
     selectPrevPR,
     clearSelection,
+    selectPR,
   } from "./lib/stores/pulls.svelte.js";
   import {
     getSelectedIssue,
     selectNextIssue,
     selectPrevIssue,
     clearIssueSelection,
+    selectIssue,
   } from "./lib/stores/issues.svelte.js";
-  import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
+  import type { ActivityItem } from "./lib/api/activity.js";
+
+  let drawerItem = $state<{
+    itemType: "pr" | "issue";
+    owner: string;
+    name: string;
+    number: number;
+  } | null>(null);
 
   $effect(() => {
     startPolling();
   });
 
+  // Sync route state: restore drawer, select items, clear stale state.
+  $effect(() => {
+    const route = getRoute();
+    const page = route.page;
+
+    // Clear drawer when leaving activity page.
+    if (page !== "activity") {
+      drawerItem = null;
+    } else {
+      // Restore drawer from URL (/?selected=pr:owner/name/42).
+      const sp = new URLSearchParams(window.location.search);
+      const sel = sp.get("selected");
+      if (sel) {
+        const match = sel.match(/^(pr|issue):([^/]+)\/([^/]+)\/(\d+)$/);
+        if (match) {
+          drawerItem = {
+            itemType: match[1] as "pr" | "issue",
+            owner: match[2]!,
+            name: match[3]!,
+            number: parseInt(match[4]!, 10),
+          };
+        }
+      } else {
+        drawerItem = null;
+      }
+    }
+
+    // Sync selection from route, clear when no item selected.
+    if (route.page === "pulls") {
+      if (route.selected) {
+        selectPR(route.selected.owner, route.selected.name, route.selected.number);
+      } else {
+        clearSelection();
+      }
+    } else if (route.page === "issues") {
+      if (route.selected) {
+        selectIssue(route.selected.owner, route.selected.name, route.selected.number);
+      } else {
+        clearIssueSelection();
+      }
+    }
+  });
+
+  function updateDrawerURL(item: typeof drawerItem): void {
+    const sp = new URLSearchParams(window.location.search);
+    if (item) {
+      sp.set("selected", `${item.itemType}:${item.owner}/${item.name}/${item.number}`);
+    } else {
+      sp.delete("selected");
+    }
+    const qs = sp.toString();
+    history.replaceState(null, "", "/" + (qs ? `?${qs}` : ""));
+  }
+
+  function handleActivitySelect(item: ActivityItem): void {
+    drawerItem = {
+      itemType: item.item_type,
+      owner: item.repo_owner,
+      name: item.repo_name,
+      number: item.item_number,
+    };
+    updateDrawerURL(drawerItem);
+  }
+
+  function closeDrawer(): void {
+    drawerItem = null;
+    updateDrawerURL(null);
+  }
+
   function handleKeydown(e: KeyboardEvent): void {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-    const isIssues = getTab() === "issues";
+    const page = getPage();
+
+    if (page === "activity") {
+      if (e.key === "Escape" && drawerItem && !e.defaultPrevented) {
+        e.preventDefault();
+        closeDrawer();
+      }
+      return;
+    }
+
+    const isIssues = page === "issues";
 
     switch (e.key) {
       case "j":
@@ -49,11 +140,11 @@
         break;
       case "1":
         e.preventDefault();
-        setView("list");
+        navigate("/pulls");
         break;
       case "2":
         e.preventDefault();
-        setView("board");
+        navigate("/pulls/board");
         break;
     }
   }
@@ -67,42 +158,57 @@
 <AppHeader />
 
 <main class="app-main">
-  {#if getView() === "list"}
-    <div class="list-layout">
-      <aside class="sidebar">
-        {#if getTab() === "pulls"}
+  {#if getPage() === "activity"}
+    <ActivityFeed onSelectItem={handleActivitySelect} />
+    {#if drawerItem}
+      <DetailDrawer
+        itemType={drawerItem.itemType}
+        owner={drawerItem.owner}
+        name={drawerItem.name}
+        number={drawerItem.number}
+        onClose={closeDrawer}
+      />
+    {/if}
+  {:else if getPage() === "pulls"}
+    {@const route = getRoute()}
+    {#if route.page === "pulls" && route.view === "board"}
+      <div class="board-layout">
+        <KanbanBoard />
+      </div>
+    {:else}
+      <div class="list-layout">
+        <aside class="sidebar">
           <PullList />
-        {:else}
-          <IssueList />
-        {/if}
-      </aside>
-      <section class="detail-area" class:detail-area--empty={getTab() === "pulls" ? getSelectedPR() === null : getSelectedIssue() === null}>
-        {#if getTab() === "pulls"}
+        </aside>
+        <section class="detail-area" class:detail-area--empty={getSelectedPR() === null}>
           {#if getSelectedPR() !== null}
             {@const sel = getSelectedPR()!}
             <PullDetail owner={sel.owner} name={sel.name} number={sel.number} />
           {:else}
             <div class="placeholder-content">
               <p class="placeholder-text">Select a PR</p>
-              <p class="placeholder-hint">j/k to navigate · Enter to open on GitHub · 1/2 to switch views</p>
+              <p class="placeholder-hint">j/k to navigate · 1/2 to switch views</p>
             </div>
           {/if}
+        </section>
+      </div>
+    {/if}
+  {:else}
+    <div class="list-layout">
+      <aside class="sidebar">
+        <IssueList />
+      </aside>
+      <section class="detail-area" class:detail-area--empty={getSelectedIssue() === null}>
+        {#if getSelectedIssue() !== null}
+          {@const sel = getSelectedIssue()!}
+          <IssueDetail owner={sel.owner} name={sel.name} number={sel.number} />
         {:else}
-          {#if getSelectedIssue() !== null}
-            {@const sel = getSelectedIssue()!}
-            <IssueDetail owner={sel.owner} name={sel.name} number={sel.number} />
-          {:else}
-            <div class="placeholder-content">
-              <p class="placeholder-text">Select an issue</p>
-              <p class="placeholder-hint">j/k to navigate · Enter to open on GitHub · 1/2 to switch views</p>
-            </div>
-          {/if}
+          <div class="placeholder-content">
+            <p class="placeholder-text">Select an issue</p>
+            <p class="placeholder-hint">j/k to navigate</p>
+          </div>
         {/if}
       </section>
-    </div>
-  {:else}
-    <div class="board-layout">
-      <KanbanBoard />
     </div>
   {/if}
 </main>
@@ -115,6 +221,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    position: relative;
   }
 
   .list-layout {

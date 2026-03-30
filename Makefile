@@ -11,7 +11,7 @@ LDFLAGS := -X main.version=$(VERSION) \
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 .PHONY: ensure-embed-dir build build-release install frontend frontend-dev dev \
-        test test-short vet lint tidy clean help
+        test test-short vet lint tidy clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -83,6 +83,14 @@ lint: ensure-embed-dir
 tidy:
 	go mod tidy
 
+# Install pre-commit hooks via prek
+install-hooks:
+	@if ! command -v prek >/dev/null 2>&1; then \
+		echo "prek not found. Install with: brew install prek" >&2; \
+		exit 1; \
+	fi
+	prek install -f
+
 # Clean build artifacts
 clean:
 	rm -f middleman
@@ -106,4 +114,5 @@ help:
 	@echo "  lint           - Run golangci-lint (auto-fix)"
 	@echo "  tidy           - Tidy go.mod"
 	@echo ""
+	@echo "  install-hooks  - Install pre-commit hooks (prek)"
 	@echo "  clean          - Remove build artifacts"

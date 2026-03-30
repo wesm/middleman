@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getView, setView, getTab, setTab } from "../../stores/router.svelte.ts";
+  import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
 
   let dark = $state(false);
@@ -48,21 +48,26 @@
 
   <nav class="header-center">
     <div class="tab-group">
-      <button class="view-tab" class:active={getTab() === "pulls"} onclick={() => setTab("pulls")}>
+      <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigate("/"); }}>
+        Activity
+      </button>
+      <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigate("/pulls")}>
         PRs
       </button>
-      <button class="view-tab" class:active={getTab() === "issues"} onclick={() => setTab("issues")}>
+      <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigate("/issues")}>
         Issues
       </button>
     </div>
-    <div class="tab-group">
-      <button class="view-tab" class:active={getView() === "list"} onclick={() => setView("list")}>
-        List
-      </button>
-      <button class="view-tab" class:active={getView() === "board"} onclick={() => setView("board")}>
-        Board
-      </button>
-    </div>
+    {#if getPage() === "pulls"}
+      <div class="tab-group">
+        <button class="view-tab" class:active={getView() === "list"} onclick={() => navigate("/pulls")}>
+          List
+        </button>
+        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
+          Board
+        </button>
+      </div>
+    {/if}
   </nav>
 
   <div class="header-right">

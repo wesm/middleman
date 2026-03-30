@@ -350,19 +350,19 @@ func computeLastActivity(
 	}
 
 	for _, c := range comments {
-		if c.UpdatedAt != nil && c.UpdatedAt.Time.After(latest) {
+		if c.UpdatedAt != nil && c.UpdatedAt.After(latest) {
 			latest = c.UpdatedAt.Time
 		}
 	}
 	for _, r := range reviews {
-		if r.SubmittedAt != nil && r.SubmittedAt.Time.After(latest) {
+		if r.SubmittedAt != nil && r.SubmittedAt.After(latest) {
 			latest = r.SubmittedAt.Time
 		}
 	}
 	for _, c := range commits {
 		if c.GetCommit() != nil && c.GetCommit().Author != nil &&
 			c.GetCommit().Author.Date != nil &&
-			c.GetCommit().Author.Date.Time.After(latest) {
+			c.GetCommit().Author.Date.After(latest) {
 			latest = c.GetCommit().Author.Date.Time
 		}
 	}
@@ -479,7 +479,7 @@ func (s *Syncer) refreshIssueTimeline(
 
 	lastActivity := ghIssue.UpdatedAt.Time
 	for _, c := range comments {
-		if c.UpdatedAt != nil && c.UpdatedAt.Time.After(lastActivity) {
+		if c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity) {
 			lastActivity = c.UpdatedAt.Time
 		}
 	}
