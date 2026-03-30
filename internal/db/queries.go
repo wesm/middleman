@@ -409,6 +409,34 @@ func (d *DB) GetPreviouslyOpenPRNumbers(
 	return closed, rows.Err()
 }
 
+// PRDerivedFields holds computed fields that are refreshed after fetching timeline events.
+type PRDerivedFields struct {
+	ReviewDecision string
+	CommentCount   int
+	LastActivityAt time.Time
+	CIStatus       string
+}
+
+// UpdatePRDerivedFields writes computed fields back to the pull_requests row.
+func (d *DB) UpdatePRDerivedFields(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	fields PRDerivedFields,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE pull_requests
+		SET review_decision = ?, comment_count = ?, last_activity_at = ?, ci_status = ?
+		WHERE repo_id = ? AND number = ?`,
+		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt, fields.CIStatus,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update pr derived fields: %w", err)
+	}
+	return nil
+}
+
 // UpdatePRState sets the final state and timestamps for a PR after it is closed or merged.
 func (d *DB) UpdatePRState(
 	ctx context.Context,

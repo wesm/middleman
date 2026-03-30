@@ -1,0 +1,330 @@
+package github
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync/atomic"
+	"time"
+
+	gh "github.com/google/go-github/v84/github"
+	"github.com/wesm/ghboard/internal/db"
+)
+
+// SyncStatus holds the current state of the sync engine.
+type SyncStatus struct {
+	Running   bool      `json:"running"`
+	LastRunAt time.Time `json:"last_run_at,omitempty"`
+	LastError string    `json:"last_error,omitempty"`
+}
+
+// RepoRef identifies a GitHub repository.
+type RepoRef struct {
+	Owner string
+	Name  string
+}
+
+// Syncer periodically pulls PR data from GitHub into SQLite.
+type Syncer struct {
+	client   Client
+	db       *db.DB
+	repos    []RepoRef
+	interval time.Duration
+	running  atomic.Bool
+	status   atomic.Value // stores *SyncStatus
+	stopCh   chan struct{}
+}
+
+// NewSyncer creates a Syncer that polls the given repos on the given interval.
+func NewSyncer(client Client, database *db.DB, repos []RepoRef, interval time.Duration) *Syncer {
+	s := &Syncer{
+		client:   client,
+		db:       database,
+		repos:    repos,
+		interval: interval,
+		stopCh:   make(chan struct{}),
+	}
+	s.status.Store(&SyncStatus{})
+	return s
+}
+
+// Start runs an immediate sync then launches a background ticker.
+// It returns as soon as the goroutine is started; call Stop to shut it down.
+func (s *Syncer) Start(ctx context.Context) {
+	go func() {
+		s.RunOnce(ctx)
+		ticker := time.NewTicker(s.interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.RunOnce(ctx)
+			case <-s.stopCh:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// Stop signals the background goroutine to exit.
+func (s *Syncer) Stop() {
+	close(s.stopCh)
+}
+
+// Status returns a snapshot of the current sync state.
+func (s *Syncer) Status() *SyncStatus {
+	return s.status.Load().(*SyncStatus)
+}
+
+// RunOnce performs a single sync pass across all configured repos.
+// If a sync is already in progress it returns immediately (single-flight).
+func (s *Syncer) RunOnce(ctx context.Context) {
+	if !s.running.CompareAndSwap(false, true) {
+		return
+	}
+	defer s.running.Store(false)
+
+	s.status.Store(&SyncStatus{Running: true})
+
+	var lastErr string
+	for _, repo := range s.repos {
+		if err := s.syncRepo(ctx, repo); err != nil {
+			slog.Error("sync repo failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
+			lastErr = err.Error()
+		}
+	}
+
+	s.status.Store(&SyncStatus{
+		Running:   false,
+		LastRunAt: time.Now(),
+		LastError: lastErr,
+	})
+}
+
+// syncRepo syncs one repository: open PRs, timeline events, and stale closures.
+func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
+	repoID, err := s.db.UpsertRepo(ctx, repo.Owner, repo.Name)
+	if err != nil {
+		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+
+	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now()); err != nil {
+		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+
+	syncErr := s.doSyncRepo(ctx, repo, repoID)
+
+	syncErrStr := ""
+	if syncErr != nil {
+		syncErrStr = syncErr.Error()
+	}
+	if err := s.db.UpdateRepoSyncCompleted(ctx, repoID, time.Now(), syncErrStr); err != nil {
+		slog.Error("mark sync completed", "repo", repo.Owner+"/"+repo.Name, "err", err)
+	}
+
+	return syncErr
+}
+
+// doSyncRepo performs the actual GitHub API calls and DB writes for one repo.
+func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64) error {
+	ghPRs, err := s.client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
+	if err != nil {
+		return fmt.Errorf("list open PRs: %w", err)
+	}
+
+	stillOpen := make(map[int]bool, len(ghPRs))
+	for _, ghPR := range ghPRs {
+		stillOpen[ghPR.GetNumber()] = true
+	}
+
+	for _, ghPR := range ghPRs {
+		if err := s.syncOpenPR(ctx, repo, repoID, ghPR); err != nil {
+			slog.Error("sync PR failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", ghPR.GetNumber(),
+				"err", err,
+			)
+		}
+	}
+
+	// Handle PRs that were open in the DB but are no longer in the open list.
+	closedNumbers, err := s.db.GetPreviouslyOpenPRNumbers(ctx, repoID, stillOpen)
+	if err != nil {
+		return fmt.Errorf("get previously open PRs: %w", err)
+	}
+	for _, number := range closedNumbers {
+		if err := s.fetchAndUpdateClosed(ctx, repo, repoID, number); err != nil {
+			slog.Error("update closed PR failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
+	}
+
+	return nil
+}
+
+// syncOpenPR upserts a single open PR and, if the data has changed,
+// refreshes its timeline events and derived fields.
+func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghPR *gh.PullRequest) error {
+	normalized := NormalizePR(repoID, ghPR)
+
+	// Check whether we already have this PR and whether it has changed.
+	existing, err := s.db.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
+	if err != nil {
+		return fmt.Errorf("get existing PR #%d: %w", ghPR.GetNumber(), err)
+	}
+
+	needsTimeline := existing == nil || !existing.UpdatedAt.Equal(normalized.UpdatedAt)
+
+	prID, err := s.db.UpsertPullRequest(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf("upsert PR #%d: %w", ghPR.GetNumber(), err)
+	}
+
+	if err := s.db.EnsureKanbanState(ctx, prID); err != nil {
+		return fmt.Errorf("ensure kanban state for PR #%d: %w", ghPR.GetNumber(), err)
+	}
+
+	if !needsTimeline {
+		return nil
+	}
+
+	return s.refreshTimeline(ctx, repo, repoID, prID, ghPR)
+}
+
+// refreshTimeline fetches comments, reviews, and commits for a PR and
+// updates its derived fields (ReviewDecision, CommentCount, LastActivityAt, CIStatus).
+func (s *Syncer) refreshTimeline(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	prID int64,
+	ghPR *gh.PullRequest,
+) error {
+	number := ghPR.GetNumber()
+
+	comments, err := s.client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
+	if err != nil {
+		return fmt.Errorf("list comments for PR #%d: %w", number, err)
+	}
+
+	reviews, err := s.client.ListReviews(ctx, repo.Owner, repo.Name, number)
+	if err != nil {
+		return fmt.Errorf("list reviews for PR #%d: %w", number, err)
+	}
+
+	commits, err := s.client.ListCommits(ctx, repo.Owner, repo.Name, number)
+	if err != nil {
+		return fmt.Errorf("list commits for PR #%d: %w", number, err)
+	}
+
+	var events []db.PREvent
+	for _, c := range comments {
+		events = append(events, NormalizeCommentEvent(prID, c))
+	}
+	for _, r := range reviews {
+		events = append(events, NormalizeReviewEvent(prID, r))
+	}
+	for _, c := range commits {
+		events = append(events, NormalizeCommitEvent(prID, c))
+	}
+
+	if err := s.db.UpsertPREvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert events for PR #%d: %w", number, err)
+	}
+
+	// Fetch CI status using the head SHA.
+	headSHA := ""
+	if ghPR.GetHead() != nil {
+		headSHA = ghPR.GetHead().GetSHA()
+	}
+
+	ciStatus := ""
+	if headSHA != "" {
+		combined, err := s.client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
+		if err != nil {
+			slog.Warn("get combined status failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		} else {
+			ciStatus = NormalizeCIStatus(combined)
+		}
+	}
+
+	// Compute derived fields and write them back.
+	reviewDecision := DeriveReviewDecision(reviews)
+	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits)
+
+	return s.db.UpdatePRDerivedFields(ctx, repoID, number, db.PRDerivedFields{
+		ReviewDecision: reviewDecision,
+		CommentCount:   len(comments),
+		LastActivityAt: lastActivityAt,
+		CIStatus:       ciStatus,
+	})
+}
+
+// computeLastActivity returns the most recent timestamp across the PR and its events.
+func computeLastActivity(
+	ghPR *gh.PullRequest,
+	comments []*gh.IssueComment,
+	reviews []*gh.PullRequestReview,
+	commits []*gh.RepositoryCommit,
+) time.Time {
+	latest := time.Time{}
+	if ghPR.UpdatedAt != nil {
+		latest = ghPR.UpdatedAt.Time
+	}
+
+	for _, c := range comments {
+		if c.UpdatedAt != nil && c.UpdatedAt.Time.After(latest) {
+			latest = c.UpdatedAt.Time
+		}
+	}
+	for _, r := range reviews {
+		if r.SubmittedAt != nil && r.SubmittedAt.Time.After(latest) {
+			latest = r.SubmittedAt.Time
+		}
+	}
+	for _, c := range commits {
+		if c.GetCommit() != nil && c.GetCommit().Author != nil &&
+			c.GetCommit().Author.Date != nil &&
+			c.GetCommit().Author.Date.Time.After(latest) {
+			latest = c.GetCommit().Author.Date.Time
+		}
+	}
+	return latest
+}
+
+// fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
+func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int) error {
+	ghPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
+	if err != nil {
+		return fmt.Errorf("get closed PR #%d: %w", number, err)
+	}
+
+	state := ghPR.GetState()
+	if ghPR.GetMerged() {
+		state = "merged"
+	}
+
+	var mergedAt, closedAt *time.Time
+	if ghPR.MergedAt != nil {
+		t := ghPR.MergedAt.Time
+		mergedAt = &t
+	}
+	if ghPR.ClosedAt != nil {
+		t := ghPR.ClosedAt.Time
+		closedAt = &t
+	}
+
+	if err := s.db.UpdatePRState(ctx, repoID, number, state, mergedAt, closedAt); err != nil {
+		return fmt.Errorf("update PR state for #%d: %w", number, err)
+	}
+	return nil
+}
