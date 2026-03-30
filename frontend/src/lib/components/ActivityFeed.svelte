@@ -5,19 +5,26 @@
     getActivityItems,
     isActivityLoading,
     getActivityError,
+    isActivityCapped,
     getActivityFilterRepo,
     getActivityFilterTypes,
     getActivitySearch,
+    getTimeRange,
+    getViewMode,
     setActivityFilterRepo,
     setActivityFilterTypes,
     setActivitySearch,
+    setTimeRange,
+    setViewMode,
     loadActivity,
     startActivityPolling,
     stopActivityPolling,
     syncFromURL,
     syncToURL,
   } from "../stores/activity.svelte.js";
+  import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
   import RepoTypeahead from "./RepoTypeahead.svelte";
+  import ActivityThreaded from "./ActivityThreaded.svelte";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -146,6 +153,24 @@
     void loadActivity();
   }
 
+  function handleTimeRangeChange(range: TimeRange): void {
+    setTimeRange(range);
+    syncToURL();
+    void loadActivity();
+  }
+
+  function handleViewModeChange(mode: ViewMode): void {
+    setViewMode(mode);
+    syncToURL();
+  }
+
+  const TIME_RANGES: { value: TimeRange; label: string }[] = [
+    { value: "24h", label: "24h" },
+    { value: "7d", label: "7d" },
+    { value: "30d", label: "30d" },
+    { value: "90d", label: "90d" },
+  ];
+
   function handleSearchInput(e: Event): void {
     const val = (e.target as HTMLInputElement).value;
     searchInput = val;
@@ -248,6 +273,16 @@
         <button class="seg-btn" class:active={itemFilter === "issues"} onclick={() => setItemFilter("issues")}>Issues</button>
       </div>
 
+      <div class="segmented-control">
+        <button class="seg-btn" class:active={getViewMode() === "flat"} onclick={() => handleViewModeChange("flat")}>Flat</button>
+        <button class="seg-btn" class:active={getViewMode() === "threaded"} onclick={() => handleViewModeChange("threaded")}>Threaded</button>
+      </div>
+
+      <div class="segmented-control">
+        {#each TIME_RANGES as r}
+          <button class="seg-btn" class:active={getTimeRange() === r.value} onclick={() => handleTimeRangeChange(r.value)}>{r.label}</button>
+        {/each}
+      </div>
     </div>
 
     <div class="filter-wrap">
@@ -343,54 +378,64 @@
     <div class="error-banner">{getActivityError()}</div>
   {/if}
 
-  <div class="table-container">
-    <table class="activity-table">
-      <thead>
-        <tr>
-          <th class="col-kind">Kind</th>
-          <th class="col-event">Event</th>
-          <th class="col-repo">Repository</th>
-          <th class="col-item">Item</th>
-          <th class="col-author">Author</th>
-          <th class="col-when">When</th>
-          <th class="col-link"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each displayItems as item (item.id)}
-          <tr class="activity-row" onclick={() => handleRowClick(item)}>
-            <td class="col-kind">
-              <span class="badge {badgeClass(item)}">{itemTypeLabel(item)}</span>
-              {#if stateLabel(item)}
-                <span class="state-badge state-{item.item_state}">{stateLabel(item)}</span>
-              {/if}
-            </td>
-            <td class="col-event">
-              <span class="evt-label {eventClass(item.activity_type)}">{eventLabel(item)}</span>
-            </td>
-            <td class="col-repo">{item.repo_owner}/{item.repo_name}</td>
-            <td class="col-item">
-              <span class="item-number">#{item.item_number}</span>
-              <span class="item-title">{item.item_title}</span>
-            </td>
-            <td class="col-author">{item.author}</td>
-            <td class="col-when">{relativeTime(item.created_at)}</td>
-            <td class="col-link">
-              <button
-                class="link-btn"
-                title="Open on GitHub"
-                onclick={(e) => handleLinkClick(e, item.item_url)}
-              >&#x2197;</button>
-            </td>
+  {#if getViewMode() === "threaded"}
+    <ActivityThreaded items={displayItems} onSelectItem={onSelectItem} />
+  {:else}
+    <div class="table-container">
+      <table class="activity-table">
+        <thead>
+          <tr>
+            <th class="col-kind">Kind</th>
+            <th class="col-event">Event</th>
+            <th class="col-repo">Repository</th>
+            <th class="col-item">Item</th>
+            <th class="col-author">Author</th>
+            <th class="col-when">When</th>
+            <th class="col-link"></th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each displayItems as item (item.id)}
+            <tr class="activity-row" onclick={() => handleRowClick(item)}>
+              <td class="col-kind">
+                <span class="badge {badgeClass(item)}">{itemTypeLabel(item)}</span>
+                {#if stateLabel(item)}
+                  <span class="state-badge state-{item.item_state}">{stateLabel(item)}</span>
+                {/if}
+              </td>
+              <td class="col-event">
+                <span class="evt-label {eventClass(item.activity_type)}">{eventLabel(item)}</span>
+              </td>
+              <td class="col-repo">{item.repo_owner}/{item.repo_name}</td>
+              <td class="col-item">
+                <span class="item-number">#{item.item_number}</span>
+                <span class="item-title">{item.item_title}</span>
+              </td>
+              <td class="col-author">{item.author}</td>
+              <td class="col-when">{relativeTime(item.created_at)}</td>
+              <td class="col-link">
+                <button
+                  class="link-btn"
+                  title="Open on GitHub"
+                  onclick={(e) => handleLinkClick(e, item.item_url)}
+                >&#x2197;</button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
 
-    {#if displayItems.length === 0 && !isActivityLoading()}
-      <div class="empty-state">No activity found</div>
-    {/if}
-  </div>
+      {#if displayItems.length === 0 && !isActivityLoading()}
+        <div class="empty-state">No activity found</div>
+      {/if}
+    </div>
+  {/if}
+
+  {#if isActivityCapped()}
+    <div class="capped-notice">
+      Showing most recent 5,000 events. Narrow the time range or use filters to see more.
+    </div>
+  {/if}
 
 </div>
 
@@ -745,6 +790,16 @@
     color: var(--accent-red);
     font-size: 12px;
     border-bottom: 1px solid var(--border-default);
+  }
+
+  .capped-notice {
+    padding: 6px 16px;
+    font-size: 11px;
+    color: var(--accent-amber);
+    background: color-mix(in srgb, var(--accent-amber) 8%, transparent);
+    border-top: 1px solid var(--border-default);
+    text-align: center;
+    flex-shrink: 0;
   }
 
 </style>
