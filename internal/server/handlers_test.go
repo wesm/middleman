@@ -401,8 +401,8 @@ func TestHandleReadyForReview(t *testing.T) {
 				CreatedAt: &now,
 				UpdatedAt: &now,
 				User:      &gh.User{Login: &author},
-				Head:      &gh.PullRequestBranch{Ref: gh.Ptr("feature")},
-				Base:      &gh.PullRequestBranch{Ref: gh.Ptr("main")},
+				Head:      &gh.PullRequestBranch{Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
 	}

@@ -7,8 +7,6 @@ import (
 	gh "github.com/google/go-github/v84/github"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func ghTimestamp(t time.Time) *gh.Timestamp {
 	return &gh.Timestamp{Time: t}
 }
@@ -16,20 +14,20 @@ func ghTimestamp(t time.Time) *gh.Timestamp {
 func TestNormalizePR_OpenPR(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
-		ID:        ptr(int64(1001)),
-		Number:    ptr(42),
-		HTMLURL:   ptr("https://github.com/owner/repo/pull/42"),
-		Title:     ptr("My PR"),
-		User:      &gh.User{Login: ptr("alice")},
-		State:     ptr("open"),
-		Draft:     ptr(false),
-		Body:      ptr("description"),
-		Additions: ptr(10),
-		Deletions: ptr(5),
+		ID:        new(int64(1001)),
+		Number:    new(42),
+		HTMLURL:   new("https://github.com/owner/repo/pull/42"),
+		Title:     new("My PR"),
+		User:      &gh.User{Login: new("alice")},
+		State:     new("open"),
+		Draft:     new(false),
+		Body:      new("description"),
+		Additions: new(10),
+		Deletions: new(5),
 		CreatedAt: ghTimestamp(now),
 		UpdatedAt: ghTimestamp(now),
-		Head:      &gh.PullRequestBranch{Ref: ptr("feature")},
-		Base:      &gh.PullRequestBranch{Ref: ptr("main")},
+		Head:      &gh.PullRequestBranch{Ref: new("feature")},
+		Base:      &gh.PullRequestBranch{Ref: new("main")},
 	}
 
 	pr := NormalizePR(7, ghPR)
@@ -90,12 +88,12 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 func TestNormalizePR_MergedPR(t *testing.T) {
 	mergedAt := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
-		ID:       ptr(int64(2002)),
-		Number:   ptr(99),
-		State:    ptr("closed"),
-		Merged:   ptr(true),
+		ID:       new(int64(2002)),
+		Number:   new(99),
+		State:    new("closed"),
+		Merged:   new(true),
 		MergedAt: ghTimestamp(mergedAt),
-		User:     &gh.User{Login: ptr("bob")},
+		User:     &gh.User{Login: new("bob")},
 	}
 
 	pr := NormalizePR(3, ghPR)
@@ -114,9 +112,9 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 func TestNormalizeCommentEvent(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	c := &gh.IssueComment{
-		ID:        ptr(int64(555)),
-		User:      &gh.User{Login: ptr("carol")},
-		Body:      ptr("looks good"),
+		ID:        new(int64(555)),
+		User:      &gh.User{Login: new("carol")},
+		Body:      new("looks good"),
 		CreatedAt: ghTimestamp(now),
 	}
 
@@ -154,8 +152,8 @@ func TestDeriveReviewDecision_Empty(t *testing.T) {
 
 func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
 	reviews := []*gh.PullRequestReview{
-		{User: &gh.User{Login: ptr("alice")}, State: ptr("APPROVED")},
-		{User: &gh.User{Login: ptr("bob")}, State: ptr("COMMENTED")},
+		{User: &gh.User{Login: new("alice")}, State: new("APPROVED")},
+		{User: &gh.User{Login: new("bob")}, State: new("COMMENTED")},
 	}
 	result := DeriveReviewDecision(reviews)
 	if result != "approved" {
@@ -165,8 +163,8 @@ func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
 
 func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
 	reviews := []*gh.PullRequestReview{
-		{User: &gh.User{Login: ptr("alice")}, State: ptr("APPROVED")},
-		{User: &gh.User{Login: ptr("bob")}, State: ptr("CHANGES_REQUESTED")},
+		{User: &gh.User{Login: new("alice")}, State: new("APPROVED")},
+		{User: &gh.User{Login: new("bob")}, State: new("CHANGES_REQUESTED")},
 	}
 	result := DeriveReviewDecision(reviews)
 	if result != "changes_requested" {
@@ -176,8 +174,8 @@ func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
 
 func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
 	reviews := []*gh.PullRequestReview{
-		{User: &gh.User{Login: ptr("alice")}, State: ptr("COMMENTED")},
-		{User: &gh.User{Login: ptr("bob")}, State: ptr("DISMISSED")},
+		{User: &gh.User{Login: new("alice")}, State: new("COMMENTED")},
+		{User: &gh.User{Login: new("bob")}, State: new("DISMISSED")},
 	}
 	result := DeriveReviewDecision(reviews)
 	if result != "" {
@@ -188,8 +186,8 @@ func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
 func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
 	// bob first requested changes, then approved — latest should be APPROVED
 	reviews := []*gh.PullRequestReview{
-		{User: &gh.User{Login: ptr("bob")}, State: ptr("CHANGES_REQUESTED")},
-		{User: &gh.User{Login: ptr("bob")}, State: ptr("APPROVED")},
+		{User: &gh.User{Login: new("bob")}, State: new("CHANGES_REQUESTED")},
+		{User: &gh.User{Login: new("bob")}, State: new("APPROVED")},
 	}
 	result := DeriveReviewDecision(reviews)
 	if result != "approved" {

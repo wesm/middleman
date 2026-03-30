@@ -166,7 +166,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 				Commit: &gh.Commit{
 					Message: &commitMsg,
 					Author: &gh.CommitAuthor{
-						Name: gh.Ptr("dev"),
+						Name: new("dev"),
 						Date: commitDate,
 					},
 				},

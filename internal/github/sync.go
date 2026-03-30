@@ -102,10 +102,9 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 
 	slog.Info("sync complete", "repos", len(s.repos))
-	lastRunAt := time.Now()
 	s.status.Store(&SyncStatus{
 		Running:   false,
-		LastRunAt: &lastRunAt,
+		LastRunAt: time.Now(),
 		LastError: lastErr,
 	})
 }
