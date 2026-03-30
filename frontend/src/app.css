@@ -40,11 +40,11 @@
   --bg-surface: #16161e;
   --bg-surface-hover: #1f1f2a;
   --bg-inset: #111116;
-  --border-default: #2b2b38;
-  --border-muted: #232330;
-  --text-primary: #e4e6eb;
-  --text-secondary: #9ea5b4;
-  --text-muted: #6c7385;
+  --border-default: #333345;
+  --border-muted: #2a2a3a;
+  --text-primary: #ececf1;
+  --text-secondary: #b4bcd0;
+  --text-muted: #8b93a8;
   --accent-blue: #60a5fa;
   --accent-amber: #fbbf24;
   --accent-purple: #a78bfa;
