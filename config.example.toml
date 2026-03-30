@@ -1,5 +1,7 @@
 sync_interval = "5m"
-github_token_env = "GITHUB_TOKEN"
+# Environment variable containing your GitHub personal access token
+# Required scopes: repo (private repos) or public_repo (public only)
+github_token_env = "GHBOARD_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8090
 

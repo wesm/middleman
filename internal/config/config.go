@@ -48,7 +48,7 @@ func DefaultDataDir() string {
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "GITHUB_TOKEN",
+		GitHubTokenEnv: "GHBOARD_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8090,
 	}
