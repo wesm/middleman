@@ -16,12 +16,12 @@
     review_comment: "Review Comment",
   };
 
-  function dotColor(eventType: string): string {
-    if (eventType === "issue_comment") return "var(--accent-blue)";
-    if (eventType === "review" || eventType === "review_comment") return "var(--accent-purple)";
-    if (eventType === "commit") return "var(--accent-green)";
-    return "var(--text-muted)";
-  }
+  const typeColors: Record<string, string> = {
+    issue_comment: "var(--accent-blue)",
+    review: "var(--accent-purple)",
+    review_comment: "var(--accent-purple)",
+    commit: "var(--accent-green)",
+  };
 
   function shouldRenderMarkdown(eventType: string): boolean {
     return eventType === "issue_comment" || eventType === "review" || eventType === "review_comment";
@@ -48,16 +48,27 @@
   <ol class="timeline">
     {#each events as event (event.ID)}
       <li class="event">
-        <span class="dot" style="background: {dotColor(event.EventType)}"></span>
-        <div class="event-content">
+        <div class="event-rail">
+          <span
+            class="dot"
+            style="background: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
+          ></span>
+          <span class="rail-line"></span>
+        </div>
+        <div class="event-card">
           <div class="event-header">
-            <span class="event-type">{typeLabels[event.EventType] ?? event.EventType}</span>
+            <span
+              class="event-type"
+              style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
+            >
+              {typeLabels[event.EventType] ?? event.EventType}
+            </span>
             {#if event.Author}
               <span class="event-author">{event.Author}</span>
             {/if}
             <span class="event-time">{timeAgo(event.CreatedAt)}</span>
           </div>
-          {#if event.Summary}
+          {#if event.Summary && event.EventType === "commit"}
             <p class="event-summary">{event.Summary}</p>
           {/if}
           {#if event.Body}
@@ -109,32 +120,48 @@
 
   .event {
     display: flex;
-    gap: 12px;
-    padding: 10px 0;
-    position: relative;
+    gap: 0;
   }
 
-  .event:not(:last-child)::after {
-    content: "";
-    position: absolute;
-    left: 5px;
-    top: 26px;
-    bottom: 0;
-    width: 2px;
-    background: var(--border-muted);
+  /* Left rail: dot + connector line */
+  .event-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 24px;
+    flex-shrink: 0;
+    padding-top: 14px;
   }
 
   .dot {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
-    margin-top: 3px;
+    z-index: 1;
+    box-shadow: 0 0 0 3px var(--bg-primary);
   }
 
-  .event-content {
+  .rail-line {
+    width: 2px;
+    flex: 1;
+    background: var(--border-default);
+    margin-top: 2px;
+  }
+
+  .event:last-child .rail-line {
+    display: none;
+  }
+
+  /* Right side: card */
+  .event-card {
     flex: 1;
     min-width: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    margin: 4px 0 4px 8px;
   }
 
   .event-header {
@@ -142,15 +169,13 @@
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-    margin-bottom: 4px;
   }
 
   .event-type {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-secondary);
   }
 
   .event-author {
@@ -165,8 +190,20 @@
     margin-left: auto;
   }
 
+  .event-summary {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Body wrap for copy button positioning */
   .event-body-wrap {
     position: relative;
+    margin-top: 8px;
   }
 
   .copy-icon-btn {
@@ -205,12 +242,6 @@
     }
   }
 
-  .event-summary {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-bottom: 4px;
-  }
-
   .event-body {
     font-size: 12px;
     color: var(--text-primary);
@@ -220,7 +251,7 @@
     padding: 8px 10px;
     white-space: pre-wrap;
     word-break: break-word;
-    line-height: 1.5;
+    line-height: 1.6;
   }
 
   .event-body.markdown-body {
