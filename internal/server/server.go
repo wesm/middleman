@@ -43,6 +43,7 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 	s.mux.HandleFunc("GET /api/v1/repos", s.handleListRepos)
 	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}", s.handleGetRepo)
 	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/approve", s.handleApprovePR)
+	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.handleReadyForReview)
 	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge", s.handleMergePR)
 	s.mux.HandleFunc("POST /api/v1/sync", s.handleTriggerSync)
 	s.mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)

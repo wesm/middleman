@@ -93,6 +93,17 @@ export async function approvePR(
   );
 }
 
+export async function markPRReadyForReview(
+  owner: string,
+  name: string,
+  number: number,
+): Promise<void> {
+  await request(
+    `/repos/${owner}/${name}/pulls/${number}/ready-for-review`,
+    { method: "POST" },
+  );
+}
+
 export interface MergeParams {
   commit_title: string;
   commit_message: string;

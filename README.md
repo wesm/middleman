@@ -16,7 +16,7 @@ Local-first GitHub dashboard for project maintainers. Syncs PRs and issues from 
 ## Requirements
 
 - Go 1.22+ (no CGO required — uses pure Go SQLite)
-- Node.js 20+ and npm
+- Bun 1.3+
 - A GitHub personal access token with `repo` scope
 
 ## Setup
@@ -62,9 +62,12 @@ The first sync runs immediately on startup. PRs and issues will populate within 
 Run the Go backend and Vite dev server in parallel:
 
 ```
-make dev            # Go server on :8090
+make air-install    # one-time install for backend live reload
+make dev            # Go server on :8090 with air live reload
 make frontend-dev   # Vite on :5173 (proxies /api to Go)
 ```
+
+`make dev` now uses [`air`](https://github.com/air-verse/air) to rebuild and restart the Go server whenever backend files change. You can still pass backend flags through with `make dev ARGS='-config /path/to/config.toml'`.
 
 Other targets:
 

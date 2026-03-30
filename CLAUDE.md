@@ -81,11 +81,12 @@ make vet        # go vet
 ## Build Requirements
 
 - **No CGO required** — uses modernc.org/sqlite (pure Go)
-- **Frontend**: Node.js + npm for Svelte build, embedded via `internal/web/dist/`
+- **Frontend**: Bun for Svelte build/test tooling, embedded via `internal/web/dist/`
 
 ## Conventions
 
 - Prefer stdlib over external dependencies
+- Use Bun for frontend package management and script execution; do not introduce npm-based workflow changes unless explicitly requested
 - Tests should be fast and isolated
 - No emojis in code or output
 - Schema changes should use `ALTER TABLE ADD COLUMN` migrations in `db.init()` for backward compatibility with existing databases
