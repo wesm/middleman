@@ -137,24 +137,26 @@
     white-space: nowrap;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    color: #fff;
   }
 
   .badge--new {
-    background: var(--kanban-new);
+    background: color-mix(in srgb, var(--kanban-new) 18%, transparent);
+    color: var(--kanban-new);
   }
 
   .badge--reviewing {
-    background: var(--accent-amber);
-    color: #422006;
+    background: color-mix(in srgb, var(--accent-amber) 18%, transparent);
+    color: var(--accent-amber);
   }
 
   .badge--waiting {
-    background: var(--accent-purple);
+    background: color-mix(in srgb, var(--accent-purple) 18%, transparent);
+    color: var(--accent-purple);
   }
 
   .badge--awaiting-merge {
-    background: var(--accent-green);
+    background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+    color: var(--accent-green);
   }
 
   .star-icon {

@@ -188,15 +188,16 @@
     white-space: nowrap;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    color: #fff;
   }
 
   .badge--open {
-    background: var(--accent-green);
+    background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+    color: var(--accent-green);
   }
 
   .badge--closed {
-    background: var(--accent-purple);
+    background: color-mix(in srgb, var(--accent-purple) 18%, transparent);
+    color: var(--accent-purple);
   }
 
   .star-icon {

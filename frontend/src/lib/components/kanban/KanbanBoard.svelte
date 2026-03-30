@@ -16,7 +16,7 @@
   }
 
   const columns = [
-    { id: "new", title: "New", color: "var(--accent-blue)" },
+    { id: "new", title: "New", color: "var(--kanban-new)" },
     { id: "reviewing", title: "Reviewing", color: "var(--accent-amber)" },
     { id: "waiting", title: "Waiting", color: "var(--accent-purple)" },
     { id: "awaiting_merge", title: "Awaiting Merge", color: "var(--accent-green)" },
