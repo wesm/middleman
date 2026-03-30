@@ -62,12 +62,18 @@ export function setFilterStarred(v: boolean): void {
   filterStarred = v;
 }
 
-export function getFlatPRList(): PullRequest[] {
-  return pulls;
+/** Returns PRs in display order (grouped by repo, then by activity within group). */
+export function getDisplayOrderPRs(): PullRequest[] {
+  const grouped = pullsByRepo();
+  const ordered: PullRequest[] = [];
+  for (const prs of grouped.values()) {
+    ordered.push(...prs);
+  }
+  return ordered;
 }
 
 export function selectNextPR(): void {
-  const list = pulls;
+  const list = getDisplayOrderPRs();
   if (list.length === 0) return;
   const sel = selectedPR;
   if (sel === null) {
@@ -90,7 +96,7 @@ export function selectNextPR(): void {
 }
 
 export function selectPrevPR(): void {
-  const list = pulls;
+  const list = getDisplayOrderPRs();
   if (list.length === 0) return;
   const sel = selectedPR;
   if (sel === null) {

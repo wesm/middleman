@@ -131,11 +131,18 @@ export async function toggleIssueStar(
   }
 }
 
-// Navigation
-export function getFlatIssueList(): Issue[] { return issues; }
+// Navigation — uses display order (grouped by repo)
+function getDisplayOrderIssues(): Issue[] {
+  const grouped = issuesByRepo();
+  const ordered: Issue[] = [];
+  for (const items of grouped.values()) {
+    ordered.push(...items);
+  }
+  return ordered;
+}
 
 export function selectNextIssue(): void {
-  const list = issues;
+  const list = getDisplayOrderIssues();
   if (list.length === 0) return;
   if (selectedIssue === null) {
     const first = list[0]!;
@@ -143,8 +150,8 @@ export function selectNextIssue(): void {
     return;
   }
   const idx = list.findIndex(
-    (i) => i.repo_owner === selectedIssue!.owner &&
-      i.repo_name === selectedIssue!.name &&
+    (i) => (i.repo_owner ?? "") === selectedIssue!.owner &&
+      (i.repo_name ?? "") === selectedIssue!.name &&
       i.Number === selectedIssue!.number,
   );
   if (idx < list.length - 1) {
@@ -154,7 +161,7 @@ export function selectNextIssue(): void {
 }
 
 export function selectPrevIssue(): void {
-  const list = issues;
+  const list = getDisplayOrderIssues();
   if (list.length === 0) return;
   if (selectedIssue === null) {
     const last = list[list.length - 1]!;
@@ -162,8 +169,8 @@ export function selectPrevIssue(): void {
     return;
   }
   const idx = list.findIndex(
-    (i) => i.repo_owner === selectedIssue!.owner &&
-      i.repo_name === selectedIssue!.name &&
+    (i) => (i.repo_owner ?? "") === selectedIssue!.owner &&
+      (i.repo_name ?? "") === selectedIssue!.name &&
       i.Number === selectedIssue!.number,
   );
   if (idx > 0) {
