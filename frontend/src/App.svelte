@@ -3,13 +3,51 @@
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import PullList from "./lib/components/sidebar/PullList.svelte";
   import PullDetail from "./lib/components/detail/PullDetail.svelte";
-  import { getView } from "./lib/stores/router.svelte.ts";
+  import { getView, setView } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
-  import { getSelectedPR } from "./lib/stores/pulls.svelte.js";
+  import {
+    getSelectedPR,
+    selectNextPR,
+    selectPrevPR,
+    clearSelection,
+  } from "./lib/stores/pulls.svelte.js";
   import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
 
   $effect(() => {
     startPolling();
+  });
+
+  function handleKeydown(e: KeyboardEvent): void {
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+    switch (e.key) {
+      case "j":
+        e.preventDefault();
+        selectNextPR();
+        break;
+      case "k":
+        e.preventDefault();
+        selectPrevPR();
+        break;
+      case "Escape":
+        e.preventDefault();
+        clearSelection();
+        break;
+      case "1":
+        e.preventDefault();
+        setView("list");
+        break;
+      case "2":
+        e.preventDefault();
+        setView("board");
+        break;
+    }
+  }
+
+  $effect(() => {
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
   });
 </script>
 
@@ -26,7 +64,10 @@
           {@const sel = getSelectedPR()!}
           <PullDetail owner={sel.owner} name={sel.name} number={sel.number} />
         {:else}
-          <p class="placeholder-text">Select a PR</p>
+          <div class="placeholder-content">
+            <p class="placeholder-text">Select a PR</p>
+            <p class="placeholder-hint">j/k to navigate · Enter to open on GitHub · 1/2 to switch views</p>
+          </div>
         {/if}
       </section>
     </div>
@@ -84,8 +125,19 @@
     flex-direction: column;
   }
 
+  .placeholder-content {
+    text-align: center;
+  }
+
   .placeholder-text {
     color: var(--text-muted);
     font-size: 13px;
+  }
+
+  .placeholder-hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 8px;
+    opacity: 0.7;
   }
 </style>

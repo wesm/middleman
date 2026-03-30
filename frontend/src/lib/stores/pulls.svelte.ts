@@ -45,6 +45,66 @@ export function pullsByRepo(): Map<string, PullRequest[]> {
   return map;
 }
 
+export function getFilterRepo(): string | undefined {
+  return filterRepo;
+}
+
+export function getFilterKanban(): KanbanStatus | undefined {
+  return filterKanban;
+}
+
+export function getFlatPRList(): PullRequest[] {
+  return pulls;
+}
+
+export function selectNextPR(): void {
+  const list = pulls;
+  if (list.length === 0) return;
+  const sel = selectedPR;
+  if (sel === null) {
+    const first = list[0];
+    if (first !== undefined) {
+      selectPR(first.repo_owner ?? "", first.repo_name ?? "", first.Number);
+    }
+    return;
+  }
+  const idx = list.findIndex(
+    (pr) =>
+      (pr.repo_owner ?? "") === sel.owner &&
+      (pr.repo_name ?? "") === sel.name &&
+      pr.Number === sel.number,
+  );
+  const next = list[idx + 1];
+  if (next !== undefined) {
+    selectPR(next.repo_owner ?? "", next.repo_name ?? "", next.Number);
+  }
+}
+
+export function selectPrevPR(): void {
+  const list = pulls;
+  if (list.length === 0) return;
+  const sel = selectedPR;
+  if (sel === null) {
+    const last = list[list.length - 1];
+    if (last !== undefined) {
+      selectPR(last.repo_owner ?? "", last.repo_name ?? "", last.Number);
+    }
+    return;
+  }
+  const idx = list.findIndex(
+    (pr) =>
+      (pr.repo_owner ?? "") === sel.owner &&
+      (pr.repo_name ?? "") === sel.name &&
+      pr.Number === sel.number,
+  );
+  if (idx > 0) {
+    const prev = list[idx - 1];
+    if (prev !== undefined) {
+      selectPR(prev.repo_owner ?? "", prev.repo_name ?? "", prev.Number);
+    }
+  }
+}
+
 // --- writes ---
 
 export function setFilterRepo(repo: string | undefined): void {

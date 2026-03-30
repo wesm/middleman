@@ -9,6 +9,14 @@
 
   const { pr, selected, onclick }: Props = $props();
 
+  let el: HTMLButtonElement;
+
+  $effect(() => {
+    if (selected && el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  });
+
   const kanbanLabels: Record<string, string> = {
     new: "New",
     reviewing: "Reviewing",
@@ -29,7 +37,7 @@
   const ago = $derived(timeAgo(pr.LastActivityAt));
 </script>
 
-<button class="pull-item" class:selected onclick={onclick}>
+<button class="pull-item" class:selected bind:this={el} onclick={onclick}>
   <p class="title">{pr.Title}</p>
   <div class="meta-row">
     <span class="meta-left">#{pr.Number} · {pr.Author}</span>
