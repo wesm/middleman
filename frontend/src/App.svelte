@@ -1,6 +1,12 @@
 <script lang="ts">
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
+  import PullList from "./lib/components/sidebar/PullList.svelte";
   import { getView } from "./lib/stores/router.svelte.ts";
+  import { startPolling } from "./lib/stores/sync.svelte.js";
+
+  $effect(() => {
+    startPolling();
+  });
 </script>
 
 <AppHeader />
@@ -9,10 +15,10 @@
   {#if getView() === "list"}
     <div class="list-layout">
       <aside class="sidebar">
-        <p class="placeholder-text">PR list — coming soon</p>
+        <PullList />
       </aside>
       <section class="detail-area">
-        <p class="placeholder-text">PR detail — coming soon</p>
+        <p class="placeholder-text">Select a PR</p>
       </section>
     </div>
   {:else}
@@ -41,10 +47,9 @@
     flex-shrink: 0;
     background: var(--bg-surface);
     border-right: 1px solid var(--border-default);
-    overflow-y: auto;
+    overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
   }
 
   .detail-area {

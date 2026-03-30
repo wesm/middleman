@@ -55,6 +55,10 @@ export function setFilterKanban(kanban: KanbanStatus | undefined): void {
   filterKanban = kanban;
 }
 
+export function getSearchQuery(): string | undefined {
+  return searchQuery;
+}
+
 export function setSearchQuery(q: string | undefined): void {
   searchQuery = q;
 }
