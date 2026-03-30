@@ -124,6 +124,48 @@ func TestGitHubToken(t *testing.T) {
 	}
 }
 
+func TestGitHubTokenFallsBackToGHCli(t *testing.T) {
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	if err := os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", dir)
+	t.Setenv("TEST_GH_TOKEN", "")
+
+	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
+	if got := cfg.GitHubToken(); got != "gh-secret" {
+		t.Fatalf("expected gh-secret, got %q", got)
+	}
+}
+
+func TestGitHubTokenPrefersEnvVarOverGHCli(t *testing.T) {
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	if err := os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", dir)
+	t.Setenv("TEST_GH_TOKEN", "secret123")
+
+	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
+	if got := cfg.GitHubToken(); got != "secret123" {
+		t.Fatalf("expected secret123, got %q", got)
+	}
+}
+
+func TestGitHubTokenReturnsEmptyWhenGHCliUnavailable(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("TEST_GH_TOKEN", "")
+
+	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
+	if got := cfg.GitHubToken(); got != "" {
+		t.Fatalf("expected empty token, got %q", got)
+	}
+}
+
 func TestDBPath(t *testing.T) {
 	cfg := &Config{DataDir: "/tmp/middleman-test"}
 	expected := "/tmp/middleman-test/middleman.db"
