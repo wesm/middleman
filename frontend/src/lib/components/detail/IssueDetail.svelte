@@ -168,15 +168,15 @@
         </div>
       {/if}
 
+      <!-- Comment box -->
+      <div class="section">
+        <IssueCommentBox {owner} {name} {number} />
+      </div>
+
       <!-- Activity -->
       <div class="section">
         <h3 class="section-title">Activity</h3>
         <EventTimeline events={detail.events as any} />
-      </div>
-
-      <!-- Comment box -->
-      <div class="section">
-        <IssueCommentBox {owner} {name} {number} />
       </div>
     </div>
   {/if}
