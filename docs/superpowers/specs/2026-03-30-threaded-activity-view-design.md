@@ -12,7 +12,9 @@ The view mode and time range are persisted in the URL query string (`view=thread
 
 ### URL and history model
 
-All activity feed state changes (view mode, time range, repo filter, type filter, search) use `replaceState` — they update the URL without creating history entries. This is the same model used today for filters. Navigating away from the activity feed (e.g., clicking a PR tab) uses `pushState` as it does now, so browser back returns to the activity feed with the URL-encoded state intact. On `popstate`, the store re-reads all query params and re-fetches if the route is `/`.
+All activity feed state changes (view mode, time range, repo filter, type filter, search) use `replaceState` — they update the URL without creating history entries. Navigating away from the activity feed (e.g., clicking a PR tab) uses `pushState` as it does now, so browser back returns to the activity feed with the URL-encoded state intact.
+
+There is no `popstate` listener in the activity store. When the user navigates back to `/`, the router updates the route, Svelte destroys and recreates the `ActivityFeed` component, and `onMount` hydrates state from the URL and fetches. This is the single source of truth — one mount, one fetch.
 
 ## Time-Windowed Fetching
 
