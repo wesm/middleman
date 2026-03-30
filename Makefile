@@ -16,7 +16,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun dev \
-        test test-short vet lint tidy clean install-hooks help
+        test test-short vet lint tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -103,6 +103,10 @@ lint: ensure-embed-dir
 tidy:
 	go mod tidy
 
+# Install or update repo-local Svelte AI skills for Codex and Claude
+svelte-skills:
+	python3 scripts/update-svelte-skills.py $(ARGS)
+
 # Install pre-commit hooks via prek
 install-hooks:
 	@if ! command -v prek >/dev/null 2>&1; then \
@@ -135,6 +139,7 @@ help:
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run golangci-lint (auto-fix)"
 	@echo "  tidy           - Tidy go.mod"
+	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
 	@echo ""
 	@echo "  install-hooks  - Install pre-commit hooks (prek)"
 	@echo "  clean          - Remove build artifacts"

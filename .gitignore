@@ -13,3 +13,5 @@ tmp/
 *.db
 .env
 .superpowers/
+.agents/skills/
+.claude/skills/
