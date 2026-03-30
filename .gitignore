@@ -1,4 +1,4 @@
-ghboard
+/ghboard
 dist/
 internal/web/dist/
 frontend/node_modules/
