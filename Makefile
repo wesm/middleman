@@ -11,7 +11,7 @@ LDFLAGS := -X main.version=$(VERSION) \
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 .PHONY: ensure-embed-dir build build-release install frontend frontend-dev dev \
-        test test-short vet lint tidy svelte-skills clean help
+        test test-short vet lint tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -87,6 +87,14 @@ tidy:
 svelte-skills:
 	python3 scripts/update-svelte-skills.py $(ARGS)
 
+# Install pre-commit hooks via prek
+install-hooks:
+	@if ! command -v prek >/dev/null 2>&1; then \
+		echo "prek not found. Install with: brew install prek" >&2; \
+		exit 1; \
+	fi
+	prek install -f
+
 # Clean build artifacts
 clean:
 	rm -f middleman
@@ -111,4 +119,5 @@ help:
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
 	@echo ""
+	@echo "  install-hooks  - Install pre-commit hooks (prek)"
 	@echo "  clean          - Remove build artifacts"

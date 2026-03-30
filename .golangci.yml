@@ -9,7 +9,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gosimple
   settings:
     govet:
       disable:
