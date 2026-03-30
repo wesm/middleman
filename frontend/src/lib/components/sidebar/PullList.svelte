@@ -16,7 +16,7 @@
   } from "../../stores/pulls.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import PullItem from "./PullItem.svelte";
-  import RepoSelector from "./RepoSelector.svelte";
+  import RepoTypeahead from "../RepoTypeahead.svelte";
 
   let searchInput = $state(getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -61,6 +61,13 @@
 </script>
 
 <div class="pull-list">
+  <div class="filter-bar">
+    <RepoTypeahead
+      selected={getFilterRepo()}
+      onchange={(repo) => { setFilterRepo(repo); void loadPulls(); }}
+    />
+    <span class="count-badge">{getPulls().length} PRs</span>
+  </div>
   <div class="search-bar">
     <div class="search-input-wrap">
       <svg class="search-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -70,7 +77,7 @@
       <input
         class="search-input"
         type="search"
-        placeholder="Search PRs…"
+        placeholder="Search PRs..."
         value={searchInput}
         oninput={onSearchInput}
       />
@@ -91,11 +98,6 @@
         </svg>
       {/if}
     </button>
-    <RepoSelector
-      selected={getFilterRepo()}
-      onchange={(repo) => { setFilterRepo(repo); void loadPulls(); }}
-    />
-    <span class="count-badge">{getPulls().length}</span>
   </div>
 
   <div class="list-body">
@@ -137,11 +139,21 @@
     width: 100%;
   }
 
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-muted);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+  }
+
   .search-bar {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border-default);
     flex-shrink: 0;
     background: var(--bg-surface);
