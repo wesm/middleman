@@ -197,9 +197,8 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	needsFullFetch := needsTimeline ||
 		(existing != nil && existing.Additions == 0 && existing.Deletions == 0)
 
-	// The list endpoint doesn't return diff stats. Always fetch the
-	// individual PR to get additions/deletions on first sync or when
-	// data has changed.
+	// The list endpoint doesn't return diff stats. Fetch the individual
+	// PR when data is new/changed or diff stats are missing.
 	if needsFullFetch {
 		fullPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
 		if err != nil {
@@ -211,12 +210,11 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		} else {
 			ghPR = fullPR
 			normalized = NormalizePR(repoID, ghPR)
-			slog.Debug("fetched full PR",
-				"number", ghPR.GetNumber(),
-				"additions", normalized.Additions,
-				"deletions", normalized.Deletions,
-			)
 		}
+	} else if existing != nil {
+		// Preserve fields the list endpoint doesn't return
+		normalized.Additions = existing.Additions
+		normalized.Deletions = existing.Deletions
 	}
 
 	prID, err := s.db.UpsertPullRequest(ctx, normalized)
