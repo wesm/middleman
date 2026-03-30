@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -103,7 +105,20 @@ func (c *Config) SyncDuration() time.Duration {
 }
 
 func (c *Config) GitHubToken() string {
-	return os.Getenv(c.GitHubTokenEnv)
+	if token := os.Getenv(c.GitHubTokenEnv); token != "" {
+		return token
+	}
+	return ghAuthToken()
+}
+
+var execCommand = exec.Command
+
+func ghAuthToken() string {
+	out, err := execCommand("gh", "auth", "token").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (c *Config) ListenAddr() string {
