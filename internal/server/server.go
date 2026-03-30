@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wesm/ghboard/internal/db"
@@ -36,24 +37,22 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 	s.mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)
 
 	if frontend != nil {
-		fileServer := http.FileServer(http.FS(frontend))
+		fileServer := http.FileServerFS(frontend)
 		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Strip leading slash: fs.FS paths must not start with '/'.
+			name := strings.TrimPrefix(r.URL.Path, "/")
+			if name == "" {
+				name = "index.html"
+			}
 			// Try serving the exact file; fall back to index.html for SPA routing.
-			f, err := frontend.Open(r.URL.Path)
+			f, err := frontend.Open(name)
 			if err == nil {
 				f.Close()
 				fileServer.ServeHTTP(w, r)
 				return
 			}
-			indexFile, err := frontend.Open("index.html")
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			indexFile.Close()
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = "/index.html"
-			fileServer.ServeHTTP(w, r2)
+			// File not found — serve index.html so the SPA router handles the path.
+			http.ServeFileFS(w, r, frontend, "index.html")
 		})
 	}
 
