@@ -169,13 +169,13 @@ export function syncFromURL(): void {
   filterTypes = typesParam ? typesParam.split(",") : [];
   searchQuery = sp.get("search") ?? undefined;
   const rangeParam = sp.get("range");
-  if (rangeParam && rangeParam in RANGE_MS) {
-    timeRange = rangeParam as TimeRange;
-  }
+  timeRange = (rangeParam && rangeParam in RANGE_MS)
+    ? rangeParam as TimeRange
+    : "7d";
   const viewParam = sp.get("view");
-  if (viewParam === "flat" || viewParam === "threaded") {
-    viewMode = viewParam;
-  }
+  viewMode = (viewParam === "flat" || viewParam === "threaded")
+    ? viewParam
+    : "flat";
 }
 
 /** Sync store state → URL query params (replaceState). */

@@ -52,6 +52,9 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		opts.Since = &t
+	} else {
+		defaultSince := time.Now().UTC().AddDate(0, 0, -7)
+		opts.Since = &defaultSince
 	}
 
 	if cursor := q.Get("after"); cursor != "" {

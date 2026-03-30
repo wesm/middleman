@@ -455,7 +455,11 @@
   {/if}
 
   {#if getViewMode() === "threaded"}
-    <ActivityThreaded items={displayItems} onSelectItem={onSelectItem} />
+    {#if displayItems.length === 0 && isActivityLoading()}
+      <div class="table-container"><div class="empty-state">Loading...</div></div>
+    {:else}
+      <ActivityThreaded items={displayItems} onSelectItem={onSelectItem} />
+    {/if}
   {:else}
     <div class="table-container">
       <table class="activity-table">
