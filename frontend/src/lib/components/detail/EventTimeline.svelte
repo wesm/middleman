@@ -248,7 +248,7 @@
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
-    padding: 8px 10px;
+    padding: 8px 36px 8px 10px;
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;

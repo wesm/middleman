@@ -30,6 +30,10 @@
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let hideClosedMerged = $state(false);
+  let hideBots = $state(false);
+  let showFilterDropdown = $state(false);
+  let filterBtnRef = $state<HTMLButtonElement>();
+  let filterDropRef = $state<HTMLDivElement>();
 
   type ItemFilter = "all" | "prs" | "issues";
   let itemFilter = $state<ItemFilter>("all");
@@ -42,7 +46,25 @@
     commit: "Commits",
   };
 
+  const EVENT_COLORS: Record<string, string> = {
+    comment: "var(--accent-amber)",
+    review: "var(--accent-green)",
+    commit: "var(--accent-teal)",
+  };
+
+  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
+
+  function isBot(author: string): boolean {
+    const lower = author.toLowerCase();
+    return BOT_SUFFIXES.some((s) => lower.endsWith(s));
+  }
+
   let enabledEvents = $state<Set<string>>(new Set(EVENT_TYPES));
+  const hiddenFilterCount = $derived(
+    (EVENT_TYPES.length - enabledEvents.size)
+    + (hideClosedMerged ? 1 : 0)
+    + (hideBots ? 1 : 0),
+  );
 
   onMount(() => {
     syncFromURL();
@@ -55,6 +77,19 @@
   onDestroy(() => {
     stopActivityPolling();
     if (debounceTimer) clearTimeout(debounceTimer);
+  });
+
+  // Close filter dropdown on outside click.
+  $effect(() => {
+    if (!showFilterDropdown) return;
+    function handleClick(e: MouseEvent) {
+      if (filterDropRef && !filterDropRef.contains(e.target as Node)
+          && filterBtnRef && !filterBtnRef.contains(e.target as Node)) {
+        showFilterDropdown = false;
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   });
 
   function restoreFiltersFromStore(): void {
@@ -152,11 +187,23 @@
   }
 
   const displayItems = $derived.by(() => {
-    const all = getActivityItems();
-    if (!hideClosedMerged) return all;
-    return all.filter((it) =>
-      it.item_state !== "merged" && it.item_state !== "closed");
+    let result = getActivityItems();
+    if (hideClosedMerged) {
+      result = result.filter((it) =>
+        it.item_state !== "merged" && it.item_state !== "closed");
+    }
+    if (hideBots) {
+      result = result.filter((it) => !isBot(it.author));
+    }
+    return result;
   });
+
+  function resetFilters(): void {
+    enabledEvents = new Set(EVENT_TYPES);
+    hideClosedMerged = false;
+    hideBots = false;
+    applyFilters();
+  }
 
   function eventClass(type: string): string {
     switch (type) {
@@ -203,24 +250,87 @@
         <button class="seg-btn" class:active={itemFilter === "issues"} onclick={() => setItemFilter("issues")}>Issues</button>
       </div>
 
-      <div class="event-toggles">
-        {#each EVENT_TYPES as evt}
-          <button
-            class="evt-toggle"
-            class:active={enabledEvents.has(evt)}
-            onclick={() => toggleEvent(evt)}
-          >
-            <span class="evt-dot {eventClass(evt)}"></span>
-            {EVENT_LABELS[evt]}
-          </button>
-        {/each}
-      </div>
     </div>
 
-    <label class="hide-closed-toggle">
-      <input type="checkbox" bind:checked={hideClosedMerged} />
-      Hide closed
-    </label>
+    <div class="filter-wrap">
+      <button
+        class="filter-btn"
+        class:filter-active={hiddenFilterCount > 0}
+        bind:this={filterBtnRef}
+        onclick={() => (showFilterDropdown = !showFilterDropdown)}
+        title="Filter activity types"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+        </svg>
+        Filters
+        {#if hiddenFilterCount > 0}
+          <span class="filter-badge">{hiddenFilterCount}</span>
+        {/if}
+      </button>
+
+      {#if showFilterDropdown}
+        <div class="filter-dropdown" bind:this={filterDropRef}>
+          <div class="filter-section-title">Event types</div>
+          {#each EVENT_TYPES as evt}
+            {@const visible = enabledEvents.has(evt)}
+            <button
+              class="filter-item"
+              class:active={visible}
+              onclick={() => toggleEvent(evt)}
+            >
+              <span
+                class="filter-dot"
+                style:background={visible ? EVENT_COLORS[evt] : "var(--border-muted)"}
+              ></span>
+              <span class="filter-label">{EVENT_LABELS[evt]}</span>
+              <span class="filter-check" class:on={visible}>
+                {#if visible}
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                  </svg>
+                {/if}
+              </span>
+            </button>
+          {/each}
+          <div class="filter-divider"></div>
+          <div class="filter-section-title">Visibility</div>
+          <button
+            class="filter-item"
+            class:active={hideClosedMerged}
+            onclick={() => { hideClosedMerged = !hideClosedMerged; }}
+          >
+            <span class="filter-dot" style:background={hideClosedMerged ? "var(--accent-red)" : "var(--border-muted)"}></span>
+            <span class="filter-label">Hide closed/merged</span>
+            <span class="filter-check" class:on={hideClosedMerged}>
+              {#if hideClosedMerged}
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+              {/if}
+            </span>
+          </button>
+          <button
+            class="filter-item"
+            class:active={hideBots}
+            onclick={() => { hideBots = !hideBots; }}
+          >
+            <span class="filter-dot" style:background={hideBots ? "var(--accent-purple)" : "var(--border-muted)"}></span>
+            <span class="filter-label">Hide bots</span>
+            <span class="filter-check" class:on={hideBots}>
+              {#if hideBots}
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+              {/if}
+            </span>
+          </button>
+          {#if hiddenFilterCount > 0}
+            <button class="filter-reset" onclick={resetFilters}>Show all</button>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
     <input
       class="search-input"
@@ -345,57 +455,136 @@
     color: var(--text-secondary);
   }
 
-  .event-toggles {
-    display: flex;
-    gap: 2px;
+  .filter-wrap {
+    position: relative;
   }
 
-  .evt-toggle {
+  .filter-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
+    gap: 5px;
+    padding: 3px 10px;
     font-size: 11px;
+    font-weight: 500;
     color: var(--text-muted);
-    transition: color 0.12s, opacity 0.12s;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+    position: relative;
   }
 
-  .evt-toggle.active {
-    color: var(--text-primary);
+  .filter-btn:hover {
+    border-color: var(--border-default);
+    color: var(--text-secondary);
   }
 
-  .evt-toggle:not(.active) {
-    opacity: 0.4;
+  .filter-btn.filter-active {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
   }
 
-  .evt-toggle:hover {
-    opacity: 1;
+  .filter-badge {
+    font-size: 9px;
+    font-weight: 700;
+    background: var(--accent-blue);
+    color: white;
+    border-radius: 6px;
+    padding: 0 4px;
+    min-width: 14px;
+    text-align: center;
+    line-height: 14px;
   }
 
-  .evt-dot {
+  .filter-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 200px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    padding: 4px 0;
+  }
+
+  .filter-section-title {
+    padding: 4px 12px 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .filter-divider {
+    height: 1px;
+    background: var(--border-muted);
+    margin: 4px 8px;
+  }
+
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.08s;
+  }
+
+  .filter-item:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .filter-item:not(.active) {
+    opacity: 0.5;
+  }
+
+  .filter-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.1s;
   }
 
-  .evt-dot.evt-comment { background: var(--accent-amber); }
-  .evt-dot.evt-review { background: var(--accent-green); }
-  .evt-dot.evt-commit { background: var(--accent-teal); }
+  .filter-label {
+    flex: 1;
+  }
 
-  .hide-closed-toggle {
+  .filter-check {
+    width: 14px;
+    height: 14px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    color: var(--text-muted);
-    cursor: pointer;
-    white-space: nowrap;
-    user-select: none;
+    justify-content: center;
+    color: var(--accent-green);
+    flex-shrink: 0;
   }
 
-  .hide-closed-toggle input {
-    accent-color: var(--accent-blue);
+  .filter-reset {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 4px 8px 2px;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    border-top: 1px solid var(--border-muted);
+    padding-top: 8px;
+    cursor: pointer;
+    transition: color 0.1s;
+  }
+
+  .filter-reset:hover {
+    color: var(--text-primary);
   }
 
   .search-input {
