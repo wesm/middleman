@@ -1,0 +1,15 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/middleman ./cmd/middleman"
+entrypoint = "./tmp/middleman"
+delay = 500
+exclude_dir = ["frontend", "internal/web/dist", "tmp", "vendor", ".git"]
+include_ext = ["go", "tpl", "tmpl", "html"]
+stop_on_error = true
+send_interrupt = true
+kill_delay = "500ms"
+
+[screen]
+clear_on_rebuild = true

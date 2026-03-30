@@ -9,9 +9,13 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.buildDate=$(BUILD_DATE)
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
+AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
+	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air" ]; then printf "%s" "$$(go env GOBIN)/air"; \
+	elif [ -x "$$(go env GOPATH | cut -d: -f1)/bin/air" ]; then printf "%s" "$$(go env GOPATH | cut -d: -f1)/bin/air"; \
+	fi)
 
-.PHONY: ensure-embed-dir build build-release install frontend frontend-dev dev \
-        test test-short vet lint tidy clean help
+.PHONY: ensure-embed-dir check-air air-install build build-release install \
+        frontend frontend-dev dev test test-short vet lint tidy clean help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -55,9 +59,20 @@ frontend:
 frontend-dev:
 	cd frontend && npm run dev
 
-# Run Go server in dev mode (no embedded frontend)
-dev: ensure-embed-dir
-	go run -ldflags="$(LDFLAGS)" ./cmd/middleman $(ARGS)
+# Ensure air is installed for backend live reload
+check-air:
+	@if [ -z "$(AIR_BIN)" ]; then \
+		echo "air not found. Install with: make air-install" >&2; \
+		exit 1; \
+	fi
+
+# Install air for backend live reload
+air-install:
+	go install github.com/air-verse/air@latest
+
+# Run Go server in dev mode with live reload (use alongside `make frontend-dev`)
+dev: ensure-embed-dir check-air
+	"$(AIR_BIN)" -c .air.toml -- $(ARGS)
 
 # Run tests
 test: ensure-embed-dir
@@ -95,8 +110,9 @@ help:
 	@echo "  build          - Build with embedded frontend"
 	@echo "  build-release  - Release build (optimized, stripped)"
 	@echo "  install        - Build and install to ~/.local/bin or GOPATH"
+	@echo "  air-install    - Install air live reload tool"
 	@echo ""
-	@echo "  dev            - Run Go server (use with frontend-dev)"
+	@echo "  dev            - Run Go server with air live reload (use with frontend-dev)"
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Run Vite dev server"
 	@echo ""
