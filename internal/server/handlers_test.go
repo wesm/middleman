@@ -263,6 +263,7 @@ func TestHandleSetKanbanState(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("PR not found")
+		return
 	}
 	if pr.KanbanStatus != "reviewing" {
 		t.Errorf("expected kanban status 'reviewing', got %q", pr.KanbanStatus)
@@ -326,6 +327,9 @@ func TestHandleSyncStatus(t *testing.T) {
 	var status ghclient.SyncStatus
 	if err := json.NewDecoder(rr.Body).Decode(&status); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	if !status.LastRunAt.IsZero() {
+		t.Fatalf("expected empty sync status to omit last_run_at, got %v", status.LastRunAt)
 	}
 }
 
@@ -397,8 +401,8 @@ func TestHandleReadyForReview(t *testing.T) {
 				CreatedAt: &now,
 				UpdatedAt: &now,
 				User:      &gh.User{Login: &author},
-				Head:      &gh.PullRequestBranch{Ref: gh.Ptr("feature")},
-				Base:      &gh.PullRequestBranch{Ref: gh.Ptr("main")},
+				Head:      &gh.PullRequestBranch{Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
 	}
@@ -452,6 +456,7 @@ func TestHandleReadyForReview(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("expected PR to exist")
+		return
 	}
 	if pr.IsDraft {
 		t.Fatal("expected PR to no longer be draft")

@@ -14,7 +14,7 @@ import (
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
 	Running   bool      `json:"running"`
-	LastRunAt time.Time `json:"last_run_at,omitempty"`
+	LastRunAt time.Time `json:"last_run_at,omitzero"`
 	LastError string    `json:"last_error,omitempty"`
 }
 

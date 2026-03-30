@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("renders mocked frontend data", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/pulls");
 
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();
   await expect(page.getByText("acme/widgets")).toBeVisible();

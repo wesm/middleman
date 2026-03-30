@@ -209,7 +209,7 @@ func (c *liveClient) CreateIssueComment(
 	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
 	comment, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{
-		Body: gh.Ptr(body),
+		Body: new(body),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating comment on %s/%s#%d: %w", owner, repo, number, err)
@@ -233,8 +233,8 @@ func (c *liveClient) CreateReview(
 ) (*gh.PullRequestReview, error) {
 	review, _, err := c.gh.PullRequests.CreateReview(
 		ctx, owner, repo, number, &gh.PullRequestReviewRequest{
-			Event: gh.Ptr(event),
-			Body:  gh.Ptr(body),
+			Event: new(event),
+			Body:  new(body),
 		},
 	)
 	if err != nil {

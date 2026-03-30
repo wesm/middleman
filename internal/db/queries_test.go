@@ -96,6 +96,7 @@ func TestGetRepoByOwnerName(t *testing.T) {
 	}
 	if r == nil {
 		t.Fatal("expected repo, got nil")
+		return
 	}
 	if r.ID != id {
 		t.Errorf("ID = %d, want %d", r.ID, id)
@@ -192,6 +193,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("expected PR, got nil")
+		return
 	}
 	if got.ID != id {
 		t.Errorf("ID = %d, want %d", got.ID, id)

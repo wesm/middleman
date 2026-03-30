@@ -9,6 +9,7 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    - modernize
   settings:
     govet:
       disable:

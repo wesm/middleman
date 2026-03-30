@@ -166,7 +166,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 				Commit: &gh.Commit{
 					Message: &commitMsg,
 					Author: &gh.CommitAuthor{
-						Name: gh.Ptr("dev"),
+						Name: new("dev"),
 						Date: commitDate,
 					},
 				},
@@ -187,6 +187,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("expected PR in DB, got nil")
+		return
 	}
 	if pr.Number != 1 {
 		t.Errorf("pr.Number = %d, want 1", pr.Number)
@@ -199,6 +200,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	}
 	if ks == nil {
 		t.Fatal("expected kanban state, got nil")
+		return
 	}
 	if ks.Status != "new" {
 		t.Errorf("kanban status = %q, want %q", ks.Status, "new")
