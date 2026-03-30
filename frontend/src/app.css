@@ -17,6 +17,7 @@
   --accent-purple: #7c3aed;
   --accent-green: #059669;
   --accent-red: #dc2626;
+  --accent-teal: #0d9488;
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: 0 2px 8px rgba(0,0,0,0.08);
   --radius-sm: 4px;
@@ -51,6 +52,7 @@
   --accent-purple: #a78bfa;
   --accent-green: #34d399;
   --accent-red: #f87171;
+  --accent-teal: #2dd4bf;
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
   --shadow-md: 0 2px 8px rgba(0,0,0,0.35);
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);

@@ -28,6 +28,7 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		mux:    http.NewServeMux(),
 	}
 
+	s.mux.HandleFunc("GET /api/v1/activity", s.handleListActivity)
 	s.mux.HandleFunc("GET /api/v1/pulls", s.handleListPulls)
 	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/pulls/{number}", s.handleGetPull)
 	s.mux.HandleFunc("PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state", s.handleSetKanbanState)
