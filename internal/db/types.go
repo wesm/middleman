@@ -41,6 +41,7 @@ type PullRequest struct {
 	MergedAt       *time.Time
 	ClosedAt       *time.Time
 	KanbanStatus   string
+	Starred        bool
 }
 
 // CICheck represents a single CI check run.
@@ -76,7 +77,57 @@ type ListPullsOpts struct {
 	RepoName    string
 	State       string
 	KanbanState string
+	Starred     bool
 	Search      string
 	Limit       int
 	Offset      int
+}
+
+type Issue struct {
+	ID             int64
+	RepoID         int64
+	GitHubID       int64
+	Number         int
+	URL            string
+	Title          string
+	Author         string
+	State          string
+	Body           string
+	CommentCount   int
+	LabelsJSON     string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	LastActivityAt time.Time
+	ClosedAt       *time.Time
+	Starred        bool
+}
+
+type IssueEvent struct {
+	ID           int64
+	IssueID      int64
+	GitHubID     *int64
+	EventType    string
+	Author       string
+	Summary      string
+	Body         string
+	MetadataJSON string
+	CreatedAt    time.Time
+	DedupeKey    string
+}
+
+type ListIssuesOpts struct {
+	RepoOwner string
+	RepoName  string
+	State     string
+	Starred   bool
+	Search    string
+	Limit     int
+	Offset    int
+}
+
+type StarredItem struct {
+	ItemType  string
+	RepoID    int64
+	Number    int
+	StarredAt time.Time
 }

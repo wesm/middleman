@@ -22,6 +22,14 @@ func (m *mockGH) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.Pul
 	return nil, nil
 }
 
+func (m *mockGH) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+	return nil, nil
+}
+
+func (m *mockGH) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+	return nil, nil
+}
+
 func (m *mockGH) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 	return nil, nil
 }

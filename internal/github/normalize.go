@@ -188,6 +188,74 @@ func appName(r *gh.CheckRun) string {
 	return ""
 }
 
+// --- Issues ---
+
+// Label represents a GitHub issue label for JSON serialization.
+type Label struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+// NormalizeIssue converts a GitHub Issue to a db.Issue.
+func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
+	issue := &db.Issue{
+		RepoID:       repoID,
+		GitHubID:     ghIssue.GetID(),
+		Number:       ghIssue.GetNumber(),
+		URL:          ghIssue.GetHTMLURL(),
+		Title:        ghIssue.GetTitle(),
+		Author:       loginOrEmpty(ghIssue.GetUser()),
+		State:        ghIssue.GetState(),
+		Body:         ghIssue.GetBody(),
+		CommentCount: ghIssue.GetComments(),
+	}
+	if ghIssue.CreatedAt != nil {
+		issue.CreatedAt = ghIssue.CreatedAt.Time
+	}
+	if ghIssue.UpdatedAt != nil {
+		issue.UpdatedAt = ghIssue.UpdatedAt.Time
+		issue.LastActivityAt = ghIssue.UpdatedAt.Time
+	}
+	if ghIssue.ClosedAt != nil {
+		t := ghIssue.ClosedAt.Time
+		issue.ClosedAt = &t
+	}
+	issue.LabelsJSON = normalizeLabels(ghIssue.Labels)
+	return issue
+}
+
+func normalizeLabels(labels []*gh.Label) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	out := make([]Label, 0, len(labels))
+	for _, l := range labels {
+		out = append(out, Label{
+			Name:  l.GetName(),
+			Color: l.GetColor(),
+		})
+	}
+	b, _ := json.Marshal(out)
+	return string(b)
+}
+
+// NormalizeIssueCommentEvent converts a GitHub IssueComment to a db.IssueEvent.
+func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent {
+	event := db.IssueEvent{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		DedupeKey: fmt.Sprintf("issue-comment-%d", c.GetID()),
+		Author:    loginOrEmpty(c.GetUser()),
+		Body:      c.GetBody(),
+	}
+	ghID := c.GetID()
+	event.GitHubID = &ghID
+	if c.CreatedAt != nil {
+		event.CreatedAt = c.CreatedAt.Time
+	}
+	return event
+}
+
 // loginOrEmpty returns the GitHub login for a user, or "" if user is nil.
 func loginOrEmpty(u *gh.User) string {
 	if u == nil {

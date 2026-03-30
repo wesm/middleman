@@ -37,6 +37,14 @@ func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh
 	return m.openPRs, nil
 }
 
+func (m *mockClient) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+	return nil, nil
+}
+
+func (m *mockClient) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+	return nil, nil
+}
+
 func (m *mockClient) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 	return m.singlePR, nil
 }

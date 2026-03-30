@@ -32,6 +32,13 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/pulls/{number}", s.handleGetPull)
 	s.mux.HandleFunc("PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state", s.handleSetKanbanState)
 	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/comments", s.handlePostComment)
+	s.mux.HandleFunc("GET /api/v1/issues", s.handleListIssues)
+	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/issues/{number}", s.handleGetIssue)
+	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/issues/{number}/comments", s.handlePostIssueComment)
+
+	s.mux.HandleFunc("PUT /api/v1/starred", s.handleSetStarred)
+	s.mux.HandleFunc("DELETE /api/v1/starred", s.handleUnsetStarred)
+
 	s.mux.HandleFunc("GET /api/v1/repos", s.handleListRepos)
 	s.mux.HandleFunc("POST /api/v1/sync", s.handleTriggerSync)
 	s.mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)

@@ -49,7 +49,18 @@ func (d *DB) init() error {
 	if _, err := d.rw.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
+	d.migrate()
 	return nil
+}
+
+// migrate applies idempotent column additions for existing databases.
+func (d *DB) migrate() {
+	migrations := []string{
+		"ALTER TABLE pull_requests ADD COLUMN ci_checks_json TEXT NOT NULL DEFAULT ''",
+	}
+	for _, m := range migrations {
+		d.rw.Exec(m) // Ignore errors — column may already exist
+	}
 }
 
 // Close closes both database connections.

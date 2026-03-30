@@ -12,6 +12,8 @@ import (
 type Client interface {
 	ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error)
 	GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
+	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
+	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
@@ -49,6 +51,51 @@ func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo strin
 		opts.Page = resp.NextPage
 	}
 	return all, nil
+}
+
+func (c *liveClient) ListOpenIssues(
+	ctx context.Context, owner, repo string,
+) ([]*gh.Issue, error) {
+	var all []*gh.Issue
+	opts := &gh.IssueListByRepoOptions{
+		State:       "open",
+		Sort:        "updated",
+		Direction:   "desc",
+		ListOptions: gh.ListOptions{PerPage: 100},
+	}
+	for {
+		issues, resp, err := c.gh.Issues.ListByRepo(
+			ctx, owner, repo, opts,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"listing issues for %s/%s: %w", owner, repo, err,
+			)
+		}
+		// GitHub's Issues API returns PRs too — filter them out.
+		for _, issue := range issues {
+			if issue.PullRequestLinks == nil {
+				all = append(all, issue)
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.ListOptions.Page = resp.NextPage
+	}
+	return all, nil
+}
+
+func (c *liveClient) GetIssue(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.Issue, error) {
+	issue, _, err := c.gh.Issues.Get(ctx, owner, repo, number)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"getting issue %s/%s#%d: %w", owner, repo, number, err,
+		)
+	}
+	return issue, nil
 }
 
 func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {

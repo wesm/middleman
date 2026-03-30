@@ -164,6 +164,13 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64) err
 		}
 	}
 
+	// Sync issues (non-fatal — issue failure should not block PR sync)
+	if err := s.syncIssues(ctx, repo, repoID); err != nil {
+		slog.Error("sync issues failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+	}
+
 	return nil
 }
 
@@ -317,6 +324,150 @@ func computeLastActivity(
 		}
 	}
 	return latest
+}
+
+// --- Issue sync ---
+
+func (s *Syncer) syncIssues(
+	ctx context.Context, repo RepoRef, repoID int64,
+) error {
+	ghIssues, err := s.client.ListOpenIssues(
+		ctx, repo.Owner, repo.Name,
+	)
+	if err != nil {
+		return fmt.Errorf("list open issues: %w", err)
+	}
+
+	stillOpen := make(map[int]bool, len(ghIssues))
+	for _, issue := range ghIssues {
+		stillOpen[issue.GetNumber()] = true
+	}
+
+	for _, ghIssue := range ghIssues {
+		if err := s.syncOpenIssue(ctx, repo, repoID, ghIssue); err != nil {
+			slog.Error("sync issue failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", ghIssue.GetNumber(),
+				"err", err,
+			)
+		}
+	}
+
+	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
+		ctx, repoID, stillOpen,
+	)
+	if err != nil {
+		return fmt.Errorf("get previously open issues: %w", err)
+	}
+	for _, number := range closedNumbers {
+		if err := s.fetchAndUpdateClosedIssue(ctx, repo, repoID, number); err != nil {
+			slog.Error("update closed issue failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
+	}
+
+	return nil
+}
+
+func (s *Syncer) syncOpenIssue(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghIssue *gh.Issue,
+) error {
+	normalized := NormalizeIssue(repoID, ghIssue)
+
+	existing, err := s.db.GetIssue(
+		ctx, repo.Owner, repo.Name, ghIssue.GetNumber(),
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing issue #%d: %w", ghIssue.GetNumber(), err,
+		)
+	}
+
+	needsTimeline := existing == nil ||
+		!existing.UpdatedAt.Equal(normalized.UpdatedAt)
+
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf(
+			"upsert issue #%d: %w", ghIssue.GetNumber(), err,
+		)
+	}
+
+	if !needsTimeline {
+		return nil
+	}
+
+	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
+}
+
+func (s *Syncer) refreshIssueTimeline(
+	ctx context.Context,
+	repo RepoRef,
+	issueID int64,
+	ghIssue *gh.Issue,
+) error {
+	number := ghIssue.GetNumber()
+
+	comments, err := s.client.ListIssueComments(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"list comments for issue #%d: %w", number, err,
+		)
+	}
+
+	var events []db.IssueEvent
+	for _, c := range comments {
+		events = append(events, NormalizeIssueCommentEvent(issueID, c))
+	}
+
+	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+		return fmt.Errorf(
+			"upsert issue events for #%d: %w", number, err,
+		)
+	}
+
+	lastActivity := ghIssue.UpdatedAt.Time
+	for _, c := range comments {
+		if c.UpdatedAt != nil && c.UpdatedAt.Time.After(lastActivity) {
+			lastActivity = c.UpdatedAt.Time
+		}
+	}
+
+	_, err = s.db.WriteDB().ExecContext(ctx,
+		`UPDATE issues SET comment_count = ?, last_activity_at = ?
+		 WHERE id = ?`,
+		len(comments), lastActivity, issueID,
+	)
+	return err
+}
+
+func (s *Syncer) fetchAndUpdateClosedIssue(
+	ctx context.Context, repo RepoRef, repoID int64, number int,
+) error {
+	ghIssue, err := s.client.GetIssue(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	if err != nil {
+		return fmt.Errorf("get closed issue #%d: %w", number, err)
+	}
+
+	var closedAt *time.Time
+	if ghIssue.ClosedAt != nil {
+		t := ghIssue.ClosedAt.Time
+		closedAt = &t
+	}
+
+	return s.db.UpdateIssueState(
+		ctx, repoID, number, ghIssue.GetState(), closedAt,
+	)
 }
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.

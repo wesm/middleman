@@ -163,10 +163,13 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at,
-		       COALESCE(k.status, '') AS kanban_status
+		       COALESCE(k.status, '') AS kanban_status,
+		       (s.number IS NOT NULL) AS starred
 		FROM pull_requests p
 		JOIN repos r ON r.id = p.repo_id
 		LEFT JOIN kanban_state k ON k.pr_id = p.id
+		LEFT JOIN starred_items s
+		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
 		owner, name, number,
 	).Scan(
@@ -175,7 +178,7 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 		&pr.CIStatus, &pr.CIChecksJSON,
 		&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
-		&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus,
+		&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus, &pr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -212,6 +215,9 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		conds = append(conds, "COALESCE(k.status, '') = ?")
 		args = append(args, opts.KanbanState)
 	}
+	if opts.Starred {
+		conds = append(conds, "s.number IS NOT NULL")
+	}
 	if opts.Search != "" {
 		conds = append(conds, "(p.title LIKE ? OR p.author LIKE ?)")
 		like := "%" + opts.Search + "%"
@@ -228,10 +234,13 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at,
-		       COALESCE(k.status, '') AS kanban_status
+		       COALESCE(k.status, '') AS kanban_status,
+		       (s.number IS NOT NULL) AS starred
 		FROM pull_requests p
 		JOIN repos r ON r.id = p.repo_id
 		LEFT JOIN kanban_state k ON k.pr_id = p.id
+		LEFT JOIN starred_items s
+		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		ORDER BY p.last_activity_at DESC
 		LIMIT ? OFFSET ?`, where)
@@ -251,7 +260,7 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 			&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 			&pr.CIStatus, &pr.CIChecksJSON,
 			&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
-			&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus,
+			&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus, &pr.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan pull request: %w", err)
 		}
@@ -463,4 +472,326 @@ func (d *DB) UpdatePRState(
 		return fmt.Errorf("update pr state: %w", err)
 	}
 	return nil
+}
+
+// --- Issues ---
+
+// UpsertIssue inserts or updates an issue, returning its internal ID.
+func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO issues
+		    (repo_id, github_id, number, url, title, author, state,
+		     body, comment_count, labels_json,
+		     created_at, updated_at, last_activity_at, closed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(repo_id, number) DO UPDATE SET
+		    github_id        = excluded.github_id,
+		    url              = excluded.url,
+		    title            = excluded.title,
+		    author           = excluded.author,
+		    state            = excluded.state,
+		    body             = excluded.body,
+		    comment_count    = excluded.comment_count,
+		    labels_json      = excluded.labels_json,
+		    updated_at       = excluded.updated_at,
+		    last_activity_at = excluded.last_activity_at,
+		    closed_at        = excluded.closed_at`,
+		issue.RepoID, issue.GitHubID, issue.Number, issue.URL,
+		issue.Title, issue.Author, issue.State,
+		issue.Body, issue.CommentCount, issue.LabelsJSON,
+		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("upsert issue: %w", err)
+	}
+	var id int64
+	err = d.ro.QueryRowContext(ctx,
+		`SELECT id FROM issues WHERE repo_id = ? AND number = ?`,
+		issue.RepoID, issue.Number,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("get issue id after upsert: %w", err)
+	}
+	return id, nil
+}
+
+// GetIssue returns an issue by repo owner/name and issue number, or nil if not found.
+func (d *DB) GetIssue(
+	ctx context.Context, owner, name string, number int,
+) (*Issue, error) {
+	var issue Issue
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT i.id, i.repo_id, i.github_id, i.number, i.url, i.title,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
+		       (s.number IS NOT NULL) AS starred
+		FROM issues i
+		JOIN repos r ON r.id = i.repo_id
+		LEFT JOIN starred_items s
+		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		WHERE r.owner = ? AND r.name = ? AND i.number = ?`,
+		owner, name, number,
+	).Scan(
+		&issue.ID, &issue.RepoID, &issue.GitHubID, &issue.Number,
+		&issue.URL, &issue.Title, &issue.Author, &issue.State,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
+		&issue.ClosedAt, &issue.Starred,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get issue: %w", err)
+	}
+	return &issue, nil
+}
+
+// ListIssues returns issues matching the given options.
+func (d *DB) ListIssues(
+	ctx context.Context, opts ListIssuesOpts,
+) ([]Issue, error) {
+	state := opts.State
+	if state == "" {
+		state = "open"
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	var conds []string
+	var args []any
+
+	conds = append(conds, "i.state = ?")
+	args = append(args, state)
+
+	if opts.RepoOwner != "" && opts.RepoName != "" {
+		conds = append(conds, "r.owner = ? AND r.name = ?")
+		args = append(args, opts.RepoOwner, opts.RepoName)
+	}
+	if opts.Starred {
+		conds = append(conds, "s.number IS NOT NULL")
+	}
+	if opts.Search != "" {
+		conds = append(conds, "(i.title LIKE ? OR i.author LIKE ?)")
+		like := "%" + opts.Search + "%"
+		args = append(args, like, like)
+	}
+
+	where := "WHERE " + strings.Join(conds, " AND ")
+	args = append(args, limit, opts.Offset)
+
+	query := fmt.Sprintf(`
+		SELECT i.id, i.repo_id, i.github_id, i.number, i.url, i.title,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
+		       (s.number IS NOT NULL) AS starred
+		FROM issues i
+		JOIN repos r ON r.id = i.repo_id
+		LEFT JOIN starred_items s
+		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		%s
+		ORDER BY i.last_activity_at DESC
+		LIMIT ? OFFSET ?`, where)
+
+	rows, err := d.ro.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list issues: %w", err)
+	}
+	defer rows.Close()
+
+	var issues []Issue
+	for rows.Next() {
+		var issue Issue
+		if err := rows.Scan(
+			&issue.ID, &issue.RepoID, &issue.GitHubID, &issue.Number,
+			&issue.URL, &issue.Title, &issue.Author, &issue.State,
+			&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+			&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
+			&issue.ClosedAt, &issue.Starred,
+		); err != nil {
+			return nil, fmt.Errorf("scan issue: %w", err)
+		}
+		issues = append(issues, issue)
+	}
+	return issues, rows.Err()
+}
+
+// GetIssueIDByRepoAndNumber returns the internal issue ID for a given repo+number.
+func (d *DB) GetIssueIDByRepoAndNumber(
+	ctx context.Context, owner, name string, number int,
+) (int64, error) {
+	var id int64
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT i.id FROM issues i
+		JOIN repos r ON r.id = i.repo_id
+		WHERE r.owner = ? AND r.name = ? AND i.number = ?`,
+		owner, name, number,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("issue %s/%s#%d not found", owner, name, number)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("get issue id by repo and number: %w", err)
+	}
+	return id, nil
+}
+
+// UpdateIssueState sets the state and closed_at for an issue.
+func (d *DB) UpdateIssueState(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	state string,
+	closedAt *time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE issues SET state = ?, closed_at = ?
+		WHERE repo_id = ? AND number = ?`,
+		state, closedAt, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue state: %w", err)
+	}
+	return nil
+}
+
+// GetPreviouslyOpenIssueNumbers returns issue numbers that are open in the DB
+// but not in the stillOpen set.
+func (d *DB) GetPreviouslyOpenIssueNumbers(
+	ctx context.Context,
+	repoID int64,
+	stillOpen map[int]bool,
+) ([]int, error) {
+	rows, err := d.ro.QueryContext(ctx,
+		`SELECT number FROM issues WHERE repo_id = ? AND state = 'open'`,
+		repoID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get previously open issues: %w", err)
+	}
+	defer rows.Close()
+
+	var closed []int
+	for rows.Next() {
+		var n int
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("scan issue number: %w", err)
+		}
+		if !stillOpen[n] {
+			closed = append(closed, n)
+		}
+	}
+	return closed, rows.Err()
+}
+
+// --- Issue Events ---
+
+// UpsertIssueEvents bulk-inserts issue events, ignoring duplicates by dedupe_key.
+func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO issue_events
+			    (issue_id, github_id, event_type, author, summary, body,
+			     metadata_json, created_at, dedupe_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(dedupe_key) DO NOTHING`)
+		if err != nil {
+			return fmt.Errorf("prepare upsert issue events: %w", err)
+		}
+		defer stmt.Close()
+
+		for i := range events {
+			e := &events[i]
+			if _, err := stmt.ExecContext(ctx,
+				e.IssueID, e.GitHubID, e.EventType, e.Author,
+				e.Summary, e.Body, e.MetadataJSON, e.CreatedAt,
+				e.DedupeKey,
+			); err != nil {
+				return fmt.Errorf("insert issue event (dedupe_key=%s): %w", e.DedupeKey, err)
+			}
+		}
+		return nil
+	})
+}
+
+// ListIssueEvents returns all events for an issue ordered by created_at DESC.
+func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT id, issue_id, github_id, event_type, author, summary, body,
+		       metadata_json, created_at, dedupe_key
+		FROM issue_events
+		WHERE issue_id = ?
+		ORDER BY created_at DESC`, issueID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list issue events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []IssueEvent
+	for rows.Next() {
+		var e IssueEvent
+		if err := rows.Scan(
+			&e.ID, &e.IssueID, &e.GitHubID, &e.EventType, &e.Author,
+			&e.Summary, &e.Body, &e.MetadataJSON, &e.CreatedAt, &e.DedupeKey,
+		); err != nil {
+			return nil, fmt.Errorf("scan issue event: %w", err)
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// --- Starring ---
+
+// SetStarred stars an item (PR or issue).
+func (d *DB) SetStarred(
+	ctx context.Context, itemType string, repoID int64, number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO starred_items (item_type, repo_id, number)
+		VALUES (?, ?, ?)
+		ON CONFLICT(item_type, repo_id, number) DO NOTHING`,
+		itemType, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("set starred: %w", err)
+	}
+	return nil
+}
+
+// UnsetStarred removes a star from an item.
+func (d *DB) UnsetStarred(
+	ctx context.Context, itemType string, repoID int64, number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		DELETE FROM starred_items
+		WHERE item_type = ? AND repo_id = ? AND number = ?`,
+		itemType, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("unset starred: %w", err)
+	}
+	return nil
+}
+
+// IsStarred checks whether an item is starred.
+func (d *DB) IsStarred(
+	ctx context.Context, itemType string, repoID int64, number int,
+) (bool, error) {
+	var count int
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM starred_items
+		WHERE item_type = ? AND repo_id = ? AND number = ?`,
+		itemType, repoID, number,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("is starred: %w", err)
+	}
+	return count > 0, nil
 }
