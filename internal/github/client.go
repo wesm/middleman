@@ -22,6 +22,7 @@ type Client interface {
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
+	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
 }
 
@@ -242,6 +243,32 @@ func (c *liveClient) CreateReview(
 		)
 	}
 	return review, nil
+}
+
+func (c *liveClient) MarkPullRequestReadyForReview(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	req, err := c.gh.NewRequest(
+		"POST",
+		fmt.Sprintf("repos/%s/%s/pulls/%d/ready_for_review", owner, repo, number),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"building ready-for-review request for %s/%s#%d: %w",
+			owner, repo, number, err,
+		)
+	}
+
+	pr := new(gh.PullRequest)
+	if _, err := c.gh.Do(ctx, req, pr); err != nil {
+		return nil, fmt.Errorf(
+			"marking %s/%s#%d ready for review: %w",
+			owner, repo, number, err,
+		)
+	}
+
+	return pr, nil
 }
 
 func (c *liveClient) MergePullRequest(

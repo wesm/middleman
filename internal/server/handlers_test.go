@@ -16,7 +16,10 @@ import (
 )
 
 // mockGH implements ghclient.Client for testing.
-type mockGH struct{}
+type mockGH struct {
+	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
+	markReadyForReviewFn func(context.Context, string, string, int) (*gh.PullRequest, error)
+}
 
 func (m *mockGH) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
 	return nil, nil
@@ -31,6 +34,9 @@ func (m *mockGH) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, err
 }
 
 func (m *mockGH) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+	if m.getPullRequestFn != nil {
+		return m.getPullRequestFn(context.Background(), "", "", 0)
+	}
 	return nil, nil
 }
 
@@ -86,6 +92,16 @@ func (m *mockGH) CreateReview(
 	id := int64(99)
 	state := "APPROVED"
 	return &gh.PullRequestReview{ID: &id, State: &state}, nil
+}
+
+func (m *mockGH) MarkPullRequestReadyForReview(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	if m.markReadyForReviewFn != nil {
+		return m.markReadyForReviewFn(ctx, owner, repo, number)
+	}
+	draft := false
+	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
 }
 
 func (m *mockGH) MergePullRequest(
@@ -313,3 +329,90 @@ func TestHandleSyncStatus(t *testing.T) {
 	}
 }
 
+func TestHandleReadyForReview(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			title := "Ready PR"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "octocat"
+			draft := false
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				User:      &gh.User{Login: &author},
+				Head:      &gh.PullRequestBranch{Ref: gh.Ptr("feature")},
+				Base:      &gh.PullRequestBranch{Ref: gh.Ptr("main")},
+			}, nil
+		},
+	}
+	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
+	srv := New(database, mock, syncer, nil)
+
+	repoID, err := database.UpsertRepo(context.Background(), "acme", "widget")
+	if err != nil {
+		t.Fatalf("upsert repo: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	prID, err := database.UpsertPullRequest(context.Background(), &db.PullRequest{
+		RepoID:         repoID,
+		GitHubID:       1001,
+		Number:         1,
+		URL:            "https://github.com/acme/widget/pull/1",
+		Title:          "Ready PR",
+		Author:         "octocat",
+		State:          "open",
+		IsDraft:        true,
+		Body:           "",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		Additions:      0,
+		Deletions:      0,
+		CommentCount:   0,
+		ReviewDecision: "",
+		CIStatus:       "",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	if err != nil {
+		t.Fatalf("upsert pull request: %v", err)
+	}
+	if err := database.EnsureKanbanState(context.Background(), prID); err != nil {
+		t.Fatalf("ensure kanban state: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/repos/acme/widget/pulls/1/ready-for-review", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	if err != nil {
+		t.Fatalf("get pull request: %v", err)
+	}
+	if pr == nil {
+		t.Fatal("expected PR to exist")
+	}
+	if pr.IsDraft {
+		t.Fatal("expected PR to no longer be draft")
+	}
+}
