@@ -20,12 +20,27 @@
   const ago = $derived(timeAgo(pr.LastActivityAt));
   const repoLabel = $derived(
     pr.repo_owner && pr.repo_name
-      ? `${pr.repo_owner}/${pr.repo_name}`
+      ? `${pr.repo_name}`
       : `#${pr.Number}`
   );
+
+  function handleDragStart(e: DragEvent): void {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", JSON.stringify({
+      owner: pr.repo_owner ?? "",
+      name: pr.repo_name ?? "",
+      number: pr.Number,
+    }));
+  }
 </script>
 
-<button class="kanban-card" {onclick}>
+<button
+  class="kanban-card"
+  {onclick}
+  draggable="true"
+  ondragstart={handleDragStart}
+>
   <p class="card-title">{pr.Title}</p>
   <p class="card-meta">{repoLabel} #{pr.Number}</p>
   <div class="card-footer">
@@ -43,14 +58,19 @@
     background: var(--bg-surface);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: box-shadow 0.15s, border-color 0.15s;
+    cursor: grab;
+    transition: box-shadow 0.15s, border-color 0.15s, opacity 0.15s;
     box-shadow: var(--shadow-sm);
   }
 
   .kanban-card:hover {
     box-shadow: var(--shadow-md);
     border-color: var(--border-default);
+  }
+
+  .kanban-card:active {
+    cursor: grabbing;
+    opacity: 0.7;
   }
 
   .card-title {
