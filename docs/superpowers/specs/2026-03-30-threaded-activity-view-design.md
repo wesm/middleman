@@ -1,30 +1,50 @@
 # Threaded Activity View Design
 
-A grouped/threaded view option for the activity feed that shows events organized by Project > Issue/PR > Event, sorted reverse-chronologically at every level. Coexists with the existing flat view as a toggle. Replaces limit-based pagination with time-window fetching for both views.
+A grouped/threaded view option for the activity feed that shows events organized by Project > Issue/PR > Event, sorted reverse-chronologically at every level. Coexists with the existing flat view as a toggle.
+
+This spec also changes how both views fetch data: time-window fetching replaces the current limit/cursor pagination model. This is intentional — the flat view's "Load more" button and cursor-based pagination are removed in favor of a time-range selector. Both views benefit from seeing a complete time window rather than an arbitrary page of events.
 
 ## View Toggle
 
 A Flat/Threaded segmented control in the activity feed controls bar. Flat is the current table view. Threaded groups the same data into a nested tree. Both views render the same `displayItems` array (already filtered by type, bots, closed/merged). Toggling is instant with no re-fetch.
 
-The toggle is local UI state, not persisted in the URL.
+The view mode and time range are persisted in the URL query string (`view=threaded&range=7d`) alongside the existing `repo`, `types`, and `search` params. This makes the current view bookmarkable and survives browser back/forward.
 
 ## Time-Windowed Fetching
 
-Replaces the current limit/cursor pagination model.
-
 ### API change
 
-Add a `since` parameter to `GET /api/v1/activity` — an ISO 8601 timestamp. The server returns all events with `created_at >= since`. A server-side safety cap (default 5000 rows) prevents unbounded responses.
+Replace the `limit`/`before` pagination model with time-window fetching.
 
-Remove the `before` HTTP query parameter from the handler. The `after` cursor is retained for polling (prepending new items). The internal `BeforeTime`/`BeforeSource`/`BeforeSourceID` fields on `ListActivityOpts` remain in the code but are no longer used by the handler.
+Add a `since` parameter to `GET /api/v1/activity` — an ISO 8601 timestamp. The server returns all events with `created_at >= since`. Remove the `before` and `limit` HTTP query parameters from the handler. The `after` cursor is retained for polling.
+
+The server applies a safety cap of 5000 rows. If the result set exceeds this, the response includes `"capped": true` so the frontend can inform the user (e.g., "Showing most recent 5000 events in this window").
+
+The `has_more` field is removed from the response. The new response shape:
+
+```json
+{
+  "items": [...],
+  "capped": false
+}
+```
+
+The internal `BeforeTime`/`BeforeSource`/`BeforeSourceID` and `Limit` fields on `ListActivityOpts` remain in the code but are no longer set by the handler. The `AfterTime`/`AfterSource`/`AfterSourceID` fields remain for polling.
+
+### Client-side filter interaction with safety cap
+
+The `hide bots` and `hide closed/merged` filters are client-side. In a busy window the 5000-row cap could cut off rows before client filtering, meaning the user sees fewer visible items than actually exist. This is acceptable because:
+- 5000 rows in a 7-day window is a very high bar (714 events/day across all repos).
+- When `capped` is true, the frontend shows a notice so the user knows the window is incomplete.
+- The user can narrow the time range (24h) or use the server-side repo/type filters to reduce the result set.
 
 ### Time range control
 
-Preset time windows displayed as a segmented control at the top of the table: **24h / 7d / 30d / 90d**. Default is 7d. Selecting a range re-fetches with the new `since` value. No "Load more" button.
+Preset time windows displayed as a segmented control: **24h / 7d / 30d / 90d**. Default is 7d. Selecting a range computes `since` as `now - range` and re-fetches. No "Load more" button.
 
 ### Polling
 
-Unchanged. Uses the `after` cursor of the newest displayed item to prepend new events on a 15-second interval.
+Polling prepends new items using the `after` cursor, same as today. On each poll tick, the store also prunes items whose `created_at` is older than the current window's `since` boundary. This keeps the view accurate as time passes (items don't linger past the window edge).
 
 ## Threaded View Structure
 
@@ -77,12 +97,12 @@ Controls bar, left to right:
 ## File Changes
 
 **Modified:**
-- `internal/server/handlers_activity.go` — add `since` param (ISO timestamp), apply 5000-row safety cap, remove `before` cursor support
+- `internal/server/handlers_activity.go` — add `since` param, remove `before`/`limit`, apply 5000-row safety cap, return `capped` instead of `has_more`
 - `internal/db/queries_activity.go` — add `Since *time.Time` to `ListActivityOpts`, apply as `WHERE created_at >= ?`
 - `internal/db/types.go` — add `Since` field to `ListActivityOpts`
-- `frontend/src/lib/api/activity.ts` — add `since` to `ActivityParams`, remove `before`
-- `frontend/src/lib/stores/activity.svelte.ts` — replace limit-based loading with time-window, add `timeRange` state, remove `loadMoreActivity`
-- `frontend/src/lib/components/ActivityFeed.svelte` — add Flat/Threaded toggle, time range control, remove "Load more" button, conditionally render flat table or `ActivityThreaded`
+- `frontend/src/lib/api/activity.ts` — add `since` to `ActivityParams`, remove `before`, change response shape (`capped` replaces `has_more`)
+- `frontend/src/lib/stores/activity.svelte.ts` — replace limit-based loading with time-window, add `timeRange` and `viewMode` state, remove `loadMoreActivity`, add window pruning to poll tick, persist view/range to URL
+- `frontend/src/lib/components/ActivityFeed.svelte` — add Flat/Threaded toggle, time range control, remove "Load more" button, show capped notice, conditionally render flat table or `ActivityThreaded`
 
 **New:**
-- `frontend/src/lib/components/ActivityThreaded.svelte` — threaded view component: takes `displayItems` as prop, performs grouping, renders three-level nested tree
+- `frontend/src/lib/components/ActivityThreaded.svelte` — threaded view component: takes `displayItems` and `onSelectItem` as props, performs grouping, renders three-level nested tree
