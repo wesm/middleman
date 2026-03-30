@@ -196,11 +196,6 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 	if state == "" {
 		state = "open"
 	}
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 500
-	}
-
 	var conds []string
 	var args []any
 
@@ -225,7 +220,6 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 	}
 
 	where := "WHERE " + strings.Join(conds, " AND ")
-	args = append(args, limit, opts.Offset)
 
 	query := fmt.Sprintf(`
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
@@ -242,8 +236,7 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		LEFT JOIN starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
-		ORDER BY p.last_activity_at DESC
-		LIMIT ? OFFSET ?`, where)
+		ORDER BY p.last_activity_at DESC`, where)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -555,11 +548,6 @@ func (d *DB) ListIssues(
 	if state == "" {
 		state = "open"
 	}
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 500
-	}
-
 	var conds []string
 	var args []any
 
@@ -580,7 +568,6 @@ func (d *DB) ListIssues(
 	}
 
 	where := "WHERE " + strings.Join(conds, " AND ")
-	args = append(args, limit, opts.Offset)
 
 	query := fmt.Sprintf(`
 		SELECT i.id, i.repo_id, i.github_id, i.number, i.url, i.title,
@@ -592,8 +579,7 @@ func (d *DB) ListIssues(
 		LEFT JOIN starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
 		%s
-		ORDER BY i.last_activity_at DESC
-		LIMIT ? OFFSET ?`, where)
+		ORDER BY i.last_activity_at DESC`, where)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
 	if err != nil {

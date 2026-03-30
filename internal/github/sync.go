@@ -193,10 +193,13 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 
 	needsTimeline := existing == nil || !existing.UpdatedAt.Equal(normalized.UpdatedAt)
 
+	// Also fetch full PR details if we have stale zero diff stats
+	needsFullFetch := needsTimeline ||
+		(existing != nil && existing.Additions == 0 && existing.Deletions == 0)
+
 	// The list endpoint doesn't return diff stats. Fetch the individual
-	// PR to get additions/deletions when we need a timeline refresh
-	// (i.e., the PR is new or updated).
-	if needsTimeline {
+	// PR to get additions/deletions.
+	if needsFullFetch {
 		fullPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
 		if err != nil {
 			slog.Warn("get full PR for diff stats failed",
