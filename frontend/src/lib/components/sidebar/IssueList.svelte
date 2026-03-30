@@ -14,18 +14,35 @@
     getIssueFilterStarred,
     setIssueFilterStarred,
   } from "../../stores/issues.svelte.js";
+  import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import { listRepos } from "../../api/client.js";
   import IssueItem from "./IssueItem.svelte";
 
   let searchInput = $state(getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
   let repos = $state<string[]>([]);
+  let refreshHandle: ReturnType<typeof setInterval> | null = null;
 
   $effect(() => {
     void loadIssues();
     listRepos().then((r) => {
       repos = r.map((repo) => `${repo.Owner}/${repo.Name}`);
     });
+
+    refreshHandle = setInterval(() => {
+      void loadIssues();
+      listRepos().then((r) => {
+        repos = r.map((repo) => `${repo.Owner}/${repo.Name}`);
+      });
+    }, 15_000);
+
+    if (getSyncState()?.running) {
+      onNextSyncComplete(() => void loadIssues());
+    }
+
+    return () => {
+      if (refreshHandle !== null) clearInterval(refreshHandle);
+    };
   });
 
   function onSearchInput(e: Event): void {
@@ -108,10 +125,17 @@
   {/if}
 
   <div class="list-body">
-    {#if isIssuesLoading()}
-      <p class="state-message">Loading...</p>
-    {:else if getIssuesError() !== null}
+    {#if isIssuesLoading() && getIssues().length === 0}
+      <p class="state-message">Loading…</p>
+    {:else if getIssuesError() !== null && getIssues().length === 0}
       <p class="state-message state-message--error">Error: {getIssuesError()}</p>
+    {:else if getIssues().length === 0 && getSyncState()?.running}
+      <div class="state-message sync-message">
+        <span class="sync-dot"></span>
+        Syncing from GitHub…
+      </div>
+    {:else if getIssues().length === 0 && !getSyncState()?.last_run_at}
+      <p class="state-message">Waiting for first sync…</p>
     {:else if getIssues().length === 0}
       <p class="state-message">No issues found.</p>
     {:else}
@@ -265,6 +289,26 @@
 
   .state-message--error {
     color: var(--accent-red);
+  }
+
+  .sync-message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .sync-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
   }
 
   .repo-group {

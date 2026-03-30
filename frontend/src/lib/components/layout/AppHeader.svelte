@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getView, setView, getTab, setTab } from "../../stores/router.svelte.ts";
+  import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
 
-  let syncing = $state(false);
   let dark = $state(false);
 
   $effect(() => {
@@ -19,14 +19,11 @@
   }
 
   async function handleSync(): Promise<void> {
-    if (syncing) return;
-    syncing = true;
-    try {
-      await fetch("/api/v1/sync", { method: "POST" });
-    } finally {
-      setTimeout(() => { syncing = false; }, 1000);
-    }
+    if (getSyncState()?.running) return;
+    await triggerSync();
   }
+
+  const syncing = $derived(getSyncState()?.running ?? false);
 </script>
 
 <header class="app-header">

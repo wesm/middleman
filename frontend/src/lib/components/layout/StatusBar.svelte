@@ -1,8 +1,18 @@
 <script lang="ts">
   import { getPulls } from "../../stores/pulls.svelte.js";
+  import { getIssues } from "../../stores/issues.svelte.js";
   import { getSyncState } from "../../stores/sync.svelte.js";
 
+  // Force re-render every 10s so relative times stay fresh
+  let tick = $state(0);
+  let tickHandle: ReturnType<typeof setInterval> | null = null;
+  $effect(() => {
+    tickHandle = setInterval(() => { tick++; }, 10_000);
+    return () => { if (tickHandle !== null) clearInterval(tickHandle); };
+  });
+
   function syncText(): string {
+    void tick; // reactive dependency
     const st = getSyncState();
     if (st === null) return "";
     if (st.running) return "syncing…";
@@ -16,9 +26,8 @@
 
   function repoCount(): number {
     const repos = new Set<string>();
-    for (const pr of getPulls()) {
-      repos.add(`${pr.repo_owner}/${pr.repo_name}`);
-    }
+    for (const pr of getPulls()) repos.add(`${pr.repo_owner}/${pr.repo_name}`);
+    for (const issue of getIssues()) repos.add(`${issue.repo_owner}/${issue.repo_name}`);
     return repos.size;
   }
 </script>
@@ -27,6 +36,8 @@
   <div class="status-left">
     <span class="status-item">{getPulls().length} PRs</span>
     <span class="status-sep">·</span>
+    <span class="status-item">{getIssues().length} issues</span>
+    <span class="status-sep">·</span>
     <span class="status-item">{repoCount()} repos</span>
   </div>
   <div class="status-right">
@@ -34,7 +45,12 @@
       <span class="status-item status-item--error" title={getSyncState()?.last_error}>sync error</span>
       <span class="status-sep">·</span>
     {/if}
-    <span class="status-item" class:status-item--active={getSyncState()?.running}>{syncText()}</span>
+    <span class="status-item" class:status-item--active={getSyncState()?.running}>
+      {#if getSyncState()?.running}
+        <span class="sync-dot"></span>
+      {/if}
+      {syncText()}
+    </span>
   </div>
 </footer>
 
@@ -64,5 +80,19 @@
   }
   .status-item--active {
     color: var(--accent-green);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sync-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
   }
 </style>

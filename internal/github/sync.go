@@ -87,15 +87,21 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	defer s.running.Store(false)
 
 	s.status.Store(&SyncStatus{Running: true})
+	slog.Info("sync started", "repos", len(s.repos))
 
 	var lastErr string
-	for _, repo := range s.repos {
+	for i, repo := range s.repos {
+		slog.Info("syncing repo",
+			"repo", repo.Owner+"/"+repo.Name,
+			"progress", fmt.Sprintf("%d/%d", i+1, len(s.repos)),
+		)
 		if err := s.syncRepo(ctx, repo); err != nil {
 			slog.Error("sync repo failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
 			lastErr = err.Error()
 		}
 	}
 
+	slog.Info("sync complete", "repos", len(s.repos))
 	s.status.Store(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),
