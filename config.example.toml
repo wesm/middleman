@@ -1,0 +1,12 @@
+sync_interval = "5m"
+github_token_env = "GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8090
+
+[[repos]]
+owner = "apache"
+name = "arrow"
+
+[[repos]]
+owner = "ibis-project"
+name = "ibis"

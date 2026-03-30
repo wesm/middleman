@@ -1,1 +1,12 @@
+ghboard
+dist/
+internal/web/dist/
+frontend/node_modules/
+frontend/dist/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+*.db
+.env
 .superpowers/
