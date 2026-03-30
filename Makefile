@@ -21,12 +21,12 @@ ensure-embed-dir:
 
 # Build the binary (debug, with embedded frontend)
 build: frontend
-	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o ghboard ./cmd/ghboard
+	go build -ldflags="$(LDFLAGS)" -o ghboard ./cmd/ghboard
 	@chmod +x ghboard
 
 # Build with optimizations (release)
 build-release: frontend
-	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o ghboard ./cmd/ghboard
+	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o ghboard ./cmd/ghboard
 	@chmod +x ghboard
 
 # Install to ~/.local/bin, $GOBIN, or $GOPATH/bin
@@ -61,11 +61,11 @@ dev: ensure-embed-dir
 
 # Run tests
 test: ensure-embed-dir
-	CGO_ENABLED=1 go test ./... -v -count=1
+	go test ./... -v -count=1
 
 # Run fast tests only
 test-short: ensure-embed-dir
-	CGO_ENABLED=1 go test ./... -short -count=1
+	go test ./... -short -count=1
 
 # Vet
 vet: ensure-embed-dir
