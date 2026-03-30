@@ -11,8 +11,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/ghboard/internal/db"
-	ghclient "github.com/wesm/ghboard/internal/github"
+	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 // mockGH implements ghclient.Client for testing.

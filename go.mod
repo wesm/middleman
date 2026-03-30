@@ -1,4 +1,4 @@
-module github.com/wesm/ghboard
+module github.com/wesm/middleman
 
 go 1.25.0
 

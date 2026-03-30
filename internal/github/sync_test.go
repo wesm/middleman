@@ -7,7 +7,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/ghboard/internal/db"
+	"github.com/wesm/middleman/internal/db"
 )
 
 // openTestDB opens a temporary SQLite database for the duration of the test.

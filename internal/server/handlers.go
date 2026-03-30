@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wesm/ghboard/internal/db"
-	ghclient "github.com/wesm/ghboard/internal/github"
+	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 // --- /api/v1/pulls ---

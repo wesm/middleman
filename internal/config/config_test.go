@@ -125,8 +125,8 @@ func TestGitHubToken(t *testing.T) {
 }
 
 func TestDBPath(t *testing.T) {
-	cfg := &Config{DataDir: "/tmp/ghboard-test"}
-	expected := "/tmp/ghboard-test/ghboard.db"
+	cfg := &Config{DataDir: "/tmp/middleman-test"}
+	expected := "/tmp/middleman-test/middleman.db"
 	if got := cfg.DBPath(); got != expected {
 		t.Fatalf("expected %s, got %s", expected, got)
 	}

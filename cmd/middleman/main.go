@@ -11,11 +11,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/wesm/ghboard/internal/config"
-	"github.com/wesm/ghboard/internal/db"
-	ghclient "github.com/wesm/ghboard/internal/github"
-	"github.com/wesm/ghboard/internal/server"
-	"github.com/wesm/ghboard/internal/web"
+	"github.com/wesm/middleman/internal/config"
+	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/web"
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf("ghboard %s (%s) built %s\n", version, commit, buildDate)
+		fmt.Printf("middleman %s (%s) built %s\n", version, commit, buildDate)
 		os.Exit(0)
 	}
 

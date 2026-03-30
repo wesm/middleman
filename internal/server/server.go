@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/ghboard/internal/db"
-	ghclient "github.com/wesm/ghboard/internal/github"
+	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 // Server holds the HTTP mux and its dependencies.

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/ghboard/internal/db"
+	"github.com/wesm/middleman/internal/db"
 )
 
 // SyncStatus holds the current state of the sync engine.

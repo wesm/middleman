@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-ghboard is a local-first GitHub PR monitoring dashboard for a maintainer managing a small fixed set of repositories. It syncs PR data from GitHub into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge without living in GitHub's notification UI.
+middleman is a local-first GitHub PR monitoring dashboard for a maintainer managing a small fixed set of repositories. It syncs PR data from GitHub into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge without living in GitHub's notification UI.
 
 ## Architecture
 
 ```
-CLI (ghboard) → Config (TOML) → DB (SQLite)
+CLI (middleman) → Config (TOML) → DB (SQLite)
                     ↓                ↓
                Sync Engine → GitHub API (go-github/v84)
                     ↓                ↓
@@ -18,11 +18,11 @@ CLI (ghboard) → Config (TOML) → DB (SQLite)
 - **Storage**: SQLite with WAL mode (pure Go driver: modernc.org/sqlite)
 - **Sync**: Periodic pull from GitHub API (configurable, default 5m)
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
-- **Config**: TOML at `~/.config/ghboard/config.toml`, GitHub token from env var `GHBOARD_GITHUB_TOKEN`
+- **Config**: TOML at `~/.config/middleman/config.toml`, GitHub token from env var `MIDDLEMAN_GITHUB_TOKEN`
 
 ## Project Structure
 
-- `cmd/ghboard/` - Go server entrypoint
+- `cmd/middleman/` - Go server entrypoint
 - `internal/config/` - TOML config loading and validation
 - `internal/db/` - SQLite schema, connection, queries, types
 - `internal/github/` - GitHub API client, normalization, sync engine
@@ -34,7 +34,7 @@ CLI (ghboard) → Config (TOML) → DB (SQLite)
 
 | Path | Purpose |
 |------|---------|
-| `cmd/ghboard/main.go` | CLI entry point, server startup, signal handling |
+| `cmd/middleman/main.go` | CLI entry point, server startup, signal handling |
 | `internal/config/config.go` | TOML config, validation, defaults |
 | `internal/db/schema.sql` | Table definitions and indexes |
 | `internal/db/db.go` | Database open, WAL, schema init |

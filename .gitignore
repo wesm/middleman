@@ -1,4 +1,4 @@
-/ghboard
+/middleman
 dist/
 internal/web/dist/
 frontend/node_modules/

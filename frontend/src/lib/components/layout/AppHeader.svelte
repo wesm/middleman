@@ -28,7 +28,7 @@
 
 <header class="app-header">
   <div class="header-left">
-    <span class="logo">ghboard</span>
+    <span class="logo">middleman</span>
   </div>
 
   <nav class="header-center">

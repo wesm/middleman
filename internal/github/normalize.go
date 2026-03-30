@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/ghboard/internal/db"
+	"github.com/wesm/middleman/internal/db"
 )
 
 // NormalizePR converts a GitHub PullRequest to a db.PullRequest.

@@ -30,11 +30,11 @@ type Config struct {
 }
 
 func DefaultConfigPath() string {
-	return filepath.Join(homeDir(), ".config", "ghboard", "config.toml")
+	return filepath.Join(homeDir(), ".config", "middleman", "config.toml")
 }
 
 func DefaultDataDir() string {
-	return filepath.Join(homeDir(), ".config", "ghboard")
+	return filepath.Join(homeDir(), ".config", "middleman")
 }
 
 func homeDir() string {
@@ -48,7 +48,7 @@ func homeDir() string {
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "GHBOARD_GITHUB_TOKEN",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8090,
 	}
@@ -87,7 +87,7 @@ func (c *Config) Validate() error {
 	if ip := net.ParseIP(c.Host); ip == nil {
 		return fmt.Errorf("config: invalid host %q", c.Host)
 	} else if !ip.IsLoopback() {
-		return fmt.Errorf("config: host %q is not loopback; ghboard v1 only supports loopback addresses", c.Host)
+		return fmt.Errorf("config: host %q is not loopback; only loopback addresses are supported", c.Host)
 	}
 
 	if c.Port < 1 || c.Port > 65535 {
@@ -111,5 +111,5 @@ func (c *Config) ListenAddr() string {
 }
 
 func (c *Config) DBPath() string {
-	return filepath.Join(c.DataDir, "ghboard.db")
+	return filepath.Join(c.DataDir, "middleman.db")
 }

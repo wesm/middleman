@@ -21,19 +21,19 @@ ensure-embed-dir:
 
 # Build the binary (debug, with embedded frontend)
 build: frontend
-	go build -ldflags="$(LDFLAGS)" -o ghboard ./cmd/ghboard
-	@chmod +x ghboard
+	go build -ldflags="$(LDFLAGS)" -o middleman ./cmd/middleman
+	@chmod +x middleman
 
 # Build with optimizations (release)
 build-release: frontend
-	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o ghboard ./cmd/ghboard
-	@chmod +x ghboard
+	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o middleman ./cmd/middleman
+	@chmod +x middleman
 
 # Install to ~/.local/bin, $GOBIN, or $GOPATH/bin
 install: build-release
 	@if [ -d "$(HOME)/.local/bin" ]; then \
-		echo "Installing to ~/.local/bin/ghboard"; \
-		cp ghboard "$(HOME)/.local/bin/ghboard"; \
+		echo "Installing to ~/.local/bin/middleman"; \
+		cp middleman "$(HOME)/.local/bin/middleman"; \
 	else \
 		INSTALL_DIR="$${GOBIN:-$$(go env GOBIN)}"; \
 		if [ -z "$$INSTALL_DIR" ]; then \
@@ -41,8 +41,8 @@ install: build-release
 			INSTALL_DIR="$$GOPATH_FIRST/bin"; \
 		fi; \
 		mkdir -p "$$INSTALL_DIR"; \
-		echo "Installing to $$INSTALL_DIR/ghboard"; \
-		cp ghboard "$$INSTALL_DIR/ghboard"; \
+		echo "Installing to $$INSTALL_DIR/middleman"; \
+		cp middleman "$$INSTALL_DIR/middleman"; \
 	fi
 
 # Build frontend SPA and copy into embed directory
@@ -57,7 +57,7 @@ frontend-dev:
 
 # Run Go server in dev mode (no embedded frontend)
 dev: ensure-embed-dir
-	go run -ldflags="$(LDFLAGS)" ./cmd/ghboard $(ARGS)
+	go run -ldflags="$(LDFLAGS)" ./cmd/middleman $(ARGS)
 
 # Run tests
 test: ensure-embed-dir
@@ -85,12 +85,12 @@ tidy:
 
 # Clean build artifacts
 clean:
-	rm -f ghboard
+	rm -f middleman
 	rm -rf internal/web/dist dist/
 
 # Show help
 help:
-	@echo "ghboard build targets:"
+	@echo "middleman build targets:"
 	@echo ""
 	@echo "  build          - Build with embedded frontend"
 	@echo "  build-release  - Release build (optimized, stripped)"
