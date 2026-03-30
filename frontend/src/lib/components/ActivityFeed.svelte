@@ -290,6 +290,7 @@
   .table-container {
     flex: 1;
     overflow-y: auto;
+    padding: 0 16px;
   }
 
   .activity-table {
@@ -324,7 +325,7 @@
     text-overflow: ellipsis;
   }
 
-  .col-type { width: 76px; }
+  .col-type { width: 90px; overflow: visible; }
   .col-repo { width: 160px; }
   .col-item { width: auto; }
   .col-author { width: 130px; }
