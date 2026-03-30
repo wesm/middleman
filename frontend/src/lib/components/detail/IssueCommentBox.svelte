@@ -57,7 +57,7 @@
       onclick={() => void handleSubmit()}
       disabled={isEmpty || posting}
     >
-      {posting ? "Posting..." : "Comment"}
+      {posting ? "Posting\u2026" : "Comment"}
     </button>
   </div>
 </div>
@@ -81,6 +81,7 @@
     color: var(--text-primary);
     outline: none;
     min-height: 80px;
+    max-height: 200px;
   }
 
   .comment-textarea:focus {

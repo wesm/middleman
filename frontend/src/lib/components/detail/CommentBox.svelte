@@ -78,6 +78,7 @@
     color: var(--text-primary);
     outline: none;
     min-height: 80px;
+    max-height: 200px;
   }
 
   .comment-textarea:focus {

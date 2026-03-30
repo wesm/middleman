@@ -11,6 +11,7 @@
   } from "../../stores/detail.svelte.js";
   import type { CICheck, KanbanStatus } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
+  import { timeAgo } from "../../utils/time.js";
   import EventTimeline from "./EventTimeline.svelte";
   import CommentBox from "./CommentBox.svelte";
 
@@ -76,15 +77,6 @@
     { value: "waiting", label: "Waiting" },
     { value: "awaiting_merge", label: "Awaiting Merge" },
   ];
-
-  function timeAgo(dateStr: string): string {
-    const diffMs = Date.now() - new Date(dateStr).getTime();
-    const diffMin = Math.floor(diffMs / 60_000);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    return `${Math.floor(diffHr / 24)}d ago`;
-  }
 
   function ciColor(status: string): string {
     if (status === "success") return "chip--green";
@@ -595,51 +587,4 @@
     line-height: 1.6;
   }
 
-  .markdown-body :global(p) {
-    margin-bottom: 0.5em;
-  }
-  .markdown-body :global(p:last-child) {
-    margin-bottom: 0;
-  }
-  .markdown-body :global(code) {
-    font-family: var(--font-mono);
-    font-size: 0.9em;
-    background: var(--bg-surface-hover);
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-  .markdown-body :global(pre) {
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    padding: 8px 10px;
-    overflow-x: auto;
-    margin: 6px 0;
-  }
-  .markdown-body :global(pre code) {
-    background: none;
-    padding: 0;
-  }
-  .markdown-body :global(a) {
-    color: var(--accent-blue);
-  }
-  .markdown-body :global(ul), .markdown-body :global(ol) {
-    padding-left: 1.5em;
-    margin-bottom: 0.5em;
-  }
-  .markdown-body :global(blockquote) {
-    border-left: 3px solid var(--border-default);
-    padding-left: 10px;
-    color: var(--text-secondary);
-    margin: 6px 0;
-  }
-  .markdown-body :global(h1), .markdown-body :global(h2), .markdown-body :global(h3) {
-    font-size: 1em;
-    font-weight: 600;
-    margin: 8px 0 4px;
-  }
-  .markdown-body :global(img) {
-    max-width: 100%;
-    border-radius: var(--radius-sm);
-  }
 </style>

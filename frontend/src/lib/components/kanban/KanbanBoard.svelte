@@ -66,8 +66,8 @@
   ): Promise<void> {
     try {
       await setKanbanState(owner, name, number, status);
-    } catch (err) {
-      console.error("Failed to update kanban state:", err);
+    } catch {
+      // Card will snap back when pulls refresh
     }
     await loadPulls();
   }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PullRequest } from "../../api/types.js";
+  import { timeAgo } from "../../utils/time.js";
 
   interface Props {
     pr: PullRequest;
@@ -7,15 +8,6 @@
   }
 
   const { pr, onclick }: Props = $props();
-
-  function timeAgo(dateStr: string): string {
-    const diffMs = Date.now() - new Date(dateStr).getTime();
-    const diffMin = Math.floor(diffMs / 60_000);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    return `${Math.floor(diffHr / 24)}d ago`;
-  }
 
   const ago = $derived(timeAgo(pr.LastActivityAt));
   const repoLabel = $derived(
