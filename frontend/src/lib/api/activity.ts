@@ -10,6 +10,7 @@ export interface ActivityItem {
   item_number: number;
   item_title: string;
   item_url: string;
+  item_state: "open" | "merged" | "closed";
   author: string;
   created_at: string;
   body_preview: string;

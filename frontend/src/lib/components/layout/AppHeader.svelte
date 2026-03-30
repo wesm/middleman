@@ -57,17 +57,10 @@
       <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigate("/issues")}>
         Issues
       </button>
+      <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
+        Board
+      </button>
     </div>
-    {#if getPage() === "pulls"}
-      <div class="tab-group">
-        <button class="view-tab" class:active={getView() === "list"} onclick={() => navigate("/pulls")}>
-          List
-        </button>
-        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
-          Board
-        </button>
-      </div>
-    {/if}
   </nav>
 
   <div class="header-right">

@@ -68,7 +68,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 50%;
+    width: 65%;
     min-width: 500px;
     background: var(--bg-surface);
     border-left: 1px solid var(--border-default);

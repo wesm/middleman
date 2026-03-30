@@ -19,8 +19,7 @@
     syncFromURL,
     syncToURL,
   } from "../stores/activity.svelte.js";
-  import { listRepos } from "../api/client.js";
-  import type { Repo } from "../api/types.js";
+  import RepoTypeahead from "./RepoTypeahead.svelte";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -28,26 +27,51 @@
 
   let { onSelectItem }: Props = $props();
 
-  let repos = $state<Repo[]>([]);
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideClosedMerged = $state(false);
+  let hideBots = $state(false);
+  let showFilterDropdown = $state(false);
+  let filterBtnRef = $state<HTMLButtonElement>();
+  let filterDropRef = $state<HTMLDivElement>();
 
-  const ALL_TYPES = ["new_pr", "new_issue", "comment", "review", "commit"] as const;
+  type ItemFilter = "all" | "prs" | "issues";
+  let itemFilter = $state<ItemFilter>("all");
 
-  const TYPE_LABELS: Record<string, string> = {
-    new_pr: "New PR",
-    new_issue: "New Issue",
-    comment: "Comment",
-    review: "Review",
-    commit: "Commit",
+  const EVENT_TYPES = ["comment", "review", "commit"] as const;
+
+  const EVENT_LABELS: Record<string, string> = {
+    comment: "Comments",
+    review: "Reviews",
+    commit: "Commits",
   };
+
+  const EVENT_COLORS: Record<string, string> = {
+    comment: "var(--accent-amber)",
+    review: "var(--accent-green)",
+    commit: "var(--accent-teal)",
+  };
+
+  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
+
+  function isBot(author: string): boolean {
+    const lower = author.toLowerCase();
+    return BOT_SUFFIXES.some((s) => lower.endsWith(s));
+  }
+
+  let enabledEvents = $state<Set<string>>(new Set(EVENT_TYPES));
+  const hiddenFilterCount = $derived(
+    (EVENT_TYPES.length - enabledEvents.size)
+    + (hideClosedMerged ? 1 : 0)
+    + (hideBots ? 1 : 0),
+  );
 
   onMount(() => {
     syncFromURL();
     searchInput = getActivitySearch() ?? "";
+    restoreFiltersFromStore();
     void loadActivity();
     startActivityPolling();
-    void listRepos().then((r) => { repos = r; });
   });
 
   onDestroy(() => {
@@ -55,31 +79,73 @@
     if (debounceTimer) clearTimeout(debounceTimer);
   });
 
-  function handleRepoChange(e: Event): void {
-    const val = (e.target as HTMLSelectElement).value;
-    setActivityFilterRepo(val || undefined);
-    syncToURL();
-    void loadActivity();
-  }
-
-  function toggleType(type: string): void {
-    const current = getActivityFilterTypes();
-    if (current.length === 0) {
-      setActivityFilterTypes([type]);
-    } else if (current.includes(type)) {
-      const next = current.filter((t) => t !== type);
-      setActivityFilterTypes(next);
-    } else {
-      setActivityFilterTypes([...current, type]);
+  // Close filter dropdown on outside click.
+  $effect(() => {
+    if (!showFilterDropdown) return;
+    function handleClick(e: MouseEvent) {
+      if (filterDropRef && !filterDropRef.contains(e.target as Node)
+          && filterBtnRef && !filterBtnRef.contains(e.target as Node)) {
+        showFilterDropdown = false;
+      }
     }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  });
+
+  function restoreFiltersFromStore(): void {
+    const types = getActivityFilterTypes();
+    if (types.length === 0) {
+      itemFilter = "all";
+      enabledEvents = new Set(EVENT_TYPES);
+      return;
+    }
+    const hasPR = types.includes("new_pr");
+    const hasIssue = types.includes("new_issue");
+    if (hasPR && !hasIssue) itemFilter = "prs";
+    else if (hasIssue && !hasPR) itemFilter = "issues";
+    else itemFilter = "all";
+    enabledEvents = new Set(EVENT_TYPES.filter((t) => types.includes(t)));
+  }
+
+  function applyFilters(): void {
+    const types: string[] = [];
+    if (itemFilter === "prs") {
+      types.push("new_pr");
+    } else if (itemFilter === "issues") {
+      types.push("new_issue");
+    } else {
+      types.push("new_pr", "new_issue");
+    }
+    for (const evt of enabledEvents) {
+      types.push(evt);
+    }
+    const allSelected = itemFilter === "all"
+      && enabledEvents.size === EVENT_TYPES.length;
+    setActivityFilterTypes(allSelected ? [] : types);
     syncToURL();
     void loadActivity();
   }
 
-  function isTypeActive(type: string): boolean {
-    const f = getActivityFilterTypes();
-    if (f.length === 0) return true;
-    return f.includes(type);
+  function setItemFilter(f: ItemFilter): void {
+    itemFilter = f;
+    applyFilters();
+  }
+
+  function toggleEvent(evt: string): void {
+    const next = new Set(enabledEvents);
+    if (next.has(evt)) {
+      if (next.size > 1) next.delete(evt);
+    } else {
+      next.add(evt);
+    }
+    enabledEvents = next;
+    applyFilters();
+  }
+
+  function handleRepoChange(repo: string | undefined): void {
+    setActivityFilterRepo(repo);
+    syncToURL();
+    void loadActivity();
   }
 
   function handleSearchInput(e: Event): void {
@@ -93,13 +159,57 @@
     }, 300);
   }
 
-  function badgeClass(type: string): string {
+  function eventLabel(item: ActivityItem): string {
+    switch (item.activity_type) {
+      case "new_pr": return "Opened";
+      case "new_issue": return "Opened";
+      case "comment": return "Comment";
+      case "review": return "Review";
+      case "commit": return "Commit";
+      default: return item.activity_type;
+    }
+  }
+
+  function itemTypeLabel(item: ActivityItem): string {
+    return item.item_type === "pr" ? "PR" : "Issue";
+  }
+
+  function badgeClass(item: ActivityItem): string {
+    if (item.item_state === "merged") return "badge-merged";
+    if (item.item_state === "closed") return "badge-closed";
+    return item.item_type === "pr" ? "badge-pr" : "badge-issue";
+  }
+
+  function stateLabel(item: ActivityItem): string | null {
+    if (item.item_state === "merged") return "Merged";
+    if (item.item_state === "closed") return "Closed";
+    return null;
+  }
+
+  const displayItems = $derived.by(() => {
+    let result = getActivityItems();
+    if (hideClosedMerged) {
+      result = result.filter((it) =>
+        it.item_state !== "merged" && it.item_state !== "closed");
+    }
+    if (hideBots) {
+      result = result.filter((it) => !isBot(it.author));
+    }
+    return result;
+  });
+
+  function resetFilters(): void {
+    enabledEvents = new Set(EVENT_TYPES);
+    hideClosedMerged = false;
+    hideBots = false;
+    applyFilters();
+  }
+
+  function eventClass(type: string): string {
     switch (type) {
-      case "new_pr": return "badge-pr";
-      case "new_issue": return "badge-issue";
-      case "comment": return "badge-comment";
-      case "review": return "badge-review";
-      case "commit": return "badge-commit";
+      case "comment": return "evt-comment";
+      case "review": return "evt-review";
+      case "commit": return "evt-commit";
       default: return "";
     }
   }
@@ -128,30 +238,104 @@
 
 <div class="activity-feed">
   <div class="controls-bar">
-    <select class="repo-select" value={getActivityFilterRepo() ?? ""} onchange={handleRepoChange}>
-      <option value="">All repositories</option>
-      {#each repos as repo}
-        <option value="{repo.Owner}/{repo.Name}">{repo.Owner}/{repo.Name}</option>
-      {/each}
-    </select>
+    <RepoTypeahead
+      selected={getActivityFilterRepo()}
+      onchange={handleRepoChange}
+    />
 
-    <div class="type-pills">
-      {#each ALL_TYPES as type}
-        <button
-          class="type-pill"
-          class:active={isTypeActive(type)}
-          onclick={() => toggleType(type)}
-        >
-          <span class="pill-dot {badgeClass(type)}"></span>
-          {TYPE_LABELS[type]}
-        </button>
-      {/each}
+    <div class="filter-group">
+      <div class="segmented-control">
+        <button class="seg-btn" class:active={itemFilter === "all"} onclick={() => setItemFilter("all")}>All</button>
+        <button class="seg-btn" class:active={itemFilter === "prs"} onclick={() => setItemFilter("prs")}>PRs</button>
+        <button class="seg-btn" class:active={itemFilter === "issues"} onclick={() => setItemFilter("issues")}>Issues</button>
+      </div>
+
+    </div>
+
+    <div class="filter-wrap">
+      <button
+        class="filter-btn"
+        class:filter-active={hiddenFilterCount > 0}
+        bind:this={filterBtnRef}
+        onclick={() => (showFilterDropdown = !showFilterDropdown)}
+        title="Filter activity types"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+        </svg>
+        Filters
+        {#if hiddenFilterCount > 0}
+          <span class="filter-badge">{hiddenFilterCount}</span>
+        {/if}
+      </button>
+
+      {#if showFilterDropdown}
+        <div class="filter-dropdown" bind:this={filterDropRef}>
+          <div class="filter-section-title">Event types</div>
+          {#each EVENT_TYPES as evt}
+            {@const visible = enabledEvents.has(evt)}
+            <button
+              class="filter-item"
+              class:active={visible}
+              onclick={() => toggleEvent(evt)}
+            >
+              <span
+                class="filter-dot"
+                style:background={visible ? EVENT_COLORS[evt] : "var(--border-muted)"}
+              ></span>
+              <span class="filter-label">{EVENT_LABELS[evt]}</span>
+              <span class="filter-check" class:on={visible}>
+                {#if visible}
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                  </svg>
+                {/if}
+              </span>
+            </button>
+          {/each}
+          <div class="filter-divider"></div>
+          <div class="filter-section-title">Visibility</div>
+          <button
+            class="filter-item"
+            class:active={hideClosedMerged}
+            onclick={() => { hideClosedMerged = !hideClosedMerged; }}
+          >
+            <span class="filter-dot" style:background={hideClosedMerged ? "var(--accent-red)" : "var(--border-muted)"}></span>
+            <span class="filter-label">Hide closed/merged</span>
+            <span class="filter-check" class:on={hideClosedMerged}>
+              {#if hideClosedMerged}
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+              {/if}
+            </span>
+          </button>
+          <button
+            class="filter-item"
+            class:active={hideBots}
+            onclick={() => { hideBots = !hideBots; }}
+          >
+            <span class="filter-dot" style:background={hideBots ? "var(--accent-purple)" : "var(--border-muted)"}></span>
+            <span class="filter-label">Hide bots</span>
+            <span class="filter-check" class:on={hideBots}>
+              {#if hideBots}
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+              {/if}
+            </span>
+          </button>
+          {#if hiddenFilterCount > 0}
+            <button class="filter-reset" onclick={resetFilters}>Show all</button>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <input
       class="search-input"
       type="text"
-      placeholder="Search titles and content..."
+      placeholder="Search..."
       value={searchInput}
       oninput={handleSearchInput}
     />
@@ -165,7 +349,8 @@
     <table class="activity-table">
       <thead>
         <tr>
-          <th class="col-type">Type</th>
+          <th class="col-kind">Kind</th>
+          <th class="col-event">Event</th>
           <th class="col-repo">Repository</th>
           <th class="col-item">Item</th>
           <th class="col-author">Author</th>
@@ -174,10 +359,16 @@
         </tr>
       </thead>
       <tbody>
-        {#each getActivityItems() as item (item.id)}
+        {#each displayItems as item (item.id)}
           <tr class="activity-row" onclick={() => handleRowClick(item)}>
-            <td class="col-type">
-              <span class="badge {badgeClass(item.activity_type)}">{TYPE_LABELS[item.activity_type]}</span>
+            <td class="col-kind">
+              <span class="badge {badgeClass(item)}">{itemTypeLabel(item)}</span>
+              {#if stateLabel(item)}
+                <span class="state-badge state-{item.item_state}">{stateLabel(item)}</span>
+              {/if}
+            </td>
+            <td class="col-event">
+              <span class="evt-label {eventClass(item.activity_type)}">{eventLabel(item)}</span>
             </td>
             <td class="col-repo">{item.repo_owner}/{item.repo_name}</td>
             <td class="col-item">
@@ -198,7 +389,7 @@
       </tbody>
     </table>
 
-    {#if getActivityItems().length === 0 && !isActivityLoading()}
+    {#if displayItems.length === 0 && !isActivityLoading()}
       <div class="empty-state">No activity found</div>
     {/if}
   </div>
@@ -223,66 +414,182 @@
   .controls-bar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     padding: 8px 16px;
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
     flex-shrink: 0;
   }
 
-  .repo-select {
-    font: inherit;
-    font-size: 12px;
-    padding: 4px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-  }
-
-  .type-pills {
-    display: flex;
-    gap: 4px;
-  }
-
-  .type-pill {
+  .filter-group {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
+    gap: 8px;
+  }
+
+  .segmented-control {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    background: var(--bg-inset);
     border-radius: var(--radius-sm);
+    padding: 2px;
+  }
+
+  .seg-btn {
+    padding: 3px 10px;
     font-size: 11px;
+    font-weight: 500;
     color: var(--text-muted);
-    border: 1px solid var(--border-muted);
-    background: transparent;
-    transition: opacity 0.15s;
+    border-radius: calc(var(--radius-sm) - 1px);
+    transition: background 0.12s, color 0.12s;
   }
 
-  .type-pill.active {
-    color: var(--text-primary);
-    border-color: var(--border-default);
+  .seg-btn.active {
     background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
   }
 
-  .type-pill:not(.active) {
+  .seg-btn:hover:not(.active) {
+    color: var(--text-secondary);
+  }
+
+  .filter-wrap {
+    position: relative;
+  }
+
+  .filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+    position: relative;
+  }
+
+  .filter-btn:hover {
+    border-color: var(--border-default);
+    color: var(--text-secondary);
+  }
+
+  .filter-btn.filter-active {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+  }
+
+  .filter-badge {
+    font-size: 9px;
+    font-weight: 700;
+    background: var(--accent-blue);
+    color: white;
+    border-radius: 6px;
+    padding: 0 4px;
+    min-width: 14px;
+    text-align: center;
+    line-height: 14px;
+  }
+
+  .filter-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 200px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    padding: 4px 0;
+  }
+
+  .filter-section-title {
+    padding: 4px 12px 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .filter-divider {
+    height: 1px;
+    background: var(--border-muted);
+    margin: 4px 8px;
+  }
+
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.08s;
+  }
+
+  .filter-item:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .filter-item:not(.active) {
     opacity: 0.5;
   }
 
-  .pill-dot {
+  .filter-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.1s;
   }
 
-  .pill-dot.badge-pr { background: var(--accent-blue); }
-  .pill-dot.badge-issue { background: var(--accent-purple); }
-  .pill-dot.badge-comment { background: var(--accent-amber); }
-  .pill-dot.badge-review { background: var(--accent-green); }
-  .pill-dot.badge-commit { background: var(--accent-teal); }
+  .filter-label {
+    flex: 1;
+  }
+
+  .filter-check {
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-green);
+    flex-shrink: 0;
+  }
+
+  .filter-reset {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 4px 8px 2px;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    border-top: 1px solid var(--border-muted);
+    padding-top: 8px;
+    cursor: pointer;
+    transition: color 0.1s;
+  }
+
+  .filter-reset:hover {
+    color: var(--text-primary);
+  }
 
   .search-input {
     margin-left: auto;
-    width: 220px;
+    width: 180px;
     font-size: 12px;
     padding: 4px 8px;
   }
@@ -290,47 +597,52 @@
   .table-container {
     flex: 1;
     overflow-y: auto;
+    padding: 0 16px;
   }
 
   .activity-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
   }
 
   .activity-table thead {
     position: sticky;
     top: 0;
-    background: var(--bg-surface);
+    background: var(--bg-primary);
     z-index: 1;
   }
 
   .activity-table th {
     text-align: left;
-    padding: 6px 12px;
+    padding: 6px 10px;
     font-size: 11px;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-default);
+    white-space: nowrap;
   }
 
   .activity-table td {
-    padding: 5px 12px;
+    padding: 5px 10px;
     border-bottom: 1px solid var(--border-muted);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .col-type { width: 76px; }
-  .col-repo { width: 160px; }
-  .col-item { width: auto; }
-  .col-author { width: 130px; }
-  .col-when { width: 80px; text-align: right; }
+  .col-kind { }
+  .col-event { }
+  .col-repo { }
+  .col-item {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 0;
+  }
+  .col-author { }
+  .col-when { text-align: right; }
   th.col-when { text-align: right; }
-  .col-link { width: 36px; text-align: center; }
+  .col-link { text-align: center; }
 
   .activity-row {
     cursor: pointer;
@@ -343,18 +655,59 @@
 
   .badge {
     display: inline-block;
-    padding: 1px 6px;
+    padding: 1px 5px;
     border-radius: 3px;
-    font-size: 11px;
-    font-weight: 500;
+    font-size: 10px;
+    font-weight: 600;
     white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
   }
 
-  .badge-pr { background: color-mix(in srgb, var(--accent-blue) 18%, transparent); color: var(--accent-blue); }
-  .badge-issue { background: color-mix(in srgb, var(--accent-purple) 18%, transparent); color: var(--accent-purple); }
-  .badge-comment { background: color-mix(in srgb, var(--accent-amber) 18%, transparent); color: var(--accent-amber); }
-  .badge-review { background: color-mix(in srgb, var(--accent-green) 18%, transparent); color: var(--accent-green); }
-  .badge-commit { background: color-mix(in srgb, var(--accent-teal) 18%, transparent); color: var(--accent-teal); }
+  .badge-pr {
+    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+    color: var(--accent-blue);
+  }
+  .badge-issue {
+    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
+    color: var(--accent-purple);
+  }
+  .badge-merged {
+    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
+    color: var(--accent-purple);
+  }
+  .badge-closed {
+    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+    color: var(--accent-red);
+  }
+
+  .state-badge {
+    display: inline-block;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: 3px;
+  }
+  .state-merged {
+    background: color-mix(in srgb, var(--accent-purple) 20%, transparent);
+    color: var(--accent-purple);
+  }
+  .state-closed {
+    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+    color: var(--accent-red);
+  }
+
+  .evt-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .evt-label.evt-comment { color: var(--accent-amber); }
+  .evt-label.evt-review { color: var(--accent-green); }
+  .evt-label.evt-commit { color: var(--accent-teal); }
 
   .col-repo {
     color: var(--text-muted);

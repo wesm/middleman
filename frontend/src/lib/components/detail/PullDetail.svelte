@@ -168,8 +168,14 @@
 
       <!-- Chips row -->
       <div class="chips-row">
-        {#if pr.IsDraft}
+        {#if pr.State === "merged"}
+          <span class="chip chip--purple">Merged</span>
+        {:else if pr.State === "closed"}
+          <span class="chip chip--red">Closed</span>
+        {:else if pr.IsDraft}
           <span class="chip chip--amber">Draft</span>
+        {:else}
+          <span class="chip chip--green">Open</span>
         {/if}
         {#if pr.CIStatus || checks.length > 0}
           <button
@@ -459,6 +465,11 @@
   .chip--amber {
     background: color-mix(in srgb, var(--accent-amber) 15%, transparent);
     color: var(--accent-amber);
+  }
+
+  .chip--purple {
+    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
+    color: var(--accent-purple);
   }
 
   .chip--muted {

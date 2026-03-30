@@ -16,7 +16,7 @@
   } from "../../stores/issues.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import IssueItem from "./IssueItem.svelte";
-  import RepoSelector from "./RepoSelector.svelte";
+  import RepoTypeahead from "../RepoTypeahead.svelte";
 
   let searchInput = $state(getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -60,6 +60,13 @@
 </script>
 
 <div class="issue-list">
+  <div class="filter-bar">
+    <RepoTypeahead
+      selected={getIssueFilterRepo()}
+      onchange={(repo) => { setIssueFilterRepo(repo); void loadIssues(); }}
+    />
+    <span class="count-badge">{getIssues().length} issues</span>
+  </div>
   <div class="search-bar">
     <div class="search-input-wrap">
       <svg class="search-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -90,11 +97,6 @@
         </svg>
       {/if}
     </button>
-    <RepoSelector
-      selected={getIssueFilterRepo()}
-      onchange={(repo) => { setIssueFilterRepo(repo); void loadIssues(); }}
-    />
-    <span class="count-badge">{getIssues().length}</span>
   </div>
 
   <div class="list-body">
@@ -136,11 +138,21 @@
     width: 100%;
   }
 
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-muted);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+  }
+
   .search-bar {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border-default);
     flex-shrink: 0;
     background: var(--bg-surface);

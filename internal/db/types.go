@@ -137,15 +137,16 @@ type StarredItem struct {
 
 // ActivityItem represents one row in the unified activity feed.
 type ActivityItem struct {
-	ActivityType string    // new_pr, new_issue, comment, review, commit
-	Source       string    // pr, issue, pre, ise
-	SourceID     int64     // PK from the source table
+	ActivityType string // new_pr, new_issue, comment, review, commit
+	Source       string // pr, issue, pre, ise
+	SourceID     int64  // PK from the source table
 	RepoOwner    string
 	RepoName     string
-	ItemType     string    // pr or issue
+	ItemType     string // pr or issue
 	ItemNumber   int
 	ItemTitle    string
 	ItemURL      string
+	ItemState    string // open, merged, closed
 	Author       string
 	CreatedAt    time.Time
 	BodyPreview  string

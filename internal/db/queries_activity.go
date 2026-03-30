@@ -76,7 +76,7 @@ func (d *DB) ListActivity(
 		SELECT activity_type, source, source_id,
 		       repo_owner, repo_name,
 		       item_type, item_number, item_title,
-		       item_url, author,
+		       item_url, item_state, author,
 		       created_at, body_preview
 		FROM (
 			SELECT 'new_pr' AS activity_type,
@@ -84,7 +84,8 @@ func (d *DB) ListActivity(
 			       r.owner AS repo_owner, r.name AS repo_name,
 			       'pr' AS item_type, p.number AS item_number,
 			       p.title AS item_title,
-			       p.url AS item_url, p.author, p.created_at,
+			       p.url AS item_url, p.state AS item_state,
+			       p.author, p.created_at,
 			       '' AS body_preview
 			FROM pull_requests p
 			JOIN repos r ON p.repo_id = r.id
@@ -92,7 +93,8 @@ func (d *DB) ListActivity(
 			SELECT 'new_issue', 'issue', i.id,
 			       r.owner, r.name,
 			       'issue', i.number, i.title,
-			       i.url, i.author, i.created_at,
+			       i.url, i.state,
+			       i.author, i.created_at,
 			       ''
 			FROM issues i
 			JOIN repos r ON i.repo_id = r.id
@@ -104,7 +106,8 @@ func (d *DB) ListActivity(
 			       'pre', e.id,
 			       r.owner, r.name,
 			       'pr', p.number, p.title,
-			       p.url, e.author, e.created_at,
+			       p.url, p.state,
+			       e.author, e.created_at,
 			       substr(COALESCE(e.body, ''), 1, 200)
 			FROM pr_events e
 			JOIN pull_requests p ON e.pr_id = p.id
@@ -115,7 +118,8 @@ func (d *DB) ListActivity(
 			SELECT 'comment', 'ise', e.id,
 			       r.owner, r.name,
 			       'issue', i.number, i.title,
-			       i.url, e.author, e.created_at,
+			       i.url, i.state,
+			       e.author, e.created_at,
 			       substr(COALESCE(e.body, ''), 1, 200)
 			FROM issue_events e
 			JOIN issues i ON e.issue_id = i.id
@@ -141,7 +145,7 @@ func (d *DB) ListActivity(
 			&it.ActivityType, &it.Source, &it.SourceID,
 			&it.RepoOwner, &it.RepoName,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
-			&it.ItemURL, &it.Author,
+			&it.ItemURL, &it.ItemState, &it.Author,
 			&it.CreatedAt, &it.BodyPreview,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity item: %w", err)
