@@ -67,6 +67,32 @@ export async function updateKanbanState(
   await loadPulls();
 }
 
+// --- polling ---
+
+let detailPollHandle: ReturnType<typeof setInterval> | null = null;
+
+async function refreshDetail(owner: string, name: string, number: number): Promise<void> {
+  try {
+    detail = await getPull(owner, name, number);
+  } catch {
+    // Silent refresh - don't overwrite error state
+  }
+}
+
+export function startDetailPolling(owner: string, name: string, number: number): void {
+  stopDetailPolling();
+  detailPollHandle = setInterval(() => {
+    void refreshDetail(owner, name, number);
+  }, 60_000);
+}
+
+export function stopDetailPolling(): void {
+  if (detailPollHandle !== null) {
+    clearInterval(detailPollHandle);
+    detailPollHandle = null;
+  }
+}
+
 /** Posts a comment to GitHub, then reloads the detail to show the new event. */
 export async function submitComment(
   owner: string,

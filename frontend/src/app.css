@@ -24,7 +24,9 @@
   --radius-lg: 8px;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
   --header-height: 44px;
+  --status-bar-height: 24px;
   --kanban-new: var(--accent-blue);
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
@@ -50,6 +52,7 @@
   --accent-red: #f87171;
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
   --shadow-md: 0 2px 8px rgba(0,0,0,0.35);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
   --kanban-new: var(--accent-blue);
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
@@ -60,11 +63,16 @@
 /* Base */
 html, body {
   height: 100%;
+  overflow: hidden;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
   background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
 }
 
 #app {
@@ -123,4 +131,9 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }

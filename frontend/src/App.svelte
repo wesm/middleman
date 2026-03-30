@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
+  import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import PullList from "./lib/components/sidebar/PullList.svelte";
   import PullDetail from "./lib/components/detail/PullDetail.svelte";
   import { getView } from "./lib/stores/router.svelte.ts";
@@ -35,6 +36,8 @@
     </div>
   {/if}
 </main>
+
+<StatusBar />
 
 <style>
   .app-main {

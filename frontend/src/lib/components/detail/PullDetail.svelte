@@ -5,8 +5,11 @@
     getDetailError,
     loadDetail,
     updateKanbanState,
+    startDetailPolling,
+    stopDetailPolling,
   } from "../../stores/detail.svelte.js";
   import type { KanbanStatus } from "../../api/types.js";
+  import { renderMarkdown } from "../../utils/markdown.js";
   import EventTimeline from "./EventTimeline.svelte";
   import CommentBox from "./CommentBox.svelte";
 
@@ -20,7 +23,23 @@
 
   $effect(() => {
     void loadDetail(owner, name, number);
+    startDetailPolling(owner, name, number);
+    return () => stopDetailPolling();
   });
+
+  let copied = $state(false);
+  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function copyBody(text: string): void {
+    void navigator.clipboard.writeText(text).then(() => {
+      copied = true;
+      if (copyTimeout !== null) clearTimeout(copyTimeout);
+      copyTimeout = setTimeout(() => {
+        copied = false;
+        copyTimeout = null;
+      }, 1500);
+    });
+  }
 
   const kanbanOptions: { value: KanbanStatus; label: string }[] = [
     { value: "new", label: "New" },
@@ -122,7 +141,17 @@
       <!-- PR body -->
       {#if pr.Body}
         <div class="section">
-          <div class="inset-box">{pr.Body}</div>
+          <div class="section-header">
+            <span class="section-title-inline">Description</span>
+            <button
+              class="copy-btn"
+              onclick={() => copyBody(pr.Body)}
+              title="Copy to clipboard"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body)}</div>
         </div>
       {/if}
 
@@ -286,12 +315,43 @@
     gap: 8px;
   }
 
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
   .section-title {
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
+  }
+
+  .section-title-inline {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .copy-btn {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.1s, border-color 0.1s;
+  }
+
+  .copy-btn:hover {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
   }
 
   .inset-box {
@@ -301,8 +361,55 @@
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
     padding: 10px 12px;
-    white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;
+  }
+
+  .markdown-body :global(p) {
+    margin-bottom: 0.5em;
+  }
+  .markdown-body :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .markdown-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--bg-surface-hover);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .markdown-body :global(pre) {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    overflow-x: auto;
+    margin: 6px 0;
+  }
+  .markdown-body :global(pre code) {
+    background: none;
+    padding: 0;
+  }
+  .markdown-body :global(a) {
+    color: var(--accent-blue);
+  }
+  .markdown-body :global(ul), .markdown-body :global(ol) {
+    padding-left: 1.5em;
+    margin-bottom: 0.5em;
+  }
+  .markdown-body :global(blockquote) {
+    border-left: 3px solid var(--border-default);
+    padding-left: 10px;
+    color: var(--text-secondary);
+    margin: 6px 0;
+  }
+  .markdown-body :global(h1), .markdown-body :global(h2), .markdown-body :global(h3) {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 8px 0 4px;
+  }
+  .markdown-body :global(img) {
+    max-width: 100%;
+    border-radius: var(--radius-sm);
   }
 </style>
