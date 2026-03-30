@@ -7,19 +7,25 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "dompurify": "3.3.3",
     "marked": "17.0.5"
   },
   "devDependencies": {
+    "@playwright/test": "1.54.2",
     "@sveltejs/vite-plugin-svelte": "7.0.0",
+    "@testing-library/svelte": "5.2.8",
     "@tsconfig/svelte": "5.0.8",
     "@types/dompurify": "3.2.0",
+    "jsdom": "26.1.0",
     "svelte": "5.55.0",
     "svelte-check": "4.4.5",
     "typescript": "5.9.3",
-    "vite": "8.0.3"
+    "vite": "8.0.3",
+    "vitest": "3.2.4"
   }
 }
