@@ -30,6 +30,7 @@ export interface PullRequest {
   CommentCount: number;
   ReviewDecision: string;
   CIStatus: string;
+  CIChecksJSON: string;
   CreatedAt: string;
   UpdatedAt: string;
   LastActivityAt: string;
@@ -68,3 +69,11 @@ export interface SyncStatus {
 }
 
 export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";
+
+export interface CICheck {
+  name: string;
+  status: string;
+  conclusion: string;
+  url: string;
+  app: string;
+}
