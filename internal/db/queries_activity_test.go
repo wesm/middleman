@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -205,11 +206,11 @@ func TestListActivity(t *testing.T) {
 
 		seen := make(map[string]bool)
 		for _, it := range page1 {
-			key := it.Source + ":" + string(rune(it.SourceID))
+			key := fmt.Sprintf("%s:%d", it.Source, it.SourceID)
 			seen[key] = true
 		}
 		for _, it := range page2 {
-			key := it.Source + ":" + string(rune(it.SourceID))
+			key := fmt.Sprintf("%s:%d", it.Source, it.SourceID)
 			if seen[key] {
 				t.Errorf("duplicate across pages: %s", key)
 			}

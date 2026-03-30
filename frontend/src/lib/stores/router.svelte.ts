@@ -12,7 +12,7 @@ function parseRoute(path: string): Route {
       return {
         page: "pulls",
         view: "list",
-        selected: { owner: match[1], name: match[2], number: parseInt(match[3], 10) },
+        selected: { owner: match[1]!, name: match[2]!, number: parseInt(match[3]!, 10) },
       };
     }
     return { page: "pulls", view: "list" };
@@ -22,7 +22,7 @@ function parseRoute(path: string): Route {
     if (match) {
       return {
         page: "issues",
-        selected: { owner: match[1], name: match[2], number: parseInt(match[3], 10) },
+        selected: { owner: match[1]!, name: match[2]!, number: parseInt(match[3]!, 10) },
       };
     }
     return { page: "issues" };

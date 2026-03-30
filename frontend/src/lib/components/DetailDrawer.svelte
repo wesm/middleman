@@ -42,11 +42,13 @@
       </span>
     </div>
     <div class="drawer-body">
-      {#if itemType === "pr"}
-        <PullDetail {owner} {name} {number} />
-      {:else}
-        <IssueDetail {owner} {name} {number} />
-      {/if}
+      {#key `${owner}/${name}/${number}`}
+        {#if itemType === "pr"}
+          <PullDetail {owner} {name} {number} />
+        {:else}
+          <IssueDetail {owner} {name} {number} />
+        {/if}
+      {/key}
     </div>
   </aside>
 </div>

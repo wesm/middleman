@@ -20,9 +20,6 @@ func (d *DB) ListActivity(
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
 
 	var whereClauses []string
 	var args []any

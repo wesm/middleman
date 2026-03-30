@@ -82,7 +82,7 @@ export async function loadActivity(): Promise<void> {
 /** Load more items (append to existing list). */
 export async function loadMoreActivity(): Promise<void> {
   if (items.length === 0) return;
-  const lastItem = items[items.length - 1];
+  const lastItem = items[items.length - 1]!;
   loading = true;
   error = null;
   try {
@@ -108,7 +108,7 @@ async function pollNewItems(): Promise<void> {
   }
   try {
     const params = buildParams();
-    params.after = items[0].cursor;
+    params.after = items[0]!.cursor;
     const resp = await listActivity(params);
     if (resp.items.length >= OVERFLOW_LIMIT) {
       await loadActivity();
@@ -151,10 +151,13 @@ export function syncFromURL(): void {
 
 /** Sync store state → URL query params (replaceState). */
 export function syncToURL(): void {
-  const sp = new URLSearchParams();
+  const sp = new URLSearchParams(window.location.search);
   if (filterRepo) sp.set("repo", filterRepo);
+  else sp.delete("repo");
   if (filterTypes.length > 0) sp.set("types", filterTypes.join(","));
+  else sp.delete("types");
   if (searchQuery) sp.set("search", searchQuery);
+  else sp.delete("search");
   const qs = sp.toString();
   const url = "/" + (qs ? `?${qs}` : "");
   history.replaceState(null, "", url);
