@@ -18,6 +18,7 @@
   import CommentBox from "./CommentBox.svelte";
   import ApproveButton from "./ApproveButton.svelte";
   import MergeModal from "./MergeModal.svelte";
+  import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
 
   interface Props {
     owner: string;
@@ -247,6 +248,9 @@
       <!-- Approve / Merge actions (open PRs only) -->
       {#if pr.State === "open"}
         <div class="actions-row">
+          {#if pr.IsDraft}
+            <ReadyForReviewButton {owner} {name} {number} />
+          {/if}
           <ApproveButton {owner} {name} {number} />
           {#if repoSettings}
             <button

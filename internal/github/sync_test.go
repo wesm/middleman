@@ -25,12 +25,12 @@ func openTestDB(t *testing.T) *db.DB {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	openPRs    []*gh.PullRequest
-	singlePR   *gh.PullRequest
-	comments   []*gh.IssueComment
-	reviews    []*gh.PullRequestReview
-	commits    []*gh.RepositoryCommit
-	ciStatus   *gh.CombinedStatus
+	openPRs  []*gh.PullRequest
+	singlePR *gh.PullRequest
+	comments []*gh.IssueComment
+	reviews  []*gh.PullRequestReview
+	commits  []*gh.RepositoryCommit
+	ciStatus *gh.CombinedStatus
 }
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -96,6 +96,13 @@ func (m *mockClient) CreateReview(
 	id := int64(1)
 	state := "APPROVED"
 	return &gh.PullRequestReview{ID: &id, State: &state}, nil
+}
+
+func (m *mockClient) MarkPullRequestReadyForReview(
+	_ context.Context, _, _ string, number int,
+) (*gh.PullRequest, error) {
+	draft := false
+	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
 }
 
 func (m *mockClient) MergePullRequest(

@@ -134,9 +134,9 @@ func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 // --- PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state ---
 
 var validKanbanStates = map[string]bool{
-	"new":           true,
-	"reviewing":     true,
-	"waiting":       true,
+	"new":            true,
+	"reviewing":      true,
+	"waiting":        true,
 	"awaiting_merge": true,
 }
 
@@ -303,10 +303,10 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 // --- /api/v1/repos/{owner}/{name}/issues/{number} ---
 
 type issueDetailResponse struct {
-	Issue     *db.Issue        `json:"issue"`
-	Events    []db.IssueEvent  `json:"events"`
-	RepoOwner string           `json:"repo_owner"`
-	RepoName  string           `json:"repo_name"`
+	Issue     *db.Issue       `json:"issue"`
+	Events    []db.IssueEvent `json:"events"`
+	RepoOwner string          `json:"repo_owner"`
+	RepoName  string          `json:"repo_name"`
 }
 
 func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
@@ -547,6 +547,34 @@ func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
+}
+
+// --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/ready-for-review ---
+
+func (s *Server) handleReadyForReview(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	name := r.PathValue("name")
+	number, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid PR number")
+		return
+	}
+
+	pr, err := s.gh.MarkPullRequestReadyForReview(r.Context(), owner, name, number)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "GitHub API error: "+err.Error())
+		return
+	}
+
+	repoObj, err := s.db.GetRepoByOwnerName(r.Context(), owner, name)
+	if err == nil && repoObj != nil {
+		normalized := ghclient.NormalizePR(repoObj.ID, pr)
+		if prID, upsertErr := s.db.UpsertPullRequest(r.Context(), normalized); upsertErr == nil {
+			_ = s.db.EnsureKanbanState(r.Context(), prID)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready_for_review"})
 }
 
 // --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge ---
