@@ -81,7 +81,7 @@ make vet        # go vet
 ## Build Requirements
 
 - **No CGO required** — uses modernc.org/sqlite (pure Go)
-- **Frontend**: Node.js + npm for Svelte build, embedded via `internal/web/dist/`
+- **Frontend**: Bun for Svelte build/test tooling, embedded via `internal/web/dist/`
 
 ## Conventions
 

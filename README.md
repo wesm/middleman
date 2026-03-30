@@ -16,7 +16,7 @@ Local-first GitHub dashboard for project maintainers. Syncs PRs and issues from 
 ## Requirements
 
 - Go 1.22+ (no CGO required — uses pure Go SQLite)
-- Node.js 20+ and npm
+- Bun 1.3+
 - A GitHub personal access token with `repo` scope
 
 ## Setup
