@@ -45,8 +45,17 @@ func (m *mockClient) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue,
 	return nil, nil
 }
 
-func (m *mockClient) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
-	return m.singlePR, nil
+func (m *mockClient) GetPullRequest(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	if m.singlePR != nil {
+		return m.singlePR, nil
+	}
+	// Fall back to matching from the open PRs list
+	for _, pr := range m.openPRs {
+		if pr.GetNumber() == number {
+			return pr, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
