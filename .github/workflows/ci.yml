@@ -64,13 +64,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      - uses: oven-sh/setup-bun@735343b667d3e6a1a3d0149c49c82fbb3b8cee64  # v2.0.2
         with:
-          node-version: "24"
+          bun-version: latest
 
       - name: Build frontend
         run: |
-          cd frontend && npm ci && npm run build
+          cd frontend && bun install --frozen-lockfile && bun run build
 
       - name: Embed frontend
         run: |
