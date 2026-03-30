@@ -83,7 +83,7 @@ func run(configPath string) error {
 	srv := server.New(database, ghClient, syncer, assets)
 
 	addr := cfg.ListenAddr()
-	slog.Info("starting server", "addr", addr)
+	slog.Info(fmt.Sprintf("starting server at http://%s", addr))
 
 	errCh := make(chan error, 1)
 	go func() {
