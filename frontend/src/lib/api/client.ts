@@ -70,6 +70,51 @@ export async function postComment(
   );
 }
 
+export async function getRepo(
+  owner: string,
+  name: string,
+): Promise<Repo> {
+  return request<Repo>(`/repos/${owner}/${name}`);
+}
+
+export async function approvePR(
+  owner: string,
+  name: string,
+  number: number,
+  body: string,
+): Promise<void> {
+  await request(
+    `/repos/${owner}/${name}/pulls/${number}/approve`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    },
+  );
+}
+
+export interface MergeParams {
+  commit_title: string;
+  commit_message: string;
+  method: "merge" | "squash" | "rebase";
+}
+
+export async function mergePR(
+  owner: string,
+  name: string,
+  number: number,
+  params: MergeParams,
+): Promise<{ merged: boolean; sha: string; message: string }> {
+  return request(
+    `/repos/${owner}/${name}/pulls/${number}/merge`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    },
+  );
+}
+
 export async function listRepos(): Promise<Repo[]> {
   return request<Repo[]>("/repos");
 }

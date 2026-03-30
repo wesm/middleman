@@ -9,11 +9,15 @@
     stopDetailPolling,
     toggleDetailPRStar,
   } from "../../stores/detail.svelte.js";
+  import { loadPulls } from "../../stores/pulls.svelte.js";
+  import { getRepo } from "../../api/client.js";
   import type { CICheck, KanbanStatus } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import EventTimeline from "./EventTimeline.svelte";
   import CommentBox from "./CommentBox.svelte";
+  import ApproveButton from "./ApproveButton.svelte";
+  import MergeModal from "./MergeModal.svelte";
 
   interface Props {
     owner: string;
@@ -42,6 +46,23 @@
       }, 1500);
     });
   }
+
+  let repoSettings = $state<{
+    allowSquash: boolean;
+    allowMerge: boolean;
+    allowRebase: boolean;
+  } | null>(null);
+  let showMergeModal = $state(false);
+
+  $effect(() => {
+    getRepo(owner, name).then(repo => {
+      repoSettings = {
+        allowSquash: repo.AllowSquashMerge,
+        allowMerge: repo.AllowMergeCommit,
+        allowRebase: repo.AllowRebaseMerge,
+      };
+    }).catch(() => {});
+  });
 
   let ciExpanded = $state(false);
   const checks = $derived(parseCIChecks(getDetail()?.pull_request?.CIChecksJSON ?? ""));
@@ -222,6 +243,51 @@
           {/each}
         </select>
       </div>
+
+      <!-- Approve / Merge actions (open PRs only) -->
+      {#if pr.State === "open"}
+        <div class="actions-row">
+          <ApproveButton {owner} {name} {number} />
+          {#if repoSettings}
+            <button
+              class="btn--merge"
+              onclick={() => { showMergeModal = true; }}
+            >
+              {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
+                Squash and merge
+              {:else if !repoSettings.allowSquash && repoSettings.allowMerge && !repoSettings.allowRebase}
+                Merge
+              {:else if !repoSettings.allowSquash && !repoSettings.allowMerge && repoSettings.allowRebase}
+                Rebase and merge
+              {:else}
+                Merge &#9662;
+              {/if}
+            </button>
+          {/if}
+        </div>
+      {/if}
+
+      {#if showMergeModal && repoSettings}
+        {@const d = getDetail()!}
+        {@const p = d.pull_request}
+        <MergeModal
+          {owner}
+          {name}
+          {number}
+          prTitle={p.Title}
+          prBody={p.Body}
+          prAuthor={p.Author}
+          allowSquash={repoSettings.allowSquash}
+          allowMerge={repoSettings.allowMerge}
+          allowRebase={repoSettings.allowRebase}
+          onclose={() => { showMergeModal = false; }}
+          onmerged={() => {
+            showMergeModal = false;
+            void loadDetail(owner, name, number);
+            void loadPulls();
+          }}
+        />
+      {/if}
 
       <!-- PR body -->
       {#if pr.Body}
@@ -501,6 +567,27 @@
 
   .kanban-select:focus {
     border-color: var(--accent-blue);
+  }
+
+  .actions-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .btn--merge {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-green);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.1s;
+  }
+  .btn--merge:hover {
+    opacity: 0.9;
   }
 
   .kanban-select--new { color: var(--kanban-new); }

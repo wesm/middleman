@@ -6,6 +6,9 @@ export interface Repo {
   ID: number;
   Owner: string;
   Name: string;
+  AllowSquashMerge: boolean;
+  AllowMergeCommit: boolean;
+  AllowRebaseMerge: boolean;
   LastSyncStartedAt: string | null;
   LastSyncCompletedAt: string | null;
   LastSyncError: string;
