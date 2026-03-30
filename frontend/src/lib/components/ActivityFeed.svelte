@@ -19,7 +19,7 @@
     syncFromURL,
     syncToURL,
   } from "../stores/activity.svelte.js";
-  import RepoSelector from "./sidebar/RepoSelector.svelte";
+  import RepoTypeahead from "./RepoTypeahead.svelte";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -29,6 +29,7 @@
 
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideClosedMerged = $state(false);
 
   type ItemFilter = "all" | "prs" | "issues";
   let itemFilter = $state<ItemFilter>("all");
@@ -139,8 +140,23 @@
   }
 
   function badgeClass(item: ActivityItem): string {
+    if (item.item_state === "merged") return "badge-merged";
+    if (item.item_state === "closed") return "badge-closed";
     return item.item_type === "pr" ? "badge-pr" : "badge-issue";
   }
+
+  function stateLabel(item: ActivityItem): string | null {
+    if (item.item_state === "merged") return "Merged";
+    if (item.item_state === "closed") return "Closed";
+    return null;
+  }
+
+  const displayItems = $derived.by(() => {
+    const all = getActivityItems();
+    if (!hideClosedMerged) return all;
+    return all.filter((it) =>
+      it.item_state !== "merged" && it.item_state !== "closed");
+  });
 
   function eventClass(type: string): string {
     switch (type) {
@@ -175,7 +191,7 @@
 
 <div class="activity-feed">
   <div class="controls-bar">
-    <RepoSelector
+    <RepoTypeahead
       selected={getActivityFilterRepo()}
       onchange={handleRepoChange}
     />
@@ -200,6 +216,11 @@
         {/each}
       </div>
     </div>
+
+    <label class="hide-closed-toggle">
+      <input type="checkbox" bind:checked={hideClosedMerged} />
+      Hide closed
+    </label>
 
     <input
       class="search-input"
@@ -228,10 +249,13 @@
         </tr>
       </thead>
       <tbody>
-        {#each getActivityItems() as item (item.id)}
+        {#each displayItems as item (item.id)}
           <tr class="activity-row" onclick={() => handleRowClick(item)}>
             <td class="col-kind">
               <span class="badge {badgeClass(item)}">{itemTypeLabel(item)}</span>
+              {#if stateLabel(item)}
+                <span class="state-badge state-{item.item_state}">{stateLabel(item)}</span>
+              {/if}
             </td>
             <td class="col-event">
               <span class="evt-label {eventClass(item.activity_type)}">{eventLabel(item)}</span>
@@ -255,7 +279,7 @@
       </tbody>
     </table>
 
-    {#if getActivityItems().length === 0 && !isActivityLoading()}
+    {#if displayItems.length === 0 && !isActivityLoading()}
       <div class="empty-state">No activity found</div>
     {/if}
   </div>
@@ -359,6 +383,21 @@
   .evt-dot.evt-review { background: var(--accent-green); }
   .evt-dot.evt-commit { background: var(--accent-teal); }
 
+  .hide-closed-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .hide-closed-toggle input {
+    accent-color: var(--accent-blue);
+  }
+
   .search-input {
     margin-left: auto;
     width: 180px;
@@ -443,6 +482,33 @@
   .badge-issue {
     background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
     color: var(--accent-purple);
+  }
+  .badge-merged {
+    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
+    color: var(--accent-purple);
+  }
+  .badge-closed {
+    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+    color: var(--accent-red);
+  }
+
+  .state-badge {
+    display: inline-block;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: 3px;
+  }
+  .state-merged {
+    background: color-mix(in srgb, var(--accent-purple) 20%, transparent);
+    color: var(--accent-purple);
+  }
+  .state-closed {
+    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+    color: var(--accent-red);
   }
 
   .evt-label {

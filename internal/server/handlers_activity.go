@@ -23,6 +23,7 @@ type activityItemResponse struct {
 	ItemNumber   int    `json:"item_number"`
 	ItemTitle    string `json:"item_title"`
 	ItemURL      string `json:"item_url"`
+	ItemState    string `json:"item_state"`
 	Author       string `json:"author"`
 	CreatedAt    string `json:"created_at"`
 	BodyPreview  string `json:"body_preview"`
@@ -96,6 +97,7 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 			ItemNumber:   it.ItemNumber,
 			ItemTitle:    it.ItemTitle,
 			ItemURL:      it.ItemURL,
+			ItemState:    it.ItemState,
 			Author:       it.Author,
 			CreatedAt:    it.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			BodyPreview:  it.BodyPreview,
