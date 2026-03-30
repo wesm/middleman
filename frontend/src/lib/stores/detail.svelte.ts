@@ -1,4 +1,4 @@
-import { getPull, postComment, setKanbanState } from "../api/client.js";
+import { getPull, postComment, setKanbanState, setStarred, unsetStarred } from "../api/client.js";
 import type { KanbanStatus, PullDetail } from "../api/types.js";
 import { loadPulls } from "./pulls.svelte.js";
 
@@ -91,6 +91,29 @@ export function stopDetailPolling(): void {
     clearInterval(detailPollHandle);
     detailPollHandle = null;
   }
+}
+
+export async function toggleDetailPRStar(
+  owner: string,
+  name: string,
+  number: number,
+  currentlyStarred: boolean,
+): Promise<void> {
+  // Optimistic update
+  if (detail !== null) {
+    detail = { ...detail, pull_request: { ...detail.pull_request, Starred: !currentlyStarred } };
+  }
+  try {
+    if (currentlyStarred) await unsetStarred("pr", owner, name, number);
+    else await setStarred("pr", owner, name, number);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+    if (detail !== null) {
+      detail = { ...detail, pull_request: { ...detail.pull_request, Starred: currentlyStarred } };
+    }
+    return;
+  }
+  await loadPulls();
 }
 
 /** Posts a comment to GitHub, then reloads the detail to show the new event. */

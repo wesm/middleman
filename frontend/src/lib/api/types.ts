@@ -37,9 +37,56 @@ export interface PullRequest {
   MergedAt: string | null;
   ClosedAt: string | null;
   KanbanStatus: string;
+  Starred: boolean;
   // Enrichment fields from list endpoint (json-tagged, lowercase)
   repo_owner?: string;
   repo_name?: string;
+}
+
+export interface Issue {
+  ID: number;
+  RepoID: number;
+  GitHubID: number;
+  Number: number;
+  URL: string;
+  Title: string;
+  Author: string;
+  State: string;
+  Body: string;
+  CommentCount: number;
+  LabelsJSON: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+  LastActivityAt: string;
+  ClosedAt: string | null;
+  Starred: boolean;
+  repo_owner?: string;
+  repo_name?: string;
+}
+
+export interface IssueEvent {
+  ID: number;
+  IssueID: number;
+  GitHubID: number | null;
+  EventType: string;
+  Author: string;
+  Summary: string;
+  Body: string;
+  MetadataJSON: string;
+  CreatedAt: string;
+  DedupeKey: string;
+}
+
+export interface IssueDetail {
+  issue: Issue;
+  events: IssueEvent[];
+  repo_owner: string;
+  repo_name: string;
+}
+
+export interface IssueLabel {
+  name: string;
+  color: string;
 }
 
 export interface PREvent {

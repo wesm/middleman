@@ -1,4 +1,4 @@
-import { listPulls } from "../api/client.js";
+import { listPulls, setStarred, unsetStarred } from "../api/client.js";
 import type { KanbanStatus, PullRequest } from "../api/types.js";
 import type { PullsParams } from "../api/client.js";
 
@@ -9,6 +9,7 @@ let loading = $state(false);
 let error = $state<string | null>(null);
 let filterRepo = $state<string | undefined>(undefined);
 let filterKanban = $state<KanbanStatus | undefined>(undefined);
+let filterStarred = $state(false);
 let searchQuery = $state<string | undefined>(undefined);
 let selectedPR = $state<{ owner: string; name: string; number: number } | null>(null);
 
@@ -51,6 +52,14 @@ export function getFilterRepo(): string | undefined {
 
 export function getFilterKanban(): KanbanStatus | undefined {
   return filterKanban;
+}
+
+export function getFilterStarred(): boolean {
+  return filterStarred;
+}
+
+export function setFilterStarred(v: boolean): void {
+  filterStarred = v;
 }
 
 export function getFlatPRList(): PullRequest[] {
@@ -131,6 +140,25 @@ export function clearSelection(): void {
   selectedPR = null;
 }
 
+export async function togglePRStar(
+  owner: string,
+  name: string,
+  number: number,
+  currentlyStarred: boolean,
+): Promise<void> {
+  try {
+    if (currentlyStarred) {
+      await unsetStarred("pr", owner, name, number);
+    } else {
+      await setStarred("pr", owner, name, number);
+    }
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+    return;
+  }
+  await loadPulls();
+}
+
 export async function loadPulls(params?: PullsParams): Promise<void> {
   loading = true;
   error = null;
@@ -138,6 +166,7 @@ export async function loadPulls(params?: PullsParams): Promise<void> {
     const merged: PullsParams = {
       repo: filterRepo,
       kanban: filterKanban,
+      starred: filterStarred || undefined,
       q: searchQuery,
       ...params,
     };

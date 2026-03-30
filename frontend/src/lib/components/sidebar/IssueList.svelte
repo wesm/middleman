@@ -1,28 +1,28 @@
 <script lang="ts">
   import {
-    pullsByRepo,
-    isLoading,
-    getError,
-    loadPulls,
-    getPulls,
-    getSelectedPR,
-    selectPR,
-    getSearchQuery,
-    setSearchQuery,
-    getFilterRepo,
-    setFilterRepo,
-    getFilterStarred,
-    setFilterStarred,
-  } from "../../stores/pulls.svelte.js";
+    issuesByRepo,
+    isIssuesLoading,
+    getIssuesError,
+    loadIssues,
+    getIssues,
+    getSelectedIssue,
+    selectIssue,
+    getIssueSearchQuery,
+    setIssueSearchQuery,
+    getIssueFilterRepo,
+    setIssueFilterRepo,
+    getIssueFilterStarred,
+    setIssueFilterStarred,
+  } from "../../stores/issues.svelte.js";
   import { listRepos } from "../../api/client.js";
-  import PullItem from "./PullItem.svelte";
+  import IssueItem from "./IssueItem.svelte";
 
-  let searchInput = $state(getSearchQuery() ?? "");
+  let searchInput = $state(getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
   let repos = $state<string[]>([]);
 
   $effect(() => {
-    void loadPulls();
+    void loadIssues();
     listRepos().then((r) => {
       repos = r.map((repo) => `${repo.Owner}/${repo.Name}`);
     });
@@ -34,22 +34,22 @@
 
     if (debounceHandle !== null) clearTimeout(debounceHandle);
     debounceHandle = setTimeout(() => {
-      setSearchQuery(value.trim() === "" ? undefined : value.trim());
-      void loadPulls();
+      setIssueSearchQuery(value.trim() === "" ? undefined : value.trim());
+      void loadIssues();
     }, 300);
   }
 
   function handleSelect(owner: string, name: string, number: number): void {
-    selectPR(owner, name, number);
+    selectIssue(owner, name, number);
   }
 
   function isSelected(owner: string, name: string, number: number): boolean {
-    const sel = getSelectedPR();
+    const sel = getSelectedIssue();
     return sel !== null && sel.owner === owner && sel.name === name && sel.number === number;
   }
 </script>
 
-<div class="pull-list">
+<div class="issue-list">
   <div class="search-bar">
     <div class="search-input-wrap">
       <svg class="search-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -59,18 +59,18 @@
       <input
         class="search-input"
         type="search"
-        placeholder="Search PRs…"
+        placeholder="Search issues..."
         value={searchInput}
         oninput={onSearchInput}
       />
     </div>
     <button
       class="star-filter-btn"
-      class:star-filter-btn--active={getFilterStarred()}
-      onclick={() => { setFilterStarred(!getFilterStarred()); void loadPulls(); }}
-      title={getFilterStarred() ? "Show all" : "Show starred only"}
+      class:star-filter-btn--active={getIssueFilterStarred()}
+      onclick={() => { setIssueFilterStarred(!getIssueFilterStarred()); void loadIssues(); }}
+      title={getIssueFilterStarred() ? "Show all" : "Show starred only"}
     >
-      {#if getFilterStarred()}
+      {#if getIssueFilterStarred()}
         <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
           <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
         </svg>
@@ -80,25 +80,25 @@
         </svg>
       {/if}
     </button>
-    <span class="count-badge">{getPulls().length}</span>
+    <span class="count-badge">{getIssues().length}</span>
   </div>
 
   {#if repos.length > 1}
     <div class="filter-chips">
       <button
         class="filter-chip"
-        class:active={getFilterRepo() === undefined}
-        onclick={() => { setFilterRepo(undefined); void loadPulls(); }}
+        class:active={getIssueFilterRepo() === undefined}
+        onclick={() => { setIssueFilterRepo(undefined); void loadIssues(); }}
       >
         All
       </button>
       {#each repos as repo}
         <button
           class="filter-chip"
-          class:active={getFilterRepo() === repo}
+          class:active={getIssueFilterRepo() === repo}
           onclick={() => {
-            setFilterRepo(getFilterRepo() === repo ? undefined : repo);
-            void loadPulls();
+            setIssueFilterRepo(getIssueFilterRepo() === repo ? undefined : repo);
+            void loadIssues();
           }}
         >
           {repo.split("/")[1]}
@@ -108,21 +108,21 @@
   {/if}
 
   <div class="list-body">
-    {#if isLoading()}
-      <p class="state-message">Loading…</p>
-    {:else if getError() !== null}
-      <p class="state-message state-message--error">Error: {getError()}</p>
-    {:else if getPulls().length === 0}
-      <p class="state-message">No pull requests found.</p>
+    {#if isIssuesLoading()}
+      <p class="state-message">Loading...</p>
+    {:else if getIssuesError() !== null}
+      <p class="state-message state-message--error">Error: {getIssuesError()}</p>
+    {:else if getIssues().length === 0}
+      <p class="state-message">No issues found.</p>
     {:else}
-      {#each [...pullsByRepo().entries()] as [repo, prs] (repo)}
+      {#each [...issuesByRepo().entries()] as [repo, repoIssues] (repo)}
         <div class="repo-group">
           <h3 class="repo-header">{repo}</h3>
-          {#each prs as pr (pr.ID)}
-            <PullItem
-              {pr}
-              selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
-              onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+          {#each repoIssues as issue (issue.ID)}
+            <IssueItem
+              {issue}
+              selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
+              onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
             />
           {/each}
         </div>
@@ -132,7 +132,7 @@
 </div>
 
 <style>
-  .pull-list {
+  .issue-list {
     display: flex;
     flex-direction: column;
     height: 100%;

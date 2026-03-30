@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getView, setView } from "../../stores/router.svelte.ts";
+  import { getView, setView, getTab, setTab } from "../../stores/router.svelte.ts";
 
   let syncing = $state(false);
   let dark = $state(false);
@@ -35,20 +35,22 @@
   </div>
 
   <nav class="header-center">
-    <button
-      class="view-tab"
-      class:active={getView() === "list"}
-      onclick={() => setView("list")}
-    >
-      List
-    </button>
-    <button
-      class="view-tab"
-      class:active={getView() === "board"}
-      onclick={() => setView("board")}
-    >
-      Board
-    </button>
+    <div class="tab-group">
+      <button class="view-tab" class:active={getTab() === "pulls"} onclick={() => setTab("pulls")}>
+        PRs
+      </button>
+      <button class="view-tab" class:active={getTab() === "issues"} onclick={() => setTab("issues")}>
+        Issues
+      </button>
+    </div>
+    <div class="tab-group">
+      <button class="view-tab" class:active={getView() === "list"} onclick={() => setView("list")}>
+        List
+      </button>
+      <button class="view-tab" class:active={getView() === "board"} onclick={() => setView("board")}>
+        Board
+      </button>
+    </div>
   </nav>
 
   <div class="header-right">
@@ -88,6 +90,12 @@
   }
 
   .header-center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tab-group {
     display: flex;
     align-items: center;
     gap: 2px;

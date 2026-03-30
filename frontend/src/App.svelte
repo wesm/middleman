@@ -3,7 +3,9 @@
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import PullList from "./lib/components/sidebar/PullList.svelte";
   import PullDetail from "./lib/components/detail/PullDetail.svelte";
-  import { getView, setView } from "./lib/stores/router.svelte.ts";
+  import IssueList from "./lib/components/sidebar/IssueList.svelte";
+  import IssueDetail from "./lib/components/detail/IssueDetail.svelte";
+  import { getView, setView, getTab } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import {
     getSelectedPR,
@@ -11,6 +13,12 @@
     selectPrevPR,
     clearSelection,
   } from "./lib/stores/pulls.svelte.js";
+  import {
+    getSelectedIssue,
+    selectNextIssue,
+    selectPrevIssue,
+    clearIssueSelection,
+  } from "./lib/stores/issues.svelte.js";
   import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
 
   $effect(() => {
@@ -21,18 +29,23 @@
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+    const isIssues = getTab() === "issues";
+
     switch (e.key) {
       case "j":
         e.preventDefault();
-        selectNextPR();
+        if (isIssues) selectNextIssue();
+        else selectNextPR();
         break;
       case "k":
         e.preventDefault();
-        selectPrevPR();
+        if (isIssues) selectPrevIssue();
+        else selectPrevPR();
         break;
       case "Escape":
         e.preventDefault();
-        clearSelection();
+        if (isIssues) clearIssueSelection();
+        else clearSelection();
         break;
       case "1":
         e.preventDefault();
@@ -57,17 +70,33 @@
   {#if getView() === "list"}
     <div class="list-layout">
       <aside class="sidebar">
-        <PullList />
-      </aside>
-      <section class="detail-area" class:detail-area--empty={getSelectedPR() === null}>
-        {#if getSelectedPR() !== null}
-          {@const sel = getSelectedPR()!}
-          <PullDetail owner={sel.owner} name={sel.name} number={sel.number} />
+        {#if getTab() === "pulls"}
+          <PullList />
         {:else}
-          <div class="placeholder-content">
-            <p class="placeholder-text">Select a PR</p>
-            <p class="placeholder-hint">j/k to navigate · Enter to open on GitHub · 1/2 to switch views</p>
-          </div>
+          <IssueList />
+        {/if}
+      </aside>
+      <section class="detail-area" class:detail-area--empty={getTab() === "pulls" ? getSelectedPR() === null : getSelectedIssue() === null}>
+        {#if getTab() === "pulls"}
+          {#if getSelectedPR() !== null}
+            {@const sel = getSelectedPR()!}
+            <PullDetail owner={sel.owner} name={sel.name} number={sel.number} />
+          {:else}
+            <div class="placeholder-content">
+              <p class="placeholder-text">Select a PR</p>
+              <p class="placeholder-hint">j/k to navigate · Enter to open on GitHub · 1/2 to switch views</p>
+            </div>
+          {/if}
+        {:else}
+          {#if getSelectedIssue() !== null}
+            {@const sel = getSelectedIssue()!}
+            <IssueDetail owner={sel.owner} name={sel.name} number={sel.number} />
+          {:else}
+            <div class="placeholder-content">
+              <p class="placeholder-text">Select an issue</p>
+              <p class="placeholder-hint">j/k to navigate · Enter to open on GitHub · 1/2 to switch views</p>
+            </div>
+          {/if}
         {/if}
       </section>
     </div>

@@ -1,24 +1,14 @@
 <script lang="ts">
-  import type { PullRequest } from "../../api/types.js";
-  import { togglePRStar } from "../../stores/pulls.svelte.js";
+  import type { Issue, IssueLabel } from "../../api/types.js";
+  import { toggleIssueStar } from "../../stores/issues.svelte.js";
 
   interface Props {
-    pr: PullRequest;
+    issue: Issue;
     selected: boolean;
     onclick: () => void;
   }
 
-  const { pr, selected, onclick }: Props = $props();
-
-  function handleStarClick(e: MouseEvent): void {
-    e.stopPropagation();
-    void togglePRStar(
-      pr.repo_owner ?? "",
-      pr.repo_name ?? "",
-      pr.Number,
-      pr.Starred,
-    );
-  }
+  const { issue, selected, onclick }: Props = $props();
 
   let el: HTMLButtonElement;
 
@@ -28,12 +18,29 @@
     }
   });
 
-  const kanbanLabels: Record<string, string> = {
-    new: "New",
-    reviewing: "Reviewing",
-    waiting: "Waiting",
-    awaiting_merge: "Ready",
-  };
+  function handleStarClick(e: MouseEvent): void {
+    e.stopPropagation();
+    void toggleIssueStar(
+      issue.repo_owner ?? "",
+      issue.repo_name ?? "",
+      issue.Number,
+      issue.Starred,
+    );
+  }
+
+  function parseLabels(json: string): IssueLabel[] {
+    if (!json) return [];
+    try {
+      return JSON.parse(json) as IssueLabel[];
+    } catch {
+      return [];
+    }
+  }
+
+  function labelColor(color: string): string {
+    if (!color) return "#666";
+    return color.startsWith("#") ? color : `#${color}`;
+  }
 
   function timeAgo(dateStr: string): string {
     const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -44,17 +51,35 @@
     return `${Math.floor(diffHr / 24)}d ago`;
   }
 
-  const statusLabel = $derived(kanbanLabels[pr.KanbanStatus] ?? pr.KanbanStatus);
-  const ago = $derived(timeAgo(pr.LastActivityAt));
+  const labels = $derived(parseLabels(issue.LabelsJSON));
+  const visibleLabels = $derived(labels.slice(0, 2));
+  const extraCount = $derived(Math.max(0, labels.length - 2));
+  const ago = $derived(timeAgo(issue.LastActivityAt));
+  const stateLabel = $derived(
+    issue.State === "open" ? "Open" : "Closed",
+  );
 </script>
 
-<button class="pull-item" class:selected bind:this={el} onclick={onclick}>
-  <p class="title">{pr.Title}</p>
+<button class="issue-item" class:selected bind:this={el} onclick={onclick}>
+  <p class="title">{issue.Title}</p>
+  {#if visibleLabels.length > 0}
+    <div class="labels-row">
+      {#each visibleLabels as label}
+        <span
+          class="label-pill"
+          style="background: {labelColor(label.color)}; color: #fff;"
+        >{label.name}</span>
+      {/each}
+      {#if extraCount > 0}
+        <span class="label-more">+{extraCount}</span>
+      {/if}
+    </div>
+  {/if}
   <div class="meta-row">
-    <span class="meta-left">#{pr.Number} · {pr.Author}</span>
+    <span class="meta-left">#{issue.Number} · {issue.Author}</span>
     <span class="meta-right">
       <!-- svelte-ignore a11y_click_events_have_key_events -->
-      {#if pr.Starred}
+      {#if issue.Starred}
         <svg class="star-icon star-icon--active" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" onclick={handleStarClick} role="button" tabindex="-1">
           <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
         </svg>
@@ -63,14 +88,14 @@
           <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"/>
         </svg>
       {/if}
-      <span class="badge badge--{pr.KanbanStatus.replace('_', '-')}">{statusLabel}</span>
+      <span class="badge badge--{issue.State}">{stateLabel}</span>
       <span class="time">{ago}</span>
     </span>
   </div>
 </button>
 
 <style>
-  .pull-item {
+  .issue-item {
     display: block;
     width: 100%;
     text-align: left;
@@ -82,11 +107,11 @@
     border-left: 3px solid transparent;
   }
 
-  .pull-item:hover {
+  .issue-item:hover {
     background: var(--bg-surface-hover);
   }
 
-  .pull-item.selected {
+  .issue-item.selected {
     background: var(--bg-inset);
     border-left-color: var(--accent-blue);
   }
@@ -99,6 +124,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 4px;
+  }
+
+  .labels-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+    overflow: hidden;
+  }
+
+  .label-pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    line-height: 1.5;
+  }
+
+  .label-more {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .meta-row {
@@ -140,20 +191,12 @@
     color: #fff;
   }
 
-  .badge--new {
-    background: var(--accent-blue);
-  }
-
-  .badge--reviewing {
-    background: var(--accent-amber);
-  }
-
-  .badge--waiting {
-    background: var(--accent-purple);
-  }
-
-  .badge--awaiting-merge {
+  .badge--open {
     background: var(--accent-green);
+  }
+
+  .badge--closed {
+    background: var(--accent-purple);
   }
 
   .star-icon {
@@ -164,7 +207,7 @@
     flex-shrink: 0;
   }
 
-  .pull-item:hover .star-icon {
+  .issue-item:hover .star-icon {
     opacity: 0.6;
   }
 

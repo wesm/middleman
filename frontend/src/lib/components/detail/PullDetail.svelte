@@ -7,6 +7,7 @@
     updateKanbanState,
     startDetailPolling,
     stopDetailPolling,
+    toggleDetailPRStar,
   } from "../../stores/detail.svelte.js";
   import type { CICheck, KanbanStatus } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
@@ -116,6 +117,21 @@
       <!-- Header -->
       <div class="detail-header">
         <h2 class="detail-title">{pr.Title}</h2>
+        <button
+          class="star-btn"
+          onclick={() => void toggleDetailPRStar(owner, name, number, pr.Starred)}
+          title={pr.Starred ? "Unstar" : "Star"}
+        >
+          {#if pr.Starred}
+            <svg class="star-detail-icon star-detail-icon--active" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
+            </svg>
+          {:else}
+            <svg class="star-detail-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"/>
+            </svg>
+          {/if}
+        </button>
         <a class="gh-link" href={pr.URL} target="_blank" rel="noopener noreferrer" title="Open on GitHub">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M6 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -309,6 +325,30 @@
   .gh-link:hover {
     color: var(--accent-blue);
     text-decoration: none;
+  }
+
+  .star-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    margin-top: 3px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .star-detail-icon {
+    color: var(--text-muted);
+    transition: color 0.1s;
+  }
+
+  .star-detail-icon:hover {
+    color: var(--accent-amber);
+  }
+
+  .star-detail-icon--active {
+    color: var(--accent-amber);
   }
 
   .meta-row {
