@@ -10,6 +10,10 @@ A Flat/Threaded segmented control in the activity feed controls bar. Flat is the
 
 The view mode and time range are persisted in the URL query string (`view=threaded&range=7d`) alongside the existing `repo`, `types`, and `search` params. This makes the current view bookmarkable and survives browser back/forward.
 
+### URL and history model
+
+All activity feed state changes (view mode, time range, repo filter, type filter, search) use `replaceState` — they update the URL without creating history entries. This is the same model used today for filters. Navigating away from the activity feed (e.g., clicking a PR tab) uses `pushState` as it does now, so browser back returns to the activity feed with the URL-encoded state intact. On `popstate`, the store re-reads all query params and re-fetches if the route is `/`.
+
 ## Time-Windowed Fetching
 
 ### API change
@@ -29,7 +33,9 @@ The `has_more` field is removed from the response. The new response shape:
 }
 ```
 
-The internal `BeforeTime`/`BeforeSource`/`BeforeSourceID` and `Limit` fields on `ListActivityOpts` remain in the code but are no longer set by the handler. The `AfterTime`/`AfterSource`/`AfterSourceID` fields remain for polling.
+The handler sets `opts.Limit = 5001` (one more than the cap) to implement the safety cap using the existing `ListActivity` limit logic. If the query returns 5001 rows, the handler truncates to 5000 and sets `capped: true`. The `ListActivity` function's existing `if limit <= 0 { limit = 50 }` default is only a fallback — the handler always provides a value.
+
+The `BeforeTime`/`BeforeSource`/`BeforeSourceID` fields on `ListActivityOpts` remain in the code but are no longer set by the handler. The `AfterTime`/`AfterSource`/`AfterSourceID` fields remain for polling.
 
 ### Client-side filter interaction with safety cap
 
@@ -44,7 +50,9 @@ Preset time windows displayed as a segmented control: **24h / 7d / 30d / 90d**. 
 
 ### Polling
 
-Polling prepends new items using the `after` cursor, same as today. On each poll tick, the store also prunes items whose `created_at` is older than the current window's `since` boundary. This keeps the view accurate as time passes (items don't linger past the window edge).
+Polling prepends new items using the `after` cursor. The poll request also passes `since` so the server applies the same time window. On each poll tick, the store also prunes items whose `created_at` is older than the current window's `since` boundary (recomputed from `now - range`). This keeps the view accurate as time passes.
+
+If a poll response has `capped: true`, the client discards the poll result and does a full reload from scratch. This replaces the old `has_more`-based overflow detection — the semantics are the same (too many new items to merge incrementally, so start over).
 
 ## Threaded View Structure
 
@@ -56,7 +64,7 @@ Three visual nesting levels rendered from the `displayItems` array. No collapse/
 
 ### Level 2 — Issue/PR row (indented)
 
-`#number title` with PR/Issue badge, state badge (Merged/Closed/Open), author, and time of most recent event. One row per unique item within the project. Sorted by most recent event, descending. Clickable — opens the detail drawer.
+`#number title` with PR/Issue badge, state badge (Merged/Closed/Open), and time of most recent event. No author on the group header — when the item's `new_pr`/`new_issue` event is outside the time window, there is no reliable item-level author in the data. The event rows below already show per-event authors, which is more useful in context. One row per unique item within the project. Sorted by most recent event, descending. Clickable — opens the detail drawer.
 
 ### Level 3 — Event row (further indented)
 
