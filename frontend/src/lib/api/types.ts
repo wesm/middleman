@@ -1,0 +1,70 @@
+// TypeScript interfaces matching Go JSON output.
+// Go's default encoding uses PascalCase for struct fields without json tags.
+// Fields with explicit json tags use lowercase (e.g., repo_owner, repo_name).
+
+export interface Repo {
+  ID: number;
+  Owner: string;
+  Name: string;
+  LastSyncStartedAt: string | null;
+  LastSyncCompletedAt: string | null;
+  LastSyncError: string;
+  CreatedAt: string;
+}
+
+export interface PullRequest {
+  ID: number;
+  RepoID: number;
+  GitHubID: number;
+  Number: number;
+  URL: string;
+  Title: string;
+  Author: string;
+  State: string;
+  IsDraft: boolean;
+  Body: string;
+  HeadBranch: string;
+  BaseBranch: string;
+  Additions: number;
+  Deletions: number;
+  CommentCount: number;
+  ReviewDecision: string;
+  CIStatus: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+  LastActivityAt: string;
+  MergedAt: string | null;
+  ClosedAt: string | null;
+  KanbanStatus: string;
+  // Enrichment fields from list endpoint (json-tagged, lowercase)
+  repo_owner?: string;
+  repo_name?: string;
+}
+
+export interface PREvent {
+  ID: number;
+  PRID: number;
+  GitHubID: number | null;
+  EventType: string;
+  Author: string;
+  Summary: string;
+  Body: string;
+  MetadataJSON: string;
+  CreatedAt: string;
+  DedupeKey: string;
+}
+
+export interface PullDetail {
+  pull_request: PullRequest;
+  events: PREvent[];
+  repo_owner: string;
+  repo_name: string;
+}
+
+export interface SyncStatus {
+  running: boolean;
+  last_run_at: string;
+  last_error: string;
+}
+
+export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";
