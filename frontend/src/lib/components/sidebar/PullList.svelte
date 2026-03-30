@@ -15,26 +15,18 @@
     setFilterStarred,
   } from "../../stores/pulls.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
-  import { listRepos } from "../../api/client.js";
   import PullItem from "./PullItem.svelte";
+  import RepoSelector from "./RepoSelector.svelte";
 
   let searchInput = $state(getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
-  let repos = $state<string[]>([]);
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
 
   $effect(() => {
     void loadPulls();
-    listRepos().then((r) => {
-      repos = r.map((repo) => `${repo.Owner}/${repo.Name}`);
-    });
 
-    // Auto-refresh list every 15 seconds
     refreshHandle = setInterval(() => {
       void loadPulls();
-      listRepos().then((r) => {
-        repos = r.map((repo) => `${repo.Owner}/${repo.Name}`);
-      });
     }, 15_000);
 
     // If sync is currently running on first load, refresh when it completes
@@ -99,32 +91,12 @@
         </svg>
       {/if}
     </button>
+    <RepoSelector
+      selected={getFilterRepo()}
+      onchange={(repo) => { setFilterRepo(repo); void loadPulls(); }}
+    />
     <span class="count-badge">{getPulls().length}</span>
   </div>
-
-  {#if repos.length > 1}
-    <div class="filter-chips">
-      <button
-        class="filter-chip"
-        class:active={getFilterRepo() === undefined}
-        onclick={() => { setFilterRepo(undefined); void loadPulls(); }}
-      >
-        All
-      </button>
-      {#each repos as repo}
-        <button
-          class="filter-chip"
-          class:active={getFilterRepo() === repo}
-          onclick={() => {
-            setFilterRepo(getFilterRepo() === repo ? undefined : repo);
-            void loadPulls();
-          }}
-        >
-          {repo.split("/")[1]}
-        </button>
-      {/each}
-    </div>
-  {/if}
 
   <div class="list-body">
     {#if isLoading() && getPulls().length === 0}
@@ -237,44 +209,6 @@
     border-radius: 10px;
     padding: 2px 7px;
     flex-shrink: 0;
-  }
-
-  .filter-chips {
-    display: flex;
-    gap: 4px;
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border-muted);
-    overflow-x: auto;
-    flex-shrink: 0;
-  }
-
-  .filter-chips::-webkit-scrollbar {
-    display: none;
-  }
-
-  .filter-chip {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 3px 10px;
-    border-radius: 10px;
-    white-space: nowrap;
-    color: var(--text-secondary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    transition: all 0.1s;
-    flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  .filter-chip:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .filter-chip.active {
-    background: var(--accent-blue);
-    color: #fff;
-    border-color: var(--accent-blue);
   }
 
   .list-body {

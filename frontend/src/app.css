@@ -27,7 +27,7 @@
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
   --header-height: 44px;
   --status-bar-height: 24px;
-  --kanban-new: var(--accent-blue);
+  --kanban-new: #78716c;
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
@@ -53,7 +53,7 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
   --shadow-md: 0 2px 8px rgba(0,0,0,0.35);
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --kanban-new: var(--accent-blue);
+  --kanban-new: #a8a29e;
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
