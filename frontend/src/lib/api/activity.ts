@@ -18,15 +18,14 @@ export interface ActivityItem {
 
 export interface ActivityResponse {
   items: ActivityItem[];
-  has_more: boolean;
+  capped: boolean;
 }
 
 export interface ActivityParams {
   repo?: string;
   types?: string[];
   search?: string;
-  limit?: number;
-  before?: string;
+  since?: string;
   after?: string;
 }
 
@@ -35,8 +34,7 @@ export async function listActivity(params?: ActivityParams): Promise<ActivityRes
   if (params?.repo) sp.set("repo", params.repo);
   if (params?.types && params.types.length > 0) sp.set("types", params.types.join(","));
   if (params?.search) sp.set("search", params.search);
-  if (params?.limit) sp.set("limit", String(params.limit));
-  if (params?.before) sp.set("before", params.before);
+  if (params?.since) sp.set("since", params.since);
   if (params?.after) sp.set("after", params.after);
   const qs = sp.toString();
   const res = await fetch(`${BASE}/activity${qs ? `?${qs}` : ""}`);

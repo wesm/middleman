@@ -59,7 +59,7 @@ export function setActivitySearch(q: string | undefined): void {
 }
 
 function buildParams(): ActivityParams {
-  const p: ActivityParams = { limit: 50 };
+  const p: ActivityParams = {};
   if (filterRepo) p.repo = filterRepo;
   if (filterTypes.length > 0) p.types = filterTypes;
   if (searchQuery) p.search = searchQuery;
@@ -83,7 +83,7 @@ export async function loadActivity(): Promise<void> {
     const resp = await listActivity(buildParams());
     if (version !== requestVersion) return;
     items = resp.items;
-    hasMore = resp.has_more;
+    hasMore = resp.capped;
   } catch (err) {
     if (version !== requestVersion) return;
     error = err instanceof Error ? err.message : String(err);
@@ -101,11 +101,11 @@ export async function loadMoreActivity(): Promise<void> {
   error = null;
   try {
     const params = buildParams();
-    params.before = lastItem.cursor;
+    params.after = lastItem.cursor;
     const resp = await listActivity(params);
     if (version !== requestVersion) return;
     items = [...items, ...resp.items];
-    hasMore = resp.has_more;
+    hasMore = resp.capped;
   } catch (err) {
     if (version !== requestVersion) return;
     error = err instanceof Error ? err.message : String(err);
@@ -124,7 +124,7 @@ async function pollNewItems(): Promise<void> {
     const params = buildParams();
     params.after = items[0]!.cursor;
     const resp = await listActivity(params);
-    if (resp.has_more) {
+    if (resp.capped) {
       // More new items than one page — full reload.
       await loadActivity();
       return;
