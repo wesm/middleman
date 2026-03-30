@@ -375,7 +375,6 @@
   .activity-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
   }
 
   .activity-table thead {
@@ -394,24 +393,28 @@
     letter-spacing: 0.5px;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-default);
+    white-space: nowrap;
   }
 
   .activity-table td {
     padding: 5px 10px;
     border-bottom: 1px solid var(--border-muted);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .col-kind { width: 52px; overflow: visible; }
-  .col-event { width: 72px; overflow: visible; }
-  .col-repo { width: 150px; }
-  .col-item { width: auto; }
-  .col-author { width: 120px; }
-  .col-when { width: 76px; text-align: right; }
+  .col-kind { }
+  .col-event { }
+  .col-repo { }
+  .col-item {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 0;
+  }
+  .col-author { }
+  .col-when { text-align: right; }
   th.col-when { text-align: right; }
-  .col-link { width: 32px; text-align: center; }
+  .col-link { text-align: center; }
 
   .activity-row {
     cursor: pointer;
