@@ -154,10 +154,11 @@ type ActivityItem struct {
 
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
-	Repo   string   // "owner/name" filter
-	Types  []string // activity type filter
-	Search string   // title/body search
-	Limit  int      // page size (default 50, max 200)
+	Repo   string     // "owner/name" filter
+	Types  []string   // activity type filter
+	Search string     // title/body search
+	Limit  int        // page size (default 50, max 200)
+	Since  *time.Time // only return events created at or after this time
 	// Cursor fields -- decoded from opaque token by the handler.
 	BeforeTime     *time.Time
 	BeforeSource   string

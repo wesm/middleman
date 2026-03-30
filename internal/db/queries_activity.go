@@ -47,6 +47,12 @@ func (d *DB) ListActivity(
 		args = append(args, pattern, pattern)
 	}
 
+	// Time window filter.
+	if opts.Since != nil {
+		whereClauses = append(whereClauses, "created_at >= ?")
+		args = append(args, *opts.Since)
+	}
+
 	if opts.BeforeTime != nil {
 		whereClauses = append(whereClauses,
 			"(created_at < ? OR (created_at = ? AND "+
