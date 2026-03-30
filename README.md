@@ -73,7 +73,13 @@ make build          # Production binary with embedded frontend
 make test           # Run all Go tests
 make lint           # golangci-lint
 make install        # Install to ~/.local/bin
+make install-hooks  # Install pre-commit hooks via prek
 ```
+
+Pre-commit hooks are managed with [prek](https://github.com/j178/prek).
+Run `brew install prek && make install-hooks` after cloning. The hook
+runs `make lint` on every commit, auto-fixing formatting issues. If the
+hook rewrites files, re-stage and re-commit.
 
 ## License
 
