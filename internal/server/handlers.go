@@ -523,7 +523,10 @@ func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body string `json:"body"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
 
 	review, err := s.gh.CreateReview(
 		r.Context(), owner, name, number, "APPROVE", body.Body,
