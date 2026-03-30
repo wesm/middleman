@@ -209,6 +209,80 @@
     return null;
   }
 
+  interface CollapsedCommits {
+    kind: "collapsed";
+    id: string;
+    author: string;
+    count: number;
+    repo_owner: string;
+    repo_name: string;
+    item_type: "pr" | "issue";
+    item_number: number;
+    item_title: string;
+    item_url: string;
+    item_state: "open" | "merged" | "closed";
+    earliest: string;
+    latest: string;
+    representative: ActivityItem;
+  }
+
+  type DisplayRow = ActivityItem | CollapsedCommits;
+
+  function isCollapsed(row: DisplayRow): row is CollapsedCommits {
+    return "kind" in row && row.kind === "collapsed";
+  }
+
+  function collapseCommitRuns(items: ActivityItem[]): DisplayRow[] {
+    const result: DisplayRow[] = [];
+    let i = 0;
+    while (i < items.length) {
+      const item = items[i]!;
+      if (item.activity_type !== "commit") {
+        result.push(item);
+        i++;
+        continue;
+      }
+      // Collect consecutive commits by same author on same item.
+      let j = i + 1;
+      while (j < items.length) {
+        const next = items[j]!;
+        if (next.activity_type !== "commit"
+            || next.author !== item.author
+            || next.repo_owner !== item.repo_owner
+            || next.repo_name !== item.repo_name
+            || next.item_number !== item.item_number) break;
+        j++;
+      }
+      const count = j - i;
+      if (count < 3) {
+        // Not worth collapsing fewer than 3.
+        for (let k = i; k < j; k++) result.push(items[k]!);
+      } else {
+        // Items are newest-first, so earliest is last in the run.
+        const latest = items[i]!;
+        const earliest = items[j - 1]!;
+        result.push({
+          kind: "collapsed",
+          id: `collapsed-${latest.id}-${count}`,
+          author: item.author,
+          count,
+          repo_owner: item.repo_owner,
+          repo_name: item.repo_name,
+          item_type: item.item_type,
+          item_number: item.item_number,
+          item_title: item.item_title,
+          item_url: item.item_url,
+          item_state: item.item_state,
+          earliest: earliest.created_at,
+          latest: latest.created_at,
+          representative: latest,
+        });
+      }
+      i = j;
+    }
+    return result;
+  }
+
   const displayItems = $derived.by(() => {
     let result = getActivityItems();
     if (hideClosedMerged) {
@@ -220,6 +294,8 @@
     }
     return result;
   });
+
+  const flatRows = $derived(collapseCommitRuns(displayItems));
 
   function resetFilters(): void {
     enabledEvents = new Set(EVENT_TYPES);
@@ -395,37 +471,62 @@
           </tr>
         </thead>
         <tbody>
-          {#each displayItems as item (item.id)}
-            <tr class="activity-row" onclick={() => handleRowClick(item)}>
-              <td class="col-kind">
-                <span class="badge {badgeClass(item)}">{itemTypeLabel(item)}</span>
-                {#if stateLabel(item)}
-                  <span class="state-badge state-{item.item_state}">{stateLabel(item)}</span>
-                {/if}
-              </td>
-              <td class="col-event">
-                <span class="evt-label {eventClass(item.activity_type)}">{eventLabel(item)}</span>
-              </td>
-              <td class="col-repo">{item.repo_owner}/{item.repo_name}</td>
-              <td class="col-item">
-                <span class="item-number">#{item.item_number}</span>
-                <span class="item-title">{item.item_title}</span>
-              </td>
-              <td class="col-author">{item.author}</td>
-              <td class="col-when">{relativeTime(item.created_at)}</td>
-              <td class="col-link">
-                <button
-                  class="link-btn"
-                  title="Open on GitHub"
-                  onclick={(e) => handleLinkClick(e, item.item_url)}
-                >&#x2197;</button>
-              </td>
-            </tr>
+          {#each flatRows as row (row.id)}
+            {#if isCollapsed(row)}
+              <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
+                <td class="col-kind">
+                  <span class="badge {row.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.item_type === "pr" ? "PR" : "Issue"}</span>
+                </td>
+                <td class="col-event">
+                  <span class="evt-label evt-commit">{row.count} commits</span>
+                </td>
+                <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                <td class="col-item">
+                  <span class="item-number">#{row.item_number}</span>
+                  <span class="item-title">{row.item_title}</span>
+                </td>
+                <td class="col-author">{row.author}</td>
+                <td class="col-when">{relativeTime(row.latest)} - {relativeTime(row.earliest)}</td>
+                <td class="col-link">
+                  <button
+                    class="link-btn"
+                    title="Open on GitHub"
+                    onclick={(e) => handleLinkClick(e, row.item_url)}
+                  >&#x2197;</button>
+                </td>
+              </tr>
+            {:else}
+              <tr class="activity-row" onclick={() => handleRowClick(row)}>
+                <td class="col-kind">
+                  <span class="badge {badgeClass(row)}">{itemTypeLabel(row)}</span>
+                  {#if stateLabel(row)}
+                    <span class="state-badge state-{row.item_state}">{stateLabel(row)}</span>
+                  {/if}
+                </td>
+                <td class="col-event">
+                  <span class="evt-label {eventClass(row.activity_type)}">{eventLabel(row)}</span>
+                </td>
+                <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                <td class="col-item">
+                  <span class="item-number">#{row.item_number}</span>
+                  <span class="item-title">{row.item_title}</span>
+                </td>
+                <td class="col-author">{row.author}</td>
+                <td class="col-when">{relativeTime(row.created_at)}</td>
+                <td class="col-link">
+                  <button
+                    class="link-btn"
+                    title="Open on GitHub"
+                    onclick={(e) => handleLinkClick(e, row.item_url)}
+                  >&#x2197;</button>
+                </td>
+              </tr>
+            {/if}
           {/each}
         </tbody>
       </table>
 
-      {#if displayItems.length === 0 && !isActivityLoading()}
+      {#if flatRows.length === 0 && !isActivityLoading()}
         <div class="empty-state">No activity found</div>
       {/if}
     </div>
@@ -683,6 +784,10 @@
 
   .activity-row:hover {
     background: var(--bg-surface-hover);
+  }
+
+  .collapsed-row {
+    background: var(--bg-inset);
   }
 
   .badge {
