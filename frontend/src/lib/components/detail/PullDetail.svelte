@@ -511,7 +511,7 @@
     border-color: var(--accent-blue);
   }
 
-  .kanban-select--new { color: var(--accent-blue); }
+  .kanban-select--new { color: var(--kanban-new); }
   .kanban-select--reviewing { color: var(--accent-amber); }
   .kanban-select--waiting { color: var(--accent-purple); }
   .kanban-select--awaiting-merge { color: var(--accent-green); }

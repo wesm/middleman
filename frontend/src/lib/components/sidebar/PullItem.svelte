@@ -141,7 +141,7 @@
   }
 
   .badge--new {
-    background: var(--accent-blue);
+    background: var(--kanban-new);
   }
 
   .badge--reviewing {
