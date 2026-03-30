@@ -19,7 +19,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
+    if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
       onClose();
     }

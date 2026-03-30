@@ -37,31 +37,46 @@
     startPolling();
   });
 
-  // Restore drawer from URL on mount (/?selected=pr:owner/name/42).
-  $effect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const sel = sp.get("selected");
-    if (sel && getPage() === "activity") {
-      const match = sel.match(/^(pr|issue):([^/]+)\/([^/]+)\/(\d+)$/);
-      if (match) {
-        drawerItem = {
-          itemType: match[1] as "pr" | "issue",
-          owner: match[2],
-          name: match[3],
-          number: parseInt(match[4], 10),
-        };
-      }
-    }
-  });
-
-  // When navigating to a detail route, select the item.
+  // Sync route state: restore drawer, select items, clear stale state.
   $effect(() => {
     const route = getRoute();
-    if (route.page === "pulls" && route.selected) {
-      selectPR(route.selected.owner, route.selected.name, route.selected.number);
+    const page = route.page;
+
+    // Clear drawer when leaving activity page.
+    if (page !== "activity") {
+      drawerItem = null;
+    } else {
+      // Restore drawer from URL (/?selected=pr:owner/name/42).
+      const sp = new URLSearchParams(window.location.search);
+      const sel = sp.get("selected");
+      if (sel) {
+        const match = sel.match(/^(pr|issue):([^/]+)\/([^/]+)\/(\d+)$/);
+        if (match) {
+          drawerItem = {
+            itemType: match[1] as "pr" | "issue",
+            owner: match[2]!,
+            name: match[3]!,
+            number: parseInt(match[4]!, 10),
+          };
+        }
+      } else {
+        drawerItem = null;
+      }
     }
-    if (route.page === "issues" && route.selected) {
-      selectIssue(route.selected.owner, route.selected.name, route.selected.number);
+
+    // Sync selection from route, clear when no item selected.
+    if (route.page === "pulls") {
+      if (route.selected) {
+        selectPR(route.selected.owner, route.selected.name, route.selected.number);
+      } else {
+        clearSelection();
+      }
+    } else if (route.page === "issues") {
+      if (route.selected) {
+        selectIssue(route.selected.owner, route.selected.name, route.selected.number);
+      } else {
+        clearIssueSelection();
+      }
     }
   });
 
@@ -98,7 +113,7 @@
     const page = getPage();
 
     if (page === "activity") {
-      if (e.key === "Escape" && drawerItem) {
+      if (e.key === "Escape" && drawerItem && !e.defaultPrevented) {
         e.preventDefault();
         closeDrawer();
       }

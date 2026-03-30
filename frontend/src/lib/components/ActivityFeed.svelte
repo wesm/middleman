@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/activity.js";
   import {
     getActivityItems,
@@ -42,7 +42,7 @@
     commit: "Commit",
   };
 
-  $effect(() => {
+  onMount(() => {
     syncFromURL();
     searchInput = getActivitySearch() ?? "";
     void loadActivity();
@@ -52,6 +52,7 @@
 
   onDestroy(() => {
     stopActivityPolling();
+    if (debounceTimer) clearTimeout(debounceTimer);
   });
 
   function handleRepoChange(e: Event): void {

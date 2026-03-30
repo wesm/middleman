@@ -33,7 +33,7 @@
 
   <nav class="header-center">
     <div class="tab-group">
-      <button class="view-tab" class:active={getPage() === "activity"} onclick={() => navigate("/")}>
+      <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigate("/"); }}>
         Activity
       </button>
       <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigate("/pulls")}>

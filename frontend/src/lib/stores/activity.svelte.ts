@@ -11,6 +11,8 @@ let filterRepo = $state<string | undefined>(undefined);
 let filterTypes = $state<string[]>([]);
 let searchQuery = $state<string | undefined>(undefined);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
+let activeController: AbortController | null = null;
+let requestVersion = 0;
 
 // --- reads ---
 
@@ -64,18 +66,29 @@ function buildParams(): ActivityParams {
   return p;
 }
 
+function cancelPending(): void {
+  if (activeController) {
+    activeController.abort();
+    activeController = null;
+  }
+}
+
 /** Load the feed from the top (initial load or after filter change). */
 export async function loadActivity(): Promise<void> {
+  cancelPending();
+  const version = ++requestVersion;
   loading = true;
   error = null;
   try {
     const resp = await listActivity(buildParams());
+    if (version !== requestVersion) return;
     items = resp.items;
     hasMore = resp.has_more;
   } catch (err) {
+    if (version !== requestVersion) return;
     error = err instanceof Error ? err.message : String(err);
   } finally {
-    loading = false;
+    if (version === requestVersion) loading = false;
   }
 }
 
@@ -83,22 +96,23 @@ export async function loadActivity(): Promise<void> {
 export async function loadMoreActivity(): Promise<void> {
   if (items.length === 0) return;
   const lastItem = items[items.length - 1]!;
+  const version = ++requestVersion;
   loading = true;
   error = null;
   try {
     const params = buildParams();
     params.before = lastItem.cursor;
     const resp = await listActivity(params);
+    if (version !== requestVersion) return;
     items = [...items, ...resp.items];
     hasMore = resp.has_more;
   } catch (err) {
+    if (version !== requestVersion) return;
     error = err instanceof Error ? err.message : String(err);
   } finally {
-    loading = false;
+    if (version === requestVersion) loading = false;
   }
 }
-
-const OVERFLOW_LIMIT = 500;
 
 /** Poll for new items since the newest displayed item. */
 async function pollNewItems(): Promise<void> {
@@ -110,7 +124,8 @@ async function pollNewItems(): Promise<void> {
     const params = buildParams();
     params.after = items[0]!.cursor;
     const resp = await listActivity(params);
-    if (resp.items.length >= OVERFLOW_LIMIT) {
+    if (resp.has_more) {
+      // More new items than one page — full reload.
       await loadActivity();
       return;
     }
