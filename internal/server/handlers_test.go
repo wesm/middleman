@@ -50,6 +50,12 @@ func (m *mockGH) GetCombinedStatus(
 	return nil, nil
 }
 
+func (m *mockGH) ListCheckRunsForRef(
+	_ context.Context, _, _, _ string,
+) ([]*gh.CheckRun, error) {
+	return nil, nil
+}
+
 func (m *mockGH) CreateIssueComment(
 	_ context.Context, _, _ string, _ int, body string,
 ) (*gh.IssueComment, error) {

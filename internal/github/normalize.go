@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/json"
 	"fmt"
 
 	gh "github.com/google/go-github/v84/github"
@@ -154,6 +155,35 @@ func DeriveReviewDecision(reviews []*gh.PullRequestReview) string {
 	}
 	if hasApproved {
 		return "approved"
+	}
+	return ""
+}
+
+// NormalizeCheckRuns converts GitHub check runs to a JSON string of CICheck objects.
+func NormalizeCheckRuns(runs []*gh.CheckRun) string {
+	if len(runs) == 0 {
+		return ""
+	}
+	checks := make([]db.CICheck, 0, len(runs))
+	for _, r := range runs {
+		checks = append(checks, db.CICheck{
+			Name:       r.GetName(),
+			Status:     r.GetStatus(),
+			Conclusion: r.GetConclusion(),
+			URL:        r.GetHTMLURL(),
+			App:        appName(r),
+		})
+	}
+	b, err := json.Marshal(checks)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func appName(r *gh.CheckRun) string {
+	if r.GetApp() != nil {
+		return r.GetApp().GetName()
 	}
 	return ""
 }

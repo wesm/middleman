@@ -57,6 +57,10 @@ func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.C
 	return m.ciStatus, nil
 }
 
+func (m *mockClient) ListCheckRunsForRef(_ context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
+	return nil, nil
+}
+
 func (m *mockClient) CreateIssueComment(
 	_ context.Context, _, _ string, _ int, _ string,
 ) (*gh.IssueComment, error) {

@@ -257,6 +257,23 @@ func (s *Syncer) refreshTimeline(
 		}
 	}
 
+	// Fetch individual check runs.
+	ciChecksJSON := ""
+	if headSHA != "" {
+		checkRuns, err := s.client.ListCheckRunsForRef(
+			ctx, repo.Owner, repo.Name, headSHA,
+		)
+		if err != nil {
+			slog.Warn("list check runs failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		} else {
+			ciChecksJSON = NormalizeCheckRuns(checkRuns)
+		}
+	}
+
 	// Compute derived fields and write them back.
 	reviewDecision := DeriveReviewDecision(reviews)
 	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits)
@@ -266,6 +283,7 @@ func (s *Syncer) refreshTimeline(
 		CommentCount:   len(comments),
 		LastActivityAt: lastActivityAt,
 		CIStatus:       ciStatus,
+		CIChecksJSON:   ciChecksJSON,
 	})
 }
 

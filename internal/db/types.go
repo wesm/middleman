@@ -34,12 +34,22 @@ type PullRequest struct {
 	CommentCount   int
 	ReviewDecision string
 	CIStatus       string
+	CIChecksJSON   string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	LastActivityAt time.Time
 	MergedAt       *time.Time
 	ClosedAt       *time.Time
 	KanbanStatus   string
+}
+
+// CICheck represents a single CI check run.
+type CICheck struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`     // queued, in_progress, completed
+	Conclusion string `json:"conclusion"` // success, failure, neutral, cancelled, skipped, timed_out, action_required, or empty
+	URL        string `json:"url"`        // link to the check run details page
+	App        string `json:"app"`        // app name (e.g., "GitHub Actions")
 }
 
 type PREvent struct {

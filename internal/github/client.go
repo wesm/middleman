@@ -16,6 +16,7 @@ type Client interface {
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (*gh.CombinedStatus, error)
+	ListCheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*gh.CheckRun, error)
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
 }
 
@@ -125,6 +126,32 @@ func (c *liveClient) GetCombinedStatus(
 		return nil, fmt.Errorf("getting combined status for %s/%s@%s: %w", owner, repo, ref, err)
 	}
 	return status, nil
+}
+
+func (c *liveClient) ListCheckRunsForRef(
+	ctx context.Context, owner, repo, ref string,
+) ([]*gh.CheckRun, error) {
+	var all []*gh.CheckRun
+	opts := &gh.ListCheckRunsOptions{
+		ListOptions: gh.ListOptions{PerPage: 100},
+	}
+	for {
+		result, resp, err := c.gh.Checks.ListCheckRunsForRef(
+			ctx, owner, repo, ref, opts,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"listing check runs for %s/%s@%s: %w",
+				owner, repo, ref, err,
+			)
+		}
+		all = append(all, result.CheckRuns...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return all, nil
 }
 
 func (c *liveClient) CreateIssueComment(

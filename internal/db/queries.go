@@ -110,9 +110,9 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		INSERT INTO pull_requests
 		    (repo_id, github_id, number, url, title, author, state, is_draft,
 		     body, head_branch, base_branch, additions, deletions, comment_count,
-		     review_decision, ci_status, created_at, updated_at, last_activity_at,
-		     merged_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		     review_decision, ci_status, ci_checks_json, created_at, updated_at,
+		     last_activity_at, merged_at, closed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    github_id        = excluded.github_id,
 		    url              = excluded.url,
@@ -128,6 +128,7 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		    comment_count    = excluded.comment_count,
 		    review_decision  = excluded.review_decision,
 		    ci_status        = excluded.ci_status,
+		    ci_checks_json   = excluded.ci_checks_json,
 		    updated_at       = excluded.updated_at,
 		    last_activity_at = excluded.last_activity_at,
 		    merged_at        = excluded.merged_at,
@@ -135,8 +136,8 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		pr.RepoID, pr.GitHubID, pr.Number, pr.URL, pr.Title, pr.Author,
 		pr.State, pr.IsDraft, pr.Body, pr.HeadBranch, pr.BaseBranch,
 		pr.Additions, pr.Deletions, pr.CommentCount, pr.ReviewDecision,
-		pr.CIStatus, pr.CreatedAt, pr.UpdatedAt, pr.LastActivityAt,
-		pr.MergedAt, pr.ClosedAt,
+		pr.CIStatus, pr.CIChecksJSON, pr.CreatedAt, pr.UpdatedAt,
+		pr.LastActivityAt, pr.MergedAt, pr.ClosedAt,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert pull request: %w", err)
@@ -159,7 +160,8 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
 		       p.author, p.state, p.is_draft, p.body, p.head_branch, p.base_branch,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
-		       p.ci_status, p.created_at, p.updated_at, p.last_activity_at,
+		       p.ci_status, p.ci_checks_json,
+		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at,
 		       COALESCE(k.status, '') AS kanban_status
 		FROM pull_requests p
@@ -171,7 +173,8 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		&pr.ID, &pr.RepoID, &pr.GitHubID, &pr.Number, &pr.URL, &pr.Title,
 		&pr.Author, &pr.State, &pr.IsDraft, &pr.Body, &pr.HeadBranch, &pr.BaseBranch,
 		&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
-		&pr.CIStatus, &pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
+		&pr.CIStatus, &pr.CIChecksJSON,
+		&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
 		&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -222,7 +225,8 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
 		       p.author, p.state, p.is_draft, p.body, p.head_branch, p.base_branch,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
-		       p.ci_status, p.created_at, p.updated_at, p.last_activity_at,
+		       p.ci_status, p.ci_checks_json,
+		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at,
 		       COALESCE(k.status, '') AS kanban_status
 		FROM pull_requests p
@@ -245,7 +249,8 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 			&pr.ID, &pr.RepoID, &pr.GitHubID, &pr.Number, &pr.URL, &pr.Title,
 			&pr.Author, &pr.State, &pr.IsDraft, &pr.Body, &pr.HeadBranch, &pr.BaseBranch,
 			&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
-			&pr.CIStatus, &pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
+			&pr.CIStatus, &pr.CIChecksJSON,
+			&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
 			&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus,
 		); err != nil {
 			return nil, fmt.Errorf("scan pull request: %w", err)
@@ -415,6 +420,7 @@ type PRDerivedFields struct {
 	CommentCount   int
 	LastActivityAt time.Time
 	CIStatus       string
+	CIChecksJSON   string
 }
 
 // UpdatePRDerivedFields writes computed fields back to the pull_requests row.
@@ -426,9 +432,11 @@ func (d *DB) UpdatePRDerivedFields(
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE pull_requests
-		SET review_decision = ?, comment_count = ?, last_activity_at = ?, ci_status = ?
+		SET review_decision = ?, comment_count = ?, last_activity_at = ?,
+		    ci_status = ?, ci_checks_json = ?
 		WHERE repo_id = ? AND number = ?`,
-		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt, fields.CIStatus,
+		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt,
+		fields.CIStatus, fields.CIChecksJSON,
 		repoID, number,
 	)
 	if err != nil {

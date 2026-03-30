@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     comment_count    INTEGER NOT NULL DEFAULT 0,
     review_decision  TEXT NOT NULL DEFAULT '',
     ci_status        TEXT NOT NULL DEFAULT '',
+    ci_checks_json   TEXT NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL,
     updated_at       DATETIME NOT NULL,
     last_activity_at DATETIME NOT NULL,
