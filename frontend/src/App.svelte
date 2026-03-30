@@ -5,6 +5,7 @@
   import { getView } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSelectedPR } from "./lib/stores/pulls.svelte.js";
+  import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
 
   $effect(() => {
     startPolling();
@@ -30,7 +31,7 @@
     </div>
   {:else}
     <div class="board-layout">
-      <p class="placeholder-text">Kanban board — coming soon</p>
+      <KanbanBoard />
     </div>
   {/if}
 </main>
@@ -74,12 +75,10 @@
 
   .board-layout {
     flex: 1;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: hidden;
     background: var(--bg-primary);
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
   }
 
   .placeholder-text {
