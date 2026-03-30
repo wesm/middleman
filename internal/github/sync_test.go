@@ -25,12 +25,12 @@ func openTestDB(t *testing.T) *db.DB {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	openPRs    []*gh.PullRequest
-	singlePR   *gh.PullRequest
-	comments   []*gh.IssueComment
-	reviews    []*gh.PullRequestReview
-	commits    []*gh.RepositoryCommit
-	ciStatus   *gh.CombinedStatus
+	openPRs  []*gh.PullRequest
+	singlePR *gh.PullRequest
+	comments []*gh.IssueComment
+	reviews  []*gh.PullRequestReview
+	commits  []*gh.RepositoryCommit
+	ciStatus *gh.CombinedStatus
 }
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -180,6 +180,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("expected PR in DB, got nil")
+		return
 	}
 	if pr.Number != 1 {
 		t.Errorf("pr.Number = %d, want 1", pr.Number)
@@ -192,6 +193,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	}
 	if ks == nil {
 		t.Fatal("expected kanban state, got nil")
+		return
 	}
 	if ks.Status != "new" {
 		t.Errorf("kanban status = %q, want %q", ks.Status, "new")

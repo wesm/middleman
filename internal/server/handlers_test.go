@@ -247,6 +247,7 @@ func TestHandleSetKanbanState(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("PR not found")
+		return
 	}
 	if pr.KanbanStatus != "reviewing" {
 		t.Errorf("expected kanban status 'reviewing', got %q", pr.KanbanStatus)
@@ -312,4 +313,3 @@ func TestHandleSyncStatus(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 }
-

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -133,9 +134,9 @@ func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 // --- PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state ---
 
 var validKanbanStates = map[string]bool{
-	"new":           true,
-	"reviewing":     true,
-	"waiting":       true,
+	"new":            true,
+	"reviewing":      true,
+	"waiting":        true,
 	"awaiting_merge": true,
 }
 
@@ -302,10 +303,10 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 // --- /api/v1/repos/{owner}/{name}/issues/{number} ---
 
 type issueDetailResponse struct {
-	Issue     *db.Issue        `json:"issue"`
-	Events    []db.IssueEvent  `json:"events"`
-	RepoOwner string           `json:"repo_owner"`
-	RepoName  string           `json:"repo_name"`
+	Issue     *db.Issue       `json:"issue"`
+	Events    []db.IssueEvent `json:"events"`
+	RepoOwner string          `json:"repo_owner"`
+	RepoName  string          `json:"repo_name"`
 }
 
 func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
@@ -523,7 +524,10 @@ func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body string `json:"body"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
 
 	review, err := s.gh.CreateReview(
 		r.Context(), owner, name, number, "APPROVE", body.Body,

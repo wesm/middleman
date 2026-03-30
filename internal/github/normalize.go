@@ -13,15 +13,15 @@ import (
 // initialized to UpdatedAt.
 func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
 	pr := &db.PullRequest{
-		RepoID:   repoID,
-		GitHubID: ghPR.GetID(),
-		Number:   ghPR.GetNumber(),
-		URL:      ghPR.GetHTMLURL(),
-		Title:    ghPR.GetTitle(),
-		Author:   loginOrEmpty(ghPR.GetUser()),
-		State:    ghPR.GetState(),
-		IsDraft:  ghPR.GetDraft(),
-		Body:     ghPR.GetBody(),
+		RepoID:    repoID,
+		GitHubID:  ghPR.GetID(),
+		Number:    ghPR.GetNumber(),
+		URL:       ghPR.GetHTMLURL(),
+		Title:     ghPR.GetTitle(),
+		Author:    loginOrEmpty(ghPR.GetUser()),
+		State:     ghPR.GetState(),
+		IsDraft:   ghPR.GetDraft(),
+		Body:      ghPR.GetBody(),
 		Additions: ghPR.GetAdditions(),
 		Deletions: ghPR.GetDeletions(),
 	}

@@ -62,7 +62,7 @@ func (d *DB) migrate() {
 		"ALTER TABLE repos ADD COLUMN allow_rebase_merge INTEGER NOT NULL DEFAULT 1",
 	}
 	for _, m := range migrations {
-		d.rw.Exec(m) // Ignore errors — column may already exist
+		_, _ = d.rw.Exec(m) // Ignore errors — column may already exist
 	}
 }
 
@@ -85,7 +85,7 @@ func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 		return err
 	}
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 	return tx.Commit()

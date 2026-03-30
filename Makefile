@@ -10,8 +10,8 @@ LDFLAGS := -X main.version=$(VERSION) \
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
-.PHONY: ensure-embed-dir build build-release install frontend frontend-dev dev \
-        test test-short vet lint tidy clean help
+.PHONY: ensure-embed-dir build build-release install frontend frontend-dev \
+        frontend-check dev test test-short vet lint tidy clean help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -54,6 +54,10 @@ frontend:
 # Run Vite dev server (use alongside `make dev`)
 frontend-dev:
 	cd frontend && npm run dev
+
+# Run frontend type checks
+frontend-check:
+	cd frontend && npm run check
 
 # Run Go server in dev mode (no embedded frontend)
 dev: ensure-embed-dir
