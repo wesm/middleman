@@ -64,26 +64,35 @@
               <span class="event-author">{event.Author}</span>
             {/if}
             <span class="event-time">{timeAgo(event.CreatedAt)}</span>
-            {#if event.Body}
-              <button
-                class="copy-btn"
-                onclick={() => copyText(event.ID, event.Body)}
-                title="Copy to clipboard"
-              >
-                {copiedId === event.ID ? "Copied!" : "Copy"}
-              </button>
-            {/if}
           </div>
           {#if event.Summary}
             <p class="event-summary">{event.Summary}</p>
           {/if}
           {#if event.Body}
-            <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
-              {#if shouldRenderMarkdown(event.EventType)}
-                {@html renderMarkdown(event.Body)}
-              {:else}
-                {event.Body}
-              {/if}
+            <div class="event-body-wrap">
+              <button
+                class="copy-icon-btn"
+                onclick={() => copyText(String(event.ID), event.Body)}
+                title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
+              >
+                {#if copiedId === String(event.ID)}
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                  </svg>
+                {:else}
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
+                    <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
+                  </svg>
+                {/if}
+              </button>
+              <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
+                {#if shouldRenderMarkdown(event.EventType)}
+                  {@html renderMarkdown(event.Body)}
+                {:else}
+                  {event.Body}
+                {/if}
+              </div>
             </div>
           {/if}
         </div>
@@ -164,26 +173,44 @@
     margin-left: auto;
   }
 
-  .copy-btn {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 1px 6px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.1s, border-color 0.1s;
+  .event-body-wrap {
+    position: relative;
   }
 
-  .event:hover .copy-btn {
+  .copy-icon-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+    z-index: 1;
+  }
+
+  .event-body-wrap:hover .copy-icon-btn,
+  .copy-icon-btn:focus-visible {
     opacity: 1;
   }
 
-  .copy-btn:hover {
-    color: var(--accent-blue);
-    border-color: var(--accent-blue);
+  .copy-icon-btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-secondary);
+  }
+
+  .copy-icon-btn:active {
+    transform: scale(0.92);
+  }
+
+  @media (hover: none) {
+    .copy-icon-btn {
+      opacity: 1;
+    }
   }
 
   .event-summary {
