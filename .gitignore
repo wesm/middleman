@@ -10,3 +10,5 @@ frontend/dist/
 *.db
 .env
 .superpowers/
+.agents/skills/
+.claude/skills/

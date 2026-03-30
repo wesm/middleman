@@ -11,7 +11,7 @@ LDFLAGS := -X main.version=$(VERSION) \
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 .PHONY: ensure-embed-dir build build-release install frontend frontend-dev dev \
-        test test-short vet lint tidy clean help
+        test test-short vet lint tidy svelte-skills clean help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -83,6 +83,10 @@ lint: ensure-embed-dir
 tidy:
 	go mod tidy
 
+# Install or update repo-local Svelte AI skills for Codex and Claude
+svelte-skills:
+	python3 scripts/update-svelte-skills.py $(ARGS)
+
 # Clean build artifacts
 clean:
 	rm -f middleman
@@ -105,5 +109,6 @@ help:
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run golangci-lint (auto-fix)"
 	@echo "  tidy           - Tidy go.mod"
+	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
 	@echo ""
 	@echo "  clean          - Remove build artifacts"
