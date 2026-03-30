@@ -1,8 +1,10 @@
 <script lang="ts">
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import PullList from "./lib/components/sidebar/PullList.svelte";
+  import PullDetail from "./lib/components/detail/PullDetail.svelte";
   import { getView } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
+  import { getSelectedPR } from "./lib/stores/pulls.svelte.js";
 
   $effect(() => {
     startPolling();
@@ -17,8 +19,13 @@
       <aside class="sidebar">
         <PullList />
       </aside>
-      <section class="detail-area">
-        <p class="placeholder-text">Select a PR</p>
+      <section class="detail-area" class:detail-area--empty={getSelectedPR() === null}>
+        {#if getSelectedPR() !== null}
+          {@const sel = getSelectedPR()!}
+          <PullDetail owner={sel.owner} name={sel.name} number={sel.number} />
+        {:else}
+          <p class="placeholder-text">Select a PR</p>
+        {/if}
       </section>
     </div>
   {:else}
@@ -57,6 +64,10 @@
     overflow-y: auto;
     background: var(--bg-primary);
     display: flex;
+    flex-direction: column;
+  }
+
+  .detail-area--empty {
     align-items: center;
     justify-content: center;
   }
