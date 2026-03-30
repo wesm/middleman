@@ -52,13 +52,13 @@ install: build-release
 
 # Build frontend SPA and copy into embed directory
 frontend:
-	cd frontend && bun install && bun run build
+	cd frontend && npm install && npm run build
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
 
 # Run Vite dev server (use alongside `make dev`)
 frontend-dev:
-	cd frontend && bun run dev
+	cd frontend && npm run dev
 
 # Run Vite dev server with Bun (use alongside `make dev`)
 frontend-dev-bun:
