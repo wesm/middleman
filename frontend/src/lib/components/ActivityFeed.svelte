@@ -5,7 +5,6 @@
     getActivityItems,
     isActivityLoading,
     getActivityError,
-    hasMoreActivity,
     getActivityFilterRepo,
     getActivityFilterTypes,
     getActivitySearch,
@@ -13,7 +12,6 @@
     setActivityFilterTypes,
     setActivitySearch,
     loadActivity,
-    loadMoreActivity,
     startActivityPolling,
     stopActivityPolling,
     syncFromURL,
@@ -394,13 +392,6 @@
     {/if}
   </div>
 
-  {#if hasMoreActivity()}
-    <div class="load-more">
-      <button class="load-more-btn" onclick={() => void loadMoreActivity()} disabled={isActivityLoading()}>
-        {isActivityLoading() ? "Loading..." : "Load more"}
-      </button>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -630,16 +621,12 @@
     white-space: nowrap;
   }
 
-  .col-kind { }
-  .col-event { }
-  .col-repo { }
   .col-item {
     width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 0;
   }
-  .col-author { }
   .col-when { text-align: right; }
   th.col-when { text-align: right; }
   .col-link { text-align: center; }
@@ -760,30 +747,4 @@
     border-bottom: 1px solid var(--border-default);
   }
 
-  .load-more {
-    padding: 8px 16px;
-    text-align: center;
-    border-top: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    flex-shrink: 0;
-  }
-
-  .load-more-btn {
-    padding: 5px 16px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    font-size: 12px;
-    color: var(--text-secondary);
-    background: var(--bg-surface);
-  }
-
-  .load-more-btn:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .load-more-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
 </style>
