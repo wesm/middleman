@@ -198,7 +198,7 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 	}
 	limit := opts.Limit
 	if limit <= 0 {
-		limit = 100
+		limit = 500
 	}
 
 	var conds []string
@@ -557,7 +557,7 @@ func (d *DB) ListIssues(
 	}
 	limit := opts.Limit
 	if limit <= 0 {
-		limit = 100
+		limit = 500
 	}
 
 	var conds []string
