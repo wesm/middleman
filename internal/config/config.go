@@ -30,19 +30,19 @@ type Config struct {
 }
 
 func DefaultConfigPath() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = filepath.Join(os.Getenv("HOME"), ".config")
-	}
-	return filepath.Join(dir, "ghboard", "config.toml")
+	return filepath.Join(homeDir(), ".config", "ghboard", "config.toml")
 }
 
 func DefaultDataDir() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = filepath.Join(os.Getenv("HOME"), ".config")
+	return filepath.Join(homeDir(), ".config", "ghboard")
+}
+
+func homeDir() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
 	}
-	return filepath.Join(dir, "ghboard")
+	h, _ := os.UserHomeDir()
+	return h
 }
 
 func Load(path string) (*Config, error) {
