@@ -74,6 +74,31 @@ func (m *mockGH) CreateIssueComment(
 	}, nil
 }
 
+func (m *mockGH) GetRepository(
+	_ context.Context, _, _ string,
+) (*gh.Repository, error) {
+	return &gh.Repository{}, nil
+}
+
+func (m *mockGH) CreateReview(
+	_ context.Context, _, _ string, _ int, _ string, _ string,
+) (*gh.PullRequestReview, error) {
+	id := int64(99)
+	state := "APPROVED"
+	return &gh.PullRequestReview{ID: &id, State: &state}, nil
+}
+
+func (m *mockGH) MergePullRequest(
+	_ context.Context, _, _ string, _ int, _, _, _ string,
+) (*gh.PullRequestMergeResult, error) {
+	merged := true
+	sha := "abc123"
+	msg := "merged"
+	return &gh.PullRequestMergeResult{
+		Merged: &merged, SHA: &sha, Message: &msg,
+	}, nil
+}
+
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()

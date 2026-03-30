@@ -34,7 +34,8 @@ func (d *DB) UpsertRepo(ctx context.Context, owner, name string) (int64, error) 
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := d.ro.QueryContext(ctx,
 		`SELECT id, owner, name, last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, created_at
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge, created_at
 		 FROM repos ORDER BY owner, name`,
 	)
 	if err != nil {
@@ -48,7 +49,9 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		if err := rows.Scan(
 			&r.ID, &r.Owner, &r.Name,
 			&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-			&r.LastSyncError, &r.CreatedAt,
+			&r.LastSyncError,
+			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+			&r.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
@@ -85,12 +88,15 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT id, owner, name, last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, created_at
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge, created_at
 		 FROM repos WHERE owner = ? AND name = ?`, owner, name,
 	).Scan(
 		&r.ID, &r.Owner, &r.Name,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-		&r.LastSyncError, &r.CreatedAt,
+		&r.LastSyncError,
+		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -99,6 +105,19 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		return nil, fmt.Errorf("get repo by owner/name: %w", err)
 	}
 	return &r, nil
+}
+
+// UpdateRepoSettings updates the merge method settings for a repo.
+func (d *DB) UpdateRepoSettings(
+	ctx context.Context,
+	id int64,
+	allowSquash, allowMerge, allowRebase bool,
+) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
+		allowSquash, allowMerge, allowRebase, id,
+	)
+	return err
 }
 
 // --- Pull Requests ---

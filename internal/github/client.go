@@ -20,6 +20,9 @@ type Client interface {
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (*gh.CombinedStatus, error)
 	ListCheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*gh.CheckRun, error)
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
+	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
+	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
+	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
 }
 
 // NewClient creates a GitHub Client authenticated with the given token.
@@ -211,4 +214,51 @@ func (c *liveClient) CreateIssueComment(
 		return nil, fmt.Errorf("creating comment on %s/%s#%d: %w", owner, repo, number, err)
 	}
 	return comment, nil
+}
+
+func (c *liveClient) GetRepository(
+	ctx context.Context, owner, repo string,
+) (*gh.Repository, error) {
+	r, _, err := c.gh.Repositories.Get(ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
+	}
+	return r, nil
+}
+
+func (c *liveClient) CreateReview(
+	ctx context.Context, owner, repo string, number int,
+	event string, body string,
+) (*gh.PullRequestReview, error) {
+	review, _, err := c.gh.PullRequests.CreateReview(
+		ctx, owner, repo, number, &gh.PullRequestReviewRequest{
+			Event: gh.Ptr(event),
+			Body:  gh.Ptr(body),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"creating review on %s/%s#%d: %w", owner, repo, number, err,
+		)
+	}
+	return review, nil
+}
+
+func (c *liveClient) MergePullRequest(
+	ctx context.Context, owner, repo string, number int,
+	commitTitle, commitMessage, method string,
+) (*gh.PullRequestMergeResult, error) {
+	opts := &gh.PullRequestOptions{
+		CommitTitle: commitTitle,
+		MergeMethod: method,
+	}
+	result, _, err := c.gh.PullRequests.Merge(
+		ctx, owner, repo, number, commitMessage, opts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"merging %s/%s#%d: %w", owner, repo, number, err,
+		)
+	}
+	return result, nil
 }

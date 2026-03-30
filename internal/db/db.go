@@ -57,6 +57,9 @@ func (d *DB) init() error {
 func (d *DB) migrate() {
 	migrations := []string{
 		"ALTER TABLE pull_requests ADD COLUMN ci_checks_json TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE repos ADD COLUMN allow_squash_merge INTEGER NOT NULL DEFAULT 1",
+		"ALTER TABLE repos ADD COLUMN allow_merge_commit INTEGER NOT NULL DEFAULT 1",
+		"ALTER TABLE repos ADD COLUMN allow_rebase_merge INTEGER NOT NULL DEFAULT 1",
 	}
 	for _, m := range migrations {
 		d.rw.Exec(m) // Ignore errors — column may already exist

@@ -5,6 +5,9 @@ CREATE TABLE IF NOT EXISTS repos (
     last_sync_started_at  DATETIME,
     last_sync_completed_at DATETIME,
     last_sync_error       TEXT DEFAULT '',
+    allow_squash_merge    INTEGER NOT NULL DEFAULT 1,
+    allow_merge_commit    INTEGER NOT NULL DEFAULT 1,
+    allow_rebase_merge    INTEGER NOT NULL DEFAULT 1,
     created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(owner, name)
 );

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
@@ -493,6 +494,110 @@ func (s *Server) handleUnsetStarred(
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// --- GET /api/v1/repos/{owner}/{name} ---
+
+func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	name := r.PathValue("name")
+	repo, err := s.db.GetRepoByOwnerName(r.Context(), owner, name)
+	if err != nil || repo == nil {
+		writeError(w, http.StatusNotFound, "repo not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, repo)
+}
+
+// --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/approve ---
+
+func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	name := r.PathValue("name")
+	number, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid PR number")
+		return
+	}
+
+	var body struct {
+		Body string `json:"body"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+
+	review, err := s.gh.CreateReview(
+		r.Context(), owner, name, number, "APPROVE", body.Body,
+	)
+	if err != nil {
+		writeError(w, http.StatusBadGateway,
+			"GitHub API error: "+err.Error())
+		return
+	}
+
+	prID, lookupErr := s.db.GetPRIDByRepoAndNumber(
+		r.Context(), owner, name, number,
+	)
+	if lookupErr == nil {
+		event := ghclient.NormalizeReviewEvent(prID, review)
+		_ = s.db.UpsertPREvents(r.Context(), []db.PREvent{event})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
+}
+
+// --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge ---
+
+func (s *Server) handleMergePR(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	name := r.PathValue("name")
+	number, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid PR number")
+		return
+	}
+
+	var body struct {
+		CommitTitle   string `json:"commit_title"`
+		CommitMessage string `json:"commit_message"`
+		Method        string `json:"method"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	validMethods := map[string]bool{
+		"merge": true, "squash": true, "rebase": true,
+	}
+	if !validMethods[body.Method] {
+		writeError(w, http.StatusBadRequest,
+			"invalid merge method: must be merge, squash, or rebase")
+		return
+	}
+
+	result, err := s.gh.MergePullRequest(
+		r.Context(), owner, name, number,
+		body.CommitTitle, body.CommitMessage, body.Method,
+	)
+	if err != nil {
+		writeError(w, http.StatusBadGateway,
+			"GitHub merge error: "+err.Error())
+		return
+	}
+
+	repoObj, _ := s.db.GetRepoByOwnerName(r.Context(), owner, name)
+	if repoObj != nil {
+		now := time.Now()
+		_ = s.db.UpdatePRState(
+			r.Context(), repoObj.ID, number, "merged", &now, &now,
+		)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"merged":  result.GetMerged(),
+		"sha":     result.GetSHA(),
+		"message": result.GetMessage(),
+	})
 }
 
 // --- GET /api/v1/repos ---

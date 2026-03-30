@@ -116,6 +116,19 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
+	ghRepo, err := s.client.GetRepository(ctx, repo.Owner, repo.Name)
+	if err != nil {
+		slog.Warn("get repo settings failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+	} else {
+		_ = s.db.UpdateRepoSettings(ctx, repoID,
+			ghRepo.GetAllowSquashMerge(),
+			ghRepo.GetAllowMergeCommit(),
+			ghRepo.GetAllowRebaseMerge(),
+		)
+	}
+
 	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now()); err != nil {
 		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
 	}

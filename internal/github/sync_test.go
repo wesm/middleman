@@ -84,6 +84,31 @@ func (m *mockClient) CreateIssueComment(
 	return nil, nil
 }
 
+func (m *mockClient) GetRepository(
+	_ context.Context, _, _ string,
+) (*gh.Repository, error) {
+	return &gh.Repository{}, nil
+}
+
+func (m *mockClient) CreateReview(
+	_ context.Context, _, _ string, _ int, _ string, _ string,
+) (*gh.PullRequestReview, error) {
+	id := int64(1)
+	state := "APPROVED"
+	return &gh.PullRequestReview{ID: &id, State: &state}, nil
+}
+
+func (m *mockClient) MergePullRequest(
+	_ context.Context, _, _ string, _ int, _, _, _ string,
+) (*gh.PullRequestMergeResult, error) {
+	merged := true
+	sha := "abc123"
+	msg := "merged"
+	return &gh.PullRequestMergeResult{
+		Merged: &merged, SHA: &sha, Message: &msg,
+	}, nil
+}
+
 // makeTimestamp is a helper for constructing go-github Timestamp values.
 func makeTimestamp(t time.Time) *gh.Timestamp {
 	return &gh.Timestamp{Time: t}

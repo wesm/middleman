@@ -9,6 +9,9 @@ type Repo struct {
 	LastSyncStartedAt   *time.Time
 	LastSyncCompletedAt *time.Time
 	LastSyncError       string
+	AllowSquashMerge    bool
+	AllowMergeCommit    bool
+	AllowRebaseMerge    bool
 	CreatedAt           time.Time
 }
 
