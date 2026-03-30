@@ -328,6 +328,9 @@ func TestHandleSyncStatus(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&status); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
+	if !status.LastRunAt.IsZero() {
+		t.Fatalf("expected empty sync status to omit last_run_at, got %v", status.LastRunAt)
+	}
 }
 
 func TestHandleTriggerSyncIgnoresRequestCancellation(t *testing.T) {

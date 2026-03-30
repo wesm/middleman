@@ -114,8 +114,8 @@ export interface PullDetail {
 
 export interface SyncStatus {
   running: boolean;
-  last_run_at: string;
-  last_error: string;
+  last_run_at?: string;
+  last_error?: string;
 }
 
 export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";
