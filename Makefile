@@ -10,7 +10,7 @@ LDFLAGS := -X main.version=$(VERSION) \
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
-.PHONY: ensure-embed-dir build build-release install frontend frontend-dev dev \
+.PHONY: ensure-embed-dir build build-release install frontend frontend-dev frontend-dev-bun dev \
         test test-short vet lint tidy clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
@@ -54,6 +54,10 @@ frontend:
 # Run Vite dev server (use alongside `make dev`)
 frontend-dev:
 	cd frontend && npm run dev
+
+# Run Vite dev server with Bun (use alongside `make dev`)
+frontend-dev-bun:
+	cd frontend && bun install && bun run dev
 
 # Run Go server in dev mode (no embedded frontend)
 dev: ensure-embed-dir
@@ -107,6 +111,7 @@ help:
 	@echo "  dev            - Run Go server (use with frontend-dev)"
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Run Vite dev server"
+	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
 	@echo ""
 	@echo "  test           - Run all tests"
 	@echo "  test-short     - Run fast tests only"

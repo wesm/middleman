@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -620,7 +621,7 @@ func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
 // --- POST /api/v1/sync ---
 
 func (s *Server) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
-	go s.syncer.RunOnce(r.Context())
+	go s.syncer.RunOnce(context.WithoutCancel(r.Context()))
 	w.WriteHeader(http.StatusAccepted)
 }
 
