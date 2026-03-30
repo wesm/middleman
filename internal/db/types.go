@@ -134,3 +134,34 @@ type StarredItem struct {
 	Number    int
 	StarredAt time.Time
 }
+
+// ActivityItem represents one row in the unified activity feed.
+type ActivityItem struct {
+	ActivityType string    // new_pr, new_issue, comment, review, commit
+	Source       string    // pr, issue, pre, ise
+	SourceID     int64     // PK from the source table
+	RepoOwner    string
+	RepoName     string
+	ItemType     string    // pr or issue
+	ItemNumber   int
+	ItemTitle    string
+	ItemURL      string
+	Author       string
+	CreatedAt    time.Time
+	BodyPreview  string
+}
+
+// ListActivityOpts holds filters and pagination for the activity feed.
+type ListActivityOpts struct {
+	Repo   string   // "owner/name" filter
+	Types  []string // activity type filter
+	Search string   // title/body search
+	Limit  int      // page size (default 50, max 200)
+	// Cursor fields -- decoded from opaque token by the handler.
+	BeforeTime     *time.Time
+	BeforeSource   string
+	BeforeSourceID int64
+	AfterTime      *time.Time
+	AfterSource    string
+	AfterSourceID  int64
+}
