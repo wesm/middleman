@@ -1,12 +1,63 @@
-minimum_prek_version = "0.3.6"
+default_install_hook_types = ["pre-commit"]
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "check-case-conflict" },
+  { id = "check-merge-conflict", args = ["--assume-in-merge"] },
+  { id = "detect-private-key" },
+  { id = "no-commit-to-branch" },
+  { id = "check-added-large-files", args = ["--maxkb=1024"] },
+  { id = "trailing-whitespace", args = ["--markdown-linebreak-ext=md"] },
+  { id = "end-of-file-fixer" },
+  { id = "check-json" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+]
 
 [[repos]]
 repo = "local"
+hooks = [
+  {
+    id = "gofmt",
+    name = "gofmt",
+    language = "system",
+    entry = "gofmt -w",
+    files = "\\.go$",
+    priority = 0,
+  },
+  {
+    id = "golangci-lint",
+    name = "golangci-lint --fix",
+    language = "system",
+    entry = "make lint",
+    files = "^(go\\.mod|go\\.sum|.*\\.go)$",
+    pass_filenames = false,
+    priority = 10,
+  },
+  {
+    id = "go-test-short",
+    name = "go test (short)",
+    language = "system",
+    entry = "make test-short",
+    files = "^(go\\.mod|go\\.sum|.*\\.go)$",
+    pass_filenames = false,
+    priority = 20,
+  },
+  {
+    id = "frontend-check",
+    name = "frontend check",
+    language = "system",
+    entry = "make frontend-check",
+    files = "^frontend/(src/.*\\.(svelte|ts)|package(-lock)?\\.json|tsconfig\\.json|vite\\.config\\.ts)$",
+    pass_filenames = false,
+    priority = 0,
+  },
+]
 
-[[repos.hooks]]
-id = "golangci-lint"
-name = "golangci-lint"
-language = "system"
-entry = "make lint"
-pass_filenames = false
-always_run = true
+[[repos]]
+repo = "meta"
+hooks = [
+  { id = "check-hooks-apply" },
+  { id = "check-useless-excludes" },
+]

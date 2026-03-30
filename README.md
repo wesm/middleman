@@ -73,6 +73,7 @@ Other targets:
 
 ```
 make build          # Production binary with embedded frontend
+make frontend-check # Svelte / TypeScript checks
 make test           # Run all Go tests
 make lint           # golangci-lint
 make install        # Install to ~/.local/bin
@@ -83,6 +84,18 @@ Pre-commit hooks are managed with [prek](https://github.com/j178/prek).
 Run `brew install prek && make install-hooks` after cloning. The hook
 runs `make lint` on every commit, auto-fixing formatting issues. If the
 hook rewrites files, re-stage and re-commit.
+
+To enable local git hooks with `prek`:
+
+```sh
+brew install prek
+brew install golangci-lint
+prek install
+prek run --all-files
+```
+
+The repo hook config lives in `prek.toml`. Go commits run `gofmt`, `golangci-lint --fix`, and `make test-short`; frontend commits run `make frontend-check`. Install frontend dependencies once with `npm --prefix frontend install` if you have not already done so.
+
 
 ## License
 

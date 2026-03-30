@@ -263,6 +263,7 @@ func TestHandleSetKanbanState(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("PR not found")
+		return
 	}
 	if pr.KanbanStatus != "reviewing" {
 		t.Errorf("expected kanban status 'reviewing', got %q", pr.KanbanStatus)
@@ -452,6 +453,7 @@ func TestHandleReadyForReview(t *testing.T) {
 	}
 	if pr == nil {
 		t.Fatal("expected PR to exist")
+		return
 	}
 	if pr.IsDraft {
 		t.Fatal("expected PR to no longer be draft")

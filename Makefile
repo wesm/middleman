@@ -15,7 +15,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	fi)
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
-        frontend frontend-dev frontend-dev-bun dev \
+        frontend frontend-dev frontend-dev-bun frontend-check dev \
         test test-short vet lint tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
@@ -63,6 +63,10 @@ frontend-dev:
 # Run Vite dev server with Bun (use alongside `make dev`)
 frontend-dev-bun:
 	cd frontend && bun install && bun run dev
+
+# Run frontend type checks
+frontend-check:
+	cd frontend && npm run check
 
 # Ensure air is installed for backend live reload
 check-air:
