@@ -1,11 +1,26 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
 
   let dark = $state(false);
 
+  onMount(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    dark = mediaQuery.matches;
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      dark = event.matches;
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  });
+
   $effect(() => {
-    dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     applyTheme(dark);
   });
 

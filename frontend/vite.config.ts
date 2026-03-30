@@ -1,9 +1,14 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { svelteTesting } from "@testing-library/svelte/vite";
 
 export default defineConfig({
   base: "/",
-  plugins: [svelte()],
+  plugins: [svelte(), svelteTesting()],
+  test: {
+    environment: "jsdom",
+    exclude: ["tests/e2e/**", "node_modules/**"],
+  },
   server: {
     proxy: {
       "/api": {

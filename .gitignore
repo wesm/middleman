@@ -3,6 +3,8 @@ dist/
 internal/web/dist/
 frontend/node_modules/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
 .idea/
 .vscode/
 tmp/
