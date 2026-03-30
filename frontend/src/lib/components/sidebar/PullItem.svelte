@@ -146,6 +146,7 @@
 
   .badge--reviewing {
     background: var(--accent-amber);
+    color: #422006;
   }
 
   .badge--waiting {
