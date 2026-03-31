@@ -15,8 +15,8 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	fi)
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
-        frontend frontend-dev frontend-dev-bun frontend-check dev \
-        test test-short vet lint tidy svelte-skills clean install-hooks help
+        frontend frontend-dev frontend-dev-bun frontend-check api-generate \
+        dev test test-short vet lint tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -66,7 +66,12 @@ frontend-dev-bun:
 
 # Run frontend type checks
 frontend-check:
-	cd frontend && npm run check
+	cd frontend && bun run check
+
+# Regenerate the checked-in OpenAPI document and generated frontend schema
+api-generate:
+	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.json
+	cd frontend && bunx openapi-typescript openapi/openapi.json -o src/lib/api/generated/schema.ts
 
 # Ensure air is installed for backend live reload
 check-air:
@@ -137,6 +142,7 @@ help:
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Run Vite dev server"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
+	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""
 	@echo "  test           - Run all tests"
 	@echo "  test-short     - Run fast tests only"

@@ -2,11 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/wesm/middleman/internal/db"
@@ -26,35 +23,6 @@ type starredRequest struct {
 }
 
 var errRepoNotFound = errors.New("repo not found")
-
-// parseRepoNumberPath extracts the common {owner}/{name}/{number} route tuple
-// used by PR and issue handlers and writes a 400 when the number is invalid.
-func parseRepoNumberPath(
-	w http.ResponseWriter, r *http.Request, itemLabel string,
-) (repoNumberPathRef, bool) {
-	number, err := strconv.Atoi(r.PathValue("number"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid "+itemLabel+" number")
-		return repoNumberPathRef{}, false
-	}
-	return repoNumberPathRef{
-		owner:  r.PathValue("owner"),
-		name:   r.PathValue("name"),
-		number: number,
-	}, true
-}
-
-// decodeJSONBody centralizes request body decoding while preserving each
-// handler's existing 400 response semantics for malformed JSON.
-func decodeJSONBody(
-	w http.ResponseWriter, r *http.Request, dst any, invalidMsg string,
-) bool {
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		writeError(w, http.StatusBadRequest, invalidMsg)
-		return false
-	}
-	return true
-}
 
 // buildRepoLookup materializes a repo-id keyed map used to annotate list
 // responses with owner/name information.
@@ -109,53 +77,6 @@ func parseRepoFilter(repo string) (owner, name string) {
 	return parts[0], parts[1]
 }
 
-func parseOptionalInt(values queryValues, key string) int {
-	v := values.Get(key)
-	if v == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-func parseBoolFlag(values queryValues, key string) bool {
-	return values.Get(key) == "true"
-}
-
 func validateStarredRequest(body starredRequest) bool {
 	return body.ItemType == "pr" || body.ItemType == "issue"
-}
-
-// parseStarredRequest centralizes decode, validation, and repo resolution for
-// the starred set/unset endpoints so both handlers share one error path.
-func (s *Server) parseStarredRequest(
-	w http.ResponseWriter, r *http.Request,
-) (starredRequest, int64, bool) {
-	var body starredRequest
-	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
-		return starredRequest{}, 0, false
-	}
-	if !validateStarredRequest(body) {
-		writeError(w, http.StatusBadRequest, "item_type must be 'pr' or 'issue'")
-		return starredRequest{}, 0, false
-	}
-
-	repoID, err := s.lookupRepoID(r.Context(), body.Owner, body.Name)
-	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
-			return starredRequest{}, 0, false
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return starredRequest{}, 0, false
-	}
-
-	return body, repoID, true
-}
-
-type queryValues interface {
-	Get(string) string
 }

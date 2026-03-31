@@ -14,7 +14,7 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
                HTTP Server → REST API + Embedded SPA
 ```
 
-- **Server**: HTTP server on loopback (default 127.0.0.1:8090)
+- **Server**: Huma-based HTTP server on loopback (default 127.0.0.1:8090)
 - **Storage**: SQLite with WAL mode (pure Go driver: modernc.org/sqlite)
 - **Sync**: Periodic pull from GitHub API (configurable, default 5m)
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
@@ -87,6 +87,7 @@ make vet        # go vet
 ## Conventions
 
 - Prefer stdlib over external dependencies
+- Use `huma` for the web framework and OpenAPI generation
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output
