@@ -44,7 +44,9 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 | `internal/github/normalize.go` | Convert GitHub types to DB types |
 | `internal/github/sync.go` | Periodic sync engine |
 | `internal/server/server.go` | HTTP router, SPA serving |
-| `internal/server/handlers.go` | API endpoint handlers |
+| `internal/server/huma_routes.go` | Huma API registrations and handlers |
+| `internal/server/api_types.go` | Shared API response types used by Huma |
+| `internal/apiclient/generated/client.gen.go` | Generated Go API client from the checked-in OpenAPI spec |
 | `frontend/src/App.svelte` | Root component, view routing |
 | `frontend/src/app.css` | Design tokens, theme, global styles |
 | `frontend/src/lib/stores/` | Svelte 5 rune-based stores |
@@ -75,6 +77,7 @@ make vet        # go vet
 
 - Table-driven tests for Go code
 - Use `testify` for new Go tests
+- Prefer the generated Go API client in `internal/apiclient` for integration-style API tests
 - Use `openTestDB(t)` helper for database tests
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
@@ -88,6 +91,7 @@ make vet        # go vet
 
 - Prefer stdlib over external dependencies
 - Use `huma` for the web framework and OpenAPI generation
+- Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output

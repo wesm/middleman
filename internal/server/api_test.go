@@ -1,9 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/apiclient"
+	"github.com/wesm/middleman/internal/apiclient/generated"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -134,6 +135,43 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	return srv, database
 }
 
+func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
+	t.Helper()
+
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			var body io.Reader = http.NoBody
+			if req.Body != nil {
+				payload, err := io.ReadAll(req.Body)
+				if err != nil {
+					return nil, err
+				}
+				_ = req.Body.Close()
+				body = strings.NewReader(string(payload))
+			}
+
+			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq.Header = req.Header.Clone()
+			serverReq = serverReq.WithContext(req.Context())
+
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, serverReq)
+			return rr.Result(), nil
+		}),
+	}
+
+	client, err := apiclient.NewWithHTTPClient("http://middleman.test", httpClient)
+	require.NoError(t, err)
+
+	return client
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64 {
 	t.Helper()
@@ -179,168 +217,125 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	return prID
 }
 
-// --- Tests ---
+func TestAPIClientConstruction(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	require.NotNil(t, client)
+	require.NotNil(t, client.HTTP)
+}
 
 func TestAPIListPulls(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	var results []pullResponse
-	if err := json.NewDecoder(rr.Body).Decode(&results); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].RepoOwner != "acme" || results[0].RepoName != "widget" {
-		t.Errorf("unexpected repo: %s/%s", results[0].RepoOwner, results[0].RepoName)
-	}
+	resp, err := client.HTTP.ListPullsWithResponse(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.Len(t, *resp.JSON200, 1)
+	require.Equal(t, "acme", (*resp.JSON200)[0].RepoOwner)
+	require.Equal(t, "widget", (*resp.JSON200)[0].RepoName)
 }
 
 func TestAPIGetPull(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/pulls/1", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	var resp pullDetailResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp.PullRequest == nil {
-		t.Fatal("expected pull_request in response")
-	}
-	if resp.PullRequest.Number != 1 {
-		t.Errorf("expected PR number 1, got %d", resp.PullRequest.Number)
-	}
-	if resp.RepoOwner != "acme" || resp.RepoName != "widget" {
-		t.Errorf("unexpected repo: %s/%s", resp.RepoOwner, resp.RepoName)
-	}
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.NotNil(t, resp.JSON200.PullRequest)
+	require.EqualValues(t, 1, resp.JSON200.PullRequest.Number)
+	require.Equal(t, "acme", resp.JSON200.RepoOwner)
+	require.Equal(t, "widget", resp.JSON200.RepoName)
 }
 
 func TestAPIGetPullNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	client := setupTestClient(t, srv)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/pulls/999", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
-	}
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 999,
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode())
+	require.NotNil(t, resp.ApplicationproblemJSONDefault)
 }
 
 func TestAPISetKanbanState(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
 
-	body := bytes.NewBufferString(`{"status":"reviewing"}`)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/repos/acme/widget/pulls/1/state", body)
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
+	resp, err := client.HTTP.SetKanbanStateWithResponse(
+		context.Background(),
+		"acme",
+		"widget",
+		1,
+		generated.SetKanbanStateJSONRequestBody{Status: "reviewing"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	// Verify DB was updated.
 	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
-	if err != nil {
-		t.Fatalf("get pull request: %v", err)
-	}
-	if pr == nil {
-		t.Fatal("PR not found")
-		return
-	}
-	if pr.KanbanStatus != "reviewing" {
-		t.Errorf("expected kanban status 'reviewing', got %q", pr.KanbanStatus)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, pr)
+	require.Equal(t, "reviewing", pr.KanbanStatus)
 }
 
 func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
 
-	body := bytes.NewBufferString(`{"status":"nonsense"}`)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/repos/acme/widget/pulls/1/state", body)
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
+	resp, err := client.HTTP.SetKanbanStateWithResponse(
+		context.Background(),
+		"acme",
+		"widget",
+		1,
+		generated.SetKanbanStateJSONRequestBody{Status: "nonsense"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	require.NotNil(t, resp.ApplicationproblemJSONDefault)
 }
 
 func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
 
-	ctx := context.Background()
-	if _, err := database.UpsertRepo(ctx, "acme", "widget"); err != nil {
-		t.Fatalf("upsert repo: %v", err)
-	}
+	_, err := database.UpsertRepo(context.Background(), "acme", "widget")
+	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	var repos []db.Repo
-	if err := json.NewDecoder(rr.Body).Decode(&repos); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if len(repos) != 1 {
-		t.Fatalf("expected 1 repo, got %d", len(repos))
-	}
-	if repos[0].Owner != "acme" || repos[0].Name != "widget" {
-		t.Errorf("unexpected repo: %s/%s", repos[0].Owner, repos[0].Name)
-	}
+	resp, err := client.HTTP.ListReposWithResponse(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.Len(t, *resp.JSON200, 1)
+	require.Equal(t, "acme", (*resp.JSON200)[0].Owner)
+	require.Equal(t, "widget", (*resp.JSON200)[0].Name)
 }
 
 func TestAPISyncStatus(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	client := setupTestClient(t, srv)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/status", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	var status ghclient.SyncStatus
-	if err := json.NewDecoder(rr.Body).Decode(&status); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !status.LastRunAt.IsZero() {
-		t.Fatalf("expected empty sync status to omit last_run_at, got %v", status.LastRunAt)
-	}
+	resp, err := client.HTTP.GetSyncStatusWithResponse(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.False(t, resp.JSON200.Running)
 }
 
 func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{}
@@ -357,16 +352,12 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		repos, err := database.ListRepos(context.Background())
-		if err != nil {
-			t.Fatalf("list repos: %v", err)
-		}
+		require.NoError(t, err)
 		if len(repos) == 1 && repos[0].Owner == "acme" && repos[0].Name == "widget" {
 			return
 		}
@@ -379,9 +370,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 func TestAPIReadyForReview(t *testing.T) {
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{
@@ -410,11 +399,11 @@ func TestAPIReadyForReview(t *testing.T) {
 	}
 	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
 	srv := New(database, mock, syncer, nil, "/")
+	client := setupTestClient(t, srv)
 
 	repoID, err := database.UpsertRepo(context.Background(), "acme", "widget")
-	if err != nil {
-		t.Fatalf("upsert repo: %v", err)
-	}
+	require.NoError(t, err)
+
 	now := time.Now().UTC().Truncate(time.Second)
 	prID, err := database.UpsertPullRequest(context.Background(), &db.PullRequest{
 		RepoID:         repoID,
@@ -437,45 +426,35 @@ func TestAPIReadyForReview(t *testing.T) {
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	})
-	if err != nil {
-		t.Fatalf("upsert pull request: %v", err)
-	}
-	if err := database.EnsureKanbanState(context.Background(), prID); err != nil {
-		t.Fatalf("ensure kanban state: %v", err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, database.EnsureKanbanState(context.Background(), prID))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/repos/acme/widget/pulls/1/ready-for-review", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
 
 	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
-	if err != nil {
-		t.Fatalf("get pull request: %v", err)
-	}
-	if pr == nil {
-		t.Fatal("expected PR to exist")
-		return
-	}
-	if pr.IsDraft {
-		t.Fatal("expected PR to no longer be draft")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, pr)
+	require.False(t, pr.IsDraft)
 }
 
 func TestAPISetStarred(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"pr","owner":"acme","name":"widget","number":1}`))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	resp, err := client.HTTP.SetStarredWithResponse(context.Background(), generated.SetStarredJSONRequestBody{
+		ItemType: "pr",
+		Owner:    "acme",
+		Name:     "widget",
+		Number:   1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
 
 	starred, err := database.IsStarred(context.Background(), "pr", 1, 1)
 	require.NoError(t, err)
@@ -485,16 +464,17 @@ func TestAPISetStarred(t *testing.T) {
 func TestAPIUnsetStarred(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
-	err := database.SetStarred(context.Background(), "pr", 1, 1)
+	require.NoError(t, database.SetStarred(context.Background(), "pr", 1, 1))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.UnsetStarredWithResponse(context.Background(), generated.UnsetStarredJSONRequestBody{
+		ItemType: "pr",
+		Owner:    "acme",
+		Name:     "widget",
+		Number:   1,
+	})
 	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"pr","owner":"acme","name":"widget","number":1}`))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(t, http.StatusOK, resp.StatusCode())
 
 	starred, err := database.IsStarred(context.Background(), "pr", 1, 1)
 	require.NoError(t, err)
@@ -503,15 +483,19 @@ func TestAPIUnsetStarred(t *testing.T) {
 
 func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	client := setupTestClient(t, srv)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"repo","owner":"acme","name":"widget","number":1}`))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusBadRequest, rr.Code)
-	require.Contains(t, rr.Body.String(), "item_type must be 'pr' or 'issue'")
+	resp, err := client.HTTP.SetStarredWithResponse(context.Background(), generated.SetStarredJSONRequestBody{
+		ItemType: "repo",
+		Owner:    "acme",
+		Name:     "widget",
+		Number:   1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	require.NotNil(t, resp.ApplicationproblemJSONDefault)
+	require.NotNil(t, resp.ApplicationproblemJSONDefault.Detail)
+	require.Contains(t, *resp.ApplicationproblemJSONDefault.Detail, "item_type must be 'pr' or 'issue'")
 }
 
 func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
