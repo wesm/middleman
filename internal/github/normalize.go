@@ -31,17 +31,18 @@ func sanitizeURL(raw string) string {
 // initialized to UpdatedAt.
 func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
 	pr := &db.PullRequest{
-		RepoID:    repoID,
-		GitHubID:  ghPR.GetID(),
-		Number:    ghPR.GetNumber(),
-		URL:       ghPR.GetHTMLURL(),
-		Title:     ghPR.GetTitle(),
-		Author:    loginOrEmpty(ghPR.GetUser()),
-		State:     ghPR.GetState(),
-		IsDraft:   ghPR.GetDraft(),
-		Body:      ghPR.GetBody(),
-		Additions: ghPR.GetAdditions(),
-		Deletions: ghPR.GetDeletions(),
+		RepoID:            repoID,
+		GitHubID:          ghPR.GetID(),
+		Number:            ghPR.GetNumber(),
+		URL:               ghPR.GetHTMLURL(),
+		Title:             ghPR.GetTitle(),
+		Author:            loginOrEmpty(ghPR.GetUser()),
+		AuthorDisplayName: nameOrEmpty(ghPR.GetUser()),
+		State:             ghPR.GetState(),
+		IsDraft:           ghPR.GetDraft(),
+		Body:              ghPR.GetBody(),
+		Additions:         ghPR.GetAdditions(),
+		Deletions:         ghPR.GetDeletions(),
 	}
 
 	if ghPR.GetMerged() {
@@ -329,4 +330,12 @@ func loginOrEmpty(u *gh.User) string {
 		return ""
 	}
 	return u.GetLogin()
+}
+
+// nameOrEmpty returns the GitHub display name for a user, or "" if unavailable.
+func nameOrEmpty(u *gh.User) string {
+	if u == nil {
+		return ""
+	}
+	return u.GetName()
 }

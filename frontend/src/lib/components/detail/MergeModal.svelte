@@ -8,6 +8,7 @@
     prTitle: string;
     prBody: string;
     prAuthor: string;
+    prAuthorDisplayName: string;
     allowSquash: boolean;
     allowMerge: boolean;
     allowRebase: boolean;
@@ -16,7 +17,8 @@
   }
 
   const {
-    owner, name, number, prTitle, prBody, prAuthor,
+    owner, name, number, prTitle, prBody,
+    prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
     onclose, onmerged,
   }: Props = $props();
@@ -48,8 +50,9 @@
     return out;
   });
 
+  const coAuthorName = $derived(prAuthorDisplayName || prAuthor);
   const coAuthor = $derived(
-    `Co-authored-by: ${prAuthor} <${prAuthor}@users.noreply.github.com>`
+    `Co-authored-by: ${coAuthorName} <${prAuthor}@users.noreply.github.com>`
   );
 
   let selectedMethod = $state<Method>("squash");

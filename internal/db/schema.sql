@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     url              TEXT NOT NULL DEFAULT '',
     title            TEXT NOT NULL DEFAULT '',
     author           TEXT NOT NULL DEFAULT '',
+    author_display_name TEXT NOT NULL DEFAULT '',
     state            TEXT NOT NULL DEFAULT 'open',
     is_draft         INTEGER NOT NULL DEFAULT 0,
     body             TEXT NOT NULL DEFAULT '',

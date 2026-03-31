@@ -36,6 +36,10 @@ func (m *mockGH) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, err
 	return nil, nil
 }
 
+func (m *mockGH) GetUser(_ context.Context, login string) (*gh.User, error) {
+	return &gh.User{Login: &login}, nil
+}
+
 func (m *mockGH) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 	if m.getPullRequestFn != nil {
 		return m.getPullRequestFn(context.Background(), "", "", 0)

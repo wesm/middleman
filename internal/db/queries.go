@@ -127,32 +127,35 @@ func (d *DB) UpdateRepoSettings(
 func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO pull_requests
-		    (repo_id, github_id, number, url, title, author, state, is_draft,
-		     body, head_branch, base_branch, additions, deletions, comment_count,
+		    (repo_id, github_id, number, url, title, author, author_display_name,
+		     state, is_draft, body, head_branch, base_branch,
+		     additions, deletions, comment_count,
 		     review_decision, ci_status, ci_checks_json, created_at, updated_at,
 		     last_activity_at, merged_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
-		    github_id        = excluded.github_id,
-		    url              = excluded.url,
-		    title            = excluded.title,
-		    author           = excluded.author,
-		    state            = excluded.state,
-		    is_draft         = excluded.is_draft,
-		    body             = excluded.body,
-		    head_branch      = excluded.head_branch,
-		    base_branch      = excluded.base_branch,
-		    additions        = excluded.additions,
-		    deletions        = excluded.deletions,
-		    comment_count    = excluded.comment_count,
-		    review_decision  = excluded.review_decision,
-		    ci_status        = excluded.ci_status,
-		    ci_checks_json   = excluded.ci_checks_json,
-		    updated_at       = excluded.updated_at,
-		    last_activity_at = excluded.last_activity_at,
-		    merged_at        = excluded.merged_at,
-		    closed_at        = excluded.closed_at`,
-		pr.RepoID, pr.GitHubID, pr.Number, pr.URL, pr.Title, pr.Author,
+		    github_id            = excluded.github_id,
+		    url                  = excluded.url,
+		    title                = excluded.title,
+		    author               = excluded.author,
+		    author_display_name  = excluded.author_display_name,
+		    state                = excluded.state,
+		    is_draft             = excluded.is_draft,
+		    body                 = excluded.body,
+		    head_branch          = excluded.head_branch,
+		    base_branch          = excluded.base_branch,
+		    additions            = excluded.additions,
+		    deletions            = excluded.deletions,
+		    comment_count        = excluded.comment_count,
+		    review_decision      = excluded.review_decision,
+		    ci_status            = excluded.ci_status,
+		    ci_checks_json       = excluded.ci_checks_json,
+		    updated_at           = excluded.updated_at,
+		    last_activity_at     = excluded.last_activity_at,
+		    merged_at            = excluded.merged_at,
+		    closed_at            = excluded.closed_at`,
+		pr.RepoID, pr.GitHubID, pr.Number, pr.URL, pr.Title,
+		pr.Author, pr.AuthorDisplayName,
 		pr.State, pr.IsDraft, pr.Body, pr.HeadBranch, pr.BaseBranch,
 		pr.Additions, pr.Deletions, pr.CommentCount, pr.ReviewDecision,
 		pr.CIStatus, pr.CIChecksJSON, pr.CreatedAt, pr.UpdatedAt,
@@ -177,7 +180,8 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 	var pr PullRequest
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
-		       p.author, p.state, p.is_draft, p.body, p.head_branch, p.base_branch,
+		       p.author, p.author_display_name, p.state, p.is_draft,
+		       p.body, p.head_branch, p.base_branch,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -193,7 +197,8 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		owner, name, number,
 	).Scan(
 		&pr.ID, &pr.RepoID, &pr.GitHubID, &pr.Number, &pr.URL, &pr.Title,
-		&pr.Author, &pr.State, &pr.IsDraft, &pr.Body, &pr.HeadBranch, &pr.BaseBranch,
+		&pr.Author, &pr.AuthorDisplayName, &pr.State, &pr.IsDraft,
+		&pr.Body, &pr.HeadBranch, &pr.BaseBranch,
 		&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 		&pr.CIStatus, &pr.CIChecksJSON,
 		&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
@@ -242,7 +247,8 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 
 	query := fmt.Sprintf(`
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
-		       p.author, p.state, p.is_draft, p.body, p.head_branch, p.base_branch,
+		       p.author, p.author_display_name, p.state, p.is_draft,
+		       p.body, p.head_branch, p.base_branch,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -268,7 +274,8 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		var pr PullRequest
 		if err := rows.Scan(
 			&pr.ID, &pr.RepoID, &pr.GitHubID, &pr.Number, &pr.URL, &pr.Title,
-			&pr.Author, &pr.State, &pr.IsDraft, &pr.Body, &pr.HeadBranch, &pr.BaseBranch,
+			&pr.Author, &pr.AuthorDisplayName, &pr.State, &pr.IsDraft,
+			&pr.Body, &pr.HeadBranch, &pr.BaseBranch,
 			&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 			&pr.CIStatus, &pr.CIChecksJSON,
 			&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
