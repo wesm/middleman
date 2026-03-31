@@ -4,7 +4,7 @@
 
 **Goal:** Replace the handwritten frontend API wrappers with a generated runtime client while keeping the Svelte and TypeScript frontend fully type checked.
 
-**Architecture:** Generate a runtime client from the checked-in OpenAPI document alongside the existing generated schema, keep only one tiny handwritten construction module for base-path-aware client setup, and migrate frontend call sites to generated operations directly. If generated usage is awkward, fix the OpenAPI source rather than adding handwritten endpoint wrappers.
+**Architecture:** Generate a small checked-in runtime client from the checked-in OpenAPI document, consume it only through one tiny handwritten construction module for base-path-aware setup, and migrate frontend call sites to generated operations directly. If generated usage is awkward, fix the OpenAPI source rather than adding handwritten endpoint wrappers.
 
 **Tech Stack:** Bun, TypeScript, Svelte 5, `openapi-fetch`, `openapi-typescript`, Huma, `svelte-check`
 
@@ -201,7 +201,7 @@ Expected:
 Run:
 
 ```bash
-rg -n 'from "\\$lib/api/client|from "\\./client|from "\\$lib/api/activity|from "\\./activity' frontend/src
+rg -n 'api/client|api/activity' frontend/src
 ```
 
 Expected:
@@ -367,6 +367,7 @@ Run:
 ```bash
 make api-generate
 make frontend-check
+make frontend
 make lint
 GOCACHE=/tmp/middleman-gocache go test ./...
 ```

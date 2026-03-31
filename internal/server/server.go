@@ -33,7 +33,7 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		syncer:   syncer,
 	}
 
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig())
+	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
 
 	if frontend != nil {

@@ -171,11 +171,14 @@ type listActivityOutput struct {
 	Body activityResponse
 }
 
-func apiConfig() huma.Config {
+func apiConfig(basePath string) huma.Config {
 	config := huma.DefaultConfig("middleman API", "0.1.0")
 	config.OpenAPIPath = "/openapi"
 	config.DocsPath = "/docs"
 	config.SchemasPath = "/schemas"
+	config.Servers = []*huma.Server{{
+		URL: strings.TrimSuffix(basePath, "/") + "/api/v1",
+	}}
 	return config
 }
 
@@ -235,7 +238,7 @@ func (s *Server) registerAPI(api huma.API) {
 func NewOpenAPI() *huma.OpenAPI {
 	mux := http.NewServeMux()
 	s := &Server{}
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig())
+	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
 	s.registerAPI(api)
 	return api.OpenAPI()
 }

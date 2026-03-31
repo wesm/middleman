@@ -109,3 +109,35 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 		t.Fatalf("expected /middleman/assets/ in src, got: %s", body)
 	}
 }
+
+func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+
+	srv := setupWithBasePath(t, "/middleman/", frontend)
+
+	docsReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/docs", nil)
+	docsRR := httptest.NewRecorder()
+	srv.ServeHTTP(docsRR, docsReq)
+
+	if docsRR.Code != http.StatusOK {
+		t.Fatalf("expected docs status %d, got %d: %s", http.StatusOK, docsRR.Code, docsRR.Body.String())
+	}
+	if !strings.Contains(docsRR.Body.String(), `apiDescriptionUrl="/middleman/api/v1/openapi.yaml"`) {
+		t.Fatalf("expected prefixed docs OpenAPI URL, got: %s", docsRR.Body.String())
+	}
+
+	openAPIReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/openapi.json", nil)
+	openAPIRR := httptest.NewRecorder()
+	srv.ServeHTTP(openAPIRR, openAPIReq)
+
+	if openAPIRR.Code != http.StatusOK {
+		t.Fatalf("expected OpenAPI status %d, got %d: %s", http.StatusOK, openAPIRR.Code, openAPIRR.Body.String())
+	}
+	if !strings.Contains(openAPIRR.Body.String(), `"url":"/middleman/api/v1"`) {
+		t.Fatalf("expected prefixed OpenAPI server URL, got: %s", openAPIRR.Body.String())
+	}
+}
