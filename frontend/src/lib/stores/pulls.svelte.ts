@@ -197,12 +197,12 @@ export async function loadPulls(params?: PullsParams): Promise<void> {
   loading = true;
   error = null;
   try {
-    const merged: PullsParams = {
+    const merged = {
       state: filterState,
-      repo: filterRepo,
-      kanban: filterKanban,
-      starred: filterStarred || undefined,
-      q: searchQuery,
+      ...(filterRepo !== undefined && { repo: filterRepo }),
+      ...(filterKanban !== undefined && { kanban: filterKanban }),
+      ...(filterStarred && { starred: true }),
+      ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
     const { data, error } = await client.GET("/pulls", {

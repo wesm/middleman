@@ -64,15 +64,16 @@ export async function loadIssues(params?: IssuesParams): Promise<void> {
   loading = true;
   error = null;
   try {
-    const query = {
-      state: filterState,
-      repo: filterRepo,
-      starred: filterStarred || undefined,
-      q: searchQuery,
-      ...params,
-    };
     const { data, error: requestError } = await client.GET("/issues", {
-      params: { query },
+      params: {
+        query: {
+          state: filterState,
+          ...(filterRepo !== undefined && { repo: filterRepo }),
+          ...(filterStarred && { starred: true }),
+          ...(searchQuery !== undefined && { q: searchQuery }),
+          ...params,
+        },
+      },
     });
     if (requestError) {
       throw new Error(apiErrorMessage(requestError, "failed to load issues"));
@@ -161,6 +162,7 @@ export function stopIssueDetailPolling(): void {
 export function clearIssueDetail(): void {
   ++issueSyncGeneration;
   issueDetail = null;
+  detailLoading = false;
   detailSyncing = false;
   detailError = null;
 }

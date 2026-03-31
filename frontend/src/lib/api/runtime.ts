@@ -1,4 +1,4 @@
-import type { ClientOptions, QuerySerializerOptions } from "openapi-fetch";
+import type { QuerySerializerOptions } from "openapi-fetch";
 
 import { createAPIClient } from "./generated/client.js";
 import type { components } from "./generated/schema.js";
@@ -33,7 +33,7 @@ function csrfFetch(
 }
 
 export function createRuntimeClient(
-  fetch?: ClientOptions["fetch"],
+  fetch?: typeof globalThis.fetch,
   clientBaseURL = baseUrl,
 ) {
   return createAPIClient(clientBaseURL, {

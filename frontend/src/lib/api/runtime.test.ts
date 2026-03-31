@@ -5,8 +5,8 @@ import { createRuntimeClient } from "./runtime.js";
 describe("runtime", () => {
   it("serializes activity type filters as comma-separated query params", async () => {
     let requestURL = "";
-    const fetchMock = vi.fn(async (request: Request) => {
-      requestURL = request.url;
+    const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
+      requestURL = input instanceof Request ? input.url : String(input);
       return new Response(JSON.stringify({ items: [], capped: false }), {
         status: 200,
         headers: { "Content-Type": "application/json" },

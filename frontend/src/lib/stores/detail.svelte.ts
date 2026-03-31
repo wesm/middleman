@@ -36,6 +36,7 @@ export function getDetailError(): string | null {
 export function clearDetail(): void {
   ++syncGeneration;
   detail = null;
+  loading = false;
   syncing = false;
   error = null;
 }
