@@ -364,6 +364,7 @@
             showMergeModal = false;
             void loadDetail(owner, name, number);
             void loadPulls();
+            void loadActivity();
           }}
         />
       {/if}

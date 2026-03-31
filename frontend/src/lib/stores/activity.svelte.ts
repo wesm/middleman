@@ -26,7 +26,10 @@ let searchQuery = $state<string | undefined>(undefined);
 let timeRange = $state<TimeRange>("7d");
 let viewMode = $state<ViewMode>("flat");
 let pollHandle: ReturnType<typeof setInterval> | null = null;
+let pollInFlight = false;
 let requestVersion = 0;
+let pollCount = 0;
+const FULL_REFRESH_EVERY = 4; // full reload every 4th poll (~60s)
 
 let hideClosedMerged = $state(false);
 let hideBots = $state(false);
@@ -192,12 +195,65 @@ export async function loadActivity(): Promise<void> {
   }
 }
 
+/**
+ * Silent background refresh — merges updated item_state from the
+ * server into the existing list without replacing it, so the user's
+ * scroll depth and any items beyond the server's response cap are
+ * preserved. Does not advance requestVersion so it never disrupts a
+ * foreground loadActivity().
+ */
+async function refreshActivity(): Promise<void> {
+  const versionAtStart = requestVersion;
+  try {
+    const { data, error: requestError } = await client.GET(
+      "/activity",
+      { params: { query: buildParams() } },
+    );
+    if (requestError || versionAtStart !== requestVersion) return;
+    const fresh = data?.items ?? [];
+    if (fresh.length === 0) return;
+    // Only update item_state on existing items — new item insertion
+    // is handled by the cursor-based poll path to avoid gaps.
+    const freshById = new Map(fresh.map((it) => [it.id, it]));
+    items = items.map((it) => {
+      const updated = freshById.get(it.id);
+      if (updated && updated.item_state !== it.item_state) {
+        return { ...it, item_state: updated.item_state };
+      }
+      return it;
+    });
+  } catch {
+    // silent
+  }
+}
+
 /** Poll for new items since the newest displayed item. */
 async function pollNewItems(): Promise<void> {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    await doPoll();
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+async function doPoll(): Promise<void> {
+  // Skip polling while a foreground load is in flight to avoid
+  // using a stale cursor with potentially new filter/time params.
+  if (loading) return;
+  pollCount++;
   if (items.length === 0) {
     await loadActivity();
     return;
   }
+  // Periodically do a full refresh to pick up state changes
+  // (e.g. merged/closed) on existing items.
+  if (pollCount % FULL_REFRESH_EVERY === 0) {
+    await refreshActivity();
+    return;
+  }
+  const versionAtStart = requestVersion;
   try {
     const params = buildParams();
     params.after = items[0]!.cursor;
@@ -207,6 +263,7 @@ async function pollNewItems(): Promise<void> {
     if (requestError) {
       throw new Error(apiErrorMessage(requestError, "failed to poll activity"));
     }
+    if (versionAtStart !== requestVersion) return;
     const resp = data;
     if (!resp) {
       return;
@@ -227,6 +284,7 @@ async function pollNewItems(): Promise<void> {
   } catch {
     // Silent poll failure
   }
+  if (versionAtStart !== requestVersion) return;
   // Prune items older than the current window.
   const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
   items = items.filter((it) => new Date(it.created_at) >= cutoff);
