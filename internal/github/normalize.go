@@ -181,6 +181,52 @@ func NormalizeCheckRuns(runs []*gh.CheckRun) string {
 	return string(b)
 }
 
+// NormalizeCIChecks merges check runs and commit statuses into a single
+// JSON string of CICheck objects. Commit statuses (used by GitHub Apps
+// like roborev) use the older status API and need to be mapped into the
+// same shape as check runs.
+func NormalizeCIChecks(
+	runs []*gh.CheckRun,
+	combined *gh.CombinedStatus,
+) string {
+	var checks []db.CICheck
+	for _, r := range runs {
+		checks = append(checks, db.CICheck{
+			Name:       r.GetName(),
+			Status:     r.GetStatus(),
+			Conclusion: r.GetConclusion(),
+			URL:        r.GetHTMLURL(),
+			App:        appName(r),
+		})
+	}
+	if combined != nil {
+		for _, s := range combined.Statuses {
+			// Map commit status state to check run status/conclusion.
+			status := "completed"
+			conclusion := s.GetState()
+			if conclusion == "pending" {
+				status = "in_progress"
+				conclusion = ""
+			}
+			checks = append(checks, db.CICheck{
+				Name:       s.GetContext(),
+				Status:     status,
+				Conclusion: conclusion,
+				URL:        s.GetTargetURL(),
+				App:        s.GetContext(),
+			})
+		}
+	}
+	if len(checks) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(checks)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 func appName(r *gh.CheckRun) string {
 	if r.GetApp() != nil {
 		return r.GetApp().GetName()
