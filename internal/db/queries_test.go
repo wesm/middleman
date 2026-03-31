@@ -44,23 +44,24 @@ func insertTestPR(t *testing.T, d *DB, repoID int64, number int, title string, a
 
 func TestUpsertAndListRepos(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
 	id1, err := d.UpsertRepo(ctx, "alice", "alpha")
-	require.NoError(t, err)
+	require.NoError(err)
 	id2, err := d.UpsertRepo(ctx, "bob", "beta")
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.NotEqual(id1, id2)
 
 	// Idempotency: re-inserting should return the same ID.
 	id1Again, err := d.UpsertRepo(ctx, "alice", "alpha")
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(id1, id1Again)
 
 	repos, err := d.ListRepos(ctx)
-	require.NoError(t, err)
-	require.Len(t, repos, 2)
+	require.NoError(err)
+	require.Len(repos, 2)
 	// Ordered by owner, name: alice/alpha, bob/beta.
 	assert.Equal("alice", repos[0].Owner)
 	assert.Equal("alpha", repos[0].Name)
@@ -87,34 +88,36 @@ func TestGetRepoByOwnerName(t *testing.T) {
 
 func TestUpdateRepoSync(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
 	id := insertTestRepo(t, d, "o", "r")
 	now := baseTime()
 
-	require.NoError(t, d.UpdateRepoSyncStarted(ctx, id, now))
+	require.NoError(d.UpdateRepoSyncStarted(ctx, id, now))
 	later := now.Add(time.Minute)
-	require.NoError(t, d.UpdateRepoSyncCompleted(ctx, id, later, ""))
+	require.NoError(d.UpdateRepoSyncCompleted(ctx, id, later, ""))
 
 	r, err := d.GetRepoByOwnerName(ctx, "o", "r")
-	require.NoError(t, err)
-	require.NotNil(t, r)
-	require.NotNil(t, r.LastSyncStartedAt)
-	require.NotNil(t, r.LastSyncCompletedAt)
+	require.NoError(err)
+	require.NotNil(r)
+	require.NotNil(r.LastSyncStartedAt)
+	require.NotNil(r.LastSyncCompletedAt)
 	assert.True(r.LastSyncStartedAt.Equal(now))
 	assert.True(r.LastSyncCompletedAt.Equal(later))
 	assert.Empty(r.LastSyncError)
 
 	// Record a sync error.
-	require.NoError(t, d.UpdateRepoSyncCompleted(ctx, id, later, "rate limited"))
+	require.NoError(d.UpdateRepoSyncCompleted(ctx, id, later, "rate limited"))
 	r2, _ := d.GetRepoByOwnerName(ctx, "o", "r")
-	require.NotNil(t, r2)
+	require.NotNil(r2)
 	assert.Equal("rate limited", r2.LastSyncError)
 }
 
 func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -144,12 +147,12 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	}
 
 	id, err := d.UpsertPullRequest(ctx, pr)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.NotZero(id)
 
 	got, err := d.GetPullRequest(ctx, "owner", "repo", 7)
-	require.NoError(t, err)
-	require.NotNil(t, got)
+	require.NoError(err)
+	require.NotNil(got)
 	assert.Equal(id, got.ID)
 	assert.Equal(pr.Title, got.Title)
 	assert.Equal(pr.Author, got.Author)
@@ -163,11 +166,11 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	pr.LastActivityAt = now.Add(time.Hour)
 
 	id2, err := d.UpsertPullRequest(ctx, pr)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(id, id2)
 
 	got2, _ := d.GetPullRequest(ctx, "owner", "repo", 7)
-	require.NotNil(t, got2)
+	require.NotNil(got2)
 	assert.Equal("fix: something updated", got2.Title)
 	assert.Equal(20, got2.Additions)
 	// created_at must not change.
@@ -175,7 +178,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 
 	// Missing PR returns nil.
 	missing, err := d.GetPullRequest(ctx, "owner", "repo", 999)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Nil(missing)
 }
 
@@ -233,6 +236,7 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 
 func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -244,20 +248,21 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	id3 := insertTestPR(t, d, repoID, 3, "pr 3", base.Add(2*time.Hour))
 
 	// Set PR 2 to "reviewing".
-	require.NoError(t, d.SetKanbanState(ctx, id2, "reviewing"))
+	require.NoError(d.SetKanbanState(ctx, id2, "reviewing"))
 	// Ensure kanban for PR 1 and 3 (status = "new").
-	require.NoError(t, d.EnsureKanbanState(ctx, id1))
-	require.NoError(t, d.EnsureKanbanState(ctx, id3))
+	require.NoError(d.EnsureKanbanState(ctx, id1))
+	require.NoError(d.EnsureKanbanState(ctx, id3))
 
 	prs, err := d.ListPullRequests(ctx, ListPullsOpts{KanbanState: "reviewing"})
-	require.NoError(t, err)
-	require.Len(t, prs, 1)
+	require.NoError(err)
+	require.Len(prs, 1)
 	assert.Equal(2, prs[0].Number)
 	assert.Equal("reviewing", prs[0].KanbanStatus)
 }
 
 func TestKanbanState(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -266,31 +271,32 @@ func TestKanbanState(t *testing.T) {
 
 	// Before EnsureKanbanState, GetKanbanState returns nil.
 	k, err := d.GetKanbanState(ctx, prID)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Nil(k)
 
 	// EnsureKanbanState creates "new".
-	require.NoError(t, d.EnsureKanbanState(ctx, prID))
+	require.NoError(d.EnsureKanbanState(ctx, prID))
 	k, err = d.GetKanbanState(ctx, prID)
-	require.NoError(t, err)
-	require.NotNil(t, k)
+	require.NoError(err)
+	require.NotNil(k)
 	assert.Equal("new", k.Status)
 
 	// SetKanbanState changes the status.
-	require.NoError(t, d.SetKanbanState(ctx, prID, "reviewing"))
+	require.NoError(d.SetKanbanState(ctx, prID, "reviewing"))
 	k, _ = d.GetKanbanState(ctx, prID)
-	require.NotNil(t, k)
+	require.NotNil(k)
 	assert.Equal("reviewing", k.Status)
 
 	// EnsureKanbanState does NOT overwrite an existing row.
-	require.NoError(t, d.EnsureKanbanState(ctx, prID))
+	require.NoError(d.EnsureKanbanState(ctx, prID))
 	k, _ = d.GetKanbanState(ctx, prID)
-	require.NotNil(t, k)
+	require.NotNil(k)
 	assert.Equal("reviewing", k.Status)
 }
 
 func TestPREvents(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -317,11 +323,11 @@ func TestPREvents(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, d.UpsertPREvents(ctx, events))
+	require.NoError(d.UpsertPREvents(ctx, events))
 
 	got, err := d.ListPREvents(ctx, prID)
-	require.NoError(t, err)
-	require.Len(t, got, 2)
+	require.NoError(err)
+	require.Len(got, 2)
 	// Newest first.
 	assert.Equal("review-1", got[0].DedupeKey)
 	assert.Equal("comment-1", got[1].DedupeKey)
@@ -337,7 +343,7 @@ func TestPREvents(t *testing.T) {
 			DedupeKey: "comment-1",
 		},
 	}
-	require.NoError(t, d.UpsertPREvents(ctx, dup))
+	require.NoError(d.UpsertPREvents(ctx, dup))
 	got2, _ := d.ListPREvents(ctx, prID)
 	assert.Len(got2, 2)
 }
@@ -376,6 +382,7 @@ func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 
 func TestUpdatePRState(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -383,12 +390,12 @@ func TestUpdatePRState(t *testing.T) {
 	insertTestPR(t, d, repoID, 1, "pr", baseTime())
 
 	mergedAt := baseTime().Add(time.Hour)
-	require.NoError(t, d.UpdatePRState(ctx, repoID, 1, "merged", &mergedAt, nil))
+	require.NoError(d.UpdatePRState(ctx, repoID, 1, "merged", &mergedAt, nil))
 
 	pr, err := d.GetPullRequest(ctx, "o", "r", 1)
-	require.NoError(t, err)
-	require.NotNil(t, pr)
+	require.NoError(err)
+	require.NotNil(pr)
 	assert.Equal("merged", pr.State)
-	require.NotNil(t, pr.MergedAt)
+	require.NotNil(pr.MergedAt)
 	assert.True(pr.MergedAt.Equal(mergedAt))
 }

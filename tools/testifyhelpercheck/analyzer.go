@@ -192,22 +192,19 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 		return
 	}
 
-	hasAnyHelper := hasAssertHelper || hasRequireHelper
-
 	if len(assertCallPositions) >= 2 && !hasAssertHelper {
-		pass.Reportf(assertCallPositions[len(assertCallPositions)-1].Pos(), assertDiagnosticMessage, total)
+		pass.Reportf(
+			assertCallPositions[len(assertCallPositions)-1].Pos(),
+			assertDiagnosticMessage, total,
+		)
 		return
 	}
 
-	if !hasAnyHelper {
-		pos := requireCallPositions[len(requireCallPositions)-1].Pos()
-		msg := requireDiagnosticMessage
-		if len(requireCallPositions) == 0 {
-			pos = assertCallPositions[len(assertCallPositions)-1].Pos()
-			msg = assertDiagnosticMessage
-		}
-		pass.Reportf(pos, msg, total)
-		return
+	if len(requireCallPositions) >= 2 && !hasRequireHelper {
+		pass.Reportf(
+			requireCallPositions[len(requireCallPositions)-1].Pos(),
+			requireDiagnosticMessage, total,
+		)
 	}
 }
 
