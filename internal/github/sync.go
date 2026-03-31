@@ -321,7 +321,8 @@ func (s *Syncer) refreshCIStatus(
 
 	number := ghPR.GetNumber()
 
-	var combined *gh.CombinedStatus
+	// Fetch both sources. On failure, skip the DB write to preserve
+	// existing data rather than wiping it with empty values.
 	combined, err := s.client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		slog.Warn("get combined status failed",
@@ -329,24 +330,20 @@ func (s *Syncer) refreshCIStatus(
 			"number", number,
 			"err", err,
 		)
-		combined = nil
+		return nil
 	}
 
-	ciStatus := ""
-	if combined != nil {
-		ciStatus = NormalizeCIStatus(combined)
-	}
-
-	var checkRuns []*gh.CheckRun
-	checkRuns, err = s.client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
+	checkRuns, err := s.client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 			"err", err,
 		)
+		return nil
 	}
 
+	ciStatus := NormalizeCIStatus(combined)
 	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
 
 	return s.db.UpdatePRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)

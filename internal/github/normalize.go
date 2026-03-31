@@ -3,10 +3,28 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
 )
+
+// sanitizeURL returns the URL if it uses a safe scheme, or empty string.
+func sanitizeURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "https" || scheme == "http" {
+		return raw
+	}
+	return ""
+}
 
 // NormalizePR converts a GitHub PullRequest to a db.PullRequest.
 // If the PR is merged, State is set to "merged". LastActivityAt is
@@ -212,7 +230,7 @@ func NormalizeCIChecks(
 				Name:       s.GetContext(),
 				Status:     status,
 				Conclusion: conclusion,
-				URL:        s.GetTargetURL(),
+				URL:        sanitizeURL(s.GetTargetURL()),
 				App:        s.GetContext(),
 			})
 		}
