@@ -596,7 +596,7 @@
     padding: 6px 14px;
     border-radius: var(--radius-sm);
     background: #1a7f37;
-    color: #fff;
+    color: #e6ffe6;
     border: none;
     cursor: pointer;
     transition: background 0.1s;

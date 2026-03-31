@@ -379,13 +379,13 @@
   }
 
   .btn--primary {
-    color: #fff;
+    color: #e6ffe6;
     border: none;
   }
 
   .btn--green {
     background: #1a7f37;
-    color: #fff;
+    color: #e6ffe6;
   }
   .btn--green:hover:not(:disabled) {
     background: #176b2e;

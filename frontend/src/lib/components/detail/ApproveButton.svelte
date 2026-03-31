@@ -135,7 +135,7 @@
   }
 
   .btn--primary {
-    color: #fff;
+    color: #e6ffe6;
     border: none;
   }
 
