@@ -223,8 +223,15 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 	var conds []string
 	var args []any
 
-	conds = append(conds, "p.state = ?")
-	args = append(args, state)
+	switch state {
+	case "all":
+		// no state filter
+	case "closed":
+		conds = append(conds, "p.state IN ('closed', 'merged')")
+	default:
+		conds = append(conds, "p.state = ?")
+		args = append(args, state)
+	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
 		conds = append(conds, "r.owner = ? AND r.name = ?")
@@ -243,7 +250,10 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		args = append(args, like, like)
 	}
 
-	where := "WHERE " + strings.Join(conds, " AND ")
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
 
 	query := fmt.Sprintf(`
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
@@ -498,11 +508,13 @@ func (d *DB) UpdatePRState(
 	state string,
 	mergedAt, closedAt *time.Time,
 ) error {
+	now := time.Now().UTC()
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE pull_requests
-		SET state = ?, merged_at = ?, closed_at = ?
+		SET state = ?, merged_at = ?, closed_at = ?,
+		    updated_at = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
-		state, mergedAt, closedAt, repoID, number,
+		state, mergedAt, closedAt, now, now, repoID, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update pr state: %w", err)
@@ -594,8 +606,15 @@ func (d *DB) ListIssues(
 	var conds []string
 	var args []any
 
-	conds = append(conds, "i.state = ?")
-	args = append(args, state)
+	switch state {
+	case "all":
+		// no state filter
+	case "closed":
+		conds = append(conds, "i.state = 'closed'")
+	default:
+		conds = append(conds, "i.state = ?")
+		args = append(args, state)
+	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
 		conds = append(conds, "r.owner = ? AND r.name = ?")
@@ -610,7 +629,10 @@ func (d *DB) ListIssues(
 		args = append(args, like, like)
 	}
 
-	where := "WHERE " + strings.Join(conds, " AND ")
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
 
 	query := fmt.Sprintf(`
 		SELECT i.id, i.repo_id, i.github_id, i.number, i.url, i.title,
@@ -675,10 +697,12 @@ func (d *DB) UpdateIssueState(
 	state string,
 	closedAt *time.Time,
 ) error {
+	now := time.Now().UTC()
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE issues SET state = ?, closed_at = ?
+		UPDATE issues SET state = ?, closed_at = ?,
+		    updated_at = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
-		state, closedAt, repoID, number,
+		state, closedAt, now, now, repoID, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update issue state: %w", err)

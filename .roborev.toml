@@ -1,0 +1,13 @@
+[review]
+guidelines = """
+middleman is a local-first, single-user tool that binds to loopback
+(127.0.0.1) by default. There is no multi-user authentication or
+session management by design. All API endpoints -- including mutation
+endpoints like merge, approve, comment, close, and reopen -- share the
+same trust model: the user who started the server is the only intended
+consumer.
+
+Do not flag the absence of request-level authentication, authorization,
+or CSRF protection on API endpoints. This is an intentional architectural
+decision, not a missing feature.
+"""
