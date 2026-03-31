@@ -10,7 +10,10 @@
     "moduleDetection": "force",
     "noEmit": true,
     "strict": true,
+    "useUnknownInCatchVariables": true,
     "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true
   },

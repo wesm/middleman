@@ -55,10 +55,10 @@ hooks = [
   },
   {
     id = "frontend-check",
-    name = "frontend check",
+    name = "frontend type lint",
     language = "system",
     entry = "make frontend-check",
-    files = "^frontend/(src/.*\\.(svelte|ts)|package(-lock)?\\.json|tsconfig\\.json|vite\\.config\\.ts)$",
+    files = "^frontend/(src/.*\\.(svelte|ts)|package\\.json|bun\\.lock|tsconfig\\.json|vite\\.config\\.ts|eslint\\.config\\.(js|mjs|cjs))$",
     pass_filenames = false,
     priority = 0,
   },

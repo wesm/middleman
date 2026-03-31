@@ -3,7 +3,7 @@
 
   interface Props {
     items: ActivityItem[];
-    onSelectItem?: (item: ActivityItem) => void;
+    onSelectItem: ((item: ActivityItem) => void) | undefined;
   }
 
   let { items, onSelectItem }: Props = $props();

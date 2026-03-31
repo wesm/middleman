@@ -2,13 +2,7 @@
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import { getPulls, loadPulls } from "../../stores/pulls.svelte.js";
   import { client } from "../../api/runtime.js";
-  import {
-    loadDetail,
-    getDetail,
-    isDetailLoading,
-    startDetailPolling,
-    stopDetailPolling,
-  } from "../../stores/detail.svelte.js";
+  import { stopDetailPolling } from "../../stores/detail.svelte.js";
   import PullDetail from "../detail/PullDetail.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
 
