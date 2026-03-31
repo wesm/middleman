@@ -759,3 +759,77 @@ func TestHandleReadyForReview(t *testing.T) {
 		t.Fatal("expected PR to no longer be draft")
 	}
 }
+
+func TestCSRFRejectsCrossSite(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	body := bytes.NewBufferString(`{"status":"reviewing"}`)
+	req := httptest.NewRequest(
+		http.MethodPut, "/api/v1/repos/a/b/pulls/1/state", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for cross-site, got %d", rr.Code)
+	}
+}
+
+func TestCSRFRejectsWrongContentType(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	body := bytes.NewBufferString(`{"status":"reviewing"}`)
+	req := httptest.NewRequest(
+		http.MethodPut, "/api/v1/repos/a/b/pulls/1/state", body,
+	)
+	req.Header.Set("Content-Type", "text/plain")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415 for text/plain, got %d", rr.Code)
+	}
+}
+
+func TestCSRFAllowsSameOrigin(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	body := bytes.NewBufferString(`{"status":"reviewing"}`)
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/repos/acme/widget/pulls/1/state", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for same-origin, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+}
+
+func TestCSRFAllowsNoHeader(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	body := bytes.NewBufferString(`{"status":"reviewing"}`)
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/repos/acme/widget/pulls/1/state", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf(
+			"expected 200 without Sec-Fetch-Site, got %d: %s",
+			rr.Code, rr.Body.String(),
+		)
+	}
+}

@@ -157,7 +157,40 @@ func newServer(
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") && r.Method != http.MethodGet {
+		if !checkCSRF(w, r) {
+			return
+		}
+	}
 	s.handler.ServeHTTP(w, r)
+}
+
+// checkCSRF rejects cross-site mutation requests. Returns true if
+// the request is allowed, false if it was rejected (response written).
+func checkCSRF(w http.ResponseWriter, r *http.Request) bool {
+	// Reject cross-site requests. Sec-Fetch-Site is set by all
+	// modern browsers and cannot be forged by JavaScript.
+	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
+		if sfs != "same-origin" && sfs != "none" {
+			writeError(w, http.StatusForbidden,
+				"cross-origin requests are not allowed")
+			return false
+		}
+	}
+
+	// Require JSON content type for requests with bodies.
+	// This blocks simple cross-origin form submissions and
+	// text/plain fetches that json.Decoder would still parse.
+	if r.ContentLength != 0 || r.Body != http.NoBody {
+		ct := r.Header.Get("Content-Type")
+		if !strings.HasPrefix(ct, "application/json") {
+			writeError(w, http.StatusUnsupportedMediaType,
+				"Content-Type must be application/json")
+			return false
+		}
+	}
+
+	return true
 }
 
 // ListenAndServe starts the HTTP server on addr.
