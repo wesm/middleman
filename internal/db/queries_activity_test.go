@@ -140,10 +140,11 @@ func TestListActivity(t *testing.T) {
 
 	t.Run("limit and before cursor", func(t *testing.T) {
 		assert := Assert.New(t)
+		require := require.New(t)
 		page1, err := d.ListActivity(
 			ctx, ListActivityOpts{Limit: 3})
-		require.NoError(t, err)
-		require.Len(t, page1, 3)
+		require.NoError(err)
+		require.Len(page1, 3)
 
 		last := page1[2]
 		page2, err := d.ListActivity(ctx, ListActivityOpts{
@@ -152,8 +153,8 @@ func TestListActivity(t *testing.T) {
 			BeforeSource:   last.Source,
 			BeforeSourceID: last.SourceID,
 		})
-		require.NoError(t, err)
-		require.Len(t, page2, 3)
+		require.NoError(err)
+		require.Len(page2, 3)
 
 		seen := make(map[string]bool)
 		for _, it := range page1 {
@@ -168,9 +169,10 @@ func TestListActivity(t *testing.T) {
 
 	t.Run("after cursor for polling", func(t *testing.T) {
 		assert := Assert.New(t)
+		require := require.New(t)
 		all, err := d.ListActivity(
 			ctx, ListActivityOpts{Limit: 50})
-		require.NoError(t, err)
+		require.NoError(err)
 		newest := all[0]
 
 		err = d.UpsertPREvents(ctx, []PREvent{
@@ -179,7 +181,7 @@ func TestListActivity(t *testing.T) {
 				CreatedAt: base.Add(10 * time.Minute),
 				DedupeKey: "comment-new"},
 		})
-		require.NoError(t, err)
+		require.NoError(err)
 
 		newItems, err := d.ListActivity(ctx, ListActivityOpts{
 			Limit:         50,
@@ -187,8 +189,8 @@ func TestListActivity(t *testing.T) {
 			AfterSource:   newest.Source,
 			AfterSourceID: newest.SourceID,
 		})
-		require.NoError(t, err)
-		require.Len(t, newItems, 1)
+		require.NoError(err)
+		require.Len(newItems, 1)
 		assert.Equal("grace", newItems[0].Author)
 	})
 
