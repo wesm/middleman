@@ -233,9 +233,11 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		normalized.AuthorDisplayName = s.resolveDisplayName(
-			ctx, normalized.Author,
-		)
+		if name := s.resolveDisplayName(ctx, normalized.Author); name != "" {
+			normalized.AuthorDisplayName = name
+		} else if existing != nil {
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		}
 	}
 
 	prID, err := s.db.UpsertPullRequest(ctx, normalized)
@@ -402,10 +404,9 @@ func (s *Syncer) resolveDisplayName(
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
 		)
-		s.displayNames[login] = ""
 		return ""
 	}
-	name := user.GetName()
+	name := sanitizeDisplayName(user.GetName())
 	s.displayNames[login] = name
 	return name
 }

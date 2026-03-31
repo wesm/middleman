@@ -337,5 +337,20 @@ func nameOrEmpty(u *gh.User) string {
 	if u == nil {
 		return ""
 	}
-	return u.GetName()
+	return sanitizeDisplayName(u.GetName())
+}
+
+// sanitizeDisplayName strips characters that could inject trailers or
+// corrupt git commit metadata when used in a Co-authored-by line.
+func sanitizeDisplayName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch r {
+		case '\n', '\r', '<', '>':
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
