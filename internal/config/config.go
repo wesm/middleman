@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -107,8 +108,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: invalid port %d", c.Port)
 	}
 
+	if !validBasePathRe.MatchString(c.BasePath) {
+		return fmt.Errorf("config: invalid base_path %q: must be / or /path/ using only alphanumerics, hyphens, underscores, dots, and tildes", c.BasePath)
+	}
+
 	return nil
 }
+
+var validBasePathRe = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
 
 func (c *Config) SyncDuration() time.Duration {
 	d, _ := time.ParseDuration(c.SyncInterval)

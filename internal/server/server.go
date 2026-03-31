@@ -2,10 +2,8 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -25,10 +23,6 @@ type Server struct {
 // New creates a Server wiring up all API routes and optional SPA serving.
 // basePath should be "/" or "/prefix/" (with trailing slash).
 func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS, basePath string) *Server {
-	if !isValidBasePath(basePath) {
-		panic(fmt.Sprintf("invalid base_path %q: must match /[a-zA-Z0-9._~-/]*/", basePath))
-	}
-
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -144,10 +138,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-var validBasePathRe = regexp.MustCompile(`^/[a-zA-Z0-9._~/-]*/$`)
-
-func isValidBasePath(bp string) bool {
-	return bp == "/" || validBasePathRe.MatchString(bp)
 }
