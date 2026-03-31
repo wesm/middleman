@@ -239,11 +239,16 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		return fmt.Errorf("ensure kanban state for PR #%d: %w", ghPR.GetNumber(), err)
 	}
 
-	if !needsTimeline {
-		return nil
+	if needsTimeline {
+		if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
+			return err
+		}
 	}
 
-	return s.refreshTimeline(ctx, repo, repoID, prID, ghPR)
+	// Always refresh CI status — check runs change independently of the
+	// PR's updated_at field, so pending/in-progress checks would be missed
+	// if we only fetched them when the PR itself changed.
+	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
 }
 
 // refreshTimeline fetches comments, reviews, and commits for a PR and
@@ -287,44 +292,6 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("upsert events for PR #%d: %w", number, err)
 	}
 
-	// Fetch CI status using the head SHA.
-	headSHA := ""
-	if ghPR.GetHead() != nil {
-		headSHA = ghPR.GetHead().GetSHA()
-	}
-
-	ciStatus := ""
-	if headSHA != "" {
-		combined, err := s.client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
-		if err != nil {
-			slog.Warn("get combined status failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-		} else {
-			ciStatus = NormalizeCIStatus(combined)
-		}
-	}
-
-	// Fetch individual check runs.
-	ciChecksJSON := ""
-	if headSHA != "" {
-		checkRuns, err := s.client.ListCheckRunsForRef(
-			ctx, repo.Owner, repo.Name, headSHA,
-		)
-		if err != nil {
-			slog.Warn("list check runs failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-		} else {
-			ciChecksJSON = NormalizeCheckRuns(checkRuns)
-		}
-	}
-
-	// Compute derived fields and write them back.
 	reviewDecision := DeriveReviewDecision(reviews)
 	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits)
 
@@ -332,9 +299,54 @@ func (s *Syncer) refreshTimeline(
 		ReviewDecision: reviewDecision,
 		CommentCount:   len(comments),
 		LastActivityAt: lastActivityAt,
-		CIStatus:       ciStatus,
-		CIChecksJSON:   ciChecksJSON,
 	})
+}
+
+// refreshCIStatus fetches combined status and check runs for a PR's head SHA.
+// Called on every sync cycle for open PRs, since check runs change independently
+// of the PR's updated_at field.
+func (s *Syncer) refreshCIStatus(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghPR *gh.PullRequest,
+) error {
+	headSHA := ""
+	if ghPR.GetHead() != nil {
+		headSHA = ghPR.GetHead().GetSHA()
+	}
+	if headSHA == "" {
+		return nil
+	}
+
+	number := ghPR.GetNumber()
+
+	// Fetch both sources. On failure, skip the DB write to preserve
+	// existing data rather than wiping it with empty values.
+	combined, err := s.client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
+	if err != nil {
+		slog.Warn("get combined status failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return nil
+	}
+
+	checkRuns, err := s.client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
+	if err != nil {
+		slog.Warn("list check runs failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return nil
+	}
+
+	ciStatus := NormalizeCIStatus(combined)
+	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
+
+	return s.db.UpdatePRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
 }
 
 // computeLastActivity returns the most recent timestamp across the PR and its events.

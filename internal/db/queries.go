@@ -440,8 +440,6 @@ type PRDerivedFields struct {
 	ReviewDecision string
 	CommentCount   int
 	LastActivityAt time.Time
-	CIStatus       string
-	CIChecksJSON   string
 }
 
 // UpdatePRDerivedFields writes computed fields back to the pull_requests row.
@@ -453,15 +451,34 @@ func (d *DB) UpdatePRDerivedFields(
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE pull_requests
-		SET review_decision = ?, comment_count = ?, last_activity_at = ?,
-		    ci_status = ?, ci_checks_json = ?
+		SET review_decision = ?, comment_count = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
 		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt,
-		fields.CIStatus, fields.CIChecksJSON,
 		repoID, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update pr derived fields: %w", err)
+	}
+	return nil
+}
+
+// UpdatePRCIStatus writes CI status and check runs JSON for a PR.
+func (d *DB) UpdatePRCIStatus(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	ciStatus string,
+	ciChecksJSON string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE pull_requests
+		SET ci_status = ?, ci_checks_json = ?
+		WHERE repo_id = ? AND number = ?`,
+		ciStatus, ciChecksJSON,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update pr ci status: %w", err)
 	}
 	return nil
 }

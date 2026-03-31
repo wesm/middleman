@@ -135,15 +135,15 @@
   }
 
   .btn--primary {
-    color: #fff;
+    color: #e6ffe6;
     border: none;
   }
 
   .btn--green {
-    background: var(--accent-green);
+    background: #1a7f37;
   }
   .btn--green:hover:not(:disabled) {
-    opacity: 0.9;
+    background: #176b2e;
   }
 
   .btn--approve {

@@ -3,10 +3,28 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
 )
+
+// sanitizeURL returns the URL if it uses a safe scheme, or empty string.
+func sanitizeURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "https" || scheme == "http" {
+		return raw
+	}
+	return ""
+}
 
 // NormalizePR converts a GitHub PullRequest to a db.PullRequest.
 // If the PR is merged, State is set to "merged". LastActivityAt is
@@ -173,6 +191,52 @@ func NormalizeCheckRuns(runs []*gh.CheckRun) string {
 			URL:        r.GetHTMLURL(),
 			App:        appName(r),
 		})
+	}
+	b, err := json.Marshal(checks)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// NormalizeCIChecks merges check runs and commit statuses into a single
+// JSON string of CICheck objects. Commit statuses (used by GitHub Apps
+// like roborev) use the older status API and need to be mapped into the
+// same shape as check runs.
+func NormalizeCIChecks(
+	runs []*gh.CheckRun,
+	combined *gh.CombinedStatus,
+) string {
+	var checks []db.CICheck
+	for _, r := range runs {
+		checks = append(checks, db.CICheck{
+			Name:       r.GetName(),
+			Status:     r.GetStatus(),
+			Conclusion: r.GetConclusion(),
+			URL:        r.GetHTMLURL(),
+			App:        appName(r),
+		})
+	}
+	if combined != nil {
+		for _, s := range combined.Statuses {
+			// Map commit status state to check run status/conclusion.
+			status := "completed"
+			conclusion := s.GetState()
+			if conclusion == "pending" {
+				status = "in_progress"
+				conclusion = ""
+			}
+			checks = append(checks, db.CICheck{
+				Name:       s.GetContext(),
+				Status:     status,
+				Conclusion: conclusion,
+				URL:        sanitizeURL(s.GetTargetURL()),
+				App:        s.GetContext(),
+			})
+		}
+	}
+	if len(checks) == 0 {
+		return ""
 	}
 	b, err := json.Marshal(checks)
 	if err != nil {
