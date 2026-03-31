@@ -51,7 +51,7 @@
 </script>
 
 <div class="setting-row">
-  <label class="setting-label">Default view mode</label>
+  <span class="setting-label">Default view mode</span>
   <div class="segmented-control">
     <button class="seg-btn" class:active={activity.view_mode === "flat"} onclick={() => setViewMode("flat")}>Flat</button>
     <button class="seg-btn" class:active={activity.view_mode === "threaded"} onclick={() => setViewMode("threaded")}>Threaded</button>
@@ -59,7 +59,7 @@
 </div>
 
 <div class="setting-row">
-  <label class="setting-label">Default time range</label>
+  <span class="setting-label">Default time range</span>
   <div class="segmented-control">
     {#each TIME_RANGES as r}
       <button class="seg-btn" class:active={activity.time_range === r.value} onclick={() => setTimeRange(r.value)}>{r.label}</button>
@@ -68,15 +68,15 @@
 </div>
 
 <div class="setting-row">
-  <label class="setting-label">Hide closed/merged</label>
-  <button class="toggle-btn" class:toggle-on={activity.hide_closed} onclick={toggleHideClosed}>
+  <span class="setting-label">Hide closed/merged</span>
+  <button class="toggle-btn" class:toggle-on={activity.hide_closed} onclick={toggleHideClosed} aria-label="Toggle hide closed/merged">
     <span class="toggle-track"><span class="toggle-thumb"></span></span>
   </button>
 </div>
 
 <div class="setting-row">
-  <label class="setting-label">Hide bots</label>
-  <button class="toggle-btn" class:toggle-on={activity.hide_bots} onclick={toggleHideBots}>
+  <span class="setting-label">Hide bots</span>
+  <button class="toggle-btn" class:toggle-on={activity.hide_bots} onclick={toggleHideBots} aria-label="Toggle hide bots">
     <span class="toggle-track"><span class="toggle-thumb"></span></span>
   </button>
 </div>
