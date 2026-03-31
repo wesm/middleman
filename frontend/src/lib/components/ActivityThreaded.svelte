@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ActivityItem } from "../api/activity.js";
+  import type { ActivityItem } from "../api/types.js";
 
   interface Props {
     items: ActivityItem[];

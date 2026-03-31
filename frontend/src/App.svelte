@@ -24,7 +24,7 @@
     clearIssueSelection,
     selectIssue,
   } from "./lib/stores/issues.svelte.js";
-  import type { ActivityItem } from "./lib/api/activity.js";
+  import type { ActivityItem } from "./lib/api/types.js";
 
   let drawerItem = $state<{
     itemType: "pr" | "issue";
@@ -99,8 +99,9 @@
   }
 
   function handleActivitySelect(item: ActivityItem): void {
+    const itemType = item.item_type === "issue" ? "issue" : "pr";
     drawerItem = {
-      itemType: item.item_type,
+      itemType,
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,

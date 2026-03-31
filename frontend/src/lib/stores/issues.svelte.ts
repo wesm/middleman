@@ -1,6 +1,5 @@
-import { listIssues, getIssue, postIssueComment, setStarred, unsetStarred } from "../api/client.js";
-import type { Issue, IssueDetail } from "../api/types.js";
-import type { IssuesParams } from "../api/client.js";
+import { apiErrorMessage, client } from "../api/runtime.js";
+import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 
 let issues = $state<Issue[]>([]);
 let loading = $state(false);
@@ -52,12 +51,19 @@ export async function loadIssues(params?: IssuesParams): Promise<void> {
   loading = true;
   error = null;
   try {
-    issues = await listIssues({
+    const query = {
       repo: filterRepo,
       starred: filterStarred || undefined,
       q: searchQuery,
       ...params,
+    };
+    const { data, error: requestError } = await client.GET("/issues", {
+      params: { query },
     });
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "failed to load issues"));
+    }
+    issues = (data ?? []) as Issue[];
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   } finally {
@@ -69,7 +75,15 @@ export async function loadIssueDetail(owner: string, name: string, number: numbe
   detailLoading = true;
   detailError = null;
   try {
-    issueDetail = await getIssue(owner, name, number);
+    const { data, error: requestError } = await client.GET("/repos/{owner}/{name}/issues/{number}", {
+      params: { path: { owner, name, number } },
+    });
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "failed to load issue"));
+    }
+    issueDetail = data
+      ? ({ ...data, events: data.events ?? [] } as IssueDetail)
+      : null;
   } catch (err) {
     detailError = err instanceof Error ? err.message : String(err);
   } finally {
@@ -78,7 +92,16 @@ export async function loadIssueDetail(owner: string, name: string, number: numbe
 }
 
 async function refreshIssueDetail(owner: string, name: string, number: number): Promise<void> {
-  try { issueDetail = await getIssue(owner, name, number); } catch { /* silent */ }
+  try {
+    const { data } = await client.GET("/repos/{owner}/{name}/issues/{number}", {
+      params: { path: { owner, name, number } },
+    });
+    if (data !== undefined) {
+      issueDetail = { ...data, events: data.events ?? [] } as IssueDetail;
+    }
+  } catch {
+    /* silent */
+  }
 }
 
 export function startIssueDetailPolling(owner: string, name: string, number: number): void {
@@ -100,7 +123,13 @@ export async function submitIssueComment(
 ): Promise<void> {
   detailError = null;
   try {
-    await postIssueComment(owner, name, number, body);
+    const { error: requestError } = await client.POST("/repos/{owner}/{name}/issues/{number}/comments", {
+      params: { path: { owner, name, number } },
+      body: { body },
+    });
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "failed to post comment"));
+    }
   } catch (err) {
     detailError = err instanceof Error ? err.message : String(err);
     return;
@@ -116,9 +145,19 @@ export async function toggleIssueStar(
 ): Promise<void> {
   try {
     if (currentlyStarred) {
-      await unsetStarred("issue", owner, name, number);
+      const { error: requestError } = await client.DELETE("/starred", {
+        body: { item_type: "issue", owner, name, number },
+      });
+      if (requestError) {
+        throw new Error(apiErrorMessage(requestError, "failed to unstar issue"));
+      }
     } else {
-      await setStarred("issue", owner, name, number);
+      const { error: requestError } = await client.PUT("/starred", {
+        body: { item_type: "issue", owner, name, number },
+      });
+      if (requestError) {
+        throw new Error(apiErrorMessage(requestError, "failed to star issue"));
+      }
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);

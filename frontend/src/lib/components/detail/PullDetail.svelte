@@ -338,7 +338,7 @@
       <!-- Activity -->
       <div class="section">
         <h3 class="section-title">Activity</h3>
-        <EventTimeline events={detail.events} />
+        <EventTimeline events={detail.events ?? []} />
       </div>
     </div>
   {/if}
