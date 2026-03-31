@@ -82,7 +82,9 @@ api-generate:
 		'import createClient from "openapi-fetch";' \
 		'import type { paths } from "./schema";' \
 		'' \
-		'export const client = createClient<paths>();' \
+		'export function createAPIClient(baseUrl: string) {' \
+		'  return createClient<paths>({ baseUrl });' \
+		'}' \
 		> src/lib/api/generated/client.ts
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
 
