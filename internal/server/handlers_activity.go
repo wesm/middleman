@@ -4,13 +4,16 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wesm/middleman/internal/db"
 )
 
+const activitySafetyCap = 5000
+
 type activityResponse struct {
-	Items   []activityItemResponse `json:"items"`
-	HasMore bool                   `json:"has_more"`
+	Items  []activityItemResponse `json:"items"`
+	Capped bool                   `json:"capped"`
 }
 
 type activityItemResponse struct {
@@ -35,32 +38,23 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 	opts := db.ListActivityOpts{
 		Repo:   q.Get("repo"),
 		Search: q.Get("search"),
+		Limit:  activitySafetyCap + 1,
 	}
 
 	if types := q.Get("types"); types != "" {
 		opts.Types = strings.Split(types, ",")
 	}
 
-	limit := 50
-	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
-		}
-	}
-	if limit > 200 {
-		limit = 200
-	}
-	opts.Limit = limit + 1
-
-	if cursor := q.Get("before"); cursor != "" {
-		t, source, sourceID, err := db.DecodeCursor(cursor)
+	if since := q.Get("since"); since != "" {
+		t, err := time.Parse(time.RFC3339, since)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid before cursor: "+err.Error())
+			writeError(w, http.StatusBadRequest, "invalid since: "+err.Error())
 			return
 		}
-		opts.BeforeTime = &t
-		opts.BeforeSource = source
-		opts.BeforeSourceID = sourceID
+		opts.Since = &t
+	} else {
+		defaultSince := time.Now().UTC().AddDate(0, 0, -7)
+		opts.Since = &defaultSince
 	}
 
 	if cursor := q.Get("after"); cursor != "" {
@@ -80,9 +74,9 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasMore := len(items) > limit
-	if hasMore {
-		items = items[:limit]
+	capped := len(items) > activitySafetyCap
+	if capped {
+		items = items[:activitySafetyCap]
 	}
 
 	out := make([]activityItemResponse, len(items))
@@ -104,5 +98,5 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, activityResponse{Items: out, HasMore: hasMore})
+	writeJSON(w, http.StatusOK, activityResponse{Items: out, Capped: capped})
 }

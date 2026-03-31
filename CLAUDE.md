@@ -86,7 +86,7 @@ make vet        # go vet
 ## Conventions
 
 - Prefer stdlib over external dependencies
-- Use Bun for frontend package management and script execution; do not introduce npm-based workflow changes unless explicitly requested
+- **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output
 - Schema changes should use `ALTER TABLE ADD COLUMN` migrations in `db.init()` for backward compatibility with existing databases
@@ -99,3 +99,10 @@ make vet        # go vet
 - Use conventional commit messages
 - Run tests before committing when applicable
 - Never push or pull unless explicitly asked
+
+## Pull Requests
+
+- PR descriptions should be concise: summarize what changed, not how or why in detail
+- No test plans, implementation details, or checklists in PR descriptions
+- No marketing language (critical, robust, comprehensive, etc.)
+- A bulleted summary of user-visible changes is sufficient

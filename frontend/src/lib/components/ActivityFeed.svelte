@@ -5,21 +5,26 @@
     getActivityItems,
     isActivityLoading,
     getActivityError,
-    hasMoreActivity,
+    isActivityCapped,
     getActivityFilterRepo,
     getActivityFilterTypes,
     getActivitySearch,
+    getTimeRange,
+    getViewMode,
     setActivityFilterRepo,
     setActivityFilterTypes,
     setActivitySearch,
+    setTimeRange,
+    setViewMode,
     loadActivity,
-    loadMoreActivity,
     startActivityPolling,
     stopActivityPolling,
     syncFromURL,
     syncToURL,
   } from "../stores/activity.svelte.js";
+  import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
   import RepoTypeahead from "./RepoTypeahead.svelte";
+  import ActivityThreaded from "./ActivityThreaded.svelte";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -148,6 +153,24 @@
     void loadActivity();
   }
 
+  function handleTimeRangeChange(range: TimeRange): void {
+    setTimeRange(range);
+    syncToURL();
+    void loadActivity();
+  }
+
+  function handleViewModeChange(mode: ViewMode): void {
+    setViewMode(mode);
+    syncToURL();
+  }
+
+  const TIME_RANGES: { value: TimeRange; label: string }[] = [
+    { value: "24h", label: "24h" },
+    { value: "7d", label: "7d" },
+    { value: "30d", label: "30d" },
+    { value: "90d", label: "90d" },
+  ];
+
   function handleSearchInput(e: Event): void {
     const val = (e.target as HTMLInputElement).value;
     searchInput = val;
@@ -186,6 +209,80 @@
     return null;
   }
 
+  interface CollapsedCommits {
+    kind: "collapsed";
+    id: string;
+    author: string;
+    count: number;
+    repo_owner: string;
+    repo_name: string;
+    item_type: "pr" | "issue";
+    item_number: number;
+    item_title: string;
+    item_url: string;
+    item_state: "open" | "merged" | "closed";
+    earliest: string;
+    latest: string;
+    representative: ActivityItem;
+  }
+
+  type DisplayRow = ActivityItem | CollapsedCommits;
+
+  function isCollapsed(row: DisplayRow): row is CollapsedCommits {
+    return "kind" in row && row.kind === "collapsed";
+  }
+
+  function collapseCommitRuns(items: ActivityItem[]): DisplayRow[] {
+    const result: DisplayRow[] = [];
+    let i = 0;
+    while (i < items.length) {
+      const item = items[i]!;
+      if (item.activity_type !== "commit") {
+        result.push(item);
+        i++;
+        continue;
+      }
+      // Collect consecutive commits by same author on same item.
+      let j = i + 1;
+      while (j < items.length) {
+        const next = items[j]!;
+        if (next.activity_type !== "commit"
+            || next.author !== item.author
+            || next.repo_owner !== item.repo_owner
+            || next.repo_name !== item.repo_name
+            || next.item_number !== item.item_number) break;
+        j++;
+      }
+      const count = j - i;
+      if (count < 3) {
+        // Not worth collapsing fewer than 3.
+        for (let k = i; k < j; k++) result.push(items[k]!);
+      } else {
+        // Items are newest-first, so earliest is last in the run.
+        const latest = items[i]!;
+        const earliest = items[j - 1]!;
+        result.push({
+          kind: "collapsed",
+          id: `collapsed-${latest.id}-${count}`,
+          author: item.author,
+          count,
+          repo_owner: item.repo_owner,
+          repo_name: item.repo_name,
+          item_type: item.item_type,
+          item_number: item.item_number,
+          item_title: item.item_title,
+          item_url: item.item_url,
+          item_state: item.item_state,
+          earliest: earliest.created_at,
+          latest: latest.created_at,
+          representative: latest,
+        });
+      }
+      i = j;
+    }
+    return result;
+  }
+
   const displayItems = $derived.by(() => {
     let result = getActivityItems();
     if (hideClosedMerged) {
@@ -197,6 +294,8 @@
     }
     return result;
   });
+
+  const flatRows = $derived(collapseCommitRuns(displayItems));
 
   function resetFilters(): void {
     enabledEvents = new Set(EVENT_TYPES);
@@ -250,6 +349,16 @@
         <button class="seg-btn" class:active={itemFilter === "issues"} onclick={() => setItemFilter("issues")}>Issues</button>
       </div>
 
+      <div class="segmented-control">
+        <button class="seg-btn" class:active={getViewMode() === "flat"} onclick={() => handleViewModeChange("flat")}>Flat</button>
+        <button class="seg-btn" class:active={getViewMode() === "threaded"} onclick={() => handleViewModeChange("threaded")}>Threaded</button>
+      </div>
+
+      <div class="segmented-control">
+        {#each TIME_RANGES as r}
+          <button class="seg-btn" class:active={getTimeRange() === r.value} onclick={() => handleTimeRangeChange(r.value)}>{r.label}</button>
+        {/each}
+      </div>
     </div>
 
     <div class="filter-wrap">
@@ -345,62 +454,94 @@
     <div class="error-banner">{getActivityError()}</div>
   {/if}
 
-  <div class="table-container">
-    <table class="activity-table">
-      <thead>
-        <tr>
-          <th class="col-kind">Kind</th>
-          <th class="col-event">Event</th>
-          <th class="col-repo">Repository</th>
-          <th class="col-item">Item</th>
-          <th class="col-author">Author</th>
-          <th class="col-when">When</th>
-          <th class="col-link"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each displayItems as item (item.id)}
-          <tr class="activity-row" onclick={() => handleRowClick(item)}>
-            <td class="col-kind">
-              <span class="badge {badgeClass(item)}">{itemTypeLabel(item)}</span>
-              {#if stateLabel(item)}
-                <span class="state-badge state-{item.item_state}">{stateLabel(item)}</span>
-              {/if}
-            </td>
-            <td class="col-event">
-              <span class="evt-label {eventClass(item.activity_type)}">{eventLabel(item)}</span>
-            </td>
-            <td class="col-repo">{item.repo_owner}/{item.repo_name}</td>
-            <td class="col-item">
-              <span class="item-number">#{item.item_number}</span>
-              <span class="item-title">{item.item_title}</span>
-            </td>
-            <td class="col-author">{item.author}</td>
-            <td class="col-when">{relativeTime(item.created_at)}</td>
-            <td class="col-link">
-              <button
-                class="link-btn"
-                title="Open on GitHub"
-                onclick={(e) => handleLinkClick(e, item.item_url)}
-              >&#x2197;</button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-
-    {#if displayItems.length === 0 && !isActivityLoading()}
-      <div class="empty-state">No activity found</div>
+  {#if getViewMode() === "threaded"}
+    {#if displayItems.length === 0 && isActivityLoading()}
+      <div class="table-container"><div class="empty-state">Loading...</div></div>
+    {:else}
+      <ActivityThreaded items={displayItems} onSelectItem={onSelectItem} />
     {/if}
-  </div>
+  {:else}
+    <div class="table-container">
+      <table class="activity-table">
+        <thead>
+          <tr>
+            <th class="col-kind">Kind</th>
+            <th class="col-event">Event</th>
+            <th class="col-repo">Repository</th>
+            <th class="col-item">Item</th>
+            <th class="col-author">Author</th>
+            <th class="col-when">When</th>
+            <th class="col-link"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each flatRows as row (row.id)}
+            {#if isCollapsed(row)}
+              <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
+                <td class="col-kind">
+                  <span class="badge {row.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.item_type === "pr" ? "PR" : "Issue"}</span>
+                </td>
+                <td class="col-event">
+                  <span class="evt-label evt-commit">{row.count} commits</span>
+                </td>
+                <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                <td class="col-item">
+                  <span class="item-number">#{row.item_number}</span>
+                  <span class="item-title">{row.item_title}</span>
+                </td>
+                <td class="col-author">{row.author}</td>
+                <td class="col-when">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</td>
+                <td class="col-link">
+                  <button
+                    class="link-btn"
+                    title="Open on GitHub"
+                    onclick={(e) => handleLinkClick(e, row.item_url)}
+                  >&#x2197;</button>
+                </td>
+              </tr>
+            {:else}
+              <tr class="activity-row" onclick={() => handleRowClick(row)}>
+                <td class="col-kind">
+                  <span class="badge {badgeClass(row)}">{itemTypeLabel(row)}</span>
+                  {#if stateLabel(row)}
+                    <span class="state-badge state-{row.item_state}">{stateLabel(row)}</span>
+                  {/if}
+                </td>
+                <td class="col-event">
+                  <span class="evt-label {eventClass(row.activity_type)}">{eventLabel(row)}</span>
+                </td>
+                <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                <td class="col-item">
+                  <span class="item-number">#{row.item_number}</span>
+                  <span class="item-title">{row.item_title}</span>
+                </td>
+                <td class="col-author">{row.author}</td>
+                <td class="col-when">{relativeTime(row.created_at)}</td>
+                <td class="col-link">
+                  <button
+                    class="link-btn"
+                    title="Open on GitHub"
+                    onclick={(e) => handleLinkClick(e, row.item_url)}
+                  >&#x2197;</button>
+                </td>
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
 
-  {#if hasMoreActivity()}
-    <div class="load-more">
-      <button class="load-more-btn" onclick={() => void loadMoreActivity()} disabled={isActivityLoading()}>
-        {isActivityLoading() ? "Loading..." : "Load more"}
-      </button>
+      {#if flatRows.length === 0 && !isActivityLoading()}
+        <div class="empty-state">No activity found</div>
+      {/if}
     </div>
   {/if}
+
+  {#if isActivityCapped()}
+    <div class="capped-notice">
+      Showing most recent 5,000 events. Narrow the time range or use filters to see more.
+    </div>
+  {/if}
+
 </div>
 
 <style>
@@ -630,16 +771,12 @@
     white-space: nowrap;
   }
 
-  .col-kind { }
-  .col-event { }
-  .col-repo { }
   .col-item {
     width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 0;
   }
-  .col-author { }
   .col-when { text-align: right; }
   th.col-when { text-align: right; }
   .col-link { text-align: center; }
@@ -651,6 +788,10 @@
 
   .activity-row:hover {
     background: var(--bg-surface-hover);
+  }
+
+  .collapsed-row {
+    background: var(--bg-inset);
   }
 
   .badge {
@@ -760,30 +901,14 @@
     border-bottom: 1px solid var(--border-default);
   }
 
-  .load-more {
-    padding: 8px 16px;
-    text-align: center;
+  .capped-notice {
+    padding: 6px 16px;
+    font-size: 11px;
+    color: var(--accent-amber);
+    background: color-mix(in srgb, var(--accent-amber) 8%, transparent);
     border-top: 1px solid var(--border-default);
-    background: var(--bg-surface);
+    text-align: center;
     flex-shrink: 0;
   }
 
-  .load-more-btn {
-    padding: 5px 16px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    font-size: 12px;
-    color: var(--text-secondary);
-    background: var(--bg-surface);
-  }
-
-  .load-more-btn:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .load-more-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
 </style>

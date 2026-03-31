@@ -1,17 +1,30 @@
 import { listActivity } from "../api/activity.js";
 import type { ActivityItem, ActivityParams } from "../api/activity.js";
 
+// --- constants ---
+
+export type TimeRange = "24h" | "7d" | "30d" | "90d";
+export type ViewMode = "flat" | "threaded";
+
+const RANGE_MS: Record<TimeRange, number> = {
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+  "90d": 90 * 24 * 60 * 60 * 1000,
+};
+
 // --- state ---
 
 let items = $state<ActivityItem[]>([]);
 let loading = $state(false);
 let error = $state<string | null>(null);
-let hasMore = $state(false);
+let capped = $state(false);
 let filterRepo = $state<string | undefined>(undefined);
 let filterTypes = $state<string[]>([]);
 let searchQuery = $state<string | undefined>(undefined);
+let timeRange = $state<TimeRange>("7d");
+let viewMode = $state<ViewMode>("flat");
 let pollHandle: ReturnType<typeof setInterval> | null = null;
-let activeController: AbortController | null = null;
 let requestVersion = 0;
 
 // --- reads ---
@@ -28,8 +41,8 @@ export function getActivityError(): string | null {
   return error;
 }
 
-export function hasMoreActivity(): boolean {
-  return hasMore;
+export function isActivityCapped(): boolean {
+  return capped;
 }
 
 export function getActivityFilterRepo(): string | undefined {
@@ -42,6 +55,14 @@ export function getActivityFilterTypes(): string[] {
 
 export function getActivitySearch(): string | undefined {
   return searchQuery;
+}
+
+export function getTimeRange(): TimeRange {
+  return timeRange;
+}
+
+export function getViewMode(): ViewMode {
+  return viewMode;
 }
 
 // --- writes ---
@@ -58,24 +79,28 @@ export function setActivitySearch(q: string | undefined): void {
   searchQuery = q;
 }
 
+export function setTimeRange(range: TimeRange): void {
+  timeRange = range;
+}
+
+export function setViewMode(mode: ViewMode): void {
+  viewMode = mode;
+}
+
+function computeSince(): string {
+  return new Date(Date.now() - RANGE_MS[timeRange]).toISOString();
+}
+
 function buildParams(): ActivityParams {
-  const p: ActivityParams = { limit: 50 };
+  const p: ActivityParams = { since: computeSince() };
   if (filterRepo) p.repo = filterRepo;
   if (filterTypes.length > 0) p.types = filterTypes;
   if (searchQuery) p.search = searchQuery;
   return p;
 }
 
-function cancelPending(): void {
-  if (activeController) {
-    activeController.abort();
-    activeController = null;
-  }
-}
-
-/** Load the feed from the top (initial load or after filter change). */
+/** Load the full time window from scratch. */
 export async function loadActivity(): Promise<void> {
-  cancelPending();
   const version = ++requestVersion;
   loading = true;
   error = null;
@@ -83,29 +108,7 @@ export async function loadActivity(): Promise<void> {
     const resp = await listActivity(buildParams());
     if (version !== requestVersion) return;
     items = resp.items;
-    hasMore = resp.has_more;
-  } catch (err) {
-    if (version !== requestVersion) return;
-    error = err instanceof Error ? err.message : String(err);
-  } finally {
-    if (version === requestVersion) loading = false;
-  }
-}
-
-/** Load more items (append to existing list). */
-export async function loadMoreActivity(): Promise<void> {
-  if (items.length === 0) return;
-  const lastItem = items[items.length - 1]!;
-  const version = ++requestVersion;
-  loading = true;
-  error = null;
-  try {
-    const params = buildParams();
-    params.before = lastItem.cursor;
-    const resp = await listActivity(params);
-    if (version !== requestVersion) return;
-    items = [...items, ...resp.items];
-    hasMore = resp.has_more;
+    capped = resp.capped;
   } catch (err) {
     if (version !== requestVersion) return;
     error = err instanceof Error ? err.message : String(err);
@@ -124,8 +127,8 @@ async function pollNewItems(): Promise<void> {
     const params = buildParams();
     params.after = items[0]!.cursor;
     const resp = await listActivity(params);
-    if (resp.has_more) {
-      // More new items than one page — full reload.
+    if (resp.capped) {
+      // Too many new items — full reload.
       await loadActivity();
       return;
     }
@@ -139,6 +142,9 @@ async function pollNewItems(): Promise<void> {
   } catch {
     // Silent poll failure
   }
+  // Prune items older than the current window.
+  const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+  items = items.filter((it) => new Date(it.created_at) >= cutoff);
 }
 
 export function startActivityPolling(): void {
@@ -155,13 +161,21 @@ export function stopActivityPolling(): void {
   }
 }
 
-/** Sync URL query params → store state. Called when navigating to /. */
+/** Sync URL query params → store state. Called on mount. */
 export function syncFromURL(): void {
   const sp = new URLSearchParams(window.location.search);
   filterRepo = sp.get("repo") ?? undefined;
   const typesParam = sp.get("types");
   filterTypes = typesParam ? typesParam.split(",") : [];
   searchQuery = sp.get("search") ?? undefined;
+  const rangeParam = sp.get("range");
+  timeRange = (rangeParam && rangeParam in RANGE_MS)
+    ? rangeParam as TimeRange
+    : "7d";
+  const viewParam = sp.get("view");
+  viewMode = (viewParam === "flat" || viewParam === "threaded")
+    ? viewParam
+    : "flat";
 }
 
 /** Sync store state → URL query params (replaceState). */
@@ -173,6 +187,10 @@ export function syncToURL(): void {
   else sp.delete("types");
   if (searchQuery) sp.set("search", searchQuery);
   else sp.delete("search");
+  if (timeRange !== "7d") sp.set("range", timeRange);
+  else sp.delete("range");
+  if (viewMode !== "flat") sp.set("view", viewMode);
+  else sp.delete("view");
   const qs = sp.toString();
   const url = "/" + (qs ? `?${qs}` : "");
   history.replaceState(null, "", url);

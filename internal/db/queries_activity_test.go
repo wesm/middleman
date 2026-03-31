@@ -253,5 +253,27 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("since time window", func(t *testing.T) {
+		since := base.Add(4 * time.Minute)
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Limit: 50,
+			Since: &since,
+		})
+		if err != nil {
+			t.Fatalf("ListActivity since: %v", err)
+		}
+		for _, it := range items {
+			if it.CreatedAt.Before(since) {
+				t.Errorf("item %s:%d has created_at %v before since %v",
+					it.Source, it.SourceID, it.CreatedAt, since)
+			}
+		}
+		// base+4m is review, base+5m is commit, base+7m is issue comment,
+		// base+10m is comment-new from after cursor test = 4 items
+		if len(items) != 4 {
+			t.Fatalf("expected 4 items since base+4m, got %d", len(items))
+		}
+	})
+
 	_ = prID2
 }

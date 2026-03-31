@@ -33,8 +33,14 @@
     number: number;
   } | null>(null);
 
+  import { loadPulls } from "./lib/stores/pulls.svelte.js";
+  import { loadIssues } from "./lib/stores/issues.svelte.js";
+
   $effect(() => {
     startPolling();
+    // Load pulls and issues so status bar counts are available on all pages.
+    void loadPulls();
+    void loadIssues();
   });
 
   // Sync route state: restore drawer, select items, clear stale state.
