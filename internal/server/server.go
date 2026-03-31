@@ -5,8 +5,10 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -16,13 +18,50 @@ type Server struct {
 	db       *db.DB
 	gh       ghclient.Client
 	syncer   *ghclient.Syncer
+	cfg      *config.Config
+	cfgPath  string
+	cfgMu    sync.Mutex
 	basePath string
 	handler  http.Handler
 }
 
-// New creates a Server wiring up all API routes and optional SPA serving.
-// basePath should be "/" or "/prefix/" (with trailing slash).
-func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS, basePath string) *Server {
+// New creates a Server without config persistence (used by tests).
+func New(
+	database *db.DB,
+	gh ghclient.Client,
+	syncer *ghclient.Syncer,
+	frontend fs.FS,
+	basePath string,
+) *Server {
+	return newServer(
+		database, gh, syncer, frontend, basePath, nil, "",
+	)
+}
+
+// NewWithConfig creates a Server with config persistence
+// for settings/repo endpoints.
+func NewWithConfig(
+	database *db.DB,
+	gh ghclient.Client,
+	syncer *ghclient.Syncer,
+	frontend fs.FS,
+	cfg *config.Config,
+	cfgPath string,
+) *Server {
+	return newServer(
+		database, gh, syncer, frontend, cfg.BasePath, cfg, cfgPath,
+	)
+}
+
+func newServer(
+	database *db.DB,
+	gh ghclient.Client,
+	syncer *ghclient.Syncer,
+	frontend fs.FS,
+	basePath string,
+	cfg *config.Config,
+	cfgPath string,
+) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -30,6 +69,8 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		basePath: basePath,
 		gh:       gh,
 		syncer:   syncer,
+		cfg:      cfg,
+		cfgPath:  cfgPath,
 	}
 
 	mux.HandleFunc("GET /api/v1/activity", s.handleListActivity)
@@ -51,6 +92,11 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge", s.handleMergePR)
 	mux.HandleFunc("POST /api/v1/sync", s.handleTriggerSync)
 	mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)
+
+	mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/v1/settings", s.handleUpdateSettings)
+	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
+	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.handleDeleteRepo)
 
 	if frontend != nil {
 		indexBytes, err := fs.ReadFile(frontend, "index.html")

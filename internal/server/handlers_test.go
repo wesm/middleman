@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -372,6 +373,254 @@ func TestHandleTriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	}
 
 	t.Fatal("expected sync to complete despite request context cancellation")
+}
+
+// setupTestServerWithConfig opens a temp DB, saves the given config,
+// and returns a Server wired with NewWithConfig.
+func setupTestServerWithConfig(
+	t *testing.T, cfg *config.Config,
+) (*Server, *db.DB) {
+	t.Helper()
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	configPath := filepath.Join(dir, "config.toml")
+	if err := cfg.Save(configPath); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	mock := &mockGH{}
+	syncer := ghclient.NewSyncer(
+		mock, database, nil, time.Minute,
+	)
+	srv := NewWithConfig(
+		database, mock, syncer, nil, cfg, configPath,
+	)
+	return srv, database
+}
+
+func TestHandleGetSettings(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+			{Owner: "acme", Name: "gadget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "threaded",
+			TimeRange: "30d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	req := httptest.NewRequest(
+		http.MethodGet, "/api/v1/settings", nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+
+	var resp settingsResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Repos) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(resp.Repos))
+	}
+	if resp.Activity.ViewMode != "threaded" {
+		t.Errorf("expected view_mode threaded, got %q",
+			resp.Activity.ViewMode)
+	}
+	if resp.Activity.TimeRange != "30d" {
+		t.Errorf("expected time_range 30d, got %q",
+			resp.Activity.TimeRange)
+	}
+}
+
+func TestHandleUpdateSettings(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	body := bytes.NewBufferString(
+		`{"activity":{"view_mode":"threaded","time_range":"30d"}}`,
+	)
+	req := httptest.NewRequest(
+		http.MethodPut, "/api/v1/settings", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+
+	var resp settingsResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Activity.ViewMode != "threaded" {
+		t.Errorf("expected view_mode threaded, got %q",
+			resp.Activity.ViewMode)
+	}
+	if resp.Activity.TimeRange != "30d" {
+		t.Errorf("expected time_range 30d, got %q",
+			resp.Activity.TimeRange)
+	}
+}
+
+func TestHandleAddRepo(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	body := bytes.NewBufferString(
+		`{"owner":"acme","name":"gadget"}`,
+	)
+	req := httptest.NewRequest(
+		http.MethodPost, "/api/v1/repos", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+
+	var repo config.Repo
+	if err := json.NewDecoder(rr.Body).Decode(&repo); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if repo.Owner != "acme" || repo.Name != "gadget" {
+		t.Errorf("unexpected repo: %s/%s",
+			repo.Owner, repo.Name)
+	}
+}
+
+func TestHandleAddRepoDuplicate(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	body := bytes.NewBufferString(
+		`{"owner":"acme","name":"widget"}`,
+	)
+	req := httptest.NewRequest(
+		http.MethodPost, "/api/v1/repos", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleDeleteRepo(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+			{Owner: "acme", Name: "gadget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	req := httptest.NewRequest(
+		http.MethodDelete, "/api/v1/repos/acme/widget", nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleDeleteLastRepo(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	req := httptest.NewRequest(
+		http.MethodDelete, "/api/v1/repos/acme/widget", nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
 }
 
 func TestHandleReadyForReview(t *testing.T) {

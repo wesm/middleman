@@ -26,8 +26,8 @@ const (
 )
 
 type Repo struct {
-	Owner string `toml:"owner"`
-	Name  string `toml:"name"`
+	Owner string `toml:"owner" json:"owner"`
+	Name  string `toml:"name" json:"name"`
 }
 
 func (r Repo) FullName() string {
@@ -35,10 +35,10 @@ func (r Repo) FullName() string {
 }
 
 type Activity struct {
-	ViewMode   string `toml:"view_mode"`
-	TimeRange  string `toml:"time_range"`
-	HideClosed bool   `toml:"hide_closed"`
-	HideBots   bool   `toml:"hide_bots"`
+	ViewMode   string `toml:"view_mode" json:"view_mode"`
+	TimeRange  string `toml:"time_range" json:"time_range"`
+	HideClosed bool   `toml:"hide_closed" json:"hide_closed"`
+	HideBots   bool   `toml:"hide_bots" json:"hide_bots"`
 }
 
 type Config struct {
