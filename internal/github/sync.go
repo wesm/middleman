@@ -14,9 +14,11 @@ import (
 
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
-	Running   bool      `json:"running"`
-	LastRunAt time.Time `json:"last_run_at,omitzero"`
-	LastError string    `json:"last_error,omitempty"`
+	Running     bool      `json:"running"`
+	CurrentRepo string    `json:"current_repo,omitempty"`
+	Progress    string    `json:"progress,omitempty"`
+	LastRunAt   time.Time `json:"last_run_at,omitzero"`
+	LastError   string    `json:"last_error,omitempty"`
 }
 
 // RepoRef identifies a GitHub repository.
@@ -106,9 +108,16 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 	var lastErr string
 	for i, repo := range repos {
+		progress := fmt.Sprintf("%d/%d", i+1, len(repos))
+		repoName := repo.Owner + "/" + repo.Name
+		s.status.Store(&SyncStatus{
+			Running:     true,
+			CurrentRepo: repoName,
+			Progress:    progress,
+		})
 		slog.Info("syncing repo",
-			"repo", repo.Owner+"/"+repo.Name,
-			"progress", fmt.Sprintf("%d/%d", i+1, len(repos)),
+			"repo", repoName,
+			"progress", progress,
 		)
 		if err := s.syncRepo(ctx, repo); err != nil {
 			slog.Error("sync repo failed", "repo", repo.Owner+"/"+repo.Name, "err", err)

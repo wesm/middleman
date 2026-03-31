@@ -114,6 +114,8 @@ export interface PullDetail {
 
 export interface SyncStatus {
   running: boolean;
+  current_repo?: string;
+  progress?: string;
   last_run_at?: string;
   last_error?: string;
 }
