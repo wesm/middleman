@@ -166,6 +166,7 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 
 func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
@@ -199,20 +200,20 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 
 	// PR should be in the DB.
 	pr, err := d.GetPullRequest(ctx, "owner", "repo", 1)
-	require.NoError(t, err)
-	require.NotNil(t, pr)
+	require.NoError(err)
+	require.NotNil(pr)
 	assert.Equal(1, pr.Number)
 
 	// Kanban state should have been created.
 	ks, err := d.GetKanbanState(ctx, pr.ID)
-	require.NoError(t, err)
-	require.NotNil(t, ks)
+	require.NoError(err)
+	require.NotNil(ks)
 	assert.Equal("new", ks.Status)
 
 	// Commit event should have been stored.
 	events, err := d.ListPREvents(ctx, pr.ID)
-	require.NoError(t, err)
-	require.NotEmpty(t, events)
+	require.NoError(err)
+	require.NotEmpty(events)
 	found := false
 	for _, e := range events {
 		if e.EventType == "commit" {
