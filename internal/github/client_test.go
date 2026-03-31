@@ -1,13 +1,15 @@
 package github
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 // Compile-time assertion that liveClient satisfies Client.
 var _ Client = (*liveClient)(nil)
 
 func TestNewClientReturnsNonNil(t *testing.T) {
 	c := NewClient("fake-token")
-	if c == nil {
-		t.Fatal("expected non-nil client")
-	}
+	require.NotNil(t, c)
 }

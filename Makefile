@@ -16,7 +16,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate \
-        dev test test-short vet lint tidy svelte-skills clean install-hooks help
+        dev test test-short vet lint testify-helper-check tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -115,6 +115,10 @@ test-short: ensure-embed-dir
 vet: ensure-embed-dir
 	go vet ./...
 
+# Enforce testify helper usage for assertion-heavy tests
+testify-helper-check: ensure-embed-dir
+	go run ./cmd/testify-helper-check ./...
+
 # Lint Go code and auto-fix where possible
 lint: ensure-embed-dir
 	@if ! command -v mise >/dev/null 2>&1; then \
@@ -122,6 +126,7 @@ lint: ensure-embed-dir
 		exit 1; \
 	fi
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" mise exec -- golangci-lint run --fix
+	go run ./cmd/testify-helper-check ./...
 
 # Tidy dependencies
 tidy:
@@ -163,6 +168,7 @@ help:
 	@echo "  test-short     - Run fast tests only"
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
+	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
 	@echo ""

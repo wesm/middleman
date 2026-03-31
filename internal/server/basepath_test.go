@@ -10,6 +10,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -18,9 +20,7 @@ func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {
 	t.Helper()
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{}
@@ -51,19 +51,18 @@ func TestBasePathAPIRouting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
 			srv := setupWithBasePath(t, tt.basePath, frontend)
 			req := httptest.NewRequest(http.MethodGet, tt.reqPath, nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
 
-			if rr.Code != tt.wantStatus {
-				t.Fatalf("expected %d, got %d: %s", tt.wantStatus, rr.Code, rr.Body.String())
-			}
+			require.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
 			ct := rr.Header().Get("Content-Type")
 			isJSON := strings.HasPrefix(ct, "application/json")
-			if tt.wantJSON && !isJSON {
-				t.Fatalf("expected JSON, got Content-Type %q: %s", ct, rr.Body.String())
-			}
+			assert.Condition(func() bool {
+				return !tt.wantJSON || isJSON
+			}, "expected JSON response for %q, got Content-Type %q: %s", tt.reqPath, ct, rr.Body.String())
 		})
 	}
 }
@@ -81,9 +80,7 @@ func TestBasePathInjectsScript(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	body := rr.Body.String()
-	if !strings.Contains(body, `window.__BASE_PATH__="/middleman/"`) {
-		t.Fatalf("expected injected base path script, got: %s", body)
-	}
+	Assert.Contains(t, body, `window.__BASE_PATH__="/middleman/"`)
 }
 
 func TestBasePathRewritesAssetURLs(t *testing.T) {
@@ -99,15 +96,10 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	body := rr.Body.String()
-	if strings.Contains(body, `href="/assets/`) {
-		t.Fatalf("expected rewritten href, got: %s", body)
-	}
-	if !strings.Contains(body, `href="/middleman/assets/`) {
-		t.Fatalf("expected /middleman/assets/ in href, got: %s", body)
-	}
-	if !strings.Contains(body, `src="/middleman/assets/`) {
-		t.Fatalf("expected /middleman/assets/ in src, got: %s", body)
-	}
+	assert := Assert.New(t)
+	assert.NotContains(body, `href="/assets/`)
+	assert.Contains(body, `href="/middleman/assets/`)
+	assert.Contains(body, `src="/middleman/assets/`)
 }
 
 func TestCSRFRejectsCrossSite(t *testing.T) {
@@ -120,9 +112,7 @@ func TestCSRFRejectsCrossSite(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rr.Code)
-	}
+	require.Equal(t, http.StatusForbidden, rr.Code)
 }
 
 func TestCSRFRejectsWrongContentType(t *testing.T) {
@@ -136,9 +126,7 @@ func TestCSRFRejectsWrongContentType(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusUnsupportedMediaType {
-		t.Fatalf("expected 415, got %d", rr.Code)
-	}
+	require.Equal(t, http.StatusUnsupportedMediaType, rr.Code)
 }
 
 func TestCSRFAllowsSameOrigin(t *testing.T) {
@@ -151,9 +139,7 @@ func TestCSRFAllowsSameOrigin(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	// Should pass CSRF and reach the handler (202 Accepted).
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
 }
 
 func TestCSRFAllowsNoSecFetchSite(t *testing.T) {
@@ -166,9 +152,7 @@ func TestCSRFAllowsNoSecFetchSite(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
 }
 
 func TestCSRFRejectsNoContentType(t *testing.T) {
@@ -179,9 +163,7 @@ func TestCSRFRejectsNoContentType(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusUnsupportedMediaType {
-		t.Fatalf("expected 415, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusUnsupportedMediaType, rr.Code, rr.Body.String())
 }
 
 func TestCSRFAppliesUnderBasePath(t *testing.T) {
@@ -197,15 +179,11 @@ func TestCSRFAppliesUnderBasePath(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf(
-			"expected 403 for cross-site under basePath, got %d",
-			rr.Code,
-		)
-	}
+	require.Equal(t, http.StatusForbidden, rr.Code)
 }
 
 func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
+	assert := Assert.New(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -218,21 +196,13 @@ func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
 	docsRR := httptest.NewRecorder()
 	srv.ServeHTTP(docsRR, docsReq)
 
-	if docsRR.Code != http.StatusOK {
-		t.Fatalf("expected docs status %d, got %d: %s", http.StatusOK, docsRR.Code, docsRR.Body.String())
-	}
-	if !strings.Contains(docsRR.Body.String(), `apiDescriptionUrl="/middleman/api/v1/openapi.yaml"`) {
-		t.Fatalf("expected prefixed docs OpenAPI URL, got: %s", docsRR.Body.String())
-	}
+	require.Equal(t, http.StatusOK, docsRR.Code, docsRR.Body.String())
+	assert.Contains(docsRR.Body.String(), `apiDescriptionUrl="/middleman/api/v1/openapi.yaml"`)
 
 	openAPIReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/openapi.json", nil)
 	openAPIRR := httptest.NewRecorder()
 	srv.ServeHTTP(openAPIRR, openAPIReq)
 
-	if openAPIRR.Code != http.StatusOK {
-		t.Fatalf("expected OpenAPI status %d, got %d: %s", http.StatusOK, openAPIRR.Code, openAPIRR.Body.String())
-	}
-	if !strings.Contains(openAPIRR.Body.String(), `"url":"/middleman/api/v1"`) {
-		t.Fatalf("expected prefixed OpenAPI server URL, got: %s", openAPIRR.Body.String())
-	}
+	require.Equal(t, http.StatusOK, openAPIRR.Code, openAPIRR.Body.String())
+	assert.Contains(openAPIRR.Body.String(), `"url":"/middleman/api/v1"`)
 }

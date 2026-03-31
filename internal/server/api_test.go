@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/apiclient"
 	"github.com/wesm/middleman/internal/apiclient/generated"
@@ -157,9 +158,7 @@ func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
 	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
@@ -214,9 +213,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	ctx := context.Background()
 
 	repoID, err := database.UpsertRepo(ctx, owner, name)
-	if err != nil {
-		t.Fatalf("upsert repo: %v", err)
-	}
+	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.PullRequest{
@@ -242,13 +239,9 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	}
 
 	prID, err := database.UpsertPullRequest(ctx, pr)
-	if err != nil {
-		t.Fatalf("upsert pr: %v", err)
-	}
+	require.NoError(t, err)
 
-	if err := database.EnsureKanbanState(ctx, prID); err != nil {
-		t.Fatalf("ensure kanban state: %v", err)
-	}
+	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
 }
@@ -261,20 +254,22 @@ func TestAPIClientConstruction(t *testing.T) {
 }
 
 func TestAPIListPulls(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ListPullsWithResponse(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.Len(t, *resp.JSON200, 1)
-	require.Equal(t, "acme", (*resp.JSON200)[0].RepoOwner)
-	require.Equal(t, "widget", (*resp.JSON200)[0].RepoName)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	require.Equal("widget", (*resp.JSON200)[0].RepoName)
 }
 
 func TestAPIGetPull(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -282,13 +277,13 @@ func TestAPIGetPull(t *testing.T) {
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		context.Background(), "acme", "widget", 1,
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.NotNil(t, resp.JSON200.PullRequest)
-	require.EqualValues(t, 1, resp.JSON200.PullRequest.Number)
-	require.Equal(t, "acme", resp.JSON200.RepoOwner)
-	require.Equal(t, "widget", resp.JSON200.RepoName)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.PullRequest)
+	require.EqualValues(1, resp.JSON200.PullRequest.Number)
+	require.Equal("acme", resp.JSON200.RepoOwner)
+	require.Equal("widget", resp.JSON200.RepoName)
 }
 
 func TestAPIGetPullNotFound(t *testing.T) {
@@ -304,6 +299,7 @@ func TestAPIGetPullNotFound(t *testing.T) {
 }
 
 func TestAPISetKanbanState(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -315,13 +311,13 @@ func TestAPISetKanbanState(t *testing.T) {
 		1,
 		generated.SetKanbanStateJSONRequestBody{Status: "reviewing"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
-	require.NoError(t, err)
-	require.NotNil(t, pr)
-	require.Equal(t, "reviewing", pr.KanbanStatus)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.Equal("reviewing", pr.KanbanStatus)
 }
 
 func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
@@ -342,36 +338,39 @@ func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 }
 
 func TestAPIListRepos(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
 	_, err := database.UpsertRepo(context.Background(), "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	resp, err := client.HTTP.ListReposWithResponse(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.Len(t, *resp.JSON200, 1)
-	require.Equal(t, "acme", (*resp.JSON200)[0].Owner)
-	require.Equal(t, "widget", (*resp.JSON200)[0].Name)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.Equal("acme", (*resp.JSON200)[0].Owner)
+	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
 func TestAPISyncStatus(t *testing.T) {
+	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.GetSyncStatusWithResponse(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.False(t, resp.JSON200.Running)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.False(resp.JSON200.Running)
 }
 
 func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{}
@@ -389,25 +388,26 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		repos, err := database.ListRepos(context.Background())
-		require.NoError(t, err)
+		require.NoError(err)
 		if len(repos) == 1 && repos[0].Owner == "acme" && repos[0].Name == "widget" {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Fatal("expected sync to complete despite request context cancellation")
+	Assert.Fail(t, "expected sync to complete despite request context cancellation")
 }
 
 func TestAPIReadyForReview(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{
@@ -439,7 +439,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	repoID, err := database.UpsertRepo(context.Background(), "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	prID, err := database.UpsertPullRequest(context.Background(), &db.PullRequest{
@@ -463,23 +463,24 @@ func TestAPIReadyForReview(t *testing.T) {
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	})
-	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(context.Background(), prID))
+	require.NoError(err)
+	require.NoError(database.EnsureKanbanState(context.Background(), prID))
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		context.Background(), "acme", "widget", 1,
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
 
 	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
-	require.NoError(t, err)
-	require.NotNil(t, pr)
-	require.False(t, pr.IsDraft)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.False(pr.IsDraft)
 }
 
 func TestAPISetStarred(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -490,18 +491,19 @@ func TestAPISetStarred(t *testing.T) {
 		Name:     "widget",
 		Number:   1,
 	})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	starred, err := database.IsStarred(context.Background(), "pr", 1, 1)
-	require.NoError(t, err)
-	require.True(t, starred)
+	require.NoError(err)
+	require.True(starred)
 }
 
 func TestAPIUnsetStarred(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
-	require.NoError(t, database.SetStarred(context.Background(), "pr", 1, 1))
+	require.NoError(database.SetStarred(context.Background(), "pr", 1, 1))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.UnsetStarredWithResponse(context.Background(), generated.UnsetStarredJSONRequestBody{
@@ -510,15 +512,16 @@ func TestAPIUnsetStarred(t *testing.T) {
 		Name:     "widget",
 		Number:   1,
 	})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	starred, err := database.IsStarred(context.Background(), "pr", 1, 1)
-	require.NoError(t, err)
-	require.False(t, starred)
+	require.NoError(err)
+	require.False(starred)
 }
 
 func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
+	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
@@ -528,28 +531,29 @@ func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
 		Name:     "widget",
 		Number:   1,
 	})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
-	require.NotNil(t, resp.ApplicationproblemJSONDefault)
-	require.NotNil(t, resp.ApplicationproblemJSONDefault.Detail)
-	require.Contains(t, *resp.ApplicationproblemJSONDefault.Detail, "item_type must be 'pr' or 'issue'")
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
+	require.Contains(*resp.ApplicationproblemJSONDefault.Detail, "item_type must be 'pr' or 'issue'")
 }
 
 func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
+	require := require.New(t)
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	body := rr.Body.String()
-	require.Contains(t, body, `"/activity"`)
-	require.Contains(t, body, `"name":"since"`)
-	require.Contains(t, body, `"capped"`)
-	require.NotContains(t, body, `"name":"before"`)
-	require.NotContains(t, body, `"has_more"`)
+	require.Contains(body, `"/activity"`)
+	require.Contains(body, `"name":"since"`)
+	require.Contains(body, `"capped"`)
+	require.NotContains(body, `"name":"before"`)
+	require.NotContains(body, `"has_more"`)
 }
 
 // seedIssue inserts a repo and an issue into the DB.
@@ -574,6 +578,7 @@ func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, st
 }
 
 func TestAPIClosePR(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -582,57 +587,59 @@ func TestAPIClosePR(t *testing.T) {
 		context.Background(), "acme", "widget", 1,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
-	require.NoError(t, err)
-	require.Equal(t, "closed", pr.State)
-	require.NotNil(t, pr.ClosedAt)
+	require.NoError(err)
+	require.Equal("closed", pr.State)
+	require.NotNil(pr.ClosedAt)
 }
 
 func TestAPIReopenPR(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := context.Background()
 
 	// Close it first.
 	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 	now := time.Now()
-	require.NoError(t, database.UpdatePRState(ctx, repo.ID, 1, "closed", nil, &now))
+	require.NoError(database.UpdatePRState(ctx, repo.ID, 1, "closed", nil, &now))
 
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		ctx, "acme", "widget", 1,
 		generated.SetPrGithubStateJSONRequestBody{State: "open"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	pr, err := database.GetPullRequest(ctx, "acme", "widget", 1)
-	require.NoError(t, err)
-	require.Equal(t, "open", pr.State)
-	require.Nil(t, pr.ClosedAt, "closed_at should be cleared on reopen")
+	require.NoError(err)
+	require.Equal("open", pr.State)
+	require.Nil(pr.ClosedAt, "closed_at should be cleared on reopen")
 }
 
 func TestAPIClosePRRejectsMerged(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := context.Background()
 
 	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 	now := time.Now()
-	require.NoError(t, database.UpdatePRState(ctx, repo.ID, 1, "merged", &now, &now))
+	require.NoError(database.UpdatePRState(ctx, repo.ID, 1, "merged", &now, &now))
 
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		ctx, "acme", "widget", 1,
 		generated.SetPrGithubStateJSONRequestBody{State: "open"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusConflict, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
 }
 
 func TestAPIClosePRInvalidState(t *testing.T) {
@@ -649,6 +656,7 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 }
 
 func TestAPICloseIssue(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
@@ -657,16 +665,17 @@ func TestAPICloseIssue(t *testing.T) {
 		context.Background(), "acme", "widget", 5,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
-	require.NoError(t, err)
-	require.Equal(t, "closed", issue.State)
-	require.NotNil(t, issue.ClosedAt)
+	require.NoError(err)
+	require.Equal("closed", issue.State)
+	require.NotNil(issue.ClosedAt)
 }
 
 func TestAPIReopenIssue(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "closed")
 	client := setupTestClient(t, srv)
@@ -675,16 +684,17 @@ func TestAPIReopenIssue(t *testing.T) {
 		context.Background(), "acme", "widget", 5,
 		generated.SetIssueGithubStateJSONRequestBody{State: "open"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
-	require.NoError(t, err)
-	require.Equal(t, "open", issue.State)
-	require.Nil(t, issue.ClosedAt, "closed_at should be cleared on reopen")
+	require.NoError(err)
+	require.Equal("open", issue.State)
+	require.Nil(issue.ClosedAt, "closed_at should be cleared on reopen")
 }
 
 func TestAPIListPullsStateFilter(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := context.Background()
 
@@ -701,30 +711,31 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 
 	// Default (open)
 	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.Len(t, *resp.JSON200, 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Len(*resp.JSON200, 1)
 
 	// Closed (includes merged)
 	state := "closed"
 	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(t, err)
-	require.Len(t, *resp.JSON200, 2)
+	require.NoError(err)
+	require.Len(*resp.JSON200, 2)
 
 	// All
 	state = "all"
 	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(t, err)
-	require.Len(t, *resp.JSON200, 3)
+	require.NoError(err)
+	require.Len(*resp.JSON200, 3)
 
 	// Invalid
 	state = "bogus"
 	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
 }
 
 func TestAPIListIssuesStateFilter(t *testing.T) {
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := context.Background()
 
@@ -735,20 +746,20 @@ func TestAPIListIssuesStateFilter(t *testing.T) {
 
 	// Default (open)
 	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(t, err)
-	require.Len(t, *resp.JSON200, 1)
+	require.NoError(err)
+	require.Len(*resp.JSON200, 1)
 
 	// Closed
 	state := "closed"
 	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
-	require.NoError(t, err)
-	require.Len(t, *resp.JSON200, 1)
+	require.NoError(err)
+	require.Len(*resp.JSON200, 1)
 
 	// All
 	state = "all"
 	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
-	require.NoError(t, err)
-	require.Len(t, *resp.JSON200, 2)
+	require.NoError(err)
+	require.Len(*resp.JSON200, 2)
 }
 
 func make422Error() error {
@@ -759,6 +770,7 @@ func make422Error() error {
 }
 
 func TestAPIClosePR422AlreadyClosed(t *testing.T) {
+	require := require.New(t)
 	// EditPullRequest returns 422, but re-fetch shows PR is already closed.
 	// Should succeed since the requested state matches.
 	state := "closed"
@@ -788,11 +800,11 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 		context.Background(), "acme", "widget", 1,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	pr, _ := database.GetPullRequest(context.Background(), "acme", "widget", 1)
-	require.Equal(t, "closed", pr.State)
+	require.Equal("closed", pr.State)
 }
 
 func TestAPIClosePR422Merged(t *testing.T) {
@@ -830,6 +842,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 }
 
 func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
+	require := require.New(t)
 	state := "closed"
 	mock := &mockGH{
 		editIssueFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.Issue, error) {
@@ -855,35 +868,36 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 		context.Background(), "acme", "widget", 5,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	issue, _ := database.GetIssue(context.Background(), "acme", "widget", 5)
-	require.Equal(t, "closed", issue.State)
+	require.Equal("closed", issue.State)
 }
 
 func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
+	require := require.New(t)
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	spec := rr.Body.String()
-	require.Contains(t, spec, `"/sync":{"post":{"operationId":"trigger-sync"`)
-	require.Contains(t, spec, `"/starred":{"delete":{"operationId":"unset-starred"`)
-	require.Contains(t, spec, `"/repos/{owner}/{name}/pulls/{number}/comments":{"post":{"operationId":"post-pr-comment"`)
-	require.Contains(t, spec, `"trigger-sync","responses":{"202":{"description":"Accepted"}`)
-	require.Contains(t, spec, `"set-starred","requestBody"`)
-	require.Contains(t, spec, `"responses":{"200":{"description":"OK"}`)
-	require.True(t,
+	require.Contains(spec, `"/sync":{"post":{"operationId":"trigger-sync"`)
+	require.Contains(spec, `"/starred":{"delete":{"operationId":"unset-starred"`)
+	require.Contains(spec, `"/repos/{owner}/{name}/pulls/{number}/comments":{"post":{"operationId":"post-pr-comment"`)
+	require.Contains(spec, `"trigger-sync","responses":{"202":{"description":"Accepted"}`)
+	require.Contains(spec, `"set-starred","requestBody"`)
+	require.Contains(spec, `"responses":{"200":{"description":"OK"}`)
+	require.True(
 		strings.Contains(spec, `"operationId":"post-pr-comment","parameters"`) ||
 			strings.Contains(spec, `"operationId":"post-pr-comment","requestBody"`),
 		"expected post-pr-comment operation to be present",
 	)
-	require.Contains(t, spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PREvent"}}},"description":"Created"}`)
-	require.Contains(t, spec, `"operationId":"post-issue-comment"`)
-	require.Contains(t, spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
+	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PREvent"}}},"description":"Created"}`)
+	require.Contains(spec, `"operationId":"post-issue-comment"`)
+	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
 }
