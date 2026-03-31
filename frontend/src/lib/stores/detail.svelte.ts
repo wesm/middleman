@@ -174,16 +174,23 @@ export async function updateKanbanState(
         reloads.push(loadDetail(owner, name, number));
       }
       await Promise.all(reloads);
+      // Allow older in-flight requests to still reconcile, but
+      // only if no newer request started during the reload.
+      if (seq === kanbanSeqByPR.get(key)) {
+        kanbanSeqByPR.set(key, seq - 1);
+      }
     }
     return;
   }
-  // Always refresh from server on success so both views converge to
-  // authoritative state regardless of request completion order.
-  const refreshes: Promise<void>[] = [refreshPullsIfActive()];
-  if (isDetailShowing(owner, name, number)) {
-    refreshes.push(loadDetail(owner, name, number));
+  // Only refresh if still the latest request for this PR, so an
+  // older success doesn't overwrite a newer optimistic value.
+  if (seq === kanbanSeqByPR.get(key)) {
+    const refreshes: Promise<void>[] = [refreshPullsIfActive()];
+    if (isDetailShowing(owner, name, number)) {
+      refreshes.push(loadDetail(owner, name, number));
+    }
+    await Promise.all(refreshes);
   }
-  await Promise.all(refreshes);
 }
 
 // --- polling ---

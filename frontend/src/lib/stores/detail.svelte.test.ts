@@ -308,9 +308,35 @@ describe("updateKanbanState", () => {
     expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
     expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
 
-    // A succeeds later. Server applied A before B, so server still
-    // has "waiting". A's refresh must still run and converge.
+    // A succeeds later but is stale (B already settled). Its
+    // refresh is suppressed — B's authoritative state stands.
     putCalls[0]!.resolve({});
+    await promiseA;
+
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+    expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
+  });
+
+  it("older success does not overwrite newer optimistic state while B is pending", async () => {
+    await seedStores([{ owner: "acme", name: "repo", number: 42, status: "new" }]);
+
+    // Fire A then B; B is still pending when A resolves.
+    const promiseA = updateKanbanState("acme", "repo", 42, "reviewing");
+    const promiseB = updateKanbanState("acme", "repo", 42, "waiting");
+
+    expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+
+    // A succeeds while B is still in flight. A's refresh must be
+    // suppressed so B's optimistic state is preserved.
+    putCalls[0]!.resolve({});
+    await promiseA;
+
+    expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+
+    // B succeeds. As latest request, its refresh runs.
+    putCalls[1]!.resolve({});
     await flush();
 
     getCalls[getCalls.length - 2]!.resolve({
@@ -319,9 +345,9 @@ describe("updateKanbanState", () => {
     getCalls[getCalls.length - 1]!.resolve(
       makeDetailResponse("acme", "repo", 42, "waiting"),
     );
-    await promiseA;
+    await promiseB;
 
-    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
     expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
   });
 });
