@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import PullList from "./lib/components/sidebar/PullList.svelte";
@@ -41,7 +42,7 @@
 
   let appReady = $state(false);
 
-  $effect(() => {
+  onMount(() => {
     void (async () => {
       try {
         const settings = await getSettings();
