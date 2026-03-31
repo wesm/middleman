@@ -56,9 +56,9 @@ frontend:
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
 
-# Run Vite dev server (use alongside `make dev`)
+# Run Vite dev server with dependencies installed (use alongside `make dev`)
 frontend-dev:
-	cd frontend && bun run dev
+	cd frontend && bun install && bun run dev
 
 # Run Vite dev server with Bun (use alongside `make dev`)
 frontend-dev-bun:
@@ -99,7 +99,7 @@ check-air:
 air-install:
 	go install github.com/air-verse/air@latest
 
-# Run Go server in dev mode with live reload (use alongside `make frontend-dev`)
+# Run Go server in dev mode with live reload and API artifact refresh (use alongside `make frontend-dev`)
 dev: ensure-embed-dir check-air
 	"$(AIR_BIN)" -c .air.toml -- $(ARGS)
 
@@ -153,9 +153,9 @@ help:
 	@echo "  install        - Build and install to ~/.local/bin or GOPATH"
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
-	@echo "  dev            - Run Go server with air live reload (use with frontend-dev)"
+	@echo "  dev            - Run Go server with air live reload and API artifact refresh"
 	@echo "  frontend       - Build frontend SPA"
-	@echo "  frontend-dev   - Run Vite dev server"
+	@echo "  frontend-dev   - Install deps and run Vite dev server"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""

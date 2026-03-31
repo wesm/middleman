@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "go build -o ./tmp/middleman ./cmd/middleman"
+cmd = "./scripts/dev-backend-build.sh"
 entrypoint = "./tmp/middleman"
 delay = 500
 exclude_dir = ["frontend", "internal/web/dist", "tmp", "vendor", ".git"]
