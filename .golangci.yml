@@ -5,6 +5,7 @@ linters:
   default: none
   enable:
     - errcheck
+    - forbidigo
     - govet
     - ineffassign
     - staticcheck
@@ -19,6 +20,13 @@ linters:
     errcheck:
       check-type-assertions: false
       check-blank: false
+    forbidigo:
+      forbid:
+        - pattern: '^t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)$'
+          msg: Use testify assert/require helpers in tests.
+        - pattern: '^testing\..+\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)$'
+          msg: Use testify assert/require helpers in tests.
+      analyze-types: true
   exclusions:
     generated: lax
     presets:

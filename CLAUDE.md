@@ -76,7 +76,9 @@ make vet        # go vet
 ### Test Guidelines
 
 - Table-driven tests for Go code
-- Use `testify` for new Go tests
+- Use `testify` consistently in Go tests; prefer `require` for setup/preconditions and `assert` for non-blocking checks
+- When a test function has more than 3 assertions, create a local helper with `assert := Assert.New(t)` and use the helper methods for the rest of the checks
+- Do not use `t.Fatal`, `t.Fatalf`, `t.Error`, `t.Errorf`, `t.Fail`, or `t.FailNow` in tests; use testify assertions instead
 - Prefer the generated Go API client in `internal/apiclient` for integration-style API tests
 - Use `openTestDB(t)` helper for database tests
 - All tests use `t.TempDir()` for temp directories

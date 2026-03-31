@@ -5,6 +5,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func ghTimestamp(t time.Time) *gh.Timestamp {
@@ -12,6 +14,7 @@ func ghTimestamp(t time.Time) *gh.Timestamp {
 }
 
 func TestNormalizePR_OpenPR(t *testing.T) {
+	assert := Assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
 		ID:        new(int64(1001)),
@@ -32,60 +35,27 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 
 	pr := NormalizePR(7, ghPR)
 
-	if pr.RepoID != 7 {
-		t.Errorf("RepoID: got %d, want 7", pr.RepoID)
-	}
-	if pr.GitHubID != 1001 {
-		t.Errorf("GitHubID: got %d, want 1001", pr.GitHubID)
-	}
-	if pr.Number != 42 {
-		t.Errorf("Number: got %d, want 42", pr.Number)
-	}
-	if pr.URL != "https://github.com/owner/repo/pull/42" {
-		t.Errorf("URL: got %q", pr.URL)
-	}
-	if pr.Title != "My PR" {
-		t.Errorf("Title: got %q", pr.Title)
-	}
-	if pr.Author != "alice" {
-		t.Errorf("Author: got %q, want alice", pr.Author)
-	}
-	if pr.State != "open" {
-		t.Errorf("State: got %q, want open", pr.State)
-	}
-	if pr.IsDraft {
-		t.Error("IsDraft: got true, want false")
-	}
-	if pr.Body != "description" {
-		t.Errorf("Body: got %q", pr.Body)
-	}
-	if pr.Additions != 10 {
-		t.Errorf("Additions: got %d, want 10", pr.Additions)
-	}
-	if pr.Deletions != 5 {
-		t.Errorf("Deletions: got %d, want 5", pr.Deletions)
-	}
-	if pr.HeadBranch != "feature" {
-		t.Errorf("HeadBranch: got %q, want feature", pr.HeadBranch)
-	}
-	if pr.BaseBranch != "main" {
-		t.Errorf("BaseBranch: got %q, want main", pr.BaseBranch)
-	}
-	if !pr.CreatedAt.Equal(now) {
-		t.Errorf("CreatedAt: got %v, want %v", pr.CreatedAt, now)
-	}
-	if !pr.UpdatedAt.Equal(now) {
-		t.Errorf("UpdatedAt: got %v, want %v", pr.UpdatedAt, now)
-	}
-	if !pr.LastActivityAt.Equal(now) {
-		t.Errorf("LastActivityAt: got %v, want %v", pr.LastActivityAt, now)
-	}
-	if pr.MergedAt != nil {
-		t.Errorf("MergedAt: expected nil, got %v", pr.MergedAt)
-	}
+	assert.Equal(int64(7), pr.RepoID)
+	assert.Equal(int64(1001), pr.GitHubID)
+	assert.Equal(42, pr.Number)
+	assert.Equal("https://github.com/owner/repo/pull/42", pr.URL)
+	assert.Equal("My PR", pr.Title)
+	assert.Equal("alice", pr.Author)
+	assert.Equal("open", pr.State)
+	assert.False(pr.IsDraft)
+	assert.Equal("description", pr.Body)
+	assert.Equal(10, pr.Additions)
+	assert.Equal(5, pr.Deletions)
+	assert.Equal("feature", pr.HeadBranch)
+	assert.Equal("main", pr.BaseBranch)
+	assert.True(pr.CreatedAt.Equal(now))
+	assert.True(pr.UpdatedAt.Equal(now))
+	assert.True(pr.LastActivityAt.Equal(now))
+	assert.Nil(pr.MergedAt)
 }
 
 func TestNormalizePR_MergedPR(t *testing.T) {
+	assert := Assert.New(t)
 	mergedAt := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
 		ID:       new(int64(2002)),
@@ -98,18 +68,13 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 
 	pr := NormalizePR(3, ghPR)
 
-	if pr.State != "merged" {
-		t.Errorf("State: got %q, want merged", pr.State)
-	}
-	if pr.MergedAt == nil {
-		t.Fatal("MergedAt: expected non-nil")
-	}
-	if !pr.MergedAt.Equal(mergedAt) {
-		t.Errorf("MergedAt: got %v, want %v", *pr.MergedAt, mergedAt)
-	}
+	assert.Equal("merged", pr.State)
+	require.NotNil(t, pr.MergedAt)
+	assert.True(pr.MergedAt.Equal(mergedAt))
 }
 
 func TestNormalizeCommentEvent(t *testing.T) {
+	assert := Assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	c := &gh.IssueComment{
 		ID:        new(int64(555)),
@@ -120,30 +85,18 @@ func TestNormalizeCommentEvent(t *testing.T) {
 
 	event := NormalizeCommentEvent(10, c)
 
-	if event.PRID != 10 {
-		t.Errorf("PRID: got %d, want 10", event.PRID)
-	}
-	if event.EventType != "issue_comment" {
-		t.Errorf("EventType: got %q, want issue_comment", event.EventType)
-	}
-	if event.DedupeKey != "comment-555" {
-		t.Errorf("DedupeKey: got %q, want comment-555", event.DedupeKey)
-	}
-	if event.Author != "carol" {
-		t.Errorf("Author: got %q, want carol", event.Author)
-	}
-	if event.Body != "looks good" {
-		t.Errorf("Body: got %q", event.Body)
-	}
-	if event.GitHubID == nil || *event.GitHubID != 555 {
-		t.Errorf("GitHubID: got %v, want 555", event.GitHubID)
-	}
-	if !event.CreatedAt.Equal(now) {
-		t.Errorf("CreatedAt: got %v, want %v", event.CreatedAt, now)
-	}
+	assert.Equal(int64(10), event.PRID)
+	assert.Equal("issue_comment", event.EventType)
+	assert.Equal("comment-555", event.DedupeKey)
+	assert.Equal("carol", event.Author)
+	assert.Equal("looks good", event.Body)
+	require.NotNil(t, event.GitHubID)
+	assert.Equal(int64(555), *event.GitHubID)
+	assert.True(event.CreatedAt.Equal(now))
 }
 
 func TestNormalizeIssueCommentEvent(t *testing.T) {
+	assert := Assert.New(t)
 	now := time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)
 	id := int64(777)
 	body := "needs follow-up"
@@ -157,34 +110,19 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 
 	event := NormalizeIssueCommentEvent(12, c)
 
-	if event.IssueID != 12 {
-		t.Errorf("IssueID: got %d, want 12", event.IssueID)
-	}
-	if event.EventType != "issue_comment" {
-		t.Errorf("EventType: got %q, want issue_comment", event.EventType)
-	}
-	if event.DedupeKey != "issue-comment-777" {
-		t.Errorf("DedupeKey: got %q, want issue-comment-777", event.DedupeKey)
-	}
-	if event.Author != "dana" {
-		t.Errorf("Author: got %q, want dana", event.Author)
-	}
-	if event.Body != "needs follow-up" {
-		t.Errorf("Body: got %q", event.Body)
-	}
-	if event.GitHubID == nil || *event.GitHubID != 777 {
-		t.Errorf("GitHubID: got %v, want 777", event.GitHubID)
-	}
-	if !event.CreatedAt.Equal(now) {
-		t.Errorf("CreatedAt: got %v, want %v", event.CreatedAt, now)
-	}
+	assert.Equal(int64(12), event.IssueID)
+	assert.Equal("issue_comment", event.EventType)
+	assert.Equal("issue-comment-777", event.DedupeKey)
+	assert.Equal("dana", event.Author)
+	assert.Equal("needs follow-up", event.Body)
+	require.NotNil(t, event.GitHubID)
+	assert.Equal(int64(777), *event.GitHubID)
+	assert.True(event.CreatedAt.Equal(now))
 }
 
 func TestDeriveReviewDecision_Empty(t *testing.T) {
 	result := DeriveReviewDecision(nil)
-	if result != "" {
-		t.Errorf("got %q, want empty string", result)
-	}
+	Assert.Empty(t, result)
 }
 
 func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
@@ -193,9 +131,7 @@ func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("COMMENTED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	if result != "approved" {
-		t.Errorf("got %q, want approved", result)
-	}
+	Assert.Equal(t, "approved", result)
 }
 
 func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
@@ -204,9 +140,7 @@ func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("CHANGES_REQUESTED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	if result != "changes_requested" {
-		t.Errorf("got %q, want changes_requested", result)
-	}
+	Assert.Equal(t, "changes_requested", result)
 }
 
 func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
@@ -215,9 +149,7 @@ func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("DISMISSED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	if result != "" {
-		t.Errorf("got %q, want empty string", result)
-	}
+	Assert.Empty(t, result)
 }
 
 func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
@@ -227,7 +159,5 @@ func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
 		{User: &gh.User{Login: new("bob")}, State: new("APPROVED")},
 	}
 	result := DeriveReviewDecision(reviews)
-	if result != "approved" {
-		t.Errorf("got %q, want approved", result)
-	}
+	Assert.Equal(t, "approved", result)
 }

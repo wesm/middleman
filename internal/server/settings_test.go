@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
@@ -22,9 +24,7 @@ func setupTestServerWithConfig(
 
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
 	cfgContent := `
@@ -38,16 +38,11 @@ owner = "acme"
 name = "widget"
 `
 	cfgPath := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(
-		cfgPath, []byte(cfgContent), 0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
+	err = os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
+	require.NoError(t, err)
 
 	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(
@@ -68,9 +63,7 @@ func doJSON(
 	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
-		if err := json.NewEncoder(&buf).Encode(body); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
 	req := httptest.NewRequest(method, path, &buf)
 	if method != http.MethodGet {
@@ -82,31 +75,21 @@ func doJSON(
 }
 
 func TestHandleGetSettings(t *testing.T) {
+	assert := Assert.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatal(err)
-	}
-	if len(resp.Repos) != 1 {
-		t.Fatalf("expected 1 repo, got %d", len(resp.Repos))
-	}
-	if resp.Repos[0].Owner != "acme" {
-		t.Fatalf("expected acme, got %s", resp.Repos[0].Owner)
-	}
-	if resp.Activity.ViewMode != "flat" {
-		t.Fatalf(
-			"expected flat view mode, got %s", resp.Activity.ViewMode,
-		)
-	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(t, resp.Repos, 1)
+	assert.Equal("acme", resp.Repos[0].Owner)
+	assert.Equal("flat", resp.Activity.ViewMode)
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
+	assert := Assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	body := updateSettingsRequest{
@@ -120,23 +103,13 @@ func TestHandleUpdateSettings(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
 	)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	// Verify persisted to disk.
 	cfg2, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg2.Activity.ViewMode != "threaded" {
-		t.Fatalf(
-			"expected threaded, got %s", cfg2.Activity.ViewMode,
-		)
-	}
-	if cfg2.Activity.TimeRange != "30d" {
-		t.Fatalf("expected 30d, got %s", cfg2.Activity.TimeRange)
-	}
+	require.NoError(t, err)
+	assert.Equal("threaded", cfg2.Activity.ViewMode)
+	assert.Equal("30d", cfg2.Activity.TimeRange)
 }
 
 func TestHandleUpdateSettingsInvalid(t *testing.T) {
@@ -151,21 +124,12 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
 	)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 
 	// Verify config was NOT modified (rollback).
 	cfg2, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg2.Activity.ViewMode != "flat" {
-		t.Fatalf(
-			"expected flat after rollback, got %s",
-			cfg2.Activity.ViewMode,
-		)
-	}
+	require.NoError(t, err)
+	Assert.Equal(t, "flat", cfg2.Activity.ViewMode)
 }
 
 func TestHandleAddRepo(t *testing.T) {
@@ -178,17 +142,11 @@ func TestHandleAddRepo(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", body,
 	)
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg2.Repos) != 2 {
-		t.Fatalf("expected 2 repos, got %d", len(cfg2.Repos))
-	}
+	require.NoError(t, err)
+	require.Len(t, cfg2.Repos, 2)
 }
 
 func TestHandleAddRepoDuplicate(t *testing.T) {
@@ -201,12 +159,11 @@ func TestHandleAddRepoDuplicate(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", body,
 	)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 }
 
 func TestHandleDeleteRepo(t *testing.T) {
+	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	// Add a second repo first so we can delete one.
@@ -217,31 +174,18 @@ func TestHandleDeleteRepo(t *testing.T) {
 	addRR := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", addBody,
 	)
-	if addRR.Code != http.StatusCreated {
-		t.Fatalf(
-			"setup: expected 201, got %d: %s",
-			addRR.Code, addRR.Body.String(),
-		)
-	}
+	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
 		"/api/v1/repos/acme/widget", nil,
 	)
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg2.Repos) != 1 {
-		t.Fatalf("expected 1 repo, got %d", len(cfg2.Repos))
-	}
-	if cfg2.Repos[0].Owner != "other-org" {
-		t.Fatalf("expected other-org, got %s", cfg2.Repos[0].Owner)
-	}
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	Assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
 }
 
 func TestHandleDeleteLastRepo(t *testing.T) {
@@ -251,7 +195,5 @@ func TestHandleDeleteLastRepo(t *testing.T) {
 		t, srv, http.MethodDelete,
 		"/api/v1/repos/acme/widget", nil,
 	)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
-	}
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 }

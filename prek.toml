@@ -45,6 +45,15 @@ hooks = [
     priority = 10,
   },
   {
+    id = "testify-helper-check",
+    name = "testify helper check",
+    language = "system",
+    entry = "make testify-helper-check",
+    files = "^(go\\.mod|go\\.sum|.*\\.go)$",
+    pass_filenames = false,
+    priority = 15,
+  },
+  {
     id = "go-test-short",
     name = "go test (short)",
     language = "system",

@@ -4,19 +4,21 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 	return path
 }
 
 func TestLoadValid(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 sync_interval = "10m"
 github_token_env = "MY_TOKEN"
@@ -33,50 +35,31 @@ name = "ibis"
 `)
 
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Repos) != 2 {
-		t.Fatalf("expected 2 repos, got %d", len(cfg.Repos))
-	}
-	if cfg.Repos[0].FullName() != "apache/arrow" {
-		t.Fatalf("expected apache/arrow, got %s", cfg.Repos[0].FullName())
-	}
-	if cfg.SyncInterval != "10m" {
-		t.Fatalf("expected 10m, got %s", cfg.SyncInterval)
-	}
-	if cfg.Port != 9000 {
-		t.Fatalf("expected port 9000, got %d", cfg.Port)
-	}
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 2)
+	assert.Equal("apache/arrow", cfg.Repos[0].FullName())
+	assert.Equal("10m", cfg.SyncInterval)
+	assert.Equal(9000, cfg.Port)
 }
 
 func TestLoadDefaults(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "test"
 name = "repo"
 `)
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SyncInterval != "5m" {
-		t.Fatalf("expected default 5m, got %s", cfg.SyncInterval)
-	}
-	if cfg.Host != "127.0.0.1" {
-		t.Fatalf("expected default 127.0.0.1, got %s", cfg.Host)
-	}
-	if cfg.Port != 8090 {
-		t.Fatalf("expected default 8090, got %d", cfg.Port)
-	}
+	require.NoError(t, err)
+	assert.Equal("5m", cfg.SyncInterval)
+	assert.Equal("127.0.0.1", cfg.Host)
+	assert.Equal(8090, cfg.Port)
 }
 
 func TestLoadNoRepos(t *testing.T) {
 	path := writeConfig(t, `host = "127.0.0.1"`)
 	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for no repos")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadInvalidSyncInterval(t *testing.T) {
@@ -87,9 +70,7 @@ owner = "a"
 name = "b"
 `)
 	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for bad sync_interval")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadRejectsNonLoopback(t *testing.T) {
@@ -100,9 +81,7 @@ owner = "a"
 name = "b"
 `)
 	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for non-loopback host")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadRepoMissingFields(t *testing.T) {
@@ -111,49 +90,37 @@ func TestLoadRepoMissingFields(t *testing.T) {
 owner = "a"
 `)
 	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for repo missing name")
-	}
+	require.Error(t, err)
 }
 
 func TestGitHubToken(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	if got := cfg.GitHubToken(); got != "secret123" {
-		t.Fatalf("expected secret123, got %s", got)
-	}
+	Assert.Equal(t, "secret123", cfg.GitHubToken())
 }
 
 func TestGitHubTokenFallsBackToGHCli(t *testing.T) {
 	dir := t.TempDir()
 	ghPath := filepath.Join(dir, "gh")
-	if err := os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755))
 
 	t.Setenv("PATH", dir)
 	t.Setenv("TEST_GH_TOKEN", "")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	if got := cfg.GitHubToken(); got != "gh-secret" {
-		t.Fatalf("expected gh-secret, got %q", got)
-	}
+	Assert.Equal(t, "gh-secret", cfg.GitHubToken())
 }
 
 func TestGitHubTokenPrefersEnvVarOverGHCli(t *testing.T) {
 	dir := t.TempDir()
 	ghPath := filepath.Join(dir, "gh")
-	if err := os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755))
 
 	t.Setenv("PATH", dir)
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	if got := cfg.GitHubToken(); got != "secret123" {
-		t.Fatalf("expected secret123, got %q", got)
-	}
+	Assert.Equal(t, "secret123", cfg.GitHubToken())
 }
 
 func TestBasePathValidation(t *testing.T) {
@@ -187,17 +154,11 @@ name = "b"
 			path := writeConfig(t, extra+"\n"+base)
 			cfg, err := Load(path)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
+				require.Error(t, err)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if cfg.BasePath != tt.wantBP {
-				t.Fatalf("expected BasePath %q, got %q", tt.wantBP, cfg.BasePath)
-			}
+			require.NoError(t, err)
+			Assert.Equal(t, tt.wantBP, cfg.BasePath)
 		})
 	}
 }
@@ -207,44 +168,32 @@ func TestGitHubTokenReturnsEmptyWhenGHCliUnavailable(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
-	if got := cfg.GitHubToken(); got != "" {
-		t.Fatalf("expected empty token, got %q", got)
-	}
+	Assert.Empty(t, cfg.GitHubToken())
 }
 
 func TestDBPath(t *testing.T) {
 	cfg := &Config{DataDir: "/tmp/middleman-test"}
 	expected := "/tmp/middleman-test/middleman.db"
-	if got := cfg.DBPath(); got != expected {
-		t.Fatalf("expected %s, got %s", expected, got)
-	}
+	Assert.Equal(t, expected, cfg.DBPath())
 }
 
 func TestLoadActivityDefaults(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
 name = "b"
 `)
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Activity.ViewMode != "flat" {
-		t.Fatalf("expected view_mode flat, got %q", cfg.Activity.ViewMode)
-	}
-	if cfg.Activity.TimeRange != "7d" {
-		t.Fatalf("expected time_range 7d, got %q", cfg.Activity.TimeRange)
-	}
-	if cfg.Activity.HideClosed {
-		t.Fatal("expected hide_closed false")
-	}
-	if cfg.Activity.HideBots {
-		t.Fatal("expected hide_bots false")
-	}
+	require.NoError(t, err)
+	assert.Equal("flat", cfg.Activity.ViewMode)
+	assert.Equal("7d", cfg.Activity.TimeRange)
+	assert.False(cfg.Activity.HideClosed)
+	assert.False(cfg.Activity.HideBots)
 }
 
 func TestLoadActivityExplicit(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -257,21 +206,11 @@ hide_closed = true
 hide_bots = true
 `)
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Activity.ViewMode != "threaded" {
-		t.Fatalf("expected view_mode threaded, got %q", cfg.Activity.ViewMode)
-	}
-	if cfg.Activity.TimeRange != "30d" {
-		t.Fatalf("expected time_range 30d, got %q", cfg.Activity.TimeRange)
-	}
-	if !cfg.Activity.HideClosed {
-		t.Fatal("expected hide_closed true")
-	}
-	if !cfg.Activity.HideBots {
-		t.Fatal("expected hide_bots true")
-	}
+	require.NoError(t, err)
+	assert.Equal("threaded", cfg.Activity.ViewMode)
+	assert.Equal("30d", cfg.Activity.TimeRange)
+	assert.True(cfg.Activity.HideClosed)
+	assert.True(cfg.Activity.HideBots)
 }
 
 func TestLoadActivityInvalidViewMode(t *testing.T) {
@@ -284,9 +223,7 @@ name = "b"
 view_mode = "kanban"
 `)
 	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for invalid view_mode")
-	}
+	require.Error(t, err)
 }
 
 func TestLoadActivityInvalidTimeRange(t *testing.T) {
@@ -299,12 +236,11 @@ name = "b"
 time_range = "1y"
 `)
 	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for invalid time_range")
-	}
+	require.Error(t, err)
 }
 
 func TestSaveRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 sync_interval = "10m"
 github_token_env = "MY_TOKEN"
@@ -323,106 +259,50 @@ hide_closed = true
 hide_bots = true
 `)
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	if err := cfg.Save(savePath); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, cfg.Save(savePath))
 
 	cfg2, err := Load(savePath)
-	if err != nil {
-		t.Fatalf("reloading saved config: %v", err)
-	}
-
-	if cfg2.GitHubTokenEnv != "MY_TOKEN" {
-		t.Fatalf("github_token_env: got %q, want %q",
-			cfg2.GitHubTokenEnv, "MY_TOKEN")
-	}
-	if cfg2.SyncInterval != cfg.SyncInterval {
-		t.Fatalf("sync_interval: got %q, want %q",
-			cfg2.SyncInterval, cfg.SyncInterval)
-	}
-	if cfg2.Host != cfg.Host {
-		t.Fatalf("host: got %q, want %q", cfg2.Host, cfg.Host)
-	}
-	if cfg2.Port != cfg.Port {
-		t.Fatalf("port: got %d, want %d", cfg2.Port, cfg.Port)
-	}
-	if cfg2.BasePath != cfg.BasePath {
-		t.Fatalf("base_path: got %q, want %q",
-			cfg2.BasePath, cfg.BasePath)
-	}
-	if len(cfg2.Repos) != len(cfg.Repos) {
-		t.Fatalf("repos count: got %d, want %d",
-			len(cfg2.Repos), len(cfg.Repos))
-	}
-	if cfg2.Repos[0].FullName() != cfg.Repos[0].FullName() {
-		t.Fatalf("repos[0]: got %q, want %q",
-			cfg2.Repos[0].FullName(), cfg.Repos[0].FullName())
-	}
-	if cfg2.Activity.ViewMode != cfg.Activity.ViewMode {
-		t.Fatalf("activity.view_mode: got %q, want %q",
-			cfg2.Activity.ViewMode, cfg.Activity.ViewMode)
-	}
-	if cfg2.Activity.TimeRange != cfg.Activity.TimeRange {
-		t.Fatalf("activity.time_range: got %q, want %q",
-			cfg2.Activity.TimeRange, cfg.Activity.TimeRange)
-	}
-	if cfg2.Activity.HideClosed != cfg.Activity.HideClosed {
-		t.Fatalf("activity.hide_closed: got %v, want %v",
-			cfg2.Activity.HideClosed, cfg.Activity.HideClosed)
-	}
-	if cfg2.Activity.HideBots != cfg.Activity.HideBots {
-		t.Fatalf("activity.hide_bots: got %v, want %v",
-			cfg2.Activity.HideBots, cfg.Activity.HideBots)
-	}
+	require.NoError(t, err)
+	assert.Equal("MY_TOKEN", cfg2.GitHubTokenEnv)
+	assert.Equal(cfg.SyncInterval, cfg2.SyncInterval)
+	assert.Equal(cfg.Host, cfg2.Host)
+	assert.Equal(cfg.Port, cfg2.Port)
+	assert.Equal(cfg.BasePath, cfg2.BasePath)
+	assert.Len(cfg2.Repos, len(cfg.Repos))
+	assert.Equal(cfg.Repos[0].FullName(), cfg2.Repos[0].FullName())
+	assert.Equal(cfg.Activity.ViewMode, cfg2.Activity.ViewMode)
+	assert.Equal(cfg.Activity.TimeRange, cfg2.Activity.TimeRange)
+	assert.Equal(cfg.Activity.HideClosed, cfg2.Activity.HideClosed)
+	assert.Equal(cfg.Activity.HideBots, cfg2.Activity.HideBots)
 }
 
 func TestSavePreservesDefaults(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
 name = "b"
 `)
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	if err := cfg.Save(savePath); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, cfg.Save(savePath))
 
 	cfg2, err := Load(savePath)
-	if err != nil {
-		t.Fatalf("reloading saved config: %v", err)
-	}
-
-	if cfg2.SyncInterval != "5m" {
-		t.Fatalf("expected default sync_interval 5m, got %q",
-			cfg2.SyncInterval)
-	}
-	if cfg2.Host != "127.0.0.1" {
-		t.Fatalf("expected default host 127.0.0.1, got %q", cfg2.Host)
-	}
-	if cfg2.Port != 8090 {
-		t.Fatalf("expected default port 8090, got %d", cfg2.Port)
-	}
-	if cfg2.Activity.ViewMode != "flat" {
-		t.Fatalf("expected default view_mode flat, got %q",
-			cfg2.Activity.ViewMode)
-	}
-	if cfg2.Activity.TimeRange != "7d" {
-		t.Fatalf("expected default time_range 7d, got %q",
-			cfg2.Activity.TimeRange)
-	}
+	require.NoError(t, err)
+	assert.Equal("5m", cfg2.SyncInterval)
+	assert.Equal("127.0.0.1", cfg2.Host)
+	assert.Equal(8090, cfg2.Port)
+	assert.Equal("flat", cfg2.Activity.ViewMode)
+	assert.Equal("7d", cfg2.Activity.TimeRange)
 }
 
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
 	path := writeConfig(t, `
 github_token_env = ""
 
@@ -431,27 +311,13 @@ owner = "a"
 name = "b"
 `)
 	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GitHubTokenEnv != "" {
-		t.Fatalf("expected empty github_token_env, got %q",
-			cfg.GitHubTokenEnv)
-	}
+	require.NoError(t, err)
+	assert.Empty(cfg.GitHubTokenEnv)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	if err := cfg.Save(savePath); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, cfg.Save(savePath))
 
 	cfg2, err := Load(savePath)
-	if err != nil {
-		t.Fatalf("reloading saved config: %v", err)
-	}
-	if cfg2.GitHubTokenEnv != "" {
-		t.Fatalf(
-			"expected empty github_token_env after round-trip, got %q",
-			cfg2.GitHubTokenEnv,
-		)
-	}
+	require.NoError(t, err)
+	assert.Empty(cfg2.GitHubTokenEnv)
 }

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
 )
 
@@ -16,9 +18,7 @@ func openTestDB(t *testing.T) *db.DB {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 	d, err := db.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 	return d
 }
@@ -165,6 +165,7 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 }
 
 func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
+	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
@@ -198,38 +199,20 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 
 	// PR should be in the DB.
 	pr, err := d.GetPullRequest(ctx, "owner", "repo", 1)
-	if err != nil {
-		t.Fatalf("GetPullRequest: %v", err)
-	}
-	if pr == nil {
-		t.Fatal("expected PR in DB, got nil")
-		return
-	}
-	if pr.Number != 1 {
-		t.Errorf("pr.Number = %d, want 1", pr.Number)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, pr)
+	assert.Equal(1, pr.Number)
 
 	// Kanban state should have been created.
 	ks, err := d.GetKanbanState(ctx, pr.ID)
-	if err != nil {
-		t.Fatalf("GetKanbanState: %v", err)
-	}
-	if ks == nil {
-		t.Fatal("expected kanban state, got nil")
-		return
-	}
-	if ks.Status != "new" {
-		t.Errorf("kanban status = %q, want %q", ks.Status, "new")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, ks)
+	assert.Equal("new", ks.Status)
 
 	// Commit event should have been stored.
 	events, err := d.ListPREvents(ctx, pr.ID)
-	if err != nil {
-		t.Fatalf("ListPREvents: %v", err)
-	}
-	if len(events) == 0 {
-		t.Fatal("expected at least one PR event")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, events)
 	found := false
 	for _, e := range events {
 		if e.EventType == "commit" {
@@ -237,9 +220,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Error("expected a commit event, none found")
-	}
+	assert.True(found)
 }
 
 func TestSyncSingleFlight(t *testing.T) {
@@ -262,17 +243,14 @@ func TestSyncSingleFlight(t *testing.T) {
 
 	// Verify no DB side-effects: repo row should not exist because the RunOnce was skipped.
 	repo, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
-	if err != nil {
-		t.Fatalf("GetRepoByOwnerName: %v", err)
-	}
-	if repo != nil {
-		t.Errorf("expected nil repo (sync was skipped), got %+v", repo)
-	}
+	require.NoError(t, err)
+	Assert.Nil(t, repo)
 
 	_ = callCount
 }
 
 func TestSyncStatusUpdated(t *testing.T) {
+	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
@@ -290,16 +268,10 @@ func TestSyncStatusUpdated(t *testing.T) {
 	after := time.Now()
 
 	status := syncer.Status()
-	if status.Running {
-		t.Error("status.Running should be false after sync completes")
-	}
-	if status.LastRunAt.IsZero() {
-		t.Error("status.LastRunAt should be set after sync")
-	}
-	if status.LastRunAt.Before(before) || status.LastRunAt.After(after) {
-		t.Errorf("status.LastRunAt %v not between %v and %v", status.LastRunAt, before, after)
-	}
-	if status.LastError != "" {
-		t.Errorf("expected no error, got %q", status.LastError)
-	}
+	assert.False(status.Running)
+	assert.False(status.LastRunAt.IsZero())
+	assert.Condition(func() bool {
+		return !status.LastRunAt.Before(before) && !status.LastRunAt.After(after)
+	}, "status.LastRunAt %v should be between %v and %v", status.LastRunAt, before, after)
+	assert.Empty(status.LastError)
 }
