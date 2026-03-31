@@ -181,7 +181,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 
 // --- Tests ---
 
-func TestHandleListPulls(t *testing.T) {
+func TestAPIListPulls(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -205,7 +205,7 @@ func TestHandleListPulls(t *testing.T) {
 	}
 }
 
-func TestHandleGetPull(t *testing.T) {
+func TestAPIGetPull(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -232,7 +232,7 @@ func TestHandleGetPull(t *testing.T) {
 	}
 }
 
-func TestHandleGetPull404(t *testing.T) {
+func TestAPIGetPullNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/pulls/999", nil)
@@ -244,7 +244,7 @@ func TestHandleGetPull404(t *testing.T) {
 	}
 }
 
-func TestHandleSetKanbanState(t *testing.T) {
+func TestAPISetKanbanState(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -272,7 +272,7 @@ func TestHandleSetKanbanState(t *testing.T) {
 	}
 }
 
-func TestHandleSetKanbanStateInvalid(t *testing.T) {
+func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -287,7 +287,7 @@ func TestHandleSetKanbanStateInvalid(t *testing.T) {
 	}
 }
 
-func TestHandleListRepos(t *testing.T) {
+func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 
 	ctx := context.Background()
@@ -315,7 +315,7 @@ func TestHandleListRepos(t *testing.T) {
 	}
 }
 
-func TestHandleSyncStatus(t *testing.T) {
+func TestAPISyncStatus(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/status", nil)
@@ -335,7 +335,7 @@ func TestHandleSyncStatus(t *testing.T) {
 	}
 }
 
-func TestHandleTriggerSyncIgnoresRequestCancellation(t *testing.T) {
+func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -376,7 +376,7 @@ func TestHandleTriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	t.Fatal("expected sync to complete despite request context cancellation")
 }
 
-func TestHandleReadyForReview(t *testing.T) {
+func TestAPIReadyForReview(t *testing.T) {
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -465,7 +465,7 @@ func TestHandleReadyForReview(t *testing.T) {
 	}
 }
 
-func TestHandleSetStarred(t *testing.T) {
+func TestAPISetStarred(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -482,7 +482,7 @@ func TestHandleSetStarred(t *testing.T) {
 	require.True(t, starred)
 }
 
-func TestHandleUnsetStarred(t *testing.T) {
+func TestAPIUnsetStarred(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	err := database.SetStarred(context.Background(), "pr", 1, 1)
@@ -501,7 +501,7 @@ func TestHandleUnsetStarred(t *testing.T) {
 	require.False(t, starred)
 }
 
-func TestHandleSetStarredRejectsInvalidItemType(t *testing.T) {
+func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"repo","owner":"acme","name":"widget","number":1}`))
