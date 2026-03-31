@@ -233,7 +233,7 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		if name := s.resolveDisplayName(ctx, normalized.Author); name != "" {
+		if name, ok := s.resolveDisplayName(ctx, normalized.Author); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
 			normalized.AuthorDisplayName = existing.AuthorDisplayName
@@ -391,24 +391,26 @@ func computeLastActivity(
 	return latest
 }
 
-// resolveDisplayName returns the GitHub display name for a login,
-// using an in-memory cache to avoid duplicate API calls within a sync run.
+// resolveDisplayName returns the GitHub display name for a login and
+// whether the lookup succeeded. Returns ("", false) on API failure so
+// callers can preserve existing data. Uses an in-memory cache to avoid
+// duplicate API calls within a sync run.
 func (s *Syncer) resolveDisplayName(
 	ctx context.Context, login string,
-) string {
+) (string, bool) {
 	if name, ok := s.displayNames[login]; ok {
-		return name
+		return name, true
 	}
 	user, err := s.client.GetUser(ctx, login)
 	if err != nil {
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
 		)
-		return ""
+		return "", false
 	}
 	name := sanitizeDisplayName(user.GetName())
 	s.displayNames[login] = name
-	return name
+	return name, true
 }
 
 // --- Issue sync ---
