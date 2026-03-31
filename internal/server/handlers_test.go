@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -461,4 +462,53 @@ func TestHandleReadyForReview(t *testing.T) {
 	if pr.IsDraft {
 		t.Fatal("expected PR to no longer be draft")
 	}
+}
+
+func TestHandleSetStarred(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"pr","owner":"acme","name":"widget","number":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	starred, err := database.IsStarred(context.Background(), "pr", 1, 1)
+	require.NoError(t, err)
+	require.True(t, starred)
+}
+
+func TestHandleUnsetStarred(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	err := database.SetStarred(context.Background(), "pr", 1, 1)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"pr","owner":"acme","name":"widget","number":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	starred, err := database.IsStarred(context.Background(), "pr", 1, 1)
+	require.NoError(t, err)
+	require.False(t, starred)
+}
+
+func TestHandleSetStarredRejectsInvalidItemType(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"repo","owner":"acme","name":"widget","number":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "item_type must be 'pr' or 'issue'")
 }
