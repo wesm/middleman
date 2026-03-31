@@ -151,7 +151,8 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(520px, 90%);
+    width: 65%;
+    min-width: 500px;
     background: var(--bg-primary);
     border-left: 1px solid var(--border-default);
     box-shadow: var(--shadow-lg);
@@ -194,5 +195,12 @@
   .drawer-body {
     flex: 1;
     overflow-y: auto;
+  }
+
+  @media (max-width: 1023px) {
+    .drawer {
+      width: 100%;
+      min-width: 0;
+    }
   }
 </style>

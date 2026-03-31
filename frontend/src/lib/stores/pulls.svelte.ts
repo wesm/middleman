@@ -164,6 +164,34 @@ export function clearSelection(): void {
   selectedPR = null;
 }
 
+/** Returns the current kanban status for a PR in the pulls list. */
+export function getPullKanbanStatus(
+  owner: string,
+  name: string,
+  number: number,
+): KanbanStatus | undefined {
+  const pr = pulls.find(
+    (p) => p.repo_owner === owner && p.repo_name === name && p.Number === number,
+  );
+  return pr?.KanbanStatus as KanbanStatus | undefined;
+}
+
+/** Optimistically update a single PR's kanban status in the pulls list. */
+export function optimisticKanbanUpdate(
+  owner: string,
+  name: string,
+  number: number,
+  status: KanbanStatus,
+): void {
+  pulls = pulls.map((pr) =>
+    pr.repo_owner === owner &&
+    pr.repo_name === name &&
+    pr.Number === number
+      ? { ...pr, KanbanStatus: status }
+      : pr,
+  );
+}
+
 export async function togglePRStar(
   owner: string,
   name: string,

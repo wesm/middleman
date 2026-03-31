@@ -1,7 +1,7 @@
 import { client, apiErrorMessage } from "../api/runtime.js";
 import type { KanbanStatus, PullDetail } from "../api/types.js";
 import { getPage } from "./router.svelte.js";
-import { loadPulls } from "./pulls.svelte.js";
+import { loadPulls, optimisticKanbanUpdate, getPullKanbanStatus } from "./pulls.svelte.js";
 
 // --- state ---
 
@@ -99,6 +99,27 @@ async function refreshPullsIfActive(): Promise<void> {
   }
 }
 
+// Per-PR monotonic counters so stale request handlers become no-ops
+// without interfering with updates to other PRs.
+const kanbanSeqByPR = new Map<string, number>();
+
+function prKey(owner: string, name: string, number: number): string {
+  return `${owner}/${name}/${number}`;
+}
+
+function isDetailShowing(
+  owner: string,
+  name: string,
+  number: number,
+): boolean {
+  return (
+    detail !== null &&
+    detail.repo_owner === owner &&
+    detail.repo_name === name &&
+    detail.pull_request.Number === number
+  );
+}
+
 /** Optimistically updates the kanban state, then refreshes the pulls list. */
 export async function updateKanbanState(
   owner: string,
@@ -106,13 +127,24 @@ export async function updateKanbanState(
   number: number,
   status: KanbanStatus,
 ): Promise<void> {
-  // Optimistic update on the cached detail.
-  if (detail !== null) {
+  const key = prKey(owner, name, number);
+  const seq = (kanbanSeqByPR.get(key) ?? 0) + 1;
+  kanbanSeqByPR.set(key, seq);
+
+  // Capture previous status for local rollback on failure.
+  const prevDetailStatus = isDetailShowing(owner, name, number)
+    ? detail!.pull_request.KanbanStatus as KanbanStatus
+    : undefined;
+  const prevPullsStatus = getPullKanbanStatus(owner, name, number);
+
+  // Optimistic update: detail only if it shows this PR, pulls always.
+  if (prevDetailStatus !== undefined) {
     detail = {
-      ...detail,
-      pull_request: { ...detail.pull_request, KanbanStatus: status },
+      ...detail!,
+      pull_request: { ...detail!.pull_request, KanbanStatus: status },
     };
   }
+  optimisticKanbanUpdate(owner, name, number, status);
   try {
     const { error: requestError } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
       params: { path: { owner, name, number } },
@@ -122,12 +154,38 @@ export async function updateKanbanState(
       throw new Error(requestError.detail ?? requestError.title ?? "failed to update kanban state");
     }
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-    // Reload to restore accurate server state on failure.
-    await loadDetail(owner, name, number);
+    // Only reconcile if no newer request for this PR has superseded.
+    if (seq === kanbanSeqByPR.get(key)) {
+      error = err instanceof Error ? err.message : String(err);
+      // Restore previous state locally first so the UI is correct
+      // even if the server reload below also fails.
+      if (prevDetailStatus !== undefined && isDetailShowing(owner, name, number)) {
+        detail = {
+          ...detail!,
+          pull_request: { ...detail!.pull_request, KanbanStatus: prevDetailStatus },
+        };
+      }
+      if (prevPullsStatus !== undefined) {
+        optimisticKanbanUpdate(owner, name, number, prevPullsStatus);
+      }
+      // Best-effort server reload to get authoritative state.
+      const reloads: Promise<void>[] = [loadPulls()];
+      if (isDetailShowing(owner, name, number)) {
+        reloads.push(loadDetail(owner, name, number));
+      }
+      await Promise.all(reloads);
+      // Allow older in-flight requests to still reconcile, but
+      // only if no newer request started during the reload.
+      if (seq === kanbanSeqByPR.get(key)) {
+        kanbanSeqByPR.set(key, seq - 1);
+      }
+    }
     return;
   }
-  await refreshPullsIfActive();
+  // Only refresh if still the latest request for this PR.
+  if (seq === kanbanSeqByPR.get(key)) {
+    await refreshPullsIfActive();
+  }
 }
 
 // --- polling ---
