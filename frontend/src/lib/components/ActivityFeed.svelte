@@ -490,7 +490,7 @@
                   <span class="item-title">{row.item_title}</span>
                 </td>
                 <td class="col-author">{row.author}</td>
-                <td class="col-when">{relativeTime(row.latest)} - {relativeTime(row.earliest)}</td>
+                <td class="col-when">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</td>
                 <td class="col-link">
                   <button
                     class="link-btn"

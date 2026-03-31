@@ -222,7 +222,7 @@
             <div class="event-row collapsed-event" onclick={() => handleEventClick(row.representative)}>
               <span class="event-type evt-commit">{row.count} commits</span>
               <span class="event-author">{row.author}</span>
-              <span class="event-time">{relativeTime(row.latest)} - {relativeTime(row.earliest)}</span>
+              <span class="event-time">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</span>
             </div>
           {:else}
             <div class="event-row" onclick={() => handleEventClick(row)}>
