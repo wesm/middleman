@@ -7,19 +7,26 @@
     getActivityError,
     isActivityCapped,
     getActivityFilterRepo,
-    getActivityFilterTypes,
     getActivitySearch,
     getTimeRange,
     getViewMode,
+    getHideClosedMerged,
+    getHideBots,
+    getEnabledEvents,
+    getItemFilter,
     setActivityFilterRepo,
     setActivityFilterTypes,
     setActivitySearch,
     setTimeRange,
     setViewMode,
+    setHideClosedMerged,
+    setHideBots,
+    setEnabledEvents,
+    setItemFilter,
     loadActivity,
     startActivityPolling,
     stopActivityPolling,
-    syncFromURL,
+    initializeFromMount,
     syncToURL,
   } from "../stores/activity.svelte.js";
   import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
@@ -34,14 +41,9 @@
 
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let hideClosedMerged = $state(false);
-  let hideBots = $state(false);
   let showFilterDropdown = $state(false);
   let filterBtnRef = $state<HTMLButtonElement>();
   let filterDropRef = $state<HTMLDivElement>();
-
-  type ItemFilter = "all" | "prs" | "issues";
-  let itemFilter = $state<ItemFilter>("all");
 
   const EVENT_TYPES = ["comment", "review", "commit"] as const;
 
@@ -64,17 +66,15 @@
     return BOT_SUFFIXES.some((s) => lower.endsWith(s));
   }
 
-  let enabledEvents = $state<Set<string>>(new Set(EVENT_TYPES));
   const hiddenFilterCount = $derived(
-    (EVENT_TYPES.length - enabledEvents.size)
-    + (hideClosedMerged ? 1 : 0)
-    + (hideBots ? 1 : 0),
+    (EVENT_TYPES.length - getEnabledEvents().size)
+    + (getHideClosedMerged() ? 1 : 0)
+    + (getHideBots() ? 1 : 0),
   );
 
   onMount(() => {
-    syncFromURL();
+    initializeFromMount();
     searchInput = getActivitySearch() ?? "";
-    restoreFiltersFromStore();
     void loadActivity();
     startActivityPolling();
   });
@@ -97,53 +97,31 @@
     return () => document.removeEventListener("mousedown", handleClick);
   });
 
-  function restoreFiltersFromStore(): void {
-    const types = getActivityFilterTypes();
-    if (types.length === 0) {
-      itemFilter = "all";
-      enabledEvents = new Set(EVENT_TYPES);
-      return;
-    }
-    const hasPR = types.includes("new_pr");
-    const hasIssue = types.includes("new_issue");
-    if (hasPR && !hasIssue) itemFilter = "prs";
-    else if (hasIssue && !hasPR) itemFilter = "issues";
-    else itemFilter = "all";
-    enabledEvents = new Set(EVENT_TYPES.filter((t) => types.includes(t)));
-  }
-
   function applyFilters(): void {
     const types: string[] = [];
-    if (itemFilter === "prs") {
-      types.push("new_pr");
-    } else if (itemFilter === "issues") {
-      types.push("new_issue");
-    } else {
-      types.push("new_pr", "new_issue");
-    }
-    for (const evt of enabledEvents) {
-      types.push(evt);
-    }
-    const allSelected = itemFilter === "all"
-      && enabledEvents.size === EVENT_TYPES.length;
+    const filter = getItemFilter();
+    if (filter === "prs") types.push("new_pr");
+    else if (filter === "issues") types.push("new_issue");
+    else { types.push("new_pr", "new_issue"); }
+    for (const evt of getEnabledEvents()) types.push(evt);
+    const allSelected = filter === "all"
+      && getEnabledEvents().size === EVENT_TYPES.length;
     setActivityFilterTypes(allSelected ? [] : types);
     syncToURL();
     void loadActivity();
   }
 
-  function setItemFilter(f: ItemFilter): void {
-    itemFilter = f;
+  function handleItemFilterChange(f: "all" | "prs" | "issues"): void {
+    setItemFilter(f);
     applyFilters();
   }
 
   function toggleEvent(evt: string): void {
-    const next = new Set(enabledEvents);
-    if (next.has(evt)) {
-      if (next.size > 1) next.delete(evt);
-    } else {
-      next.add(evt);
-    }
-    enabledEvents = next;
+    const current = getEnabledEvents();
+    const next = new Set(current);
+    if (next.has(evt)) { if (next.size > 1) next.delete(evt); }
+    else next.add(evt);
+    setEnabledEvents(next);
     applyFilters();
   }
 
@@ -285,11 +263,11 @@
 
   const displayItems = $derived.by(() => {
     let result = getActivityItems();
-    if (hideClosedMerged) {
+    if (getHideClosedMerged()) {
       result = result.filter((it) =>
         it.item_state !== "merged" && it.item_state !== "closed");
     }
-    if (hideBots) {
+    if (getHideBots()) {
       result = result.filter((it) => !isBot(it.author));
     }
     return result;
@@ -298,9 +276,9 @@
   const flatRows = $derived(collapseCommitRuns(displayItems));
 
   function resetFilters(): void {
-    enabledEvents = new Set(EVENT_TYPES);
-    hideClosedMerged = false;
-    hideBots = false;
+    setEnabledEvents(new Set(EVENT_TYPES));
+    setHideClosedMerged(false);
+    setHideBots(false);
     applyFilters();
   }
 
@@ -344,9 +322,9 @@
 
     <div class="filter-group">
       <div class="segmented-control">
-        <button class="seg-btn" class:active={itemFilter === "all"} onclick={() => setItemFilter("all")}>All</button>
-        <button class="seg-btn" class:active={itemFilter === "prs"} onclick={() => setItemFilter("prs")}>PRs</button>
-        <button class="seg-btn" class:active={itemFilter === "issues"} onclick={() => setItemFilter("issues")}>Issues</button>
+        <button class="seg-btn" class:active={getItemFilter() === "all"} onclick={() => handleItemFilterChange("all")}>All</button>
+        <button class="seg-btn" class:active={getItemFilter() === "prs"} onclick={() => handleItemFilterChange("prs")}>PRs</button>
+        <button class="seg-btn" class:active={getItemFilter() === "issues"} onclick={() => handleItemFilterChange("issues")}>Issues</button>
       </div>
 
       <div class="segmented-control">
@@ -382,7 +360,7 @@
         <div class="filter-dropdown" bind:this={filterDropRef}>
           <div class="filter-section-title">Event types</div>
           {#each EVENT_TYPES as evt}
-            {@const visible = enabledEvents.has(evt)}
+            {@const visible = getEnabledEvents().has(evt)}
             <button
               class="filter-item"
               class:active={visible}
@@ -406,13 +384,13 @@
           <div class="filter-section-title">Visibility</div>
           <button
             class="filter-item"
-            class:active={hideClosedMerged}
-            onclick={() => { hideClosedMerged = !hideClosedMerged; }}
+            class:active={getHideClosedMerged()}
+            onclick={() => { setHideClosedMerged(!getHideClosedMerged()); }}
           >
-            <span class="filter-dot" style:background={hideClosedMerged ? "var(--accent-red)" : "var(--border-muted)"}></span>
+            <span class="filter-dot" style:background={getHideClosedMerged() ? "var(--accent-red)" : "var(--border-muted)"}></span>
             <span class="filter-label">Hide closed/merged</span>
-            <span class="filter-check" class:on={hideClosedMerged}>
-              {#if hideClosedMerged}
+            <span class="filter-check" class:on={getHideClosedMerged()}>
+              {#if getHideClosedMerged()}
                 <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
                 </svg>
@@ -421,13 +399,13 @@
           </button>
           <button
             class="filter-item"
-            class:active={hideBots}
-            onclick={() => { hideBots = !hideBots; }}
+            class:active={getHideBots()}
+            onclick={() => { setHideBots(!getHideBots()); }}
           >
-            <span class="filter-dot" style:background={hideBots ? "var(--accent-purple)" : "var(--border-muted)"}></span>
+            <span class="filter-dot" style:background={getHideBots() ? "var(--accent-purple)" : "var(--border-muted)"}></span>
             <span class="filter-label">Hide bots</span>
-            <span class="filter-check" class:on={hideBots}>
-              {#if hideBots}
+            <span class="filter-check" class:on={getHideBots()}>
+              {#if getHideBots()}
                 <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
                 </svg>
