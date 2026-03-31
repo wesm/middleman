@@ -43,7 +43,7 @@ export async function removeRepo(
 ): Promise<void> {
   const res = await fetch(
     `${BASE}/repos/${owner}/${name}`,
-    { method: "DELETE" },
+    { method: "DELETE", headers: { "Content-Type": "application/json" } },
   );
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
