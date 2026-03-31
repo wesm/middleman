@@ -3,6 +3,17 @@
   import { getIssues } from "../../stores/issues.svelte.js";
   import { getSyncState } from "../../stores/sync.svelte.js";
 
+  const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
+
+  let appVersion = $state("");
+
+  $effect(() => {
+    fetch(`${basePath}/api/v1/version`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.version) appVersion = data.version; })
+      .catch(() => {});
+  });
+
   // Force re-render every 10s so relative times stay fresh
   let tick = $state(0);
   let tickHandle: ReturnType<typeof setInterval> | null = null;
@@ -56,6 +67,10 @@
       {/if}
       {syncText()}
     </span>
+    {#if appVersion}
+      <span class="status-sep">·</span>
+      <span class="status-item status-item--version">{appVersion}</span>
+    {/if}
   </div>
 </footer>
 

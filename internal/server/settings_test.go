@@ -85,7 +85,7 @@ func TestHandleGetSettings(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(t, resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
-	assert.Equal("flat", resp.Activity.ViewMode)
+	assert.Equal("threaded", resp.Activity.ViewMode)
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
@@ -129,7 +129,7 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	// Verify config was NOT modified (rollback).
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	Assert.Equal(t, "flat", cfg2.Activity.ViewMode)
+	Assert.Equal(t, "threaded", cfg2.Activity.ViewMode)
 }
 
 func TestHandleAddRepo(t *testing.T) {
