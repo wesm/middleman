@@ -1,4 +1,5 @@
-const BASE = "/api/v1";
+const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
+const BASE = `${basePath}/api/v1`;
 
 export interface ActivityItem {
   id: string;

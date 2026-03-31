@@ -128,7 +128,7 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
-	srv := New(database, mock, syncer, nil)
+	srv := New(database, mock, syncer, nil, "/")
 	return srv, database
 }
 
@@ -346,7 +346,7 @@ func TestHandleTriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		Owner: "acme",
 		Name:  "widget",
 	}}, time.Minute)
-	srv := New(database, mock, syncer, nil)
+	srv := New(database, mock, syncer, nil, "/")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil).WithContext(ctx)
@@ -407,7 +407,7 @@ func TestHandleReadyForReview(t *testing.T) {
 		},
 	}
 	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
-	srv := New(database, mock, syncer, nil)
+	srv := New(database, mock, syncer, nil, "/")
 
 	repoID, err := database.UpsertRepo(context.Background(), "acme", "widget")
 	if err != nil {

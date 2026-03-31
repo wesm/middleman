@@ -3,7 +3,23 @@ export type Route =
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } };
 
-function parseRoute(path: string): Route {
+// Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
+const rawBase = window.__BASE_PATH__ ?? "/";
+const basePrefix = rawBase === "/" ? "" : rawBase.replace(/\/$/, "");
+
+export function getBasePath(): string {
+  return rawBase;
+}
+
+function stripBase(path: string): string {
+  if (basePrefix && path.startsWith(basePrefix)) {
+    return path.slice(basePrefix.length) || "/";
+  }
+  return path;
+}
+
+function parseRoute(fullPath: string): Route {
+  const path = stripBase(fullPath);
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
     if (rest === "/board") return { page: "pulls", view: "board" };
@@ -41,13 +57,15 @@ export function getPage(): "activity" | "pulls" | "issues" {
 }
 
 export function navigate(path: string): void {
-  history.pushState(null, "", path);
-  route = parseRoute(path);
+  const fullPath = basePrefix + path;
+  history.pushState(null, "", fullPath);
+  route = parseRoute(fullPath);
 }
 
 export function replaceUrl(path: string): void {
-  history.replaceState(null, "", path);
-  route = parseRoute(path);
+  const fullPath = basePrefix + path;
+  history.replaceState(null, "", fullPath);
+  route = parseRoute(fullPath);
 }
 
 // Listen for browser back/forward.

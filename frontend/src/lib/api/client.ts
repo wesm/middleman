@@ -1,6 +1,7 @@
 import type { Issue, IssueDetail, KanbanStatus, PullDetail, PullRequest, Repo, SyncStatus } from "./types.js";
 
-const BASE = "/api/v1";
+const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
+const BASE = `${basePath}/api/v1`;
 
 export interface PullsParams {
   repo?: string;

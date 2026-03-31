@@ -13,59 +13,97 @@ import (
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db     *db.DB
-	gh     ghclient.Client
-	syncer *ghclient.Syncer
-	mux    *http.ServeMux
+	db       *db.DB
+	gh       ghclient.Client
+	syncer   *ghclient.Syncer
+	basePath string
+	handler  http.Handler
 }
 
 // New creates a Server wiring up all API routes and optional SPA serving.
-func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS) *Server {
+// basePath should be "/" or "/prefix/" (with trailing slash).
+func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS, basePath string) *Server {
+	mux := http.NewServeMux()
+
 	s := &Server{
-		db:     database,
-		gh:     gh,
-		syncer: syncer,
-		mux:    http.NewServeMux(),
+		db:       database,
+		basePath: basePath,
+		gh:       gh,
+		syncer:   syncer,
 	}
 
-	s.mux.HandleFunc("GET /api/v1/activity", s.handleListActivity)
-	s.mux.HandleFunc("GET /api/v1/pulls", s.handleListPulls)
-	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/pulls/{number}", s.handleGetPull)
-	s.mux.HandleFunc("PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state", s.handleSetKanbanState)
-	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/comments", s.handlePostComment)
-	s.mux.HandleFunc("GET /api/v1/issues", s.handleListIssues)
-	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/issues/{number}", s.handleGetIssue)
-	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/issues/{number}/comments", s.handlePostIssueComment)
+	mux.HandleFunc("GET /api/v1/activity", s.handleListActivity)
+	mux.HandleFunc("GET /api/v1/pulls", s.handleListPulls)
+	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/pulls/{number}", s.handleGetPull)
+	mux.HandleFunc("PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state", s.handleSetKanbanState)
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/comments", s.handlePostComment)
+	mux.HandleFunc("GET /api/v1/issues", s.handleListIssues)
+	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/issues/{number}", s.handleGetIssue)
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/issues/{number}/comments", s.handlePostIssueComment)
 
-	s.mux.HandleFunc("PUT /api/v1/starred", s.handleSetStarred)
-	s.mux.HandleFunc("DELETE /api/v1/starred", s.handleUnsetStarred)
+	mux.HandleFunc("PUT /api/v1/starred", s.handleSetStarred)
+	mux.HandleFunc("DELETE /api/v1/starred", s.handleUnsetStarred)
 
-	s.mux.HandleFunc("GET /api/v1/repos", s.handleListRepos)
-	s.mux.HandleFunc("GET /api/v1/repos/{owner}/{name}", s.handleGetRepo)
-	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/approve", s.handleApprovePR)
-	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.handleReadyForReview)
-	s.mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge", s.handleMergePR)
-	s.mux.HandleFunc("POST /api/v1/sync", s.handleTriggerSync)
-	s.mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)
+	mux.HandleFunc("GET /api/v1/repos", s.handleListRepos)
+	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}", s.handleGetRepo)
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/approve", s.handleApprovePR)
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.handleReadyForReview)
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge", s.handleMergePR)
+	mux.HandleFunc("POST /api/v1/sync", s.handleTriggerSync)
+	mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)
 
 	if frontend != nil {
+		indexBytes, err := fs.ReadFile(frontend, "index.html")
+		if err != nil {
+			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
+		}
+		idx := string(indexBytes)
+		safeBase, _ := json.Marshal(basePath)
+		idx = strings.Replace(idx, "<head>",
+			`<head><script>window.__BASE_PATH__=`+string(safeBase)+`;</script>`, 1)
+		if basePath != "/" {
+			prefix := strings.TrimSuffix(basePath, "/")
+			idx = strings.ReplaceAll(idx, `src="/assets/`, `src="`+prefix+`/assets/`)
+			idx = strings.ReplaceAll(idx, `href="/assets/`, `href="`+prefix+`/assets/`)
+		}
+		indexHTML := []byte(idx)
+
+		serveIndex := func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(indexHTML)
+		}
+
 		fileServer := http.FileServerFS(frontend)
-		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// Strip leading slash: fs.FS paths must not start with '/'.
-			name := strings.TrimPrefix(r.URL.Path, "/")
-			if name == "" {
-				name = "index.html"
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				http.NotFound(w, r)
+				return
 			}
-			// Try serving the exact file; fall back to index.html for SPA routing.
+			name := strings.TrimPrefix(r.URL.Path, "/")
+			if name == "" || name == "index.html" {
+				serveIndex(w)
+				return
+			}
 			f, err := frontend.Open(name)
 			if err == nil {
 				f.Close()
 				fileServer.ServeHTTP(w, r)
 				return
 			}
-			// File not found — serve index.html so the SPA router handles the path.
-			http.ServeFileFS(w, r, frontend, "index.html")
+			serveIndex(w)
 		})
+	}
+
+	// When serving under a base path, use an outer mux with
+	// StripPrefix so the inner mux sees clean paths like /api/v1/...
+	if basePath != "/" {
+		outer := http.NewServeMux()
+		prefix := strings.TrimSuffix(basePath, "/")
+		outer.Handle(basePath, http.StripPrefix(prefix, mux))
+		s.handler = outer
+	} else {
+		s.handler = mux
 	}
 
 	return s
@@ -73,14 +111,14 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 // ListenAndServe starts the HTTP server on addr.
 func (s *Server) ListenAndServe(addr string) error {
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      s.mux,
+		Handler:      s,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -93,7 +131,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		// Headers already written; nothing useful we can do.
 		return
 	}
 }

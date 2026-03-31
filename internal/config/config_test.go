@@ -156,6 +156,52 @@ func TestGitHubTokenPrefersEnvVarOverGHCli(t *testing.T) {
 	}
 }
 
+func TestBasePathValidation(t *testing.T) {
+	base := `
+[[repos]]
+owner = "a"
+name = "b"
+`
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+		wantBP  string
+	}{
+		{"default", "", false, "/"},
+		{"root", "/", false, "/"},
+		{"simple", "middleman", false, "/middleman/"},
+		{"with slashes", "/middleman/", false, "/middleman/"},
+		{"nested", "/apps/middleman", false, "/apps/middleman/"},
+		{"dot segment", "/../evil", true, ""},
+		{"single dot", "/./path", true, ""},
+		{"special chars", "/mid<script>", true, ""},
+		{"quotes", `/mid"man`, true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extra := ""
+			if tt.value != "" {
+				extra = `base_path = "` + tt.value + `"`
+			}
+			path := writeConfig(t, extra+"\n"+base)
+			cfg, err := Load(path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.BasePath != tt.wantBP {
+				t.Fatalf("expected BasePath %q, got %q", tt.wantBP, cfg.BasePath)
+			}
+		})
+	}
+}
+
 func TestGitHubTokenReturnsEmptyWhenGHCliUnavailable(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("TEST_GH_TOKEN", "")

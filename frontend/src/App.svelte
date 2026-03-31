@@ -8,7 +8,7 @@
   import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
   import ActivityFeed from "./lib/components/ActivityFeed.svelte";
   import DetailDrawer from "./lib/components/DetailDrawer.svelte";
-  import { getRoute, getPage, navigate } from "./lib/stores/router.svelte.ts";
+  import { getRoute, getPage, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import {
     getSelectedPR,
@@ -94,7 +94,8 @@
       sp.delete("selected");
     }
     const qs = sp.toString();
-    history.replaceState(null, "", "/" + (qs ? `?${qs}` : ""));
+    const base = getBasePath().replace(/\/$/, "") || "";
+    history.replaceState(null, "", (base || "/") + (qs ? `?${qs}` : ""));
   }
 
   function handleActivitySelect(item: ActivityItem): void {
