@@ -637,6 +637,12 @@ func (s *Server) setPRGitHubState(
 							"cannot change state of a merged pull request",
 						)
 					}
+					// Already in requested state (concurrent edit).
+					if ghPR.GetState() == input.Body.State {
+						out := &githubStateOutput{}
+						out.Body.State = input.Body.State
+						return out, nil
+					}
 				}
 			}
 		}
@@ -696,6 +702,29 @@ func (s *Server) setIssueGitHubState(
 		ctx, input.Owner, input.Name,
 		input.Number, input.Body.State,
 	); err != nil {
+		var ghErr *gh.ErrorResponse
+		if errors.As(err, &ghErr) &&
+			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
+			// Re-fetch to sync local state. If already in the
+			// requested state (concurrent edit), treat as success.
+			repoID, repoErr := s.lookupRepoID(
+				ctx, input.Owner, input.Name,
+			)
+			if repoErr == nil {
+				ghIssue, fetchErr := s.gh.GetIssue(
+					ctx, input.Owner, input.Name, input.Number,
+				)
+				if fetchErr == nil {
+					normalized := ghclient.NormalizeIssue(repoID, ghIssue)
+					_, _ = s.db.UpsertIssue(ctx, normalized)
+					if ghIssue.GetState() == input.Body.State {
+						out := &githubStateOutput{}
+						out.Body.State = input.Body.State
+						return out, nil
+					}
+				}
+			}
+		}
 		return nil, huma.Error502BadGateway(
 			"GitHub API error: " + err.Error(),
 		)
