@@ -69,17 +69,25 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		}
 		indexHTML := idx
 
+		serveIndex := func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(indexHTML))
+		}
+
 		fileServer := http.FileServerFS(frontend)
 		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Never intercept API paths — let them 404 naturally.
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				http.NotFound(w, r)
+				return
+			}
 			name := strings.TrimPrefix(r.URL.Path, "/")
 			if name == "" {
 				name = "index.html"
 			}
-			// Serve index.html with injected base path for SPA routes.
 			if name == "index.html" {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(indexHTML))
+				serveIndex(w)
 				return
 			}
 			// Try serving the exact file; fall back to index.html for SPA routing.
@@ -89,9 +97,7 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 				fileServer.ServeHTTP(w, r)
 				return
 			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(indexHTML))
+			serveIndex(w)
 		})
 	}
 
