@@ -116,6 +116,7 @@ Fix:
 - Move `hideClosedMerged`, `hideBots`, `enabledEvents`, and `itemFilter` into the activity store as module-level state (same pattern as existing `filterTypes`, `viewMode`, etc.)
 - Add an `initialized` flag to the activity store. On first mount, sync from URL. On subsequent mounts, restore from store state (skip `syncFromURL`)
 - On mount: if not initialized, call `syncFromURL()` and set initialized. If already initialized, call `syncToURL()` to push the in-memory state back into the URL (so a page reload preserves the filters)
+- Change `syncFromURL()` to only override fields whose query params are actually present in the URL. When a param is absent, leave the current store value untouched (which will be the config default after hydration, or the hardcoded default if hydration failed). The current implementation unconditionally resets missing params to hardcoded defaults, which would erase config defaults on first mount.
 - Continue syncing store-to-URL when filters change so bookmarkable URLs still work
 
 ### Settings hydration
