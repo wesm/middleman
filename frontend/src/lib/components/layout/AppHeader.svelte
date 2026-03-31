@@ -6,9 +6,13 @@
   const THEME_KEY = "middleman-theme";
 
   function storedTheme(): string | null {
-    const v = localStorage.getItem(THEME_KEY);
-    if (v === "dark" || v === "light") return v;
-    if (v !== null) localStorage.removeItem(THEME_KEY);
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      if (v === "dark" || v === "light") return v;
+      if (v !== null) localStorage.removeItem(THEME_KEY);
+    } catch {
+      // Storage blocked (e.g. private browsing) — fall back to system preference
+    }
     return null;
   }
 
@@ -42,7 +46,9 @@
 
   function toggleTheme(): void {
     dark = !dark;
-    localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+    try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch {
+      // Storage blocked — toggle still works for this session
+    }
   }
 
   async function handleSync(): Promise<void> {
