@@ -140,10 +140,10 @@
   }
 
   .btn--green {
-    background: var(--accent-green);
+    background: #16a34a;
   }
   .btn--green:hover:not(:disabled) {
-    opacity: 0.9;
+    background: #15803d;
   }
 
   .btn--approve {

@@ -595,14 +595,14 @@
     font-weight: 500;
     padding: 6px 14px;
     border-radius: var(--radius-sm);
-    background: var(--accent-green);
+    background: #16a34a;
     color: #fff;
     border: none;
     cursor: pointer;
-    transition: opacity 0.1s;
+    transition: background 0.1s;
   }
   .btn--merge:hover {
-    opacity: 0.9;
+    background: #15803d;
   }
 
   .kanban-select--new { color: var(--kanban-new); }
