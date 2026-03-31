@@ -68,10 +68,12 @@ frontend-dev-bun:
 frontend-check:
 	cd frontend && bun run check
 
-# Regenerate the checked-in OpenAPI document and generated frontend schema
+# Regenerate the checked-in OpenAPI documents and generated clients
 api-generate:
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.json
+	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
 	cd frontend && bunx openapi-typescript openapi/openapi.json -o src/lib/api/generated/schema.ts
+	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
 
 # Ensure air is installed for backend live reload
 check-air:

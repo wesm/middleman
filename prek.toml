@@ -20,10 +20,10 @@ repo = "local"
 hooks = [
   {
     id = "api-generate",
-    name = "regenerate openapi client",
+    name = "regenerate api clients",
     language = "system",
     entry = "make api-generate",
-    files = "^(go\\.mod|go\\.sum|cmd/middleman-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|frontend/package\\.json|frontend/bun\\.lock)$",
+    files = "^(go\\.mod|go\\.sum|cmd/middleman-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$",
     pass_filenames = false,
     priority = 0,
   },
