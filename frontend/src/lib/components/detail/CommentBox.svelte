@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { submitComment, getDetailError, isDetailLoading } from "../../stores/detail.svelte.js";
+  import { submitComment, getDetailError } from "../../stores/detail.svelte.js";
 
   interface Props {
     owner: string;

@@ -66,7 +66,7 @@ frontend-dev-bun:
 
 # Run frontend type checks
 frontend-check:
-	cd frontend && bun run check
+	cd frontend && bun run typecheck && bun run lint
 
 # Regenerate the checked-in OpenAPI documents and generated clients
 api-generate:
