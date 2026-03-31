@@ -109,3 +109,24 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 		t.Fatalf("expected /middleman/assets/ in src, got: %s", body)
 	}
 }
+
+func TestCSRFAppliesUnderBasePath(t *testing.T) {
+	srv := setupWithBasePath(t, "/middleman/", nil)
+
+	body := strings.NewReader(`{"body":"test"}`)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/middleman/api/v1/sync", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf(
+			"expected 403 for cross-site under basePath, got %d",
+			rr.Code,
+		)
+	}
+}

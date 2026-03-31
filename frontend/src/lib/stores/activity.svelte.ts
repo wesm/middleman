@@ -144,13 +144,16 @@ export function hydrateActivityDefaults(
   hideBots = activity.hide_bots;
 }
 
+/**
+ * Called by ActivityFeed on mount. Always reads URL params (partial
+ * override), then writes store state back to URL so missing params
+ * are filled in. Safe to call on every mount because syncFromURL
+ * only touches fields whose params are present in the URL.
+ */
 export function initializeFromMount(): void {
-  if (!initialized) {
-    syncFromURL();
-    initialized = true;
-  } else {
-    syncToURL();
-  }
+  syncFromURL();
+  initialized = true;
+  syncToURL();
 }
 
 // --- internals ---

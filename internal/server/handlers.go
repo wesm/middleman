@@ -855,6 +855,26 @@ func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
 	if repos == nil {
 		repos = []db.Repo{}
 	}
+
+	// When config is available, filter to only configured repos
+	// so that removed repos don't appear in the UI.
+	if s.cfg != nil {
+		s.cfgMu.Lock()
+		configured := make(map[string]bool, len(s.cfg.Repos))
+		for _, cr := range s.cfg.Repos {
+			configured[cr.Owner+"/"+cr.Name] = true
+		}
+		s.cfgMu.Unlock()
+
+		filtered := make([]db.Repo, 0, len(repos))
+		for _, r := range repos {
+			if configured[r.Owner+"/"+r.Name] {
+				filtered = append(filtered, r)
+			}
+		}
+		repos = filtered
+	}
+
 	writeJSON(w, http.StatusOK, repos)
 }
 

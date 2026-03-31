@@ -157,12 +157,23 @@ func newServer(
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/") && r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
 		if !checkCSRF(w, r) {
 			return
 		}
 	}
 	s.handler.ServeHTTP(w, r)
+}
+
+// isMutatingAPIRequest checks whether the request targets an API route,
+// accounting for the configured basePath prefix.
+func (s *Server) isMutatingAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return strings.HasPrefix(path, "/api/")
 }
 
 // checkCSRF rejects cross-site mutation requests. Returns true if
