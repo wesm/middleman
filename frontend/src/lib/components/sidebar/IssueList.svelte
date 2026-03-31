@@ -15,6 +15,7 @@
     setIssueFilterStarred,
   } from "../../stores/issues.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
+  import { navigate } from "../../stores/router.svelte.js";
   import IssueItem from "./IssueItem.svelte";
   import RepoTypeahead from "../RepoTypeahead.svelte";
 
@@ -51,6 +52,7 @@
 
   function handleSelect(owner: string, name: string, number: number): void {
     selectIssue(owner, name, number);
+    navigate(`/issues/${owner}/${name}/${number}`);
   }
 
   function isSelected(owner: string, name: string, number: number): boolean {
