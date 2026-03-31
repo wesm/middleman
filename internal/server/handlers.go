@@ -544,22 +544,27 @@ func (s *Server) handleUpdateSettings(
 		return
 	}
 
+	// Validate against a copy before mutating the live config.
+	candidate := body.Activity
+	if candidate.ViewMode == "" {
+		candidate.ViewMode = "flat"
+	}
+	if candidate.TimeRange == "" {
+		candidate.TimeRange = "7d"
+	}
+
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 
-	s.cfg.Activity = body.Activity
-	if s.cfg.Activity.ViewMode == "" {
-		s.cfg.Activity.ViewMode = "flat"
-	}
-	if s.cfg.Activity.TimeRange == "" {
-		s.cfg.Activity.TimeRange = "7d"
-	}
-
+	prev := s.cfg.Activity
+	s.cfg.Activity = candidate
 	if err := s.cfg.Validate(); err != nil {
+		s.cfg.Activity = prev
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.cfg.Activity = prev
 		writeError(w, http.StatusInternalServerError,
 			"save config: "+err.Error())
 		return
