@@ -87,4 +87,16 @@ describe("AppHeader", () => {
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
+
+  it("ignores invalid localStorage value and falls back to system preference", () => {
+    cleanup();
+    document.documentElement.classList.remove("dark");
+    localStorage.setItem("middleman-theme", "garbage");
+    mockMatchMedia(true);
+
+    render(AppHeader);
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("middleman-theme")).toBeNull();
+  });
 });

@@ -5,8 +5,15 @@
 
   const THEME_KEY = "middleman-theme";
 
+  function storedTheme(): string | null {
+    const v = localStorage.getItem(THEME_KEY);
+    if (v === "dark" || v === "light") return v;
+    if (v !== null) localStorage.removeItem(THEME_KEY);
+    return null;
+  }
+
   function loadInitialTheme(): boolean {
-    const stored = localStorage.getItem(THEME_KEY);
+    const stored = storedTheme();
     if (stored !== null) return stored === "dark";
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
@@ -17,7 +24,7 @@
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const handleChange = (event: MediaQueryListEvent) => {
-      if (localStorage.getItem(THEME_KEY) === null) {
+      if (storedTheme() === null) {
         dark = event.matches;
       }
     };
