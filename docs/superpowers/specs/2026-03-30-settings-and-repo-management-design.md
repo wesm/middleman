@@ -115,7 +115,7 @@ The activity feed currently resets all filters when navigating away and back bec
 Fix:
 - Move `hideClosedMerged`, `hideBots`, `enabledEvents`, and `itemFilter` into the activity store as module-level state (same pattern as existing `filterTypes`, `viewMode`, etc.)
 - Add an `initialized` flag to the activity store. On first mount, sync from URL. On subsequent mounts, restore from store state (skip `syncFromURL`)
-- On mount: if not initialized, call `syncFromURL()` and set initialized. If already initialized, skip URL sync
+- On mount: if not initialized, call `syncFromURL()` and set initialized. If already initialized, call `syncToURL()` to push the in-memory state back into the URL (so a page reload preserves the filters)
 - Continue syncing store-to-URL when filters change so bookmarkable URLs still work
 
 ### Settings hydration
@@ -125,9 +125,10 @@ On app startup in `App.svelte`, fetch `GET /api/v1/settings` and apply activity 
 Initialization sequence:
 1. App mounts, sets `appReady = false`
 2. Fetches `GET /api/v1/settings`
-3. Calls `hydrateActivityDefaults(settings.activity)` on the activity store -- this sets `viewMode`, `timeRange`, `hideClosedMerged`, `hideBots` from config values
-4. Sets `appReady = true`, views render
-5. When `ActivityFeed` mounts: if URL has query params, those override the hydrated defaults (URL params > config > hardcoded). If URL has no params, the config defaults stick.
+3. On success: calls `hydrateActivityDefaults(settings.activity)` on the activity store -- this sets `viewMode`, `timeRange`, `hideClosedMerged`, `hideBots` from config values
+4. On failure: log the error, fall back to hardcoded defaults (the store already initializes with these), surface a non-blocking error (e.g. console warning). Do not block the app.
+5. Sets `appReady = true` in both success and failure paths, views render
+6. When `ActivityFeed` mounts: if URL has query params, those override the hydrated defaults (URL params > config > hardcoded). If URL has no params, the config defaults stick.
 
 This ensures the initialization priority is: URL params > config.toml defaults > hardcoded defaults.
 
