@@ -154,14 +154,16 @@ describe("updateKanbanState", () => {
     expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
 
     // Succeed request B. Don't await yet — B's success path calls
-    // loadPulls() which issues a GET we must resolve first.
+    // loadPulls() and loadDetail() which issue GETs we must resolve.
     putCalls[1]!.resolve({});
     await flush();
 
-    // Resolve the GET /pulls that B's success path triggered.
-    getCalls[getCalls.length - 1]!.resolve({
+    getCalls[getCalls.length - 2]!.resolve({
       data: [makePR("acme", "repo", 42, "waiting")],
     });
+    getCalls[getCalls.length - 1]!.resolve(
+      makeDetailResponse("acme", "repo", 42, "waiting"),
+    );
     await promiseB;
 
     expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
@@ -268,13 +270,17 @@ describe("updateKanbanState", () => {
     putCalls[0]!.resolve({});
     await flush();
 
-    // A's success triggers refreshPullsIfActive → loadPulls.
-    getCalls[getCalls.length - 1]!.resolve({
+    // A's success triggers refreshPullsIfActive and loadDetail.
+    getCalls[getCalls.length - 2]!.resolve({
       data: [makePR("acme", "repo", 42, "reviewing")],
     });
+    getCalls[getCalls.length - 1]!.resolve(
+      makeDetailResponse("acme", "repo", 42, "reviewing"),
+    );
     await promiseA;
 
-    expect(getDetail()!.pull_request.KanbanStatus).toBe("new");
+    // Both views converge to server state.
+    expect(getDetail()!.pull_request.KanbanStatus).toBe("reviewing");
     expect(getPulls()[0]!.KanbanStatus).toBe("reviewing");
   });
 
@@ -287,28 +293,35 @@ describe("updateKanbanState", () => {
 
     expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
 
-    // B succeeds first.
+    // B succeeds first. Refreshes pulls and detail.
     putCalls[1]!.resolve({});
     await flush();
 
-    // B's success refreshes pulls from server (server has "waiting").
-    getCalls[getCalls.length - 1]!.resolve({
+    getCalls[getCalls.length - 2]!.resolve({
       data: [makePR("acme", "repo", 42, "waiting")],
     });
+    getCalls[getCalls.length - 1]!.resolve(
+      makeDetailResponse("acme", "repo", 42, "waiting"),
+    );
     await promiseB;
 
     expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+    expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
 
     // A succeeds later. Server applied A before B, so server still
     // has "waiting". A's refresh must still run and converge.
     putCalls[0]!.resolve({});
     await flush();
 
-    getCalls[getCalls.length - 1]!.resolve({
+    getCalls[getCalls.length - 2]!.resolve({
       data: [makePR("acme", "repo", 42, "waiting")],
     });
+    getCalls[getCalls.length - 1]!.resolve(
+      makeDetailResponse("acme", "repo", 42, "waiting"),
+    );
     await promiseA;
 
     expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+    expect(getDetail()!.pull_request.KanbanStatus).toBe("waiting");
   });
 });

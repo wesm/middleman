@@ -177,9 +177,13 @@ export async function updateKanbanState(
     }
     return;
   }
-  // Always refresh from server on success so the UI converges to
+  // Always refresh from server on success so both views converge to
   // authoritative state regardless of request completion order.
-  await refreshPullsIfActive();
+  const refreshes: Promise<void>[] = [refreshPullsIfActive()];
+  if (isDetailShowing(owner, name, number)) {
+    refreshes.push(loadDetail(owner, name, number));
+  }
+  await Promise.all(refreshes);
 }
 
 // --- polling ---
