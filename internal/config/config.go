@@ -27,6 +27,7 @@ type Config struct {
 	GitHubTokenEnv string `toml:"github_token_env"`
 	Host           string `toml:"host"`
 	Port           int    `toml:"port"`
+	BasePath       string `toml:"base_path"`
 	DataDir        string `toml:"data_dir"`
 	Repos          []Repo `toml:"repos"`
 }
@@ -66,6 +67,16 @@ func Load(path string) (*Config, error) {
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()
+	}
+
+	if cfg.BasePath == "" {
+		cfg.BasePath = "/"
+	} else {
+		bp := "/" + strings.Trim(cfg.BasePath, "/")
+		if bp != "/" {
+			bp += "/"
+		}
+		cfg.BasePath = bp
 	}
 
 	return cfg, cfg.Validate()

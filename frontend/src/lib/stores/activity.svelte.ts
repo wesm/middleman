@@ -192,6 +192,7 @@ export function syncToURL(): void {
   if (viewMode !== "flat") sp.set("view", viewMode);
   else sp.delete("view");
   const qs = sp.toString();
-  const url = "/" + (qs ? `?${qs}` : "");
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") || "";
+  const url = (base || "/") + (qs ? `?${qs}` : "");
   history.replaceState(null, "", url);
 }

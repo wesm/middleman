@@ -3,7 +3,24 @@ export type Route =
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } };
 
-function parseRoute(path: string): Route {
+// Base path from Vite build (e.g., "/" or "/middleman/").
+// Strip trailing slash for prefix-stripping; keep "/" as empty string.
+const rawBase = import.meta.env.BASE_URL ?? "/";
+const basePrefix = rawBase === "/" ? "" : rawBase.replace(/\/$/, "");
+
+export function getBasePath(): string {
+  return rawBase;
+}
+
+function stripBase(path: string): string {
+  if (basePrefix && path.startsWith(basePrefix)) {
+    return path.slice(basePrefix.length) || "/";
+  }
+  return path;
+}
+
+function parseRoute(fullPath: string): Route {
+  const path = stripBase(fullPath);
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
     if (rest === "/board") return { page: "pulls", view: "board" };
@@ -41,13 +58,15 @@ export function getPage(): "activity" | "pulls" | "issues" {
 }
 
 export function navigate(path: string): void {
-  history.pushState(null, "", path);
-  route = parseRoute(path);
+  const fullPath = basePrefix + path;
+  history.pushState(null, "", fullPath);
+  route = parseRoute(fullPath);
 }
 
 export function replaceUrl(path: string): void {
-  history.replaceState(null, "", path);
-  route = parseRoute(path);
+  const fullPath = basePrefix + path;
+  history.replaceState(null, "", fullPath);
+  route = parseRoute(fullPath);
 }
 
 // Listen for browser back/forward.

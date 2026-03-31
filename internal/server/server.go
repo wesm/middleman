@@ -13,19 +13,22 @@ import (
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db     *db.DB
-	gh     ghclient.Client
-	syncer *ghclient.Syncer
-	mux    *http.ServeMux
+	db       *db.DB
+	gh       ghclient.Client
+	syncer   *ghclient.Syncer
+	basePath string
+	mux      *http.ServeMux
 }
 
 // New creates a Server wiring up all API routes and optional SPA serving.
-func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS) *Server {
+// basePath should be "/" or "/prefix/" (with trailing slash).
+func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS, basePath string) *Server {
 	s := &Server{
-		db:     database,
-		gh:     gh,
-		syncer: syncer,
-		mux:    http.NewServeMux(),
+		db:       database,
+		basePath: basePath,
+		gh:       gh,
+		syncer:   syncer,
+		mux:      http.NewServeMux(),
 	}
 
 	s.mux.HandleFunc("GET /api/v1/activity", s.handleListActivity)
@@ -73,6 +76,10 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.basePath != "/" {
+		http.StripPrefix(strings.TrimSuffix(s.basePath, "/"), s.mux).ServeHTTP(w, r)
+		return
+	}
 	s.mux.ServeHTTP(w, r)
 }
 

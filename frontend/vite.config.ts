@@ -3,7 +3,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 
 export default defineConfig({
-  base: "/",
+  base: process.env.MIDDLEMAN_BASE_PATH || "/",
   plugins: [svelte(), svelteTesting()],
   test: {
     environment: "jsdom",

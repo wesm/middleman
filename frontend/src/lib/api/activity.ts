@@ -1,4 +1,5 @@
-const BASE = "/api/v1";
+const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+const BASE = `${basePath}/api/v1`;
 
 export interface ActivityItem {
   id: string;
