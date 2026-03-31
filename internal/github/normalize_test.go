@@ -143,6 +143,43 @@ func TestNormalizeCommentEvent(t *testing.T) {
 	}
 }
 
+func TestNormalizeIssueCommentEvent(t *testing.T) {
+	now := time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)
+	id := int64(777)
+	body := "needs follow-up"
+	login := "dana"
+	c := &gh.IssueComment{
+		ID:        &id,
+		Body:      &body,
+		User:      &gh.User{Login: &login},
+		CreatedAt: &gh.Timestamp{Time: now},
+	}
+
+	event := NormalizeIssueCommentEvent(12, c)
+
+	if event.IssueID != 12 {
+		t.Errorf("IssueID: got %d, want 12", event.IssueID)
+	}
+	if event.EventType != "issue_comment" {
+		t.Errorf("EventType: got %q, want issue_comment", event.EventType)
+	}
+	if event.DedupeKey != "issue-comment-777" {
+		t.Errorf("DedupeKey: got %q, want issue-comment-777", event.DedupeKey)
+	}
+	if event.Author != "dana" {
+		t.Errorf("Author: got %q, want dana", event.Author)
+	}
+	if event.Body != "needs follow-up" {
+		t.Errorf("Body: got %q", event.Body)
+	}
+	if event.GitHubID == nil || *event.GitHubID != 777 {
+		t.Errorf("GitHubID: got %v, want 777", event.GitHubID)
+	}
+	if !event.CreatedAt.Equal(now) {
+		t.Errorf("CreatedAt: got %v, want %v", event.CreatedAt, now)
+	}
+}
+
 func TestDeriveReviewDecision_Empty(t *testing.T) {
 	result := DeriveReviewDecision(nil)
 	if result != "" {

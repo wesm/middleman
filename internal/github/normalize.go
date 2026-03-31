@@ -57,18 +57,9 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
 
 // NormalizeCommentEvent converts a GitHub IssueComment to a db.PREvent.
 func NormalizeCommentEvent(prID int64, c *gh.IssueComment) db.PREvent {
-	event := db.PREvent{
-		PRID:      prID,
-		EventType: "issue_comment",
-		DedupeKey: fmt.Sprintf("comment-%d", c.GetID()),
-		Author:    loginOrEmpty(c.GetUser()),
-		Body:      c.GetBody(),
-	}
-	ghID := c.GetID()
-	event.GitHubID = &ghID
-	if c.CreatedAt != nil {
-		event.CreatedAt = c.CreatedAt.Time
-	}
+	event := normalizeIssueCommentBase(c)
+	event.PRID = prID
+	event.DedupeKey = fmt.Sprintf("comment-%d", c.GetID())
 	return event
 }
 
@@ -241,10 +232,22 @@ func normalizeLabels(labels []*gh.Label) string {
 
 // NormalizeIssueCommentEvent converts a GitHub IssueComment to a db.IssueEvent.
 func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent {
-	event := db.IssueEvent{
+	event := normalizeIssueCommentBase(c)
+	return db.IssueEvent{
 		IssueID:   issueID,
-		EventType: "issue_comment",
+		GitHubID:  event.GitHubID,
+		EventType: event.EventType,
+		Author:    event.Author,
+		Summary:   event.Summary,
+		Body:      event.Body,
+		CreatedAt: event.CreatedAt,
 		DedupeKey: fmt.Sprintf("issue-comment-%d", c.GetID()),
+	}
+}
+
+func normalizeIssueCommentBase(c *gh.IssueComment) db.PREvent {
+	event := db.PREvent{
+		EventType: "issue_comment",
 		Author:    loginOrEmpty(c.GetUser()),
 		Body:      c.GetBody(),
 	}

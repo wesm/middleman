@@ -129,6 +129,33 @@ func validateStarredRequest(body starredRequest) bool {
 	return body.ItemType == "pr" || body.ItemType == "issue"
 }
 
+// parseStarredRequest centralizes decode, validation, and repo resolution for
+// the starred set/unset endpoints so both handlers share one error path.
+func (s *Server) parseStarredRequest(
+	w http.ResponseWriter, r *http.Request,
+) (starredRequest, int64, bool) {
+	var body starredRequest
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
+		return starredRequest{}, 0, false
+	}
+	if !validateStarredRequest(body) {
+		writeError(w, http.StatusBadRequest, "item_type must be 'pr' or 'issue'")
+		return starredRequest{}, 0, false
+	}
+
+	repoID, err := s.lookupRepoID(r.Context(), body.Owner, body.Name)
+	if err != nil {
+		if errors.Is(err, errRepoNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return starredRequest{}, 0, false
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return starredRequest{}, 0, false
+	}
+
+	return body, repoID, true
+}
+
 type queryValues interface {
 	Get(string) string
 }

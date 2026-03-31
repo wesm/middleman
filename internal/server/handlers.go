@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -346,26 +345,8 @@ func (s *Server) handleSetStarred(
 	w http.ResponseWriter, r *http.Request,
 ) {
 	ctx := r.Context()
-
-	var body struct {
-		starredRequest
-	}
-	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
-		return
-	}
-	if !validateStarredRequest(body.starredRequest) {
-		writeError(w, http.StatusBadRequest,
-			"item_type must be 'pr' or 'issue'")
-		return
-	}
-
-	repoID, err := s.lookupRepoID(ctx, body.Owner, body.Name)
-	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	body, repoID, ok := s.parseStarredRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -386,26 +367,8 @@ func (s *Server) handleUnsetStarred(
 	w http.ResponseWriter, r *http.Request,
 ) {
 	ctx := r.Context()
-
-	var body struct {
-		starredRequest
-	}
-	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
-		return
-	}
-	if !validateStarredRequest(body.starredRequest) {
-		writeError(w, http.StatusBadRequest,
-			"item_type must be 'pr' or 'issue'")
-		return
-	}
-
-	repoID, err := s.lookupRepoID(ctx, body.Owner, body.Name)
-	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+	body, repoID, ok := s.parseStarredRequest(w, r)
+	if !ok {
 		return
 	}
 

@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -55,4 +57,45 @@ func TestLookupRepoIDReturnsExistingRepoID(t *testing.T) {
 	got, err := srv.lookupRepoID(ctx, "acme", "widget")
 	require.NoError(t, err)
 	require.Equal(t, repoID, got)
+}
+
+func TestParseStarredRequestParsesValidBodyAndRepoID(t *testing.T) {
+	srv, database := setupTestServer(t)
+	_, err := database.UpsertRepo(context.Background(), "acme", "widget")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"pr","owner":"acme","name":"widget","number":1}`))
+	rr := httptest.NewRecorder()
+
+	body, repoID, ok := srv.parseStarredRequest(rr, req)
+	require.True(t, ok)
+	require.Equal(t, "pr", body.ItemType)
+	require.Equal(t, "acme", body.Owner)
+	require.Equal(t, "widget", body.Name)
+	require.Equal(t, 1, body.Number)
+	require.NotZero(t, repoID)
+}
+
+func TestParseStarredRequestRejectsInvalidItemType(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"repo","owner":"acme","name":"widget","number":1}`))
+	rr := httptest.NewRecorder()
+
+	_, _, ok := srv.parseStarredRequest(rr, req)
+	require.False(t, ok)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "item_type must be 'pr' or 'issue'")
+}
+
+func TestParseStarredRequestRejectsMissingRepo(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/starred", bytes.NewBufferString(`{"item_type":"pr","owner":"acme","name":"widget","number":1}`))
+	rr := httptest.NewRecorder()
+
+	_, _, ok := srv.parseStarredRequest(rr, req)
+	require.False(t, ok)
+	require.Equal(t, http.StatusNotFound, rr.Code)
+	require.Contains(t, rr.Body.String(), "repo not found")
 }
