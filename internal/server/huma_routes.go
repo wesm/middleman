@@ -234,7 +234,7 @@ func (s *Server) registerAPI(api huma.API) {
 
 func NewOpenAPI() *huma.OpenAPI {
 	mux := http.NewServeMux()
-	s := &Server{mux: mux}
+	s := &Server{}
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig())
 	s.registerAPI(api)
 	return api.OpenAPI()
