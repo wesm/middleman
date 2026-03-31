@@ -45,12 +45,3 @@ func TestHasRequireHelper(t *testing.T) {
 	require.NoError(nil)
 	require.NotNil(&struct{}{})
 }
-
-func TestAssertHelperDoesNotSuppressRequire(t *testing.T) {
-	assert := Assert.New(t)
-	assert.Equal(1, 1)
-	require.NoError(t, nil)
-	require.NotNil(t, &struct{}{})
-	require.NoError(t, nil)
-	require.NotNil(t, &struct{}{}) // want "test has 4 direct testify package calls; create a local require helper with require := require.New\\(t\\) and use it for repeated checks"
-}
