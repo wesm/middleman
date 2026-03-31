@@ -94,13 +94,12 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		})
 	}
 
-	// When serving under a base path, mount the inner mux on the
-	// outer mux at the prefix. ServeMux automatically strips the
-	// matched prefix before delegating, so the inner routes see
-	// clean paths like /api/v1/... and /.
+	// When serving under a base path, use an outer mux with
+	// StripPrefix so the inner mux sees clean paths like /api/v1/...
 	if basePath != "/" {
 		outer := http.NewServeMux()
-		outer.Handle(basePath, mux)
+		prefix := strings.TrimSuffix(basePath, "/")
+		outer.Handle(basePath, http.StripPrefix(prefix, mux))
 		s.handler = outer
 	} else {
 		s.handler = mux
