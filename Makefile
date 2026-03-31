@@ -97,11 +97,11 @@ vet: ensure-embed-dir
 
 # Lint Go code and auto-fix where possible
 lint: ensure-embed-dir
-	@if ! command -v golangci-lint >/dev/null 2>&1; then \
-		echo "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest" >&2; \
+	@if ! command -v mise >/dev/null 2>&1; then \
+		echo "mise not found. Install with: brew install mise" >&2; \
 		exit 1; \
 	fi
-	golangci-lint run --fix ./...
+	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" mise exec -- golangci-lint run --fix
 
 # Tidy dependencies
 tidy:
@@ -141,7 +141,7 @@ help:
 	@echo "  test           - Run all tests"
 	@echo "  test-short     - Run fast tests only"
 	@echo "  vet            - Run go vet"
-	@echo "  lint           - Run golangci-lint (auto-fix)"
+	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
 	@echo ""

@@ -10,6 +10,7 @@ linters:
     - staticcheck
     - unused
     - modernize
+    - testifylint
   settings:
     govet:
       disable:

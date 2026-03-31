@@ -2,9 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,30 +27,17 @@ func (s *Server) handleListPulls(w http.ResponseWriter, r *http.Request) {
 	opts := db.ListPullsOpts{
 		State:       q.Get("state"),
 		KanbanState: q.Get("kanban"),
-		Starred:     q.Get("starred") == "true",
+		Starred:     parseBoolFlag(q, "starred"),
 		Search:      q.Get("q"),
 	}
 
-	if repo := q.Get("repo"); repo != "" {
-		parts := strings.SplitN(repo, "/", 2)
-		if len(parts) == 2 {
-			opts.RepoOwner = parts[0]
-			opts.RepoName = parts[1]
-		}
+	if owner, name := parseRepoFilter(q.Get("repo")); owner != "" {
+		opts.RepoOwner = owner
+		opts.RepoName = name
 	}
 
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err == nil {
-			opts.Limit = n
-		}
-	}
-	if v := q.Get("offset"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err == nil {
-			opts.Offset = n
-		}
-	}
+	opts.Limit = parseOptionalInt(q, "limit")
+	opts.Offset = parseOptionalInt(q, "offset")
 
 	prs, err := s.db.ListPullRequests(ctx, opts)
 	if err != nil {
@@ -60,14 +46,10 @@ func (s *Server) handleListPulls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build repo ID → Repo lookup to annotate each PR with owner/name.
-	repos, err := s.db.ListRepos(ctx)
+	repoByID, err := s.lookupRepoMap(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list repos: "+err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	repoByID := make(map[int64]db.Repo, len(repos))
-	for _, rp := range repos {
-		repoByID[rp.ID] = rp
 	}
 
 	out := make([]pullResponse, 0, len(prs))
@@ -94,17 +76,12 @@ type pullDetailResponse struct {
 
 func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	numberStr := r.PathValue("number")
-
-	number, err := strconv.Atoi(numberStr)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR number")
+	ref, ok := parseRepoNumberPath(w, r, "PR")
+	if !ok {
 		return
 	}
 
-	pr, err := s.db.GetPullRequest(ctx, owner, name, number)
+	pr, err := s.db.GetPullRequest(ctx, ref.owner, ref.name, ref.number)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "get pull request: "+err.Error())
 		return
@@ -126,8 +103,8 @@ func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pullDetailResponse{
 		PullRequest: pr,
 		Events:      events,
-		RepoOwner:   owner,
-		RepoName:    name,
+		RepoOwner:   ref.owner,
+		RepoName:    ref.name,
 	})
 }
 
@@ -142,21 +119,15 @@ var validKanbanStates = map[string]bool{
 
 func (s *Server) handleSetKanbanState(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	numberStr := r.PathValue("number")
-
-	number, err := strconv.Atoi(numberStr)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR number")
+	ref, ok := parseRepoNumberPath(w, r, "PR")
+	if !ok {
 		return
 	}
 
 	var body struct {
 		Status string `json:"status"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
 		return
 	}
 
@@ -166,7 +137,7 @@ func (s *Server) handleSetKanbanState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prID, err := s.db.GetPRIDByRepoAndNumber(ctx, owner, name, number)
+	prID, err := s.lookupPRID(ctx, ref)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -184,21 +155,15 @@ func (s *Server) handleSetKanbanState(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePostComment(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	numberStr := r.PathValue("number")
-
-	number, err := strconv.Atoi(numberStr)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR number")
+	ref, ok := parseRepoNumberPath(w, r, "PR")
+	if !ok {
 		return
 	}
 
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
 		return
 	}
 	if strings.TrimSpace(body.Body) == "" {
@@ -206,13 +171,15 @@ func (s *Server) handlePostComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comment, err := s.gh.CreateIssueComment(ctx, owner, name, number, body.Body)
+	comment, err := s.gh.CreateIssueComment(
+		ctx, ref.owner, ref.name, ref.number, body.Body,
+	)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "create comment on GitHub: "+err.Error())
 		return
 	}
 
-	prID, err := s.db.GetPRIDByRepoAndNumber(ctx, owner, name, number)
+	prID, err := s.lookupPRID(ctx, ref)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -244,30 +211,14 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		Search: q.Get("q"),
 	}
 
-	if repo := q.Get("repo"); repo != "" {
-		parts := strings.SplitN(repo, "/", 2)
-		if len(parts) == 2 {
-			opts.RepoOwner = parts[0]
-			opts.RepoName = parts[1]
-		}
+	if owner, name := parseRepoFilter(q.Get("repo")); owner != "" {
+		opts.RepoOwner = owner
+		opts.RepoName = name
 	}
 
-	if q.Get("starred") == "true" {
-		opts.Starred = true
-	}
-
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err == nil {
-			opts.Limit = n
-		}
-	}
-	if v := q.Get("offset"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err == nil {
-			opts.Offset = n
-		}
-	}
+	opts.Starred = parseBoolFlag(q, "starred")
+	opts.Limit = parseOptionalInt(q, "limit")
+	opts.Offset = parseOptionalInt(q, "offset")
 
 	issues, err := s.db.ListIssues(ctx, opts)
 	if err != nil {
@@ -276,15 +227,10 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repos, err := s.db.ListRepos(ctx)
+	repoByID, err := s.lookupRepoMap(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError,
-			"list repos: "+err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	repoByID := make(map[int64]db.Repo, len(repos))
-	for _, rp := range repos {
-		repoByID[rp.ID] = rp
 	}
 
 	out := make([]issueResponse, 0, len(issues))
@@ -311,17 +257,12 @@ type issueDetailResponse struct {
 
 func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	numberStr := r.PathValue("number")
-
-	number, err := strconv.Atoi(numberStr)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid issue number")
+	ref, ok := parseRepoNumberPath(w, r, "issue")
+	if !ok {
 		return
 	}
 
-	issue, err := s.db.GetIssue(ctx, owner, name, number)
+	issue, err := s.db.GetIssue(ctx, ref.owner, ref.name, ref.number)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError,
 			"get issue: "+err.Error())
@@ -345,8 +286,8 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, issueDetailResponse{
 		Issue:     issue,
 		Events:    events,
-		RepoOwner: owner,
-		RepoName:  name,
+		RepoOwner: ref.owner,
+		RepoName:  ref.name,
 	})
 }
 
@@ -356,21 +297,15 @@ func (s *Server) handlePostIssueComment(
 	w http.ResponseWriter, r *http.Request,
 ) {
 	ctx := r.Context()
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	numberStr := r.PathValue("number")
-
-	number, err := strconv.Atoi(numberStr)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid issue number")
+	ref, ok := parseRepoNumberPath(w, r, "issue")
+	if !ok {
 		return
 	}
 
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
 		return
 	}
 	if strings.TrimSpace(body.Body) == "" {
@@ -380,7 +315,7 @@ func (s *Server) handlePostIssueComment(
 	}
 
 	comment, err := s.gh.CreateIssueComment(
-		ctx, owner, name, number, body.Body,
+		ctx, ref.owner, ref.name, ref.number, body.Body,
 	)
 	if err != nil {
 		writeError(w, http.StatusBadGateway,
@@ -388,9 +323,7 @@ func (s *Server) handlePostIssueComment(
 		return
 	}
 
-	issueID, err := s.db.GetIssueIDByRepoAndNumber(
-		ctx, owner, name, number,
-	)
+	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -415,34 +348,29 @@ func (s *Server) handleSetStarred(
 	ctx := r.Context()
 
 	var body struct {
-		ItemType string `json:"item_type"`
-		Owner    string `json:"owner"`
-		Name     string `json:"name"`
-		Number   int    `json:"number"`
+		starredRequest
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
 		return
 	}
-	if body.ItemType != "pr" && body.ItemType != "issue" {
+	if !validateStarredRequest(body.starredRequest) {
 		writeError(w, http.StatusBadRequest,
 			"item_type must be 'pr' or 'issue'")
 		return
 	}
 
-	repo, err := s.db.GetRepoByOwnerName(ctx, body.Owner, body.Name)
+	repoID, err := s.lookupRepoID(ctx, body.Owner, body.Name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError,
-			"get repo: "+err.Error())
-		return
-	}
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "repo not found")
+		if errors.Is(err, errRepoNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	if err := s.db.SetStarred(
-		ctx, body.ItemType, repo.ID, body.Number,
+		ctx, body.ItemType, repoID, body.Number,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError,
 			"set starred: "+err.Error())
@@ -460,34 +388,29 @@ func (s *Server) handleUnsetStarred(
 	ctx := r.Context()
 
 	var body struct {
-		ItemType string `json:"item_type"`
-		Owner    string `json:"owner"`
-		Name     string `json:"name"`
-		Number   int    `json:"number"`
+		starredRequest
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
 		return
 	}
-	if body.ItemType != "pr" && body.ItemType != "issue" {
+	if !validateStarredRequest(body.starredRequest) {
 		writeError(w, http.StatusBadRequest,
 			"item_type must be 'pr' or 'issue'")
 		return
 	}
 
-	repo, err := s.db.GetRepoByOwnerName(ctx, body.Owner, body.Name)
+	repoID, err := s.lookupRepoID(ctx, body.Owner, body.Name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError,
-			"get repo: "+err.Error())
-		return
-	}
-	if repo == nil {
-		writeError(w, http.StatusNotFound, "repo not found")
+		if errors.Is(err, errRepoNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	if err := s.db.UnsetStarred(
-		ctx, body.ItemType, repo.ID, body.Number,
+		ctx, body.ItemType, repoID, body.Number,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError,
 			"unset starred: "+err.Error())
@@ -513,24 +436,20 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 // --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/approve ---
 
 func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	number, err := strconv.Atoi(r.PathValue("number"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR number")
+	ref, ok := parseRepoNumberPath(w, r, "PR")
+	if !ok {
 		return
 	}
 
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+	if !decodeJSONBody(w, r, &body, "invalid JSON body") {
 		return
 	}
 
 	review, err := s.gh.CreateReview(
-		r.Context(), owner, name, number, "APPROVE", body.Body,
+		r.Context(), ref.owner, ref.name, ref.number, "APPROVE", body.Body,
 	)
 	if err != nil {
 		writeError(w, http.StatusBadGateway,
@@ -538,9 +457,7 @@ func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prID, lookupErr := s.db.GetPRIDByRepoAndNumber(
-		r.Context(), owner, name, number,
-	)
+	prID, lookupErr := s.lookupPRID(r.Context(), ref)
 	if lookupErr == nil {
 		event := ghclient.NormalizeReviewEvent(prID, review)
 		_ = s.db.UpsertPREvents(r.Context(), []db.PREvent{event})
@@ -552,21 +469,20 @@ func (s *Server) handleApprovePR(w http.ResponseWriter, r *http.Request) {
 // --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/ready-for-review ---
 
 func (s *Server) handleReadyForReview(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	number, err := strconv.Atoi(r.PathValue("number"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR number")
+	ref, ok := parseRepoNumberPath(w, r, "PR")
+	if !ok {
 		return
 	}
 
-	pr, err := s.gh.MarkPullRequestReadyForReview(r.Context(), owner, name, number)
+	pr, err := s.gh.MarkPullRequestReadyForReview(
+		r.Context(), ref.owner, ref.name, ref.number,
+	)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "GitHub API error: "+err.Error())
 		return
 	}
 
-	repoObj, err := s.db.GetRepoByOwnerName(r.Context(), owner, name)
+	repoObj, err := s.db.GetRepoByOwnerName(r.Context(), ref.owner, ref.name)
 	if err == nil && repoObj != nil {
 		normalized := ghclient.NormalizePR(repoObj.ID, pr)
 		if prID, upsertErr := s.db.UpsertPullRequest(r.Context(), normalized); upsertErr == nil {
@@ -580,11 +496,8 @@ func (s *Server) handleReadyForReview(w http.ResponseWriter, r *http.Request) {
 // --- POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge ---
 
 func (s *Server) handleMergePR(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
-	number, err := strconv.Atoi(r.PathValue("number"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid PR number")
+	ref, ok := parseRepoNumberPath(w, r, "PR")
+	if !ok {
 		return
 	}
 
@@ -593,8 +506,7 @@ func (s *Server) handleMergePR(w http.ResponseWriter, r *http.Request) {
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSONBody(w, r, &body, "invalid request body") {
 		return
 	}
 
@@ -608,7 +520,7 @@ func (s *Server) handleMergePR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.gh.MergePullRequest(
-		r.Context(), owner, name, number,
+		r.Context(), ref.owner, ref.name, ref.number,
 		body.CommitTitle, body.CommitMessage, body.Method,
 	)
 	if err != nil {
@@ -617,11 +529,11 @@ func (s *Server) handleMergePR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoObj, _ := s.db.GetRepoByOwnerName(r.Context(), owner, name)
+	repoObj, _ := s.db.GetRepoByOwnerName(r.Context(), ref.owner, ref.name)
 	if repoObj != nil {
 		now := time.Now()
 		_ = s.db.UpdatePRState(
-			r.Context(), repoObj.ID, number, "merged", &now, &now,
+			r.Context(), repoObj.ID, ref.number, "merged", &now, &now,
 		)
 	}
 

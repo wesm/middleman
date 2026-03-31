@@ -38,21 +38,20 @@ type liveClient struct {
 }
 
 func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
-	var all []*gh.PullRequest
 	opts := &gh.PullRequestListOptions{
 		State:       "open",
 		ListOptions: gh.ListOptions{PerPage: 100},
 	}
-	for {
+	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.PullRequest, *gh.Response, error) {
+		opts.ListOptions = *pageOpts
 		page, resp, err := c.gh.PullRequests.List(ctx, owner, repo, opts)
 		if err != nil {
-			return nil, fmt.Errorf("listing open pull requests for %s/%s: %w", owner, repo, err)
+			return nil, nil, fmt.Errorf("listing open pull requests for %s/%s: %w", owner, repo, err)
 		}
-		all = append(all, page...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
+		return page, resp, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return all, nil
 }
@@ -60,32 +59,34 @@ func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo strin
 func (c *liveClient) ListOpenIssues(
 	ctx context.Context, owner, repo string,
 ) ([]*gh.Issue, error) {
-	var all []*gh.Issue
 	opts := &gh.IssueListByRepoOptions{
 		State:       "open",
 		Sort:        "updated",
 		Direction:   "desc",
 		ListOptions: gh.ListOptions{PerPage: 100},
 	}
-	for {
+	issues, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.Issue, *gh.Response, error) {
+		opts.ListOptions = *pageOpts
 		issues, resp, err := c.gh.Issues.ListByRepo(
 			ctx, owner, repo, opts,
 		)
 		if err != nil {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"listing issues for %s/%s: %w", owner, repo, err,
 			)
 		}
-		// GitHub's Issues API returns PRs too — filter them out.
-		for _, issue := range issues {
-			if issue.PullRequestLinks == nil {
-				all = append(all, issue)
-			}
+		return issues, resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var all []*gh.Issue
+	// GitHub's Issues API returns PRs too — filter them out.
+	for _, issue := range issues {
+		if issue.PullRequestLinks == nil {
+			all = append(all, issue)
 		}
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.ListOptions.Page = resp.NextPage
 	}
 	return all, nil
 }
@@ -113,20 +114,19 @@ func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, num
 func (c *liveClient) ListIssueComments(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	var all []*gh.IssueComment
 	opts := &gh.IssueListCommentsOptions{
 		ListOptions: gh.ListOptions{PerPage: 100},
 	}
-	for {
+	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.IssueComment, *gh.Response, error) {
+		opts.ListOptions = *pageOpts
 		page, resp, err := c.gh.Issues.ListComments(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, fmt.Errorf("listing comments for %s/%s#%d: %w", owner, repo, number, err)
+			return nil, nil, fmt.Errorf("listing comments for %s/%s#%d: %w", owner, repo, number, err)
 		}
-		all = append(all, page...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
+		return page, resp, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return all, nil
 }
@@ -134,18 +134,15 @@ func (c *liveClient) ListIssueComments(
 func (c *liveClient) ListReviews(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.PullRequestReview, error) {
-	var all []*gh.PullRequestReview
-	opts := &gh.ListOptions{PerPage: 100}
-	for {
+	all, err := collectPages(ctx, func(opts *gh.ListOptions) ([]*gh.PullRequestReview, *gh.Response, error) {
 		page, resp, err := c.gh.PullRequests.ListReviews(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, fmt.Errorf("listing reviews for %s/%s#%d: %w", owner, repo, number, err)
+			return nil, nil, fmt.Errorf("listing reviews for %s/%s#%d: %w", owner, repo, number, err)
 		}
-		all = append(all, page...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
+		return page, resp, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return all, nil
 }
@@ -153,18 +150,15 @@ func (c *liveClient) ListReviews(
 func (c *liveClient) ListCommits(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.RepositoryCommit, error) {
-	var all []*gh.RepositoryCommit
-	opts := &gh.ListOptions{PerPage: 100}
-	for {
+	all, err := collectPages(ctx, func(opts *gh.ListOptions) ([]*gh.RepositoryCommit, *gh.Response, error) {
 		page, resp, err := c.gh.PullRequests.ListCommits(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, fmt.Errorf("listing commits for %s/%s#%d: %w", owner, repo, number, err)
+			return nil, nil, fmt.Errorf("listing commits for %s/%s#%d: %w", owner, repo, number, err)
 		}
-		all = append(all, page...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
+		return page, resp, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return all, nil
 }
@@ -182,25 +176,24 @@ func (c *liveClient) GetCombinedStatus(
 func (c *liveClient) ListCheckRunsForRef(
 	ctx context.Context, owner, repo, ref string,
 ) ([]*gh.CheckRun, error) {
-	var all []*gh.CheckRun
 	opts := &gh.ListCheckRunsOptions{
 		ListOptions: gh.ListOptions{PerPage: 100},
 	}
-	for {
+	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.CheckRun, *gh.Response, error) {
+		opts.ListOptions = *pageOpts
 		result, resp, err := c.gh.Checks.ListCheckRunsForRef(
 			ctx, owner, repo, ref, opts,
 		)
 		if err != nil {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"listing check runs for %s/%s@%s: %w",
 				owner, repo, ref, err,
 			)
 		}
-		all = append(all, result.CheckRuns...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
+		return result.CheckRuns, resp, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return all, nil
 }

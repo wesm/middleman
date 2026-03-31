@@ -74,6 +74,7 @@ make vet        # go vet
 ### Test Guidelines
 
 - Table-driven tests for Go code
+- Use `testify` for new Go tests
 - Use `openTestDB(t)` helper for database tests
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
