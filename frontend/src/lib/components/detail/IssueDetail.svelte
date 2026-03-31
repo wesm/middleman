@@ -11,6 +11,7 @@
   import type { IssueLabel } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
+  import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
 
@@ -32,7 +33,8 @@
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
   function copyBody(text: string): void {
-    void navigator.clipboard.writeText(text).then(() => {
+    void copyToClipboard(text).then((ok) => {
+      if (!ok) return;
       copied = true;
       if (copyTimeout !== null) clearTimeout(copyTimeout);
       copyTimeout = setTimeout(() => {
@@ -141,6 +143,7 @@
           <div class="inset-box-wrap">
             <button
               class="copy-icon-btn"
+              class:copied
               onclick={() => copyBody(issue.Body)}
               title={copied ? "Copied!" : "Copy to clipboard"}
             >
@@ -363,6 +366,12 @@
 
   .copy-icon-btn:active {
     transform: scale(0.92);
+  }
+
+  .copy-icon-btn.copied {
+    opacity: 1;
+    color: var(--accent-green);
+    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
   }
 
   @media (hover: none) {

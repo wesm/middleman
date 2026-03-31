@@ -2,6 +2,7 @@
   import type { PREvent } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
+  import { copyToClipboard } from "../../utils/clipboard.js";
 
   interface Props {
     events: PREvent[];
@@ -31,7 +32,8 @@
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
   function copyText(id: string, text: string): void {
-    void navigator.clipboard.writeText(text).then(() => {
+    void copyToClipboard(text).then((ok) => {
+      if (!ok) return;
       copiedId = id;
       if (copyTimeout !== null) clearTimeout(copyTimeout);
       copyTimeout = setTimeout(() => {
@@ -75,6 +77,7 @@
             <div class="event-body-wrap">
               <button
                 class="copy-icon-btn"
+                class:copied={copiedId === String(event.ID)}
                 onclick={() => copyText(String(event.ID), event.Body)}
                 title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
               >
@@ -234,6 +237,12 @@
 
   .copy-icon-btn:active {
     transform: scale(0.92);
+  }
+
+  .copy-icon-btn.copied {
+    opacity: 1;
+    color: var(--accent-green);
+    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
   }
 
   @media (hover: none) {
