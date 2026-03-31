@@ -496,6 +496,9 @@ type ClientInterface interface {
 
 	SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostReposByOwnerByNameIssuesByNumberSync request
+	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetReposByOwnerByNamePullsByNumber request
 	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -526,6 +529,9 @@ type ClientInterface interface {
 	SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostReposByOwnerByNamePullsByNumberSync request
+	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UnsetStarredWithBody request with any body
 	UnsetStarredWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -654,6 +660,18 @@ func (c *Client) SetIssueGithubStateWithBody(ctx context.Context, owner string, 
 
 func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetIssueGithubStateRequest(c.Server, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNameIssuesByNumberSyncRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -798,6 +816,18 @@ func (c *Client) SetKanbanStateWithBody(ctx context.Context, owner string, name 
 
 func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetKanbanStateRequest(c.Server, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberSyncRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -1505,6 +1535,54 @@ func NewSetIssueGithubStateRequestWithBody(server string, owner string, name str
 	return req, nil
 }
 
+// NewPostReposByOwnerByNameIssuesByNumberSyncRequest generates requests for PostReposByOwnerByNameIssuesByNumberSync
+func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/sync", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetReposByOwnerByNamePullsByNumberRequest generates requests for GetReposByOwnerByNamePullsByNumber
 func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -1906,6 +1984,54 @@ func NewSetKanbanStateRequestWithBody(server string, owner string, name string, 
 	return req, nil
 }
 
+// NewPostReposByOwnerByNamePullsByNumberSyncRequest generates requests for PostReposByOwnerByNamePullsByNumberSync
+func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/sync", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewUnsetStarredRequest calls the generic UnsetStarred builder with application/json body
 func NewUnsetStarredRequest(server string, body UnsetStarredJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2111,6 +2237,9 @@ type ClientWithResponsesInterface interface {
 
 	SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
 
+	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
+	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
+
 	// GetReposByOwnerByNamePullsByNumberWithResponse request
 	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
 
@@ -2141,6 +2270,9 @@ type ClientWithResponsesInterface interface {
 	SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
 	SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
+
+	// PostReposByOwnerByNamePullsByNumberSyncWithResponse request
+	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
 
 	// UnsetStarredWithBodyWithResponse request with any body
 	UnsetStarredWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error)
@@ -2343,6 +2475,29 @@ func (r SetIssueGithubStateResponse) StatusCode() int {
 	return 0
 }
 
+type PostReposByOwnerByNameIssuesByNumberSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetReposByOwnerByNamePullsByNumberResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -2497,6 +2652,29 @@ func (r SetKanbanStateResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r SetKanbanStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostReposByOwnerByNamePullsByNumberSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *PullDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostReposByOwnerByNamePullsByNumberSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostReposByOwnerByNamePullsByNumberSyncResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2680,6 +2858,15 @@ func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Contex
 	return ParseSetIssueGithubStateResponse(rsp)
 }
 
+// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request returning *PostReposByOwnerByNameIssuesByNumberSyncResponse
+func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error) {
+	rsp, err := c.PostReposByOwnerByNameIssuesByNumberSync(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp)
+}
+
 // GetReposByOwnerByNamePullsByNumberWithResponse request returning *GetReposByOwnerByNamePullsByNumberResponse
 func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error) {
 	rsp, err := c.GetReposByOwnerByNamePullsByNumber(ctx, owner, name, number, reqEditors...)
@@ -2781,6 +2968,15 @@ func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, ow
 		return nil, err
 	}
 	return ParseSetKanbanStateResponse(rsp)
+}
+
+// PostReposByOwnerByNamePullsByNumberSyncWithResponse request returning *PostReposByOwnerByNamePullsByNumberSyncResponse
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberSync(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp)
 }
 
 // UnsetStarredWithBodyWithResponse request with arbitrary body returning *UnsetStarredResponse
@@ -3099,6 +3295,39 @@ func ParseSetIssueGithubStateResponse(rsp *http.Response) (*SetIssueGithubStateR
 	return response, nil
 }
 
+// ParsePostReposByOwnerByNameIssuesByNumberSyncResponse parses an HTTP response from a PostReposByOwnerByNameIssuesByNumberSyncWithResponse call
+func ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp *http.Response) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostReposByOwnerByNameIssuesByNumberSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetReposByOwnerByNamePullsByNumberResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberWithResponse call
 func ParseGetReposByOwnerByNamePullsByNumberResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3311,6 +3540,39 @@ func ParseSetKanbanStateResponse(rsp *http.Response) (*SetKanbanStateResponse, e
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostReposByOwnerByNamePullsByNumberSyncResponse parses an HTTP response from a PostReposByOwnerByNamePullsByNumberSyncWithResponse call
+func ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp *http.Response) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostReposByOwnerByNamePullsByNumberSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PullDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

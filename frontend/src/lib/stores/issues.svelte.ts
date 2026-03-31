@@ -13,8 +13,10 @@ let selectedIssue = $state<{ owner: string; name: string; number: number } | nul
 // Detail state
 let issueDetail = $state<IssueDetail | null>(null);
 let detailLoading = $state(false);
+let detailSyncing = $state(false);
 let detailError = $state<string | null>(null);
 let detailPollHandle: ReturnType<typeof setInterval> | null = null;
+let issueSyncGeneration = 0;
 
 // Read functions
 export function getIssues(): Issue[] { return issues; }
@@ -26,6 +28,7 @@ export function getIssueFilterStarred(): boolean { return filterStarred; }
 export function getIssueSearchQuery(): string | undefined { return searchQuery; }
 export function getIssueDetail(): IssueDetail | null { return issueDetail; }
 export function isIssueDetailLoading(): boolean { return detailLoading; }
+export function isIssueDetailSyncing(): boolean { return detailSyncing; }
 export function getIssueDetailError(): string | null { return detailError; }
 
 export function issuesByRepo(): Map<string, Issue[]> {
@@ -61,15 +64,16 @@ export async function loadIssues(params?: IssuesParams): Promise<void> {
   loading = true;
   error = null;
   try {
-    const query = {
-      state: filterState,
-      repo: filterRepo,
-      starred: filterStarred || undefined,
-      q: searchQuery,
-      ...params,
-    };
     const { data, error: requestError } = await client.GET("/issues", {
-      params: { query },
+      params: {
+        query: {
+          state: filterState,
+          ...(filterRepo !== undefined && { repo: filterRepo }),
+          ...(filterStarred && { starred: true }),
+          ...(searchQuery !== undefined && { q: searchQuery }),
+          ...params,
+        },
+      },
     });
     if (requestError) {
       throw new Error(apiErrorMessage(requestError, "failed to load issues"));
@@ -83,12 +87,16 @@ export async function loadIssues(params?: IssuesParams): Promise<void> {
 }
 
 export async function loadIssueDetail(owner: string, name: string, number: number): Promise<void> {
+  const gen = ++issueSyncGeneration;
+
   detailLoading = true;
+  detailSyncing = false;
   detailError = null;
   try {
     const { data, error: requestError } = await client.GET("/repos/{owner}/{name}/issues/{number}", {
       params: { path: { owner, name, number } },
     });
+    if (gen !== issueSyncGeneration) return;
     if (requestError) {
       throw new Error(apiErrorMessage(requestError, "failed to load issue"));
     }
@@ -96,9 +104,36 @@ export async function loadIssueDetail(owner: string, name: string, number: numbe
       ? ({ ...data, events: data.events ?? [] } as IssueDetail)
       : null;
   } catch (err) {
+    if (gen !== issueSyncGeneration) return;
     detailError = err instanceof Error ? err.message : String(err);
   } finally {
-    detailLoading = false;
+    if (gen === issueSyncGeneration) detailLoading = false;
+  }
+
+  // Only sync if this load is still the active one.
+  if (gen === issueSyncGeneration) {
+    void syncIssueDetail(owner, name, number, gen);
+  }
+}
+
+async function syncIssueDetail(owner: string, name: string, number: number, gen: number): Promise<void> {
+  detailSyncing = true;
+  try {
+    const { data, error: requestError } = await client.POST("/repos/{owner}/{name}/issues/{number}/sync", {
+      params: { path: { owner, name, number } },
+    });
+    if (gen !== issueSyncGeneration) return;
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "sync failed"));
+    }
+    if (data) {
+      detailError = null;
+      issueDetail = { ...data, events: data.events ?? [] } as IssueDetail;
+    }
+  } catch {
+    // Sync failure is non-fatal — we already have cached data.
+  } finally {
+    if (gen === issueSyncGeneration) detailSyncing = false;
   }
 }
 
@@ -124,7 +159,13 @@ export function stopIssueDetailPolling(): void {
   if (detailPollHandle !== null) { clearInterval(detailPollHandle); detailPollHandle = null; }
 }
 
-export function clearIssueDetail(): void { issueDetail = null; detailError = null; }
+export function clearIssueDetail(): void {
+  ++issueSyncGeneration;
+  issueDetail = null;
+  detailLoading = false;
+  detailSyncing = false;
+  detailError = null;
+}
 
 export async function submitIssueComment(
   owner: string,

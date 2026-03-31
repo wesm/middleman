@@ -2,6 +2,7 @@
   import {
     getDetail,
     isDetailLoading,
+    isDetailSyncing,
     getDetailError,
     loadDetail,
     updateKanbanState,
@@ -213,6 +214,15 @@
         <span class="meta-item">{pr.Author}</span>
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(pr.CreatedAt)}</span>
+        {#if isDetailSyncing()}
+          <span class="meta-sep">·</span>
+          <span class="sync-indicator" title="Syncing from GitHub">
+            <svg class="sync-spinner" width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
+            </svg>
+            Syncing
+          </span>
+        {/if}
       </div>
 
       <!-- Chips row -->
@@ -494,6 +504,22 @@
   .meta-sep {
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  .sync-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--accent-blue);
+  }
+
+  .sync-spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .chips-row {

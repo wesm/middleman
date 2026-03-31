@@ -1,4 +1,4 @@
-import { client } from "../api/runtime.js";
+import { client, apiErrorMessage } from "../api/runtime.js";
 import type { KanbanStatus, PullDetail } from "../api/types.js";
 import { getPage } from "./router.svelte.js";
 import { loadPulls } from "./pulls.svelte.js";
@@ -7,7 +7,11 @@ import { loadPulls } from "./pulls.svelte.js";
 
 let detail = $state<PullDetail | null>(null);
 let loading = $state(false);
+let syncing = $state(false);
 let error = $state<string | null>(null);
+
+// Monotonic counter to detect stale sync responses after item switches.
+let syncGeneration = 0;
 
 // --- reads ---
 
@@ -19,6 +23,10 @@ export function isDetailLoading(): boolean {
   return loading;
 }
 
+export function isDetailSyncing(): boolean {
+  return syncing;
+}
+
 export function getDetailError(): string | null {
   return error;
 }
@@ -26,26 +34,62 @@ export function getDetailError(): string | null {
 // --- writes ---
 
 export function clearDetail(): void {
+  ++syncGeneration;
   detail = null;
+  loading = false;
+  syncing = false;
   error = null;
 }
 
 export async function loadDetail(owner: string, name: string, number: number): Promise<void> {
+  // Bump generation so any in-flight sync for a previous item is ignored.
+  const gen = ++syncGeneration;
+
   loading = true;
+  syncing = false;
   error = null;
   try {
     const { data, error: requestError } = await client.GET("/repos/{owner}/{name}/pulls/{number}", {
       params: { path: { owner, name, number } },
     });
+    if (gen !== syncGeneration) return;
     if (requestError) {
       throw new Error(requestError.detail ?? requestError.title ?? "failed to load pull request");
     }
     detail = data ? ({ ...data, events: data.events ?? [] } as PullDetail) : null;
   } catch (err) {
+    if (gen !== syncGeneration) return;
     error = err instanceof Error ? err.message : String(err);
   } finally {
-    loading = false;
+    if (gen === syncGeneration) loading = false;
   }
+
+  // Only sync if this load is still the active one.
+  if (gen === syncGeneration) {
+    void syncDetail(owner, name, number, gen);
+  }
+}
+
+async function syncDetail(owner: string, name: string, number: number, gen: number): Promise<void> {
+  syncing = true;
+  try {
+    const { data, error: requestError } = await client.POST("/repos/{owner}/{name}/pulls/{number}/sync", {
+      params: { path: { owner, name, number } },
+    });
+    if (gen !== syncGeneration) return;
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "sync failed"));
+    }
+    if (data) {
+      error = null;
+      detail = { ...data, events: data.events ?? [] } as PullDetail;
+    }
+  } catch {
+    // Sync failure is non-fatal — we already have cached data.
+  } finally {
+    if (gen === syncGeneration) syncing = false;
+  }
+  if (gen === syncGeneration) await refreshPullsIfActive();
 }
 
 /** Refreshes the pulls list only when the pulls list view is active. */

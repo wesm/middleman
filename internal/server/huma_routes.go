@@ -171,6 +171,14 @@ type acceptedOutput struct {
 	Status int `status:"202"`
 }
 
+type syncPROutput struct {
+	Body pullDetailResponse
+}
+
+type syncIssueOutput struct {
+	Body issueDetailResponse
+}
+
 type syncStatusOutput struct {
 	Body *ghclient.SyncStatus
 }
@@ -242,6 +250,8 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/merge", s.mergePR)
+	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/sync", s.syncPR)
+	huma.Post(api, "/repos/{owner}/{name}/issues/{number}/sync", s.syncIssue)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-pr-github-state",
 		Method:        http.MethodPost,
@@ -778,6 +788,70 @@ func (s *Server) triggerSync(ctx context.Context, _ *struct{}) (*acceptedOutput,
 
 func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, error) {
 	return &syncStatusOutput{Body: s.syncer.Status()}, nil
+}
+
+func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
+	if err := s.syncer.SyncPR(ctx, input.Owner, input.Name, input.Number); err != nil {
+		if strings.Contains(err.Error(), "is not tracked") {
+			return nil, huma.Error403Forbidden(err.Error())
+		}
+		return nil, huma.Error502BadGateway("sync PR: " + err.Error())
+	}
+
+	pr, err := s.db.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+	}
+	if pr == nil {
+		return nil, huma.Error404NotFound("pull request not found after sync")
+	}
+
+	events, err := s.db.ListPREvents(ctx, pr.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list pr events: " + err.Error())
+	}
+	if events == nil {
+		events = []db.PREvent{}
+	}
+
+	return &syncPROutput{Body: pullDetailResponse{
+		PullRequest: pr,
+		Events:      events,
+		RepoOwner:   input.Owner,
+		RepoName:    input.Name,
+	}}, nil
+}
+
+func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIssueOutput, error) {
+	if err := s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number); err != nil {
+		if strings.Contains(err.Error(), "is not tracked") {
+			return nil, huma.Error403Forbidden(err.Error())
+		}
+		return nil, huma.Error502BadGateway("sync issue: " + err.Error())
+	}
+
+	issue, err := s.db.GetIssue(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found after sync")
+	}
+
+	events, err := s.db.ListIssueEvents(ctx, issue.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list issue events: " + err.Error())
+	}
+	if events == nil {
+		events = []db.IssueEvent{}
+	}
+
+	return &syncIssueOutput{Body: issueDetailResponse{
+		Issue:     issue,
+		Events:    events,
+		RepoOwner: input.Owner,
+		RepoName:  input.Name,
+	}}, nil
 }
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
