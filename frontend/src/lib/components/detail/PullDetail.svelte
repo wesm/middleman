@@ -10,7 +10,7 @@
     toggleDetailPRStar,
   } from "../../stores/detail.svelte.js";
   import { loadPulls } from "../../stores/pulls.svelte.js";
-  import { getRepo } from "../../api/client.js";
+  import { client } from "../../api/runtime.js";
   import type { CICheck, KanbanStatus } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -56,11 +56,14 @@
   let showMergeModal = $state(false);
 
   $effect(() => {
-    getRepo(owner, name).then(repo => {
+    client.GET("/repos/{owner}/{name}", {
+      params: { path: { owner, name } },
+    }).then(({ data, error }) => {
+      if (error || !data) return;
       repoSettings = {
-        allowSquash: repo.AllowSquashMerge,
-        allowMerge: repo.AllowMergeCommit,
-        allowRebase: repo.AllowRebaseMerge,
+        allowSquash: data.AllowSquashMerge,
+        allowMerge: data.AllowMergeCommit,
+        allowRebase: data.AllowRebaseMerge,
       };
     }).catch(() => {});
   });

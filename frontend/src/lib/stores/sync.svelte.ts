@@ -1,4 +1,4 @@
-import { getSyncStatus, triggerSync as apiTriggerSync } from "../api/client.js";
+import { client } from "../api/runtime.js";
 import type { SyncStatus } from "../api/types.js";
 
 // --- state ---
@@ -23,7 +23,11 @@ export function onNextSyncComplete(fn: () => void): void {
 
 export async function refreshSyncStatus(): Promise<void> {
   try {
-    status = await getSyncStatus();
+    const { data, error } = await client.GET("/sync/status");
+    if (error) {
+      throw new Error(error.detail ?? error.title ?? "failed to load sync status");
+    }
+    status = data ?? null;
   } catch {
     return;
   }
@@ -54,7 +58,10 @@ export async function triggerSync(): Promise<void> {
   adjustPollingSpeed(true);
 
   try {
-    await apiTriggerSync();
+    const { error } = await client.POST("/sync");
+    if (error) {
+      throw new Error(error.detail ?? error.title ?? "failed to trigger sync");
+    }
     await refreshSyncStatus();
   } catch (err) {
     status = {

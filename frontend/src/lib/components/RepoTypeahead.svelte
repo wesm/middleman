@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { listRepos } from "../api/client.js";
+  import { client } from "../api/runtime.js";
   import type { Repo } from "../api/types.js";
 
   interface Props {
@@ -18,7 +18,10 @@
   let containerEl = $state<HTMLDivElement>();
 
   $effect(() => {
-    void listRepos().then((r) => { repos = r; });
+    void client.GET("/repos").then(({ data, error }) => {
+      if (error) return;
+      repos = data ?? [];
+    });
   });
 
   const options = $derived.by(() => {

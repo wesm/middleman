@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { listRepos } from "../../api/client.js";
+  import { client } from "../../api/runtime.js";
 
   interface Props {
     selected: string | undefined;
@@ -14,8 +14,9 @@
   let dropdownRef: HTMLDivElement | undefined;
 
   $effect(() => {
-    listRepos().then((r) => {
-      repos = r.map((repo) => `${repo.Owner}/${repo.Name}`);
+    client.GET("/repos").then(({ data, error }) => {
+      if (error || !data) return;
+      repos = data.map((repo) => `${repo.Owner}/${repo.Name}`);
     });
   });
 
