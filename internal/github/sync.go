@@ -581,6 +581,97 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	)
 }
 
+// isTrackedRepo checks whether the given repo is in the configured list.
+func (s *Syncer) isTrackedRepo(owner, name string) bool {
+	s.reposMu.Lock()
+	repos := s.repos
+	s.reposMu.Unlock()
+	for _, r := range repos {
+		if r.Owner == owner && r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// SyncPR fetches fresh data for a single PR from GitHub and updates the DB.
+// Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
+// Returns an error if the repo is not in the configured repo list.
+func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) error {
+	if !s.isTrackedRepo(owner, name) {
+		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
+	}
+
+	repo := RepoRef{Owner: owner, Name: name}
+
+	repoID, err := s.db.UpsertRepo(ctx, owner, name)
+	if err != nil {
+		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
+	}
+
+	ghPR, err := s.client.GetPullRequest(ctx, owner, name, number)
+	if err != nil {
+		return fmt.Errorf("get PR %s/%s#%d: %w", owner, name, number, err)
+	}
+
+	normalized := NormalizePR(repoID, ghPR)
+
+	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
+		existing, _ := s.db.GetPullRequest(ctx, owner, name, number)
+		// Resolve directly instead of using s.resolveDisplayName to
+		// avoid racing with the shared displayNames map in RunOnce.
+		user, userErr := s.client.GetUser(ctx, normalized.Author)
+		if userErr == nil {
+			normalized.AuthorDisplayName = sanitizeDisplayName(user.GetName())
+		} else if existing != nil {
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		}
+	}
+
+	prID, err := s.db.UpsertPullRequest(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf("upsert PR #%d: %w", number, err)
+	}
+
+	if err := s.db.EnsureKanbanState(ctx, prID); err != nil {
+		return fmt.Errorf("ensure kanban state for PR #%d: %w", number, err)
+	}
+
+	if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
+		return fmt.Errorf("refresh timeline for PR #%d: %w", number, err)
+	}
+
+	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
+}
+
+// SyncIssue fetches fresh data for a single issue from GitHub and updates the DB.
+// Returns an error if the repo is not in the configured repo list.
+func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) error {
+	if !s.isTrackedRepo(owner, name) {
+		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
+	}
+
+	repo := RepoRef{Owner: owner, Name: name}
+
+	repoID, err := s.db.UpsertRepo(ctx, owner, name)
+	if err != nil {
+		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
+	}
+
+	ghIssue, err := s.client.GetIssue(ctx, owner, name, number)
+	if err != nil {
+		return fmt.Errorf("get issue %s/%s#%d: %w", owner, name, number, err)
+	}
+
+	normalized := NormalizeIssue(repoID, ghIssue)
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf("upsert issue #%d: %w", number, err)
+	}
+
+	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
+}
+
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int) error {
 	ghPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, number)

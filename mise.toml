@@ -1,4 +1,4 @@
 [tools]
 bun = "latest"
-"cargo:https://github.com/hughdbrown/samesame-rolling" = "ref:main"
+"cargo:https://github.com/hughdbrown/samesame-rolling" = "rev:ff1f3b7942bd407ac3e30b21eb3dbe6085091a0f"
 golangci-lint = "2.11.4"
