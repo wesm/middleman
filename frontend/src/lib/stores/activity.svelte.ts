@@ -1,10 +1,11 @@
 import { apiErrorMessage, client } from "../api/runtime.js";
-import type { ActivityItem, ActivityParams } from "../api/types.js";
+import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
 
 // --- constants ---
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
+export type ItemFilter = "all" | "prs" | "issues";
 
 const RANGE_MS: Record<TimeRange, number> = {
   "24h": 24 * 60 * 60 * 1000,
@@ -26,6 +27,14 @@ let timeRange = $state<TimeRange>("7d");
 let viewMode = $state<ViewMode>("flat");
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let requestVersion = 0;
+
+let hideClosedMerged = $state(false);
+let hideBots = $state(false);
+let enabledEvents = $state<Set<string>>(
+  new Set(["comment", "review", "commit"]),
+);
+let itemFilter = $state<ItemFilter>("all");
+let initialized = false;
 
 // --- reads ---
 
@@ -65,6 +74,26 @@ export function getViewMode(): ViewMode {
   return viewMode;
 }
 
+export function getHideClosedMerged(): boolean {
+  return hideClosedMerged;
+}
+
+export function getHideBots(): boolean {
+  return hideBots;
+}
+
+export function getEnabledEvents(): Set<string> {
+  return enabledEvents;
+}
+
+export function getItemFilter(): ItemFilter {
+  return itemFilter;
+}
+
+export function isInitialized(): boolean {
+  return initialized;
+}
+
 // --- writes ---
 
 export function setActivityFilterRepo(repo: string | undefined): void {
@@ -79,13 +108,54 @@ export function setActivitySearch(q: string | undefined): void {
   searchQuery = q;
 }
 
-export function setTimeRange(range: TimeRange): void {
-  timeRange = range;
+export function setTimeRange(range_: TimeRange): void {
+  timeRange = range_;
 }
 
 export function setViewMode(mode: ViewMode): void {
   viewMode = mode;
 }
+
+export function setHideClosedMerged(v: boolean): void {
+  hideClosedMerged = v;
+}
+
+export function setHideBots(v: boolean): void {
+  hideBots = v;
+}
+
+export function setEnabledEvents(events: Set<string>): void {
+  enabledEvents = events;
+}
+
+export function setItemFilter(f: ItemFilter): void {
+  itemFilter = f;
+}
+
+// --- hydration ---
+
+export function hydrateActivityDefaults(
+  activity: ActivitySettings,
+): void {
+  viewMode = activity.view_mode;
+  timeRange = activity.time_range;
+  hideClosedMerged = activity.hide_closed;
+  hideBots = activity.hide_bots;
+}
+
+/**
+ * Called by ActivityFeed on mount. Always reads URL params (partial
+ * override), then writes store state back to URL so missing params
+ * are filled in. Safe to call on every mount because syncFromURL
+ * only touches fields whose params are present in the URL.
+ */
+export function initializeFromMount(): void {
+  syncFromURL();
+  initialized = true;
+  syncToURL();
+}
+
+// --- internals ---
 
 function computeSince(): string {
   return new Date(Date.now() - RANGE_MS[timeRange]).toISOString();
@@ -142,7 +212,7 @@ async function pollNewItems(): Promise<void> {
       return;
     }
     if (resp.capped) {
-      // Too many new items — full reload.
+      // Too many new items -- full reload.
       await loadActivity();
       return;
     }
@@ -176,24 +246,48 @@ export function stopActivityPolling(): void {
   }
 }
 
-/** Sync URL query params → store state. Called on mount. */
-export function syncFromURL(): void {
-  const sp = new URLSearchParams(window.location.search);
-  filterRepo = sp.get("repo") ?? undefined;
-  const typesParam = sp.get("types");
-  filterTypes = typesParam ? typesParam.split(",") : [];
-  searchQuery = sp.get("search") ?? undefined;
-  const rangeParam = sp.get("range");
-  timeRange = (rangeParam && rangeParam in RANGE_MS)
-    ? rangeParam as TimeRange
-    : "7d";
-  const viewParam = sp.get("view");
-  viewMode = (viewParam === "flat" || viewParam === "threaded")
-    ? viewParam
-    : "flat";
+function deriveFiltersFromTypes(): void {
+  if (filterTypes.length === 0) {
+    itemFilter = "all";
+    enabledEvents = new Set(["comment", "review", "commit"]);
+    return;
+  }
+  const hasPR = filterTypes.includes("new_pr");
+  const hasIssue = filterTypes.includes("new_issue");
+  if (hasPR && !hasIssue) itemFilter = "prs";
+  else if (hasIssue && !hasPR) itemFilter = "issues";
+  else itemFilter = "all";
+  enabledEvents = new Set(
+    (["comment", "review", "commit"] as const).filter((t) =>
+      filterTypes.includes(t),
+    ),
+  );
 }
 
-/** Sync store state → URL query params (replaceState). */
+/** Sync URL query params -> store state (partial override). */
+export function syncFromURL(): void {
+  const sp = new URLSearchParams(window.location.search);
+  if (sp.has("repo")) filterRepo = sp.get("repo") ?? undefined;
+  if (sp.has("types")) {
+    const typesParam = sp.get("types");
+    filterTypes = typesParam ? typesParam.split(",") : [];
+  }
+  if (sp.has("search"))
+    searchQuery = sp.get("search") ?? undefined;
+  if (sp.has("range")) {
+    const rangeParam = sp.get("range");
+    if (rangeParam && rangeParam in RANGE_MS)
+      timeRange = rangeParam as TimeRange;
+  }
+  if (sp.has("view")) {
+    const viewParam = sp.get("view");
+    if (viewParam === "flat" || viewParam === "threaded")
+      viewMode = viewParam;
+  }
+  deriveFiltersFromTypes();
+}
+
+/** Sync store state -> URL query params (replaceState). */
 export function syncToURL(): void {
   const sp = new URLSearchParams(window.location.search);
   if (filterRepo) sp.set("repo", filterRepo);
@@ -207,7 +301,8 @@ export function syncToURL(): void {
   if (viewMode !== "flat") sp.set("view", viewMode);
   else sp.delete("view");
   const qs = sp.toString();
-  const base = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "") || "";
+  const base =
+    (window.__BASE_PATH__ ?? "/").replace(/\/$/, "") || "";
   const url = (base || "/") + (qs ? `?${qs}` : "");
   history.replaceState(null, "", url);
 }

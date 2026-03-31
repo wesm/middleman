@@ -663,9 +663,11 @@ export interface components {
              * @example /api/v1/schemas/SyncStatus.json
              */
             readonly $schema?: string;
+            current_repo?: string;
             last_error?: string;
             /** Format: date-time */
             last_run_at?: string;
+            progress?: string;
             running: boolean;
         };
     };

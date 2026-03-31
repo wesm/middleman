@@ -5,9 +5,11 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -17,13 +19,50 @@ type Server struct {
 	db       *db.DB
 	gh       ghclient.Client
 	syncer   *ghclient.Syncer
+	cfg      *config.Config
+	cfgPath  string
+	cfgMu    sync.Mutex
 	basePath string
 	handler  http.Handler
 }
 
-// New creates a Server wiring up all API routes and optional SPA serving.
-// basePath should be "/" or "/prefix/" (with trailing slash).
-func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend fs.FS, basePath string) *Server {
+// New creates a Server without config persistence (used by tests).
+func New(
+	database *db.DB,
+	gh ghclient.Client,
+	syncer *ghclient.Syncer,
+	frontend fs.FS,
+	basePath string,
+) *Server {
+	return newServer(
+		database, gh, syncer, frontend, basePath, nil, "",
+	)
+}
+
+// NewWithConfig creates a Server with config persistence
+// for settings/repo endpoints.
+func NewWithConfig(
+	database *db.DB,
+	gh ghclient.Client,
+	syncer *ghclient.Syncer,
+	frontend fs.FS,
+	cfg *config.Config,
+	cfgPath string,
+) *Server {
+	return newServer(
+		database, gh, syncer, frontend, cfg.BasePath, cfg, cfgPath,
+	)
+}
+
+func newServer(
+	database *db.DB,
+	gh ghclient.Client,
+	syncer *ghclient.Syncer,
+	frontend fs.FS,
+	basePath string,
+	cfg *config.Config,
+	cfgPath string,
+) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -31,10 +70,17 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		basePath: basePath,
 		gh:       gh,
 		syncer:   syncer,
+		cfg:      cfg,
+		cfgPath:  cfgPath,
 	}
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
+
+	mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/v1/settings", s.handleUpdateSettings)
+	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
+	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.handleDeleteRepo)
 
 	if frontend != nil {
 		indexBytes, err := fs.ReadFile(frontend, "index.html")
@@ -95,7 +141,48 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
+		if !checkCSRF(w, r) {
+			return
+		}
+	}
 	s.handler.ServeHTTP(w, r)
+}
+
+// isMutatingAPIRequest checks whether the request targets an API route,
+// accounting for the configured basePath prefix.
+func (s *Server) isMutatingAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return strings.HasPrefix(path, "/api/")
+}
+
+// checkCSRF rejects cross-site mutation requests. Returns true if
+// the request is allowed, false if it was rejected (response written).
+func checkCSRF(w http.ResponseWriter, r *http.Request) bool {
+	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
+		if sfs != "same-origin" && sfs != "none" {
+			writeError(w, http.StatusForbidden,
+				"cross-origin requests are not allowed")
+			return false
+		}
+	}
+
+	// Require Content-Type: application/json on all mutation requests,
+	// including zero-body endpoints like POST /sync. This prevents
+	// cross-origin form submissions and simple fetches from forging
+	// requests even without Sec-Fetch-Site.
+	ct := r.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		writeError(w, http.StatusUnsupportedMediaType,
+			"Content-Type must be application/json")
+		return false
+	}
+
+	return true
 }
 
 // ListenAndServe starts the HTTP server on addr.
@@ -108,4 +195,16 @@ func (s *Server) ListenAndServe(addr string) error {
 		IdleTimeout:  60 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+// writeJSON encodes v as JSON and writes it with the given HTTP status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError writes a JSON error response.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -13,9 +14,11 @@ import (
 
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
-	Running   bool      `json:"running"`
-	LastRunAt time.Time `json:"last_run_at,omitzero"`
-	LastError string    `json:"last_error,omitempty"`
+	Running     bool      `json:"running"`
+	CurrentRepo string    `json:"current_repo,omitempty"`
+	Progress    string    `json:"progress,omitempty"`
+	LastRunAt   time.Time `json:"last_run_at,omitzero"`
+	LastError   string    `json:"last_error,omitempty"`
 }
 
 // RepoRef identifies a GitHub repository.
@@ -29,6 +32,7 @@ type Syncer struct {
 	client       Client
 	db           *db.DB
 	repos        []RepoRef
+	reposMu      sync.Mutex
 	interval     time.Duration
 	running      atomic.Bool
 	status       atomic.Value // stores *SyncStatus
@@ -47,6 +51,14 @@ func NewSyncer(client Client, database *db.DB, repos []RepoRef, interval time.Du
 	}
 	s.status.Store(&SyncStatus{})
 	return s
+}
+
+// SetRepos atomically replaces the list of repositories to sync.
+func (s *Syncer) SetRepos(repos []RepoRef) {
+	s.reposMu.Lock()
+	s.repos = make([]RepoRef, len(repos))
+	copy(s.repos, repos)
+	s.reposMu.Unlock()
 }
 
 // Start runs an immediate sync then launches a background ticker.
@@ -87,23 +99,35 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 	defer s.running.Store(false)
 
+	s.reposMu.Lock()
+	repos := make([]RepoRef, len(s.repos))
+	copy(repos, s.repos)
+	s.reposMu.Unlock()
+
 	s.status.Store(&SyncStatus{Running: true})
 	s.displayNames = make(map[string]string)
-	slog.Info("sync started", "repos", len(s.repos))
+	slog.Info("sync started", "repos", len(repos))
 
 	var lastErr string
-	for i, repo := range s.repos {
+	for i, repo := range repos {
+		progress := fmt.Sprintf("%d/%d", i+1, len(repos))
+		repoName := repo.Owner + "/" + repo.Name
+		s.status.Store(&SyncStatus{
+			Running:     true,
+			CurrentRepo: repoName,
+			Progress:    progress,
+		})
 		slog.Info("syncing repo",
-			"repo", repo.Owner+"/"+repo.Name,
-			"progress", fmt.Sprintf("%d/%d", i+1, len(s.repos)),
+			"repo", repoName,
+			"progress", progress,
 		)
 		if err := s.syncRepo(ctx, repo); err != nil {
-			slog.Error("sync repo failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
+			slog.Error("sync repo failed", "repo", repoName, "err", err)
 			lastErr = err.Error()
 		}
 	}
 
-	slog.Info("sync complete", "repos", len(s.repos))
+	slog.Info("sync complete", "repos", len(repos))
 	s.status.Store(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),

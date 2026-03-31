@@ -110,6 +110,101 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 	}
 }
 
+func TestCSRFRejectsCrossSite(t *testing.T) {
+	srv := setupWithBasePath(t, "/", nil)
+
+	body := strings.NewReader(`{"body":"test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestCSRFRejectsWrongContentType(t *testing.T) {
+	srv := setupWithBasePath(t, "/", nil)
+
+	body := strings.NewReader(`body=test`)
+	req := httptest.NewRequest(
+		http.MethodPost, "/api/v1/sync", body,
+	)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415, got %d", rr.Code)
+	}
+}
+
+func TestCSRFAllowsSameOrigin(t *testing.T) {
+	srv := setupWithBasePath(t, "/", nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	// Should pass CSRF and reach the handler (202 Accepted).
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCSRFAllowsNoSecFetchSite(t *testing.T) {
+	srv := setupWithBasePath(t, "/", nil)
+
+	// Non-browser clients (curl, API tools) won't send
+	// Sec-Fetch-Site but must still set Content-Type.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCSRFRejectsNoContentType(t *testing.T) {
+	srv := setupWithBasePath(t, "/", nil)
+
+	// Zero-body POST without Content-Type should be blocked.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCSRFAppliesUnderBasePath(t *testing.T) {
+	srv := setupWithBasePath(t, "/middleman/", nil)
+
+	body := strings.NewReader(`{"body":"test"}`)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/middleman/api/v1/sync", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf(
+			"expected 403 for cross-site under basePath, got %d",
+			rr.Code,
+		)
+	}
+}
+
 func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
