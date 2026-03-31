@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { mergePR } from "../../api/client.js";
-  import type { MergeParams } from "../../api/client.js";
+  import { client } from "../../api/runtime.js";
 
   interface Props {
     owner: string;
@@ -24,6 +23,11 @@
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
+  type MergeParams = {
+    commit_title: string;
+    commit_message: string;
+    method: Method;
+  };
 
   // Props are stable for the lifetime of this modal, so we
   // intentionally capture their initial values for editable fields.
@@ -76,7 +80,13 @@
         commit_message: commitMessage,
         method: selectedMethod,
       };
-      await mergePR(owner, name, number, params);
+      const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/merge", {
+        params: { path: { owner, name, number } },
+        body: params,
+      });
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to merge pull request");
+      }
       onmerged();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

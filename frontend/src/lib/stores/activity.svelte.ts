@@ -1,5 +1,5 @@
-import { listActivity } from "../api/activity.js";
-import type { ActivityItem, ActivityParams } from "../api/activity.js";
+import { apiErrorMessage, client } from "../api/runtime.js";
+import type { ActivityItem, ActivityParams } from "../api/types.js";
 
 // --- constants ---
 
@@ -105,10 +105,15 @@ export async function loadActivity(): Promise<void> {
   loading = true;
   error = null;
   try {
-    const resp = await listActivity(buildParams());
+    const { data, error: requestError } = await client.GET("/activity", {
+      params: { query: buildParams() },
+    });
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "failed to load activity"));
+    }
     if (version !== requestVersion) return;
-    items = resp.items;
-    capped = resp.capped;
+    items = data?.items ?? [];
+    capped = data?.capped ?? false;
   } catch (err) {
     if (version !== requestVersion) return;
     error = err instanceof Error ? err.message : String(err);
@@ -126,15 +131,25 @@ async function pollNewItems(): Promise<void> {
   try {
     const params = buildParams();
     params.after = items[0]!.cursor;
-    const resp = await listActivity(params);
+    const { data, error: requestError } = await client.GET("/activity", {
+      params: { query: params },
+    });
+    if (requestError) {
+      throw new Error(apiErrorMessage(requestError, "failed to poll activity"));
+    }
+    const resp = data;
+    if (!resp) {
+      return;
+    }
     if (resp.capped) {
       // Too many new items — full reload.
       await loadActivity();
       return;
     }
-    if (resp.items.length > 0) {
+    const nextItems = resp.items ?? [];
+    if (nextItems.length > 0) {
       const existingIds = new Set(items.map((it) => it.id));
-      const newItems = resp.items.filter((it) => !existingIds.has(it.id));
+      const newItems = nextItems.filter((it) => !existingIds.has(it.id));
       if (newItems.length > 0) {
         items = [...newItems, ...items];
       }

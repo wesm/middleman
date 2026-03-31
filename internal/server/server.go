@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -32,25 +33,8 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 		syncer:   syncer,
 	}
 
-	mux.HandleFunc("GET /api/v1/activity", s.handleListActivity)
-	mux.HandleFunc("GET /api/v1/pulls", s.handleListPulls)
-	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/pulls/{number}", s.handleGetPull)
-	mux.HandleFunc("PUT /api/v1/repos/{owner}/{name}/pulls/{number}/state", s.handleSetKanbanState)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/comments", s.handlePostComment)
-	mux.HandleFunc("GET /api/v1/issues", s.handleListIssues)
-	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}/issues/{number}", s.handleGetIssue)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/issues/{number}/comments", s.handlePostIssueComment)
-
-	mux.HandleFunc("PUT /api/v1/starred", s.handleSetStarred)
-	mux.HandleFunc("DELETE /api/v1/starred", s.handleUnsetStarred)
-
-	mux.HandleFunc("GET /api/v1/repos", s.handleListRepos)
-	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}", s.handleGetRepo)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/approve", s.handleApprovePR)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.handleReadyForReview)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/pulls/{number}/merge", s.handleMergePR)
-	mux.HandleFunc("POST /api/v1/sync", s.handleTriggerSync)
-	mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)
+	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
+	s.registerAPI(api)
 
 	if frontend != nil {
 		indexBytes, err := fs.ReadFile(frontend, "index.html")
@@ -124,18 +108,4 @@ func (s *Server) ListenAndServe(addr string) error {
 		IdleTimeout:  60 * time.Second,
 	}
 	return srv.ListenAndServe()
-}
-
-// writeJSON encodes v as JSON and writes it with the given HTTP status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		return
-	}
-}
-
-// writeError writes a JSON error response.
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }

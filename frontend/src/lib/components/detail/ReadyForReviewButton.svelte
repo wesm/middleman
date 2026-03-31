@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { markPRReadyForReview } from "../../api/client.js";
+  import { client } from "../../api/runtime.js";
   import { loadDetail } from "../../stores/detail.svelte.js";
   import { loadPulls } from "../../stores/pulls.svelte.js";
 
@@ -18,7 +18,12 @@
     submitting = true;
     error = null;
     try {
-      await markPRReadyForReview(owner, name, number);
+      const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/ready-for-review", {
+        params: { path: { owner, name, number } },
+      });
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to mark pull request ready for review");
+      }
       await loadDetail(owner, name, number);
       await loadPulls();
     } catch (err) {

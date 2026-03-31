@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import type { ActivityItem } from "../api/activity.js";
+  import type { ActivityItem } from "../api/types.js";
   import {
     getActivityItems,
     isActivityLoading,
@@ -216,11 +216,11 @@
     count: number;
     repo_owner: string;
     repo_name: string;
-    item_type: "pr" | "issue";
+    item_type: string;
     item_number: number;
     item_title: string;
     item_url: string;
-    item_state: "open" | "merged" | "closed";
+    item_state: string;
     earliest: string;
     latest: string;
     representative: ActivityItem;

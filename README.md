@@ -17,6 +17,7 @@ Local-first GitHub dashboard for project maintainers. Syncs PRs and issues from 
 
 - Go 1.22+ (no CGO required — uses pure Go SQLite)
 - Bun 1.3+
+- [mise](https://mise.jdx.dev/)
 - A GitHub personal access token with `repo` scope
 
 ## Setup
@@ -26,6 +27,7 @@ Local-first GitHub dashboard for project maintainers. Syncs PRs and issues from 
 ```
 git clone https://github.com/wesm/middleman.git
 cd middleman
+mise install
 make build
 ```
 
@@ -75,7 +77,7 @@ Other targets:
 make build          # Production binary with embedded frontend
 make frontend-check # Svelte / TypeScript checks
 make test           # Run all Go tests
-make lint           # golangci-lint
+make lint           # mise-managed golangci-lint
 make install        # Install to ~/.local/bin
 make install-hooks  # Install pre-commit hooks via prek
 ```
@@ -88,13 +90,14 @@ hook rewrites files, re-stage and re-commit.
 To enable local git hooks with `prek`:
 
 ```sh
+brew install mise
+mise install
 brew install prek
-brew install golangci-lint
 prek install
 prek run --all-files
 ```
 
-The repo hook config lives in `prek.toml`. Go commits run `gofmt`, `golangci-lint --fix`, and `make test-short`; frontend commits run `make frontend-check`. Install frontend dependencies once with `npm --prefix frontend install` if you have not already done so.
+The repo hook config lives in `prek.toml`. Go commits run `gofmt`, `make lint`, and `make test-short`; frontend commits run `make frontend-check`. `make lint` invokes the `mise`-managed `golangci-lint` version pinned in `mise.toml`. Install frontend dependencies once with `npm --prefix frontend install` if you have not already done so.
 
 
 ## License

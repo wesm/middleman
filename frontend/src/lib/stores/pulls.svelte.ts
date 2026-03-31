@@ -1,6 +1,15 @@
-import { listPulls, setStarred, unsetStarred } from "../api/client.js";
+import { client } from "../api/runtime.js";
 import type { KanbanStatus, PullRequest } from "../api/types.js";
-import type { PullsParams } from "../api/client.js";
+
+type PullsParams = {
+  repo?: string;
+  state?: string;
+  kanban?: KanbanStatus;
+  starred?: boolean;
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
 
 // --- state ---
 
@@ -154,9 +163,19 @@ export async function togglePRStar(
 ): Promise<void> {
   try {
     if (currentlyStarred) {
-      await unsetStarred("pr", owner, name, number);
+      const { error } = await client.DELETE("/starred", {
+        body: { item_type: "pr", owner, name, number },
+      });
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to unstar pull request");
+      }
     } else {
-      await setStarred("pr", owner, name, number);
+      const { error } = await client.PUT("/starred", {
+        body: { item_type: "pr", owner, name, number },
+      });
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to star pull request");
+      }
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -176,7 +195,13 @@ export async function loadPulls(params?: PullsParams): Promise<void> {
       q: searchQuery,
       ...params,
     };
-    pulls = await listPulls(merged);
+    const { data, error } = await client.GET("/pulls", {
+      params: { query: merged },
+    });
+    if (error) {
+      throw new Error(error.detail ?? error.title ?? "failed to load pulls");
+    }
+    pulls = data ?? [];
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   } finally {

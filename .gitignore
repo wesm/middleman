@@ -13,5 +13,6 @@ tmp/
 *.db
 .env
 .superpowers/
+.worktrees/
 .agents/skills/
 .claude/skills/

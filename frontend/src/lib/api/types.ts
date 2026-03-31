@@ -1,121 +1,27 @@
-// TypeScript interfaces matching Go JSON output.
-// Go's default encoding uses PascalCase for struct fields without json tags.
-// Fields with explicit json tags use lowercase (e.g., repo_owner, repo_name).
+import type { components, operations } from "./generated/schema.js";
 
-export interface Repo {
-  ID: number;
-  Owner: string;
-  Name: string;
-  AllowSquashMerge: boolean;
-  AllowMergeCommit: boolean;
-  AllowRebaseMerge: boolean;
-  LastSyncStartedAt: string | null;
-  LastSyncCompletedAt: string | null;
-  LastSyncError: string;
-  CreatedAt: string;
-}
-
-export interface PullRequest {
-  ID: number;
-  RepoID: number;
-  GitHubID: number;
-  Number: number;
-  URL: string;
-  Title: string;
-  Author: string;
-  State: string;
-  IsDraft: boolean;
-  Body: string;
-  HeadBranch: string;
-  BaseBranch: string;
-  Additions: number;
-  Deletions: number;
-  CommentCount: number;
-  ReviewDecision: string;
-  CIStatus: string;
-  CIChecksJSON: string;
-  CreatedAt: string;
-  UpdatedAt: string;
-  LastActivityAt: string;
-  MergedAt: string | null;
-  ClosedAt: string | null;
-  KanbanStatus: string;
-  Starred: boolean;
-  // Enrichment fields from list endpoint (json-tagged, lowercase)
-  repo_owner?: string;
-  repo_name?: string;
-}
-
-export interface Issue {
-  ID: number;
-  RepoID: number;
-  GitHubID: number;
-  Number: number;
-  URL: string;
-  Title: string;
-  Author: string;
-  State: string;
-  Body: string;
-  CommentCount: number;
-  LabelsJSON: string;
-  CreatedAt: string;
-  UpdatedAt: string;
-  LastActivityAt: string;
-  ClosedAt: string | null;
-  Starred: boolean;
-  repo_owner?: string;
-  repo_name?: string;
-}
-
-export interface IssueEvent {
-  ID: number;
-  IssueID: number;
-  GitHubID: number | null;
-  EventType: string;
-  Author: string;
-  Summary: string;
-  Body: string;
-  MetadataJSON: string;
-  CreatedAt: string;
-  DedupeKey: string;
-}
-
-export interface IssueDetail {
-  issue: Issue;
-  events: IssueEvent[];
-  repo_owner: string;
-  repo_name: string;
-}
+export type Repo = components["schemas"]["Repo"];
+export type PullRequest =
+  components["schemas"]["PullRequest"] &
+  Partial<Pick<components["schemas"]["PullResponse"], "repo_owner" | "repo_name">>;
+export type Issue =
+  components["schemas"]["Issue"] &
+  Partial<Pick<components["schemas"]["IssueResponse"], "repo_owner" | "repo_name">>;
+export type IssueEvent = components["schemas"]["IssueEvent"];
+export type IssueDetail = components["schemas"]["IssueDetailResponse"];
+export type PREvent = components["schemas"]["PREvent"];
+export type PullDetail = components["schemas"]["PullDetailResponse"];
+export type SyncStatus = components["schemas"]["SyncStatus"];
+export type ActivityItem = components["schemas"]["ActivityItemResponse"];
+export type ActivityResponse = components["schemas"]["ActivityResponse"];
+export type ActivityParams = NonNullable<operations["get-activity"]["parameters"]["query"]>;
+export type PullsParams = operations["list-pulls"]["parameters"]["query"];
+export type IssuesParams = operations["list-issues"]["parameters"]["query"];
+export type MergeParams = components["schemas"]["MergePRInputBody"];
 
 export interface IssueLabel {
   name: string;
   color: string;
-}
-
-export interface PREvent {
-  ID: number;
-  PRID: number;
-  GitHubID: number | null;
-  EventType: string;
-  Author: string;
-  Summary: string;
-  Body: string;
-  MetadataJSON: string;
-  CreatedAt: string;
-  DedupeKey: string;
-}
-
-export interface PullDetail {
-  pull_request: PullRequest;
-  events: PREvent[];
-  repo_owner: string;
-  repo_name: string;
-}
-
-export interface SyncStatus {
-  running: boolean;
-  last_run_at?: string;
-  last_error?: string;
 }
 
 export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";

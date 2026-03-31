@@ -1,4 +1,4 @@
-import { getPull, postComment, setKanbanState, setStarred, unsetStarred } from "../api/client.js";
+import { client } from "../api/runtime.js";
 import type { KanbanStatus, PullDetail } from "../api/types.js";
 import { getPage } from "./router.svelte.js";
 import { loadPulls } from "./pulls.svelte.js";
@@ -34,7 +34,13 @@ export async function loadDetail(owner: string, name: string, number: number): P
   loading = true;
   error = null;
   try {
-    detail = await getPull(owner, name, number);
+    const { data, error: requestError } = await client.GET("/repos/{owner}/{name}/pulls/{number}", {
+      params: { path: { owner, name, number } },
+    });
+    if (requestError) {
+      throw new Error(requestError.detail ?? requestError.title ?? "failed to load pull request");
+    }
+    detail = data ? ({ ...data, events: data.events ?? [] } as PullDetail) : null;
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   } finally {
@@ -64,7 +70,13 @@ export async function updateKanbanState(
     };
   }
   try {
-    await setKanbanState(owner, name, number, status);
+    const { error: requestError } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
+      params: { path: { owner, name, number } },
+      body: { status },
+    });
+    if (requestError) {
+      throw new Error(requestError.detail ?? requestError.title ?? "failed to update kanban state");
+    }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
     // Reload to restore accurate server state on failure.
@@ -80,7 +92,12 @@ let detailPollHandle: ReturnType<typeof setInterval> | null = null;
 
 async function refreshDetail(owner: string, name: string, number: number): Promise<void> {
   try {
-    detail = await getPull(owner, name, number);
+    const { data } = await client.GET("/repos/{owner}/{name}/pulls/{number}", {
+      params: { path: { owner, name, number } },
+    });
+    if (data !== undefined) {
+      detail = { ...data, events: data.events ?? [] } as PullDetail;
+    }
   } catch {
     // Silent refresh - don't overwrite error state
   }
@@ -111,8 +128,21 @@ export async function toggleDetailPRStar(
     detail = { ...detail, pull_request: { ...detail.pull_request, Starred: !currentlyStarred } };
   }
   try {
-    if (currentlyStarred) await unsetStarred("pr", owner, name, number);
-    else await setStarred("pr", owner, name, number);
+    if (currentlyStarred) {
+      const { error: requestError } = await client.DELETE("/starred", {
+        body: { item_type: "pr", owner, name, number },
+      });
+      if (requestError) {
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to unstar pull request");
+      }
+    } else {
+      const { error: requestError } = await client.PUT("/starred", {
+        body: { item_type: "pr", owner, name, number },
+      });
+      if (requestError) {
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to star pull request");
+      }
+    }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
     if (detail !== null) {
@@ -132,7 +162,13 @@ export async function submitComment(
 ): Promise<void> {
   error = null;
   try {
-    await postComment(owner, name, number, body);
+    const { error: requestError } = await client.POST("/repos/{owner}/{name}/pulls/{number}/comments", {
+      params: { path: { owner, name, number } },
+      body: { body },
+    });
+    if (requestError) {
+      throw new Error(requestError.detail ?? requestError.title ?? "failed to post comment");
+    }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
     return;

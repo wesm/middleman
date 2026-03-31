@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { PREvent } from "../../api/types.js";
+  import type { IssueEvent, PREvent } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
 
   interface Props {
-    events: PREvent[];
+    events: Array<PREvent | IssueEvent>;
   }
 
   const { events }: Props = $props();

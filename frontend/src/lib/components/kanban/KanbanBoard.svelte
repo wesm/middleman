@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import { getPulls, loadPulls } from "../../stores/pulls.svelte.js";
-  import { setKanbanState } from "../../api/client.js";
+  import { client } from "../../api/runtime.js";
   import {
     loadDetail,
     getDetail,
@@ -65,7 +65,13 @@
     status: KanbanStatus,
   ): Promise<void> {
     try {
-      await setKanbanState(owner, name, number, status);
+      const { error } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
+        params: { path: { owner, name, number } },
+        body: { status },
+      });
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to update kanban state");
+      }
     } catch {
       // Card will snap back when pulls refresh
     }

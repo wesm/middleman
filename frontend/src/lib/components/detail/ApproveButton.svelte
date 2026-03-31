@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { approvePR } from "../../api/client.js";
+  import { client } from "../../api/runtime.js";
   import { loadDetail } from "../../stores/detail.svelte.js";
   import { loadPulls } from "../../stores/pulls.svelte.js";
 
@@ -20,7 +20,13 @@
     submitting = true;
     error = null;
     try {
-      await approvePR(owner, name, number, body.trim());
+      const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/approve", {
+        params: { path: { owner, name, number } },
+        body: { body: body.trim() },
+      });
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to approve pull request");
+      }
       body = "";
       expanded = false;
       await loadDetail(owner, name, number);
