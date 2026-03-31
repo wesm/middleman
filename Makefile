@@ -73,6 +73,17 @@ api-generate:
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.json
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
 	cd frontend && bunx openapi-typescript openapi/openapi.json -o src/lib/api/generated/schema.ts
+	cd frontend && printf '%s\n' \
+		'/**' \
+		' * This file was auto-generated from frontend/openapi/openapi.json.' \
+		' * Do not make direct changes to the file.' \
+		' */' \
+		'' \
+		'import createClient from "openapi-fetch";' \
+		'import type { paths } from "./schema";' \
+		'' \
+		'export const client = createClient<paths>();' \
+		> src/lib/api/generated/client.ts
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
 
 # Ensure air is installed for backend live reload
