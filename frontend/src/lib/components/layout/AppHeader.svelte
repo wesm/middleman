@@ -3,14 +3,23 @@
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
 
-  let dark = $state(false);
+  const THEME_KEY = "middleman-theme";
+
+  function loadInitialTheme(): boolean {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored !== null) return stored === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  let dark = $state(loadInitialTheme());
 
   onMount(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    dark = mediaQuery.matches;
 
     const handleChange = (event: MediaQueryListEvent) => {
-      dark = event.matches;
+      if (localStorage.getItem(THEME_KEY) === null) {
+        dark = event.matches;
+      }
     };
 
     mediaQuery.addEventListener("change", handleChange);
@@ -21,16 +30,12 @@
   });
 
   $effect(() => {
-    applyTheme(dark);
+    document.documentElement.classList.toggle("dark", dark);
   });
-
-  function applyTheme(isDark: boolean): void {
-    document.documentElement.classList.toggle("dark", isDark);
-  }
 
   function toggleTheme(): void {
     dark = !dark;
-    applyTheme(dark);
+    localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
   }
 
   async function handleSync(): Promise<void> {

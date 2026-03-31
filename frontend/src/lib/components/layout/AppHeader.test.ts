@@ -23,12 +23,14 @@ function mockMatchMedia(matches: boolean): void {
 describe("AppHeader", () => {
   beforeEach(() => {
     document.documentElement.classList.remove("dark");
+    localStorage.clear();
     mockMatchMedia(false);
   });
 
   afterEach(() => {
     cleanup();
     document.documentElement.classList.remove("dark");
+    localStorage.clear();
   });
 
   it("toggles the root dark class when the theme button is clicked", async () => {
@@ -46,6 +48,37 @@ describe("AppHeader", () => {
   });
 
   it("applies the system dark preference on mount", () => {
+    cleanup();
+    document.documentElement.classList.remove("dark");
+    mockMatchMedia(true);
+
+    render(AppHeader);
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("persists theme choice to localStorage on toggle", async () => {
+    render(AppHeader);
+
+    const button = screen.getByTitle("Toggle theme");
+
+    await fireEvent.click(button);
+    expect(localStorage.getItem("middleman-theme")).toBe("dark");
+
+    await fireEvent.click(button);
+    expect(localStorage.getItem("middleman-theme")).toBe("light");
+  });
+
+  it("restores theme from localStorage over system preference", () => {
+    localStorage.setItem("middleman-theme", "dark");
+    mockMatchMedia(false);
+
+    render(AppHeader);
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("falls back to system preference when no stored theme", () => {
     cleanup();
     document.documentElement.classList.remove("dark");
     mockMatchMedia(true);
