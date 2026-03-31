@@ -15,7 +15,12 @@
     void tick; // reactive dependency
     const st = getSyncState();
     if (st === null) return "";
-    if (st.running) return "syncing…";
+    if (st.running) {
+      if (st.current_repo && st.progress) {
+        return `syncing ${st.current_repo} (${st.progress})`;
+      }
+      return "syncing…";
+    }
     if (!st.last_run_at) return "not synced";
     const diffMs = Date.now() - new Date(st.last_run_at).getTime();
     const mins = Math.floor(diffMs / 60_000);

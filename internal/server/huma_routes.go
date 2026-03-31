@@ -269,12 +269,15 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 
 	out := make([]pullResponse, 0, len(prs))
 	for _, pr := range prs {
-		resp := pullResponse{PullRequest: pr}
-		if rp, ok := repoByID[pr.RepoID]; ok {
-			resp.RepoOwner = rp.Owner
-			resp.RepoName = rp.Name
+		rp, ok := repoByID[pr.RepoID]
+		if !ok {
+			continue
 		}
-		out = append(out, resp)
+		out = append(out, pullResponse{
+			PullRequest: pr,
+			RepoOwner:   rp.Owner,
+			RepoName:    rp.Name,
+		})
 	}
 
 	return &listPullsOutput{Body: out}, nil
@@ -373,12 +376,15 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 
 	out := make([]issueResponse, 0, len(issues))
 	for _, issue := range issues {
-		resp := issueResponse{Issue: issue}
-		if rp, ok := repoByID[issue.RepoID]; ok {
-			resp.RepoOwner = rp.Owner
-			resp.RepoName = rp.Name
+		rp, ok := repoByID[issue.RepoID]
+		if !ok {
+			continue
 		}
-		out = append(out, resp)
+		out = append(out, issueResponse{
+			Issue:     issue,
+			RepoOwner: rp.Owner,
+			RepoName:  rp.Name,
+		})
 	}
 
 	return &listIssuesOutput{Body: out}, nil
@@ -540,6 +546,10 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 	if repos == nil {
 		repos = []db.Repo{}
 	}
+	if s.cfg != nil {
+		repos = s.filterConfiguredRepos(repos)
+	}
+
 	return &listReposOutput{Body: repos}, nil
 }
 
@@ -585,6 +595,23 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list activity failed")
+	}
+
+	if s.cfg != nil {
+		s.cfgMu.Lock()
+		configured := make(map[string]bool, len(s.cfg.Repos))
+		for _, cr := range s.cfg.Repos {
+			configured[cr.Owner+"/"+cr.Name] = true
+		}
+		s.cfgMu.Unlock()
+
+		filtered := items[:0]
+		for _, it := range items {
+			if configured[it.RepoOwner+"/"+it.RepoName] {
+				filtered = append(filtered, it)
+			}
+		}
+		items = filtered
 	}
 
 	capped := len(items) > activitySafetyCap

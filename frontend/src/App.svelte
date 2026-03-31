@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import PullList from "./lib/components/sidebar/PullList.svelte";
@@ -8,8 +9,11 @@
   import KanbanBoard from "./lib/components/kanban/KanbanBoard.svelte";
   import ActivityFeed from "./lib/components/ActivityFeed.svelte";
   import DetailDrawer from "./lib/components/DetailDrawer.svelte";
+  import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import { getRoute, getPage, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
+  import { getSettings } from "./lib/api/settings.js";
+  import { hydrateActivityDefaults } from "./lib/stores/activity.svelte.js";
   import {
     getSelectedPR,
     selectNextPR,
@@ -36,11 +40,21 @@
   import { loadPulls } from "./lib/stores/pulls.svelte.js";
   import { loadIssues } from "./lib/stores/issues.svelte.js";
 
-  $effect(() => {
-    startPolling();
-    // Load pulls and issues so status bar counts are available on all pages.
-    void loadPulls();
-    void loadIssues();
+  let appReady = $state(false);
+
+  onMount(() => {
+    void (async () => {
+      try {
+        const settings = await getSettings();
+        hydrateActivityDefaults(settings.activity);
+      } catch (err) {
+        console.warn("Failed to load settings, using defaults:", err);
+      }
+      appReady = true;
+      startPolling();
+      void loadPulls();
+      void loadIssues();
+    })();
   });
 
   // Sync route state: restore drawer, select items, clear stale state.
@@ -119,6 +133,7 @@
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
     const page = getPage();
+    if (page === "settings") return;
 
     if (page === "activity") {
       if (e.key === "Escape" && drawerItem && !e.defaultPrevented) {
@@ -166,7 +181,11 @@
 <AppHeader />
 
 <main class="app-main">
-  {#if getPage() === "activity"}
+  {#if !appReady}
+    <div class="loading-state">Loading...</div>
+  {:else if getPage() === "settings"}
+    <SettingsPage />
+  {:else if getPage() === "activity"}
     <ActivityFeed onSelectItem={handleActivitySelect} />
     {#if drawerItem}
       <DetailDrawer
@@ -283,5 +302,14 @@
     font-size: 11px;
     margin-top: 8px;
     opacity: 0.7;
+  }
+
+  .loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--text-muted);
+    font-size: 13px;
   }
 </style>

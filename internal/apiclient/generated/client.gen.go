@@ -316,10 +316,12 @@ type StarredRequest struct {
 // SyncStatus defines model for SyncStatus.
 type SyncStatus struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string    `json:"$schema,omitempty"`
-	LastError *string    `json:"last_error,omitempty"`
-	LastRunAt *time.Time `json:"last_run_at,omitempty"`
-	Running   bool       `json:"running"`
+	Schema      *string    `json:"$schema,omitempty"`
+	CurrentRepo *string    `json:"current_repo,omitempty"`
+	LastError   *string    `json:"last_error,omitempty"`
+	LastRunAt   *time.Time `json:"last_run_at,omitempty"`
+	Progress    *string    `json:"progress,omitempty"`
+	Running     bool       `json:"running"`
 }
 
 // GetActivityParams defines parameters for GetActivity.

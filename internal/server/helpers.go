@@ -34,14 +34,36 @@ func buildRepoLookup(repos []db.Repo) map[int64]db.Repo {
 	return lookup
 }
 
-// lookupRepoMap fetches all repos once for handlers that need to decorate list
-// responses with repository identity details.
+// lookupRepoMap fetches repos and returns an ID-keyed map. When config is
+// available, only configured repos are included so that removed repos are
+// filtered out of list responses.
 func (s *Server) lookupRepoMap(ctx context.Context) (map[int64]db.Repo, error) {
 	repos, err := s.db.ListRepos(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)
 	}
+	if s.cfg != nil {
+		repos = s.filterConfiguredRepos(repos)
+	}
 	return buildRepoLookup(repos), nil
+}
+
+// filterConfiguredRepos returns only repos that are in the config.
+func (s *Server) filterConfiguredRepos(repos []db.Repo) []db.Repo {
+	s.cfgMu.Lock()
+	configured := make(map[string]bool, len(s.cfg.Repos))
+	for _, cr := range s.cfg.Repos {
+		configured[cr.Owner+"/"+cr.Name] = true
+	}
+	s.cfgMu.Unlock()
+
+	filtered := make([]db.Repo, 0, len(repos))
+	for _, r := range repos {
+		if configured[r.Owner+"/"+r.Name] {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
 }
 
 // lookupRepoID resolves a repository from owner/name inputs and returns a

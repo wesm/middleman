@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -14,23 +15,41 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+const (
+	defaultGitHubTokenEnv = "MIDDLEMAN_GITHUB_TOKEN"
+	defaultSyncInterval   = "5m"
+	defaultHost           = "127.0.0.1"
+	defaultPort           = 8090
+	defaultViewMode       = "flat"
+	defaultTimeRange      = "7d"
+	defaultBasePath       = "/"
+)
+
 type Repo struct {
-	Owner string `toml:"owner"`
-	Name  string `toml:"name"`
+	Owner string `toml:"owner" json:"owner"`
+	Name  string `toml:"name" json:"name"`
 }
 
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
+type Activity struct {
+	ViewMode   string `toml:"view_mode" json:"view_mode"`
+	TimeRange  string `toml:"time_range" json:"time_range"`
+	HideClosed bool   `toml:"hide_closed" json:"hide_closed"`
+	HideBots   bool   `toml:"hide_bots" json:"hide_bots"`
+}
+
 type Config struct {
-	SyncInterval   string `toml:"sync_interval"`
-	GitHubTokenEnv string `toml:"github_token_env"`
-	Host           string `toml:"host"`
-	Port           int    `toml:"port"`
-	BasePath       string `toml:"base_path"`
-	DataDir        string `toml:"data_dir"`
-	Repos          []Repo `toml:"repos"`
+	SyncInterval   string   `toml:"sync_interval"`
+	GitHubTokenEnv string   `toml:"github_token_env"`
+	Host           string   `toml:"host"`
+	Port           int      `toml:"port"`
+	BasePath       string   `toml:"base_path"`
+	DataDir        string   `toml:"data_dir"`
+	Repos          []Repo   `toml:"repos"`
+	Activity       Activity `toml:"activity"`
 }
 
 func DefaultConfigPath() string {
@@ -51,10 +70,10 @@ func homeDir() string {
 
 func Load(path string) (*Config, error) {
 	cfg := &Config{
-		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
-		Host:           "127.0.0.1",
-		Port:           8090,
+		SyncInterval:   defaultSyncInterval,
+		GitHubTokenEnv: defaultGitHubTokenEnv,
+		Host:           defaultHost,
+		Port:           defaultPort,
 	}
 
 	data, err := os.ReadFile(path)
@@ -70,8 +89,15 @@ func Load(path string) (*Config, error) {
 		cfg.DataDir = DefaultDataDir()
 	}
 
+	if cfg.Activity.ViewMode == "" {
+		cfg.Activity.ViewMode = defaultViewMode
+	}
+	if cfg.Activity.TimeRange == "" {
+		cfg.Activity.TimeRange = defaultTimeRange
+	}
+
 	if cfg.BasePath == "" {
-		cfg.BasePath = "/"
+		cfg.BasePath = defaultBasePath
 	} else {
 		bp := "/" + strings.Trim(cfg.BasePath, "/")
 		if bp != "/" {
@@ -117,6 +143,25 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	validViewModes := map[string]bool{
+		"flat": true, "threaded": true,
+	}
+	if !validViewModes[c.Activity.ViewMode] {
+		return fmt.Errorf(
+			"config: invalid activity view_mode %q",
+			c.Activity.ViewMode,
+		)
+	}
+	validTimeRanges := map[string]bool{
+		"24h": true, "7d": true, "30d": true, "90d": true,
+	}
+	if !validTimeRanges[c.Activity.TimeRange] {
+		return fmt.Errorf(
+			"config: invalid activity time_range %q",
+			c.Activity.TimeRange,
+		)
+	}
+
 	return nil
 }
 
@@ -150,4 +195,41 @@ func (c *Config) ListenAddr() string {
 
 func (c *Config) DBPath() string {
 	return filepath.Join(c.DataDir, "middleman.db")
+}
+
+// configFile is the subset of Config written to disk.
+type configFile struct {
+	SyncInterval   string   `toml:"sync_interval"`
+	GitHubTokenEnv string   `toml:"github_token_env"`
+	Host           string   `toml:"host"`
+	Port           int      `toml:"port"`
+	BasePath       string   `toml:"base_path,omitempty"`
+	DataDir        string   `toml:"data_dir,omitempty"`
+	Repos          []Repo   `toml:"repos"`
+	Activity       Activity `toml:"activity"`
+}
+
+// Save writes the current config to the given path.
+func (c *Config) Save(path string) error {
+	f := configFile{
+		SyncInterval:   c.SyncInterval,
+		GitHubTokenEnv: c.GitHubTokenEnv,
+		Host:           c.Host,
+		Port:           c.Port,
+		Repos:          c.Repos,
+		Activity:       c.Activity,
+	}
+	if c.BasePath != defaultBasePath {
+		f.BasePath = c.BasePath
+	}
+	if c.DataDir != DefaultDataDir() {
+		f.DataDir = c.DataDir
+	}
+
+	var buf bytes.Buffer
+	enc := toml.NewEncoder(&buf)
+	if err := enc.Encode(f); err != nil {
+		return fmt.Errorf("encoding config: %w", err)
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }

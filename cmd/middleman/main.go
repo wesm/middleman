@@ -80,7 +80,9 @@ func run(configPath string) error {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
-	srv := server.New(database, ghClient, syncer, assets, cfg.BasePath)
+	srv := server.NewWithConfig(
+		database, ghClient, syncer, assets, cfg, configPath,
+	)
 
 	addr := cfg.ListenAddr()
 	slog.Info(fmt.Sprintf("starting server at http://%s", addr))

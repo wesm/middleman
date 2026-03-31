@@ -156,6 +156,10 @@ func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 
 			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
+			// Ensure mutation requests have Content-Type for CSRF.
+			if req.Method != http.MethodGet && serverReq.Header.Get("Content-Type") == "" {
+				serverReq.Header.Set("Content-Type", "application/json")
+			}
 			serverReq = serverReq.WithContext(req.Context())
 
 			rr := httptest.NewRecorder()
@@ -351,6 +355,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
 	cancel()
 
 	rr := httptest.NewRecorder()

@@ -130,6 +130,11 @@
       {/each}
     {/if}
   </div>
+  <div class="sidebar-footer">
+    <button class="add-repo-link" onclick={() => navigate("/settings")}>
+      + Add repository
+    </button>
+  </div>
 </div>
 
 <style>
@@ -276,5 +281,23 @@
     position: sticky;
     top: 0;
     z-index: 1;
+  }
+
+  .sidebar-footer {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-muted);
+    flex-shrink: 0;
+  }
+
+  .add-repo-link {
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.1s;
+    padding: 0;
+  }
+
+  .add-repo-link:hover {
+    color: var(--accent-blue);
   }
 </style>
