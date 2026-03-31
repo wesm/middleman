@@ -12,6 +12,7 @@ import (
 type Client interface {
 	ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error)
 	GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
+	GetUser(ctx context.Context, login string) (*gh.User, error)
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
@@ -109,6 +110,14 @@ func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, num
 		return nil, fmt.Errorf("getting pull request %s/%s#%d: %w", owner, repo, number, err)
 	}
 	return pr, nil
+}
+
+func (c *liveClient) GetUser(ctx context.Context, login string) (*gh.User, error) {
+	user, _, err := c.gh.Users.Get(ctx, login)
+	if err != nil {
+		return nil, fmt.Errorf("getting user %s: %w", login, err)
+	}
+	return user, nil
 }
 
 func (c *liveClient) ListIssueComments(

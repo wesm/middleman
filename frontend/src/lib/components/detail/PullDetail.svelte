@@ -292,6 +292,7 @@
           prTitle={p.Title}
           prBody={p.Body}
           prAuthor={p.Author}
+          prAuthorDisplayName={p.AuthorDisplayName}
           allowSquash={repoSettings.allowSquash}
           allowMerge={repoSettings.allowMerge}
           allowRebase={repoSettings.allowRebase}

@@ -20,31 +20,32 @@ func (r Repo) FullName() string {
 }
 
 type PullRequest struct {
-	ID             int64
-	RepoID         int64
-	GitHubID       int64
-	Number         int
-	URL            string
-	Title          string
-	Author         string
-	State          string
-	IsDraft        bool
-	Body           string
-	HeadBranch     string
-	BaseBranch     string
-	Additions      int
-	Deletions      int
-	CommentCount   int
-	ReviewDecision string
-	CIStatus       string
-	CIChecksJSON   string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	LastActivityAt time.Time
-	MergedAt       *time.Time
-	ClosedAt       *time.Time
-	KanbanStatus   string
-	Starred        bool
+	ID                int64
+	RepoID            int64
+	GitHubID          int64
+	Number            int
+	URL               string
+	Title             string
+	Author            string
+	AuthorDisplayName string
+	State             string
+	IsDraft           bool
+	Body              string
+	HeadBranch        string
+	BaseBranch        string
+	Additions         int
+	Deletions         int
+	CommentCount      int
+	ReviewDecision    string
+	CIStatus          string
+	CIChecksJSON      string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	LastActivityAt    time.Time
+	MergedAt          *time.Time
+	ClosedAt          *time.Time
+	KanbanStatus      string
+	Starred           bool
 }
 
 // CICheck represents a single CI check run.

@@ -45,6 +45,10 @@ func (m *mockClient) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue,
 	return nil, nil
 }
 
+func (m *mockClient) GetUser(_ context.Context, login string) (*gh.User, error) {
+	return &gh.User{Login: &login}, nil
+}
+
 func (m *mockClient) GetPullRequest(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 	if m.singlePR != nil {
 		return m.singlePR, nil

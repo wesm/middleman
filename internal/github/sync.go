@@ -26,13 +26,14 @@ type RepoRef struct {
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	client   Client
-	db       *db.DB
-	repos    []RepoRef
-	interval time.Duration
-	running  atomic.Bool
-	status   atomic.Value // stores *SyncStatus
-	stopCh   chan struct{}
+	client       Client
+	db           *db.DB
+	repos        []RepoRef
+	interval     time.Duration
+	running      atomic.Bool
+	status       atomic.Value // stores *SyncStatus
+	stopCh       chan struct{}
+	displayNames map[string]string // login -> display name, per sync run
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the given interval.
@@ -87,6 +88,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	defer s.running.Store(false)
 
 	s.status.Store(&SyncStatus{Running: true})
+	s.displayNames = make(map[string]string)
 	slog.Info("sync started", "repos", len(s.repos))
 
 	var lastErr string
@@ -228,6 +230,14 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		// Preserve fields the list endpoint doesn't return
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
+	}
+
+	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
+		if name, ok := s.resolveDisplayName(ctx, normalized.Author); ok {
+			normalized.AuthorDisplayName = name
+		} else if existing != nil {
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		}
 	}
 
 	prID, err := s.db.UpsertPullRequest(ctx, normalized)
@@ -379,6 +389,28 @@ func computeLastActivity(
 		}
 	}
 	return latest
+}
+
+// resolveDisplayName returns the GitHub display name for a login and
+// whether the lookup succeeded. Returns ("", false) on API failure so
+// callers can preserve existing data. Uses an in-memory cache to avoid
+// duplicate API calls within a sync run.
+func (s *Syncer) resolveDisplayName(
+	ctx context.Context, login string,
+) (string, bool) {
+	if name, ok := s.displayNames[login]; ok {
+		return name, true
+	}
+	user, err := s.client.GetUser(ctx, login)
+	if err != nil {
+		slog.Warn("get user display name failed",
+			"login", login, "err", err,
+		)
+		return "", false
+	}
+	name := sanitizeDisplayName(user.GetName())
+	s.displayNames[login] = name
+	return name, true
 }
 
 // --- Issue sync ---

@@ -534,6 +534,7 @@ export interface components {
             /** Format: int64 */
             Additions: number;
             Author: string;
+            AuthorDisplayName: string;
             BaseBranch: string;
             Body: string;
             CIChecksJSON: string;
@@ -573,6 +574,7 @@ export interface components {
             /** Format: int64 */
             Additions: number;
             Author: string;
+            AuthorDisplayName: string;
             BaseBranch: string;
             Body: string;
             CIChecksJSON: string;
