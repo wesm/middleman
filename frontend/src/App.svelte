@@ -132,6 +132,7 @@
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
     const page = getPage();
+    if (page === "settings") return;
 
     if (page === "activity") {
       if (e.key === "Escape" && drawerItem && !e.defaultPrevented) {

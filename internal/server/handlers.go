@@ -515,12 +515,15 @@ func (s *Server) handleGetSettings(
 	}
 
 	s.cfgMu.Lock()
-	resp := settingsResponse{
-		Repos:    s.cfg.Repos,
-		Activity: s.cfg.Activity,
-	}
+	repos := make([]config.Repo, len(s.cfg.Repos))
+	copy(repos, s.cfg.Repos)
+	activity := s.cfg.Activity
 	s.cfgMu.Unlock()
-	writeJSON(w, http.StatusOK, resp)
+
+	writeJSON(w, http.StatusOK, settingsResponse{
+		Repos:    repos,
+		Activity: activity,
+	})
 }
 
 // --- PUT /api/v1/settings ---

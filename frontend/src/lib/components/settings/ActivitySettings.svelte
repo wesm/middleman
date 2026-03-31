@@ -69,14 +69,14 @@
 
 <div class="setting-row">
   <span class="setting-label">Hide closed/merged</span>
-  <button class="toggle-btn" class:toggle-on={activity.hide_closed} onclick={toggleHideClosed} aria-label="Toggle hide closed/merged">
+  <button class="toggle-btn" class:toggle-on={activity.hide_closed} onclick={toggleHideClosed} aria-label="Toggle hide closed/merged" aria-pressed={activity.hide_closed}>
     <span class="toggle-track"><span class="toggle-thumb"></span></span>
   </button>
 </div>
 
 <div class="setting-row">
   <span class="setting-label">Hide bots</span>
-  <button class="toggle-btn" class:toggle-on={activity.hide_bots} onclick={toggleHideBots} aria-label="Toggle hide bots">
+  <button class="toggle-btn" class:toggle-on={activity.hide_bots} onclick={toggleHideBots} aria-label="Toggle hide bots" aria-pressed={activity.hide_bots}>
     <span class="toggle-track"><span class="toggle-thumb"></span></span>
   </button>
 </div>

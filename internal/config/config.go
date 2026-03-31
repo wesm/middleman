@@ -200,7 +200,7 @@ func (c *Config) DBPath() string {
 // configFile is the subset of Config written to disk.
 type configFile struct {
 	SyncInterval   string   `toml:"sync_interval"`
-	GitHubTokenEnv string   `toml:"github_token_env,omitempty"`
+	GitHubTokenEnv string   `toml:"github_token_env"`
 	Host           string   `toml:"host"`
 	Port           int      `toml:"port"`
 	BasePath       string   `toml:"base_path,omitempty"`
@@ -211,20 +211,18 @@ type configFile struct {
 
 func (c *Config) Save(path string) error {
 	f := configFile{
-		SyncInterval: c.SyncInterval,
-		Host:         c.Host,
-		Port:         c.Port,
-		Repos:        c.Repos,
-		Activity:     c.Activity,
+		SyncInterval:   c.SyncInterval,
+		GitHubTokenEnv: c.GitHubTokenEnv,
+		Host:           c.Host,
+		Port:           c.Port,
+		Repos:          c.Repos,
+		Activity:       c.Activity,
 	}
 	if c.BasePath != defaultBasePath {
 		f.BasePath = c.BasePath
 	}
 	if c.DataDir != DefaultDataDir() {
 		f.DataDir = c.DataDir
-	}
-	if c.GitHubTokenEnv != defaultGitHubTokenEnv {
-		f.GitHubTokenEnv = c.GitHubTokenEnv
 	}
 
 	var buf bytes.Buffer

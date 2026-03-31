@@ -231,6 +231,24 @@ export function stopActivityPolling(): void {
   }
 }
 
+function deriveFiltersFromTypes(): void {
+  if (filterTypes.length === 0) {
+    itemFilter = "all";
+    enabledEvents = new Set(["comment", "review", "commit"]);
+    return;
+  }
+  const hasPR = filterTypes.includes("new_pr");
+  const hasIssue = filterTypes.includes("new_issue");
+  if (hasPR && !hasIssue) itemFilter = "prs";
+  else if (hasIssue && !hasPR) itemFilter = "issues";
+  else itemFilter = "all";
+  enabledEvents = new Set(
+    (["comment", "review", "commit"] as const).filter((t) =>
+      filterTypes.includes(t),
+    ),
+  );
+}
+
 /** Sync URL query params -> store state (partial override). */
 export function syncFromURL(): void {
   const sp = new URLSearchParams(window.location.search);
@@ -251,6 +269,7 @@ export function syncFromURL(): void {
     if (viewParam === "flat" || viewParam === "threaded")
       viewMode = viewParam;
   }
+  deriveFiltersFromTypes();
 }
 
 /** Sync store state -> URL query params (replaceState). */

@@ -53,7 +53,8 @@ func NewSyncer(client Client, database *db.DB, repos []RepoRef, interval time.Du
 // SetRepos atomically replaces the list of repositories to sync.
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	s.reposMu.Lock()
-	s.repos = repos
+	s.repos = make([]RepoRef, len(repos))
+	copy(s.repos, repos)
 	s.reposMu.Unlock()
 }
 

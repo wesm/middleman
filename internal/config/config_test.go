@@ -380,6 +380,38 @@ hide_bots = true
 	}
 }
 
+func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
+	path := writeConfig(t, `
+github_token_env = ""
+
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GitHubTokenEnv != "" {
+		t.Fatalf("expected empty github_token_env, got %q",
+			cfg.GitHubTokenEnv)
+	}
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	if err := cfg.Save(savePath); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg2, err := Load(savePath)
+	if err != nil {
+		t.Fatalf("reloading saved config: %v", err)
+	}
+	if cfg2.GitHubTokenEnv != "" {
+		t.Fatalf("expected empty github_token_env after round-trip, got %q",
+			cfg2.GitHubTokenEnv)
+	}
+}
+
 func TestSavePreservesDefaults(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]

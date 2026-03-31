@@ -493,6 +493,54 @@ func TestHandleUpdateSettings(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateSettingsInvalid(t *testing.T) {
+	cfg := &config.Config{
+		SyncInterval: "5m",
+		Host:         "127.0.0.1",
+		Port:         8090,
+		BasePath:     "/",
+		Repos:        []config.Repo{{Owner: "acme", Name: "widget"}},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+	}
+	srv, _ := setupTestServerWithConfig(t, cfg)
+
+	body := bytes.NewBufferString(
+		`{"activity":{"view_mode":"kanban","time_range":"7d"}}`,
+	)
+	req := httptest.NewRequest(
+		http.MethodPut, "/api/v1/settings", body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s",
+			rr.Code, rr.Body.String())
+	}
+
+	// Verify in-memory config was not corrupted.
+	getReq := httptest.NewRequest(
+		http.MethodGet, "/api/v1/settings", nil,
+	)
+	getRR := httptest.NewRecorder()
+	srv.ServeHTTP(getRR, getReq)
+
+	var resp settingsResponse
+	if err := json.NewDecoder(getRR.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Activity.ViewMode != "flat" {
+		t.Fatalf(
+			"expected view_mode to remain flat after invalid update, got %q",
+			resp.Activity.ViewMode,
+		)
+	}
+}
+
 func TestHandleAddRepo(t *testing.T) {
 	cfg := &config.Config{
 		SyncInterval: "5m",
