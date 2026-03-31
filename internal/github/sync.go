@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +30,7 @@ type Syncer struct {
 	client   Client
 	db       *db.DB
 	repos    []RepoRef
+	reposMu  sync.Mutex
 	interval time.Duration
 	running  atomic.Bool
 	status   atomic.Value // stores *SyncStatus
@@ -46,6 +48,13 @@ func NewSyncer(client Client, database *db.DB, repos []RepoRef, interval time.Du
 	}
 	s.status.Store(&SyncStatus{})
 	return s
+}
+
+// SetRepos atomically replaces the list of repositories to sync.
+func (s *Syncer) SetRepos(repos []RepoRef) {
+	s.reposMu.Lock()
+	s.repos = repos
+	s.reposMu.Unlock()
 }
 
 // Start runs an immediate sync then launches a background ticker.
@@ -86,14 +95,19 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 	defer s.running.Store(false)
 
+	s.reposMu.Lock()
+	repos := make([]RepoRef, len(s.repos))
+	copy(repos, s.repos)
+	s.reposMu.Unlock()
+
 	s.status.Store(&SyncStatus{Running: true})
-	slog.Info("sync started", "repos", len(s.repos))
+	slog.Info("sync started", "repos", len(repos))
 
 	var lastErr string
-	for i, repo := range s.repos {
+	for i, repo := range repos {
 		slog.Info("syncing repo",
 			"repo", repo.Owner+"/"+repo.Name,
-			"progress", fmt.Sprintf("%d/%d", i+1, len(s.repos)),
+			"progress", fmt.Sprintf("%d/%d", i+1, len(repos)),
 		)
 		if err := s.syncRepo(ctx, repo); err != nil {
 			slog.Error("sync repo failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
@@ -101,7 +115,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 		}
 	}
 
-	slog.Info("sync complete", "repos", len(s.repos))
+	slog.Info("sync complete", "repos", len(repos))
 	s.status.Store(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),
