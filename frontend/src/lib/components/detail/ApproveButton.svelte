@@ -140,10 +140,10 @@
   }
 
   .btn--green {
-    background: #16a34a;
+    background: #1a7f37;
   }
   .btn--green:hover:not(:disabled) {
-    background: #15803d;
+    background: #176b2e;
   }
 
   .btn--approve {

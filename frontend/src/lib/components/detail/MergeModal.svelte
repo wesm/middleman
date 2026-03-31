@@ -384,10 +384,10 @@
   }
 
   .btn--green {
-    background: #16a34a;
+    background: #1a7f37;
     color: #fff;
   }
   .btn--green:hover:not(:disabled) {
-    background: #15803d;
+    background: #176b2e;
   }
 </style>
