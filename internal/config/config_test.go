@@ -337,6 +337,9 @@ hide_bots = true
 		t.Fatalf("reloading saved config: %v", err)
 	}
 
+	if cfg2.GitHubTokenEnv != "MY_TOKEN" {
+		t.Fatalf("github_token_env: got %q, want %q", cfg2.GitHubTokenEnv, "MY_TOKEN")
+	}
 	if cfg2.SyncInterval != cfg.SyncInterval {
 		t.Fatalf("sync_interval: got %q, want %q",
 			cfg2.SyncInterval, cfg.SyncInterval)

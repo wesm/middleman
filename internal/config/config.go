@@ -15,6 +15,16 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+const (
+	defaultGitHubTokenEnv = "MIDDLEMAN_GITHUB_TOKEN"
+	defaultSyncInterval   = "5m"
+	defaultHost           = "127.0.0.1"
+	defaultPort           = 8090
+	defaultViewMode       = "flat"
+	defaultTimeRange      = "7d"
+	defaultBasePath       = "/"
+)
+
 type Repo struct {
 	Owner string `toml:"owner"`
 	Name  string `toml:"name"`
@@ -60,10 +70,10 @@ func homeDir() string {
 
 func Load(path string) (*Config, error) {
 	cfg := &Config{
-		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
-		Host:           "127.0.0.1",
-		Port:           8090,
+		SyncInterval:   defaultSyncInterval,
+		GitHubTokenEnv: defaultGitHubTokenEnv,
+		Host:           defaultHost,
+		Port:           defaultPort,
 	}
 
 	data, err := os.ReadFile(path)
@@ -80,14 +90,14 @@ func Load(path string) (*Config, error) {
 	}
 
 	if cfg.Activity.ViewMode == "" {
-		cfg.Activity.ViewMode = "flat"
+		cfg.Activity.ViewMode = defaultViewMode
 	}
 	if cfg.Activity.TimeRange == "" {
-		cfg.Activity.TimeRange = "7d"
+		cfg.Activity.TimeRange = defaultTimeRange
 	}
 
 	if cfg.BasePath == "" {
-		cfg.BasePath = "/"
+		cfg.BasePath = defaultBasePath
 	} else {
 		bp := "/" + strings.Trim(cfg.BasePath, "/")
 		if bp != "/" {
@@ -207,13 +217,13 @@ func (c *Config) Save(path string) error {
 		Repos:        c.Repos,
 		Activity:     c.Activity,
 	}
-	if c.BasePath != "/" {
+	if c.BasePath != defaultBasePath {
 		f.BasePath = c.BasePath
 	}
 	if c.DataDir != DefaultDataDir() {
 		f.DataDir = c.DataDir
 	}
-	if c.GitHubTokenEnv != "MIDDLEMAN_GITHUB_TOKEN" {
+	if c.GitHubTokenEnv != defaultGitHubTokenEnv {
 		f.GitHubTokenEnv = c.GitHubTokenEnv
 	}
 
