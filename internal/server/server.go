@@ -52,12 +52,35 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 	s.mux.HandleFunc("GET /api/v1/sync/status", s.handleSyncStatus)
 
 	if frontend != nil {
+		// Read index.html once and inject the runtime base path.
+		indexBytes, err := fs.ReadFile(frontend, "index.html")
+		if err != nil {
+			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
+		}
+		idx := string(indexBytes)
+		// Inject runtime base path for the SPA.
+		idx = strings.Replace(idx, "<head>",
+			`<head><script>window.__BASE_PATH__="`+basePath+`";</script>`, 1)
+		// Rewrite asset URLs to include the base path prefix.
+		if basePath != "/" {
+			prefix := strings.TrimSuffix(basePath, "/")
+			idx = strings.ReplaceAll(idx, `src="/assets/`, `src="`+prefix+`/assets/`)
+			idx = strings.ReplaceAll(idx, `href="/assets/`, `href="`+prefix+`/assets/`)
+		}
+		indexHTML := idx
+
 		fileServer := http.FileServerFS(frontend)
 		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// Strip leading slash: fs.FS paths must not start with '/'.
 			name := strings.TrimPrefix(r.URL.Path, "/")
 			if name == "" {
 				name = "index.html"
+			}
+			// Serve index.html with injected base path for SPA routes.
+			if name == "index.html" {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(indexHTML))
+				return
 			}
 			// Try serving the exact file; fall back to index.html for SPA routing.
 			f, err := frontend.Open(name)
@@ -66,8 +89,9 @@ func New(database *db.DB, gh ghclient.Client, syncer *ghclient.Syncer, frontend 
 				fileServer.ServeHTTP(w, r)
 				return
 			}
-			// File not found — serve index.html so the SPA router handles the path.
-			http.ServeFileFS(w, r, frontend, "index.html")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(indexHTML))
 		})
 	}
 

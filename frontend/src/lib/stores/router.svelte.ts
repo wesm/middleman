@@ -3,9 +3,8 @@ export type Route =
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } };
 
-// Base path from Vite build (e.g., "/" or "/middleman/").
-// Strip trailing slash for prefix-stripping; keep "/" as empty string.
-const rawBase = import.meta.env.BASE_URL ?? "/";
+// Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
+const rawBase = window.__BASE_PATH__ ?? "/";
 const basePrefix = rawBase === "/" ? "" : rawBase.replace(/\/$/, "");
 
 export function getBasePath(): string {
