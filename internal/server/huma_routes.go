@@ -183,22 +183,52 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/activity", s.listActivity)
 	huma.Get(api, "/pulls", s.listPulls)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
-	huma.Put(api, "/repos/{owner}/{name}/pulls/{number}/state", s.setKanbanState)
-	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/comments", s.postComment)
+	huma.Register(api, huma.Operation{
+		OperationID:   "set-kanban-state",
+		Method:        http.MethodPut,
+		Path:          "/repos/{owner}/{name}/pulls/{number}/state",
+		DefaultStatus: http.StatusOK,
+	}, s.setKanbanState)
+	huma.Register(api, huma.Operation{
+		OperationID:   "post-pr-comment",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/pulls/{number}/comments",
+		DefaultStatus: http.StatusCreated,
+	}, s.postComment)
 
 	huma.Get(api, "/issues", s.listIssues)
 	huma.Get(api, "/repos/{owner}/{name}/issues/{number}", s.getIssue)
-	huma.Post(api, "/repos/{owner}/{name}/issues/{number}/comments", s.postIssueComment)
+	huma.Register(api, huma.Operation{
+		OperationID:   "post-issue-comment",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/issues/{number}/comments",
+		DefaultStatus: http.StatusCreated,
+	}, s.postIssueComment)
 
-	huma.Put(api, "/starred", s.setStarred)
-	huma.Delete(api, "/starred", s.unsetStarred)
+	huma.Register(api, huma.Operation{
+		OperationID:   "set-starred",
+		Method:        http.MethodPut,
+		Path:          "/starred",
+		DefaultStatus: http.StatusOK,
+	}, s.setStarred)
+	huma.Register(api, huma.Operation{
+		OperationID:   "unset-starred",
+		Method:        http.MethodDelete,
+		Path:          "/starred",
+		DefaultStatus: http.StatusOK,
+	}, s.unsetStarred)
 
 	huma.Get(api, "/repos", s.listRepos)
 	huma.Get(api, "/repos/{owner}/{name}", s.getRepo)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/merge", s.mergePR)
-	huma.Post(api, "/sync", s.triggerSync)
+	huma.Register(api, huma.Operation{
+		OperationID:   "trigger-sync",
+		Method:        http.MethodPost,
+		Path:          "/sync",
+		DefaultStatus: http.StatusAccepted,
+	}, s.triggerSync)
 	huma.Get(api, "/sync/status", s.syncStatus)
 }
 

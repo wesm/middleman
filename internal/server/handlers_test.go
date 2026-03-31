@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -511,4 +512,47 @@ func TestHandleSetStarredRejectsInvalidItemType(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	require.Contains(t, rr.Body.String(), "item_type must be 'pr' or 'issue'")
+}
+
+func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	body := rr.Body.String()
+	require.Contains(t, body, `"/activity"`)
+	require.Contains(t, body, `"name":"since"`)
+	require.Contains(t, body, `"capped"`)
+	require.NotContains(t, body, `"name":"before"`)
+	require.NotContains(t, body, `"has_more"`)
+}
+
+func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	spec := rr.Body.String()
+	require.Contains(t, spec, `"/sync":{"post":{"operationId":"trigger-sync"`)
+	require.Contains(t, spec, `"/starred":{"delete":{"operationId":"unset-starred"`)
+	require.Contains(t, spec, `"/repos/{owner}/{name}/pulls/{number}/comments":{"post":{"operationId":"post-pr-comment"`)
+	require.Contains(t, spec, `"trigger-sync","responses":{"202":{"description":"Accepted"}`)
+	require.Contains(t, spec, `"set-starred","requestBody"`)
+	require.Contains(t, spec, `"responses":{"200":{"description":"OK"}`)
+	require.True(t,
+		strings.Contains(spec, `"operationId":"post-pr-comment","parameters"`) ||
+			strings.Contains(spec, `"operationId":"post-pr-comment","requestBody"`),
+		"expected post-pr-comment operation to be present",
+	)
+	require.Contains(t, spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PREvent"}}},"description":"Created"}`)
+	require.Contains(t, spec, `"operationId":"post-issue-comment"`)
+	require.Contains(t, spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
 }

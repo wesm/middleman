@@ -115,8 +115,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post repos by owner by name issues by number comments */
-        post: operations["post-repos-by-owner-by-name-issues-by-number-comments"];
+        post: operations["post-issue-comment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -166,8 +165,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post repos by owner by name pulls by number comments */
-        post: operations["post-repos-by-owner-by-name-pulls-by-number-comments"];
+        post: operations["post-pr-comment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -216,8 +214,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Put repos by owner by name pulls by number state */
-        put: operations["put-repos-by-owner-by-name-pulls-by-number-state"];
+        put: operations["set-kanban-state"];
         post?: never;
         delete?: never;
         options?: never;
@@ -233,11 +230,9 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Put starred */
-        put: operations["put-starred"];
+        put: operations["set-starred"];
         post?: never;
-        /** Delete starred */
-        delete: operations["delete-starred"];
+        delete: operations["unset-starred"];
         options?: never;
         head?: never;
         patch?: never;
@@ -252,8 +247,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post sync */
-        post: operations["post-sync"];
+        post: operations["trigger-sync"];
         delete?: never;
         options?: never;
         head?: never;
@@ -313,7 +307,7 @@ export interface components {
              * @example /api/v1/schemas/ActivityResponse.json
              */
             readonly $schema?: string;
-            has_more: boolean;
+            capped: boolean;
             items: components["schemas"]["ActivityItemResponse"][] | null;
         };
         ApprovePRInputBody: {
@@ -687,9 +681,8 @@ export interface operations {
                 repo?: string;
                 types?: string[] | null;
                 search?: string;
-                limit?: number;
-                before?: string;
                 after?: string;
+                since?: string;
             };
             header?: never;
             path?: never;
@@ -884,7 +877,7 @@ export interface operations {
             };
         };
     };
-    "post-repos-by-owner-by-name-issues-by-number-comments": {
+    "post-issue-comment": {
         parameters: {
             query?: never;
             header?: never;
@@ -901,8 +894,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -991,7 +984,7 @@ export interface operations {
             };
         };
     };
-    "post-repos-by-owner-by-name-pulls-by-number-comments": {
+    "post-pr-comment": {
         parameters: {
             query?: never;
             header?: never;
@@ -1008,8 +1001,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1098,7 +1091,7 @@ export interface operations {
             };
         };
     };
-    "put-repos-by-owner-by-name-pulls-by-number-state": {
+    "set-kanban-state": {
         parameters: {
             query?: never;
             header?: never;
@@ -1115,8 +1108,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description No Content */
-            204: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1133,7 +1126,7 @@ export interface operations {
             };
         };
     };
-    "put-starred": {
+    "set-starred": {
         parameters: {
             query?: never;
             header?: never;
@@ -1146,8 +1139,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description No Content */
-            204: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1164,7 +1157,7 @@ export interface operations {
             };
         };
     };
-    "delete-starred": {
+    "unset-starred": {
         parameters: {
             query?: never;
             header?: never;
@@ -1177,8 +1170,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description No Content */
-            204: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1195,7 +1188,7 @@ export interface operations {
             };
         };
     };
-    "post-sync": {
+    "trigger-sync": {
         parameters: {
             query?: never;
             header?: never;
@@ -1204,8 +1197,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No Content */
-            204: {
+            /** @description Accepted */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
