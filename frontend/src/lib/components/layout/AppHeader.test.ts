@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AppHeader from "./AppHeader.svelte";
 
-function mockMatchMedia(matches: boolean): void {
+type MediaChangeCallback = (event: MediaQueryListEvent) => void;
+
+function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): void {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     writable: true,
@@ -13,7 +15,9 @@ function mockMatchMedia(matches: boolean): void {
       onchange: null,
       addListener: vi.fn(),
       removeListener: vi.fn(),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn().mockImplementation((_event: string, cb: MediaChangeCallback) => {
+        listeners?.push(cb);
+      }),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
@@ -126,6 +130,32 @@ describe("AppHeader", () => {
     const button = screen.getByTitle("Toggle theme");
 
     await fireEvent.click(button);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    vi.restoreAllMocks();
+  });
+
+  it("media query change does not override manual toggle when storage is blocked", async () => {
+    const listeners: MediaChangeCallback[] = [];
+
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("blocked");
+    });
+
+    mockMatchMedia(false, listeners);
+    render(AppHeader);
+
+    const button = screen.getByTitle("Toggle theme");
+    await fireEvent.click(button);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    // Simulate OS switching to light — should NOT override manual toggle
+    for (const cb of listeners) {
+      cb({ matches: false } as MediaQueryListEvent);
+    }
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
     vi.restoreAllMocks();

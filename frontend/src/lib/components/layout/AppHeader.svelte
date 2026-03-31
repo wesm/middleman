@@ -23,12 +23,13 @@
   }
 
   let dark = $state(loadInitialTheme());
+  let manualOverride = storedTheme() !== null;
 
   onMount(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const handleChange = (event: MediaQueryListEvent) => {
-      if (storedTheme() === null) {
+      if (!manualOverride) {
         dark = event.matches;
       }
     };
@@ -46,6 +47,7 @@
 
   function toggleTheme(): void {
     dark = !dark;
+    manualOverride = true;
     try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch {
       // Storage blocked — toggle still works for this session
     }
