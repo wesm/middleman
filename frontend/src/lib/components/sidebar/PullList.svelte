@@ -13,6 +13,8 @@
     setFilterRepo,
     getFilterStarred,
     setFilterStarred,
+    getFilterState,
+    setFilterState,
   } from "../../stores/pulls.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
@@ -69,6 +71,15 @@
       onchange={(repo) => { setFilterRepo(repo); void loadPulls(); }}
     />
     <span class="count-badge">{getPulls().length} PRs</span>
+    <div class="state-toggle">
+      {#each ["open", "closed", "all"] as s (s)}
+        <button
+          class="state-btn"
+          class:state-btn--active={getFilterState() === s}
+          onclick={() => { setFilterState(s); void loadPulls(); }}
+        >{s === "open" ? "Open" : s === "closed" ? "Closed" : "All"}</button>
+      {/each}
+    </div>
   </div>
   <div class="search-bar">
     <div class="search-input-wrap">
@@ -102,6 +113,9 @@
     </button>
   </div>
 
+  {#if getFilterState() !== "open"}
+    <p class="state-note">Showing items closed after middleman began tracking them</p>
+  {/if}
   <div class="list-body">
     {#if isLoading() && getPulls().length === 0}
       <p class="state-message">Loading…</p>
@@ -300,5 +314,35 @@
 
   .add-repo-link:hover {
     color: var(--accent-blue);
+  }
+
+  .state-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-inset);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .state-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .state-btn--active {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+  .state-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    margin: 0;
+    border-bottom: 1px solid var(--border-muted);
   }
 </style>

@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -147,6 +148,21 @@ type mergePROutput struct {
 	Body mergePRBody
 }
 
+type githubStateInput struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		State string `json:"state"`
+	}
+}
+
+type githubStateOutput struct {
+	Body struct {
+		State string `json:"state"`
+	}
+}
+
 type listReposOutput struct {
 	Body []db.Repo
 }
@@ -227,6 +243,18 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/merge", s.mergePR)
 	huma.Register(api, huma.Operation{
+		OperationID:   "set-pr-github-state",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/pulls/{number}/github-state",
+		DefaultStatus: http.StatusOK,
+	}, s.setPRGitHubState)
+	huma.Register(api, huma.Operation{
+		OperationID:   "set-issue-github-state",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/issues/{number}/github-state",
+		DefaultStatus: http.StatusOK,
+	}, s.setIssueGitHubState)
+	huma.Register(api, huma.Operation{
 		OperationID:   "trigger-sync",
 		Method:        http.MethodPost,
 		Path:          "/sync",
@@ -244,6 +272,17 @@ func NewOpenAPI() *huma.OpenAPI {
 }
 
 func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
+	if input.State != "" {
+		valid := map[string]bool{
+			"open": true, "closed": true, "all": true,
+		}
+		if !valid[input.State] {
+			return nil, huma.Error400BadRequest(
+				"state must be one of: open, closed, all",
+			)
+		}
+	}
+
 	opts := db.ListPullsOpts{
 		State:       input.State,
 		KanbanState: input.Kanban,
@@ -352,6 +391,17 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 }
 
 func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
+	if input.State != "" {
+		valid := map[string]bool{
+			"open": true, "closed": true, "all": true,
+		}
+		if !valid[input.State] {
+			return nil, huma.Error400BadRequest(
+				"state must be one of: open, closed, all",
+			)
+		}
+	}
+
 	opts := db.ListIssuesOpts{
 		State:   input.State,
 		Search:  input.Q,
@@ -536,6 +586,174 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 			Message: result.GetMessage(),
 		},
 	}, nil
+}
+
+func (s *Server) setPRGitHubState(
+	ctx context.Context, input *githubStateInput,
+) (*githubStateOutput, error) {
+	if input.Body.State != "open" && input.Body.State != "closed" {
+		return nil, huma.Error400BadRequest(
+			"state must be 'open' or 'closed'",
+		)
+	}
+
+	pr, err := s.db.GetPullRequest(
+		ctx, input.Owner, input.Name, input.Number,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get pull request: " + err.Error(),
+		)
+	}
+	if pr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+	if pr.State == "merged" {
+		return nil, huma.Error409Conflict(
+			"cannot change state of a merged pull request",
+		)
+	}
+
+	if _, err := s.gh.EditPullRequest(
+		ctx, input.Owner, input.Name,
+		input.Number, input.Body.State,
+	); err != nil {
+		var ghErr *gh.ErrorResponse
+		if errors.As(err, &ghErr) &&
+			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
+			// Re-fetch to sync local state and determine the real cause.
+			repoID, repoErr := s.lookupRepoID(
+				ctx, input.Owner, input.Name,
+			)
+			if repoErr == nil {
+				ghPR, fetchErr := s.gh.GetPullRequest(
+					ctx, input.Owner, input.Name, input.Number,
+				)
+				if fetchErr == nil {
+					normalized := ghclient.NormalizePR(repoID, ghPR)
+					_, _ = s.db.UpsertPullRequest(ctx, normalized)
+					if ghPR.GetMerged() {
+						return nil, huma.Error409Conflict(
+							"cannot change state of a merged pull request",
+						)
+					}
+					// Already in requested state (concurrent edit).
+					if ghPR.GetState() == input.Body.State {
+						out := &githubStateOutput{}
+						out.Body.State = input.Body.State
+						return out, nil
+					}
+				}
+			}
+		}
+		return nil, huma.Error502BadGateway(
+			"GitHub API error: " + err.Error(),
+		)
+	}
+
+	repoID, err := s.lookupRepoID(ctx, input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get repo: " + err.Error(),
+		)
+	}
+
+	var closedAt *time.Time
+	if input.Body.State == "closed" {
+		now := time.Now()
+		closedAt = &now
+	}
+	if err := s.db.UpdatePRState(
+		ctx, repoID, input.Number,
+		input.Body.State, nil, closedAt,
+	); err != nil {
+		return nil, huma.Error500InternalServerError(
+			"update pr state: " + err.Error(),
+		)
+	}
+
+	out := &githubStateOutput{}
+	out.Body.State = input.Body.State
+	return out, nil
+}
+
+func (s *Server) setIssueGitHubState(
+	ctx context.Context, input *githubStateInput,
+) (*githubStateOutput, error) {
+	if input.Body.State != "open" && input.Body.State != "closed" {
+		return nil, huma.Error400BadRequest(
+			"state must be 'open' or 'closed'",
+		)
+	}
+
+	issue, err := s.db.GetIssue(
+		ctx, input.Owner, input.Name, input.Number,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get issue: " + err.Error(),
+		)
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found")
+	}
+
+	if _, err := s.gh.EditIssue(
+		ctx, input.Owner, input.Name,
+		input.Number, input.Body.State,
+	); err != nil {
+		var ghErr *gh.ErrorResponse
+		if errors.As(err, &ghErr) &&
+			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
+			// Re-fetch to sync local state. If already in the
+			// requested state (concurrent edit), treat as success.
+			repoID, repoErr := s.lookupRepoID(
+				ctx, input.Owner, input.Name,
+			)
+			if repoErr == nil {
+				ghIssue, fetchErr := s.gh.GetIssue(
+					ctx, input.Owner, input.Name, input.Number,
+				)
+				if fetchErr == nil {
+					normalized := ghclient.NormalizeIssue(repoID, ghIssue)
+					_, _ = s.db.UpsertIssue(ctx, normalized)
+					if ghIssue.GetState() == input.Body.State {
+						out := &githubStateOutput{}
+						out.Body.State = input.Body.State
+						return out, nil
+					}
+				}
+			}
+		}
+		return nil, huma.Error502BadGateway(
+			"GitHub API error: " + err.Error(),
+		)
+	}
+
+	repoID, err := s.lookupRepoID(ctx, input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get repo: " + err.Error(),
+		)
+	}
+
+	var closedAt *time.Time
+	if input.Body.State == "closed" {
+		now := time.Now()
+		closedAt = &now
+	}
+	if err := s.db.UpdateIssueState(
+		ctx, repoID, input.Number,
+		input.Body.State, closedAt,
+	); err != nil {
+		return nil, huma.Error500InternalServerError(
+			"update issue state: " + err.Error(),
+		)
+	}
+
+	out := &githubStateOutput{}
+	out.Body.State = input.Body.State
+	return out, nil
 }
 
 func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, error) {

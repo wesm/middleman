@@ -120,6 +120,18 @@ func (m *mockClient) MergePullRequest(
 	}, nil
 }
 
+func (m *mockClient) EditPullRequest(
+	_ context.Context, _, _ string, _ int, state string,
+) (*gh.PullRequest, error) {
+	return &gh.PullRequest{State: &state}, nil
+}
+
+func (m *mockClient) EditIssue(
+	_ context.Context, _, _ string, _ int, state string,
+) (*gh.Issue, error) {
+	return &gh.Issue{State: &state}, nil
+}
+
 // makeTimestamp is a helper for constructing go-github Timestamp values.
 func makeTimestamp(t time.Time) *gh.Timestamp {
 	return &gh.Timestamp{Time: t}

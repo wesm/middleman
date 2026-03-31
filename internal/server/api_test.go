@@ -21,7 +21,10 @@ import (
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
 	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn           func(context.Context, string, string, int) (*gh.Issue, error)
 	markReadyForReviewFn func(context.Context, string, string, int) (*gh.PullRequest, error)
+	editPullRequestFn    func(context.Context, string, string, int, string) (*gh.PullRequest, error)
+	editIssueFn          func(context.Context, string, string, int, string) (*gh.Issue, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -32,7 +35,10 @@ func (m *mockGH) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, er
 	return nil, nil
 }
 
-func (m *mockGH) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error) {
+	if m.getIssueFn != nil {
+		return m.getIssueFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 
@@ -122,8 +128,31 @@ func (m *mockGH) MergePullRequest(
 	}, nil
 }
 
+func (m *mockGH) EditPullRequest(
+	ctx context.Context, owner, repo string, number int, state string,
+) (*gh.PullRequest, error) {
+	if m.editPullRequestFn != nil {
+		return m.editPullRequestFn(ctx, owner, repo, number, state)
+	}
+	return &gh.PullRequest{State: &state}, nil
+}
+
+func (m *mockGH) EditIssue(
+	ctx context.Context, owner, repo string, number int, state string,
+) (*gh.Issue, error) {
+	if m.editIssueFn != nil {
+		return m.editIssueFn(ctx, owner, repo, number, state)
+	}
+	return &gh.Issue{State: &state}, nil
+}
+
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
+	t.Helper()
+	return setupTestServerWithMock(t, &mockGH{})
+}
+
+func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -133,7 +162,6 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
 	srv := New(database, mock, syncer, nil, "/")
 	return srv, database
@@ -522,6 +550,316 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 	require.Contains(t, body, `"capped"`)
 	require.NotContains(t, body, `"name":"before"`)
 	require.NotContains(t, body, `"has_more"`)
+}
+
+// seedIssue inserts a repo and an issue into the DB.
+func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) {
+	t.Helper()
+	ctx := context.Background()
+	repoID, err := database.UpsertRepo(ctx, owner, name)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issue := &db.Issue{
+		RepoID: repoID, GitHubID: int64(number) * 1000, Number: number,
+		URL:   "https://github.com/" + owner + "/" + name + "/issues/1",
+		Title: "Test Issue", Author: "testuser", State: state,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	}
+	if state == "closed" {
+		issue.ClosedAt = &now
+	}
+	_, err = database.UpsertIssue(ctx, issue)
+	require.NoError(t, err)
+}
+
+func TestAPIClosePR(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(t, err)
+	require.Equal(t, "closed", pr.State)
+	require.NotNil(t, pr.ClosedAt)
+}
+
+func TestAPIReopenPR(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	ctx := context.Background()
+
+	// Close it first.
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	require.NoError(t, err)
+	now := time.Now()
+	require.NoError(t, database.UpdatePRState(ctx, repo.ID, 1, "closed", nil, &now))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		ctx, "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "open"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	pr, err := database.GetPullRequest(ctx, "acme", "widget", 1)
+	require.NoError(t, err)
+	require.Equal(t, "open", pr.State)
+	require.Nil(t, pr.ClosedAt, "closed_at should be cleared on reopen")
+}
+
+func TestAPIClosePRRejectsMerged(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	ctx := context.Background()
+
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	require.NoError(t, err)
+	now := time.Now()
+	require.NoError(t, database.UpdatePRState(ctx, repo.ID, 1, "merged", &now, &now))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		ctx, "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "open"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusConflict, resp.StatusCode())
+}
+
+func TestAPIClosePRInvalidState(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "nonsense"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPICloseIssue(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+		context.Background(), "acme", "widget", 5,
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.NoError(t, err)
+	require.Equal(t, "closed", issue.State)
+	require.NotNil(t, issue.ClosedAt)
+}
+
+func TestAPIReopenIssue(t *testing.T) {
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "closed")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+		context.Background(), "acme", "widget", 5,
+		generated.SetIssueGithubStateJSONRequestBody{State: "open"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.NoError(t, err)
+	require.Equal(t, "open", issue.State)
+	require.Nil(t, issue.ClosedAt, "closed_at should be cleared on reopen")
+}
+
+func TestAPIListPullsStateFilter(t *testing.T) {
+	srv, database := setupTestServer(t)
+	ctx := context.Background()
+
+	seedPR(t, database, "acme", "widget", 1) // open
+	seedPR(t, database, "acme", "widget", 2) // will close
+	seedPR(t, database, "acme", "widget", 3) // will merge
+
+	repo, _ := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	now := time.Now()
+	_ = database.UpdatePRState(ctx, repo.ID, 2, "closed", nil, &now)
+	_ = database.UpdatePRState(ctx, repo.ID, 3, "merged", &now, &now)
+
+	client := setupTestClient(t, srv)
+
+	// Default (open)
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.Len(t, *resp.JSON200, 1)
+
+	// Closed (includes merged)
+	state := "closed"
+	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
+	require.NoError(t, err)
+	require.Len(t, *resp.JSON200, 2)
+
+	// All
+	state = "all"
+	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
+	require.NoError(t, err)
+	require.Len(t, *resp.JSON200, 3)
+
+	// Invalid
+	state = "bogus"
+	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIListIssuesStateFilter(t *testing.T) {
+	srv, database := setupTestServer(t)
+	ctx := context.Background()
+
+	seedIssue(t, database, "acme", "widget", 1, "open")
+	seedIssue(t, database, "acme", "widget", 2, "closed")
+
+	client := setupTestClient(t, srv)
+
+	// Default (open)
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, *resp.JSON200, 1)
+
+	// Closed
+	state := "closed"
+	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
+	require.NoError(t, err)
+	require.Len(t, *resp.JSON200, 1)
+
+	// All
+	state = "all"
+	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
+	require.NoError(t, err)
+	require.Len(t, *resp.JSON200, 2)
+}
+
+func make422Error() error {
+	return &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},
+		Message:  "Validation Failed",
+	}
+}
+
+func TestAPIClosePR422AlreadyClosed(t *testing.T) {
+	// EditPullRequest returns 422, but re-fetch shows PR is already closed.
+	// Should succeed since the requested state matches.
+	state := "closed"
+	mock := &mockGH{
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.PullRequest, error) {
+			return nil, make422Error()
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			id := int64(1000)
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			closedAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID: &id, Number: new(1), State: &state,
+				Title: new("PR"), HTMLURL: new("https://example.com"),
+				User:      &gh.User{Login: new("u")},
+				Head:      &gh.PullRequestBranch{Ref: new("f")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+				CreatedAt: &now, UpdatedAt: &now, ClosedAt: &closedAt,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	pr, _ := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	require.Equal(t, "closed", pr.State)
+}
+
+func TestAPIClosePR422Merged(t *testing.T) {
+	// EditPullRequest returns 422, re-fetch shows PR is merged.
+	// Should return 409.
+	merged := "closed"
+	mock := &mockGH{
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.PullRequest, error) {
+			return nil, make422Error()
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			id := int64(1000)
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			mergedBool := true
+			return &gh.PullRequest{
+				ID: &id, Number: new(1), State: &merged, Merged: &mergedBool,
+				Title: new("PR"), HTMLURL: new("https://example.com"),
+				User:      &gh.User{Login: new("u")},
+				Head:      &gh.PullRequestBranch{Ref: new("f")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+				CreatedAt: &now, UpdatedAt: &now,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusConflict, resp.StatusCode())
+}
+
+func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
+	state := "closed"
+	mock := &mockGH{
+		editIssueFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.Issue, error) {
+			return nil, make422Error()
+		},
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			id := int64(5000)
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			closedAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.Issue{
+				ID: &id, Number: new(5), State: &state,
+				Title: new("Issue"), HTMLURL: new("https://example.com"),
+				User:      &gh.User{Login: new("u")},
+				CreatedAt: &now, UpdatedAt: &now, ClosedAt: &closedAt,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+		context.Background(), "acme", "widget", 5,
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	issue, _ := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.Equal(t, "closed", issue.State)
 }
 
 func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {

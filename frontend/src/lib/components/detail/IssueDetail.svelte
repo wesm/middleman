@@ -4,10 +4,13 @@
     isIssueDetailLoading,
     getIssueDetailError,
     loadIssueDetail,
+    loadIssues,
     startIssueDetailPolling,
     stopIssueDetailPolling,
     toggleIssueStar,
   } from "../../stores/issues.svelte.js";
+  import { loadActivity } from "../../stores/activity.svelte.js";
+  import { client } from "../../api/runtime.js";
   import type { IssueLabel } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -67,6 +70,40 @@
       number,
       detail.issue.Starred,
     );
+  }
+
+  let stateSubmitting = $state(false);
+  let stateError = $state<string | null>(null);
+
+  async function handleStateChange(
+    newState: "open" | "closed",
+  ): Promise<void> {
+    stateSubmitting = true;
+    stateError = null;
+    try {
+      const { error: requestError } = await client.POST(
+        "/repos/{owner}/{name}/issues/{number}/github-state",
+        {
+          params: { path: { owner, name, number } },
+          body: { state: newState },
+        },
+      );
+      if (requestError) {
+        throw new Error(
+          requestError.detail
+            ?? requestError.title
+            ?? "failed to change issue state",
+        );
+      }
+      await loadIssueDetail(owner, name, number);
+      await loadIssues();
+      await loadActivity();
+    } catch (err) {
+      stateError =
+        err instanceof Error ? err.message : String(err);
+    } finally {
+      stateSubmitting = false;
+    }
   }
 </script>
 
@@ -162,6 +199,22 @@
           </div>
         </div>
       {/if}
+
+      <!-- Actions -->
+      <div class="actions-row">
+        {#if issue.State === "open"}
+          <button class="btn--close" disabled={stateSubmitting} onclick={() => handleStateChange("closed")}>
+            {stateSubmitting ? "Closing..." : "Close issue"}
+          </button>
+        {:else}
+          <button class="btn--reopen" disabled={stateSubmitting} onclick={() => handleStateChange("open")}>
+            {stateSubmitting ? "Reopening..." : "Reopen issue"}
+          </button>
+        {/if}
+        {#if stateError}
+          <span class="action-error">{stateError}</span>
+        {/if}
+      </div>
 
       <!-- Comment box -->
       <div class="section">
@@ -389,6 +442,45 @@
     padding: 10px 12px;
     word-break: break-word;
     line-height: 1.6;
+  }
+
+  .actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+  }
+  .btn--close {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .btn--close:hover {
+    background: var(--accent-red, #d73a49);
+    color: #fff;
+    border-color: var(--accent-red, #d73a49);
+  }
+  .btn--reopen {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--accent-green, #2ea043);
+    background: var(--accent-green, #2ea043);
+    color: #fff;
+    cursor: pointer;
+  }
+  .btn--reopen:hover {
+    filter: brightness(1.1);
+  }
+  .action-error {
+    font-size: 11px;
+    color: var(--accent-red, #d73a49);
   }
 
 </style>

@@ -19,6 +19,7 @@ let error = $state<string | null>(null);
 let filterRepo = $state<string | undefined>(undefined);
 let filterKanban = $state<KanbanStatus | undefined>(undefined);
 let filterStarred = $state(false);
+let filterState = $state<string>("open");
 let searchQuery = $state<string | undefined>(undefined);
 let selectedPR = $state<{ owner: string; name: string; number: number } | null>(null);
 
@@ -69,6 +70,14 @@ export function getFilterStarred(): boolean {
 
 export function setFilterStarred(v: boolean): void {
   filterStarred = v;
+}
+
+export function getFilterState(): string {
+  return filterState;
+}
+
+export function setFilterState(s: string): void {
+  filterState = s;
 }
 
 /** Returns PRs in display order (grouped by repo, then by activity within group). */
@@ -189,6 +198,7 @@ export async function loadPulls(params?: PullsParams): Promise<void> {
   error = null;
   try {
     const merged: PullsParams = {
+      state: filterState,
       repo: filterRepo,
       kanban: filterKanban,
       starred: filterStarred || undefined,

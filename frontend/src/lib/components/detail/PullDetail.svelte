@@ -10,6 +10,7 @@
     toggleDetailPRStar,
   } from "../../stores/detail.svelte.js";
   import { loadPulls } from "../../stores/pulls.svelte.js";
+  import { loadActivity } from "../../stores/activity.svelte.js";
   import { client } from "../../api/runtime.js";
   import type { CICheck, KanbanStatus } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
@@ -25,9 +26,10 @@
     owner: string;
     name: string;
     number: number;
+    onPullsRefresh?: () => Promise<void>;
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, onPullsRefresh }: Props = $props();
 
   $effect(() => {
     void loadDetail(owner, name, number);
@@ -48,6 +50,48 @@
         copyTimeout = null;
       }, 1500);
     });
+  }
+
+  async function refreshPulls(): Promise<void> {
+    if (onPullsRefresh) {
+      await onPullsRefresh();
+    } else {
+      await loadPulls();
+    }
+  }
+
+  let stateSubmitting = $state(false);
+  let stateError = $state<string | null>(null);
+
+  async function handleStateChange(
+    newState: "open" | "closed",
+  ): Promise<void> {
+    stateSubmitting = true;
+    stateError = null;
+    try {
+      const { error: requestError } = await client.POST(
+        "/repos/{owner}/{name}/pulls/{number}/github-state",
+        {
+          params: { path: { owner, name, number } },
+          body: { state: newState },
+        },
+      );
+      if (requestError) {
+        throw new Error(
+          requestError.detail
+            ?? requestError.title
+            ?? "failed to change PR state",
+        );
+      }
+      await loadDetail(owner, name, number);
+      await refreshPulls();
+      await loadActivity();
+    } catch (err) {
+      stateError =
+        err instanceof Error ? err.message : String(err);
+    } finally {
+      stateSubmitting = false;
+    }
   }
 
   let repoSettings = $state<{
@@ -256,28 +300,37 @@
         </select>
       </div>
 
-      <!-- Approve / Merge actions (open PRs only) -->
-      {#if pr.State === "open"}
+      <!-- Approve / Merge / Close / Reopen actions -->
+      {#if pr.State !== "merged"}
         <div class="actions-row">
-          {#if pr.IsDraft}
-            <ReadyForReviewButton {owner} {name} {number} />
-          {/if}
-          <ApproveButton {owner} {name} {number} />
-          {#if repoSettings}
-            <button
-              class="btn--merge"
-              onclick={() => { showMergeModal = true; }}
-            >
-              {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
-                Squash and merge
-              {:else if !repoSettings.allowSquash && repoSettings.allowMerge && !repoSettings.allowRebase}
-                Merge
-              {:else if !repoSettings.allowSquash && !repoSettings.allowMerge && repoSettings.allowRebase}
-                Rebase and merge
-              {:else}
-                Merge &#9662;
-              {/if}
+          {#if pr.State === "open"}
+            {#if pr.IsDraft}
+              <ReadyForReviewButton {owner} {name} {number} />
+            {/if}
+            <ApproveButton {owner} {name} {number} />
+            {#if repoSettings}
+              <button class="btn--merge" onclick={() => { showMergeModal = true; }}>
+                {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
+                  Squash and merge
+                {:else if !repoSettings.allowSquash && repoSettings.allowMerge && !repoSettings.allowRebase}
+                  Merge
+                {:else if !repoSettings.allowSquash && !repoSettings.allowMerge && repoSettings.allowRebase}
+                  Rebase and merge
+                {:else}
+                  Merge &#9662;
+                {/if}
+              </button>
+            {/if}
+            <button class="btn--close" disabled={stateSubmitting} onclick={() => handleStateChange("closed")}>
+              {stateSubmitting ? "Closing..." : "Close"}
             </button>
+          {:else if pr.State === "closed"}
+            <button class="btn--reopen" disabled={stateSubmitting} onclick={() => handleStateChange("open")}>
+              {stateSubmitting ? "Reopening..." : "Reopen"}
+            </button>
+          {/if}
+          {#if stateError}
+            <span class="action-error">{stateError}</span>
           {/if}
         </div>
       {/if}
@@ -610,6 +663,39 @@
   }
   .btn--merge:hover {
     background: #176b2e;
+  }
+
+  .btn--close {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .btn--close:hover {
+    background: var(--accent-red, #d73a49);
+    color: #fff;
+    border-color: var(--accent-red, #d73a49);
+  }
+  .btn--reopen {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--accent-green, #2ea043);
+    background: var(--accent-green, #2ea043);
+    color: #fff;
+    cursor: pointer;
+  }
+  .btn--reopen:hover {
+    filter: brightness(1.1);
+  }
+  .action-error {
+    font-size: 11px;
+    color: var(--accent-red, #d73a49);
   }
 
   .kanban-select--new { color: var(--kanban-new); }

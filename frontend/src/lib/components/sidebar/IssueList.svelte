@@ -13,6 +13,8 @@
     setIssueFilterRepo,
     getIssueFilterStarred,
     setIssueFilterStarred,
+    getIssueFilterState,
+    setIssueFilterState,
   } from "../../stores/issues.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
@@ -68,6 +70,15 @@
       onchange={(repo) => { setIssueFilterRepo(repo); void loadIssues(); }}
     />
     <span class="count-badge">{getIssues().length} issues</span>
+    <div class="state-toggle">
+      {#each ["open", "closed", "all"] as s (s)}
+        <button
+          class="state-btn"
+          class:state-btn--active={getIssueFilterState() === s}
+          onclick={() => { setIssueFilterState(s); void loadIssues(); }}
+        >{s === "open" ? "Open" : s === "closed" ? "Closed" : "All"}</button>
+      {/each}
+    </div>
   </div>
   <div class="search-bar">
     <div class="search-input-wrap">
@@ -101,6 +112,9 @@
     </button>
   </div>
 
+  {#if getIssueFilterState() !== "open"}
+    <p class="state-note">Showing items closed after middleman began tracking them</p>
+  {/if}
   <div class="list-body">
     {#if isIssuesLoading() && getIssues().length === 0}
       <p class="state-message">Loading…</p>
@@ -299,5 +313,35 @@
 
   .add-repo-link:hover {
     color: var(--accent-blue);
+  }
+
+  .state-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-inset);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .state-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .state-btn--active {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+  .state-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    margin: 0;
+    border-bottom: 1px solid var(--border-muted);
   }
 </style>

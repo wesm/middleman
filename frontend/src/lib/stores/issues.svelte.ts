@@ -6,6 +6,7 @@ let loading = $state(false);
 let error = $state<string | null>(null);
 let filterRepo = $state<string | undefined>(undefined);
 let filterStarred = $state(false);
+let filterState = $state<string>("open");
 let searchQuery = $state<string | undefined>(undefined);
 let selectedIssue = $state<{ owner: string; name: string; number: number } | null>(null);
 
@@ -42,6 +43,15 @@ export function issuesByRepo(): Map<string, Issue[]> {
 export function setIssueFilterRepo(repo: string | undefined): void { filterRepo = repo; }
 export function setIssueFilterStarred(v: boolean): void { filterStarred = v; }
 export function setIssueSearchQuery(q: string | undefined): void { searchQuery = q; }
+
+export function getIssueFilterState(): string {
+  return filterState;
+}
+
+export function setIssueFilterState(s: string): void {
+  filterState = s;
+}
+
 export function selectIssue(owner: string, name: string, number: number): void {
   selectedIssue = { owner, name, number };
 }
@@ -52,6 +62,7 @@ export async function loadIssues(params?: IssuesParams): Promise<void> {
   error = null;
   try {
     const query = {
+      state: filterState,
       repo: filterRepo,
       starred: filterStarred || undefined,
       q: searchQuery,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import { getPulls, loadPulls } from "../../stores/pulls.svelte.js";
   import { client } from "../../api/runtime.js";
@@ -8,10 +9,14 @@
 
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
 
-  $effect(() => {
+  onMount(() => {
+    void loadPulls({ state: "open" });
+    refreshHandle = setInterval(() => void loadPulls({ state: "open" }), 15_000);
+  });
+
+  onDestroy(() => {
+    if (refreshHandle !== null) clearInterval(refreshHandle);
     void loadPulls();
-    refreshHandle = setInterval(() => void loadPulls(), 15_000);
-    return () => { if (refreshHandle !== null) clearInterval(refreshHandle); };
   });
 
   function pullsForStatus(status: string): PullRequest[] {
@@ -69,7 +74,7 @@
     } catch {
       // Card will snap back when pulls refresh
     }
-    await loadPulls();
+    await loadPulls({ state: "open" });
   }
 </script>
 
@@ -103,6 +108,7 @@
           owner={drawerPR.owner}
           name={drawerPR.name}
           number={drawerPR.number}
+          onPullsRefresh={() => loadPulls({ state: "open" })}
         />
       </div>
     </aside>

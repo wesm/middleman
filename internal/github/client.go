@@ -25,6 +25,8 @@ type Client interface {
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
+	EditPullRequest(ctx context.Context, owner, repo string, number int, state string) (*gh.PullRequest, error)
+	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 }
 
 // NewClient creates a GitHub Client authenticated with the given token.
@@ -290,4 +292,34 @@ func (c *liveClient) MergePullRequest(
 		)
 	}
 	return result, nil
+}
+
+func (c *liveClient) EditPullRequest(
+	ctx context.Context, owner, repo string, number int, state string,
+) (*gh.PullRequest, error) {
+	pr, _, err := c.gh.PullRequests.Edit(
+		ctx, owner, repo, number, &gh.PullRequest{State: &state},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"editing pull request %s/%s#%d: %w",
+			owner, repo, number, err,
+		)
+	}
+	return pr, nil
+}
+
+func (c *liveClient) EditIssue(
+	ctx context.Context, owner, repo string, number int, state string,
+) (*gh.Issue, error) {
+	issue, _, err := c.gh.Issues.Edit(
+		ctx, owner, repo, number, &gh.IssueRequest{State: &state},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"editing issue %s/%s#%d: %w",
+			owner, repo, number, err,
+		)
+	}
+	return issue, nil
 }
