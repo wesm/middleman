@@ -1,7 +1,8 @@
 export type Route =
   | { page: "activity" }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
-  | { page: "issues"; selected?: { owner: string; name: string; number: number } };
+  | { page: "issues"; selected?: { owner: string; name: string; number: number } }
+  | { page: "settings" };
 
 // Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
 const rawBase = window.__BASE_PATH__ ?? "/";
@@ -43,6 +44,9 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "issues" };
   }
+  if (path === "/settings") {
+    return { page: "settings" };
+  }
   return { page: "activity" };
 }
 
@@ -52,7 +56,7 @@ export function getRoute(): Route {
   return route;
 }
 
-export function getPage(): "activity" | "pulls" | "issues" {
+export function getPage(): "activity" | "pulls" | "issues" | "settings" {
   return route.page;
 }
 

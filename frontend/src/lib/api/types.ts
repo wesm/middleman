@@ -127,3 +127,20 @@ export interface CICheck {
   url: string;
   app: string;
 }
+
+export interface ActivitySettings {
+  view_mode: "flat" | "threaded";
+  time_range: "24h" | "7d" | "30d" | "90d";
+  hide_closed: boolean;
+  hide_bots: boolean;
+}
+
+export interface ConfigRepo {
+  owner: string;
+  name: string;
+}
+
+export interface Settings {
+  repos: ConfigRepo[];
+  activity: ActivitySettings;
+}

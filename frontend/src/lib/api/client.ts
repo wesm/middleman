@@ -1,4 +1,4 @@
-import type { Issue, IssueDetail, KanbanStatus, PullDetail, PullRequest, Repo, SyncStatus } from "./types.js";
+import type { Issue, IssueDetail, KanbanStatus, PullDetail, PullRequest, Repo, Settings, SyncStatus } from "./types.js";
 
 const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
 const BASE = `${basePath}/api/v1`;
@@ -201,4 +201,36 @@ export async function unsetStarred(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ item_type: itemType, owner, name, number }),
   });
+}
+
+export async function getSettings(): Promise<Settings> {
+  return request<Settings>("/settings");
+}
+
+export async function updateSettings(
+  settings: { activity: Settings["activity"] },
+): Promise<Settings> {
+  return request<Settings>("/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function addRepo(
+  owner: string,
+  name: string,
+): Promise<{ owner: string; name: string }> {
+  return request("/repos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner, name }),
+  });
+}
+
+export async function removeRepo(
+  owner: string,
+  name: string,
+): Promise<void> {
+  await request(`/repos/${owner}/${name}`, { method: "DELETE" });
 }
