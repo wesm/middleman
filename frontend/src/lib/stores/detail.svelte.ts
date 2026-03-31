@@ -174,18 +174,12 @@ export async function updateKanbanState(
         reloads.push(loadDetail(owner, name, number));
       }
       await Promise.all(reloads);
-      // Allow older in-flight requests to still reconcile, but
-      // only if no newer request started during the reload.
-      if (seq === kanbanSeqByPR.get(key)) {
-        kanbanSeqByPR.set(key, seq - 1);
-      }
     }
     return;
   }
-  // Only refresh if still the latest request for this PR.
-  if (seq === kanbanSeqByPR.get(key)) {
-    await refreshPullsIfActive();
-  }
+  // Always refresh from server on success so the UI converges to
+  // authoritative state regardless of request completion order.
+  await refreshPullsIfActive();
 }
 
 // --- polling ---

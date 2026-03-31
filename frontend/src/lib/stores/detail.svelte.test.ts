@@ -277,4 +277,38 @@ describe("updateKanbanState", () => {
     expect(getDetail()!.pull_request.KanbanStatus).toBe("new");
     expect(getPulls()[0]!.KanbanStatus).toBe("reviewing");
   });
+
+  it("two same-PR successes resolving out of order converge to server state", async () => {
+    await seedStores([{ owner: "acme", name: "repo", number: 42, status: "new" }]);
+
+    // Fire A then B for the same PR; both will succeed.
+    const promiseA = updateKanbanState("acme", "repo", 42, "reviewing");
+    const promiseB = updateKanbanState("acme", "repo", 42, "waiting");
+
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+
+    // B succeeds first.
+    putCalls[1]!.resolve({});
+    await flush();
+
+    // B's success refreshes pulls from server (server has "waiting").
+    getCalls[getCalls.length - 1]!.resolve({
+      data: [makePR("acme", "repo", 42, "waiting")],
+    });
+    await promiseB;
+
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+
+    // A succeeds later. Server applied A before B, so server still
+    // has "waiting". A's refresh must still run and converge.
+    putCalls[0]!.resolve({});
+    await flush();
+
+    getCalls[getCalls.length - 1]!.resolve({
+      data: [makePR("acme", "repo", 42, "waiting")],
+    });
+    await promiseA;
+
+    expect(getPulls()[0]!.KanbanStatus).toBe("waiting");
+  });
 });
