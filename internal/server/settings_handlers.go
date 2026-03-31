@@ -56,7 +56,7 @@ func (s *Server) handleUpdateSettings(
 
 	candidate := body.Activity
 	if candidate.ViewMode == "" {
-		candidate.ViewMode = "flat"
+		candidate.ViewMode = "threaded"
 	}
 	if candidate.TimeRange == "" {
 		candidate.TimeRange = "7d"

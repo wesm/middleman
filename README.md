@@ -4,21 +4,24 @@ Local-first GitHub dashboard for project maintainers. Syncs PRs and issues from 
 
 ## What it does
 
-- Shows all open PRs and issues across your repos in one view
-- Local kanban state tracking (New / Reviewing / Waiting / Awaiting Merge)
-- Star/favorite items to keep them visible
-- Post comments, approve PRs, and merge directly from the dashboard
-- Expandable CI check details with links to failing runs
-- 60-second polling on the active PR for near-real-time comment updates
-- Keyboard navigation (j/k, Escape, 1/2 to switch views)
-- Dark mode
+**Activity feed** — See recent comments, reviews, and commits across all your repos in one timeline. Switch between flat and threaded views. Filter by time range (24h/7d/30d/90d), hide closed items, or hide bot activity.
+
+**PR and issue management** — Browse open PRs and issues across repos. Post comments, approve PRs, merge (merge commit, squash, or rebase), close/reopen, and mark draft PRs as ready — all without leaving the dashboard.
+
+**Kanban board** — Track PRs through New / Reviewing / Waiting / Awaiting Merge columns with drag-and-drop.
+
+**Near-real-time updates** — Opening a PR or issue triggers an immediate sync from GitHub. The active item polls every 60 seconds for new comments.
+
+**Settings** — Add and remove repos from the UI. Configure activity feed defaults (view mode, time range, filters) that persist to your config file.
+
+**Other** — Star/favorite items, expandable CI checks with links to failing runs, keyboard navigation (`j`/`k` to move, `1`/`2` to switch views, `Escape` to close), dark mode, copy PR/issue bodies, reverse proxy support via `base_path`.
 
 ## Requirements
 
 - Go 1.22+ (no CGO required — uses pure Go SQLite)
-- Bun 1.3+
+- Bun (managed via mise)
 - [mise](https://mise.jdx.dev/)
-- A GitHub personal access token with `repo` scope
+- A GitHub token: set `MIDDLEMAN_GITHUB_TOKEN`, or authenticate with `gh auth login`
 
 ## Setup
 
@@ -35,7 +38,6 @@ make build
 
 ```toml
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8090
 
@@ -55,9 +57,28 @@ export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 ./middleman
 ```
 
+If you use the [GitHub CLI](https://cli.github.com/), middleman will fall back to `gh auth token` automatically — no env var needed.
+
 4. Open http://localhost:8090
 
-The first sync runs immediately on startup. PRs and issues will populate within a few seconds.
+The first sync runs immediately on startup. PRs and issues populate within a few seconds.
+
+### Configuration reference
+
+All fields are optional except `[[repos]]`.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `sync_interval` | `"5m"` | How often to pull from GitHub |
+| `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding your token |
+| `host` | `"127.0.0.1"` | Listen address (loopback only) |
+| `port` | `8090` | Listen port |
+| `base_path` | `"/"` | URL prefix for reverse proxy deployments |
+| `data_dir` | `"~/.config/middleman"` | Directory for the SQLite database |
+| `activity.view_mode` | `"threaded"` | `"flat"` or `"threaded"` |
+| `activity.time_range` | `"7d"` | `"24h"`, `"7d"`, `"30d"`, or `"90d"` |
+| `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
+| `activity.hide_bots` | `false` | Hide bot activity in the feed |
 
 ## Development
 
@@ -69,36 +90,32 @@ make dev            # Go server on :8090 with air live reload
 make frontend-dev   # Vite on :5173 (proxies /api to Go)
 ```
 
-`make dev` now uses [`air`](https://github.com/air-verse/air) to rebuild and restart the Go server whenever backend files change. You can still pass backend flags through with `make dev ARGS='-config /path/to/config.toml'`.
+`make dev` uses [air](https://github.com/air-verse/air) to rebuild and restart the Go server on file changes. Pass backend flags with `make dev ARGS='-config /path/to/config.toml'`.
 
 Other targets:
 
 ```
 make build          # Production binary with embedded frontend
-make frontend-check # Svelte / TypeScript checks
+make build-release  # Optimized, stripped release build
 make test           # Run all Go tests
+make test-short     # Fast tests only
 make lint           # mise-managed golangci-lint
+make frontend-check # Svelte / TypeScript checks
+make api-generate   # Regenerate OpenAPI spec and clients
 make install        # Install to ~/.local/bin
 make install-hooks  # Install pre-commit hooks via prek
 ```
 
-Pre-commit hooks are managed with [prek](https://github.com/j178/prek).
-Run `brew install prek && make install-hooks` after cloning. The hook
-runs `make lint` on every commit, auto-fixing formatting issues. If the
-hook rewrites files, re-stage and re-commit.
+### Pre-commit hooks
 
-To enable local git hooks with `prek`:
+Hooks are managed with [prek](https://github.com/j178/prek). After cloning:
 
 ```sh
-brew install mise
-mise install
 brew install prek
 prek install
-prek run --all-files
 ```
 
-The repo hook config lives in `prek.toml`. Go commits run `gofmt`, `make lint`, and `make test-short`; frontend commits run `make frontend-check`. `make lint` invokes the `mise`-managed `golangci-lint` version pinned in `mise.toml`. Install frontend dependencies once with `npm --prefix frontend install` if you have not already done so.
-
+Go commits run `gofmt`, `golangci-lint`, `go test -short`, and API client regeneration. Frontend commits run `make frontend-check`. If a hook auto-fixes files, re-stage and re-commit. Config lives in `prek.toml`.
 
 ## License
 

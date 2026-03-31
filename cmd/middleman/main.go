@@ -84,6 +84,12 @@ func run(configPath string) error {
 		database, ghClient, syncer, assets, cfg, configPath,
 	)
 
+	displayVersion := version
+	if version == "dev" && commit != "unknown" {
+		displayVersion = "dev-" + commit
+	}
+	srv.SetVersion(displayVersion)
+
 	addr := cfg.ListenAddr()
 	slog.Info(fmt.Sprintf("starting server at http://%s", addr))
 

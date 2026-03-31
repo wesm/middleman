@@ -23,8 +23,12 @@ type Server struct {
 	cfgPath  string
 	cfgMu    sync.Mutex
 	basePath string
+	version  string
 	handler  http.Handler
 }
+
+// SetVersion sets the version string returned by GET /api/v1/version.
+func (s *Server) SetVersion(v string) { s.version = v }
 
 // New creates a Server without config persistence (used by tests).
 func New(
@@ -77,6 +81,7 @@ func newServer(
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
 
+	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/v1/settings", s.handleUpdateSettings)
 	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
@@ -195,6 +200,14 @@ func (s *Server) ListenAndServe(addr string) error {
 		IdleTimeout:  60 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+func (s *Server) handleVersion(
+	w http.ResponseWriter, _ *http.Request,
+) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version": s.version,
+	})
 }
 
 // writeJSON encodes v as JSON and writes it with the given HTTP status code.

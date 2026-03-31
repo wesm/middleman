@@ -20,7 +20,7 @@ const (
 	defaultSyncInterval   = "5m"
 	defaultHost           = "127.0.0.1"
 	defaultPort           = 8090
-	defaultViewMode       = "flat"
+	defaultViewMode       = "threaded"
 	defaultTimeRange      = "7d"
 	defaultBasePath       = "/"
 )

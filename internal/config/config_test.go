@@ -186,7 +186,7 @@ name = "b"
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	assert.Equal("flat", cfg.Activity.ViewMode)
+	assert.Equal("threaded", cfg.Activity.ViewMode)
 	assert.Equal("7d", cfg.Activity.TimeRange)
 	assert.False(cfg.Activity.HideClosed)
 	assert.False(cfg.Activity.HideBots)
@@ -297,7 +297,7 @@ name = "b"
 	assert.Equal("5m", cfg2.SyncInterval)
 	assert.Equal("127.0.0.1", cfg2.Host)
 	assert.Equal(8090, cfg2.Port)
-	assert.Equal("flat", cfg2.Activity.ViewMode)
+	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("7d", cfg2.Activity.TimeRange)
 }
 
