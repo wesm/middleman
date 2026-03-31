@@ -99,4 +99,35 @@ describe("AppHeader", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(localStorage.getItem("middleman-theme")).toBeNull();
   });
+
+  it("falls back to system preference when localStorage throws", () => {
+    cleanup();
+    document.documentElement.classList.remove("dark");
+    mockMatchMedia(true);
+
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked");
+    });
+
+    render(AppHeader);
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    vi.restoreAllMocks();
+  });
+
+  it("toggle still works when localStorage.setItem throws", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("blocked");
+    });
+
+    render(AppHeader);
+
+    const button = screen.getByTitle("Toggle theme");
+
+    await fireEvent.click(button);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    vi.restoreAllMocks();
+  });
 });
