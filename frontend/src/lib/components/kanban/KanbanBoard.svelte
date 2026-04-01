@@ -1,10 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
-  import { getPulls, loadPulls } from "../../stores/pulls.svelte.js";
+  import {
+    getPulls,
+    loadPulls,
+    getFilterRepo,
+    setFilterRepo,
+  } from "../../stores/pulls.svelte.js";
   import { client } from "../../api/runtime.js";
   import { stopDetailPolling } from "../../stores/detail.svelte.js";
   import PullDetail from "../detail/PullDetail.svelte";
+  import RepoTypeahead from "../RepoTypeahead.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
 
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
@@ -16,6 +22,7 @@
 
   onDestroy(() => {
     if (refreshHandle !== null) clearInterval(refreshHandle);
+    setFilterRepo(undefined);
     void loadPulls();
   });
 
@@ -56,6 +63,11 @@
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  function handleRepoChange(repo: string | undefined): void {
+    setFilterRepo(repo);
+    void loadPulls({ state: "open" });
+  }
+
   // --- Drag and drop ---
   async function handleDrop(
     owner: string,
@@ -79,6 +91,12 @@
 </script>
 
 <div class="kanban-wrap">
+  <div class="controls-bar">
+    <RepoTypeahead
+      selected={getFilterRepo()}
+      onchange={handleRepoChange}
+    />
+  </div>
   <div class="kanban-board">
     {#each columns as col (col.id)}
       <KanbanColumn
@@ -118,9 +136,20 @@
 <style>
   .kanban-wrap {
     display: flex;
+    flex-direction: column;
     flex: 1;
     overflow: hidden;
     position: relative;
+  }
+
+  .controls-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    flex-shrink: 0;
   }
 
   .kanban-board {
