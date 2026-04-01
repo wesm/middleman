@@ -8,7 +8,7 @@
     setFilterRepo,
   } from "../../stores/pulls.svelte.js";
   import { client } from "../../api/runtime.js";
-  import { hasConfiguredRepos } from "../../stores/settings.svelte.js";
+  import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
   import { stopDetailPolling } from "../../stores/detail.svelte.js";
   import PullDetail from "../detail/PullDetail.svelte";
@@ -98,7 +98,7 @@
       onchange={handleRepoChange}
     />
   </div>
-  {#if !hasConfiguredRepos() && getPulls().length === 0}
+  {#if isSettingsLoaded() && !hasConfiguredRepos()}
     <div class="empty-state">No repositories configured.<br />
       <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
     </div>

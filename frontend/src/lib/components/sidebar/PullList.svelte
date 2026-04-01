@@ -18,7 +18,7 @@
   } from "../../stores/pulls.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
-  import { hasConfiguredRepos } from "../../stores/settings.svelte.js";
+  import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import PullItem from "./PullItem.svelte";
   import RepoTypeahead from "../RepoTypeahead.svelte";
 
@@ -118,7 +118,7 @@
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
   <div class="list-body">
-    {#if !hasConfiguredRepos() && getPulls().length === 0}
+    {#if isSettingsLoaded() && !hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
         <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button></p>
     {:else if isLoading() && getPulls().length === 0}

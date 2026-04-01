@@ -32,7 +32,7 @@
   import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
   import RepoTypeahead from "./RepoTypeahead.svelte";
   import ActivityThreaded from "./ActivityThreaded.svelte";
-  import { hasConfiguredRepos } from "../stores/settings.svelte.js";
+  import { hasConfiguredRepos, isSettingsLoaded } from "../stores/settings.svelte.js";
   import { navigate } from "../stores/router.svelte.js";
 
   interface Props {
@@ -434,7 +434,7 @@
     <div class="error-banner">{getActivityError()}</div>
   {/if}
 
-  {#if !hasConfiguredRepos() && displayItems.length === 0 && !isActivityLoading()}
+  {#if isSettingsLoaded() && !hasConfiguredRepos()}
     <div class="table-container">
       <div class="empty-state">No repositories configured.<br />
         <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
