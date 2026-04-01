@@ -172,6 +172,29 @@ func TestGitHubTokenReturnsEmptyWhenGHCliUnavailable(t *testing.T) {
 	Assert.Empty(t, cfg.GitHubToken())
 }
 
+func TestMiddlemanHomeOverridesDefaultPaths(t *testing.T) {
+	assert := Assert.New(t)
+	t.Setenv("MIDDLEMAN_HOME", "/tmp/middleman-test")
+
+	assert.Equal(
+		"/tmp/middleman-test/config.toml",
+		DefaultConfigPath(),
+	)
+	assert.Equal("/tmp/middleman-test", DefaultDataDir())
+}
+
+func TestDefaultPathsWithoutMiddlemanHome(t *testing.T) {
+	assert := Assert.New(t)
+	t.Setenv("MIDDLEMAN_HOME", "")
+	t.Setenv("HOME", "/fakehome")
+
+	assert.Equal(
+		"/fakehome/.config/middleman/config.toml",
+		DefaultConfigPath(),
+	)
+	assert.Equal("/fakehome/.config/middleman", DefaultDataDir())
+}
+
 func TestDBPath(t *testing.T) {
 	cfg := &Config{DataDir: "/tmp/middleman-test"}
 	expected := "/tmp/middleman-test/middleman.db"
