@@ -1,6 +1,6 @@
 import { apiErrorMessage, client } from "../api/runtime.js";
 import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
-import { getGlobalRepo } from "./filter.svelte.js";
+import { getGlobalRepo, setGlobalRepo } from "./filter.svelte.js";
 
 // --- constants ---
 
@@ -318,6 +318,9 @@ function deriveFiltersFromTypes(): void {
 /** Sync URL query params -> store state (partial override). */
 export function syncFromURL(): void {
   const sp = new URLSearchParams(window.location.search);
+  if (sp.has("repo")) {
+    setGlobalRepo(sp.get("repo") ?? undefined);
+  }
   if (sp.has("types")) {
     const typesParam = sp.get("types");
     filterTypes = typesParam ? typesParam.split(",") : [];
@@ -340,6 +343,7 @@ export function syncFromURL(): void {
 /** Sync store state -> URL query params (replaceState). */
 export function syncToURL(): void {
   const sp = new URLSearchParams(window.location.search);
+  sp.delete("repo");
   if (filterTypes.length > 0) sp.set("types", filterTypes.join(","));
   else sp.delete("types");
   if (searchQuery) sp.set("search", searchQuery);
