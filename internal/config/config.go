@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,94 @@ type Repo struct {
 
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
+}
+
+// normalize cleans up a Repo entry, extracting owner/name from
+// GitHub URLs or SSH addresses if the user pasted one into either
+// field. It also strips a trailing .git suffix.
+func (r *Repo) normalize() error {
+	// Check if either field contains a full GitHub URL or SSH
+	// address. If so, extract owner/name from it.
+	for _, raw := range []string{r.Owner, r.Name} {
+		owner, name, err := parseGitHubRef(raw)
+		if err != nil {
+			return err
+		}
+		if owner != "" {
+			r.Owner = owner
+			r.Name = name
+			return nil
+		}
+	}
+
+	r.Name = strings.TrimSuffix(r.Name, ".git")
+	if r.Owner == "" || r.Name == "" {
+		return errors.New("must have owner and name")
+	}
+	return nil
+}
+
+// parseGitHubRef extracts owner and repo name from a GitHub URL or
+// SSH address. Returns ("", "", nil) when the input is not a GitHub
+// ref at all, or a non-nil error when it looks like a GitHub ref but
+// is malformed (e.g. missing the repo name).
+func parseGitHubRef(raw string) (owner, name string, err error) {
+	raw = strings.TrimSpace(raw)
+	var path string
+	switch {
+	case strings.HasPrefix(raw, "ssh://"):
+		// URI-style SSH: ssh://git@github.com[:port]/owner/repo
+		p, isGitHub, err := parseSSHURI(raw)
+		if err != nil {
+			return "", "", err
+		}
+		if !isGitHub {
+			return "", "", nil
+		}
+		path = p
+	default:
+		if m := ghSCPRe.FindStringSubmatch(raw); m != nil {
+			path = m[1]
+		} else if m := ghSchemeRe.FindStringSubmatch(raw); m != nil {
+			path = m[1]
+		} else if m := ghBareRe.FindStringSubmatch(raw); m != nil {
+			path = m[1]
+		} else {
+			return "", "", nil
+		}
+	}
+	path = cleanPath(path)
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf(
+			"incomplete GitHub reference %q: expected owner/repo", raw,
+		)
+	}
+	return parts[0], parts[1], nil
+}
+
+// parseSSHURI parses ssh:// URIs. Returns (path, true, nil) when
+// the host is github.com, or ("", false, nil) when it is not.
+func parseSSHURI(raw string) (string, bool, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", false, fmt.Errorf("invalid SSH URI %q: %w", raw, err)
+	}
+	if u.Hostname() != "github.com" {
+		return "", false, nil
+	}
+	return strings.TrimPrefix(u.Path, "/"), true, nil
+}
+
+// cleanPath strips query strings, fragments, trailing slashes,
+// and an optional .git suffix from a GitHub ref path.
+func cleanPath(path string) string {
+	if idx := strings.IndexAny(path, "?#"); idx != -1 {
+		path = path[:idx]
+	}
+	path = strings.TrimRight(path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	return path
 }
 
 type Activity struct {
@@ -212,9 +301,9 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	for i, r := range c.Repos {
-		if r.Owner == "" || r.Name == "" {
-			return fmt.Errorf("config: repos[%d] must have owner and name", i)
+	for i := range c.Repos {
+		if err := c.Repos[i].normalize(); err != nil {
+			return fmt.Errorf("config: repos[%d]: %w", i, err)
 		}
 	}
 
@@ -263,7 +352,16 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-var validBasePathRe = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
+var (
+	validBasePathRe = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
+	// With scheme: optional path so https://github.com is caught.
+	ghSchemeRe = regexp.MustCompile(`^https?://github\.com(?:/(.*))?$`)
+	// Without scheme: require / so bare "github.com" (a valid repo
+	// name) is not falsely matched.
+	ghBareRe = regexp.MustCompile(`^github\.com/(.*)$`)
+	// SCP-style only (git@github.com:path); ssh:// URIs use net/url.
+	ghSCPRe = regexp.MustCompile(`^[^@]+@github\.com:(.*)$`)
+)
 
 func (c *Config) SyncDuration() time.Duration {
 	d, _ := time.ParseDuration(c.SyncInterval)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -89,6 +90,16 @@ func TestLoadRepoMissingFields(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+}
+
+func TestLoadRepoNameDotGitOnly(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = ".git"
 `)
 	_, err := Load(path)
 	require.Error(t, err)
@@ -261,6 +272,225 @@ time_range = "1y"
 `)
 	_, err := Load(path)
 	require.Error(t, err)
+}
+
+func TestLoadNormalizesRepoNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		owner     string
+		repoName  string
+		wantOwner string
+		wantName  string
+	}{
+		{
+			name:      "strips .git suffix",
+			owner:     "apache",
+			repoName:  "arrow.git",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "HTTPS URL in name",
+			owner:     "ignored",
+			repoName:  "https://github.com/apache/arrow",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "HTTPS URL with .git in name",
+			owner:     "ignored",
+			repoName:  "https://github.com/apache/arrow.git",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "SSH URL in name",
+			owner:     "ignored",
+			repoName:  "git@github.com:apache/arrow.git",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "SSH URL without .git in name",
+			owner:     "ignored",
+			repoName:  "git@github.com:apache/arrow",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "SSH URI-style URL",
+			owner:     "ignored",
+			repoName:  "ssh://git@github.com/apache/arrow.git",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "SSH URI-style with port",
+			owner:     "ignored",
+			repoName:  "ssh://git@github.com:22/apache/arrow.git",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "SSH URI-style non-github host",
+			owner:     "myorg",
+			repoName:  "ssh://git@gitlab.com/apache/arrow.git",
+			wantOwner: "myorg",
+			wantName:  "ssh://git@gitlab.com/apache/arrow",
+		},
+		{
+			name:      "bare github.com path in name",
+			owner:     "ignored",
+			repoName:  "github.com/apache/arrow",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "HTTPS URL in owner",
+			owner:     "https://github.com/apache/arrow.git",
+			repoName:  "ignored",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "plain owner and name unchanged",
+			owner:     "apache",
+			repoName:  "arrow",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "URL with query string",
+			owner:     "ignored",
+			repoName:  "https://github.com/apache/arrow?tab=readme",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "URL with fragment",
+			owner:     "ignored",
+			repoName:  "https://github.com/apache/arrow#readme",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "URL with trailing slash",
+			owner:     "ignored",
+			repoName:  "https://github.com/apache/arrow/",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "URL with .git and trailing slash",
+			owner:     "ignored",
+			repoName:  "https://github.com/apache/arrow.git/",
+			wantOwner: "apache",
+			wantName:  "arrow",
+		},
+		{
+			name:      "repo literally named github.com",
+			owner:     "acme",
+			repoName:  "github.com",
+			wantOwner: "acme",
+			wantName:  "github.com",
+		},
+		{
+			name:      "non-github HTTPS host not parsed",
+			owner:     "ignored",
+			repoName:  "https://notgithub.com/apache/arrow",
+			wantOwner: "ignored",
+			wantName:  "https://notgithub.com/apache/arrow",
+		},
+		{
+			name:      "non-github SSH host not parsed",
+			owner:     "ignored",
+			repoName:  "git@notgithub.com:apache/arrow.git",
+			wantOwner: "ignored",
+			wantName:  "git@notgithub.com:apache/arrow",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			cfg := fmt.Sprintf(`
+[[repos]]
+owner = %q
+name = %q
+`, tt.owner, tt.repoName)
+			path := writeConfig(t, cfg)
+			got, err := Load(path)
+			require.NoError(t, err)
+			assert.Equal(tt.wantOwner, got.Repos[0].Owner)
+			assert.Equal(tt.wantName, got.Repos[0].Name)
+		})
+	}
+}
+
+func TestLoadRejectsMalformedGitHubRef(t *testing.T) {
+	tests := []struct {
+		name     string
+		owner    string
+		repoName string
+	}{
+		{
+			name:     "HTTPS URL missing repo",
+			owner:    "ignored",
+			repoName: "https://github.com/apache/",
+		},
+		{
+			name:     "HTTPS URL owner only",
+			owner:    "ignored",
+			repoName: "https://github.com/apache",
+		},
+		{
+			name:     "SSH URL missing repo",
+			owner:    "ignored",
+			repoName: "git@github.com:apache",
+		},
+		{
+			name:     "bare HTTPS prefix",
+			owner:    "ignored",
+			repoName: "https://github.com/",
+		},
+		{
+			name:     "bare github.com slash",
+			owner:    "ignored",
+			repoName: "github.com/",
+		},
+		{
+			name:     "bare SSH prefix",
+			owner:    "ignored",
+			repoName: "git@github.com:",
+		},
+		{
+			name:     "HTTPS host only no slash",
+			owner:    "ignored",
+			repoName: "https://github.com",
+		},
+		{
+			name:     "SSH URI bare host",
+			owner:    "ignored",
+			repoName: "ssh://git@github.com",
+		},
+		{
+			name:     "SSH URI bare host with port",
+			owner:    "ignored",
+			repoName: "ssh://git@github.com:22",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := fmt.Sprintf(`
+[[repos]]
+owner = %q
+name = %q
+`, tt.owner, tt.repoName)
+			path := writeConfig(t, cfg)
+			_, err := Load(path)
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "incomplete GitHub reference")
+		})
+	}
 }
 
 func TestSaveRoundTrip(t *testing.T) {
