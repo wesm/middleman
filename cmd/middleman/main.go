@@ -40,6 +40,10 @@ func main() {
 }
 
 func run(configPath string) error {
+	if err := config.EnsureDefault(configPath); err != nil {
+		return fmt.Errorf("ensure config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
