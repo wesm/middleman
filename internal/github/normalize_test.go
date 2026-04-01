@@ -120,6 +120,139 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 	assert.True(event.CreatedAt.Equal(now))
 }
 
+func TestDeriveOverallCIStatus_NoChecksOrStatuses(t *testing.T) {
+	result := DeriveOverallCIStatus(nil, nil)
+	Assert.Empty(t, result)
+}
+
+func TestDeriveOverallCIStatus_EmptyCombined(t *testing.T) {
+	combined := &gh.CombinedStatus{State: new("pending")}
+	result := DeriveOverallCIStatus(nil, combined)
+	Assert.Empty(t, result, "no actual statuses means empty, even if state says pending")
+}
+
+func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		runs []*gh.CheckRun
+		want string
+	}{
+		{
+			name: "all success",
+			runs: []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new("success")},
+				{Status: new("completed"), Conclusion: new("success")},
+			},
+			want: "success",
+		},
+		{
+			name: "one pending",
+			runs: []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new("success")},
+				{Status: new("in_progress")},
+			},
+			want: "pending",
+		},
+		{
+			name: "one queued",
+			runs: []*gh.CheckRun{
+				{Status: new("queued")},
+			},
+			want: "pending",
+		},
+		{
+			name: "one failure",
+			runs: []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new("success")},
+				{Status: new("completed"), Conclusion: new("failure")},
+			},
+			want: "failure",
+		},
+		{
+			name: "failure beats pending",
+			runs: []*gh.CheckRun{
+				{Status: new("in_progress")},
+				{Status: new("completed"), Conclusion: new("failure")},
+			},
+			want: "failure",
+		},
+		{
+			name: "timed out is failure",
+			runs: []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new("timed_out")},
+			},
+			want: "failure",
+		},
+		{
+			name: "skipped counts as success",
+			runs: []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new("skipped")},
+			},
+			want: "success",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DeriveOverallCIStatus(tt.runs, nil)
+			Assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
+	// Any completed conclusion not in {success, neutral, skipped} is failure.
+	for _, conclusion := range []string{
+		"action_required", "failure", "timed_out",
+		"cancelled", "stale", "startup_failure",
+	} {
+		t.Run(conclusion, func(t *testing.T) {
+			runs := []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new(conclusion)},
+			}
+			Assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
+		})
+	}
+}
+
+func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
+	combined := &gh.CombinedStatus{
+		TotalCount: new(1),
+		State:      new("success"),
+		Statuses: []*gh.RepoStatus{
+			{State: new("success"), Context: new("ci/build")},
+		},
+	}
+	Assert.Equal(t, "success", DeriveOverallCIStatus(nil, combined))
+}
+
+func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
+	// Statuses slice may be truncated by pagination; the pre-aggregated
+	// State field reflects all pages, so we rely on it instead.
+	combined := &gh.CombinedStatus{
+		TotalCount: new(50),
+		State:      new("failure"),
+		Statuses: []*gh.RepoStatus{
+			{State: new("success"), Context: new("ci/build")},
+		},
+	}
+	Assert.Equal(t, "failure", DeriveOverallCIStatus(nil, combined))
+}
+
+func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
+	runs := []*gh.CheckRun{
+		{Status: new("completed"), Conclusion: new("success")},
+	}
+	combined := &gh.CombinedStatus{
+		TotalCount: new(1),
+		State:      new("pending"),
+		Statuses: []*gh.RepoStatus{
+			{State: new("pending"), Context: new("ci/deploy")},
+		},
+	}
+	Assert.Equal(t, "pending", DeriveOverallCIStatus(runs, combined))
+}
+
 func TestDeriveReviewDecision_Empty(t *testing.T) {
 	result := DeriveReviewDecision(nil)
 	Assert.Empty(t, result)

@@ -2,6 +2,7 @@ import { client, apiErrorMessage } from "../api/runtime.js";
 import type { KanbanStatus, PullDetail } from "../api/types.js";
 import { getPage } from "./router.svelte.js";
 import { loadPulls, optimisticKanbanUpdate, getPullKanbanStatus } from "./pulls.svelte.js";
+import { subscribeSyncComplete } from "./sync.svelte.js";
 
 // --- state ---
 
@@ -196,6 +197,7 @@ export async function updateKanbanState(
 // --- polling ---
 
 let detailPollHandle: ReturnType<typeof setInterval> | null = null;
+let unsubSyncComplete: (() => void) | null = null;
 
 async function refreshDetail(owner: string, name: string, number: number): Promise<void> {
   try {
@@ -215,12 +217,19 @@ export function startDetailPolling(owner: string, name: string, number: number):
   detailPollHandle = setInterval(() => {
     void refreshDetail(owner, name, number);
   }, 60_000);
+  unsubSyncComplete = subscribeSyncComplete(() => {
+    void refreshDetail(owner, name, number);
+  });
 }
 
 export function stopDetailPolling(): void {
   if (detailPollHandle !== null) {
     clearInterval(detailPollHandle);
     detailPollHandle = null;
+  }
+  if (unsubSyncComplete !== null) {
+    unsubSyncComplete();
+    unsubSyncComplete = null;
   }
 }
 

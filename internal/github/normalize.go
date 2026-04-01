@@ -131,9 +131,56 @@ func NormalizeCommitEvent(prID int64, c *gh.RepositoryCommit) db.PREvent {
 	return event
 }
 
-// NormalizeCIStatus extracts the combined CI state string from a CombinedStatus.
-func NormalizeCIStatus(cs *gh.CombinedStatus) string {
-	return cs.GetState()
+// DeriveOverallCIStatus computes an aggregate CI status from check runs
+// and the legacy combined status API. The combined status API only reports
+// on commit statuses (the older mechanism); repos using only GitHub Actions
+// check runs will have an empty or "pending" combined state even when all
+// checks pass. This function merges both sources to produce the correct
+// overall status.
+func DeriveOverallCIStatus(
+	runs []*gh.CheckRun,
+	combined *gh.CombinedStatus,
+) string {
+	hasAny := false
+	hasPending := false
+	hasFailed := false
+
+	for _, r := range runs {
+		hasAny = true
+		if r.GetStatus() != "completed" {
+			hasPending = true
+			continue
+		}
+		switch r.GetConclusion() {
+		case "success", "neutral", "skipped":
+			// OK — not a failure.
+		default:
+			hasFailed = true
+		}
+	}
+
+	// Use GitHub's pre-aggregated State rather than iterating
+	// combined.Statuses, which may be truncated by pagination.
+	if combined != nil && combined.GetTotalCount() > 0 {
+		hasAny = true
+		switch combined.GetState() {
+		case "pending":
+			hasPending = true
+		case "failure", "error":
+			hasFailed = true
+		}
+	}
+
+	if !hasAny {
+		return ""
+	}
+	if hasFailed {
+		return "failure"
+	}
+	if hasPending {
+		return "pending"
+	}
+	return "success"
 }
 
 // DeriveReviewDecision computes the aggregate review decision from a list of
