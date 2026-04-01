@@ -53,10 +53,17 @@ type Config struct {
 }
 
 func DefaultConfigPath() string {
-	return filepath.Join(homeDir(), ".config", "middleman", "config.toml")
+	return filepath.Join(baseDir(), "config.toml")
 }
 
 func DefaultDataDir() string {
+	return baseDir()
+}
+
+func baseDir() string {
+	if d := os.Getenv("MIDDLEMAN_HOME"); d != "" {
+		return d
+	}
 	return filepath.Join(homeDir(), ".config", "middleman")
 }
 
