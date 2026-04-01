@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import type { Settings } from "../../api/types.js";
   import { getSettings } from "../../api/settings.js";
+  import { setConfiguredRepos } from "../../stores/settings.svelte.js";
   import SettingsSection from "./SettingsSection.svelte";
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
@@ -17,6 +18,7 @@
     error = null;
     try {
       settings = await getSettings();
+      setConfiguredRepos(settings.repos);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -34,7 +36,7 @@
     <h1 class="page-title">Settings</h1>
 
     <SettingsSection title="Repositories">
-      <RepoSettings repos={settings.repos} onUpdate={(repos) => { settings = { ...settings!, repos }; }} />
+      <RepoSettings repos={settings.repos} onUpdate={(repos) => { settings = { ...settings!, repos }; setConfiguredRepos(repos); }} />
     </SettingsSection>
 
     <SettingsSection title="Activity feed defaults">

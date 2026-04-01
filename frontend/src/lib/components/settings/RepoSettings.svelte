@@ -76,8 +76,7 @@
       {:else}
         <button
           class="remove-btn"
-          disabled={repos.length <= 1}
-          title={repos.length <= 1 ? "Cannot remove the last repository" : `Remove ${key}`}
+          title={`Remove ${key}`}
           onclick={() => { confirmingRemove = key; removeError = null; }}
         >&times;</button>
       {/if}

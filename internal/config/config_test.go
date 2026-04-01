@@ -58,8 +58,9 @@ name = "repo"
 
 func TestLoadNoRepos(t *testing.T) {
 	path := writeConfig(t, `host = "127.0.0.1"`)
-	_, err := Load(path)
-	require.Error(t, err)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	Assert.Empty(t, cfg.Repos)
 }
 
 func TestLoadInvalidSyncInterval(t *testing.T) {
@@ -299,6 +300,49 @@ name = "b"
 	assert.Equal(8090, cfg2.Port)
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("7d", cfg2.Activity.TimeRange)
+}
+
+func TestEnsureDefaultCreatesFile(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "config.toml")
+
+	require.NoError(t, EnsureDefault(path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(string(data), "sync_interval")
+	assert.Contains(string(data), "github_token_env")
+	assert.Contains(string(data), "[[repos]]")
+}
+
+func TestEnsureDefaultSkipsExisting(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	require.NoError(t, EnsureDefault(path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	Assert.Contains(t, string(data), `owner = "a"`)
+}
+
+func TestEnsureDefaultIdempotent(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	require.NoError(EnsureDefault(path))
+	info1, err := os.Stat(path)
+	require.NoError(err)
+
+	require.NoError(EnsureDefault(path))
+	info2, err := os.Stat(path)
+	require.NoError(err)
+
+	require.Equal(info1.ModTime(), info2.ModTime())
 }
 
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {

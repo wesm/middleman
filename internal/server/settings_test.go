@@ -189,11 +189,15 @@ func TestHandleDeleteRepo(t *testing.T) {
 }
 
 func TestHandleDeleteLastRepo(t *testing.T) {
-	srv, _, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
 		"/api/v1/repos/acme/widget", nil,
 	)
-	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	Assert.Empty(t, cfg2.Repos)
 }

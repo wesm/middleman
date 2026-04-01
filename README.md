@@ -76,7 +76,16 @@ cd middleman
 make build
 ```
 
-Create `~/.config/middleman/config.toml`:
+Set your token and start middleman:
+
+```sh
+export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
+./middleman
+```
+
+If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically — no env var needed.
+
+On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8090**. Add repositories from the Settings page, or edit the config file directly:
 
 ```toml
 [[repos]]
@@ -88,17 +97,6 @@ owner = "your-org"
 name = "another-repo"
 ```
 
-Set your token and start middleman:
-
-```sh
-export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
-./middleman
-```
-
-If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically — no env var needed.
-
-Open **http://localhost:8090**. The first sync runs immediately; PRs and issues appear within seconds.
-
 ### Install to PATH
 
 ```sh
@@ -107,7 +105,7 @@ make install   # installs to ~/.local/bin
 
 ## Configuration
 
-All fields are optional except `[[repos]]`.
+All fields are optional. Repos can be added in the config file or through the Settings UI.
 
 | Field | Default | Description |
 |-------|---------|-------------|

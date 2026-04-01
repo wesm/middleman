@@ -68,6 +68,97 @@ func homeDir() string {
 	return h
 }
 
+// EnsureDefault creates a default config file at path if it does not exist.
+// The file contains sensible defaults. Repos can be added later through the
+// settings UI.
+//
+// Writes to a temp file first, then hard-links into place so the target
+// path is never left empty or partially written.
+func EnsureDefault(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("creating temp config: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	const defaultConfig = `# middleman configuration
+# See https://github.com/wesm/middleman for documentation.
+
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8090
+
+# Add repositories to monitor (or add them in the Settings UI).
+# [[repos]]
+# owner = "your-org"
+# name = "your-repo"
+
+[activity]
+view_mode = "threaded"
+time_range = "7d"
+`
+	if _, err := tmp.WriteString(defaultConfig); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing default config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("flushing default config: %w", err)
+	}
+
+	// Link fails atomically when path already exists, providing
+	// both atomic install and race-free existence check.
+	if err := os.Link(tmpPath, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+		// Hard links may not be supported (FAT/exFAT, network
+		// shares, cross-device). Fall back to O_EXCL create +
+		// write with cleanup on failure.
+		return writeExclusive(tmpPath, path)
+	}
+	return nil
+}
+
+// writeExclusive creates dst with O_EXCL (fails if it exists) and
+// copies the content from src. Partial files are removed on failure.
+func writeExclusive(src, dst string) error {
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("reading temp config: %w", err)
+	}
+
+	f, err := os.OpenFile(
+		dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600,
+	)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+		return fmt.Errorf("creating config %s: %w", dst, err)
+	}
+
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		os.Remove(dst)
+		return fmt.Errorf("writing config %s: %w", dst, err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(dst)
+		return fmt.Errorf("flushing config %s: %w", dst, err)
+	}
+	return nil
+}
+
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:   defaultSyncInterval,
@@ -83,6 +174,10 @@ func Load(path string) (*Config, error) {
 
 	if err := toml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+
+	if cfg.Repos == nil {
+		cfg.Repos = []Repo{}
 	}
 
 	if cfg.DataDir == "" {
@@ -110,10 +205,6 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if len(c.Repos) == 0 {
-		return errors.New("config: at least one [[repos]] entry required")
-	}
-
 	for i, r := range c.Repos {
 		if r.Owner == "" || r.Name == "" {
 			return fmt.Errorf("config: repos[%d] must have owner and name", i)
