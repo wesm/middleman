@@ -10,7 +10,7 @@
   import ActivityFeed from "./lib/components/ActivityFeed.svelte";
   import DetailDrawer from "./lib/components/DetailDrawer.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
-  import { getRoute, getPage, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
+  import { getRoute, getPage, getView, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
   import { hydrateActivityDefaults } from "./lib/stores/activity.svelte.js";
@@ -70,7 +70,7 @@
     }
     if (repo === lastRepo) return;
     lastRepo = repo;
-    void loadPulls();
+    void loadPulls(getView() === "board" ? { state: "open" } : undefined);
     void loadIssues();
     void loadActivity();
   });
