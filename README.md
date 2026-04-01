@@ -1,46 +1,84 @@
 # middleman
 
-Local-first GitHub dashboard for project maintainers. Syncs PRs and issues from a configurable set of repos into SQLite, serves a fast Svelte frontend, and keeps you out of GitHub's notification inbox.
+A local-first GitHub dashboard for project maintainers. Syncs PRs and issues from your repos into SQLite, serves a fast Svelte 5 frontend from a single binary, and keeps you out of GitHub's notification inbox.
 
-## What it does
+Middleman runs entirely on your machine — no hosted service, no telemetry, no account to create. One binary, one config file, and you're up.
 
-**Activity feed** — See recent comments, reviews, and commits across all your repos in one timeline. Switch between flat and threaded views. Filter by time range (24h/7d/30d/90d), hide closed items, or hide bot activity.
+## Features
 
-**PR and issue management** — Browse open PRs and issues across repos. Post comments, approve PRs, merge (merge commit, squash, or rebase), close/reopen, and mark draft PRs as ready — all without leaving the dashboard.
+### Activity feed
 
-**Kanban board** — Track PRs through New / Reviewing / Waiting / Awaiting Merge columns with drag-and-drop.
+A unified timeline of comments, reviews, and commits across all your repos. Switch between flat and threaded views. Threaded view groups events by PR/issue and collapses long commit runs for readability.
 
-**Near-real-time updates** — Opening a PR or issue triggers an immediate sync from GitHub. The active item polls every 60 seconds for new comments.
+Filter by time range (24h / 7d / 30d / 90d), event type, repo, item type (PRs vs issues), or free-text search. Hide closed items and bot noise with a toggle.
 
-**Settings** — Add and remove repos from the UI. Configure activity feed defaults (view mode, time range, filters) that persist to your config file.
+### Pull request management
 
-**Other** — Star/favorite items, expandable CI checks with links to failing runs, keyboard navigation (`j`/`k` to move, `1`/`2` to switch views, `Escape` to close), dark mode, copy PR/issue bodies, reverse proxy support via `base_path`.
+Browse, search, and filter PRs across repos. From the detail view you can:
 
-## Requirements
+- **Comment** directly on a PR
+- **Approve** a PR
+- **Merge** with your choice of merge commit, squash, or rebase
+- **Mark draft PRs as ready** for review
+- **Close and reopen** PRs
+- **Star** items for quick filtering
 
-- Go 1.22+ (no CGO required — uses pure Go SQLite)
-- Bun (managed via mise)
-- [mise](https://mise.jdx.dev/)
-- A GitHub token: set `MIDDLEMAN_GITHUB_TOKEN`, or authenticate with `gh auth login`
+Review decisions, diff stats (additions/deletions), CI status, and branch info are visible at a glance.
 
-## Setup
+### Kanban board
 
-1. Clone and build:
+Track PRs through **New / Reviewing / Waiting / Awaiting Merge** columns with drag-and-drop. Kanban state is local to middleman — it doesn't touch your GitHub labels or projects.
 
-```
+### Issue tracking
+
+Same filtering, search, and detail view as PRs. Post comments, close/reopen, and star issues without context-switching to GitHub.
+
+### CI checks
+
+Expandable check run section on each PR shows pass/fail/pending status with color-coded indicators and direct links to the failing run on GitHub.
+
+### Sync engine
+
+- Runs immediately on startup, then on a configurable interval (default 5 minutes)
+- Opening a PR or issue triggers an immediate sync for that item
+- The active detail view polls every 60 seconds for new comments
+- Progress is visible in the status bar; errors surface clearly
+
+### Keyboard navigation
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move through the list |
+| `1` / `2` | Switch between list and kanban views |
+| `Escape` | Close detail view / clear selection |
+
+### Other
+
+- **Dark mode** — auto-detects system preference, with a manual toggle
+- **Copy to clipboard** — one-click copy of PR/issue bodies and comments
+- **Settings UI** — add/remove repos and configure activity feed defaults from the browser
+- **Reverse proxy support** — deploy behind a proxy with the `base_path` config
+- **Version info** — `middleman version` prints the version, commit, and build date
+
+## Quickstart
+
+### Requirements
+
+- Go 1.26+
+- [Bun](https://bun.sh/) (or install via [mise](https://mise.jdx.dev/))
+- A GitHub token (classic or fine-grained with repo read access)
+
+### Build and run
+
+```sh
 git clone https://github.com/wesm/middleman.git
 cd middleman
-mise install
 make build
 ```
 
-2. Create a config file at `~/.config/middleman/config.toml`:
+Create `~/.config/middleman/config.toml`:
 
 ```toml
-sync_interval = "5m"
-host = "127.0.0.1"
-port = 8090
-
 [[repos]]
 owner = "your-org"
 name = "your-repo"
@@ -50,20 +88,24 @@ owner = "your-org"
 name = "another-repo"
 ```
 
-3. Set your GitHub token and run:
+Set your token and start middleman:
 
-```
+```sh
 export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 ./middleman
 ```
 
-If you use the [GitHub CLI](https://cli.github.com/), middleman will fall back to `gh auth token` automatically — no env var needed.
+If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically — no env var needed.
 
-4. Open http://localhost:8090
+Open **http://localhost:8090**. The first sync runs immediately; PRs and issues appear within seconds.
 
-The first sync runs immediately on startup. PRs and issues populate within a few seconds.
+### Install to PATH
 
-### Configuration reference
+```sh
+make install   # installs to ~/.local/bin
+```
+
+## Configuration
 
 All fields are optional except `[[repos]]`.
 
@@ -71,51 +113,62 @@ All fields are optional except `[[repos]]`.
 |-------|---------|-------------|
 | `sync_interval` | `"5m"` | How often to pull from GitHub |
 | `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding your token |
-| `host` | `"127.0.0.1"` | Listen address (loopback only) |
+| `host` | `"127.0.0.1"` | Listen address |
 | `port` | `8090` | Listen port |
 | `base_path` | `"/"` | URL prefix for reverse proxy deployments |
 | `data_dir` | `"~/.config/middleman"` | Directory for the SQLite database |
 | `activity.view_mode` | `"threaded"` | `"flat"` or `"threaded"` |
 | `activity.time_range` | `"7d"` | `"24h"`, `"7d"`, `"30d"`, or `"90d"` |
 | `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
-| `activity.hide_bots` | `false` | Hide bot activity in the feed |
+| `activity.hide_bots` | `false` | Hide bot activity |
+
+## Architecture
+
+Middleman is a single Go binary with the Svelte frontend embedded at build time. No external services — just SQLite on disk.
+
+```
+middleman binary
+  ├── Config loader (TOML)
+  ├── Sync engine → GitHub API (go-github)
+  ├── SQLite database (WAL mode, pure Go driver)
+  └── HTTP server (Huma) → REST API + embedded SPA
+```
+
+- **No CGO required** — uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure Go SQLite implementation
+- **Loopback only** — binds to 127.0.0.1 by default; this is a personal tool, not a shared service
+- **Graceful shutdown** — handles SIGINT/SIGTERM cleanly
 
 ## Development
 
 Run the Go backend and Vite dev server in parallel:
 
+```sh
+make air-install    # one-time: install air for live reload
+make dev            # Go server on :8090 with live reload
+make frontend-dev   # Vite on :5173, proxies /api to Go
 ```
-make air-install    # one-time install for backend live reload
-make dev            # Go server on :8090 with air live reload
-make frontend-dev   # Vite on :5173 (proxies /api to Go)
-```
-
-`make dev` uses [air](https://github.com/air-verse/air) to rebuild and restart the Go server on file changes. Pass backend flags with `make dev ARGS='-config /path/to/config.toml'`.
 
 Other targets:
 
-```
-make build          # Production binary with embedded frontend
-make build-release  # Optimized, stripped release build
-make test           # Run all Go tests
+```sh
+make build          # Debug build with embedded frontend
+make build-release  # Optimized, stripped release binary
+make test           # All Go tests
 make test-short     # Fast tests only
-make lint           # mise-managed golangci-lint
-make frontend-check # Svelte / TypeScript checks
+make lint           # golangci-lint
+make frontend-check # Svelte and TypeScript checks
 make api-generate   # Regenerate OpenAPI spec and clients
-make install        # Install to ~/.local/bin
-make install-hooks  # Install pre-commit hooks via prek
+make clean          # Remove build artifacts
 ```
 
 ### Pre-commit hooks
 
-Hooks are managed with [prek](https://github.com/j178/prek). After cloning:
+Managed with [prek](https://github.com/j178/prek):
 
 ```sh
 brew install prek
 prek install
 ```
-
-Go commits run `gofmt`, `golangci-lint`, `go test -short`, and API client regeneration. Frontend commits run `make frontend-check`. If a hook auto-fixes files, re-stage and re-commit. Config lives in `prek.toml`.
 
 ## License
 
