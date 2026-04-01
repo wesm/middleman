@@ -2,8 +2,7 @@ const STORAGE_KEY = "middleman-filter-repo";
 
 function loadPersistedRepo(): string | undefined {
   try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    return v ?? undefined;
+    return localStorage.getItem(STORAGE_KEY) || undefined;
   } catch {
     return undefined;
   }
@@ -16,7 +15,7 @@ export function getGlobalRepo(): string | undefined {
 }
 
 export function setGlobalRepo(repo: string | undefined): void {
-  filterRepo = repo;
+  filterRepo = repo || undefined;
   try {
     if (repo !== undefined) {
       localStorage.setItem(STORAGE_KEY, repo);
