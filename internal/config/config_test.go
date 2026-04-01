@@ -301,6 +301,48 @@ name = "b"
 	assert.Equal("7d", cfg2.Activity.TimeRange)
 }
 
+func TestEnsureDefaultCreatesFile(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "config.toml")
+
+	require.NoError(t, EnsureDefault(path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(string(data), "sync_interval")
+	assert.Contains(string(data), "github_token_env")
+	assert.Contains(string(data), "[[repos]]")
+}
+
+func TestEnsureDefaultSkipsExisting(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	require.NoError(t, EnsureDefault(path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	Assert.Contains(t, string(data), `owner = "a"`)
+}
+
+func TestEnsureDefaultIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	require.NoError(t, EnsureDefault(path))
+	info1, err := os.Stat(path)
+	require.NoError(t, err)
+
+	require.NoError(t, EnsureDefault(path))
+	info2, err := os.Stat(path)
+	require.NoError(t, err)
+
+	Assert.Equal(t, info1.ModTime(), info2.ModTime())
+}
+
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
