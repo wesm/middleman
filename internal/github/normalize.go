@@ -152,20 +152,20 @@ func DeriveOverallCIStatus(
 			continue
 		}
 		switch r.GetConclusion() {
-		case "failure", "timed_out", "cancelled":
+		case "failure", "timed_out", "cancelled", "action_required":
 			hasFailed = true
 		}
 	}
 
-	if combined != nil {
-		for _, s := range combined.Statuses {
-			hasAny = true
-			switch s.GetState() {
-			case "pending":
-				hasPending = true
-			case "failure", "error":
-				hasFailed = true
-			}
+	// Use GitHub's pre-aggregated State rather than iterating
+	// combined.Statuses, which may be truncated by pagination.
+	if combined != nil && combined.GetTotalCount() > 0 {
+		hasAny = true
+		switch combined.GetState() {
+		case "pending":
+			hasPending = true
+		case "failure", "error":
+			hasFailed = true
 		}
 	}
 

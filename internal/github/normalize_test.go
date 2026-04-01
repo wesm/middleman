@@ -200,8 +200,17 @@ func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
 	}
 }
 
+func TestDeriveOverallCIStatus_ActionRequired(t *testing.T) {
+	runs := []*gh.CheckRun{
+		{Status: new("completed"), Conclusion: new("action_required")},
+	}
+	Assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
+}
+
 func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
 	combined := &gh.CombinedStatus{
+		TotalCount: new(1),
+		State:      new("success"),
 		Statuses: []*gh.RepoStatus{
 			{State: new("success"), Context: new("ci/build")},
 		},
@@ -209,11 +218,26 @@ func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
 	Assert.Equal(t, "success", DeriveOverallCIStatus(nil, combined))
 }
 
+func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
+	// Statuses slice may be truncated by pagination; the pre-aggregated
+	// State field reflects all pages, so we rely on it instead.
+	combined := &gh.CombinedStatus{
+		TotalCount: new(50),
+		State:      new("failure"),
+		Statuses: []*gh.RepoStatus{
+			{State: new("success"), Context: new("ci/build")},
+		},
+	}
+	Assert.Equal(t, "failure", DeriveOverallCIStatus(nil, combined))
+}
+
 func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
 	runs := []*gh.CheckRun{
 		{Status: new("completed"), Conclusion: new("success")},
 	}
 	combined := &gh.CombinedStatus{
+		TotalCount: new(1),
+		State:      new("pending"),
 		Statuses: []*gh.RepoStatus{
 			{State: new("pending"), Context: new("ci/deploy")},
 		},
