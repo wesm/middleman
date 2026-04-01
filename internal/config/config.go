@@ -72,18 +72,15 @@ func homeDir() string {
 // The file contains sensible defaults and a placeholder repo entry that the
 // user must edit before running middleman.
 func EnsureDefault(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil // file already exists
-		}
-		return fmt.Errorf("creating config %s: %w", path, err)
+	// Check if the file already exists before doing any work.
+	if _, err := os.Stat(path); err == nil {
+		return nil // file already exists
 	}
-	defer f.Close()
 
 	const defaultConfig = `# middleman configuration
 # See https://github.com/wesm/middleman for documentation.
@@ -103,9 +100,38 @@ port = 8090
 view_mode = "threaded"
 time_range = "7d"
 `
-	if _, err := f.WriteString(defaultConfig); err != nil {
-		return fmt.Errorf("writing default config %s: %w", path, err)
+	// Write to a temp file in the same directory, then rename into place
+	// so that the final path is never observed with partial contents.
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp config file: %w", err)
 	}
+	tmpPath := tmp.Name()
+
+	// On any failure, clean up the temp file.
+	success := false
+	defer func() {
+		if !success {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("setting config permissions: %w", err)
+	}
+	if _, err := tmp.WriteString(defaultConfig); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing default config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp config file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("installing config %s: %w", path, err)
+	}
+	success = true
 	return nil
 }
 
