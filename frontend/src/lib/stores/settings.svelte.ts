@@ -7,7 +7,7 @@ export function getConfiguredRepos(): ConfigRepo[] {
 }
 
 export function setConfiguredRepos(r: ConfigRepo[]): void {
-  repos = r;
+  repos = r ?? [];
 }
 
 export function hasConfiguredRepos(): boolean {

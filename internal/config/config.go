@@ -122,17 +122,39 @@ time_range = "7d"
 			return nil
 		}
 		// Hard links may not be supported (FAT/exFAT, network
-		// shares, cross-device). Fall back to atomic rename.
-		// Check if another process already created the file.
-		if _, statErr := os.Stat(path); statErr == nil {
+		// shares, cross-device). Fall back to O_EXCL create +
+		// write with cleanup on failure.
+		return writeExclusive(tmpPath, path)
+	}
+	return nil
+}
+
+// writeExclusive creates dst with O_EXCL (fails if it exists) and
+// copies the content from src. Partial files are removed on failure.
+func writeExclusive(src, dst string) error {
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("reading temp config: %w", err)
+	}
+
+	f, err := os.OpenFile(
+		dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600,
+	)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
 			return nil
 		}
-		// Rename is atomic on the same filesystem. The temp file
-		// is in the same directory, so this is guaranteed.
-		if renameErr := os.Rename(tmpPath, path); renameErr != nil {
-			return fmt.Errorf("installing config %s: %w", path, renameErr)
-		}
-		return nil
+		return fmt.Errorf("creating config %s: %w", dst, err)
+	}
+
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		os.Remove(dst)
+		return fmt.Errorf("writing config %s: %w", dst, err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(dst)
+		return fmt.Errorf("flushing config %s: %w", dst, err)
 	}
 	return nil
 }
@@ -152,6 +174,10 @@ func Load(path string) (*Config, error) {
 
 	if err := toml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+
+	if cfg.Repos == nil {
+		cfg.Repos = []Repo{}
 	}
 
 	if cfg.DataDir == "" {

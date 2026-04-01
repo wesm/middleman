@@ -85,7 +85,7 @@ export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 
 If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically — no env var needed.
 
-On first run, middleman creates a default config at `~/.config/middleman/config.toml` and opens the UI at **http://localhost:8090**. Add repositories from the Settings page, or edit the config file directly:
+On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8090**. Add repositories from the Settings page, or edit the config file directly:
 
 ```toml
 [[repos]]
