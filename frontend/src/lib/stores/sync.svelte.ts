@@ -6,7 +6,8 @@ import type { SyncStatus } from "../api/types.js";
 let status = $state<SyncStatus | null>(null);
 let pollingHandle: ReturnType<typeof setInterval> | null = null;
 let wasRunning = false;
-let onSyncComplete: (() => void) | null = null;
+let onSyncCompleteOnce: (() => void) | null = null;
+const syncCompleteListeners = new Set<() => void>();
 
 // --- reads ---
 
@@ -18,7 +19,13 @@ export function getSyncState(): SyncStatus | null {
 
 /** Register a callback to fire once when a running sync finishes. */
 export function onNextSyncComplete(fn: () => void): void {
-  onSyncComplete = fn;
+  onSyncCompleteOnce = fn;
+}
+
+/** Subscribe to every sync completion. Returns an unsubscribe function. */
+export function subscribeSyncComplete(fn: () => void): () => void {
+  syncCompleteListeners.add(fn);
+  return () => { syncCompleteListeners.delete(fn); };
 }
 
 export async function refreshSyncStatus(): Promise<void> {
@@ -35,10 +42,13 @@ export async function refreshSyncStatus(): Promise<void> {
   const isRunning = status?.running ?? false;
 
   // Detect sync completion transition
-  if (wasRunning && !isRunning && onSyncComplete) {
-    const cb = onSyncComplete;
-    onSyncComplete = null;
-    cb();
+  if (wasRunning && !isRunning) {
+    if (onSyncCompleteOnce) {
+      const cb = onSyncCompleteOnce;
+      onSyncCompleteOnce = null;
+      cb();
+    }
+    for (const fn of syncCompleteListeners) fn();
   }
   wasRunning = isRunning;
 

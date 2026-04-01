@@ -377,7 +377,7 @@ func (s *Syncer) refreshCIStatus(
 		return nil
 	}
 
-	ciStatus := NormalizeCIStatus(combined)
+	ciStatus := DeriveOverallCIStatus(checkRuns, combined)
 	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
 
 	return s.db.UpdatePRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
