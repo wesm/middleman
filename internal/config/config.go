@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -122,7 +123,39 @@ time_range = "7d"
 		if errors.Is(err, os.ErrExist) {
 			return nil
 		}
-		return fmt.Errorf("installing config %s: %w", path, err)
+		// Hard links may not be supported (FAT/exFAT, network
+		// shares, cross-device). Fall back to O_EXCL copy.
+		return copyExclusive(tmpPath, path)
+	}
+	return nil
+}
+
+// copyExclusive copies src to dst, failing if dst already exists.
+func copyExclusive(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("reading temp config: %w", err)
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(
+		dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600,
+	)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+		return fmt.Errorf("creating config %s: %w", dst, err)
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return fmt.Errorf("writing config %s: %w", dst, err)
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(dst)
+		return fmt.Errorf("flushing config %s: %w", dst, err)
 	}
 	return nil
 }
