@@ -76,7 +76,7 @@ cd middleman
 make build
 ```
 
-Create `~/.config/middleman/config.toml`:
+On first run, middleman creates a default config at `~/.config/middleman/config.toml`. Edit it to add at least one repo:
 
 ```toml
 [[repos]]
