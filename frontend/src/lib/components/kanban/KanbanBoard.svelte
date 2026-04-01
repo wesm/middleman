@@ -22,7 +22,6 @@
 
   onDestroy(() => {
     if (refreshHandle !== null) clearInterval(refreshHandle);
-    setFilterRepo(undefined);
     void loadPulls();
   });
 
