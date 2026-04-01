@@ -1,6 +1,14 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Prevent RepoTypeahead from making real API calls in the test environment.
+vi.mock("../../api/runtime.js", () => ({
+  client: {
+    GET: () => Promise.resolve({ data: [], error: undefined }),
+  },
+  apiErrorMessage: () => "",
+}));
+
 import AppHeader from "./AppHeader.svelte";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;

@@ -9,8 +9,6 @@
     selectPR,
     getSearchQuery,
     setSearchQuery,
-    getFilterRepo,
-    setFilterRepo,
     getFilterStarred,
     setFilterStarred,
     getFilterState,
@@ -20,7 +18,6 @@
   import { navigate } from "../../stores/router.svelte.js";
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import PullItem from "./PullItem.svelte";
-  import RepoTypeahead from "../RepoTypeahead.svelte";
 
   let searchInput = $state(getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -67,10 +64,6 @@
 
 <div class="pull-list">
   <div class="filter-bar">
-    <RepoTypeahead
-      selected={getFilterRepo()}
-      onchange={(repo) => { setFilterRepo(repo); void loadPulls(); }}
-    />
     <span class="count-badge">{getPulls().length} PRs</span>
     <div class="state-toggle">
       {#each ["open", "closed", "all"] as s (s)}

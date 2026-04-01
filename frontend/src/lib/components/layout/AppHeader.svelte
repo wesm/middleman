@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
+  import RepoTypeahead from "../RepoTypeahead.svelte";
+  import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
 
   const THEME_KEY = "middleman-theme";
 
@@ -64,6 +66,10 @@
 <header class="app-header">
   <div class="header-left">
     <span class="logo">middleman</span>
+    <RepoTypeahead
+      selected={getGlobalRepo()}
+      onchange={setGlobalRepo}
+    />
   </div>
 
   <nav class="header-center">
@@ -121,6 +127,7 @@
     flex: 1;
     display: flex;
     align-items: center;
+    gap: 12px;
   }
 
   .logo {

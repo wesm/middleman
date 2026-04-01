@@ -6,7 +6,6 @@
     isActivityLoading,
     getActivityError,
     isActivityCapped,
-    getActivityFilterRepo,
     getActivitySearch,
     getTimeRange,
     getViewMode,
@@ -14,7 +13,6 @@
     getHideBots,
     getEnabledEvents,
     getItemFilter,
-    setActivityFilterRepo,
     setActivityFilterTypes,
     setActivitySearch,
     setTimeRange,
@@ -30,7 +28,6 @@
     syncToURL,
   } from "../stores/activity.svelte.js";
   import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
-  import RepoTypeahead from "./RepoTypeahead.svelte";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import { hasConfiguredRepos, isSettingsLoaded } from "../stores/settings.svelte.js";
   import { navigate } from "../stores/router.svelte.js";
@@ -125,12 +122,6 @@
     else next.add(evt);
     setEnabledEvents(next);
     applyFilters();
-  }
-
-  function handleRepoChange(repo: string | undefined): void {
-    setActivityFilterRepo(repo);
-    syncToURL();
-    void loadActivity();
   }
 
   function handleTimeRangeChange(range: TimeRange): void {
@@ -317,11 +308,6 @@
 
 <div class="activity-feed">
   <div class="controls-bar">
-    <RepoTypeahead
-      selected={getActivityFilterRepo()}
-      onchange={handleRepoChange}
-    />
-
     <div class="filter-group">
       <div class="segmented-control">
         <button class="seg-btn" class:active={getItemFilter() === "all"} onclick={() => handleItemFilterChange("all")}>All</button>

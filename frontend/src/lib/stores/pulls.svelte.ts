@@ -1,5 +1,6 @@
 import { client } from "../api/runtime.js";
 import type { KanbanStatus, PullRequest } from "../api/types.js";
+import { getGlobalRepo } from "./filter.svelte.js";
 
 type PullsParams = {
   repo?: string;
@@ -16,7 +17,6 @@ type PullsParams = {
 let pulls = $state<PullRequest[]>([]);
 let loading = $state(false);
 let error = $state<string | null>(null);
-let filterRepo = $state<string | undefined>(undefined);
 let filterKanban = $state<KanbanStatus | undefined>(undefined);
 let filterStarred = $state(false);
 let filterState = $state<string>("open");
@@ -54,10 +54,6 @@ export function pullsByRepo(): Map<string, PullRequest[]> {
     }
   }
   return map;
-}
-
-export function getFilterRepo(): string | undefined {
-  return filterRepo;
 }
 
 export function getFilterKanban(): KanbanStatus | undefined {
@@ -140,10 +136,6 @@ export function selectPrevPR(): void {
 
 // --- writes ---
 
-export function setFilterRepo(repo: string | undefined): void {
-  filterRepo = repo;
-}
-
 export function setFilterKanban(kanban: KanbanStatus | undefined): void {
   filterKanban = kanban;
 }
@@ -225,9 +217,10 @@ export async function loadPulls(params?: PullsParams): Promise<void> {
   loading = true;
   error = null;
   try {
+    const globalRepo = getGlobalRepo();
     const merged = {
       state: filterState,
-      ...(filterRepo !== undefined && { repo: filterRepo }),
+      ...(globalRepo !== undefined && { repo: globalRepo }),
       ...(filterKanban !== undefined && { kanban: filterKanban }),
       ...(filterStarred && { starred: true }),
       ...(searchQuery !== undefined && { q: searchQuery }),

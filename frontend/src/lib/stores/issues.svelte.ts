@@ -1,10 +1,10 @@
 import { apiErrorMessage, client } from "../api/runtime.js";
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
+import { getGlobalRepo } from "./filter.svelte.js";
 
 let issues = $state<Issue[]>([]);
 let loading = $state(false);
 let error = $state<string | null>(null);
-let filterRepo = $state<string | undefined>(undefined);
 let filterStarred = $state(false);
 let filterState = $state<string>("open");
 let searchQuery = $state<string | undefined>(undefined);
@@ -23,7 +23,6 @@ export function getIssues(): Issue[] { return issues; }
 export function isIssuesLoading(): boolean { return loading; }
 export function getIssuesError(): string | null { return error; }
 export function getSelectedIssue() { return selectedIssue; }
-export function getIssueFilterRepo(): string | undefined { return filterRepo; }
 export function getIssueFilterStarred(): boolean { return filterStarred; }
 export function getIssueSearchQuery(): string | undefined { return searchQuery; }
 export function getIssueDetail(): IssueDetail | null { return issueDetail; }
@@ -43,7 +42,6 @@ export function issuesByRepo(): Map<string, Issue[]> {
 }
 
 // Write functions
-export function setIssueFilterRepo(repo: string | undefined): void { filterRepo = repo; }
 export function setIssueFilterStarred(v: boolean): void { filterStarred = v; }
 export function setIssueSearchQuery(q: string | undefined): void { searchQuery = q; }
 
@@ -64,11 +62,12 @@ export async function loadIssues(params?: IssuesParams): Promise<void> {
   loading = true;
   error = null;
   try {
+    const globalRepo = getGlobalRepo();
     const { data, error: requestError } = await client.GET("/issues", {
       params: {
         query: {
           state: filterState,
-          ...(filterRepo !== undefined && { repo: filterRepo }),
+          ...(globalRepo !== undefined && { repo: globalRepo }),
           ...(filterStarred && { starred: true }),
           ...(searchQuery !== undefined && { q: searchQuery }),
           ...params,

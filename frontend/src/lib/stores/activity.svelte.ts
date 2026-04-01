@@ -1,5 +1,6 @@
 import { apiErrorMessage, client } from "../api/runtime.js";
 import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
+import { getGlobalRepo } from "./filter.svelte.js";
 
 // --- constants ---
 
@@ -20,7 +21,6 @@ let items = $state<ActivityItem[]>([]);
 let loading = $state(false);
 let error = $state<string | null>(null);
 let capped = $state(false);
-let filterRepo = $state<string | undefined>(undefined);
 let filterTypes = $state<string[]>([]);
 let searchQuery = $state<string | undefined>(undefined);
 let timeRange = $state<TimeRange>("7d");
@@ -55,10 +55,6 @@ export function getActivityError(): string | null {
 
 export function isActivityCapped(): boolean {
   return capped;
-}
-
-export function getActivityFilterRepo(): string | undefined {
-  return filterRepo;
 }
 
 export function getActivityFilterTypes(): string[] {
@@ -98,10 +94,6 @@ export function isInitialized(): boolean {
 }
 
 // --- writes ---
-
-export function setActivityFilterRepo(repo: string | undefined): void {
-  filterRepo = repo;
-}
 
 export function setActivityFilterTypes(types: string[]): void {
   filterTypes = types;
@@ -166,7 +158,8 @@ function computeSince(): string {
 
 function buildParams(): ActivityParams {
   const p: ActivityParams = { since: computeSince() };
-  if (filterRepo) p.repo = filterRepo;
+  const repo = getGlobalRepo();
+  if (repo) p.repo = repo;
   if (filterTypes.length > 0) p.types = filterTypes;
   if (searchQuery) p.search = searchQuery;
   return p;
@@ -325,7 +318,6 @@ function deriveFiltersFromTypes(): void {
 /** Sync URL query params -> store state (partial override). */
 export function syncFromURL(): void {
   const sp = new URLSearchParams(window.location.search);
-  if (sp.has("repo")) filterRepo = sp.get("repo") ?? undefined;
   if (sp.has("types")) {
     const typesParam = sp.get("types");
     filterTypes = typesParam ? typesParam.split(",") : [];
@@ -348,8 +340,6 @@ export function syncFromURL(): void {
 /** Sync store state -> URL query params (replaceState). */
 export function syncToURL(): void {
   const sp = new URLSearchParams(window.location.search);
-  if (filterRepo) sp.set("repo", filterRepo);
-  else sp.delete("repo");
   if (filterTypes.length > 0) sp.set("types", filterTypes.join(","));
   else sp.delete("types");
   if (searchQuery) sp.set("search", searchQuery);
