@@ -71,19 +71,24 @@ func homeDir() string {
 // EnsureDefault creates a default config file at path if it does not exist.
 // The file contains sensible defaults and a placeholder repo entry that the
 // user must edit before running middleman.
+//
+// Writes to a temp file first, then hard-links into place so the target
+// path is never left empty or partially written.
 func EnsureDefault(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
 	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil // file already exists
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
 		}
-		return fmt.Errorf("creating config %s: %w", path, err)
+		return fmt.Errorf("creating temp config: %w", err)
 	}
-	defer f.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
 
 	const defaultConfig = `# middleman configuration
 # See https://github.com/wesm/middleman for documentation.
@@ -103,8 +108,21 @@ port = 8090
 view_mode = "threaded"
 time_range = "7d"
 `
-	if _, err := f.WriteString(defaultConfig); err != nil {
-		return fmt.Errorf("writing default config %s: %w", path, err)
+	if _, err := tmp.WriteString(defaultConfig); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing default config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("flushing default config: %w", err)
+	}
+
+	// Link fails atomically when path already exists, providing
+	// both atomic install and race-free existence check.
+	if err := os.Link(tmpPath, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+		return fmt.Errorf("installing config %s: %w", path, err)
 	}
 	return nil
 }

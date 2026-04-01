@@ -329,18 +329,19 @@ name = "b"
 }
 
 func TestEnsureDefaultIdempotent(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	require.NoError(t, EnsureDefault(path))
+	require.NoError(EnsureDefault(path))
 	info1, err := os.Stat(path)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	require.NoError(t, EnsureDefault(path))
+	require.NoError(EnsureDefault(path))
 	info2, err := os.Stat(path)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	Assert.Equal(t, info1.ModTime(), info2.ModTime())
+	require.Equal(info1.ModTime(), info2.ModTime())
 }
 
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
