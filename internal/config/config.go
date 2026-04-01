@@ -77,11 +77,6 @@ func EnsureDefault(path string) error {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	// Check if the file already exists before doing any work.
-	if _, err := os.Stat(path); err == nil {
-		return nil // file already exists
-	}
-
 	const defaultConfig = `# middleman configuration
 # See https://github.com/wesm/middleman for documentation.
 
@@ -100,38 +95,25 @@ port = 8090
 view_mode = "threaded"
 time_range = "7d"
 `
-	// Write to a temp file in the same directory, then rename into place
-	// so that the final path is never observed with partial contents.
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	// Use O_CREATE|O_EXCL to atomically create the file only if it does
+	// not already exist, avoiding TOCTOU races with os.Stat+os.Rename.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return fmt.Errorf("creating temp config file: %w", err)
-	}
-	tmpPath := tmp.Name()
-
-	// On any failure, clean up the temp file.
-	success := false
-	defer func() {
-		if !success {
-			os.Remove(tmpPath)
+		if errors.Is(err, os.ErrExist) {
+			return nil // file already exists
 		}
-	}()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("setting config permissions: %w", err)
+		return fmt.Errorf("creating config file: %w", err)
 	}
-	if _, err := tmp.WriteString(defaultConfig); err != nil {
-		tmp.Close()
+
+	if _, err := f.WriteString(defaultConfig); err != nil {
+		f.Close()
+		os.Remove(path)
 		return fmt.Errorf("writing default config: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp config file: %w", err)
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return fmt.Errorf("closing config file: %w", err)
 	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("installing config %s: %w", path, err)
-	}
-	success = true
 	return nil
 }
 
