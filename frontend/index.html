@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>middleman</title>
+    <style>
+      /* Critical theme colors inlined to prevent flash before app.css loads */
+      html { background: #f5f6f8; }
+      html.dark { background: #0d0d12; color-scheme: dark; }
+    </style>
+    <script>
+      // Apply theme before first paint to avoid flash of wrong theme.
+      (function() {
+        try { var v = localStorage.getItem("middleman-theme"); } catch(e) { var v = null; }
+        var dark = v === "dark" || v === "light"
+          ? v === "dark"
+          : matchMedia("(prefers-color-scheme: dark)").matches;
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

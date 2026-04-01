@@ -3,14 +3,35 @@
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
 
-  let dark = $state(false);
+  const THEME_KEY = "middleman-theme";
+
+  function storedTheme(): string | null {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      if (v === "dark" || v === "light") return v;
+      if (v !== null) localStorage.removeItem(THEME_KEY);
+    } catch {
+      // Storage blocked (e.g. private browsing) — fall back to system preference
+    }
+    return null;
+  }
+
+  function loadInitialTheme(): boolean {
+    const stored = storedTheme();
+    if (stored !== null) return stored === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  let dark = $state(loadInitialTheme());
+  let manualOverride = storedTheme() !== null;
 
   onMount(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    dark = mediaQuery.matches;
 
     const handleChange = (event: MediaQueryListEvent) => {
-      dark = event.matches;
+      if (!manualOverride) {
+        dark = event.matches;
+      }
     };
 
     mediaQuery.addEventListener("change", handleChange);
@@ -21,16 +42,15 @@
   });
 
   $effect(() => {
-    applyTheme(dark);
+    document.documentElement.classList.toggle("dark", dark);
   });
-
-  function applyTheme(isDark: boolean): void {
-    document.documentElement.classList.toggle("dark", isDark);
-  }
 
   function toggleTheme(): void {
     dark = !dark;
-    applyTheme(dark);
+    manualOverride = true;
+    try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch {
+      // Storage blocked — toggle still works for this session
+    }
   }
 
   async function handleSync(): Promise<void> {
