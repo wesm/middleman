@@ -107,7 +107,7 @@ make install   # installs to ~/.local/bin
 
 ## Configuration
 
-All fields are optional except `[[repos]]`.
+All fields are optional. Repos can be added in the config file or through the Settings UI.
 
 | Field | Default | Description |
 |-------|---------|-------------|
