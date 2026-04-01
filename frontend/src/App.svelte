@@ -40,6 +40,8 @@
 
   import { loadPulls } from "./lib/stores/pulls.svelte.js";
   import { loadIssues } from "./lib/stores/issues.svelte.js";
+  import { getGlobalRepo } from "./lib/stores/filter.svelte.js";
+  import { loadActivity } from "./lib/stores/activity.svelte.js";
 
   let appReady = $state(false);
 
@@ -57,6 +59,20 @@
       void loadPulls();
       void loadIssues();
     })();
+  });
+
+  let lastRepo: string | undefined;
+  $effect(() => {
+    const repo = getGlobalRepo();
+    if (!appReady) {
+      lastRepo = repo;
+      return;
+    }
+    if (repo === lastRepo) return;
+    lastRepo = repo;
+    void loadPulls();
+    void loadIssues();
+    void loadActivity();
   });
 
   // Sync route state: restore drawer, select items, clear stale state.

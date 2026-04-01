@@ -9,8 +9,6 @@
     selectIssue,
     getIssueSearchQuery,
     setIssueSearchQuery,
-    getIssueFilterRepo,
-    setIssueFilterRepo,
     getIssueFilterStarred,
     setIssueFilterStarred,
     getIssueFilterState,
@@ -20,7 +18,6 @@
   import { navigate } from "../../stores/router.svelte.js";
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import IssueItem from "./IssueItem.svelte";
-  import RepoTypeahead from "../RepoTypeahead.svelte";
 
   let searchInput = $state(getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -66,10 +63,6 @@
 
 <div class="issue-list">
   <div class="filter-bar">
-    <RepoTypeahead
-      selected={getIssueFilterRepo()}
-      onchange={(repo) => { setIssueFilterRepo(repo); void loadIssues(); }}
-    />
     <span class="count-badge">{getIssues().length} issues</span>
     <div class="state-toggle">
       {#each ["open", "closed", "all"] as s (s)}
