@@ -72,15 +72,18 @@ func homeDir() string {
 // The file contains sensible defaults and a placeholder repo entry that the
 // user must edit before running middleman.
 func EnsureDefault(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil // file already exists
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("checking config %s: %w", path, err)
-	}
-
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
+
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil // file already exists
+		}
+		return fmt.Errorf("creating config %s: %w", path, err)
+	}
+	defer f.Close()
 
 	const defaultConfig = `# middleman configuration
 # See https://github.com/wesm/middleman for documentation.
@@ -100,7 +103,7 @@ port = 8090
 view_mode = "threaded"
 time_range = "7d"
 `
-	if err := os.WriteFile(path, []byte(defaultConfig), 0o644); err != nil {
+	if _, err := f.WriteString(defaultConfig); err != nil {
 		return fmt.Errorf("writing default config %s: %w", path, err)
 	}
 	return nil
