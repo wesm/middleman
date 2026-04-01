@@ -58,8 +58,9 @@ name = "repo"
 
 func TestLoadNoRepos(t *testing.T) {
 	path := writeConfig(t, `host = "127.0.0.1"`)
-	_, err := Load(path)
-	require.Error(t, err)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	Assert.Empty(t, cfg.Repos)
 }
 
 func TestLoadInvalidSyncInterval(t *testing.T) {

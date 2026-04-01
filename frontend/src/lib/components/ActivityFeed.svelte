@@ -32,6 +32,8 @@
   import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
   import RepoTypeahead from "./RepoTypeahead.svelte";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import { hasConfiguredRepos } from "../stores/settings.svelte.js";
+  import { navigate } from "../stores/router.svelte.js";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -432,7 +434,13 @@
     <div class="error-banner">{getActivityError()}</div>
   {/if}
 
-  {#if getViewMode() === "threaded"}
+  {#if !hasConfiguredRepos() && displayItems.length === 0 && !isActivityLoading()}
+    <div class="table-container">
+      <div class="empty-state">No repositories configured.<br />
+        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
+      </div>
+    </div>
+  {:else if getViewMode() === "threaded"}
     {#if displayItems.length === 0 && isActivityLoading()}
       <div class="table-container"><div class="empty-state">Loading...</div></div>
     {:else}
@@ -869,6 +877,18 @@
     text-align: center;
     color: var(--text-muted);
     font-size: 13px;
+  }
+
+  .settings-link {
+    color: var(--accent-blue);
+    cursor: pointer;
+    font-size: 13px;
+    margin-top: 4px;
+    display: inline-block;
+  }
+
+  .settings-link:hover {
+    text-decoration: underline;
   }
 
   .error-banner {

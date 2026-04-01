@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -70,8 +69,8 @@ func homeDir() string {
 }
 
 // EnsureDefault creates a default config file at path if it does not exist.
-// The file contains sensible defaults and a placeholder repo entry that the
-// user must edit before running middleman.
+// The file contains sensible defaults. Repos can be added later through the
+// settings UI.
 //
 // Writes to a temp file first, then hard-links into place so the target
 // path is never left empty or partially written.
@@ -99,8 +98,7 @@ github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8090
 
-# Add repositories to monitor. At least one is required.
-# Example:
+# Add repositories to monitor (or add them in the Settings UI).
 # [[repos]]
 # owner = "your-org"
 # name = "your-repo"
@@ -124,38 +122,17 @@ time_range = "7d"
 			return nil
 		}
 		// Hard links may not be supported (FAT/exFAT, network
-		// shares, cross-device). Fall back to O_EXCL copy.
-		return copyExclusive(tmpPath, path)
-	}
-	return nil
-}
-
-// copyExclusive copies src to dst, failing if dst already exists.
-func copyExclusive(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("reading temp config: %w", err)
-	}
-	defer in.Close()
-
-	out, err := os.OpenFile(
-		dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600,
-	)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
+		// shares, cross-device). Fall back to atomic rename.
+		// Check if another process already created the file.
+		if _, statErr := os.Stat(path); statErr == nil {
 			return nil
 		}
-		return fmt.Errorf("creating config %s: %w", dst, err)
-	}
-
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(dst)
-		return fmt.Errorf("writing config %s: %w", dst, err)
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(dst)
-		return fmt.Errorf("flushing config %s: %w", dst, err)
+		// Rename is atomic on the same filesystem. The temp file
+		// is in the same directory, so this is guaranteed.
+		if renameErr := os.Rename(tmpPath, path); renameErr != nil {
+			return fmt.Errorf("installing config %s: %w", path, renameErr)
+		}
+		return nil
 	}
 	return nil
 }
@@ -202,10 +179,6 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if len(c.Repos) == 0 {
-		return errors.New("config: at least one [[repos]] entry required")
-	}
-
 	for i, r := range c.Repos {
 		if r.Owner == "" || r.Name == "" {
 			return fmt.Errorf("config: repos[%d] must have owner and name", i)

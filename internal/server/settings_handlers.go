@@ -165,12 +165,6 @@ func (s *Server) handleDeleteRepo(
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
 
-	if len(s.cfg.Repos) <= 1 {
-		writeError(w, http.StatusBadRequest,
-			"cannot remove the last configured repository")
-		return
-	}
-
 	idx := -1
 	for i, rp := range s.cfg.Repos {
 		if rp.Owner == owner && rp.Name == name {

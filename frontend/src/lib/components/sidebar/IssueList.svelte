@@ -18,6 +18,7 @@
   } from "../../stores/issues.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
+  import { hasConfiguredRepos } from "../../stores/settings.svelte.js";
   import IssueItem from "./IssueItem.svelte";
   import RepoTypeahead from "../RepoTypeahead.svelte";
 
@@ -116,7 +117,10 @@
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
   <div class="list-body">
-    {#if isIssuesLoading() && getIssues().length === 0}
+    {#if !hasConfiguredRepos() && getIssues().length === 0}
+      <p class="state-message">No repositories configured.<br />
+        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button></p>
+    {:else if isIssuesLoading() && getIssues().length === 0}
       <p class="state-message">Loading…</p>
     {:else if getIssuesError() !== null && getIssues().length === 0}
       <p class="state-message state-message--error">Error: {getIssuesError()}</p>
@@ -257,6 +261,18 @@
 
   .state-message--error {
     color: var(--accent-red);
+  }
+
+  .settings-link {
+    color: var(--accent-blue);
+    cursor: pointer;
+    font-size: 13px;
+    margin-top: 4px;
+    display: inline-block;
+  }
+
+  .settings-link:hover {
+    text-decoration: underline;
   }
 
   .sync-message {

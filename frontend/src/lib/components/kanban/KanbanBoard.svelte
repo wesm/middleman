@@ -8,6 +8,8 @@
     setFilterRepo,
   } from "../../stores/pulls.svelte.js";
   import { client } from "../../api/runtime.js";
+  import { hasConfiguredRepos } from "../../stores/settings.svelte.js";
+  import { navigate } from "../../stores/router.svelte.js";
   import { stopDetailPolling } from "../../stores/detail.svelte.js";
   import PullDetail from "../detail/PullDetail.svelte";
   import RepoTypeahead from "../RepoTypeahead.svelte";
@@ -96,6 +98,11 @@
       onchange={handleRepoChange}
     />
   </div>
+  {#if !hasConfiguredRepos() && getPulls().length === 0}
+    <div class="empty-state">No repositories configured.<br />
+      <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
+    </div>
+  {:else}
   <div class="kanban-board">
     {#each columns as col (col.id)}
       <KanbanColumn
@@ -108,6 +115,7 @@
       />
     {/each}
   </div>
+  {/if}
 
   {#if drawerPR !== null}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -159,6 +167,28 @@
     overflow-x: auto;
     overflow-y: hidden;
     align-items: stretch;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .settings-link {
+    color: var(--accent-blue);
+    cursor: pointer;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .settings-link:hover {
+    text-decoration: underline;
   }
 
   .drawer-overlay {

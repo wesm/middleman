@@ -14,6 +14,7 @@
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
   import { hydrateActivityDefaults } from "./lib/stores/activity.svelte.js";
+  import { setConfiguredRepos } from "./lib/stores/settings.svelte.js";
   import {
     getSelectedPR,
     selectNextPR,
@@ -46,6 +47,7 @@
     void (async () => {
       try {
         const settings = await getSettings();
+        setConfiguredRepos(settings.repos);
         hydrateActivityDefaults(settings.activity);
       } catch (err) {
         console.warn("Failed to load settings, using defaults:", err);
