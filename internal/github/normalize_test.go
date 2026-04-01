@@ -200,11 +200,19 @@ func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
 	}
 }
 
-func TestDeriveOverallCIStatus_ActionRequired(t *testing.T) {
-	runs := []*gh.CheckRun{
-		{Status: new("completed"), Conclusion: new("action_required")},
+func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
+	// Any completed conclusion not in {success, neutral, skipped} is failure.
+	for _, conclusion := range []string{
+		"action_required", "failure", "timed_out",
+		"cancelled", "stale", "startup_failure",
+	} {
+		t.Run(conclusion, func(t *testing.T) {
+			runs := []*gh.CheckRun{
+				{Status: new("completed"), Conclusion: new(conclusion)},
+			}
+			Assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
+		})
 	}
-	Assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
 }
 
 func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {

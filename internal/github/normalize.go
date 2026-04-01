@@ -152,7 +152,9 @@ func DeriveOverallCIStatus(
 			continue
 		}
 		switch r.GetConclusion() {
-		case "failure", "timed_out", "cancelled", "action_required":
+		case "success", "neutral", "skipped":
+			// OK — not a failure.
+		default:
 			hasFailed = true
 		}
 	}
