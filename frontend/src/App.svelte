@@ -11,6 +11,7 @@
   import DetailDrawer from "./lib/components/DetailDrawer.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
+  import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { getRoute, getPage, getView, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
@@ -47,6 +48,7 @@
   let appReady = $state(false);
 
   onMount(() => {
+    const cleanupItemRefs = initItemRefHandler();
     void (async () => {
       try {
         const settings = await getSettings();
@@ -60,6 +62,9 @@
       void loadPulls();
       void loadIssues();
     })();
+    return () => {
+      cleanupItemRefs();
+    };
   });
 
   let lastRepo: string | undefined;
