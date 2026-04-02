@@ -281,6 +281,7 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode())
+	require.Contains(string(resp.Body), "Pull Request is not mergeable")
 }
 
 func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
@@ -309,6 +310,7 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode())
+	require.Contains(string(resp.Body), "Head branch was modified")
 }
 
 func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {

@@ -132,6 +132,8 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 		{"blocked", new("blocked"), "blocked"},
 		{"behind", new("behind"), "behind"},
 		{"unstable", new("unstable"), "unstable"},
+		{"has_hooks", new("has_hooks"), "has_hooks"},
+		{"draft", new("draft"), "draft"},
 		{"nil", nil, ""},
 	}
 	for _, tt := range tests {
