@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ type mockGH struct {
 	markReadyForReviewFn func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn    func(context.Context, string, string, int, string) (*gh.PullRequest, error)
 	editIssueFn          func(context.Context, string, string, int, string) (*gh.Issue, error)
+	mergePullRequestFn   func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -119,8 +121,12 @@ func (m *mockGH) MarkPullRequestReadyForReview(
 }
 
 func (m *mockGH) MergePullRequest(
-	_ context.Context, _, _ string, _ int, _, _, _ string,
+	ctx context.Context, owner, repo string, number int,
+	commitTitle, commitMessage, method string,
 ) (*gh.PullRequestMergeResult, error) {
+	if m.mergePullRequestFn != nil {
+		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method)
+	}
 	merged := true
 	sha := "abc123"
 	msg := "merged"
@@ -247,6 +253,87 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
+}
+
+func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: 405},
+				Message:  "Pull Request is not mergeable",
+			}
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+}
+
+func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: 409},
+				Message:  "Head branch was modified",
+			}
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+}
+
+func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, fmt.Errorf("connection refused")
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
 }
 
 func TestAPIClientConstruction(t *testing.T) {
