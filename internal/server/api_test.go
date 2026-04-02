@@ -175,6 +175,24 @@ func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 	return srv, database
 }
 
+func setupTestServerWithRepos(
+	t *testing.T, mock *mockGH, repos []ghclient.RepoRef,
+) (*Server, *db.DB) {
+	t.Helper()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(mock, database, repos, time.Minute)
+	srv := New(
+		database, mock, syncer, nil, "/",
+		nil, ServerOptions{},
+	)
+	return srv, database
+}
+
 func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 	t.Helper()
 
@@ -937,6 +955,100 @@ func TestAPIClosePR422Merged(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusConflict, resp.StatusCode())
+}
+
+func TestResolveItem_PR(t *testing.T) {
+	require := require.New(t)
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	seedPR(t, database, "acme", "widget", 42)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		context.Background(), "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("pr", resp.JSON200.ItemType)
+	require.EqualValues(42, resp.JSON200.Number)
+	require.True(resp.JSON200.RepoTracked)
+}
+
+func TestResolveItem_Issue(t *testing.T) {
+	require := require.New(t)
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	seedIssue(t, database, "acme", "widget", 7, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		context.Background(), "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("issue", resp.JSON200.ItemType)
+	require.EqualValues(7, resp.JSON200.Number)
+	require.True(resp.JSON200.RepoTracked)
+}
+
+func TestResolveItem_UntrackedRepo(t *testing.T) {
+	require := require.New(t)
+	srv, _ := setupTestServer(t)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		context.Background(), "unknown", "repo", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.False(resp.JSON200.RepoTracked)
+	require.EqualValues(1, resp.JSON200.Number)
+	require.Empty(resp.JSON200.ItemType)
+}
+
+func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
+	require := require.New(t)
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: 404},
+				Message:  "Not Found",
+			}
+		},
+	}
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	srv, _ := setupTestServerWithRepos(t, mock, repos)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		context.Background(), "acme", "widget", 999,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, resp.StatusCode())
+}
+
+func TestResolveItem_GitHubServerError(t *testing.T) {
+	require := require.New(t)
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: 500},
+				Message:  "Internal Server Error",
+			}
+		},
+	}
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	srv, _ := setupTestServerWithRepos(t, mock, repos)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		context.Background(), "acme", "widget", 999,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
 }
 
 func TestAPICloseIssue422AlreadyClosed(t *testing.T) {

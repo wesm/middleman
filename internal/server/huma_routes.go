@@ -180,6 +180,10 @@ type syncIssueOutput struct {
 	Body issueDetailResponse
 }
 
+type resolveItemOutput struct {
+	Body resolveItemResponse
+}
+
 type syncStatusOutput struct {
 	Body *ghclient.SyncStatus
 }
@@ -232,6 +236,8 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/repos/{owner}/{name}/issues/{number}/comments",
 		DefaultStatus: http.StatusCreated,
 	}, s.postIssueComment)
+
+	huma.Post(api, "/repos/{owner}/{name}/items/{number}/resolve", s.resolveItem)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-starred",
@@ -945,6 +951,76 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 
 	return &listActivityOutput{
 		Body: activityResponse{Items: out, Capped: capped},
+	}, nil
+}
+
+func (s *Server) resolveItem(
+	ctx context.Context, input *repoNumberInput,
+) (*resolveItemOutput, error) {
+	owner, name, number := input.Owner, input.Name, input.Number
+
+	if !s.syncer.IsTrackedRepo(owner, name) {
+		return &resolveItemOutput{
+			Body: resolveItemResponse{
+				Number:      number,
+				RepoTracked: false,
+			},
+		}, nil
+	}
+
+	repo, err := s.db.GetRepoByOwnerName(ctx, owner, name)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get repo: " + err.Error(),
+		)
+	}
+	if repo != nil {
+		itemType, found, err := s.db.ResolveItemNumber(
+			ctx, repo.ID, number,
+		)
+		if err != nil {
+			return nil, huma.Error500InternalServerError(
+				"resolve item: " + err.Error(),
+			)
+		}
+		if found {
+			return &resolveItemOutput{
+				Body: resolveItemResponse{
+					ItemType:    itemType,
+					Number:      number,
+					RepoTracked: true,
+				},
+			}, nil
+		}
+	}
+
+	itemType, err := s.syncer.SyncItemByNumber(
+		ctx, owner, name, number,
+	)
+	if err != nil {
+		var ghErr *gh.ErrorResponse
+		if errors.As(err, &ghErr) {
+			if ghErr.Response != nil &&
+				ghErr.Response.StatusCode == 404 {
+				return nil, huma.Error404NotFound(
+					"item not found: " + err.Error(),
+				)
+			}
+			return nil, huma.Error502BadGateway(
+				"GitHub API error: " + err.Error(),
+			)
+		}
+		return nil, huma.Error500InternalServerError(
+			"resolve item: " + err.Error(),
+		)
+	}
+
+	return &resolveItemOutput{
+		Body: resolveItemResponse{
+			ItemType:    itemType,
+			Number:      number,
+			RepoTracked: true,
+		},
 	}, nil
 }
 
