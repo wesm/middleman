@@ -120,6 +120,34 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 	assert.True(event.CreatedAt.Equal(now))
 }
 
+func TestNormalizePR_MergeableState(t *testing.T) {
+	tests := []struct {
+		name  string
+		state *string
+		want  string
+	}{
+		{"dirty", new("dirty"), "dirty"},
+		{"clean", new("clean"), "clean"},
+		{"unknown", new("unknown"), "unknown"},
+		{"blocked", new("blocked"), "blocked"},
+		{"behind", new("behind"), "behind"},
+		{"unstable", new("unstable"), "unstable"},
+		{"nil", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ghPR := &gh.PullRequest{
+				ID:             new(int64(1)),
+				Number:         new(1),
+				State:          new("open"),
+				MergeableState: tt.state,
+			}
+			pr := NormalizePR(1, ghPR)
+			Assert.Equal(t, tt.want, pr.MergeableState)
+		})
+	}
+}
+
 func TestDeriveOverallCIStatus_NoChecksOrStatuses(t *testing.T) {
 	result := DeriveOverallCIStatus(nil, nil)
 	Assert.Empty(t, result)

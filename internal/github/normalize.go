@@ -70,6 +70,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
 	if ghPR.GetBase() != nil {
 		pr.BaseBranch = ghPR.GetBase().GetRef()
 	}
+	pr.MergeableState = ghPR.GetMergeableState()
 
 	return pr
 }
