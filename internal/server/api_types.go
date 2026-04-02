@@ -36,6 +36,12 @@ type issueDetailResponse struct {
 	RepoName  string          `json:"repo_name"`
 }
 
+type resolveItemResponse struct {
+	ItemType    string `json:"item_type" doc:"'pr' or 'issue'"`
+	Number      int    `json:"number"`
+	RepoTracked bool   `json:"repo_tracked"`
+}
+
 const activitySafetyCap = 5000
 
 type activityResponse struct {

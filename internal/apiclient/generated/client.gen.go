@@ -312,6 +312,17 @@ type Repo struct {
 	Owner               string     `json:"Owner"`
 }
 
+// ResolveItemResponse defines model for ResolveItemResponse.
+type ResolveItemResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// ItemType 'pr' or 'issue'
+	ItemType    string `json:"item_type"`
+	Number      int64  `json:"number"`
+	RepoTracked bool   `json:"repo_tracked"`
+}
+
 // SetKanbanStateInputBody defines model for SetKanbanStateInputBody.
 type SetKanbanStateInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -501,6 +512,9 @@ type ClientInterface interface {
 	// PostReposByOwnerByNameIssuesByNumberSync request
 	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetReposByOwnerByNameItemsByNumber request
+	GetReposByOwnerByNameItemsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetReposByOwnerByNamePullsByNumber request
 	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -674,6 +688,18 @@ func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name str
 
 func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostReposByOwnerByNameIssuesByNumberSyncRequest(c.Server, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNameItemsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNameItemsByNumberRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -1585,6 +1611,54 @@ func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner str
 	return req, nil
 }
 
+// NewGetReposByOwnerByNameItemsByNumberRequest generates requests for GetReposByOwnerByNameItemsByNumber
+func NewGetReposByOwnerByNameItemsByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/items/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetReposByOwnerByNamePullsByNumberRequest generates requests for GetReposByOwnerByNamePullsByNumber
 func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -2242,6 +2316,9 @@ type ClientWithResponsesInterface interface {
 	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
 	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
 
+	// GetReposByOwnerByNameItemsByNumberWithResponse request
+	GetReposByOwnerByNameItemsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameItemsByNumberResponse, error)
+
 	// GetReposByOwnerByNamePullsByNumberWithResponse request
 	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
 
@@ -2494,6 +2571,29 @@ func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetReposByOwnerByNameItemsByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ResolveItemResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNameItemsByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNameItemsByNumberResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2867,6 +2967,15 @@ func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithRespon
 		return nil, err
 	}
 	return ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp)
+}
+
+// GetReposByOwnerByNameItemsByNumberWithResponse request returning *GetReposByOwnerByNameItemsByNumberResponse
+func (c *ClientWithResponses) GetReposByOwnerByNameItemsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameItemsByNumberResponse, error) {
+	rsp, err := c.GetReposByOwnerByNameItemsByNumber(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNameItemsByNumberResponse(rsp)
 }
 
 // GetReposByOwnerByNamePullsByNumberWithResponse request returning *GetReposByOwnerByNamePullsByNumberResponse
@@ -3313,6 +3422,39 @@ func ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp *http.Response) (
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNameItemsByNumberResponse parses an HTTP response from a GetReposByOwnerByNameItemsByNumberWithResponse call
+func ParseGetReposByOwnerByNameItemsByNumberResponse(rsp *http.Response) (*GetReposByOwnerByNameItemsByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNameItemsByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResolveItemResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

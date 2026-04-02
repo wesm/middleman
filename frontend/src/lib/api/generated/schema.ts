@@ -155,6 +155,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/items/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name items by number */
+        get: operations["get-repos-by-owner-by-name-items-by-number"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}": {
         parameters: {
             query?: never;
@@ -720,6 +737,19 @@ export interface components {
             Name: string;
             Owner: string;
         };
+        ResolveItemResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ResolveItemResponse.json
+             */
+            readonly $schema?: string;
+            /** @description 'pr' or 'issue' */
+            item_type: string;
+            /** Format: int64 */
+            number: number;
+            repo_tracked: boolean;
+        };
         SetKanbanStateInputBody: {
             /**
              * Format: uri
@@ -1061,6 +1091,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-repos-by-owner-by-name-items-by-number": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolveItemResponse"];
                 };
             };
             /** @description Error */
