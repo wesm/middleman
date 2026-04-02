@@ -520,3 +520,19 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 		require.Fail(t, "Stop did not return within timeout")
 	}
 }
+
+func TestIsTrackedRepo(t *testing.T) {
+	assert := Assert.New(t)
+	database := openTestDB(t)
+	mc := &mockClient{}
+
+	syncer := NewSyncer(mc, database, []RepoRef{
+		{Owner: "acme", Name: "widget"},
+		{Owner: "corp", Name: "lib"},
+	}, time.Minute)
+
+	assert.True(syncer.IsTrackedRepo("acme", "widget"))
+	assert.True(syncer.IsTrackedRepo("corp", "lib"))
+	assert.False(syncer.IsTrackedRepo("acme", "other"))
+	assert.False(syncer.IsTrackedRepo("nobody", "widget"))
+}
