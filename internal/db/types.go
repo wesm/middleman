@@ -44,6 +44,7 @@ type PullRequest struct {
 	LastActivityAt    time.Time
 	MergedAt          *time.Time
 	ClosedAt          *time.Time
+	MergeableState    string
 	KanbanStatus      string
 	Starred           bool
 }
