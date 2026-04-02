@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,4 +50,13 @@ func TestOpenIdempotent(t *testing.T) {
 	d2, err := Open(path)
 	require.NoError(t, err)
 	d2.Close()
+}
+
+func TestMigrateMergeableState(t *testing.T) {
+	d := openTestDB(t)
+	var val string
+	err := d.ReadDB().QueryRow(
+		"SELECT mergeable_state FROM pull_requests LIMIT 0",
+	).Scan(&val)
+	require.ErrorIs(t, err, sql.ErrNoRows)
 }

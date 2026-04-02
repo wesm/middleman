@@ -251,6 +251,7 @@ type PullRequest struct {
 	IsDraft           bool       `json:"IsDraft"`
 	KanbanStatus      string     `json:"KanbanStatus"`
 	LastActivityAt    time.Time  `json:"LastActivityAt"`
+	MergeableState    string     `json:"MergeableState"`
 	MergedAt          *time.Time `json:"MergedAt"`
 	Number            int64      `json:"Number"`
 	RepoID            int64      `json:"RepoID"`
@@ -281,6 +282,7 @@ type PullResponse struct {
 	IsDraft           bool       `json:"IsDraft"`
 	KanbanStatus      string     `json:"KanbanStatus"`
 	LastActivityAt    time.Time  `json:"LastActivityAt"`
+	MergeableState    string     `json:"MergeableState"`
 	MergedAt          *time.Time `json:"MergedAt"`
 	Number            int64      `json:"Number"`
 	RepoID            int64      `json:"RepoID"`

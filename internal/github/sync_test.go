@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -25,12 +26,13 @@ func openTestDB(t *testing.T) *db.DB {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	openPRs  []*gh.PullRequest
-	singlePR *gh.PullRequest
-	comments []*gh.IssueComment
-	reviews  []*gh.PullRequestReview
-	commits  []*gh.RepositoryCommit
-	ciStatus *gh.CombinedStatus
+	openPRs          []*gh.PullRequest
+	singlePR         *gh.PullRequest
+	getPullRequestFn func(context.Context, string, string, int) (*gh.PullRequest, error)
+	comments         []*gh.IssueComment
+	reviews          []*gh.PullRequestReview
+	commits          []*gh.RepositoryCommit
+	ciStatus         *gh.CombinedStatus
 }
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -49,7 +51,12 @@ func (m *mockClient) GetUser(_ context.Context, login string) (*gh.User, error) 
 	return &gh.User{Login: &login}, nil
 }
 
-func (m *mockClient) GetPullRequest(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+func (m *mockClient) GetPullRequest(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	if m.getPullRequestFn != nil {
+		return m.getPullRequestFn(ctx, owner, repo, number)
+	}
 	if m.singlePR != nil {
 		return m.singlePR, nil
 	}
@@ -254,6 +261,171 @@ func TestSyncSingleFlight(t *testing.T) {
 	Assert.Nil(t, repo)
 
 	_ = callCount
+}
+
+func TestSyncPreservesMergeableState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	pr := buildOpenPR(1, now)
+	additions := 10
+	deletions := 5
+	mergeableState := "dirty"
+	pr.Additions = &additions
+	pr.Deletions = &deletions
+	pr.MergeableState = &mergeableState
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{pr},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(mc, d, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+
+	// First sync: full fetch occurs, MergeableState is stored.
+	syncer.RunOnce(ctx)
+
+	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("dirty", stored.MergeableState)
+
+	// Second sync: same UpdatedAt means no full fetch. The list endpoint
+	// does not return MergeableState, so the preservation branch runs.
+	// Reset the mock so the list PR has no MergeableState (as the real
+	// list endpoint would return).
+	listPR := buildOpenPR(1, now) // same UpdatedAt, no MergeableState set
+	listPR.Additions = nil
+	listPR.Deletions = nil
+	mc.openPRs = []*gh.PullRequest{listPR}
+	// Ensure full fetch would return empty MergeableState if it ran.
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		p := buildOpenPR(1, now)
+		return p, nil
+	}
+
+	syncer.RunOnce(ctx)
+
+	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored2)
+	assert.Equal("dirty", stored2.MergeableState, "MergeableState should be preserved when full fetch is skipped")
+}
+
+func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// Build a list PR with diff stats set so the zero-stats condition
+	// doesn't trigger the full fetch independently.
+	listPR := buildOpenPR(1, now)
+	additions := 10
+	deletions := 5
+	listPR.Additions = &additions
+	listPR.Deletions = &deletions
+
+	// First full-fetch returns "unknown".
+	fetchCount := 0
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{listPR},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		fetchCount++
+		p := buildOpenPR(1, now)
+		a, d2 := 10, 5
+		p.Additions = &a
+		p.Deletions = &d2
+		state := "unknown"
+		if fetchCount >= 2 {
+			state = "clean"
+		}
+		p.MergeableState = &state
+		return p, nil
+	}
+
+	syncer := NewSyncer(mc, d, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+
+	// First sync: PR is new, full fetch triggers, returns "unknown".
+	syncer.RunOnce(ctx)
+
+	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("unknown", stored.MergeableState)
+	assert.Equal(1, fetchCount, "first sync should trigger one full fetch")
+
+	// Second sync: same UpdatedAt, but MergeableState == "unknown" should
+	// trigger another full fetch. The callback now returns "clean".
+	syncer.RunOnce(ctx)
+
+	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored2)
+	assert.Equal("clean", stored2.MergeableState, "second sync should resolve unknown to clean")
+	assert.Equal(2, fetchCount, "second sync should trigger another full fetch for unknown state")
+}
+
+func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// First sync: full fetch succeeds, sets fields.
+	pr := buildOpenPR(1, now)
+	additions := 10
+	deletions := 5
+	mergeableState := "dirty"
+	pr.Additions = &additions
+	pr.Deletions = &deletions
+	pr.MergeableState = &mergeableState
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{pr},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(mc, d, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer.RunOnce(ctx)
+
+	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.Equal("dirty", stored.MergeableState)
+	require.Equal(10, stored.Additions)
+
+	// Second sync: bump UpdatedAt so needsTimeline triggers, but full
+	// fetch fails. Fields from the existing row should be preserved.
+	later := now.Add(time.Hour)
+	listPR := buildOpenPR(1, later)
+	mc.openPRs = []*gh.PullRequest{listPR}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		return nil, fmt.Errorf("transient network error")
+	}
+
+	syncer.RunOnce(ctx)
+
+	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	assert.Equal("dirty", stored2.MergeableState, "MergeableState should survive a failed full fetch")
+	assert.Equal(10, stored2.Additions, "Additions should survive a failed full fetch")
+	assert.Equal(5, stored2.Deletions, "Deletions should survive a failed full fetch")
 }
 
 func TestSyncStatusUpdated(t *testing.T) {

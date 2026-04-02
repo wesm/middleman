@@ -310,6 +310,26 @@
         </select>
       </div>
 
+      <!-- Mergeable state warnings -->
+      {#if pr.State === "open" && pr.MergeableState === "dirty"}
+        <div class="merge-warning merge-warning--conflict">
+          <span>This branch has conflicts that must be resolved before merging.</span>
+          <a href={pr.URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
+        </div>
+      {:else if pr.State === "open" && pr.MergeableState === "blocked"}
+        <div class="merge-warning merge-warning--info">
+          <span>Branch protection rules may prevent this merge.</span>
+        </div>
+      {:else if pr.State === "open" && pr.MergeableState === "behind"}
+        <div class="merge-warning merge-warning--info">
+          <span>This branch is behind the base branch and may need to be updated.</span>
+        </div>
+      {:else if pr.State === "open" && pr.MergeableState === "unstable"}
+        <div class="merge-warning merge-warning--info">
+          <span>Required status checks have not passed.</span>
+        </div>
+      {/if}
+
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if pr.State !== "merged"}
         <div class="actions-row">
@@ -813,6 +833,33 @@
     padding: 10px 12px;
     word-break: break-word;
     line-height: 1.6;
+  }
+
+  .merge-warning {
+    font-size: 12px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .merge-warning a {
+    color: inherit;
+    text-decoration: underline;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .merge-warning--conflict {
+    background: color-mix(in srgb, var(--accent-amber) 12%, transparent);
+    color: var(--accent-amber);
+  }
+
+  .merge-warning--info {
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--text-secondary);
   }
 
 </style>

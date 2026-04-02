@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -580,6 +581,18 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		input.Body.Method,
 	)
 	if err != nil {
+		var ghErr *gh.ErrorResponse
+		if errors.As(err, &ghErr) &&
+			(ghErr.Response.StatusCode == 405 || ghErr.Response.StatusCode == 409) {
+			go func() {
+				if syncErr := s.syncer.SyncPR(
+					context.WithoutCancel(ctx), input.Owner, input.Name, input.Number,
+				); syncErr != nil {
+					slog.Warn("background sync after merge failure", "err", syncErr)
+				}
+			}()
+			return nil, huma.Error409Conflict(ghErr.Message)
+		}
 		return nil, huma.Error502BadGateway("GitHub merge error")
 	}
 

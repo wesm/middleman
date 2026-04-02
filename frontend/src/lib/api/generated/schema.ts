@@ -640,6 +640,7 @@ export interface components {
             KanbanStatus: string;
             /** Format: date-time */
             LastActivityAt: string;
+            MergeableState: string;
             /** Format: date-time */
             MergedAt: string | null;
             /** Format: int64 */
@@ -680,6 +681,7 @@ export interface components {
             KanbanStatus: string;
             /** Format: date-time */
             LastActivityAt: string;
+            MergeableState: string;
             /** Format: date-time */
             MergedAt: string | null;
             /** Format: int64 */

@@ -380,6 +380,42 @@ func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 	Assert.Equal(t, []int{2}, closed)
 }
 
+func TestUpsertPullRequestMergeableState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	now := baseTime()
+	pr := &PullRequest{
+		RepoID:         repoID,
+		GitHubID:       9001,
+		Number:         42,
+		State:          "open",
+		MergeableState: "dirty",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+
+	_, err := d.UpsertPullRequest(ctx, pr)
+	require.NoError(err)
+
+	got, err := d.GetPullRequest(ctx, "acme", "widget", 42)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("dirty", got.MergeableState)
+
+	pr.MergeableState = "clean"
+	_, err = d.UpsertPullRequest(ctx, pr)
+	require.NoError(err)
+
+	got, err = d.GetPullRequest(ctx, "acme", "widget", 42)
+	require.NoError(err)
+	assert.Equal("clean", got.MergeableState)
+}
+
 func TestUpdatePRState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
