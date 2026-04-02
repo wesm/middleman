@@ -10,6 +10,7 @@
   import ActivityFeed from "./lib/components/ActivityFeed.svelte";
   import DetailDrawer from "./lib/components/DetailDrawer.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
+  import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { getRoute, getPage, getView, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
@@ -200,6 +201,7 @@
 </script>
 
 <AppHeader />
+<FlashBanner />
 
 <main class="app-main">
   {#if !appReady}
