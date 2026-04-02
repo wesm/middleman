@@ -251,6 +251,13 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 				"number", ghPR.GetNumber(),
 				"err", err,
 			)
+			// Preserve fields the list endpoint doesn't return
+			// so a transient fetch failure doesn't wipe cached data.
+			if existing != nil {
+				normalized.Additions = existing.Additions
+				normalized.Deletions = existing.Deletions
+				normalized.MergeableState = existing.MergeableState
+			}
 		} else {
 			ghPR = fullPR
 			normalized = NormalizePR(repoID, ghPR)

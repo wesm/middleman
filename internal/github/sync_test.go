@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -375,6 +376,56 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	require.NotNil(stored2)
 	assert.Equal("clean", stored2.MergeableState, "second sync should resolve unknown to clean")
 	assert.Equal(2, fetchCount, "second sync should trigger another full fetch for unknown state")
+}
+
+func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// First sync: full fetch succeeds, sets fields.
+	pr := buildOpenPR(1, now)
+	additions := 10
+	deletions := 5
+	mergeableState := "dirty"
+	pr.Additions = &additions
+	pr.Deletions = &deletions
+	pr.MergeableState = &mergeableState
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{pr},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(mc, d, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer.RunOnce(ctx)
+
+	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.Equal("dirty", stored.MergeableState)
+	require.Equal(10, stored.Additions)
+
+	// Second sync: bump UpdatedAt so needsTimeline triggers, but full
+	// fetch fails. Fields from the existing row should be preserved.
+	later := now.Add(time.Hour)
+	listPR := buildOpenPR(1, later)
+	mc.openPRs = []*gh.PullRequest{listPR}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		return nil, fmt.Errorf("transient network error")
+	}
+
+	syncer.RunOnce(ctx)
+
+	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	assert.Equal("dirty", stored2.MergeableState, "MergeableState should survive a failed full fetch")
+	assert.Equal(10, stored2.Additions, "Additions should survive a failed full fetch")
+	assert.Equal(5, stored2.Deletions, "Deletions should survive a failed full fetch")
 }
 
 func TestSyncStatusUpdated(t *testing.T) {
