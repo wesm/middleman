@@ -1,0 +1,174 @@
+# E2E Test Infrastructure with Synthetic Database
+
+**Date:** 2026-04-02
+**Status:** Draft
+
+## Goal
+
+Build a reusable synthetic test database and full-stack E2E test suite that catches integration bugs between the frontend UI and backend API -- like the activity feed filter bug where clicking "PRs" still showed issues.
+
+## Approach: Full-Stack E2E with Seeded SQLite
+
+Playwright tests run against the real Go server serving a seeded SQLite database. No API route mocking for activity tests -- the data flows through the real query layer.
+
+### Why full-stack over route mocking
+
+The existing `mockApi.ts` approach intercepts at the HTTP layer, so it can't catch bugs where:
+- The frontend sends filter params the backend interprets differently (the exact bug we just hit)
+- The SQL query returns unexpected shapes or orderings
+- Server-side config filtering (e.g. repo allowlist) interacts with client filters
+
+## Synthetic Test Database
+
+### Fixture Seeder
+
+A Go helper in `internal/testutil/fixtures.go` that populates a DB with realistic data. Called from a small Go binary that writes the seeded DB to a path, which Playwright's `globalSetup` invokes before tests.
+
+### Data Set
+
+**Repos (3):**
+
+| Owner | Name | Purpose |
+|-------|------|---------|
+| acme | widgets | Active repo: mix of open/merged/closed PRs and issues |
+| acme | tools | Secondary repo: fewer items, validates cross-repo filtering |
+| acme | archived | Dormant repo: no recent activity, validates empty states |
+
+**Pull Requests (8-10 across repos):**
+- Open PRs: with reviews, comments, commits (widget repo)
+- Merged PRs: recent and older
+- Closed PR: unmerged
+- Draft PR: no reviews
+- PR with merge conflict status
+- PR by a bot author (e.g. `dependabot[bot]`)
+
+**Issues (5-6 across repos):**
+- Open issues: with comments
+- Closed issues: recent
+- Issue by a bot author
+
+**PR Events:**
+- `issue_comment` events on PRs (maps to `activity_type = "comment"`)
+- `review` events (APPROVED, CHANGES_REQUESTED)
+- `commit` events (multiple consecutive by same author for collapse testing)
+
+**Issue Events:**
+- `issue_comment` events on issues (also maps to `activity_type = "comment"`)
+
+**Time Distribution:**
+- Activity spread across last 90 days, with density in the last 7 days
+- Enough items in each time bucket (24h, 7d, 30d, 90d) to validate range filters
+- Some items exactly at bucket boundaries
+
+**Key Properties the Data Must Exercise:**
+1. Both PRs and issues have comments -- so `activity_type = "comment"` exists with both `item_type = "pr"` and `item_type = "issue"`
+2. Bot authors exist on both PRs and issues
+3. Merged/closed items exist alongside open ones
+4. Multiple consecutive commits by same author on same PR (for collapse logic)
+5. Cross-repo activity (items in both acme/widgets and acme/tools)
+
+### Fixture Implementation
+
+```go
+// internal/testutil/fixtures.go
+package testutil
+
+func SeedTestDB(d *db.DB) error {
+    // Insert repos, PRs, issues, events in a deterministic order
+    // All timestamps relative to a fixed base time
+    // Returns error if any insert fails
+}
+```
+
+The seeder uses the existing `db.UpsertPR`, `db.UpsertIssue`, `db.UpsertPREvents`, `db.UpsertIssueEvents` methods -- same path as the real sync engine.
+
+### Test Server Binary
+
+A small Go program in `cmd/e2e-server/main.go` that:
+1. Creates a temp SQLite DB
+2. Calls `SeedTestDB()`
+3. Starts the real HTTP server on a fixed port (e.g. 4174)
+4. Writes "ready" to stdout when listening
+5. Exits on SIGTERM
+
+Playwright's `globalSetup` starts this process and tears it down in `globalTeardown`.
+
+## Playwright Configuration
+
+### New Config: `playwright-e2e.config.ts`
+
+Separate from the existing `playwright.config.ts` (which uses Vite + route mocking). The new config:
+- Points `baseURL` at the Go server (port 4174)
+- `webServer` starts the Go e2e-server binary instead of Vite
+- Test directory: `tests/e2e-full/` (distinct from `tests/e2e/`)
+
+The existing Vite-based E2E tests in `tests/e2e/` remain untouched.
+
+### Makefile Target
+
+```makefile
+test-e2e:
+	cd frontend && bun run playwright test --config=playwright-e2e.config.ts
+```
+
+## Test Cases
+
+### Phase 1: Activity Feed Filters (the pain point)
+
+**File:** `tests/e2e-full/activity-filters.spec.ts`
+
+1. **PR filter shows only PR items** -- click "PRs", verify every visible row has a "PR" badge, no "Issue" badges
+2. **Issues filter shows only issue items** -- click "Issues", verify every visible row has an "Issue" badge
+3. **All filter shows both** -- click "All", verify both PR and Issue badges present
+4. **Event type toggles** -- disable "Comments" in filter dropdown, verify no comment rows; re-enable, verify they return
+5. **Hide closed/merged** -- toggle on, verify no "Merged"/"Closed" state badges visible
+6. **Hide bots** -- toggle on, verify no bot authors visible
+7. **Time range filter** -- switch to "24h", verify fewer items than "7d"
+8. **Search filter** -- type a known title substring, verify only matching items shown
+9. **Combined filters** -- "PRs" + hide closed/merged + "24h": verify intersection
+
+### Phase 2: PR and Issue Lists
+
+**File:** `tests/e2e-full/pull-list.spec.ts`
+
+1. PR list renders expected count and titles
+2. Repo filter narrows results
+3. State filter (open/merged/closed) works
+4. Search filters by title
+
+**File:** `tests/e2e-full/issue-list.spec.ts`
+
+1. Issue list renders expected count and titles
+2. State filter works
+3. Search filters by title
+
+### Phase 3: Navigation and Detail Views
+
+**File:** `tests/e2e-full/navigation.spec.ts`
+
+1. Clicking a PR row navigates to detail view
+2. Clicking an issue row navigates to detail view
+3. Sidebar navigation between views (PRs, Issues, Activity)
+4. Back navigation works
+
+## File Structure
+
+```
+cmd/e2e-server/main.go              -- test server binary
+internal/testutil/fixtures.go        -- fixture seeder
+internal/testutil/fixtures_test.go   -- verify fixtures produce expected data
+frontend/playwright-e2e.config.ts    -- full-stack Playwright config
+frontend/tests/e2e-full/
+  activity-filters.spec.ts           -- Phase 1
+  pull-list.spec.ts                  -- Phase 2
+  issue-list.spec.ts                 -- Phase 2
+  navigation.spec.ts                 -- Phase 3
+```
+
+## What This Does NOT Cover
+
+- Frontend component unit tests (separate effort)
+- Frontend store unit tests (separate effort)
+- Performance/load testing
+- Visual regression testing
+- Demo mode CLI command (future project)
