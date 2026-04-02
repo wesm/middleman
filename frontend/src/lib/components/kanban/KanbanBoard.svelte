@@ -8,6 +8,8 @@
   import { client } from "../../api/runtime.js";
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
+
+  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
   import { stopDetailPolling } from "../../stores/detail.svelte.js";
   import PullDetail from "../detail/PullDetail.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
@@ -86,7 +88,7 @@
 <div class="kanban-wrap">
   {#if isSettingsLoaded() && !hasConfiguredRepos()}
     <div class="empty-state">No repositories configured.<br />
-      <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
+      {#if !embedded}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
     </div>
   {:else}
   <div class="kanban-board">

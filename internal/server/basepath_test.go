@@ -25,7 +25,10 @@ func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
-	return New(database, mock, syncer, frontend, basePath)
+	return New(
+		database, mock, syncer, frontend, basePath,
+		nil, ServerOptions{},
+	)
 }
 
 func TestBasePathAPIRouting(t *testing.T) {

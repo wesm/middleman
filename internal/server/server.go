@@ -14,6 +14,11 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
+type ServerOptions struct {
+	Embedded bool
+	AppName  string
+}
+
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
 	db       *db.DB
@@ -23,6 +28,7 @@ type Server struct {
 	cfgPath  string
 	cfgMu    sync.Mutex
 	basePath string
+	options  ServerOptions
 	version  string
 	handler  http.Handler
 }
@@ -30,21 +36,26 @@ type Server struct {
 // SetVersion sets the version string returned by GET /api/v1/version.
 func (s *Server) SetVersion(v string) { s.version = v }
 
-// New creates a Server without config persistence (used by tests).
+// New creates a Server without config persistence.
+// Pass cfg for repo filtering (can be nil for tests that
+// don't need filtering).
 func New(
 	database *db.DB,
 	gh ghclient.Client,
 	syncer *ghclient.Syncer,
 	frontend fs.FS,
 	basePath string,
+	cfg *config.Config,
+	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, gh, syncer, frontend, basePath, nil, "",
+		database, gh, syncer, frontend,
+		basePath, cfg, "", opts,
 	)
 }
 
-// NewWithConfig creates a Server with config persistence
-// for settings/repo endpoints.
+// NewWithConfig creates a Server with config persistence for
+// settings/repo endpoints.
 func NewWithConfig(
 	database *db.DB,
 	gh ghclient.Client,
@@ -52,9 +63,11 @@ func NewWithConfig(
 	frontend fs.FS,
 	cfg *config.Config,
 	cfgPath string,
+	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, gh, syncer, frontend, cfg.BasePath, cfg, cfgPath,
+		database, gh, syncer, frontend,
+		cfg.BasePath, cfg, cfgPath, opts,
 	)
 }
 
@@ -66,6 +79,7 @@ func newServer(
 	basePath string,
 	cfg *config.Config,
 	cfgPath string,
+	options ServerOptions,
 ) *Server {
 	mux := http.NewServeMux()
 
@@ -76,6 +90,7 @@ func newServer(
 		syncer:   syncer,
 		cfg:      cfg,
 		cfgPath:  cfgPath,
+		options:  options,
 	}
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
@@ -93,9 +108,8 @@ func newServer(
 			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
 		}
 		idx := string(indexBytes)
-		safeBase, _ := json.Marshal(basePath)
 		idx = strings.Replace(idx, "<head>",
-			`<head><script>window.__BASE_PATH__=`+string(safeBase)+`;</script>`, 1)
+			`<head><script>`+s.bootstrapScript()+`</script>`, 1)
 		if basePath != "/" {
 			prefix := strings.TrimSuffix(basePath, "/")
 			idx = strings.ReplaceAll(idx, `src="/assets/`, `src="`+prefix+`/assets/`)
@@ -142,6 +156,24 @@ func newServer(
 	}
 
 	return s
+}
+
+func (s *Server) bootstrapScript() string {
+	safeBase, _ := json.Marshal(s.basePath)
+	var builder strings.Builder
+	builder.WriteString(`window.__BASE_PATH__=`)
+	builder.WriteString(string(safeBase))
+	builder.WriteString(`;`)
+	if s.options.Embedded {
+		builder.WriteString(`window.__MIDDLEMAN_EMBEDDED__=true;`)
+		if s.options.AppName != "" {
+			safeAppName, _ := json.Marshal(s.options.AppName)
+			builder.WriteString(`window.__MIDDLEMAN_APP_NAME__=`)
+			builder.WriteString(string(safeAppName))
+			builder.WriteString(`;`)
+		}
+	}
+	return builder.String()
 }
 
 // ServeHTTP implements http.Handler so Server can be used directly.

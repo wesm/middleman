@@ -26,11 +26,17 @@ var (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf("middleman %s (%s) built %s\n", version, commit, buildDate)
+		fmt.Printf(
+			"middleman %s (%s) built %s\n",
+			version, commit, buildDate,
+		)
 		os.Exit(0)
 	}
 
-	configPath := flag.String("config", config.DefaultConfigPath(), "path to config file")
+	configPath := flag.String(
+		"config", config.DefaultConfigPath(),
+		"path to config file",
+	)
 	flag.Parse()
 
 	if err := run(*configPath); err != nil {
@@ -51,11 +57,16 @@ func run(configPath string) error {
 
 	token := cfg.GitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not set: env var %q is empty", cfg.GitHubTokenEnv)
+		return fmt.Errorf(
+			"GitHub token not set: env var %q is empty",
+			cfg.GitHubTokenEnv,
+		)
 	}
 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
-		return fmt.Errorf("create data directory %s: %w", cfg.DataDir, err)
+		return fmt.Errorf(
+			"create data directory %s: %w", cfg.DataDir, err,
+		)
 	}
 
 	database, err := db.Open(cfg.DBPath())
@@ -68,16 +79,14 @@ func run(configPath string) error {
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
-		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name}
+		repos[i] = ghclient.RepoRef{
+			Owner: r.Owner, Name: r.Name,
+		}
 	}
 
-	syncer := ghclient.NewSyncer(ghClient, database, repos, cfg.SyncDuration())
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	syncer.Start(ctx)
-	defer syncer.Stop()
+	syncer := ghclient.NewSyncer(
+		ghClient, database, repos, cfg.SyncDuration(),
+	)
 
 	assets, err := web.Assets()
 	if err != nil {
@@ -85,8 +94,19 @@ func run(configPath string) error {
 	}
 
 	srv := server.NewWithConfig(
-		database, ghClient, syncer, assets, cfg, configPath,
+		database, ghClient, syncer, assets,
+		cfg, configPath, server.ServerOptions{},
 	)
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	syncer.Start(ctx)
+	defer syncer.Stop()
 
 	displayVersion := version
 	if version == "dev" && commit != "unknown" {
@@ -99,8 +119,8 @@ func run(configPath string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(addr); !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+		if listenErr := srv.ListenAndServe(addr); !errors.Is(listenErr, http.ErrServerClosed) {
+			errCh <- listenErr
 		}
 	}()
 

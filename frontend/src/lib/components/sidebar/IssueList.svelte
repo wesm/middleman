@@ -19,6 +19,8 @@
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import IssueItem from "./IssueItem.svelte";
 
+  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+
   let searchInput = $state(getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
   let refreshHandle: ReturnType<typeof setInterval> | null = null;
@@ -112,7 +114,7 @@
   <div class="list-body">
     {#if isSettingsLoaded() && !hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
-        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button></p>
+        {#if !embedded}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
     {:else if isIssuesLoading() && getIssues().length === 0}
       <p class="state-message">Loading…</p>
     {:else if getIssuesError() !== null && getIssues().length === 0}
@@ -142,9 +144,11 @@
     {/if}
   </div>
   <div class="sidebar-footer">
-    <button class="add-repo-link" onclick={() => navigate("/settings")}>
-      + Add repository
-    </button>
+    {#if !embedded}
+      <button class="add-repo-link" onclick={() => navigate("/settings")}>
+        + Add repository
+      </button>
+    {/if}
   </div>
 </div>
 

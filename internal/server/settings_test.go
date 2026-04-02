@@ -50,6 +50,7 @@ name = "widget"
 	)
 	srv := NewWithConfig(
 		database, mock, syncer, nil, cfg, cfgPath,
+		ServerOptions{},
 	)
 	return srv, database, cfgPath
 }
@@ -186,6 +187,57 @@ func TestHandleDeleteRepo(t *testing.T) {
 	require.NoError(err)
 	require.Len(cfg2.Repos, 1)
 	Assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
+}
+
+func TestGetSettingsWithoutPersistence(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	cfg := &config.Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "UNUSED",
+		Host:           "127.0.0.1",
+		Port:           8090,
+		BasePath:       "/",
+		DataDir:        dir,
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget"},
+		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "30d",
+		},
+	}
+	mock := &mockGH{}
+	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
+	srv := New(database, mock, syncer, nil, "/", cfg, ServerOptions{})
+
+	// GET /settings should work (read-only).
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal("acme", resp.Repos[0].Owner)
+	assert.Equal("flat", resp.Activity.ViewMode)
+
+	// Mutations should be rejected (no cfgPath).
+	mutRR := doJSON(t, srv, http.MethodPut, "/api/v1/settings",
+		updateSettingsRequest{Activity: cfg.Activity})
+	assert.Equal(http.StatusNotFound, mutRR.Code)
+
+	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos",
+		map[string]string{"owner": "x", "name": "y"})
+	assert.Equal(http.StatusNotFound, addRR.Code)
+
+	delRR := doJSON(t, srv, http.MethodDelete,
+		"/api/v1/repos/acme/widget", nil)
+	assert.Equal(http.StatusNotFound, delRR.Code)
 }
 
 func TestHandleDeleteLastRepo(t *testing.T) {

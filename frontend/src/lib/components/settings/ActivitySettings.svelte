@@ -10,6 +10,8 @@
 
   let { activity, onUpdate }: Props = $props();
 
+  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+
   const TIME_RANGES: { value: ActivitySettingsType["time_range"]; label: string }[] = [
     { value: "24h", label: "24h" },
     { value: "7d", label: "7d" },
@@ -18,6 +20,7 @@
   ];
 
   async function save(updated: ActivitySettingsType): Promise<void> {
+    if (embedded) return;
     try {
       const settings = await updateSettings({ activity: updated });
       onUpdate(settings.activity);
