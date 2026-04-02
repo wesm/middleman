@@ -22,8 +22,8 @@ async function resolveAndNavigate(
   thisRequestId: number,
 ): Promise<void> {
   try {
-    const { data, error } = await client.GET(
-      "/repos/{owner}/{name}/items/{number}",
+    const { data, error, response } = await client.POST(
+      "/repos/{owner}/{name}/items/{number}/resolve",
       { params: { path: { owner, name, number } } },
     );
 
@@ -31,7 +31,11 @@ async function resolveAndNavigate(
     if (thisRequestId !== requestId) return;
 
     if (error) {
-      showFlash(`Item ${owner}/${name}#${number} not found on GitHub.`);
+      if (response.status === 404) {
+        showFlash(`Item ${owner}/${name}#${number} not found on GitHub.`);
+      } else {
+        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`);
+      }
       return;
     }
 

@@ -155,17 +155,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/repos/{owner}/{name}/items/{number}": {
+    "/repos/{owner}/{name}/items/{number}/resolve": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get repos by owner by name items by number */
-        get: operations["get-repos-by-owner-by-name-items-by-number"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Post repos by owner by name items by number resolve */
+        post: operations["post-repos-by-owner-by-name-items-by-number-resolve"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1104,7 +1104,7 @@ export interface operations {
             };
         };
     };
-    "get-repos-by-owner-by-name-items-by-number": {
+    "post-repos-by-owner-by-name-items-by-number-resolve": {
         parameters: {
             query?: never;
             header?: never;

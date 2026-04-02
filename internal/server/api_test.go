@@ -964,7 +964,7 @@ func TestResolveItem_PR(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 42)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetReposByOwnerByNameItemsByNumberWithResponse(
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
 		context.Background(), "acme", "widget", 42,
 	)
 	require.NoError(err)
@@ -982,7 +982,7 @@ func TestResolveItem_Issue(t *testing.T) {
 	seedIssue(t, database, "acme", "widget", 7, "open")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetReposByOwnerByNameItemsByNumberWithResponse(
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
 		context.Background(), "acme", "widget", 7,
 	)
 	require.NoError(err)
@@ -998,7 +998,7 @@ func TestResolveItem_UntrackedRepo(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetReposByOwnerByNameItemsByNumberWithResponse(
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
 		context.Background(), "unknown", "repo", 1,
 	)
 	require.NoError(err)
@@ -1023,7 +1023,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	srv, _ := setupTestServerWithRepos(t, mock, repos)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetReposByOwnerByNameItemsByNumberWithResponse(
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
 		context.Background(), "acme", "widget", 999,
 	)
 	require.NoError(err)
@@ -1044,7 +1044,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	srv, _ := setupTestServerWithRepos(t, mock, repos)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetReposByOwnerByNameItemsByNumberWithResponse(
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
 		context.Background(), "acme", "widget", 999,
 	)
 	require.NoError(err)

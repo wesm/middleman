@@ -512,8 +512,8 @@ type ClientInterface interface {
 	// PostReposByOwnerByNameIssuesByNumberSync request
 	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetReposByOwnerByNameItemsByNumber request
-	GetReposByOwnerByNameItemsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// PostReposByOwnerByNameItemsByNumberResolve request
+	PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumber request
 	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -698,8 +698,8 @@ func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, o
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetReposByOwnerByNameItemsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNameItemsByNumberRequest(c.Server, owner, name, number)
+func (c *Client) PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNameItemsByNumberResolveRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -1611,8 +1611,8 @@ func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner str
 	return req, nil
 }
 
-// NewGetReposByOwnerByNameItemsByNumberRequest generates requests for GetReposByOwnerByNameItemsByNumber
-func NewGetReposByOwnerByNameItemsByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+// NewPostReposByOwnerByNameItemsByNumberResolveRequest generates requests for PostReposByOwnerByNameItemsByNumberResolve
+func NewPostReposByOwnerByNameItemsByNumberResolveRequest(server string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -1641,7 +1641,7 @@ func NewGetReposByOwnerByNameItemsByNumberRequest(server string, owner string, n
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/repos/%s/%s/items/%s", pathParam0, pathParam1, pathParam2)
+	operationPath := fmt.Sprintf("/repos/%s/%s/items/%s/resolve", pathParam0, pathParam1, pathParam2)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1651,7 +1651,7 @@ func NewGetReposByOwnerByNameItemsByNumberRequest(server string, owner string, n
 		return nil, err
 	}
 
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2316,8 +2316,8 @@ type ClientWithResponsesInterface interface {
 	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
 	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
 
-	// GetReposByOwnerByNameItemsByNumberWithResponse request
-	GetReposByOwnerByNameItemsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameItemsByNumberResponse, error)
+	// PostReposByOwnerByNameItemsByNumberResolveWithResponse request
+	PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberWithResponse request
 	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
@@ -2577,7 +2577,7 @@ func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) StatusCode() int {
 	return 0
 }
 
-type GetReposByOwnerByNameItemsByNumberResponse struct {
+type PostReposByOwnerByNameItemsByNumberResolveResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ResolveItemResponse
@@ -2585,7 +2585,7 @@ type GetReposByOwnerByNameItemsByNumberResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNameItemsByNumberResponse) Status() string {
+func (r PostReposByOwnerByNameItemsByNumberResolveResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -2593,7 +2593,7 @@ func (r GetReposByOwnerByNameItemsByNumberResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNameItemsByNumberResponse) StatusCode() int {
+func (r PostReposByOwnerByNameItemsByNumberResolveResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2969,13 +2969,13 @@ func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithRespon
 	return ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp)
 }
 
-// GetReposByOwnerByNameItemsByNumberWithResponse request returning *GetReposByOwnerByNameItemsByNumberResponse
-func (c *ClientWithResponses) GetReposByOwnerByNameItemsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameItemsByNumberResponse, error) {
-	rsp, err := c.GetReposByOwnerByNameItemsByNumber(ctx, owner, name, number, reqEditors...)
+// PostReposByOwnerByNameItemsByNumberResolveWithResponse request returning *PostReposByOwnerByNameItemsByNumberResolveResponse
+func (c *ClientWithResponses) PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error) {
+	rsp, err := c.PostReposByOwnerByNameItemsByNumberResolve(ctx, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetReposByOwnerByNameItemsByNumberResponse(rsp)
+	return ParsePostReposByOwnerByNameItemsByNumberResolveResponse(rsp)
 }
 
 // GetReposByOwnerByNamePullsByNumberWithResponse request returning *GetReposByOwnerByNamePullsByNumberResponse
@@ -3439,15 +3439,15 @@ func ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp *http.Response) (
 	return response, nil
 }
 
-// ParseGetReposByOwnerByNameItemsByNumberResponse parses an HTTP response from a GetReposByOwnerByNameItemsByNumberWithResponse call
-func ParseGetReposByOwnerByNameItemsByNumberResponse(rsp *http.Response) (*GetReposByOwnerByNameItemsByNumberResponse, error) {
+// ParsePostReposByOwnerByNameItemsByNumberResolveResponse parses an HTTP response from a PostReposByOwnerByNameItemsByNumberResolveWithResponse call
+func ParsePostReposByOwnerByNameItemsByNumberResolveResponse(rsp *http.Response) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetReposByOwnerByNameItemsByNumberResponse{
+	response := &PostReposByOwnerByNameItemsByNumberResolveResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

@@ -237,7 +237,7 @@ func (s *Server) registerAPI(api huma.API) {
 		DefaultStatus: http.StatusCreated,
 	}, s.postIssueComment)
 
-	huma.Get(api, "/repos/{owner}/{name}/items/{number}", s.resolveItem)
+	huma.Post(api, "/repos/{owner}/{name}/items/{number}/resolve", s.resolveItem)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-starred",
@@ -999,15 +999,19 @@ func (s *Server) resolveItem(
 	)
 	if err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) &&
-			ghErr.Response != nil &&
-			ghErr.Response.StatusCode == 404 {
-			return nil, huma.Error404NotFound(
-				"item not found: " + err.Error(),
+		if errors.As(err, &ghErr) {
+			if ghErr.Response != nil &&
+				ghErr.Response.StatusCode == 404 {
+				return nil, huma.Error404NotFound(
+					"item not found: " + err.Error(),
+				)
+			}
+			return nil, huma.Error502BadGateway(
+				"GitHub API error: " + err.Error(),
 			)
 		}
-		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
+		return nil, huma.Error500InternalServerError(
+			"resolve item: " + err.Error(),
 		)
 	}
 

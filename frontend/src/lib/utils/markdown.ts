@@ -65,7 +65,19 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
   };
 }
 
-const cache = new Map<string, string>();
+const htmlCache = new Map<string, string>();
+const markedCache = new Map<string, Marked>();
+
+function getMarked(repo?: RepoContext): Marked {
+  const key = repo ? `${repo.owner}/${repo.name}` : "";
+  let instance = markedCache.get(key);
+  if (!instance) {
+    instance = new Marked({ breaks: true, gfm: true });
+    instance.use({ extensions: [itemRefExtension(repo)] });
+    markedCache.set(key, instance);
+  }
+  return instance;
+}
 
 export function renderMarkdown(
   raw: string,
@@ -73,19 +85,14 @@ export function renderMarkdown(
 ): string {
   if (!raw) return "";
   const key = repo ? `${repo.owner}/${repo.name}\0${raw}` : raw;
-  const cached = cache.get(key);
+  const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
-  const marked = new Marked({
-    breaks: true,
-    gfm: true,
-  });
-  marked.use({ extensions: [itemRefExtension(repo)] });
-
-  const html = DOMPurify.sanitize(marked.parse(raw) as string, {
-    ADD_ATTR: ["target", "data-owner", "data-name", "data-number"],
-  });
-  if (cache.size > 500) cache.clear();
-  cache.set(key, html);
+  const html = DOMPurify.sanitize(
+    getMarked(repo).parse(raw) as string,
+    { ADD_ATTR: ["target", "data-owner", "data-name", "data-number"] },
+  );
+  if (htmlCache.size > 500) htmlCache.clear();
+  htmlCache.set(key, html);
   return html;
 }
