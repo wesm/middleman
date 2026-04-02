@@ -131,8 +131,8 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		     state, is_draft, body, head_branch, base_branch,
 		     additions, deletions, comment_count,
 		     review_decision, ci_status, ci_checks_json, created_at, updated_at,
-		     last_activity_at, merged_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		     last_activity_at, merged_at, closed_at, mergeable_state)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    github_id            = excluded.github_id,
 		    url                  = excluded.url,
@@ -153,13 +153,14 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		    updated_at           = excluded.updated_at,
 		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
-		    closed_at            = excluded.closed_at`,
+		    closed_at            = excluded.closed_at,
+		    mergeable_state      = excluded.mergeable_state`,
 		pr.RepoID, pr.GitHubID, pr.Number, pr.URL, pr.Title,
 		pr.Author, pr.AuthorDisplayName,
 		pr.State, pr.IsDraft, pr.Body, pr.HeadBranch, pr.BaseBranch,
 		pr.Additions, pr.Deletions, pr.CommentCount, pr.ReviewDecision,
 		pr.CIStatus, pr.CIChecksJSON, pr.CreatedAt, pr.UpdatedAt,
-		pr.LastActivityAt, pr.MergedAt, pr.ClosedAt,
+		pr.LastActivityAt, pr.MergedAt, pr.ClosedAt, pr.MergeableState,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert pull request: %w", err)
@@ -185,7 +186,7 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
-		       p.merged_at, p.closed_at,
+		       p.merged_at, p.closed_at, p.mergeable_state,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM pull_requests p
@@ -202,7 +203,7 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 		&pr.CIStatus, &pr.CIChecksJSON,
 		&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
-		&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus, &pr.Starred,
+		&pr.MergedAt, &pr.ClosedAt, &pr.MergeableState, &pr.KanbanStatus, &pr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -262,7 +263,7 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
-		       p.merged_at, p.closed_at,
+		       p.merged_at, p.closed_at, p.mergeable_state,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM pull_requests p
@@ -289,7 +290,7 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 			&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 			&pr.CIStatus, &pr.CIChecksJSON,
 			&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
-			&pr.MergedAt, &pr.ClosedAt, &pr.KanbanStatus, &pr.Starred,
+			&pr.MergedAt, &pr.ClosedAt, &pr.MergeableState, &pr.KanbanStatus, &pr.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan pull request: %w", err)
 		}
