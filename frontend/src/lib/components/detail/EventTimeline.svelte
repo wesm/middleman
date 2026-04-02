@@ -6,9 +6,11 @@
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
+    repoOwner?: string;
+    repoName?: string;
   }
 
-  const { events }: Props = $props();
+  const { events, repoOwner, repoName }: Props = $props();
 
   const typeLabels: Record<string, string> = {
     issue_comment: "Comment",
@@ -94,7 +96,7 @@
               </button>
               <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
                 {#if shouldRenderMarkdown(event.EventType)}
-                  {@html renderMarkdown(event.Body)}
+                  {@html renderMarkdown(event.Body, repoOwner && repoName ? { owner: repoOwner, name: repoName } : undefined)}
                 {:else}
                   {event.Body}
                 {/if}

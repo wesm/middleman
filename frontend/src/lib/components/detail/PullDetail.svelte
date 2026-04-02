@@ -413,7 +413,7 @@
                 </svg>
               {/if}
             </button>
-            <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body)}</div>
+            <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { owner, name })}</div>
           </div>
         </div>
       {/if}
@@ -426,7 +426,7 @@
       <!-- Activity -->
       <div class="section">
         <h3 class="section-title">Activity</h3>
-        <EventTimeline events={detail.events ?? []} />
+        <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
       </div>
     </div>
   {/if}
