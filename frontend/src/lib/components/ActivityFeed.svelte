@@ -31,6 +31,7 @@
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import { hasConfiguredRepos, isSettingsLoaded } from "../stores/settings.svelte.js";
   import { navigate } from "../stores/router.svelte.js";
+  import { subscribeSyncComplete } from "../stores/sync.svelte.js";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -71,15 +72,19 @@
     + (getHideBots() ? 1 : 0),
   );
 
+  let unsubSync: (() => void) | undefined;
+
   onMount(() => {
     initializeFromMount();
     searchInput = getActivitySearch() ?? "";
     void loadActivity();
     startActivityPolling();
+    unsubSync = subscribeSyncComplete(() => void loadActivity());
   });
 
   onDestroy(() => {
     stopActivityPolling();
+    unsubSync?.();
     if (debounceTimer) clearTimeout(debounceTimer);
   });
 
