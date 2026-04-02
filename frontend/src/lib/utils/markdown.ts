@@ -24,10 +24,14 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       }
       return adjusted >= 0 ? adjusted : undefined;
     },
-    tokenizer(src: string): { type: string; raw: string; owner: string; name: string; number: number; text: string } | undefined {
-      // Cross-repo: owner/name#123
+    tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string): { type: string; raw: string; owner: string; name: string; number: number; text: string } | undefined {
+      // Don't tokenize inside markdown link/image labels
+      // to avoid producing invalid nested <a> elements.
+      if (this.lexer.state.inLink) return undefined;
+
+      // Cross-repo: owner/name#123 (with trailing word boundary)
       const crossMatch = src.match(
-        /^([\w.-]+)\/([\w.-]+)#(\d+)/,
+        /^([\w.-]+)\/([\w.-]+)#(\d+)(?!\w)/,
       );
       if (crossMatch) {
         return {
@@ -39,8 +43,8 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           text: crossMatch[0],
         };
       }
-      // Bare ref: #123
-      const bareMatch = src.match(/^#(\d+)/);
+      // Bare ref: #123 (with trailing word boundary)
+      const bareMatch = src.match(/^#(\d+)(?!\w)/);
       if (bareMatch && repo) {
         return {
           type: "itemRef",

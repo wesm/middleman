@@ -2,6 +2,8 @@ import { client } from "../api/runtime.js";
 import { navigate } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 
+let requestId = 0;
+
 function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
   let el = target as HTMLElement | null;
   while (el) {
@@ -17,28 +19,37 @@ async function resolveAndNavigate(
   owner: string,
   name: string,
   number: number,
+  thisRequestId: number,
 ): Promise<void> {
-  const { data, error } = await client.GET(
-    "/repos/{owner}/{name}/items/{number}",
-    { params: { path: { owner, name, number } } },
-  );
-
-  if (error) {
-    showFlash(`Item ${owner}/${name}#${number} not found on GitHub.`);
-    return;
-  }
-
-  if (!data.repo_tracked) {
-    showFlash(
-      `${owner}/${name} is not tracked. Add it in Settings to navigate here.`,
+  try {
+    const { data, error } = await client.GET(
+      "/repos/{owner}/{name}/items/{number}",
+      { params: { path: { owner, name, number } } },
     );
-    return;
-  }
 
-  const path = data.item_type === "pr"
-    ? `/pulls/${owner}/${name}/${number}`
-    : `/issues/${owner}/${name}/${number}`;
-  navigate(path);
+    // A newer click superseded this one — discard the result.
+    if (thisRequestId !== requestId) return;
+
+    if (error) {
+      showFlash(`Item ${owner}/${name}#${number} not found on GitHub.`);
+      return;
+    }
+
+    if (!data.repo_tracked) {
+      showFlash(
+        `${owner}/${name} is not tracked. Add it in Settings to navigate here.`,
+      );
+      return;
+    }
+
+    const path = data.item_type === "pr"
+      ? `/pulls/${owner}/${name}/${number}`
+      : `/issues/${owner}/${name}/${number}`;
+    navigate(path);
+  } catch {
+    if (thisRequestId !== requestId) return;
+    showFlash("Failed to resolve item reference. Check your connection.");
+  }
 }
 
 function handleClick(e: MouseEvent): void {
@@ -54,7 +65,8 @@ function handleClick(e: MouseEvent): void {
   if (!owner || !name || !numberStr) return;
 
   e.preventDefault();
-  void resolveAndNavigate(owner, name, parseInt(numberStr, 10));
+  requestId++;
+  void resolveAndNavigate(owner, name, parseInt(numberStr, 10), requestId);
 }
 
 export function initItemRefHandler(): () => void {

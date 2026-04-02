@@ -1000,6 +1000,7 @@ func (s *Server) resolveItem(
 	if err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) &&
+			ghErr.Response != nil &&
 			ghErr.Response.StatusCode == 404 {
 			return nil, huma.Error404NotFound(
 				"item not found: " + err.Error(),

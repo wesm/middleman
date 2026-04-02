@@ -1030,6 +1030,27 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	require.Equal(http.StatusNotFound, resp.StatusCode())
 }
 
+func TestResolveItem_GitHubServerError(t *testing.T) {
+	require := require.New(t)
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: 500},
+				Message:  "Internal Server Error",
+			}
+		},
+	}
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	srv, _ := setupTestServerWithRepos(t, mock, repos)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNameItemsByNumberWithResponse(
+		context.Background(), "acme", "widget", 999,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+}
+
 func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 	require := require.New(t)
 	state := "closed"
