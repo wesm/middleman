@@ -690,6 +690,32 @@ func (d *DB) GetIssueIDByRepoAndNumber(
 	return id, nil
 }
 
+// ResolveItemNumber checks whether the given number in a repo is a PR
+// or issue. Returns the item type ("pr" or "issue") and whether it was
+// found. PRs take precedence if both somehow exist.
+func (d *DB) ResolveItemNumber(
+	ctx context.Context, repoID int64, number int,
+) (itemType string, found bool, err error) {
+	var exists int
+	err = d.ro.QueryRowContext(ctx,
+		`SELECT 1 FROM pull_requests WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	).Scan(&exists)
+	if err == nil {
+		return "pr", true, nil
+	}
+
+	err = d.ro.QueryRowContext(ctx,
+		`SELECT 1 FROM issues WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	).Scan(&exists)
+	if err == nil {
+		return "issue", true, nil
+	}
+
+	return "", false, nil
+}
+
 // UpdateIssueState sets the state and closed_at for an issue.
 func (d *DB) UpdateIssueState(
 	ctx context.Context,
