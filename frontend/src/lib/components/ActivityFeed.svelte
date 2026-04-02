@@ -33,6 +33,8 @@
   import { navigate } from "../stores/router.svelte.js";
   import { subscribeSyncComplete } from "../stores/sync.svelte.js";
 
+  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
   }
@@ -428,7 +430,7 @@
   {#if isSettingsLoaded() && !hasConfiguredRepos()}
     <div class="table-container">
       <div class="empty-state">No repositories configured.<br />
-        <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>
+        {#if !embedded}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
       </div>
     </div>
   {:else if getViewMode() === "threaded"}

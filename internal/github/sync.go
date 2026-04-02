@@ -37,6 +37,8 @@ type Syncer struct {
 	running      atomic.Bool
 	status       atomic.Value // stores *SyncStatus
 	stopCh       chan struct{}
+	stopOnce     sync.Once
+	wg           sync.WaitGroup
 	displayNames map[string]string // login -> display name, per sync run
 }
 
@@ -64,7 +66,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // Start runs an immediate sync then launches a background ticker.
 // It returns as soon as the goroutine is started; call Stop to shut it down.
 func (s *Syncer) Start(ctx context.Context) {
-	go func() {
+	s.wg.Go(func() {
 		s.RunOnce(ctx)
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
@@ -78,12 +80,13 @@ func (s *Syncer) Start(ctx context.Context) {
 				return
 			}
 		}
-	}()
+	})
 }
 
-// Stop signals the background goroutine to exit.
+// Stop signals the background goroutine to exit. Safe to call multiple times.
 func (s *Syncer) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(func() { close(s.stopCh) })
+	s.wg.Wait()
 }
 
 // Status returns a snapshot of the current sync state.

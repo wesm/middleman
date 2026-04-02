@@ -7,6 +7,7 @@ export type Route =
 // Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
 const rawBase = window.__BASE_PATH__ ?? "/";
 const basePrefix = rawBase === "/" ? "" : rawBase.replace(/\/$/, "");
+const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
 
 export function getBasePath(): string {
   return rawBase;
@@ -34,7 +35,7 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "pulls", view: "list" };
   }
-  if (path === "/settings") return { page: "settings" };
+  if (path === "/settings" && !embedded) return { page: "settings" };
   if (path.startsWith("/issues")) {
     const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
     if (match) {

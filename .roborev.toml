@@ -10,4 +10,8 @@ consumer.
 Do not flag the absence of request-level authentication, authorization,
 or CSRF protection on API endpoints. This is an intentional architectural
 decision, not a missing feature.
+
+The root-level middleman package (middleman.go) is the embedding API.
+It does not have a stable API and can be changed arbitrarily until it
+stabilizes. Do not flag breaking changes to its exported surface.
 """

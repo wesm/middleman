@@ -164,6 +164,12 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 	}
 }
 
+func TestSyncerStopIsIdempotent(t *testing.T) {
+	syncer := NewSyncer(&mockClient{}, nil, nil, time.Minute)
+	syncer.Stop()
+	syncer.Stop() // must not panic
+}
+
 func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -275,4 +281,70 @@ func TestSyncStatusUpdated(t *testing.T) {
 		return !status.LastRunAt.Before(before) && !status.LastRunAt.After(after)
 	}, "status.LastRunAt %v should be between %v and %v", status.LastRunAt, before, after)
 	assert.Empty(status.LastError)
+}
+
+// blockingMockClient embeds mockClient but blocks in
+// ListOpenPullRequests until the provided channel is closed.
+type blockingMockClient struct {
+	mockClient
+	entered chan struct{}
+	blocked chan struct{}
+}
+
+func (b *blockingMockClient) ListOpenPullRequests(
+	_ context.Context, _, _ string,
+) ([]*gh.PullRequest, error) {
+	if b.entered != nil {
+		select {
+		case b.entered <- struct{}{}:
+		default:
+		}
+	}
+	<-b.blocked
+	return nil, nil
+}
+
+func TestSyncerStopWaitsForRunOnce(t *testing.T) {
+	entered := make(chan struct{})
+	blocked := make(chan struct{})
+	mock := &blockingMockClient{
+		entered: entered,
+		blocked: blocked,
+	}
+
+	database := openTestDB(t)
+	syncer := NewSyncer(
+		mock, database,
+		[]RepoRef{{Owner: "o", Name: "r"}},
+		time.Hour,
+	)
+
+	syncer.Start(t.Context())
+
+	// Wait for the goroutine to enter the blocked ListOpenPullRequests.
+	<-entered
+
+	// Call Stop while RunOnce is still in flight.
+	stopped := make(chan struct{})
+	go func() {
+		syncer.Stop()
+		close(stopped)
+	}()
+
+	// Stop should NOT return yet — RunOnce is still blocked.
+	select {
+	case <-stopped:
+		require.Fail(t, "Stop returned while RunOnce was still in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Unblock RunOnce and verify Stop completes.
+	close(blocked)
+
+	select {
+	case <-stopped:
+		// Stop waited for RunOnce to finish.
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "Stop did not return within timeout")
+	}
 }

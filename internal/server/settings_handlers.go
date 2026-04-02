@@ -42,7 +42,7 @@ func (s *Server) handleGetSettings(
 func (s *Server) handleUpdateSettings(
 	w http.ResponseWriter, r *http.Request,
 ) {
-	if s.cfg == nil {
+	if s.cfgPath == "" {
 		writeError(w, http.StatusNotFound,
 			"settings not available")
 		return
@@ -88,7 +88,7 @@ func (s *Server) handleUpdateSettings(
 func (s *Server) handleAddRepo(
 	w http.ResponseWriter, r *http.Request,
 ) {
-	if s.cfg == nil {
+	if s.cfgPath == "" {
 		writeError(w, http.StatusNotFound,
 			"settings not available")
 		return
@@ -153,7 +153,7 @@ func (s *Server) handleAddRepo(
 func (s *Server) handleDeleteRepo(
 	w http.ResponseWriter, r *http.Request,
 ) {
-	if s.cfg == nil {
+	if s.cfgPath == "" {
 		writeError(w, http.StatusNotFound,
 			"settings not available")
 		return

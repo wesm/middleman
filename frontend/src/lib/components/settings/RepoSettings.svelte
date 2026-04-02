@@ -10,6 +10,8 @@
 
   let { repos, onUpdate }: Props = $props();
 
+  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+
   let inputValue = $state("");
   let adding = $state(false);
   let addError = $state<string | null>(null);
@@ -17,6 +19,7 @@
   let removeError = $state<string | null>(null);
 
   async function handleAdd(): Promise<void> {
+    if (embedded) return;
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     const parts = trimmed.split("/");
@@ -43,6 +46,7 @@
     owner: string,
     name: string,
   ): Promise<void> {
+    if (embedded) return;
     removeError = null;
     try {
       await removeRepo(owner, name);
