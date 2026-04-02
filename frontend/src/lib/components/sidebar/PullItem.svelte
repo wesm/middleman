@@ -45,6 +45,9 @@
   <div class="meta-row">
     <span class="meta-left">#{pr.Number} · {pr.Author}</span>
     <span class="meta-right">
+      {#if pr.MergeableState === "dirty"}
+        <span class="conflict-dot" title="Has merge conflicts"></span>
+      {/if}
       <span
         class="star-btn"
         role="button"
@@ -157,6 +160,14 @@
   .badge--awaiting-merge {
     background: color-mix(in srgb, var(--accent-green) 18%, transparent);
     color: var(--accent-green);
+  }
+
+  .conflict-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-amber);
+    flex-shrink: 0;
   }
 
   .star-btn {
