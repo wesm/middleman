@@ -22,6 +22,7 @@
   import ApproveButton from "./ApproveButton.svelte";
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
+  import { getPullRequestActions, invokeAction } from "../../utils/embedding-hooks.svelte.js";
 
   interface Props {
     owner: string;
@@ -362,6 +363,19 @@
           {#if stateError}
             <span class="action-error">{stateError}</span>
           {/if}
+        </div>
+      {/if}
+
+      {#if getPullRequestActions().length > 0}
+        <div class="actions-row">
+          {#each getPullRequestActions() as action (action.id)}
+            <button
+              class="btn--embedding-action"
+              onclick={() => invokeAction(action, { owner, name, number })}
+            >
+              {action.label}
+            </button>
+          {/each}
         </div>
       {/if}
 

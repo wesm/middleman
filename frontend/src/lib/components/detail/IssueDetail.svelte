@@ -18,6 +18,7 @@
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
+  import { getIssueActions, invokeAction } from "../../utils/embedding-hooks.svelte.js";
 
   interface Props {
     owner: string;
@@ -221,6 +222,14 @@
             {stateSubmitting ? "Reopening..." : "Reopen issue"}
           </button>
         {/if}
+        {#each getIssueActions() as action (action.id)}
+          <button
+            class="btn--embedding-action"
+            onclick={() => invokeAction(action, { owner, name, number })}
+          >
+            {action.label}
+          </button>
+        {/each}
         {#if stateError}
           <span class="action-error">{stateError}</span>
         {/if}
