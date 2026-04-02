@@ -263,6 +263,12 @@
 
   const displayItems = $derived.by(() => {
     let result = getActivityItems();
+    const filter = getItemFilter();
+    if (filter === "prs") {
+      result = result.filter((it) => it.item_type === "pr");
+    } else if (filter === "issues") {
+      result = result.filter((it) => it.item_type === "issue");
+    }
     if (getHideClosedMerged()) {
       result = result.filter((it) =>
         it.item_state !== "merged" && it.item_state !== "closed");
