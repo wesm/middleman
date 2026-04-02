@@ -46,11 +46,12 @@ type Options struct {
 
 // Instance holds a running middleman server and its resources.
 type Instance struct {
-	db     *db.DB
-	server *server.Server
-	syncer *ghclient.Syncer
-	stopMu sync.Mutex
-	closed bool
+	db         *db.DB
+	server     *server.Server
+	syncer     *ghclient.Syncer
+	cancelSync context.CancelFunc
+	stopMu     sync.Mutex
+	closed     bool
 }
 
 // New creates a middleman Instance from the given options.
@@ -126,7 +127,9 @@ func (i *Instance) Handler() http.Handler {
 }
 
 // StartSync begins periodic GitHub sync in the background.
+// The context is used for cancellation during Close.
 func (i *Instance) StartSync(ctx context.Context) {
+	ctx, i.cancelSync = context.WithCancel(ctx)
 	i.syncer.Start(ctx)
 }
 
@@ -146,6 +149,9 @@ func (i *Instance) Close() error {
 	}
 	i.closed = true
 
+	if i.cancelSync != nil {
+		i.cancelSync()
+	}
 	i.StopSync()
 	return i.db.Close()
 }

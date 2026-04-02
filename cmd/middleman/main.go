@@ -103,10 +103,10 @@ func run(configPath string) error {
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
-	defer stop()
 
 	syncer.Start(ctx)
 	defer syncer.Stop()
+	defer stop()
 
 	displayVersion := version
 	if version == "dev" && commit != "unknown" {
