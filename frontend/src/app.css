@@ -201,3 +201,21 @@ a.item-ref {
 a.item-ref:hover {
   text-decoration: underline;
 }
+
+/* Embedding action buttons (used in PR and issue detail views) */
+.btn--embedding-action {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.btn--embedding-action:hover {
+  background: var(--accent-blue, #1f6feb);
+  color: #fff;
+  border-color: var(--accent-blue, #1f6feb);
+}
