@@ -28,7 +28,20 @@ Since `pullResponse` embeds `db.PullRequest` (which has no JSON tags, so Huma se
 
 `NormalizePR()` captures `ghPR.GetMergeableState()`.
 
-In `syncOpenPR()`, treat both `""` (never fetched) and `"unknown"` (GitHub still computing) as triggers for the full PR fetch, alongside the existing zero-diff-stats trigger:
+In `syncOpenPR()`, two changes:
+
+**1. Preserve `MergeableState` when full fetch is skipped.** The list endpoint does not return mergeable fields. When the full fetch is skipped (PR unchanged), the `else if existing != nil` branch must preserve `MergeableState` from the existing row alongside `Additions` and `Deletions`:
+
+```go
+} else if existing != nil {
+    // Preserve fields the list endpoint doesn't return
+    normalized.Additions = existing.Additions
+    normalized.Deletions = existing.Deletions
+    normalized.MergeableState = existing.MergeableState
+}
+```
+
+**2. Trigger full fetch for empty/unknown state.** Treat both `""` (never fetched) and `"unknown"` (GitHub still computing) as triggers for the full PR fetch, alongside the existing zero-diff-stats trigger:
 
 ```go
 needsFullFetch := needsTimeline ||
@@ -37,7 +50,7 @@ needsFullFetch := needsTimeline ||
     (existing != nil && existing.MergeableState == "unknown")
 ```
 
-The list endpoint does not return mergeable fields; the individual `GetPullRequest` call (already made during full fetch) does. If the full fetch still returns `"unknown"`, we store it as-is and retry on the next sync cycle.
+The individual `GetPullRequest` call (already made during full fetch) returns mergeable fields. If the full fetch still returns `"unknown"`, we store it as-is and retry on the next sync cycle.
 
 ## Merge Error Handling
 
@@ -46,19 +59,11 @@ In `mergePR()`, parse the error from `go-github` to detect merge-specific failur
 - **405**: "merge cannot be performed" (conflicts, branch protection, required checks, etc.)
 - **409**: SHA mismatch
 
-For 405 errors, use the cached `mergeable_state` to craft a context-specific message:
+For 405/409 errors, extract the message from `go-github`'s `*github.ErrorResponse` and forward it as the error detail. Return HTTP 409 with the GitHub-provided message. This avoids relying on potentially stale cached `mergeable_state` to classify the error.
 
-| `mergeable_state` | Error message |
-|---|---|
-| `"dirty"` | "This pull request has merge conflicts that must be resolved" |
-| `"blocked"` | "Branch protection rules prevent this merge" |
-| `"behind"` | "This branch is behind the base branch and must be updated" |
-| `"unstable"` | "Required status checks have not passed" |
-| other / `""` | "GitHub rejected the merge request" (with the raw error detail) |
+For non-405/409 GitHub errors (network, auth), return HTTP 502 with "GitHub merge error".
 
-Return these as HTTP 409 (conflict). For non-405 GitHub errors (network, auth), return HTTP 502.
-
-After any failed merge attempt, trigger `syncer.SyncPR()` to refresh the cached `mergeable_state`.
+After any failed merge attempt, trigger `syncer.SyncPR()` in a goroutine to refresh the cached `mergeable_state` in the background. The frontend's next poll cycle picks up the updated state and renders the appropriate banner.
 
 ## Frontend: PR List
 
@@ -75,22 +80,23 @@ When `MergeableState === "dirty"`, show a warning banner near the merge button a
 - Yellow/orange background.
 - Text: "This branch has conflicts that must be resolved before merging".
 - Link: "View on GitHub" pointing to the PR URL where the user can see conflict details and use GitHub's resolution UI.
-- Disable the merge button.
+- The merge button remains enabled. The cached state may be stale (conflicts could have been resolved since last sync), so the user should always be able to attempt the merge. If the PR truly has conflicts, the API returns the 409 error with GitHub's message.
 
-When `MergeableState` is `"blocked"`, `"behind"`, or `"unstable"`, show an appropriate message but do not disable the merge button (these are advisory; GitHub may still allow the merge depending on repo settings).
+When `MergeableState` is `"blocked"`, `"behind"`, or `"unstable"`, show an appropriate informational message. The merge button stays enabled for all states.
 
 ## Frontend: Merge Modal
 
-No changes needed to the modal itself. If opened with stale state (conflicts resolved between sync cycles), the merge attempt succeeds normally. If conflicts exist, the API returns the 409 error which displays in the existing error area with the context-specific message.
+No changes needed to the modal itself. If opened with stale state (conflicts resolved between sync cycles), the merge attempt succeeds normally. If the merge fails, the API returns GitHub's error message which displays in the existing error area.
 
 ## Testing
 
 - **DB migration**: Verify ALTER TABLE adds column, existing rows get default `""`.
 - **Normalization**: Verify `NormalizePR()` captures all documented `MergeableState` values.
+- **Sync preservation**: Verify `MergeableState` is preserved from the existing row when the full fetch is skipped (list-only path).
 - **Sync full-fetch trigger**: Verify `""` and `"unknown"` both trigger a full fetch; `"clean"`, `"dirty"`, etc. do not.
-- **Merge error classification**: Verify 405 with each cached `mergeable_state` produces the correct HTTP status and message. Verify non-405 errors return 502.
+- **Merge error classification**: Verify 405 returns HTTP 409 with GitHub's error message. Verify non-405 errors return 502.
 - **API response**: Verify `MergeableState` appears in both list and detail endpoints.
-- **Frontend banner**: Verify `"dirty"` shows conflict warning with disabled merge button; `"blocked"`/`"behind"`/`"unstable"` show advisory messages with enabled merge button; `"clean"`/`""` show no banner.
+- **Frontend banner**: Verify `"dirty"` shows conflict warning with "View on GitHub" link; `"blocked"`/`"behind"`/`"unstable"` show advisory messages; `"clean"`/`""` show no banner. Merge button enabled in all cases.
 - **Frontend list indicator**: Verify conflict icon appears for `"dirty"` PRs only.
 
 ## Files Changed
@@ -101,9 +107,11 @@ No changes needed to the modal itself. If opened with stale state (conflicts res
 | `internal/db/types.go` | Add `MergeableState` field |
 | `internal/db/queries.go` | Include in upsert/select |
 | `internal/github/normalize.go` | Capture `GetMergeableState()` |
-| `internal/github/sync.go` | Full-fetch trigger for empty/unknown mergeable state |
-| `internal/server/huma_routes.go` | Parse merge errors with context-specific messages, trigger re-sync |
-| `frontend/openapi/openapi.json` | Regenerated (new field) |
+| `internal/github/sync.go` | Preserve on skip, full-fetch trigger for empty/unknown |
+| `internal/server/huma_routes.go` | Forward GitHub error messages, background re-sync |
+| `internal/apiclient/spec/openapi.json` | Regenerated |
+| `internal/apiclient/generated/` | Regenerated |
+| `frontend/openapi/openapi.json` | Regenerated |
 | `frontend/src/lib/api/generated/` | Regenerated |
-| `frontend/src/lib/components/detail/PullDetail.svelte` | Conflict banner, disable merge button |
+| `frontend/src/lib/components/detail/PullDetail.svelte` | Conflict banner (merge button stays enabled) |
 | `frontend/src/lib/components/sidebar/PullItem.svelte` | Conflict indicator |
