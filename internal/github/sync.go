@@ -235,9 +235,11 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 
 	needsTimeline := existing == nil || !existing.UpdatedAt.Equal(normalized.UpdatedAt)
 
-	// Also fetch full PR details if we have stale zero diff stats
+	// Also fetch full PR details if we have stale zero diff stats or unknown mergeable state.
 	needsFullFetch := needsTimeline ||
-		(existing != nil && existing.Additions == 0 && existing.Deletions == 0)
+		(existing != nil && existing.Additions == 0 && existing.Deletions == 0) ||
+		(existing != nil && existing.MergeableState == "") ||
+		(existing != nil && existing.MergeableState == "unknown")
 
 	// The list endpoint doesn't return diff stats. Fetch the individual
 	// PR when data is new/changed or diff stats are missing.
@@ -257,6 +259,7 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		// Preserve fields the list endpoint doesn't return
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
+		normalized.MergeableState = existing.MergeableState
 	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
