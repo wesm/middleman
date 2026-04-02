@@ -29,6 +29,7 @@ type mockClient struct {
 	openPRs          []*gh.PullRequest
 	singlePR         *gh.PullRequest
 	getPullRequestFn func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn       func(context.Context, string, string, int) (*gh.Issue, error)
 	comments         []*gh.IssueComment
 	reviews          []*gh.PullRequestReview
 	commits          []*gh.RepositoryCommit
@@ -43,7 +44,12 @@ func (m *mockClient) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue
 	return nil, nil
 }
 
-func (m *mockClient) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+func (m *mockClient) GetIssue(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.Issue, error) {
+	if m.getIssueFn != nil {
+		return m.getIssueFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 
@@ -535,4 +541,126 @@ func TestIsTrackedRepo(t *testing.T) {
 	assert.True(syncer.IsTrackedRepo("corp", "lib"))
 	assert.False(syncer.IsTrackedRepo("acme", "other"))
 	assert.False(syncer.IsTrackedRepo("nobody", "widget"))
+}
+
+func TestSyncItemByNumber_Issue(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := context.Background()
+
+	number := 42
+	title := "Bug report"
+	state := "closed"
+	author := "testuser"
+	now := time.Now()
+	ghTime := &gh.Timestamp{Time: now}
+
+	mc := &mockClient{
+		getIssueFn: func(_ context.Context, _, _ string, n int) (*gh.Issue, error) {
+			if n != number {
+				return nil, fmt.Errorf("unexpected number %d", n)
+			}
+			return &gh.Issue{
+				ID:        new(int64(9999)),
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				User:      &gh.User{Login: &author},
+				HTMLURL:   new("https://github.com/acme/widget/issues/42"),
+				CreatedAt: ghTime,
+				UpdatedAt: ghTime,
+			}, nil
+		},
+	}
+
+	syncer := NewSyncer(mc, database, []RepoRef{
+		{Owner: "acme", Name: "widget"},
+	}, time.Minute)
+
+	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
+	require.NoError(err)
+	assert.Equal("issue", itemType)
+
+	issue, err := database.GetIssue(ctx, "acme", "widget", number)
+	require.NoError(err)
+	assert.NotNil(issue)
+	assert.Equal(title, issue.Title)
+}
+
+func TestSyncItemByNumber_PR(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := context.Background()
+
+	number := 10
+	title := "Add feature"
+	state := "open"
+	author := "testuser"
+	now := time.Now()
+	ghTime := &gh.Timestamp{Time: now}
+	prURL := "https://github.com/acme/widget/pull/10"
+
+	mc := &mockClient{
+		getIssueFn: func(_ context.Context, _, _ string, n int) (*gh.Issue, error) {
+			return &gh.Issue{
+				ID:      new(int64(8888)),
+				Number:  &number,
+				Title:   &title,
+				State:   &state,
+				User:    &gh.User{Login: &author},
+				HTMLURL: new(prURL),
+				PullRequestLinks: &gh.PullRequestLinks{
+					URL: &prURL,
+				},
+				CreatedAt: ghTime,
+				UpdatedAt: ghTime,
+			}, nil
+		},
+		singlePR: &gh.PullRequest{
+			ID:      new(int64(8888)),
+			Number:  &number,
+			Title:   &title,
+			State:   &state,
+			User:    &gh.User{Login: &author},
+			HTMLURL: &prURL,
+			Head: &gh.PullRequestBranch{
+				Ref: new("feature"),
+				SHA: new("abc123"),
+			},
+			Base:      &gh.PullRequestBranch{Ref: new("main")},
+			CreatedAt: ghTime,
+			UpdatedAt: ghTime,
+		},
+	}
+
+	syncer := NewSyncer(mc, database, []RepoRef{
+		{Owner: "acme", Name: "widget"},
+	}, time.Minute)
+
+	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
+	require.NoError(err)
+	assert.Equal("pr", itemType)
+
+	pr, err := database.GetPullRequest(ctx, "acme", "widget", number)
+	require.NoError(err)
+	assert.NotNil(pr)
+	assert.Equal(title, pr.Title)
+}
+
+func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := context.Background()
+
+	mc := &mockClient{}
+	syncer := NewSyncer(mc, database, []RepoRef{
+		{Owner: "acme", Name: "widget"},
+	}, time.Minute)
+
+	_, err := syncer.SyncItemByNumber(ctx, "other", "repo", 1)
+	require.Error(err)
+	assert.Contains(err.Error(), "not tracked")
 }

@@ -685,6 +685,43 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
 }
 
+// SyncItemByNumber fetches an item by number from GitHub, determines
+// whether it is a PR or issue, syncs it into the DB, and returns the
+// item type ("pr" or "issue").
+// Returns an error if the repo is not in the configured repo list.
+func (s *Syncer) SyncItemByNumber(
+	ctx context.Context, owner, name string, number int,
+) (string, error) {
+	if !s.IsTrackedRepo(owner, name) {
+		return "", fmt.Errorf("repo %s/%s is not tracked", owner, name)
+	}
+
+	// GitHub's Issues API returns both issues and PRs. If the
+	// response has PullRequestLinks, it's a PR.
+	ghIssue, err := s.client.GetIssue(ctx, owner, name, number)
+	if err != nil {
+		return "", fmt.Errorf(
+			"get item %s/%s#%d: %w", owner, name, number, err,
+		)
+	}
+
+	if ghIssue.PullRequestLinks != nil {
+		if err := s.SyncPR(ctx, owner, name, number); err != nil {
+			return "", fmt.Errorf(
+				"sync PR %s/%s#%d: %w", owner, name, number, err,
+			)
+		}
+		return "pr", nil
+	}
+
+	if err := s.SyncIssue(ctx, owner, name, number); err != nil {
+		return "", fmt.Errorf(
+			"sync issue %s/%s#%d: %w", owner, name, number, err,
+		)
+	}
+	return "issue", nil
+}
+
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int) error {
 	ghPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
