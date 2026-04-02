@@ -63,7 +63,7 @@ For 405/409 errors, extract the message from `go-github`'s `*github.ErrorRespons
 
 For non-405/409 GitHub errors (network, auth), return HTTP 502 with "GitHub merge error".
 
-After any failed merge attempt, trigger `syncer.SyncPR()` in a goroutine to refresh the cached `mergeable_state` in the background. The frontend's next poll cycle picks up the updated state and renders the appropriate banner.
+After any failed merge attempt, trigger `syncer.SyncPR()` in a goroutine with `context.WithoutCancel(ctx)` so it survives request completion (same pattern as the existing background syncs in `huma_routes.go` and `settings_handlers.go`). The frontend's next poll cycle picks up the updated state and renders the appropriate banner.
 
 ## Frontend: PR List
 
@@ -94,7 +94,7 @@ No changes needed to the modal itself. If opened with stale state (conflicts res
 - **Normalization**: Verify `NormalizePR()` captures all documented `MergeableState` values.
 - **Sync preservation**: Verify `MergeableState` is preserved from the existing row when the full fetch is skipped (list-only path).
 - **Sync full-fetch trigger**: Verify `""` and `"unknown"` both trigger a full fetch; `"clean"`, `"dirty"`, etc. do not.
-- **Merge error classification**: Verify 405 returns HTTP 409 with GitHub's error message. Verify non-405 errors return 502.
+- **Merge error classification**: Verify GitHub 405 and 409 both return HTTP 409 with GitHub's error message. Verify non-405/409 errors return 502.
 - **API response**: Verify `MergeableState` appears in both list and detail endpoints.
 - **Frontend banner**: Verify `"dirty"` shows conflict warning with "View on GitHub" link; `"blocked"`/`"behind"`/`"unstable"` show advisory messages; `"clean"`/`""` show no banner. Merge button enabled in all cases.
 - **Frontend list indicator**: Verify conflict icon appears for `"dirty"` PRs only.
