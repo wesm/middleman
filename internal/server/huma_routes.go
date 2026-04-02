@@ -998,8 +998,15 @@ func (s *Server) resolveItem(
 		ctx, owner, name, number,
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(
-			"item not found: " + err.Error(),
+		var ghErr *gh.ErrorResponse
+		if errors.As(err, &ghErr) &&
+			ghErr.Response.StatusCode == 404 {
+			return nil, huma.Error404NotFound(
+				"item not found: " + err.Error(),
+			)
+		}
+		return nil, huma.Error502BadGateway(
+			"GitHub API error: " + err.Error(),
 		)
 	}
 

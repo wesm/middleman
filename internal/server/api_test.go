@@ -1013,7 +1013,10 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	require := require.New(t)
 	mock := &mockGH{
 		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
-			return nil, fmt.Errorf("getting issue: 404 not found")
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: 404},
+				Message:  "Not Found",
+			}
 		},
 	}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}

@@ -704,6 +704,9 @@ func (d *DB) ResolveItemNumber(
 	if err == nil {
 		return "pr", true, nil
 	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", false, fmt.Errorf("check pull_requests: %w", err)
+	}
 
 	err = d.ro.QueryRowContext(ctx,
 		`SELECT 1 FROM issues WHERE repo_id = ? AND number = ?`,
@@ -711,6 +714,9 @@ func (d *DB) ResolveItemNumber(
 	).Scan(&exists)
 	if err == nil {
 		return "issue", true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", false, fmt.Errorf("check issues: %w", err)
 	}
 
 	return "", false, nil
