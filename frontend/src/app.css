@@ -191,3 +191,13 @@ a:hover {
   height: auto;
   border-radius: var(--radius-sm);
 }
+
+/* Item reference links (#123, owner/repo#456) */
+.item-ref {
+  color: var(--text-link, var(--accent-blue));
+  text-decoration: none;
+  cursor: pointer;
+}
+.item-ref:hover {
+  text-decoration: underline;
+}
