@@ -72,16 +72,14 @@ Registered in `registerAPI` like all other endpoints (Huma automatically prefixe
 
 "Tracked" means the repo is in the syncer's configured repo list (`Syncer.isTrackedRepo`), not merely present in the `repos` DB table. This matches how `SyncPR`/`SyncIssue` already gate on config.
 
-1. Query `pull_requests` table for a row with matching repo + number. If found, return `item_type: "pr"`.
-2. Query `issues` table for a row with matching repo + number. If found, return `item_type: "issue"`.
-3. If repo is tracked (in syncer config) but item not in DB:
-   - Call GitHub Issues API `GET /repos/{owner}/{name}/issues/{number}` (returns both issues and PRs).
-   - If the response has a `pull_request` field, it's a PR: call the existing `SyncPR` flow.
-   - Otherwise, sync it as an issue via the existing `SyncIssue` flow.
-   - Return the resolved type.
-4. If repo is not in syncer config: return `repo_tracked: false` (no GitHub fetch attempted).
+1. Check `s.syncer.IsTrackedRepo(owner, name)`. If not tracked, return `repo_tracked: false` immediately.
+2. Try `db.GetRepoByOwnerName(owner, name)` to get a `repoID`.
+3. If `repoID` found, query `pull_requests` then `issues` tables for a matching number. If found, return.
+4. If `repoID` not found (configured but never synced) OR item not in DB: call `SyncItemByNumber(ctx, owner, name, number)`. This delegates to `SyncPR`/`SyncIssue`, which internally call `UpsertRepo` to create the repo row if needed. Return the resolved type.
 
-The handler calls `s.syncer.IsTrackedRepo(owner, name)` — which requires exporting the existing `isTrackedRepo` method.
+Steps 3 and 4 share the same fallback path — the only difference is whether the DB lookup is attempted. This avoids a separate branch for the "configured but never synced" case.
+
+Exporting `isTrackedRepo` as `IsTrackedRepo` is required.
 
 **Error cases:**
 - Item doesn't exist on GitHub: return 404.
@@ -97,10 +95,13 @@ A single event listener (delegation on `document`) that intercepts normal left-c
 3. Read `data-owner`, `data-name`, `data-number` from the clicked element.
 4. Call the resolve endpoint (via the generated API client).
 5. On success: call `navigate()` to route to `/pulls/{o}/{n}/{num}` or `/issues/{o}/{n}/{num}`.
-6. On `repo_tracked: false`: show a toast/notification suggesting the user add the repo to their config.
-7. On 404: show a brief "Item not found" message.
+6. On `repo_tracked: false` or 404: show a flash banner (see below).
 
 The handler lives in a new `itemRefHandler.ts` utility, initialized once in `App.svelte` on mount.
+
+**Flash banner for errors:** The app has no toast system today. Add a minimal `flash.svelte.ts` store (a single `$state` string that auto-clears after 4 seconds) and a `FlashBanner.svelte` component rendered at the top of `App.svelte`. This follows the same inline-banner pattern used in `ActivityFeed.svelte` (`error-banner` class). Messages:
+- Untracked repo: `"{owner}/{name} is not tracked. Add it in Settings to navigate here."`
+- Not found: `"Item {owner}/{name}#{number} not found on GitHub."`
 
 ### 4. Component Changes
 
@@ -156,7 +157,9 @@ Fetches the item from GitHub's issues endpoint, determines PR vs issue, delegate
 |------|--------|
 | `frontend/src/lib/utils/markdown.ts` | Marked extension, repo context param, DOMPurify config |
 | `frontend/src/lib/utils/itemRefHandler.ts` | New: global click handler |
-| `frontend/src/App.svelte` | Initialize click handler on mount |
+| `frontend/src/lib/stores/flash.svelte.ts` | New: flash message store (auto-clearing) |
+| `frontend/src/lib/components/FlashBanner.svelte` | New: renders flash messages |
+| `frontend/src/App.svelte` | Initialize click handler, render FlashBanner |
 | `frontend/src/lib/components/detail/PullDetail.svelte` | Pass repo context to renderMarkdown |
 | `frontend/src/lib/components/detail/IssueDetail.svelte` | Pass repo context to renderMarkdown |
 | `frontend/src/lib/components/detail/EventTimeline.svelte` | Accept + pass repo context |
