@@ -17,6 +17,7 @@
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
+  import { getGroupByRepo, setGroupByRepo } from "../../stores/grouping.svelte.js";
   import PullItem from "./PullItem.svelte";
 
   const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
@@ -76,6 +77,18 @@
         >{s === "open" ? "Open" : s === "closed" ? "Closed" : "All"}</button>
       {/each}
     </div>
+    <div class="group-toggle">
+      <button
+        class="group-btn"
+        class:group-btn--active={getGroupByRepo()}
+        onclick={() => setGroupByRepo(true)}
+      >By Repo</button>
+      <button
+        class="group-btn"
+        class:group-btn--active={!getGroupByRepo()}
+        onclick={() => setGroupByRepo(false)}
+      >All</button>
+    </div>
   </div>
   <div class="search-bar">
     <div class="search-input-wrap">
@@ -130,19 +143,30 @@
     {:else if getPulls().length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
-      {#each [...pullsByRepo().entries()] as [repo, prs] (repo)}
-        <div class="repo-group">
-          <h3 class="repo-header">{repo}</h3>
-          {#each prs as pr (pr.ID)}
-            <PullItem
-              {pr}
-              selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
-              showRepo={false}
-              onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
-            />
-          {/each}
-        </div>
-      {/each}
+      {#if getGroupByRepo()}
+        {#each [...pullsByRepo().entries()] as [repo, prs] (repo)}
+          <div class="repo-group">
+            <h3 class="repo-header">{repo}</h3>
+            {#each prs as pr (pr.ID)}
+              <PullItem
+                {pr}
+                showRepo={false}
+                selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+              />
+            {/each}
+          </div>
+        {/each}
+      {:else}
+        {#each getPulls() as pr (pr.ID)}
+          <PullItem
+            {pr}
+            showRepo={true}
+            selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+            onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+          />
+        {/each}
+      {/if}
     {/if}
   </div>
   <div class="sidebar-footer">
@@ -358,5 +382,28 @@
     padding: 4px 10px;
     margin: 0;
     border-bottom: 1px solid var(--border-muted);
+  }
+  .group-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-inset);
+    border-radius: 6px;
+    padding: 2px;
+    margin-left: auto;
+  }
+  .group-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .group-btn--active {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
 </style>
