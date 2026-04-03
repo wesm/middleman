@@ -16,7 +16,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate \
-        dev test test-short vet lint testify-helper-check tidy svelte-skills clean install-hooks help
+        dev test test-short test-e2e vet lint testify-helper-check tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -111,6 +111,11 @@ test: ensure-embed-dir
 test-short: ensure-embed-dir
 	go test ./... -short -count=1
 
+# Run full-stack E2E tests (Playwright against real Go server)
+test-e2e: frontend
+	go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+	cd frontend && bun run playwright test --config=playwright-e2e.config.ts
+
 # Vet
 vet: ensure-embed-dir
 	go vet ./...
@@ -166,6 +171,7 @@ help:
 	@echo ""
 	@echo "  test           - Run all tests"
 	@echo "  test-short     - Run fast tests only"
+	@echo "  test-e2e       - Run full-stack E2E Playwright tests"
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
