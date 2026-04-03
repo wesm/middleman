@@ -14,6 +14,7 @@
   import { loadActivity } from "../../stores/activity.svelte.js";
   import { client } from "../../api/runtime.js";
   import type { CICheck, KanbanStatus } from "../../api/types.js";
+  import { navigate } from "../../stores/router.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -253,8 +254,9 @@
         {#if pr.ReviewDecision}
           <span class="chip {reviewColor(pr.ReviewDecision)}">{pr.ReviewDecision.replace(/_/g, " ")}</span>
         {/if}
-        <span class="chip chip--green">+{pr.Additions}</span>
-        <span class="chip chip--red">-{pr.Deletions}</span>
+        {#if pr.Additions > 0 || pr.Deletions > 0}
+          <span class="chip chip--muted">+{pr.Additions}/-{pr.Deletions}</span>
+        {/if}
       </div>
 
       <!-- Expanded CI checks -->
@@ -431,6 +433,23 @@
           </div>
         </div>
       {/if}
+
+      <!-- Files changed -->
+      <button
+        class="files-changed-btn"
+        onclick={() => navigate(`/pulls/${owner}/${name}/${number}/files`)}
+      >
+        <span class="files-changed-label">Files changed</span>
+        <span class="files-changed-stats">
+          {#if pr.Additions > 0}
+            <span class="files-stat files-stat--add">+{pr.Additions}</span>
+          {/if}
+          {#if pr.Deletions > 0}
+            <span class="files-stat files-stat--del">-{pr.Deletions}</span>
+          {/if}
+        </span>
+        <span class="files-changed-arrow">&#8594;</span>
+      </button>
 
       <!-- Comment box -->
       <div class="section">
@@ -874,6 +893,60 @@
   .merge-warning--info {
     background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
     color: var(--text-secondary);
+  }
+
+  .files-changed-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  .files-changed-btn:hover {
+    background: var(--bg-surface-hover);
+    border-color: var(--accent-blue);
+  }
+
+  .files-changed-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .files-changed-stats {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .files-stat {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .files-stat--add {
+    color: var(--accent-green);
+  }
+
+  .files-stat--del {
+    color: var(--accent-red);
+  }
+
+  .files-changed-arrow {
+    font-size: 14px;
+    color: var(--text-muted);
+    transition: color 0.1s;
+  }
+
+  .files-changed-btn:hover .files-changed-arrow {
+    color: var(--accent-blue);
   }
 
 </style>

@@ -222,6 +222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/pulls/{number}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name pulls by number diff */
+        get: operations["get-repos-by-owner-by-name-pulls-by-number-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}/github-state": {
         parameters: {
             query?: never;
@@ -402,6 +419,30 @@ export interface components {
             readonly $schema?: string;
             body: string;
         };
+        DiffFile: {
+            /** Format: int64 */
+            additions: number;
+            /** Format: int64 */
+            deletions: number;
+            hunks: components["schemas"]["Hunk"][] | null;
+            is_binary: boolean;
+            is_whitespace_only: boolean;
+            old_path: string;
+            path: string;
+            status: string;
+        };
+        DiffResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffResponse.json
+             */
+            readonly $schema?: string;
+            files: components["schemas"]["DiffFile"][] | null;
+            stale: boolean;
+            /** Format: int64 */
+            whitespace_only_count: number;
+        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -466,6 +507,18 @@ export interface components {
              */
             readonly $schema?: string;
             state: string;
+        };
+        Hunk: {
+            lines: components["schemas"]["Line"][] | null;
+            /** Format: int64 */
+            new_count: number;
+            /** Format: int64 */
+            new_start: number;
+            /** Format: int64 */
+            old_count: number;
+            /** Format: int64 */
+            old_start: number;
+            section?: string;
         };
         Issue: {
             Author: string;
@@ -556,6 +609,15 @@ export interface components {
             UpdatedAt: string;
             repo_name: string;
             repo_owner: string;
+        };
+        Line: {
+            content: string;
+            /** Format: int64 */
+            new_num?: number;
+            no_newline?: boolean;
+            /** Format: int64 */
+            old_num?: number;
+            type: string;
         };
         MergePRBody: {
             /**
@@ -1231,6 +1293,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PREvent"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-repos-by-owner-by-name-pulls-by-number-diff": {
+        parameters: {
+            query?: {
+                whitespace?: string;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResponse"];
                 };
             };
             /** @description Error */

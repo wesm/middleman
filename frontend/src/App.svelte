@@ -11,8 +11,9 @@
   import DetailDrawer from "./lib/components/DetailDrawer.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
+  import DiffView from "./lib/components/diff/DiffView.svelte";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
-  import { getRoute, getPage, getView, navigate, getBasePath } from "./lib/stores/router.svelte.ts";
+  import { getRoute, getPage, getView, navigate, replaceUrl, getBasePath, isDiffView, getDetailTab, getSelectedPRFromRoute } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
   import { hydrateActivityDefaults } from "./lib/stores/activity.svelte.js";
@@ -111,9 +112,10 @@
     }
 
     // Sync selection from route, clear when no item selected.
-    // Skip deep-link restoration when no repos are configured.
     if (route.page === "pulls") {
-      if (route.selected && hasConfiguredRepos()) {
+      if ("view" in route && route.view === "diff") {
+        selectPR(route.owner, route.name, route.number);
+      } else if ("selected" in route && route.selected && hasConfiguredRepos()) {
         selectPR(route.selected.owner, route.selected.name, route.selected.number);
       } else {
         clearSelection();
@@ -155,6 +157,21 @@
     updateDrawerURL(null);
   }
 
+  function navigateToSelectedPR(): void {
+    const sel = getSelectedPR();
+    if (!sel) return;
+    const tab = getDetailTab();
+    const path = tab === "files"
+      ? `/pulls/${sel.owner}/${sel.name}/${sel.number}/files`
+      : `/pulls/${sel.owner}/${sel.name}/${sel.number}`;
+    // Push on first selection so Back returns to the list; replace after.
+    if (getSelectedPRFromRoute()) {
+      replaceUrl(path);
+    } else {
+      navigate(path);
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent): void {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -170,23 +187,53 @@
       return;
     }
 
+    // Toggle between conversation and files tabs.
+    if (e.key === "f" && page === "pulls") {
+      const sel = getSelectedPRFromRoute();
+      if (sel) {
+        e.preventDefault();
+        const tab = getDetailTab();
+        if (tab === "conversation") {
+          navigate(`/pulls/${sel.owner}/${sel.name}/${sel.number}/files`);
+        } else {
+          navigate(`/pulls/${sel.owner}/${sel.name}/${sel.number}`);
+        }
+        return;
+      }
+    }
+
+    // DiffView handles its own j/k for file-level navigation.
+    const inDiffView = isDiffView();
+    const currentRoute = getRoute();
+    const isBoardView = currentRoute.page === "pulls" && "view" in currentRoute && currentRoute.view === "board";
     const isIssues = page === "issues";
 
     switch (e.key) {
       case "j":
+        if (inDiffView || isBoardView) break;
         e.preventDefault();
-        if (isIssues) selectNextIssue();
-        else selectNextPR();
+        if (isIssues) {
+          selectNextIssue();
+        } else {
+          selectNextPR();
+          navigateToSelectedPR();
+        }
         break;
       case "k":
+        if (inDiffView || isBoardView) break;
         e.preventDefault();
-        if (isIssues) selectPrevIssue();
-        else selectPrevPR();
+        if (isIssues) {
+          selectPrevIssue();
+        } else {
+          selectPrevPR();
+          navigateToSelectedPR();
+        }
         break;
       case "Escape":
+        if (e.defaultPrevented || isBoardView) break;
         e.preventDefault();
-        if (isIssues) clearIssueSelection();
-        else clearSelection();
+        if (isIssues) navigate("/issues");
+        else navigate("/pulls");
         break;
       case "1":
         e.preventDefault();
@@ -231,14 +278,37 @@
         <KanbanBoard />
       </div>
     {:else}
+      {@const selectedPR = getSelectedPRFromRoute() ?? getSelectedPR()}
+      {@const detailTab = getDetailTab()}
       <div class="list-layout">
         <aside class="sidebar">
           <PullList />
         </aside>
-        <section class="detail-area" class:detail-area--empty={getSelectedPR() === null}>
-          {#if getSelectedPR() !== null}
-            {@const sel = getSelectedPR()!}
-            <PullDetail owner={sel.owner} name={sel.name} number={sel.number} />
+        <section class="detail-area" class:detail-area--empty={selectedPR === null}>
+          {#if selectedPR !== null}
+            <div class="detail-tabs">
+              <button
+                class="detail-tab"
+                class:detail-tab--active={detailTab === "conversation"}
+                onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`)}
+              >
+                Conversation
+              </button>
+              <button
+                class="detail-tab"
+                class:detail-tab--active={detailTab === "files"}
+                onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`)}
+              >
+                Files changed
+              </button>
+            </div>
+            {#if detailTab === "files"}
+              {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
+                <DiffView owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} inline />
+              {/key}
+            {:else}
+              <PullDetail owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} />
+            {/if}
           {:else}
             <div class="placeholder-content">
               <p class="placeholder-text">Select a PR</p>
@@ -339,5 +409,32 @@
     flex: 1;
     color: var(--text-muted);
     font-size: 13px;
+  }
+
+  .detail-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .detail-tab {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 16px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+    transition: color 0.1s, border-color 0.1s;
+  }
+
+  .detail-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+  }
+
+  .detail-tab--active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent-blue);
   }
 </style>
