@@ -10,7 +10,7 @@
     getActiveFile,
     setActiveFile,
     isScrolling,
-    setScrolling,
+    clearScrolling,
     consumeScrollTarget,
     requestScrollToFile,
     loadDiff,
@@ -49,8 +49,6 @@
     }
 
     return () => {
-      if (scrollSafetyTimer) { clearTimeout(scrollSafetyTimer); scrollSafetyTimer = null; }
-      if (scrollFallbackTimer) { clearTimeout(scrollFallbackTimer); scrollFallbackTimer = null; }
       clearDiff();
     };
   });
@@ -76,48 +74,30 @@
     }
   }
 
-  // Safety timer: clears scrolling flag when scrollIntoView produces no movement.
-  // Armed from scrollToFile (non-reactive), cancelled on first scroll event.
-  let scrollSafetyTimer: ReturnType<typeof setTimeout> | null = null;
-
   function scrollToFile(path: string): void {
     if (!diffArea) return;
-    if (scrollSafetyTimer) clearTimeout(scrollSafetyTimer);
     const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      // If target is already in view, no scroll events fire — clear flag after a short delay.
-      scrollSafetyTimer = setTimeout(() => { scrollSafetyTimer = null; setScrolling(false); }, 300);
-    } else {
-      setScrolling(false);
+      el.scrollIntoView({ behavior: "instant", block: "start" });
     }
+    // Clear the scrolling flag after the instant scroll so the next user-initiated
+    // scroll event resumes active file tracking.
+    requestAnimationFrame(() => clearScrolling());
   }
 
   // Watch for scroll requests from the sidebar file tree (via the store).
   $effect(() => {
     const target = consumeScrollTarget();
     if (target) {
-      // Use a microtask to ensure the DOM has settled.
       queueMicrotask(() => scrollToFile(target));
     }
   });
 
   // Scroll-based active file tracking.
-  // Suppressed during programmatic smooth scrolls to prevent flashing/overshoot.
-  let scrollFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-
+  // Skipped for one frame after programmatic scroll to avoid re-setting activeFile.
   function onDiffScroll(): void {
     if (!diffArea || !diff) return;
-    // A scroll event fired, so the no-movement safety timer is no longer needed.
-    if (scrollSafetyTimer) { clearTimeout(scrollSafetyTimer); scrollSafetyTimer = null; }
-    // During programmatic smooth scroll, skip updating activeFile to prevent
-    // intermediate files from flashing in the sidebar.
-    if (isScrolling()) {
-      // Fallback: clear scrolling flag if scrollend doesn't fire (e.g. older browsers).
-      if (scrollFallbackTimer) clearTimeout(scrollFallbackTimer);
-      scrollFallbackTimer = setTimeout(() => { setScrolling(false); }, 200);
-      return;
-    }
+    if (isScrolling()) return;
     const rect = diffArea.getBoundingClientRect();
     const threshold = rect.top + 60;
 
@@ -133,11 +113,6 @@
     if (current !== null) {
       setActiveFile(current);
     }
-  }
-
-  function onDiffScrollEnd(): void {
-    if (scrollFallbackTimer) { clearTimeout(scrollFallbackTimer); scrollFallbackTimer = null; }
-    setScrolling(false);
   }
 
   // j/k keyboard navigation between files.
@@ -225,7 +200,6 @@
           class="diff-area"
           bind:this={diffArea}
           onscroll={onDiffScroll}
-          onscrollend={onDiffScrollEnd}
         >
           {#each diff.files as file, i (file.path)}
             <div class="diff-file-reveal" style="animation-delay: {Math.min(i * 30, 300)}ms">
