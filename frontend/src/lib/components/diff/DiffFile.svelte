@@ -19,6 +19,18 @@
   const collapsed = $derived(isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
 
+  // Local copy of file data, only synced when expanded. Collapsed files keep
+  // stale content so whitespace toggles don't trigger expensive re-renders
+  // and re-tokenization for hidden content.
+  // svelte-ignore state_referenced_locally — synced from file prop via $effect when expanded
+  let renderedFile = $state(file);
+
+  $effect(() => {
+    if (!collapsed) {
+      renderedFile = file;
+    }
+  });
+
   // Use shared theme detection (single MutationObserver for all DiffFile instances).
   let isDark = $state(isDarkTheme());
   onMount(() => subscribeTheme((dark) => { isDark = dark; }));
@@ -35,10 +47,12 @@
 
   // Recompute highlights when file or theme changes.
   $effect(() => {
-    const currentFile = file;
+    const version = ++tokenVersion;
+    if (collapsed) return;
+
+    const currentFile = renderedFile;
     const currentTheme = theme;
     const currentLang = lang;
-    const version = ++tokenVersion;
     const newCache = new Map<string, TokenSpan[]>();
 
     void (async () => {
@@ -74,7 +88,7 @@
   });
 
   function getTokens(hunkIdx: number, lineIdx: number): TokenSpan[] {
-    return tokenCache.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: file.hunks[hunkIdx]!.lines[lineIdx]!.content }];
+    return tokenCache.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
   }
 
   function computeCollapsedLines(hunks: DiffHunk[], hunkIdx: number): number {
@@ -163,12 +177,12 @@
     style:tab-size={tabWidth}
     ontransitionend={onTransitionEnd}
   >
-      {#if file.is_binary}
+      {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
-        {#each file.hunks as hunk, hunkIdx}
+        {#each renderedFile.hunks as hunk, hunkIdx}
           {#if hunkIdx > 0}
-            {@const gap = computeCollapsedLines(file.hunks, hunkIdx)}
+            {@const gap = computeCollapsedLines(renderedFile.hunks, hunkIdx)}
             {#if gap > 0}
               <CollapsedRegion lineCount={gap} />
             {/if}
