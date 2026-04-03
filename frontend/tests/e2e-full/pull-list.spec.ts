@@ -32,10 +32,12 @@ test.describe("PR list view", () => {
     const input = page.locator(".search-input");
     await input.fill("caching");
 
-    // Wait for the filtered result (replaces fixed sleep).
-    await expect(page.getByText("Add widget caching layer"))
-      .toBeVisible({ timeout: 5_000 });
-    // Other PRs should not be visible.
+    // Wait for the count badge to reflect filtered results. The
+    // matching item is already visible in the unfiltered list, so
+    // we must wait on a condition that only becomes true after
+    // the debounced search request completes.
+    await expect(page.locator(".count-badge"))
+      .toHaveText(/^1 PRs?$/, { timeout: 5_000 });
     await expect(page.getByText("Fix race condition in event loop")).not.toBeVisible();
     await expect(page.getByText("Add CLI flag parser")).not.toBeVisible();
   });
