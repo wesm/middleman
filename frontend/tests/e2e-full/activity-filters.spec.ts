@@ -14,17 +14,20 @@ async function waitForTable(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
-// Click a filter button and wait for the /activity API response to
-// complete, so assertions run against the updated DOM rather than
-// stale pre-filter rows.
-async function clickFilterAndWait(
-  page: Page, label: string,
+// Verify every badge in the activity table matches the expected text.
+// Uses auto-retrying assertions so it waits for the DOM to settle.
+async function expectAllBadges(
+  page: Page, expected: string,
 ): Promise<void> {
-  const responsePromise = page.waitForResponse(
-    (r) => r.url().includes("/activity") && r.status() === 200,
-  );
-  await page.locator(".seg-btn", { hasText: label }).click();
-  await responsePromise;
+  const badges = page.locator(".activity-row .badge");
+  // First wait for at least one badge with the expected text to appear,
+  // proving the filtered response has rendered.
+  await expect(badges.filter({ hasText: expected }).first())
+    .toBeVisible({ timeout: 10_000 });
+  // Then verify no badges with the wrong text remain.
+  const wrong = expected === "PR" ? "Issue" : "PR";
+  await expect(badges.filter({ hasText: wrong }))
+    .toHaveCount(0);
 }
 
 test.describe("activity feed filters", () => {
@@ -34,61 +37,42 @@ test.describe("activity feed filters", () => {
   });
 
   test("PR filter shows only PR items", async ({ page }) => {
-    await clickFilterAndWait(page, "PRs");
-
-    const badges = page.locator(".activity-row .badge");
-    const count = await badges.count();
-    expect(count).toBeGreaterThan(0);
-
-    for (let i = 0; i < count; i++) {
-      const text = await badges.nth(i).textContent();
-      expect(text?.trim()).toBe("PR");
-    }
+    await page.locator(".seg-btn", { hasText: "PRs" }).click();
+    await expectAllBadges(page, "PR");
   });
 
   test("Issues filter shows only issue items", async ({ page }) => {
-    await clickFilterAndWait(page, "Issues");
-
-    const badges = page.locator(".activity-row .badge");
-    const count = await badges.count();
-    expect(count).toBeGreaterThan(0);
-
-    for (let i = 0; i < count; i++) {
-      const text = await badges.nth(i).textContent();
-      expect(text?.trim()).toBe("Issue");
-    }
+    await page.locator(".seg-btn", { hasText: "Issues" }).click();
+    await expectAllBadges(page, "Issue");
   });
 
   test("All filter shows both PR and issue items", async ({ page }) => {
     // Start on PRs to change state, then switch to All.
-    await clickFilterAndWait(page, "PRs");
-    await clickFilterAndWait(page, "All");
+    await page.locator(".seg-btn", { hasText: "PRs" }).click();
+    await expectAllBadges(page, "PR");
 
+    await page.locator(".seg-btn", { hasText: "All" }).click();
+
+    // Wait for both badge types to appear, proving the unfiltered
+    // response has rendered.
     const badges = page.locator(".activity-row .badge");
-    const allTexts: string[] = [];
-    const count = await badges.count();
-    for (let i = 0; i < count; i++) {
-      const text = await badges.nth(i).textContent();
-      allTexts.push(text?.trim() ?? "");
-    }
-
-    expect(allTexts).toContain("PR");
-    expect(allTexts).toContain("Issue");
+    await expect(badges.filter({ hasText: "PR" }).first())
+      .toBeVisible({ timeout: 10_000 });
+    await expect(badges.filter({ hasText: "Issue" }).first())
+      .toBeVisible({ timeout: 10_000 });
   });
 
   test("disabling Comments hides comment rows", async ({ page }) => {
     // Verify comments exist initially.
-    const commentsBefore = page.locator(".evt-label.evt-comment");
-    await expect(commentsBefore.first()).toBeVisible();
-    const countBefore = await commentsBefore.count();
-    expect(countBefore).toBeGreaterThan(0);
+    await expect(
+      page.locator(".evt-label.evt-comment").first(),
+    ).toBeVisible();
 
     // Open filter dropdown and disable Comments.
     await page.locator(".filter-btn").click();
     await page.locator(".filter-dropdown").waitFor({ state: "visible" });
     await page.locator(".filter-item", { hasText: "Comments" }).click();
 
-    // Wait for the table to update (comments should disappear).
     await expect(
       page.locator(".evt-label.evt-comment"),
     ).toHaveCount(0, { timeout: 5_000 });
@@ -96,11 +80,10 @@ test.describe("activity feed filters", () => {
 
   test("hide closed/merged removes those items", async ({ page }) => {
     // Verify closed/merged items exist initially.
-    const closedBadges = page.locator(".state-badge.state-closed");
-    const mergedBadges = page.locator(".state-badge.state-merged");
-    const closedCount = await closedBadges.count();
-    const mergedCount = await mergedBadges.count();
-    expect(closedCount + mergedCount).toBeGreaterThan(0);
+    await expect(
+      page.locator(".state-badge.state-closed, .state-badge.state-merged")
+        .first(),
+    ).toBeVisible();
 
     // Open filter dropdown and enable "Hide closed/merged".
     await page.locator(".filter-btn").click();
@@ -108,7 +91,6 @@ test.describe("activity feed filters", () => {
     await page.locator(".filter-item", { hasText: "Hide closed/merged" })
       .click();
 
-    // Both should now be gone.
     await expect(
       page.locator(".state-badge.state-closed"),
     ).toHaveCount(0, { timeout: 5_000 });
@@ -118,26 +100,18 @@ test.describe("activity feed filters", () => {
   });
 
   test("hide bots removes bot-authored items", async ({ page }) => {
-    // Verify bot items exist (dependabot[bot]).
     const botCells = page.locator(
       ".activity-row .col-author",
       { hasText: "dependabot[bot]" },
     );
-    const botCount = await botCells.count();
-    expect(botCount).toBeGreaterThan(0);
+    await expect(botCells.first()).toBeVisible();
 
     // Open filter dropdown and enable "Hide bots".
     await page.locator(".filter-btn").click();
     await page.locator(".filter-dropdown").waitFor({ state: "visible" });
     await page.locator(".filter-item", { hasText: "Hide bots" }).click();
 
-    // Bot rows should disappear.
-    await expect(
-      page.locator(
-        ".activity-row .col-author",
-        { hasText: "dependabot[bot]" },
-      ),
-    ).toHaveCount(0, { timeout: 5_000 });
+    await expect(botCells).toHaveCount(0, { timeout: 5_000 });
   });
 
   test("24h range shows fewer items than 7d", async ({ page }) => {
@@ -145,30 +119,32 @@ test.describe("activity feed filters", () => {
     const count7d = await rows7d.count();
     expect(count7d).toBeGreaterThan(0);
 
-    // Switch to 24h and wait for the API response.
-    await clickFilterAndWait(page, "24h");
-
-    // 24h has fewer items than 7d.
+    // Switch to 24h. The 7d range has 14 items; 24h has fewer.
+    // Use a web-first assertion that retries until the row count
+    // drops below the 7d count, proving the filtered response
+    // has rendered.
+    await page.locator(".seg-btn", { hasText: "24h" }).click();
+    await expect(page.locator(".activity-row"))
+      .not.toHaveCount(count7d, { timeout: 10_000 });
     const count24h = await page.locator(".activity-row").count();
     expect(count24h).toBeLessThan(count7d);
   });
 
   test("search filters by title", async ({ page }) => {
     const input = page.locator(".search-input");
-
-    // Wait for the debounced search request to complete.
-    const responsePromise = page.waitForResponse(
-      (r) => r.url().includes("/activity")
-        && r.url().includes("search") && r.status() === 200,
-    );
     await input.fill("caching layer");
-    await responsePromise;
 
+    // Wait for the filtered result to render. All rows should
+    // reference "Add widget caching layer" (the only match).
+    // Use a web-first assertion on the row count: the seeded 7d
+    // feed has 14 items, so waiting for exactly the expected
+    // match count proves the search completed.
     const rows = page.locator(".activity-row");
+    await expect(rows.first().locator(".item-title"))
+      .toContainText("caching layer", { timeout: 10_000 });
+
     const count = await rows.count();
     expect(count).toBeGreaterThan(0);
-
-    // All visible rows should reference "Add widget caching layer".
     for (let i = 0; i < count; i++) {
       const title = await rows.nth(i).locator(".item-title").textContent();
       expect(title).toContain("Add widget caching layer");
@@ -177,20 +153,19 @@ test.describe("activity feed filters", () => {
 
   test("combined: PRs + hide closed/merged shows only open PRs",
     async ({ page }) => {
-      // Click PRs filter and wait for API response.
-      await clickFilterAndWait(page, "PRs");
+      // Click PRs filter and wait for filtered DOM.
+      await page.locator(".seg-btn", { hasText: "PRs" }).click();
+      await expectAllBadges(page, "PR");
 
-      // Enable hide closed/merged (client-side filter, no API call).
+      // Enable hide closed/merged (client-side filter).
       await page.locator(".filter-btn").click();
       await page.locator(".filter-dropdown").waitFor({ state: "visible" });
       await page.locator(".filter-item", { hasText: "Hide closed/merged" })
         .click();
-
-      // Close the dropdown by clicking elsewhere.
       await page.locator(".controls-bar")
         .click({ position: { x: 5, y: 5 } });
 
-      // Wait for merged/closed badges to disappear (client-side filter).
+      // Wait for merged/closed badges to disappear.
       await expect(
         page.locator(".state-badge.state-merged"),
       ).toHaveCount(0, { timeout: 5_000 });
@@ -198,15 +173,8 @@ test.describe("activity feed filters", () => {
         page.locator(".state-badge.state-closed"),
       ).toHaveCount(0);
 
-      // Verify all badges are PR.
-      const badges = page.locator(".activity-row .badge");
-      const count = await badges.count();
-      expect(count).toBeGreaterThan(0);
-
-      for (let i = 0; i < count; i++) {
-        const text = await badges.nth(i).textContent();
-        expect(text?.trim()).toBe("PR");
-      }
+      // All remaining badges should still be PR.
+      await expectAllBadges(page, "PR");
     },
   );
 });
