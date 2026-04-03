@@ -148,9 +148,10 @@ test.describe("grouping toggle", () => {
     // completes while we're still in flat mode.
     const input = page.locator(".search-input");
     await input.fill("zzz_no_match_zzz");
-    // Wait for the flat view to show its empty state (proves API returned 0 items).
+    // Wait for the flat view to show the zero-results message
+    // (not the loading placeholder) to prove the API returned 0 items.
     await expect(page.locator(".activity-feed .empty-state"))
-      .toBeVisible({ timeout: 10_000 });
+      .toHaveText("No activity found", { timeout: 10_000 });
 
     // Now switch to threaded + ungrouped. ActivityThreaded receives [].
     await page.locator(".seg-btn", { hasText: "Threaded" }).click();
