@@ -58,8 +58,8 @@ Add a shared toggle to switch all three list views (PRs, Issues, Activity Thread
 | `sidebar/IssueItem.svelte` | Conditional repo pill badge |
 | `ActivityFeed.svelte` | Toggle control in controls bar |
 | `ActivityThreaded.svelte` | Conditional repo-level grouping, repo badge on item rows |
-| `stores/pulls.svelte.ts` | Expose flat sorted list alongside `pullsByRepo()` |
-| `stores/issues.svelte.ts` | Same as pulls |
+| `stores/pulls.svelte.ts` | Expose flat sorted list alongside `pullsByRepo()`; update `selectNextPR`/`selectPrevPR` navigation helpers to walk the flat list when ungrouped |
+| `stores/issues.svelte.ts` | Same as pulls — flat list + updated navigation helpers |
 
 No backend changes — APIs already return flat data with repo owner/name fields.
 
@@ -69,3 +69,4 @@ No backend changes — APIs already return flat data with repo owner/name fields
 - **E2E: activity threaded ungrouped** — verify threads from different repos with the same PR number remain separate in ungrouped mode.
 - **E2E: toggle persistence** — set toggle to "All", reload page, verify it restores to "All".
 - **E2E: toggle syncs across views** — toggle in PR list, switch to issues, verify toggle state matches.
+- **E2E: j/k navigation** — verify j/k walks the flat chronological list in ungrouped mode and the repo-grouped order in "By Repo" mode.
