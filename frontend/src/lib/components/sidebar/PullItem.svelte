@@ -2,14 +2,18 @@
   import type { PullRequest } from "../../api/types.js";
   import { togglePRStar } from "../../stores/pulls.svelte.js";
   import { timeAgo } from "../../utils/time.js";
+  import { repoColor } from "../../utils/repo-color.js";
 
   interface Props {
     pr: PullRequest;
     selected: boolean;
+    showRepo: boolean;
     onclick: () => void;
   }
 
-  const { pr, selected, onclick }: Props = $props();
+  const { pr, selected, showRepo, onclick }: Props = $props();
+
+  const repoName = $derived(pr.repo_name ?? "");
 
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
@@ -43,7 +47,15 @@
 <button class="pull-item" class:selected bind:this={el} onclick={onclick}>
   <p class="title">{pr.Title}</p>
   <div class="meta-row">
-    <span class="meta-left">#{pr.Number} · {pr.Author}</span>
+    <span class="meta-left">
+      {#if showRepo}
+        <span
+          class="repo-badge"
+          style="color: {repoColor(repoName)}; background: color-mix(in srgb, {repoColor(repoName)} 15%, transparent);"
+        >{repoName}</span>
+      {/if}
+      #{pr.Number} · {pr.Author}
+    </span>
     <span class="meta-right">
       {#if pr.MergeableState === "dirty"}
         <span class="conflict-dot" title="Has merge conflicts"></span>
@@ -118,6 +130,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+
+  .repo-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 8px;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1.4;
   }
 
   .meta-right {

@@ -137,6 +137,7 @@
             <PullItem
               {pr}
               selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+              showRepo={false}
               onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
             />
           {/each}
