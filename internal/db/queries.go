@@ -129,10 +129,11 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		INSERT INTO pull_requests
 		    (repo_id, github_id, number, url, title, author, author_display_name,
 		     state, is_draft, body, head_branch, base_branch,
+		     github_head_sha, github_base_sha,
 		     additions, deletions, comment_count,
 		     review_decision, ci_status, ci_checks_json, created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    github_id            = excluded.github_id,
 		    url                  = excluded.url,
@@ -144,6 +145,8 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		    body                 = excluded.body,
 		    head_branch          = excluded.head_branch,
 		    base_branch          = excluded.base_branch,
+		    github_head_sha      = excluded.github_head_sha,
+		    github_base_sha      = excluded.github_base_sha,
 		    additions            = excluded.additions,
 		    deletions            = excluded.deletions,
 		    comment_count        = excluded.comment_count,
@@ -158,6 +161,7 @@ func (d *DB) UpsertPullRequest(ctx context.Context, pr *PullRequest) (int64, err
 		pr.RepoID, pr.GitHubID, pr.Number, pr.URL, pr.Title,
 		pr.Author, pr.AuthorDisplayName,
 		pr.State, pr.IsDraft, pr.Body, pr.HeadBranch, pr.BaseBranch,
+		pr.GitHubHeadSHA, pr.GitHubBaseSHA,
 		pr.Additions, pr.Deletions, pr.CommentCount, pr.ReviewDecision,
 		pr.CIStatus, pr.CIChecksJSON, pr.CreatedAt, pr.UpdatedAt,
 		pr.LastActivityAt, pr.MergedAt, pr.ClosedAt, pr.MergeableState,
@@ -183,6 +187,8 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
+		       p.github_head_sha, p.github_base_sha,
+		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -200,6 +206,8 @@ func (d *DB) GetPullRequest(ctx context.Context, owner, name string, number int)
 		&pr.ID, &pr.RepoID, &pr.GitHubID, &pr.Number, &pr.URL, &pr.Title,
 		&pr.Author, &pr.AuthorDisplayName, &pr.State, &pr.IsDraft,
 		&pr.Body, &pr.HeadBranch, &pr.BaseBranch,
+		&pr.GitHubHeadSHA, &pr.GitHubBaseSHA,
+		&pr.DiffHeadSHA, &pr.DiffBaseSHA, &pr.MergeBaseSHA,
 		&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 		&pr.CIStatus, &pr.CIChecksJSON,
 		&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
@@ -260,6 +268,8 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 		SELECT p.id, p.repo_id, p.github_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
+		       p.github_head_sha, p.github_base_sha,
+		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.additions, p.deletions, p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -287,6 +297,8 @@ func (d *DB) ListPullRequests(ctx context.Context, opts ListPullsOpts) ([]PullRe
 			&pr.ID, &pr.RepoID, &pr.GitHubID, &pr.Number, &pr.URL, &pr.Title,
 			&pr.Author, &pr.AuthorDisplayName, &pr.State, &pr.IsDraft,
 			&pr.Body, &pr.HeadBranch, &pr.BaseBranch,
+			&pr.GitHubHeadSHA, &pr.GitHubBaseSHA,
+			&pr.DiffHeadSHA, &pr.DiffBaseSHA, &pr.MergeBaseSHA,
 			&pr.Additions, &pr.Deletions, &pr.CommentCount, &pr.ReviewDecision,
 			&pr.CIStatus, &pr.CIChecksJSON,
 			&pr.CreatedAt, &pr.UpdatedAt, &pr.LastActivityAt,
@@ -499,6 +511,81 @@ func (d *DB) UpdatePRCIStatus(
 		return fmt.Errorf("update pr ci status: %w", err)
 	}
 	return nil
+}
+
+// UpdateClosedPRState atomically updates the state, timestamps, and final
+// GitHub head/base SHAs for a PR that has transitioned to closed or merged.
+// updatedAt should be the PR's UpdatedAt timestamp from GitHub.
+func (d *DB) UpdateClosedPRState(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	state string,
+	updatedAt time.Time,
+	mergedAt, closedAt *time.Time,
+	githubHeadSHA, githubBaseSHA string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE pull_requests
+		SET state = ?, merged_at = ?, closed_at = ?,
+		    updated_at = ?, last_activity_at = ?,
+		    github_head_sha = ?, github_base_sha = ?
+		WHERE repo_id = ? AND number = ?`,
+		state, mergedAt, closedAt, updatedAt, updatedAt,
+		githubHeadSHA, githubBaseSHA, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update closed PR state: %w", err)
+	}
+	return nil
+}
+
+// UpdateDiffSHAs stores the locally-verified diff SHAs for a PR.
+// Called after a successful bare clone fetch and merge-base computation.
+func (d *DB) UpdateDiffSHAs(ctx context.Context, repoID int64, number int, diffHead, diffBase, mergeBase string) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE pull_requests
+		 SET diff_head_sha = ?, diff_base_sha = ?, merge_base_sha = ?
+		 WHERE repo_id = ? AND number = ?`,
+		diffHead, diffBase, mergeBase, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update diff SHAs for PR %d: %w", number, err)
+	}
+	return nil
+}
+
+// DiffSHAs holds the SHA columns needed by the diff endpoint.
+type DiffSHAs struct {
+	GitHubHeadSHA string
+	GitHubBaseSHA string
+	DiffHeadSHA   string
+	DiffBaseSHA   string
+	MergeBaseSHA  string
+	State         string
+}
+
+// GetDiffSHAs returns the diff-related SHAs for a PR.
+func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
+	var s DiffSHAs
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT p.github_head_sha, p.github_base_sha,
+		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
+		       p.state
+		FROM pull_requests p
+		JOIN repos r ON r.id = p.repo_id
+		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
+		owner, name, number,
+	).Scan(&s.GitHubHeadSHA, &s.GitHubBaseSHA,
+		&s.DiffHeadSHA, &s.DiffBaseSHA, &s.MergeBaseSHA,
+		&s.State)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get diff SHAs: %w", err)
+	}
+	return &s, nil
 }
 
 // UpdatePRState sets the final state and timestamps for a PR after it is closed or merged.

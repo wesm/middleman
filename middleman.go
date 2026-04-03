@@ -102,7 +102,7 @@ func New(opts Options) (*Instance, error) {
 	}
 
 	syncer := ghclient.NewSyncer(
-		gh, database, refs, cfg.SyncDuration(),
+		gh, database, nil, refs, cfg.SyncDuration(),
 	)
 
 	srv := server.New(

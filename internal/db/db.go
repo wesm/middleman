@@ -62,6 +62,11 @@ func (d *DB) migrate() {
 		"ALTER TABLE repos ADD COLUMN allow_rebase_merge INTEGER NOT NULL DEFAULT 1",
 		"ALTER TABLE pull_requests ADD COLUMN author_display_name TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE pull_requests ADD COLUMN mergeable_state TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE pull_requests ADD COLUMN github_head_sha TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE pull_requests ADD COLUMN github_base_sha TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE pull_requests ADD COLUMN diff_head_sha TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE pull_requests ADD COLUMN diff_base_sha TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE pull_requests ADD COLUMN merge_base_sha TEXT NOT NULL DEFAULT ''",
 	}
 	for _, m := range migrations {
 		_, _ = d.rw.Exec(m) // Ignore errors — column may already exist

@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
@@ -24,6 +25,7 @@ type Server struct {
 	db       *db.DB
 	gh       ghclient.Client
 	syncer   *ghclient.Syncer
+	clones   *gitclone.Manager
 	cfg      *config.Config
 	cfgPath  string
 	cfgMu    sync.Mutex
@@ -49,7 +51,7 @@ func New(
 	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, gh, syncer, frontend,
+		database, gh, syncer, nil, frontend,
 		basePath, cfg, "", opts,
 	)
 }
@@ -60,13 +62,14 @@ func NewWithConfig(
 	database *db.DB,
 	gh ghclient.Client,
 	syncer *ghclient.Syncer,
+	clones *gitclone.Manager,
 	frontend fs.FS,
 	cfg *config.Config,
 	cfgPath string,
 	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, gh, syncer, frontend,
+		database, gh, syncer, clones, frontend,
 		cfg.BasePath, cfg, cfgPath, opts,
 	)
 }
@@ -75,6 +78,7 @@ func newServer(
 	database *db.DB,
 	gh ghclient.Client,
 	syncer *ghclient.Syncer,
+	clones *gitclone.Manager,
 	frontend fs.FS,
 	basePath string,
 	cfg *config.Config,
@@ -88,6 +92,7 @@ func newServer(
 		basePath: basePath,
 		gh:       gh,
 		syncer:   syncer,
+		clones:   clones,
 		cfg:      cfg,
 		cfgPath:  cfgPath,
 		options:  options,
