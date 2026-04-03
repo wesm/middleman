@@ -32,6 +32,7 @@
 
   let prTitle = $state<string | null>(null);
   let diffArea: HTMLDivElement | undefined = $state();
+  let scrollRaf = 0;
 
   // Load diff data on mount. Fetch PR title only in standalone mode.
   onMount(() => {
@@ -49,6 +50,7 @@
     }
 
     return () => {
+      cancelAnimationFrame(scrollRaf);
       clearDiff();
     };
   });
@@ -82,7 +84,7 @@
     }
     // Clear the scrolling flag after the instant scroll so the next user-initiated
     // scroll event resumes active file tracking.
-    requestAnimationFrame(() => clearScrolling());
+    scrollRaf = requestAnimationFrame(() => clearScrolling());
   }
 
   // Watch for scroll requests from the sidebar file tree (via the store).
