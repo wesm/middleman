@@ -115,7 +115,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit)
+	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
 
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 2, squashCommit)
+	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 2, squashCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 2)
 	require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
 
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 3, rebaseLastCommit)
+	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 3, rebaseLastCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 3)
 	require.NoError(t, err)
