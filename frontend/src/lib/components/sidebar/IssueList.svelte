@@ -136,6 +136,7 @@
             <IssueItem
               {issue}
               selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
+              showRepo={false}
               onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
             />
           {/each}
