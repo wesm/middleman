@@ -126,6 +126,49 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	assert.NotEqual(t, prHead, shas.MergeBaseSHA, "diff should not be empty")
 }
 
+func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
+	ctx := context.Background()
+	sourceDir := t.TempDir()
+	clonesDir := t.TempDir()
+
+	initTestRepo(t, sourceDir)
+	forkPoint := gitRun(t, sourceDir, "rev-parse", "HEAD")
+
+	gitRun(t, sourceDir, "checkout", "-b", "feature")
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	gitRun(t, sourceDir, "add", ".")
+	gitRun(t, sourceDir, "commit", "-m", "add feature")
+	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
+
+	gitRun(t, sourceDir, "checkout", "main")
+	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
+	mergeCommit := gitRun(t, sourceDir, "rev-parse", "HEAD")
+
+	gitRun(t, sourceDir, "update-ref", "refs/pull/1/head", prHead)
+
+	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+	syncer, repoID := setupSyncer(t, ctx, mgr)
+	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
+
+	// Seed incorrect diff SHAs (simulating prior SyncPR regression).
+	require.NoError(t, syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
+
+	// Without force, the existing (incorrect) SHAs are preserved.
+	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
+	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
+	require.NoError(t, err)
+	assert.Equal(t, "bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
+
+	// With force, the incorrect SHAs are replaced with correct values.
+	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, true)
+	shas, err = syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
+	require.NoError(t, err)
+	require.NotNil(t, shas)
+	assert.Equal(t, prHead, shas.DiffHeadSHA, "force=true should overwrite with correct PR head")
+	assert.Equal(t, forkPoint, shas.DiffBaseSHA, "force=true should overwrite with correct fork point")
+	assert.Equal(t, forkPoint, shas.MergeBaseSHA, "force=true should overwrite with correct merge base")
+}
+
 func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	ctx := context.Background()
 	sourceDir := t.TempDir()
