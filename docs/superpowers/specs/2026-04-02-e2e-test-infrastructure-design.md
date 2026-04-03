@@ -83,21 +83,21 @@ func SeedTestDB(d *db.DB) error {
 }
 ```
 
-The seeder uses the existing `db.UpsertPR`, `db.UpsertIssue`, `db.UpsertPREvents`, `db.UpsertIssueEvents` methods -- same path as the real sync engine.
+The seeder calls `db.UpsertRepo`, `db.UpsertPullRequest`, `db.UpsertIssue`, `db.UpsertPREvents`, and `db.UpsertIssueEvents` to populate data. This exercises the storage and query layers but bypasses the sync engine's GitHub API normalization logic -- the goal is to test the API and UI, not the sync path.
 
 ### Test Server Binary
 
 A small Go program in `cmd/e2e-server/main.go` that:
-1. Builds the frontend (`make frontend`) and embeds it -- handled by the Makefile target that builds the binary
-2. Creates a temp SQLite DB
-3. Calls `SeedTestDB()`
-4. Constructs a `config.Config` with the three test repos listed, so `/settings` returns valid data and the server's repo allowlist filtering works
-5. Creates a `ghclient.Syncer` with a noop `ghclient.Client` (the mock from api_test.go pattern), so `/sync/status` works without panicking and `POST /sync` is a safe no-op
-6. Passes the embedded frontend FS to `server.New()` so the SPA is served from `go:embed`, matching production behavior
-7. Starts the real HTTP server on a fixed port (default 4174, configurable via flag)
-8. Exits on SIGTERM
+1. Creates a temp SQLite DB and calls `SeedTestDB()`
+2. Constructs a `config.Config` with the three test repos listed, so `/settings` returns valid data and the server's repo allowlist filtering works
+3. Creates a `ghclient.Syncer` with a `NoopClient` (defined in `internal/testutil/noop_client.go` since the existing mock in `api_test.go` is in a `_test.go` file and not importable). This satisfies `/sync/status` without panicking and makes `POST /sync` a safe no-op.
+4. Passes the embedded frontend FS (`internal/web`) to `server.New()` so the SPA is served via `go:embed`, matching production
+5. Starts the HTTP server on a fixed port (default 4174, configurable via flag)
+6. Exits on SIGTERM
 
-The Makefile `test-e2e` target builds the frontend first (`make frontend`), then builds and runs this binary.
+The Makefile handles all build-time concerns: `make frontend` populates `internal/web/dist/` before `go build` compiles the binary with `go:embed`. The binary itself has no build responsibilities at runtime.
+
+Settings mutation flows (PUT /settings, add/remove repos) are out of scope for the initial E2E suite. If added later, the server constructor should switch from `server.New()` to `server.NewWithConfig()` with a writable temp config path.
 
 ## Playwright Configuration
 
@@ -114,11 +114,11 @@ The existing Vite-based E2E tests in `tests/e2e/` remain untouched.
 
 ```makefile
 test-e2e: frontend
-	go build -o bin/e2e-server ./cmd/e2e-server
+	go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 	cd frontend && bun run playwright test --config=playwright-e2e.config.ts
 ```
 
-The `frontend` prerequisite ensures `internal/web/dist/` is fresh before the Go binary is compiled with `go:embed`.
+The `frontend` prerequisite ensures `internal/web/dist/` is fresh before `go build` compiles the binary with `go:embed`. The binary is written next to its source to avoid creating a separate `bin/` directory.
 
 ## Test Cases
 
@@ -166,6 +166,7 @@ The `frontend` prerequisite ensures `internal/web/dist/` is fresh before the Go 
 cmd/e2e-server/main.go              -- test server binary
 internal/testutil/fixtures.go        -- fixture seeder
 internal/testutil/fixtures_test.go   -- verify fixtures produce expected data
+internal/testutil/noop_client.go     -- no-op ghclient.Client for e2e server
 frontend/playwright-e2e.config.ts    -- full-stack Playwright config
 frontend/tests/e2e-full/
   activity-filters.spec.ts           -- Phase 1
