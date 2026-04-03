@@ -208,6 +208,8 @@
     font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 600;
+    min-width: 3.5ch;
+    text-align: right;
   }
 
   .stat--add {
