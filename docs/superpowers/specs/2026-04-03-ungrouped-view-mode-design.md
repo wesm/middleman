@@ -17,7 +17,7 @@ Add a shared toggle to switch all three list views (PRs, Issues, Activity Thread
 - Flat list sorted by `last_activity_at DESC` (API already returns this order).
 - Repo group headers removed.
 - Each item gets a colored repo pill badge in the meta row: `[middleman] #52 · jdoe`.
-- Keyboard navigation (j/k) walks the flat list without repo boundaries.
+- Keyboard navigation (j/k) walks the flat list without repo boundaries. Because `getDisplayOrderPRs()` (and the issue equivalent) is the single traversal source for j/k globally — including board mode — the toggle must not change the return value of `getDisplayOrderPRs()` directly. Instead, the list-mode sidebar rendering determines display order from the flat array, and j/k in list mode uses that same flat order. Board mode is out of scope and its navigation is unchanged.
 
 ### Activity Threaded
 
@@ -58,8 +58,8 @@ Add a shared toggle to switch all three list views (PRs, Issues, Activity Thread
 | `sidebar/IssueItem.svelte` | Conditional repo pill badge |
 | `ActivityFeed.svelte` | Toggle control in controls bar |
 | `ActivityThreaded.svelte` | Conditional repo-level grouping, repo badge on item rows |
-| `stores/pulls.svelte.ts` | Expose flat sorted list alongside `pullsByRepo()`; update `selectNextPR`/`selectPrevPR` navigation helpers to walk the flat list when ungrouped |
-| `stores/issues.svelte.ts` | Same as pulls — flat list + updated navigation helpers |
+| `stores/pulls.svelte.ts` | Expose flat sorted list alongside `pullsByRepo()`; update `getDisplayOrderPRs()` to return flat order when ungrouped and current view is list (not board) |
+| `stores/issues.svelte.ts` | Same as pulls — flat list + toggle-aware display order |
 
 No backend changes — APIs already return flat data with repo owner/name fields.
 
@@ -68,5 +68,5 @@ No backend changes — APIs already return flat data with repo owner/name fields
 - **E2E: grouped vs ungrouped rendering** — verify PR list renders repo headers in "By Repo" mode and a flat list with repo badges in "All" mode. Same for issue list.
 - **E2E: activity threaded ungrouped** — verify threads from different repos with the same PR number remain separate in ungrouped mode.
 - **E2E: toggle persistence** — set toggle to "All", reload page, verify it restores to "All".
-- **E2E: toggle syncs across views** — toggle in PR list, switch to issues, verify toggle state matches.
+- **E2E: toggle syncs across views** — toggle in PR list, switch to issues, verify toggle state matches. Also verify activity threaded view respects the shared toggle when switching from PRs to activity (threaded mode).
 - **E2E: j/k navigation** — verify j/k walks the flat chronological list in ungrouped mode and the repo-grouped order in "By Repo" mode.
