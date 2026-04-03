@@ -691,6 +691,28 @@ func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) err
 		return fmt.Errorf("ensure kanban state for PR #%d: %w", number, err)
 	}
 
+	// Fetch bare clone and compute diff SHAs so the diff view is current.
+	if s.clones != nil {
+		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
+		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
+			slog.Warn("bare clone fetch failed during SyncPR",
+				"repo", owner+"/"+name, "number", number, "err", err)
+		} else if ghPR.GetMerged() {
+			// Merged PRs need special merge-base logic via the pull ref.
+			// Force recomputation to repair any previously incorrect SHAs.
+			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
+		} else if normalized.GitHubHeadSHA != "" && normalized.GitHubBaseSHA != "" {
+			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.GitHubBaseSHA, normalized.GitHubHeadSHA)
+			if err != nil {
+				slog.Warn("merge-base failed during SyncPR",
+					"repo", owner+"/"+name, "number", number, "err", err)
+			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.GitHubHeadSHA, normalized.GitHubBaseSHA, mb); err != nil {
+				slog.Warn("update diff SHAs failed during SyncPR",
+					"repo", owner+"/"+name, "number", number, "err", err)
+			}
+		}
+	}
+
 	if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
 		return fmt.Errorf("refresh timeline for PR #%d: %w", number, err)
 	}
@@ -806,7 +828,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		baseSHA := ghPR.GetBase().GetSHA()
 
 		if ghPR.GetMerged() {
-			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA())
+			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
 		} else if headSHA != "" && baseSHA != "" {
 			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
@@ -827,7 +849,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	return nil
 }
 
-// computeMergedPRDiffSHAs computes diff SHAs for a merged PR that lacks them.
+// computeMergedPRDiffSHAs computes diff SHAs for a merged PR.
 // Uses merge-base(merge_commit^1, refs/pull/<number>/head) which works for all
 // GitHub merge strategies:
 //   - Merge commit: ^1 is the pre-merge base tip
@@ -836,23 +858,29 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 //
 // In all cases, merge-base with the original PR head (from the pull ref)
 // correctly identifies the fork point.
+//
+// When force is false, skips PRs that already have diff SHAs (periodic sync).
+// When force is true, always recomputes (on-demand SyncPR).
 func (s *Syncer) computeMergedPRDiffSHAs(
 	ctx context.Context, repo RepoRef, repoID int64, number int, mergeCommitSHA string,
+	force bool,
 ) {
 	if mergeCommitSHA == "" {
 		return
 	}
 
-	existing, err := s.db.GetDiffSHAs(ctx, repo.Owner, repo.Name, number)
-	if err != nil {
-		slog.Warn("get diff SHAs for merged PR failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number, "err", err,
-		)
-		return
-	}
-	if existing == nil || existing.DiffHeadSHA != "" {
-		return // already has diff SHAs or PR not found
+	if !force {
+		existing, err := s.db.GetDiffSHAs(ctx, repo.Owner, repo.Name, number)
+		if err != nil {
+			slog.Warn("get diff SHAs for merged PR failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+			return
+		}
+		if existing == nil || existing.DiffHeadSHA != "" {
+			return // already has diff SHAs or PR not found
+		}
 	}
 
 	// Resolve the PR head from the pull ref. GitHub keeps these refs
