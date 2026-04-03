@@ -1,6 +1,7 @@
 import { apiErrorMessage, client } from "../api/runtime.js";
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 import { getGlobalRepo } from "./filter.svelte.js";
+import { getGroupByRepo } from "./grouping.svelte.js";
 
 let issues = $state<Issue[]>([]);
 let loading = $state(false);
@@ -221,14 +222,17 @@ export async function toggleIssueStar(
   }
 }
 
-// Navigation — uses display order (grouped by repo)
+// Navigation — uses display order (grouped by repo, or flat if ungrouped)
 function getDisplayOrderIssues(): Issue[] {
-  const grouped = issuesByRepo();
-  const ordered: Issue[] = [];
-  for (const items of grouped.values()) {
-    ordered.push(...items);
+  if (getGroupByRepo()) {
+    const grouped = issuesByRepo();
+    const ordered: Issue[] = [];
+    for (const items of grouped.values()) {
+      ordered.push(...items);
+    }
+    return ordered;
   }
-  return ordered;
+  return issues;
 }
 
 export function selectNextIssue(): void {

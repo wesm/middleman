@@ -32,6 +32,7 @@
   import { hasConfiguredRepos, isSettingsLoaded } from "../stores/settings.svelte.js";
   import { navigate } from "../stores/router.svelte.js";
   import { subscribeSyncComplete } from "../stores/sync.svelte.js";
+  import { getGroupByRepo, setGroupByRepo } from "../stores/grouping.svelte.js";
 
   const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
 
@@ -332,6 +333,13 @@
         <button class="seg-btn" class:active={getViewMode() === "flat"} onclick={() => handleViewModeChange("flat")}>Flat</button>
         <button class="seg-btn" class:active={getViewMode() === "threaded"} onclick={() => handleViewModeChange("threaded")}>Threaded</button>
       </div>
+
+      {#if getViewMode() === "threaded"}
+        <div class="segmented-control">
+          <button class="seg-btn" class:active={getGroupByRepo()} onclick={() => setGroupByRepo(true)}>By Repo</button>
+          <button class="seg-btn" class:active={!getGroupByRepo()} onclick={() => setGroupByRepo(false)}>All</button>
+        </div>
+      {/if}
 
       <div class="segmented-control">
         {#each TIME_RANGES as r}

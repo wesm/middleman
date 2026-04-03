@@ -2,14 +2,20 @@
   import type { Issue, IssueLabel } from "../../api/types.js";
   import { toggleIssueStar } from "../../stores/issues.svelte.js";
   import { timeAgo } from "../../utils/time.js";
+  import { repoColor } from "../../utils/repo-color.js";
 
   interface Props {
     issue: Issue;
     selected: boolean;
+    showRepo: boolean;
     onclick: () => void;
   }
 
-  const { issue, selected, onclick }: Props = $props();
+  const { issue, selected, showRepo, onclick }: Props = $props();
+
+  const repoSlug = $derived(
+    `${issue.repo_owner ?? ""}/${issue.repo_name ?? ""}`,
+  );
 
   let el: HTMLButtonElement;
 
@@ -68,7 +74,15 @@
     </div>
   {/if}
   <div class="meta-row">
-    <span class="meta-left">#{issue.Number} · {issue.Author}</span>
+    <span class="meta-left">
+      {#if showRepo}
+        <span
+          class="repo-badge"
+          style="color: {repoColor(repoSlug)}; background: color-mix(in srgb, {repoColor(repoSlug)} 15%, transparent);"
+        >{repoSlug}</span>
+      {/if}
+      #{issue.Number} · {issue.Author}
+    </span>
     <span class="meta-right">
       <span
         class="star-btn"
@@ -166,6 +180,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+
+  .repo-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 8px;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1.4;
+    margin-right: 4px;
   }
 
   .meta-right {
