@@ -2,7 +2,6 @@ package gitclone
 
 import (
 	"bytes"
-	"strconv"
 	"strings"
 
 	godiff "github.com/sourcegraph/go-diff/diff"
@@ -180,12 +179,4 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 	}
 
 	return rawFiles
-}
-
-func atoi(s string) int {
-	if s == "" {
-		return 0
-	}
-	n, _ := strconv.Atoi(s) //nolint:errcheck // best-effort integer parse
-	return n
 }
