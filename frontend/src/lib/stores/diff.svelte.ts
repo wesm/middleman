@@ -131,6 +131,10 @@ export async function loadDiff(owner: string, name: string, number: number): Pro
     // Guard: a newer request may have replaced abortController while we awaited.
     if (abortController !== ac) return;
     diff = data;
+    // Highlight the first file by default so the sidebar shows an active selection.
+    if (data.files?.length > 0 && !activeFile) {
+      activeFile = data.files[0].path;
+    }
   } catch (err) {
     if (ac.signal.aborted) return;
     if (abortController !== ac) return;

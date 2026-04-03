@@ -186,7 +186,11 @@
   <div class="diff-body">
     {#if loading && !diff}
       <div class="diff-state">
-        <p class="diff-state-msg">Loading diff...</p>
+        <svg class="diff-spinner" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
+          <path d="M18 10a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <p class="diff-state-msg">Loading diff</p>
       </div>
     {:else if error}
       <div class="diff-state">
@@ -210,14 +214,16 @@
           onscroll={onDiffScroll}
           onscrollend={onDiffScrollEnd}
         >
-          {#each diff.files as file (file.path)}
-            <DiffFileComponent
-              {file}
-              {owner}
-              {name}
-              {number}
-              {tabWidth}
-            />
+          {#each diff.files as file, i (file.path)}
+            <div class="diff-file-reveal" style="animation-delay: {Math.min(i * 30, 300)}ms">
+              <DiffFileComponent
+                {file}
+                {owner}
+                {name}
+                {number}
+                {tabWidth}
+              />
+            </div>
           {/each}
         </div>
       </div>
@@ -336,7 +342,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     flex: 1;
+  }
+
+  .diff-spinner {
+    animation: spin 0.8s linear infinite;
+    color: var(--text-muted);
   }
 
   .diff-state-msg {
@@ -346,5 +358,24 @@
 
   .diff-state-msg--error {
     color: var(--accent-red);
+  }
+
+  .diff-file-reveal {
+    animation: file-appear 0.25s ease both;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes file-appear {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
 </style>

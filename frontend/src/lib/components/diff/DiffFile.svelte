@@ -101,7 +101,9 @@
 <div class="diff-file" data-file-path={file.path}>
   <div class="file-header">
     <button class="collapse-toggle" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
-      <span class="collapse-chevron" class:collapse-chevron--collapsed={collapsed}>&#9662;</span>
+      <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </button>
     <span class="file-path" class:file-path--deleted={file.status === "deleted"}>
       {displayPath(file)}
@@ -182,8 +184,8 @@
   }
 
   .collapse-chevron {
-    font-size: 10px;
-    transition: transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1);
+    transition: transform 0.15s ease-out;
+    flex-shrink: 0;
   }
 
   .collapse-chevron--collapsed {
