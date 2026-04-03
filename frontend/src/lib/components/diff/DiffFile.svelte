@@ -87,16 +87,52 @@
   }
 
   let contentEl: HTMLDivElement | undefined = $state();
-  let accordionMs = $state(200);
+  let animating = $state(false);
 
   function toggle(): void {
-    // Animate at ~3000px/s, but only for the visible portion — content
-    // beyond the viewport can pop since nobody sees it anyway.
-    if (contentEl) {
-      const visible = Math.min(contentEl.scrollHeight, window.innerHeight);
-      accordionMs = Math.min(Math.max(Math.round(visible / 3), 150), 500);
+    if (!contentEl) {
+      toggleFileCollapsed(owner, name, number, file.path);
+      return;
     }
+
+    const isExpanded = !collapsed;
+    const scrollH = contentEl.scrollHeight;
+    const animateH = Math.min(scrollH, window.innerHeight);
+    const ms = Math.min(Math.max(Math.round(animateH / 3), 150), 500);
+
+    animating = true;
+
+    if (isExpanded) {
+      // Collapse: snap off-screen content away instantly, then animate visible portion to 0.
+      const currentH = contentEl.getBoundingClientRect().height;
+      contentEl.style.transition = 'none';
+      contentEl.style.overflow = 'hidden';
+      contentEl.style.maxHeight = `${Math.min(currentH, animateH)}px`;
+      contentEl.offsetHeight;
+      contentEl.style.transition = `max-height ${ms}ms ease-out`;
+      contentEl.style.maxHeight = '0px';
+    } else {
+      // Expand: animate from current to viewport height, then snap to full.
+      const currentH = contentEl.getBoundingClientRect().height;
+      contentEl.style.transition = 'none';
+      contentEl.style.overflow = 'hidden';
+      contentEl.style.maxHeight = `${currentH}px`;
+      contentEl.offsetHeight;
+      contentEl.style.transition = `max-height ${ms}ms ease-out`;
+      contentEl.style.maxHeight = `${animateH}px`;
+    }
+
     toggleFileCollapsed(owner, name, number, file.path);
+  }
+
+  function onTransitionEnd(e: TransitionEvent): void {
+    if (e.target !== contentEl || e.propertyName !== 'max-height') return;
+    animating = false;
+    contentEl.style.transition = '';
+    contentEl.style.maxHeight = '';
+    if (!collapsed) {
+      contentEl.style.overflow = '';
+    }
   }
 
   function displayPath(f: DiffFileType): string {
@@ -120,8 +156,13 @@
       <span class="stat" class:stat--del={file.deletions > 0} class:stat--dim={file.deletions === 0}>-{file.deletions}</span>
     </span>
   </button>
-  <div class="file-content-accordion" class:file-content-accordion--collapsed={collapsed} style:transition-duration="{accordionMs}ms">
-    <div class="file-content" bind:this={contentEl} style:tab-size={tabWidth}>
+  <div
+    class="file-content"
+    class:file-content--collapsed={collapsed && !animating}
+    bind:this={contentEl}
+    style:tab-size={tabWidth}
+    ontransitionend={onTransitionEnd}
+  >
       {#if file.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
@@ -149,7 +190,6 @@
           {/each}
         {/each}
       {/if}
-    </div>
   </div>
 </div>
 
@@ -229,24 +269,14 @@
     opacity: 0.3;
   }
 
-  .file-content-accordion {
-    display: grid;
-    grid-template-rows: 1fr;
-    transition: grid-template-rows ease-out;
-    /* transition-duration set inline based on content height */
-  }
-
-  .file-content-accordion--collapsed {
-    grid-template-rows: 0fr;
-  }
-
   .file-content {
-    overflow: hidden;
     min-height: 0;
+    overflow-x: auto;
   }
 
-  .file-content-accordion:not(.file-content-accordion--collapsed) > .file-content {
-    overflow-x: auto;
+  .file-content--collapsed {
+    max-height: 0;
+    overflow: hidden;
   }
 
   .binary-notice {
