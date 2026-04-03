@@ -1,6 +1,8 @@
 import { client } from "../api/runtime.js";
 import type { KanbanStatus, PullRequest } from "../api/types.js";
 import { getGlobalRepo } from "./filter.svelte.js";
+import { getGroupByRepo } from "./grouping.svelte.js";
+import { getView } from "./router.svelte.js";
 
 type PullsParams = {
   repo?: string;
@@ -76,14 +78,19 @@ export function setFilterState(s: string): void {
   filterState = s;
 }
 
-/** Returns PRs in display order (grouped by repo, then by activity within group). */
+/** Returns PRs in display order: grouped by repo when groupByRepo is true
+ *  or when in board view (board navigation is unaffected by toggle),
+ *  flat chronological otherwise. */
 export function getDisplayOrderPRs(): PullRequest[] {
-  const grouped = pullsByRepo();
-  const ordered: PullRequest[] = [];
-  for (const prs of grouped.values()) {
-    ordered.push(...prs);
+  if (getGroupByRepo() || getView() === "board") {
+    const grouped = pullsByRepo();
+    const ordered: PullRequest[] = [];
+    for (const prs of grouped.values()) {
+      ordered.push(...prs);
+    }
+    return ordered;
   }
-  return ordered;
+  return pulls;
 }
 
 export function selectNextPR(): void {
