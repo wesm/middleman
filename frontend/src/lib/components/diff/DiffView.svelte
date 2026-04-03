@@ -74,23 +74,30 @@
     }
   }
 
+  // Safety timer: clears scrolling flag when scrollIntoView produces no movement.
+  // Armed from scrollToFile (non-reactive), cancelled on first scroll event.
+  let scrollSafetyTimer: ReturnType<typeof setTimeout> | null = null;
+
   function scrollToFile(path: string): void {
     if (!diffArea) return;
+    if (scrollSafetyTimer) clearTimeout(scrollSafetyTimer);
     const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
+      // If target is already in view, no scroll events fire — clear flag after a short delay.
+      scrollSafetyTimer = setTimeout(() => { scrollSafetyTimer = null; setScrolling(false); }, 300);
+    } else {
+      setScrolling(false);
     }
   }
 
   // Watch for scroll requests from the sidebar file tree (via the store).
   $effect(() => {
     const target = consumeScrollTarget();
-    if (!target) return;
-    // Use a microtask to ensure the DOM has settled.
-    queueMicrotask(() => scrollToFile(target));
-    // Safety: if scrollIntoView produces no movement, scrollend won't fire.
-    const timer = setTimeout(() => { setScrolling(false); }, 300);
-    return () => clearTimeout(timer);
+    if (target) {
+      // Use a microtask to ensure the DOM has settled.
+      queueMicrotask(() => scrollToFile(target));
+    }
   });
 
   // Scroll-based active file tracking.
@@ -99,6 +106,8 @@
 
   function onDiffScroll(): void {
     if (!diffArea || !diff) return;
+    // A scroll event fired, so the no-movement safety timer is no longer needed.
+    if (scrollSafetyTimer) { clearTimeout(scrollSafetyTimer); scrollSafetyTimer = null; }
     // During programmatic smooth scroll, skip updating activeFile to prevent
     // intermediate files from flashing in the sidebar.
     if (isScrolling()) {
