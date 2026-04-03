@@ -131,9 +131,9 @@ export async function loadDiff(owner: string, name: string, number: number): Pro
     // Guard: a newer request may have replaced abortController while we awaited.
     if (abortController !== ac) return;
     diff = data;
-    // Highlight the first file by default so the sidebar shows an active selection.
-    if (data.files?.length > 0 && !activeFile) {
-      activeFile = data.files[0].path;
+    // Select the first file if activeFile is unset or no longer in the new diff.
+    if (!data.files?.some((f: { path: string }) => f.path === activeFile)) {
+      activeFile = data.files?.[0]?.path ?? null;
     }
   } catch (err) {
     if (ac.signal.aborted) return;
@@ -155,6 +155,7 @@ export function clearDiff(): void {
   loading = false;
   activeFile = null;
   scrollTarget = null;
+  scrolling = false;
   currentOwner = "";
   currentName = "";
   currentNumber = 0;

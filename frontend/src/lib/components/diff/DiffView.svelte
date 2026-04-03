@@ -85,10 +85,12 @@
   // Watch for scroll requests from the sidebar file tree (via the store).
   $effect(() => {
     const target = consumeScrollTarget();
-    if (target) {
-      // Use a microtask to ensure the DOM has settled.
-      queueMicrotask(() => scrollToFile(target));
-    }
+    if (!target) return;
+    // Use a microtask to ensure the DOM has settled.
+    queueMicrotask(() => scrollToFile(target));
+    // Safety: if scrollIntoView produces no movement, scrollend won't fire.
+    const timer = setTimeout(() => { setScrolling(false); }, 300);
+    return () => clearTimeout(timer);
   });
 
   // Scroll-based active file tracking.

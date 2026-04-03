@@ -53,6 +53,9 @@
     const currentFile = renderedFile;
     const currentTheme = theme;
     const currentLang = lang;
+
+    // Clear stale tokens so we never show highlights from a previous file version.
+    tokenCache = new Map();
     const newCache = new Map<string, TokenSpan[]>();
 
     void (async () => {
@@ -111,7 +114,14 @@
 
     const isExpanded = !collapsed;
     const scrollH = contentEl.scrollHeight;
-    const animateH = Math.min(scrollH, window.innerHeight);
+    const containerH = contentEl.closest('.diff-area')?.clientHeight ?? window.innerHeight;
+    const animateH = Math.min(scrollH, containerH);
+
+    if (animateH === 0) {
+      toggleFileCollapsed(owner, name, number, file.path);
+      return;
+    }
+
     const ms = Math.min(Math.max(Math.round(animateH / 3), 150), 500);
 
     animating = true;
@@ -176,6 +186,7 @@
     bind:this={contentEl}
     style:tab-size={tabWidth}
     ontransitionend={onTransitionEnd}
+    inert={collapsed && !animating}
   >
       {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
