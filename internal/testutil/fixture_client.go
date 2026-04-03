@@ -49,9 +49,14 @@ func (c *FixtureClient) GetUser(_ context.Context, login string) (*gh.User, erro
 	return &gh.User{Login: &login}, nil
 }
 
-// GetRepository returns an empty repository stub.
+// GetRepository returns a repository with all merge methods enabled.
 func (c *FixtureClient) GetRepository(_ context.Context, _, _ string) (*gh.Repository, error) {
-	return &gh.Repository{}, nil
+	t := true
+	return &gh.Repository{
+		AllowSquashMerge: &t,
+		AllowMergeCommit: &t,
+		AllowRebaseMerge: &t,
+	}, nil
 }
 
 // GetPullRequest looks up the PR by owner/repo and number from

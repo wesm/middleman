@@ -17,18 +17,23 @@ test.describe("view navigation", () => {
     // Wait for the app to be ready (activity feed visible).
     await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
 
-    // Click PRs tab -> URL should contain /pulls.
+    // Click PRs tab -> URL should contain /pulls, list renders.
     await page.locator(".view-tab", { hasText: "PRs" }).click();
     await expect(page).toHaveURL(/\/pulls/);
+    await page.locator(".pull-item").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
 
-    // Click Issues tab -> URL should contain /issues.
+    // Click Issues tab -> URL should contain /issues, list renders.
     await page.locator(".view-tab", { hasText: "Issues" }).click();
     await expect(page).toHaveURL(/\/issues/);
+    await page.locator(".issue-item").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
 
-    // Click Activity tab -> back to root.
+    // Click Activity tab -> back to root, feed renders.
     await page.locator(".view-tab", { hasText: "Activity" }).click();
-    await expect(page).toHaveURL(/^http:\/\/[^/]+\/$/);
-    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 5_000 });
+    await expect(page).toHaveURL(/\/$/);
+    await page.locator(".activity-feed")
+      .waitFor({ state: "visible", timeout: 5_000 });
   });
 
   test("clicking a PR row opens the detail pane", async ({ page }) => {

@@ -20,29 +20,27 @@ test.describe("issue list view", () => {
 
   test("renders open issues by default", async ({ page }) => {
     const countBadge = page.locator(".count-badge");
-    await expect(countBadge).toContainText("4");
+    await expect(countBadge).toHaveText(/^4 issues$/);
   });
 
   test("closed state shows closed issues", async ({ page }) => {
     await page.locator(".state-btn", { hasText: "Closed" }).click();
 
-    // Wait for list to update (closed tab may show 0 items or the closed one).
-    await page.waitForTimeout(500);
-
     const countBadge = page.locator(".count-badge");
-    await expect(countBadge).toContainText("1", { timeout: 5_000 });
+    await expect(countBadge).toHaveText(/^1 issues?$/, { timeout: 5_000 });
   });
 
   test("search filters by title", async ({ page }) => {
     const input = page.locator(".search-input");
     await input.fill("Safari");
 
-    // Wait for debounce (300ms) + network request.
-    await page.waitForTimeout(1_000);
+    // Wait for the filtered result to appear (replaces fixed sleep).
+    await expect(page.locator(".count-badge"))
+      .toHaveText(/^1 issues?$/, { timeout: 5_000 });
 
     const items = page.locator(".issue-item");
     const count = await items.count();
-    expect(count).toBeGreaterThan(0);
+    expect(count).toBe(1);
 
     for (let i = 0; i < count; i++) {
       const title = await items.nth(i).locator(".title").textContent();

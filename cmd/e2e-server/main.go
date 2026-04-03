@@ -83,8 +83,10 @@ func run(port int) error {
 
 	srv := server.New(database, fc, syncer, assets, "/", cfg, server.ServerOptions{})
 
-	syncer.Start(ctx)
-	defer syncer.Stop()
+	// Do not start the syncer's background loop. The seeded DB is the
+	// ground truth for E2E tests; RunOnce would overwrite it with
+	// incomplete fixture client data. The syncer only needs to exist
+	// for Status() and IsTrackedRepo() calls.
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	slog.Info(fmt.Sprintf("starting e2e server at http://%s", addr))
