@@ -22,7 +22,7 @@ The existing `mockApi.ts` approach intercepts at the HTTP layer, so it can't cat
 
 ### Fixture Seeder
 
-A Go helper in `internal/testutil/fixtures.go` that populates a DB with realistic data. Called from a small Go binary that writes the seeded DB to a path, which Playwright's `globalSetup` invokes before tests.
+A Go helper in `internal/testutil/fixtures.go` that populates a DB with realistic data. Called from `cmd/e2e-server/main.go` at startup.
 
 ### Data Set
 
@@ -56,9 +56,10 @@ A Go helper in `internal/testutil/fixtures.go` that populates a DB with realisti
 - `issue_comment` events on issues (also maps to `activity_type = "comment"`)
 
 **Time Distribution:**
+- All timestamps computed relative to `time.Now()` at seed time, not a fixed constant. This prevents time-window tests from rotting as the fixture ages.
 - Activity spread across last 90 days, with density in the last 7 days
 - Enough items in each time bucket (24h, 7d, 30d, 90d) to validate range filters
-- Some items exactly at bucket boundaries
+- Some items near bucket boundaries
 
 **Key Properties the Data Must Exercise:**
 1. Both PRs and issues have comments -- so `activity_type = "comment"` exists with both `item_type = "pr"` and `item_type = "issue"`
@@ -73,10 +74,12 @@ A Go helper in `internal/testutil/fixtures.go` that populates a DB with realisti
 // internal/testutil/fixtures.go
 package testutil
 
+// SeedTestDB populates a database with synthetic data for E2E tests.
+// Timestamps are relative to time.Now() so time-range filters work
+// regardless of when the tests run.
 func SeedTestDB(d *db.DB) error {
-    // Insert repos, PRs, issues, events in a deterministic order
-    // All timestamps relative to a fixed base time
-    // Returns error if any insert fails
+    now := time.Now().UTC()
+    // Insert repos, PRs, issues, events using offsets from now
 }
 ```
 
@@ -85,13 +88,16 @@ The seeder uses the existing `db.UpsertPR`, `db.UpsertIssue`, `db.UpsertPREvents
 ### Test Server Binary
 
 A small Go program in `cmd/e2e-server/main.go` that:
-1. Creates a temp SQLite DB
-2. Calls `SeedTestDB()`
-3. Starts the real HTTP server on a fixed port (e.g. 4174)
-4. Writes "ready" to stdout when listening
-5. Exits on SIGTERM
+1. Builds the frontend (`make frontend`) and embeds it -- handled by the Makefile target that builds the binary
+2. Creates a temp SQLite DB
+3. Calls `SeedTestDB()`
+4. Constructs a `config.Config` with the three test repos listed, so `/settings` returns valid data and the server's repo allowlist filtering works
+5. Creates a `ghclient.Syncer` with a noop `ghclient.Client` (the mock from api_test.go pattern), so `/sync/status` works without panicking and `POST /sync` is a safe no-op
+6. Passes the embedded frontend FS to `server.New()` so the SPA is served from `go:embed`, matching production behavior
+7. Starts the real HTTP server on a fixed port (default 4174, configurable via flag)
+8. Exits on SIGTERM
 
-Playwright's `globalSetup` starts this process and tears it down in `globalTeardown`.
+The Makefile `test-e2e` target builds the frontend first (`make frontend`), then builds and runs this binary.
 
 ## Playwright Configuration
 
@@ -99,7 +105,7 @@ Playwright's `globalSetup` starts this process and tears it down in `globalTeard
 
 Separate from the existing `playwright.config.ts` (which uses Vite + route mocking). The new config:
 - Points `baseURL` at the Go server (port 4174)
-- `webServer` starts the Go e2e-server binary instead of Vite
+- `webServer` starts the e2e-server binary (single lifecycle owner -- Playwright manages start and teardown)
 - Test directory: `tests/e2e-full/` (distinct from `tests/e2e/`)
 
 The existing Vite-based E2E tests in `tests/e2e/` remain untouched.
@@ -107,9 +113,12 @@ The existing Vite-based E2E tests in `tests/e2e/` remain untouched.
 ### Makefile Target
 
 ```makefile
-test-e2e:
+test-e2e: frontend
+	go build -o bin/e2e-server ./cmd/e2e-server
 	cd frontend && bun run playwright test --config=playwright-e2e.config.ts
 ```
+
+The `frontend` prerequisite ensures `internal/web/dist/` is fresh before the Go binary is compiled with `go:embed`.
 
 ## Test Cases
 
@@ -133,13 +142,13 @@ test-e2e:
 
 1. PR list renders expected count and titles
 2. Repo filter narrows results
-3. State filter (open/merged/closed) works
+3. State filter works (open vs closed, where closed includes merged)
 4. Search filters by title
 
 **File:** `tests/e2e-full/issue-list.spec.ts`
 
 1. Issue list renders expected count and titles
-2. State filter works
+2. State filter works (open vs closed)
 3. Search filters by title
 
 ### Phase 3: Navigation and Detail Views
