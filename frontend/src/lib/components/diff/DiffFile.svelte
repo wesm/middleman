@@ -117,7 +117,7 @@
       {/if}
     </span>
   </div>
-  {#if !collapsed}
+  <div class="file-content-accordion" class:file-content-accordion--collapsed={collapsed}>
     <div class="file-content" style:tab-size={tabWidth}>
       {#if file.is_binary}
         <div class="binary-notice">Binary file changed</div>
@@ -147,7 +147,7 @@
         {/each}
       {/if}
     </div>
-  {/if}
+  </div>
 </div>
 
 <style>
@@ -227,7 +227,22 @@
     color: var(--diff-del-text);
   }
 
+  .file-content-accordion {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.2s ease-out;
+  }
+
+  .file-content-accordion--collapsed {
+    grid-template-rows: 0fr;
+  }
+
   .file-content {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .file-content-accordion:not(.file-content-accordion--collapsed) > .file-content {
     overflow-x: auto;
   }
 
