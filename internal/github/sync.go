@@ -691,6 +691,24 @@ func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) err
 		return fmt.Errorf("ensure kanban state for PR #%d: %w", number, err)
 	}
 
+	// Fetch bare clone and compute diff SHAs so the diff view is current.
+	if s.clones != nil {
+		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
+		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
+			slog.Warn("bare clone fetch failed during SyncPR",
+				"repo", owner+"/"+name, "number", number, "err", err)
+		} else if normalized.GitHubHeadSHA != "" && normalized.GitHubBaseSHA != "" {
+			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.GitHubBaseSHA, normalized.GitHubHeadSHA)
+			if err != nil {
+				slog.Warn("merge-base failed during SyncPR",
+					"repo", owner+"/"+name, "number", number, "err", err)
+			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.GitHubHeadSHA, normalized.GitHubBaseSHA, mb); err != nil {
+				slog.Warn("update diff SHAs failed during SyncPR",
+					"repo", owner+"/"+name, "number", number, "err", err)
+			}
+		}
+	}
+
 	if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
 		return fmt.Errorf("refresh timeline for PR #%d: %w", number, err)
 	}
