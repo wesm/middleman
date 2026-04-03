@@ -59,7 +59,7 @@ A Go helper in `internal/testutil/fixtures.go` that populates a DB with realisti
 - All timestamps computed relative to `time.Now()` at seed time, not a fixed constant. This prevents time-window tests from rotting as the fixture ages.
 - Activity spread across last 90 days, with density in the last 7 days
 - Enough items in each time bucket (24h, 7d, 30d, 90d) to validate range filters
-- Some items near bucket boundaries
+- Keep fixtures comfortably inside bucket boundaries (e.g. 20h for the 24h bucket, 5d for 7d) to avoid flakes from startup delay and test execution time shifting items across cutoffs. Do not test boundary precision -- the frontend computes `since` from `Date.now()` at interaction time, not seed time, so near-boundary items are inherently racy.
 
 **Key Properties the Data Must Exercise:**
 1. Both PRs and issues have comments -- so `activity_type = "comment"` exists with both `item_type = "pr"` and `item_type = "issue"`
@@ -90,7 +90,7 @@ The seeder calls `db.UpsertRepo`, `db.UpsertPullRequest`, `db.UpsertIssue`, `db.
 A small Go program in `cmd/e2e-server/main.go` that:
 1. Creates a temp SQLite DB and calls `SeedTestDB()`
 2. Constructs a `config.Config` with the three test repos listed, so `/settings` returns valid data and the server's repo allowlist filtering works
-3. Creates a `ghclient.Syncer` with a `NoopClient` (defined in `internal/testutil/noop_client.go` since the existing mock in `api_test.go` is in a `_test.go` file and not importable). This satisfies `/sync/status` without panicking and makes `POST /sync` a safe no-op.
+3. Creates a `ghclient.Syncer` with a `FixtureClient` (defined in `internal/testutil/fixture_client.go`). This client returns the seeded open PRs/issues from `ListOpenPullRequests`/`ListOpenIssues` so that if `POST /sync` triggers `RunOnce`, it sees the same open set and doesn't mark everything as closed. All mutation methods (`EditPullRequest`, `MergePullRequest`, etc.) return errors to prevent accidental state changes. The existing mock in `api_test.go` is in a `_test.go` file and not importable, so this is a separate implementation.
 4. Passes the embedded frontend FS (`internal/web`) to `server.New()` so the SPA is served via `go:embed`, matching production
 5. Starts the HTTP server on a fixed port (default 4174, configurable via flag)
 6. Exits on SIGTERM
@@ -166,7 +166,7 @@ The `frontend` prerequisite ensures `internal/web/dist/` is fresh before `go bui
 cmd/e2e-server/main.go              -- test server binary
 internal/testutil/fixtures.go        -- fixture seeder
 internal/testutil/fixtures_test.go   -- verify fixtures produce expected data
-internal/testutil/noop_client.go     -- no-op ghclient.Client for e2e server
+internal/testutil/fixture_client.go  -- ghclient.Client returning seeded open items
 frontend/playwright-e2e.config.ts    -- full-stack Playwright config
 frontend/tests/e2e-full/
   activity-filters.spec.ts           -- Phase 1
