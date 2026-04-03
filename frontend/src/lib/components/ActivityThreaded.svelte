@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { ActivityItem } from "../api/types.js";
+  import { getGroupByRepo } from "../stores/grouping.svelte.js";
+  import { repoColor } from "../utils/repo-color.js";
 
   interface Props {
     items: ActivityItem[];
@@ -83,17 +85,14 @@
   }
 
   const grouped = $derived.by(() => {
-    const repoMap = new Map<string, Map<string, ActivityItem[]>>();
+    const byRepo = getGroupByRepo();
+
+    // Phase 1: group events by item, using a composite key that
+    // includes repo to prevent cross-repo collisions.
+    const itemMap = new Map<string, ActivityItem[]>();
 
     for (const item of items) {
-      const repoKey = `${item.repo_owner}/${item.repo_name}`;
-      const itemKey = `${item.item_type}:${item.item_number}`;
-
-      let itemMap = repoMap.get(repoKey);
-      if (!itemMap) {
-        itemMap = new Map();
-        repoMap.set(repoKey, itemMap);
-      }
+      const itemKey = `${item.repo_owner}/${item.repo_name}:${item.item_type}:${item.item_number}`;
 
       let events = itemMap.get(itemKey);
       if (!events) {
@@ -103,41 +102,62 @@
       events.push(item);
     }
 
-    const repoGroups: RepoGroup[] = [];
+    // Phase 2: build ItemGroup array from the map.
+    const allItemGroups: ItemGroup[] = [];
 
-    for (const [repo, itemMap] of repoMap) {
-      const itemGroups: ItemGroup[] = [];
+    for (const [, events] of itemMap) {
+      events.sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      for (const [, events] of itemMap) {
-        events.sort((a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const first = events[0]!;
+      allItemGroups.push({
+        itemType: first.item_type,
+        itemNumber: first.item_number,
+        itemTitle: first.item_title,
+        itemUrl: first.item_url,
+        itemState: first.item_state,
+        repoOwner: first.repo_owner,
+        repoName: first.repo_name,
+        latestTime: first.created_at,
+        events,
+        displayEvents: collapseCommitRuns(events),
+      });
+    }
 
-        const first = events[0]!;
-        itemGroups.push({
-          itemType: first.item_type,
-          itemNumber: first.item_number,
-          itemTitle: first.item_title,
-          itemUrl: first.item_url,
-          itemState: first.item_state,
-          repoOwner: first.repo_owner,
-          repoName: first.repo_name,
-          latestTime: first.created_at,
-          events,
-          displayEvents: collapseCommitRuns(events),
-        });
+    allItemGroups.sort((a, b) =>
+      new Date(b.latestTime).getTime() - new Date(a.latestTime).getTime());
+
+    if (!byRepo) {
+      // Ungrouped: single synthetic RepoGroup containing all items.
+      return [{
+        repo: "",
+        itemCount: allItemGroups.length,
+        eventCount: allItemGroups.reduce((n, g) => n + g.events.length, 0),
+        latestTime: allItemGroups[0]?.latestTime ?? "",
+        items: allItemGroups,
+      }];
+    }
+
+    // Grouped: bucket ItemGroups by repo.
+    const repoMap = new Map<string, ItemGroup[]>();
+    for (const ig of allItemGroups) {
+      const repoKey = `${ig.repoOwner}/${ig.repoName}`;
+      let bucket = repoMap.get(repoKey);
+      if (!bucket) {
+        bucket = [];
+        repoMap.set(repoKey, bucket);
       }
+      bucket.push(ig);
+    }
 
-      itemGroups.sort((a, b) =>
-        new Date(b.latestTime).getTime() - new Date(a.latestTime).getTime());
-
+    const repoGroups: RepoGroup[] = [];
+    for (const [repo, itemGroups] of repoMap) {
       const allEvents = itemGroups.flatMap((g) => g.events);
-      const latestTime = itemGroups[0]?.latestTime ?? "";
-
       repoGroups.push({
         repo,
         itemCount: itemGroups.length,
         eventCount: allEvents.length,
-        latestTime,
+        latestTime: itemGroups[0]?.latestTime ?? "",
         items: itemGroups,
       });
     }
@@ -193,18 +213,26 @@
 <div class="threaded-view">
   {#each grouped as repoGroup (repoGroup.repo)}
     <div class="repo-section">
-      <div class="repo-header">
-        <span class="repo-name">{repoGroup.repo}</span>
-        <span class="repo-stats">{repoGroup.itemCount} items, {repoGroup.eventCount} events</span>
-      </div>
+      {#if getGroupByRepo()}
+        <div class="repo-header">
+          <span class="repo-name">{repoGroup.repo}</span>
+          <span class="repo-stats">{repoGroup.itemCount} items, {repoGroup.eventCount} events</span>
+        </div>
+      {/if}
 
-      {#each repoGroup.items as itemGroup (`${itemGroup.itemType}:${itemGroup.itemNumber}`)}
+      {#each repoGroup.items as itemGroup (`${itemGroup.repoOwner}/${itemGroup.repoName}:${itemGroup.itemType}:${itemGroup.itemNumber}`)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="item-row" onclick={() => handleItemClick(itemGroup)}>
           <span class="item-badge" class:badge-pr={itemGroup.itemType === "pr"} class:badge-issue={itemGroup.itemType === "issue"}>
             {itemGroup.itemType === "pr" ? "PR" : "Issue"}
           </span>
+          {#if !getGroupByRepo()}
+            <span
+              class="repo-tag"
+              style="color: {repoColor(itemGroup.repoName)}; background: color-mix(in srgb, {repoColor(itemGroup.repoName)} 15%, transparent);"
+            >{itemGroup.repoName}</span>
+          {/if}
           {#if itemGroup.itemState === "merged"}
             <span class="state-tag state-merged">Merged</span>
           {:else if itemGroup.itemState === "closed"}
@@ -396,5 +424,17 @@
     text-align: center;
     color: var(--text-muted);
     font-size: 13px;
+  }
+
+  .repo-tag {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>
