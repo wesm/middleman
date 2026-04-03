@@ -22,12 +22,14 @@ Add a shared toggle to switch all three list views (PRs, Issues, Activity Thread
 ### Activity Threaded
 
 - Remove repo-level grouping; threads still grouped by PR/issue.
+- Grouping key must be `(repo_owner, repo_name, item_type, item_number)` — not just `item_type:item_number` — to prevent cross-repo collisions (e.g., PR #53 in two different repos must remain separate threads).
 - Each item-row gets a repo pill badge (same style) between the type badge and ref number.
 - Sorted by latest event time across all repos.
 
 ### Activity Flat
 
 - Unchanged — already ungrouped with a repo column.
+- The "By Repo / All" toggle is hidden when the activity view is in flat mode, since flat mode is inherently ungrouped. The toggle only appears when threaded mode is active.
 
 ## Repo Pill Badge
 
@@ -35,6 +37,8 @@ Add a shared toggle to switch all three list views (PRs, Issues, Activity Thread
 - Background: `color-mix(in srgb, <repo-color> 15%, transparent)`.
 - Color derived from repo name (hash to one of the existing accent colors).
 - Only rendered when in ungrouped ("All") mode.
+- Max-width 80px with `overflow: hidden; text-overflow: ellipsis; white-space: nowrap` to prevent long repo names from squeezing the author and number text.
+- The meta-left container (`#number · author`) also gets `overflow: hidden; text-overflow: ellipsis` so the row degrades gracefully at narrow widths — the right-side cluster (star, status badge, time) is `flex-shrink: 0` and always visible.
 
 ## State Management
 
@@ -58,3 +62,10 @@ Add a shared toggle to switch all three list views (PRs, Issues, Activity Thread
 | `stores/issues.svelte.ts` | Same as pulls |
 
 No backend changes — APIs already return flat data with repo owner/name fields.
+
+## Testing
+
+- **E2E: grouped vs ungrouped rendering** — verify PR list renders repo headers in "By Repo" mode and a flat list with repo badges in "All" mode. Same for issue list.
+- **E2E: activity threaded ungrouped** — verify threads from different repos with the same PR number remain separate in ungrouped mode.
+- **E2E: toggle persistence** — set toggle to "All", reload page, verify it restores to "All".
+- **E2E: toggle syncs across views** — toggle in PR list, switch to issues, verify toggle state matches.
