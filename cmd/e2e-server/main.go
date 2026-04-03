@@ -61,6 +61,10 @@ func run(port int) error {
 			{Owner: "acme", Name: "tools"},
 			{Owner: "acme", Name: "archived"},
 		},
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
 	}
 
 	fc := result.FixtureClient()

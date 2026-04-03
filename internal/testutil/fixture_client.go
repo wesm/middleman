@@ -54,13 +54,29 @@ func (c *FixtureClient) GetRepository(_ context.Context, _, _ string) (*gh.Repos
 	return &gh.Repository{}, nil
 }
 
-// GetPullRequest returns nil (read-only stub).
-func (c *FixtureClient) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+// GetPullRequest looks up the PR by owner/repo and number from
+// the seeded open PR set. Returns nil, nil if not found.
+func (c *FixtureClient) GetPullRequest(
+	_ context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	for _, pr := range c.OpenPRs[repoKey(owner, repo)] {
+		if pr.GetNumber() == number {
+			return pr, nil
+		}
+	}
 	return nil, nil
 }
 
-// GetIssue returns nil (read-only stub).
-func (c *FixtureClient) GetIssue(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+// GetIssue looks up the issue by owner/repo and number from
+// the seeded open issue set. Returns nil, nil if not found.
+func (c *FixtureClient) GetIssue(
+	_ context.Context, owner, repo string, number int,
+) (*gh.Issue, error) {
+	for _, iss := range c.OpenIssues[repoKey(owner, repo)] {
+		if iss.GetNumber() == number {
+			return iss, nil
+		}
+	}
 	return nil, nil
 }
 
