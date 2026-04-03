@@ -86,7 +86,15 @@
     return Math.max(gapOld, 0);
   }
 
+  let contentEl: HTMLDivElement | undefined = $state();
+  let accordionMs = $state(200);
+
   function toggle(): void {
+    // Scale duration by content height so expansion rate is consistent (~3000px/s).
+    if (contentEl) {
+      const h = contentEl.scrollHeight;
+      accordionMs = Math.min(Math.max(Math.round(h / 3), 150), 500);
+    }
     toggleFileCollapsed(owner, name, number, file.path);
   }
 
@@ -111,8 +119,8 @@
       <span class="stat" class:stat--del={file.deletions > 0} class:stat--dim={file.deletions === 0}>-{file.deletions}</span>
     </span>
   </button>
-  <div class="file-content-accordion" class:file-content-accordion--collapsed={collapsed}>
-    <div class="file-content" style:tab-size={tabWidth}>
+  <div class="file-content-accordion" class:file-content-accordion--collapsed={collapsed} style:transition-duration="{accordionMs}ms">
+    <div class="file-content" bind:this={contentEl} style:tab-size={tabWidth}>
       {#if file.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
@@ -223,7 +231,8 @@
   .file-content-accordion {
     display: grid;
     grid-template-rows: 1fr;
-    transition: grid-template-rows 0.2s ease-out;
+    transition: grid-template-rows ease-out;
+    /* transition-duration set inline based on content height */
   }
 
   .file-content-accordion--collapsed {
