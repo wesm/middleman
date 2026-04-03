@@ -107,12 +107,8 @@
       {displayPath(file)}
     </span>
     <span class="file-stats">
-      {#if file.additions > 0}
-        <span class="stat stat--add">+{file.additions}</span>
-      {/if}
-      {#if file.deletions > 0}
-        <span class="stat stat--del">-{file.deletions}</span>
-      {/if}
+      <span class="stat" class:stat--add={file.additions > 0} class:stat--dim={file.additions === 0}>+{file.additions}</span>
+      <span class="stat" class:stat--del={file.deletions > 0} class:stat--dim={file.deletions === 0}>-{file.deletions}</span>
     </span>
   </button>
   <div class="file-content-accordion" class:file-content-accordion--collapsed={collapsed}>
@@ -218,6 +214,10 @@
 
   .stat--del {
     color: var(--diff-del-text);
+  }
+
+  .stat--dim {
+    opacity: 0.3;
   }
 
   .file-content-accordion {
