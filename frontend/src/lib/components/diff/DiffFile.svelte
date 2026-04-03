@@ -19,6 +19,18 @@
   const collapsed = $derived(isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
 
+  // Local copy of file data, only synced when expanded. Collapsed files keep
+  // stale content so whitespace toggles don't trigger expensive re-renders
+  // and re-tokenization for hidden content.
+  // svelte-ignore state_referenced_locally — synced from file prop via $effect when expanded
+  let renderedFile = $state(file);
+
+  $effect(() => {
+    if (!collapsed) {
+      renderedFile = file;
+    }
+  });
+
   // Use shared theme detection (single MutationObserver for all DiffFile instances).
   let isDark = $state(isDarkTheme());
   onMount(() => subscribeTheme((dark) => { isDark = dark; }));
@@ -35,10 +47,12 @@
 
   // Recompute highlights when file or theme changes.
   $effect(() => {
-    const currentFile = file;
+    const version = ++tokenVersion;
+    if (collapsed) return;
+
+    const currentFile = renderedFile;
     const currentTheme = theme;
     const currentLang = lang;
-    const version = ++tokenVersion;
     const newCache = new Map<string, TokenSpan[]>();
 
     void (async () => {
@@ -74,7 +88,7 @@
   });
 
   function getTokens(hunkIdx: number, lineIdx: number): TokenSpan[] {
-    return tokenCache.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: file.hunks[hunkIdx]!.lines[lineIdx]!.content }];
+    return tokenCache.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
   }
 
   function computeCollapsedLines(hunks: DiffHunk[], hunkIdx: number): number {
@@ -99,32 +113,26 @@
 </script>
 
 <div class="diff-file" data-file-path={file.path}>
-  <div class="file-header">
-    <button class="collapse-toggle" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
-      <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
-        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
+  <button class="file-header" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
+    <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
     <span class="file-path" class:file-path--deleted={file.status === "deleted"}>
       {displayPath(file)}
     </span>
     <span class="file-stats">
-      {#if file.additions > 0}
-        <span class="stat stat--add">+{file.additions}</span>
-      {/if}
-      {#if file.deletions > 0}
-        <span class="stat stat--del">-{file.deletions}</span>
-      {/if}
+      <span class="stat" class:stat--add={file.additions > 0} class:stat--dim={file.additions === 0}>+{file.additions}</span>
+      <span class="stat" class:stat--del={file.deletions > 0} class:stat--dim={file.deletions === 0}>-{file.deletions}</span>
     </span>
-  </div>
+  </button>
   {#if !collapsed}
     <div class="file-content" style:tab-size={tabWidth}>
-      {#if file.is_binary}
+      {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
-        {#each file.hunks as hunk, hunkIdx}
+        {#each renderedFile.hunks as hunk, hunkIdx}
           {#if hunkIdx > 0}
-            {@const gap = computeCollapsedLines(file.hunks, hunkIdx)}
+            {@const gap = computeCollapsedLines(renderedFile.hunks, hunkIdx)}
             {#if gap > 0}
               <CollapsedRegion lineCount={gap} />
             {/if}
@@ -162,24 +170,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
     padding: 6px 12px;
     background: var(--diff-header-bg);
     border-bottom: 1px solid var(--diff-border);
     font-size: 12px;
-  }
-
-  .collapse-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: var(--radius-sm);
+    text-align: left;
+    cursor: pointer;
     color: var(--diff-text);
-    flex-shrink: 0;
   }
 
-  .collapse-toggle:hover {
+  .file-header:hover {
     background: var(--bg-surface-hover);
   }
 
@@ -217,6 +218,8 @@
     font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 600;
+    min-width: 3.5ch;
+    text-align: right;
   }
 
   .stat--add {
@@ -225,6 +228,10 @@
 
   .stat--del {
     color: var(--diff-del-text);
+  }
+
+  .stat--dim {
+    opacity: 0.3;
   }
 
   .file-content {
