@@ -103,60 +103,8 @@
     return Math.max(gapOld, 0);
   }
 
-  let contentEl: HTMLDivElement | undefined = $state();
-  let animating = $state(false);
-
   function toggle(): void {
-    if (!contentEl) {
-      toggleFileCollapsed(owner, name, number, file.path);
-      return;
-    }
-
-    const isExpanded = !collapsed;
-    const scrollH = contentEl.scrollHeight;
-    const containerH = contentEl.closest('.diff-area')?.clientHeight ?? window.innerHeight;
-    const animateH = Math.min(scrollH, containerH);
-
-    if (animateH === 0) {
-      toggleFileCollapsed(owner, name, number, file.path);
-      return;
-    }
-
-    const ms = Math.min(Math.max(Math.round(animateH / 3), 150), 500);
-
-    animating = true;
-
-    if (isExpanded) {
-      // Collapse: snap off-screen content away instantly, then animate visible portion to 0.
-      const currentH = contentEl.getBoundingClientRect().height;
-      contentEl.style.transition = 'none';
-      contentEl.style.overflow = 'hidden';
-      contentEl.style.maxHeight = `${Math.min(currentH, animateH)}px`;
-      contentEl.offsetHeight;
-      contentEl.style.transition = `max-height ${ms}ms ease-out`;
-      contentEl.style.maxHeight = '0px';
-    } else {
-      // Expand: animate from current to viewport height, then snap to full.
-      const currentH = contentEl.getBoundingClientRect().height;
-      contentEl.style.transition = 'none';
-      contentEl.style.overflow = 'hidden';
-      contentEl.style.maxHeight = `${currentH}px`;
-      contentEl.offsetHeight;
-      contentEl.style.transition = `max-height ${ms}ms ease-out`;
-      contentEl.style.maxHeight = `${animateH}px`;
-    }
-
     toggleFileCollapsed(owner, name, number, file.path);
-  }
-
-  function onTransitionEnd(e: TransitionEvent): void {
-    if (e.target !== contentEl || e.propertyName !== 'max-height') return;
-    animating = false;
-    contentEl.style.transition = '';
-    contentEl.style.maxHeight = '';
-    if (!collapsed) {
-      contentEl.style.overflow = '';
-    }
   }
 
   function displayPath(f: DiffFileType): string {
@@ -182,11 +130,8 @@
   </button>
   <div
     class="file-content"
-    class:file-content--collapsed={collapsed && !animating}
-    bind:this={contentEl}
+    class:file-content--collapsed={collapsed}
     style:tab-size={tabWidth}
-    ontransitionend={onTransitionEnd}
-    inert={collapsed && !animating}
   >
       {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
@@ -295,13 +240,11 @@
   }
 
   .file-content {
-    min-height: 0;
     overflow-x: auto;
   }
 
   .file-content--collapsed {
-    max-height: 0;
-    overflow: hidden;
+    display: none;
   }
 
   .binary-notice {
