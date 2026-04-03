@@ -33,6 +33,11 @@ type PullRequest struct {
 	Body              string
 	HeadBranch        string
 	BaseBranch        string
+	GitHubHeadSHA     string `json:"-"`
+	GitHubBaseSHA     string `json:"-"`
+	DiffHeadSHA       string `json:"-"`
+	DiffBaseSHA       string `json:"-"`
+	MergeBaseSHA      string `json:"-"`
 	Additions         int
 	Deletions         int
 	CommentCount      int

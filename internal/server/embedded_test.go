@@ -28,7 +28,7 @@ func setupEmbeddedServer(
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{}
-	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
+	syncer := ghclient.NewSyncer(mock, database, nil, nil, time.Minute)
 	return New(
 		database,
 		mock,

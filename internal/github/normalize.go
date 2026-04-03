@@ -66,9 +66,11 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
 	}
 	if ghPR.GetHead() != nil {
 		pr.HeadBranch = ghPR.GetHead().GetRef()
+		pr.GitHubHeadSHA = ghPR.GetHead().GetSHA()
 	}
 	if ghPR.GetBase() != nil {
 		pr.BaseBranch = ghPR.GetBase().GetRef()
+		pr.GitHubBaseSHA = ghPR.GetBase().GetSHA()
 	}
 	pr.MergeableState = ghPR.GetMergeableState()
 
