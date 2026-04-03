@@ -63,14 +63,13 @@
         for (const r of results) {
           newCache.set(r.key, r.spans);
         }
+        // Update reactively after each batch so lines get highlighted progressively.
+        tokenCache = new Map(newCache);
         // Yield to the browser between batches.
         if (i + BATCH_SIZE < items.length) {
           await new Promise((r) => requestAnimationFrame(r));
         }
       }
-
-      if (version !== tokenVersion) return;
-      tokenCache = newCache;
     })();
   });
 
@@ -184,7 +183,7 @@
 
   .collapse-chevron {
     font-size: 10px;
-    transition: transform 0.15s;
+    transition: transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1);
   }
 
   .collapse-chevron--collapsed {

@@ -9,6 +9,8 @@
     getHideWhitespace,
     getActiveFile,
     setActiveFile,
+    isScrolling,
+    setScrolling,
     consumeScrollTarget,
     requestScrollToFile,
     loadDiff,
@@ -90,8 +92,19 @@
   });
 
   // Scroll-based active file tracking.
+  // Suppressed during programmatic smooth scrolls to prevent flashing/overshoot.
+  let scrollFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
   function onDiffScroll(): void {
     if (!diffArea || !diff) return;
+    // During programmatic smooth scroll, skip updating activeFile to prevent
+    // intermediate files from flashing in the sidebar.
+    if (isScrolling()) {
+      // Fallback: clear scrolling flag if scrollend doesn't fire (e.g. older browsers).
+      if (scrollFallbackTimer) clearTimeout(scrollFallbackTimer);
+      scrollFallbackTimer = setTimeout(() => { setScrolling(false); }, 200);
+      return;
+    }
     const rect = diffArea.getBoundingClientRect();
     const threshold = rect.top + 60;
 
@@ -107,6 +120,11 @@
     if (current !== null) {
       setActiveFile(current);
     }
+  }
+
+  function onDiffScrollEnd(): void {
+    if (scrollFallbackTimer) { clearTimeout(scrollFallbackTimer); scrollFallbackTimer = null; }
+    setScrolling(false);
   }
 
   // j/k keyboard navigation between files.
@@ -190,6 +208,7 @@
           class="diff-area"
           bind:this={diffArea}
           onscroll={onDiffScroll}
+          onscrollend={onDiffScrollEnd}
         >
           {#each diff.files as file (file.path)}
             <DiffFileComponent

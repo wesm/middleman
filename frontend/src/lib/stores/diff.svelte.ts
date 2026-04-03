@@ -44,6 +44,8 @@ let collapsedFiles = $state<Record<string, string[]>>(loadCollapsedFiles());
 let activeFile = $state<string | null>(null);
 // When set, DiffView should scroll to this file path and then clear it.
 let scrollTarget = $state<string | null>(null);
+// True during programmatic smooth scrolls — suppresses scroll-based activeFile updates.
+let scrolling = $state(false);
 
 export function getDiff(): DiffResult | null { return diff; }
 export function isDiffLoading(): boolean { return loading; }
@@ -52,9 +54,12 @@ export function getTabWidth(): number { return tabWidth; }
 export function getHideWhitespace(): boolean { return hideWhitespace; }
 export function getActiveFile(): string | null { return activeFile; }
 export function setActiveFile(path: string | null): void { activeFile = path; }
+export function isScrolling(): boolean { return scrolling; }
+export function setScrolling(v: boolean): void { scrolling = v; }
 export function requestScrollToFile(path: string): void {
   activeFile = path;
   scrollTarget = path;
+  scrolling = true;
 }
 export function consumeScrollTarget(): string | null {
   const target = scrollTarget;

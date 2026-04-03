@@ -197,7 +197,7 @@
             {#if prSelected && getDetailTab() === "files"}
               <div class="diff-files">
                 {#if isDiffLoading() && !getDiff()}
-                  <div class="diff-files-state">Loading...</div>
+                  <div class="diff-files-state diff-files-state--loading">Loading files</div>
                 {:else if getDiff()}
                   {@const grouped = groupByDir(getDiff()!.files)}
                   {#each grouped as group, gi (gi)}
@@ -453,6 +453,10 @@
     color: var(--text-muted);
   }
 
+  .diff-files-state--loading {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
   .diff-dir-header {
     padding: 5px 12px 2px 24px;
     font-family: var(--font-mono);
@@ -471,7 +475,7 @@
     padding: 2px 12px 2px 24px;
     text-align: left;
     color: var(--text-secondary);
-    transition: background 0.08s;
+    transition: background 0.15s ease;
   }
 
   .diff-file-row--nested {

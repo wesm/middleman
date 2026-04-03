@@ -257,7 +257,13 @@
 
 <main class="app-main">
   {#if !appReady}
-    <div class="loading-state">Loading...</div>
+    <div class="loading-state">
+      <svg class="loading-spinner" width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
+        <path d="M16 9a7 7 0 0 0-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      Loading
+    </div>
   {:else if getPage() === "settings"}
     <SettingsPage />
   {:else if getPage() === "activity"}
@@ -406,9 +412,24 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     flex: 1;
     color: var(--text-muted);
     font-size: 13px;
+    animation: fade-in 0.3s ease;
+  }
+
+  .loading-spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   .detail-tabs {
