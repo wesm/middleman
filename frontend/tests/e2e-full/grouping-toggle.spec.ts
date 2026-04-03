@@ -114,8 +114,8 @@ test.describe("grouping toggle", () => {
     await page.locator(".repo-tag").first()
       .waitFor({ state: "visible", timeout: 5_000 });
 
-    // Find all item rows that show #1.
-    const refOnes = page.locator(".item-row .item-ref", { hasText: "#1" });
+    // Find all item rows whose ref is exactly "#1" (not #10, #11, etc.).
+    const refOnes = page.locator(".item-row .item-ref").filter({ hasText: /^#1$/ });
     // There should be at least 2 (one for widgets, one for tools).
     const count = await refOnes.count();
     expect(count).toBeGreaterThanOrEqual(2);
@@ -145,18 +145,20 @@ test.describe("grouping toggle", () => {
     await page.locator(".group-btn", { hasText: "All" }).click();
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
-    // Press j to select first item.
+    // Capture the visible flat order of items.
+    const allItems = page.locator(".pull-item");
+    const firstVisibleMeta = await allItems.nth(0).locator(".meta-left").textContent();
+    const secondVisibleMeta = await allItems.nth(1).locator(".meta-left").textContent();
+
+    // Press j to select first item — should match the first visible item.
     await page.keyboard.press("j");
     await expect(page.locator(".pull-item.selected")).toHaveCount(1);
+    const firstSelected = await page.locator(".pull-item.selected .meta-left").textContent();
+    expect(firstSelected).toEqual(firstVisibleMeta);
 
-    // Get the first selected PR number.
-    const first = await page.locator(".pull-item.selected .meta-left").textContent();
-
-    // Press j again to move to second.
+    // Press j again — should match the second visible item.
     await page.keyboard.press("j");
-    const second = await page.locator(".pull-item.selected .meta-left").textContent();
-
-    // They should be different items.
-    expect(first).not.toEqual(second);
+    const secondSelected = await page.locator(".pull-item.selected .meta-left").textContent();
+    expect(secondSelected).toEqual(secondVisibleMeta);
   });
 });

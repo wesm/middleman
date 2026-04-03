@@ -128,7 +128,7 @@
       new Date(b.latestTime).getTime() - new Date(a.latestTime).getTime());
 
     if (!byRepo) {
-      // Ungrouped: single synthetic RepoGroup containing all items.
+      if (allItemGroups.length === 0) return [];
       return [{
         repo: "",
         itemCount: allItemGroups.length,

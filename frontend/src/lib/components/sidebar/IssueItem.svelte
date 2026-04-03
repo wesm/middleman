@@ -192,6 +192,7 @@
     display: inline-block;
     vertical-align: middle;
     line-height: 1.4;
+    margin-right: 4px;
   }
 
   .meta-right {
