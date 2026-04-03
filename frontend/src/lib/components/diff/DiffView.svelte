@@ -82,8 +82,8 @@
     if (el) {
       el.scrollIntoView({ behavior: "instant", block: "start" });
     }
-    // Clear the scrolling flag after the instant scroll so the next user-initiated
-    // scroll event resumes active file tracking.
+    // Cancel any prior pending rAF before scheduling a new one.
+    cancelAnimationFrame(scrollRaf);
     scrollRaf = requestAnimationFrame(() => clearScrolling());
   }
 
