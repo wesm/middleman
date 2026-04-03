@@ -13,7 +13,9 @@
 
   const { pr, selected, showRepo, onclick }: Props = $props();
 
-  const repoName = $derived(pr.repo_name ?? "");
+  const repoSlug = $derived(
+    `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`,
+  );
 
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
@@ -51,8 +53,8 @@
       {#if showRepo}
         <span
           class="repo-badge"
-          style="color: {repoColor(repoName)}; background: color-mix(in srgb, {repoColor(repoName)} 15%, transparent);"
-        >{repoName}</span>
+          style="color: {repoColor(repoSlug)}; background: color-mix(in srgb, {repoColor(repoSlug)} 15%, transparent);"
+        >{repoSlug}</span>
       {/if}
       #{pr.Number} · {pr.Author}
     </span>

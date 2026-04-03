@@ -13,7 +13,9 @@
 
   const { issue, selected, showRepo, onclick }: Props = $props();
 
-  const repoName = $derived(issue.repo_name ?? "");
+  const repoSlug = $derived(
+    `${issue.repo_owner ?? ""}/${issue.repo_name ?? ""}`,
+  );
 
   let el: HTMLButtonElement;
 
@@ -76,8 +78,8 @@
       {#if showRepo}
         <span
           class="repo-badge"
-          style="color: {repoColor(repoName)}; background: color-mix(in srgb, {repoColor(repoName)} 15%, transparent);"
-        >{repoName}</span>
+          style="color: {repoColor(repoSlug)}; background: color-mix(in srgb, {repoColor(repoSlug)} 15%, transparent);"
+        >{repoSlug}</span>
       {/if}
       #{issue.Number} · {issue.Author}
     </span>

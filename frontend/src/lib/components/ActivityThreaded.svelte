@@ -230,8 +230,8 @@
           {#if !getGroupByRepo()}
             <span
               class="repo-tag"
-              style="color: {repoColor(itemGroup.repoName)}; background: color-mix(in srgb, {repoColor(itemGroup.repoName)} 15%, transparent);"
-            >{itemGroup.repoName}</span>
+              style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
+            >{itemGroup.repoOwner}/{itemGroup.repoName}</span>
           {/if}
           {#if itemGroup.itemState === "merged"}
             <span class="state-tag state-merged">Merged</span>
