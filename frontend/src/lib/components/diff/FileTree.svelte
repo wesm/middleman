@@ -14,8 +14,15 @@
 
   let sidebarCollapsed = $state(false);
   let filterText = $state("");
+  function safeGetItem(key: string): string | null {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+  function safeSetItem(key: string, value: string): void {
+    try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  }
+
   let sidebarWidth = $state((() => {
-    const parsed = parseInt(localStorage.getItem("diff-sidebar-width") ?? "280", 10);
+    const parsed = parseInt(safeGetItem("diff-sidebar-width") ?? "280", 10);
     return Number.isFinite(parsed) && parsed >= 180 && parsed <= 500 ? parsed : 280;
   })());
   let dragging = $state(false);
@@ -88,7 +95,7 @@
 
     function onUp(): void {
       dragging = false;
-      localStorage.setItem("diff-sidebar-width", String(sidebarWidth));
+      safeSetItem("diff-sidebar-width", String(sidebarWidth));
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     }
