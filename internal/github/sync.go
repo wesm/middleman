@@ -697,6 +697,9 @@ func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) err
 		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
 			slog.Warn("bare clone fetch failed during SyncPR",
 				"repo", owner+"/"+name, "number", number, "err", err)
+		} else if ghPR.GetMerged() {
+			// Merged PRs need special merge-base logic via the pull ref.
+			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA())
 		} else if normalized.GitHubHeadSHA != "" && normalized.GitHubBaseSHA != "" {
 			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.GitHubBaseSHA, normalized.GitHubHeadSHA)
 			if err != nil {
