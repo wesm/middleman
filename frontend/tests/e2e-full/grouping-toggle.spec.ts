@@ -105,10 +105,10 @@ test.describe("grouping toggle", () => {
     await page.locator(".seg-btn", { hasText: "Threaded" }).click();
     await page.locator(".threaded-view .item-row").first()
       .waitFor({ state: "visible", timeout: 10_000 });
-    // Click the "By Repo" button's sibling "All" button (the grouping toggle).
-    // Use the "By Repo" button to anchor the correct control group.
-    await page.locator(".seg-btn", { hasText: "By Repo" })
-      .locator("..").locator(".seg-btn", { hasText: "All" }).click();
+    // Click "All" in the grouping toggle (the segmented-control containing "By Repo").
+    const groupControl = page.locator(".segmented-control")
+      .filter({ has: page.locator(".seg-btn", { hasText: "By Repo" }) });
+    await groupControl.locator(".seg-btn", { hasText: "All" }).click();
 
     // Wait for repo tags to appear (ungrouped).
     await page.locator(".repo-tag").first()
@@ -138,6 +138,31 @@ test.describe("grouping toggle", () => {
     // Now By Repo / All toggle should be visible.
     await expect(page.locator(".seg-btn", { hasText: "By Repo" }))
       .toBeVisible();
+  });
+
+  test("threaded ungrouped empty state shows message", async ({ page }) => {
+    await page.goto("/");
+
+    // Search for a string that matches nothing to empty the result set.
+    // Do this before switching to threaded so the debounced API call
+    // completes while we're still in flat mode.
+    const input = page.locator(".search-input");
+    await input.fill("zzz_no_match_zzz");
+    // Wait for the flat view to show its empty state (proves API returned 0 items).
+    await expect(page.locator(".activity-feed .empty-state"))
+      .toBeVisible({ timeout: 10_000 });
+
+    // Now switch to threaded + ungrouped. ActivityThreaded receives [].
+    await page.locator(".seg-btn", { hasText: "Threaded" }).click();
+    // The "By Repo/All" toggle appears in threaded mode. Switch to ungrouped
+    // by finding "All" within the same segmented-control as "By Repo".
+    const groupControl = page.locator(".segmented-control")
+      .filter({ has: page.locator(".seg-btn", { hasText: "By Repo" }) });
+    await groupControl.locator(".seg-btn", { hasText: "All" }).click();
+
+    // The threaded view's own empty state should render.
+    await expect(page.locator(".threaded-view .empty-state"))
+      .toBeVisible({ timeout: 5_000 });
   });
 
   test("j/k navigation follows flat order in ungrouped mode", async ({ page }) => {
