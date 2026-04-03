@@ -99,12 +99,10 @@
 </script>
 
 <div class="diff-file" data-file-path={file.path}>
-  <div class="file-header">
-    <button class="collapse-toggle" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
-      <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
-        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
+  <button class="file-header" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
+    <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
     <span class="file-path" class:file-path--deleted={file.status === "deleted"}>
       {displayPath(file)}
     </span>
@@ -116,7 +114,7 @@
         <span class="stat stat--del">-{file.deletions}</span>
       {/if}
     </span>
-  </div>
+  </button>
   <div class="file-content-accordion" class:file-content-accordion--collapsed={collapsed}>
     <div class="file-content" style:tab-size={tabWidth}>
       {#if file.is_binary}
@@ -162,24 +160,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
     padding: 6px 12px;
     background: var(--diff-header-bg);
     border-bottom: 1px solid var(--diff-border);
     font-size: 12px;
-  }
-
-  .collapse-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: var(--radius-sm);
+    text-align: left;
+    cursor: pointer;
     color: var(--diff-text);
-    flex-shrink: 0;
   }
 
-  .collapse-toggle:hover {
+  .file-header:hover {
     background: var(--bg-surface-hover);
   }
 
