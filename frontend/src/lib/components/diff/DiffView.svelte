@@ -49,6 +49,8 @@
     }
 
     return () => {
+      if (scrollSafetyTimer) { clearTimeout(scrollSafetyTimer); scrollSafetyTimer = null; }
+      if (scrollFallbackTimer) { clearTimeout(scrollFallbackTimer); scrollFallbackTimer = null; }
       clearDiff();
     };
   });
