@@ -524,24 +524,24 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	openPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			buildGHPR(1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)),
-			buildGHPR(1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)),
-			buildGHPR(1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)),
-			buildGHPR(1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)),
+			buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)),
+			buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)),
+			buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)),
+			buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)),
 		},
 		"acme/tools": {
-			buildGHPR(2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)),
+			buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)),
 		},
 	}
 
 	openIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
-			buildGHIssue(3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue(3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
-			buildGHIssue(3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
+			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
+			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
 		"acme/tools": {
-			buildGHIssue(4005, 5, "Support config file loading", "dave", "open", ti5Created, now.Add(-16*time.Hour)),
+			buildGHIssue("acme", "tools", 4005, 5, "Support config file loading", "dave", "open", ti5Created, now.Add(-16*time.Hour)),
 		},
 	}
 
@@ -562,15 +562,18 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 // buildGHPR creates a minimal *gh.PullRequest for the FixtureClient.
 func buildGHPR(
+	owner, repo string,
 	id int64, number int, title, login, state string,
 	draft bool, mergeableState string,
 	createdAt, updatedAt time.Time,
 ) *gh.PullRequest {
+	url := fmt.Sprintf(
+		"https://github.com/%s/%s/pull/%d", owner, repo, number)
 	pr := &gh.PullRequest{
 		ID:        new(id),
 		Number:    new(number),
 		Title:     new(title),
-		HTMLURL:   new(fmt.Sprintf("https://github.com/acme/widgets/pull/%d", number)),
+		HTMLURL:   new(url),
 		State:     new(state),
 		Draft:     new(draft),
 		User:      &gh.User{Login: new(login)},
@@ -587,14 +590,17 @@ func buildGHPR(
 
 // buildGHIssue creates a minimal *gh.Issue for the FixtureClient.
 func buildGHIssue(
+	owner, repo string,
 	id int64, number int, title, login, state string,
 	createdAt, updatedAt time.Time,
 ) *gh.Issue {
+	url := fmt.Sprintf(
+		"https://github.com/%s/%s/issues/%d", owner, repo, number)
 	return &gh.Issue{
 		ID:        new(id),
 		Number:    new(number),
 		Title:     new(title),
-		HTMLURL:   new(fmt.Sprintf("https://github.com/acme/widgets/issues/%d", number)),
+		HTMLURL:   new(url),
 		State:     new(state),
 		User:      &gh.User{Login: new(login)},
 		CreatedAt: &gh.Timestamp{Time: createdAt},

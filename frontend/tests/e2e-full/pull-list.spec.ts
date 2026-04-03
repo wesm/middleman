@@ -38,7 +38,11 @@ test.describe("PR list view", () => {
     // the debounced search request completes.
     await expect(page.locator(".count-badge"))
       .toHaveText(/^1 PRs?$/, { timeout: 5_000 });
-    await expect(page.getByText("Fix race condition in event loop")).not.toBeVisible();
-    await expect(page.getByText("Add CLI flag parser")).not.toBeVisible();
+
+    // Verify the single remaining item is the expected one.
+    const items = page.locator(".pull-item");
+    await expect(items).toHaveCount(1);
+    await expect(items.first().locator(".title"))
+      .toContainText("caching layer");
   });
 });

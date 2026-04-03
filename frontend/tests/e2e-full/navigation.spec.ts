@@ -31,9 +31,11 @@ test.describe("view navigation", () => {
 
     // Click Activity tab -> back to root, feed renders.
     await page.locator(".view-tab", { hasText: "Activity" }).click();
+    // Verify pathname is exactly the base path (default "/").
     await expect(page).toHaveURL(/\/(?:\?.*)?$/);
-    // Verify we're not on pulls/issues (rules out /pulls/ matching).
-    expect(new URL(page.url()).pathname).toBe("/");
+    const basePath = new URL(page.url()).pathname
+      .replace(/\?.*$/, "");
+    expect(basePath).toBe("/");
     await page.locator(".activity-feed")
       .waitFor({ state: "visible", timeout: 5_000 });
   });
