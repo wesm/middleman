@@ -5,20 +5,28 @@ let loading = $state(false);
 let error = $state<string | null>(null);
 let abortController: AbortController | null = null;
 
+// Safe localStorage access for embedded/restricted contexts.
+function safeGetItem(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function safeSetItem(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* ignore */ }
+}
+
 // Toolbar preferences (persisted in localStorage).
 const VALID_TAB_WIDTHS = [1, 2, 4, 8];
 function loadTabWidth(): number {
-  const raw = parseInt(localStorage.getItem("diff-tab-width") ?? "4", 10);
+  const raw = parseInt(safeGetItem("diff-tab-width") ?? "4", 10);
   return VALID_TAB_WIDTHS.includes(raw) ? raw : 4;
 }
 let tabWidth = $state(loadTabWidth());
-let hideWhitespace = $state(localStorage.getItem("diff-hide-whitespace") === "true");
+let hideWhitespace = $state(safeGetItem("diff-hide-whitespace") === "true");
 
 // Per-file collapse state, keyed by "{owner}/{name}#{number}".
 // Persisted in localStorage. Uses plain arrays (not Sets) for Svelte reactivity.
 function loadCollapsedFiles(): Record<string, string[]> {
   try {
-    const raw = localStorage.getItem("diff-collapsed-files");
+    const raw = safeGetItem("diff-collapsed-files");
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
@@ -35,7 +43,7 @@ function loadCollapsedFiles(): Record<string, string[]> {
 }
 
 function saveCollapsedFiles(cf: Record<string, string[]>): void {
-  localStorage.setItem("diff-collapsed-files", JSON.stringify(cf));
+  safeSetItem("diff-collapsed-files", JSON.stringify(cf));
 }
 
 let collapsedFiles = $state<Record<string, string[]>>(loadCollapsedFiles());
@@ -69,7 +77,7 @@ export function consumeScrollTarget(): string | null {
 
 export function setTabWidth(w: number): void {
   tabWidth = w;
-  localStorage.setItem("diff-tab-width", String(w));
+  safeSetItem("diff-tab-width", String(w));
 }
 
 // Track current diff context for re-fetching on toggle change.
@@ -79,7 +87,7 @@ let currentNumber = 0;
 
 export function setHideWhitespace(v: boolean): void {
   hideWhitespace = v;
-  localStorage.setItem("diff-hide-whitespace", String(v));
+  safeSetItem("diff-hide-whitespace", String(v));
   // Re-fetch the diff with the new whitespace setting.
   if (currentOwner && currentName && currentNumber) {
     void loadDiff(currentOwner, currentName, currentNumber);
