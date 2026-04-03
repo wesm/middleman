@@ -90,10 +90,11 @@
   let accordionMs = $state(200);
 
   function toggle(): void {
-    // Scale duration by content height so expansion rate is consistent (~3000px/s).
+    // Animate at ~3000px/s, but only for the visible portion — content
+    // beyond the viewport can pop since nobody sees it anyway.
     if (contentEl) {
-      const h = contentEl.scrollHeight;
-      accordionMs = Math.min(Math.max(Math.round(h / 3), 150), 500);
+      const visible = Math.min(contentEl.scrollHeight, window.innerHeight);
+      accordionMs = Math.min(Math.max(Math.round(visible / 3), 150), 500);
     }
     toggleFileCollapsed(owner, name, number, file.path);
   }
