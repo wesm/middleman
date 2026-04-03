@@ -1,6 +1,7 @@
 export type Route =
   | { page: "activity" }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
+  | { page: "pulls"; view: "diff"; owner: string; name: string; number: number }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
   | { page: "settings" };
 
@@ -25,6 +26,16 @@ function parseRoute(fullPath: string): Route {
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
     if (rest === "/board") return { page: "pulls", view: "board" };
+    const diffMatch = rest.match(/^\/([^/]+)\/([^/]+)\/(\d+)\/files$/);
+    if (diffMatch) {
+      return {
+        page: "pulls",
+        view: "diff",
+        owner: diffMatch[1]!,
+        name: diffMatch[2]!,
+        number: parseInt(diffMatch[3]!, 10),
+      };
+    }
     const match = rest.match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
     if (match) {
       return {
@@ -59,9 +70,9 @@ export function getPage(): "activity" | "pulls" | "issues" | "settings" {
   return route.page;
 }
 
-export function navigate(path: string): void {
+export function navigate(path: string, state?: Record<string, unknown>): void {
   const fullPath = basePrefix + path;
-  history.pushState(null, "", fullPath);
+  history.pushState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);
 }
 
@@ -78,13 +89,34 @@ if (typeof window !== "undefined") {
   });
 }
 
+// --- detail tab derived from route ---
+
+export type DetailTab = "conversation" | "files";
+
+export function getDetailTab(): DetailTab {
+  if (route.page === "pulls" && "view" in route && route.view === "diff") return "files";
+  return "conversation";
+}
+
+/** Returns the selected PR info regardless of whether the route is list or diff view. */
+export function getSelectedPRFromRoute(): { owner: string; name: string; number: number } | null {
+  if (route.page !== "pulls") return null;
+  if ("view" in route && route.view === "diff") {
+    return { owner: route.owner, name: route.name, number: route.number };
+  }
+  if ("selected" in route && route.selected) {
+    return route.selected;
+  }
+  return null;
+}
+
 // --- backward-compat helpers for existing components ---
 
 export type View = "list" | "board";
 export type Tab = "pulls" | "issues";
 
 export function getView(): View {
-  return route.page === "pulls" && route.view === "board" ? "board" : "list";
+  return route.page === "pulls" && "view" in route && route.view === "board" ? "board" : "list";
 }
 
 export function setView(v: View): void {
@@ -101,4 +133,8 @@ export function getTab(): Tab {
 
 export function setTab(t: Tab): void {
   navigate(t === "pulls" ? "/pulls" : "/issues");
+}
+
+export function isDiffView(): boolean {
+  return route.page === "pulls" && "view" in route && route.view === "diff";
 }

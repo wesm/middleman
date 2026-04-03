@@ -99,7 +99,10 @@
   }
 
   function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") onclose();
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onclose();
+    }
   }
 
   function methodLabel(): string {
