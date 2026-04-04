@@ -13,6 +13,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
@@ -278,6 +279,7 @@ func (s *Server) registerAPI(api huma.API) {
 		DefaultStatus: http.StatusAccepted,
 	}, s.triggerSync)
 	huma.Get(api, "/sync/status", s.syncStatus)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 }
 
 func NewOpenAPI() *huma.OpenAPI {
@@ -1038,4 +1040,57 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 	}
 
 	return repoID, nil
+}
+
+// --- Diff ---
+
+type getDiffInput struct {
+	Owner      string `path:"owner"`
+	Name       string `path:"name"`
+	Number     int    `path:"number"`
+	Whitespace string `query:"whitespace"`
+}
+
+type getDiffOutput struct {
+	Body diffResponse
+}
+
+func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
+	if s.clones == nil {
+		return nil, huma.Error503ServiceUnavailable("diff view not available: clone manager not configured")
+	}
+
+	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to look up PR")
+	}
+	if shas == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
+		return nil, huma.Error404NotFound("diff not available for this pull request")
+	}
+
+	hideWhitespace := input.Whitespace == "hide"
+	result, err := s.clones.Diff(ctx, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA, hideWhitespace)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
+		}
+		return nil, huma.Error502BadGateway("failed to compute diff: " + err.Error())
+	}
+
+	// Compute staleness.
+	switch shas.State {
+	case "merged":
+		result.Stale = shas.DiffHeadSHA != shas.GitHubHeadSHA
+	default: // open, closed
+		result.Stale = shas.DiffHeadSHA != shas.GitHubHeadSHA || shas.DiffBaseSHA != shas.GitHubBaseSHA
+	}
+
+	return &getDiffOutput{Body: diffResponse{
+		Stale:               result.Stale,
+		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
+		Files:               result.Files,
+	}}, nil
 }

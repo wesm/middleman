@@ -167,7 +167,7 @@ func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
+	syncer := ghclient.NewSyncer(mock, database, nil, nil, time.Minute)
 	srv := New(
 		database, mock, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -185,7 +185,7 @@ func setupTestServerWithRepos(
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	syncer := ghclient.NewSyncer(mock, database, repos, time.Minute)
+	syncer := ghclient.NewSyncer(mock, database, nil, repos, time.Minute)
 	srv := New(
 		database, mock, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -484,7 +484,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{}
-	syncer := ghclient.NewSyncer(mock, database, []ghclient.RepoRef{{
+	syncer := ghclient.NewSyncer(mock, database, nil, []ghclient.RepoRef{{
 		Owner: "acme",
 		Name:  "widget",
 	}}, time.Minute)
@@ -547,7 +547,7 @@ func TestAPIReadyForReview(t *testing.T) {
 			}, nil
 		},
 	}
-	syncer := ghclient.NewSyncer(mock, database, nil, time.Minute)
+	syncer := ghclient.NewSyncer(mock, database, nil, nil, time.Minute)
 	srv := New(
 		database, mock, syncer, nil, "/",
 		nil, ServerOptions{},

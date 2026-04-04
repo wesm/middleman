@@ -50,3 +50,37 @@ export interface Settings {
   repos: ConfigRepo[];
   activity: ActivitySettings;
 }
+
+export interface DiffResult {
+  stale: boolean;
+  whitespace_only_count: number;
+  files: DiffFile[];
+}
+
+export interface DiffFile {
+  path: string;
+  old_path: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "copied";
+  is_binary: boolean;
+  is_whitespace_only: boolean;
+  additions: number;
+  deletions: number;
+  hunks: DiffHunk[];
+}
+
+export interface DiffHunk {
+  old_start: number;
+  old_count: number;
+  new_start: number;
+  new_count: number;
+  section?: string;
+  lines: DiffLine[];
+}
+
+export interface DiffLine {
+  type: "context" | "add" | "delete";
+  content: string;
+  old_num?: number;
+  new_num?: number;
+  no_newline?: boolean;
+}

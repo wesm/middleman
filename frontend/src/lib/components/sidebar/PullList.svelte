@@ -15,12 +15,62 @@
     setFilterState,
   } from "../../stores/pulls.svelte.js";
   import { getSyncState, onNextSyncComplete } from "../../stores/sync.svelte.js";
-  import { navigate } from "../../stores/router.svelte.js";
+  import { navigate, getDetailTab } from "../../stores/router.svelte.js";
+  import { getDiff, getActiveFile, requestScrollToFile, isDiffLoading } from "../../stores/diff.svelte.js";
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import { getGroupByRepo, setGroupByRepo } from "../../stores/grouping.svelte.js";
+  import type { DiffFile } from "../../api/types.js";
   import PullItem from "./PullItem.svelte";
 
   const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+
+  function filename(path: string): string {
+    const i = path.lastIndexOf("/");
+    return i >= 0 ? path.slice(i + 1) : path;
+  }
+
+  interface FileGroup { dir: string; files: DiffFile[] }
+
+  function groupByDir(files: DiffFile[]): FileGroup[] {
+    const result: FileGroup[] = [];
+    let currentDir: string | null = null;
+    let currentFiles: DiffFile[] = [];
+    for (const f of files) {
+      const i = f.path.lastIndexOf("/");
+      const dir = i > 0 ? f.path.slice(0, i) : "";
+      if (dir !== currentDir) {
+        if (currentFiles.length > 0) result.push({ dir: currentDir ?? "", files: currentFiles });
+        currentDir = dir;
+        currentFiles = [f];
+      } else {
+        currentFiles.push(f);
+      }
+    }
+    if (currentFiles.length > 0) result.push({ dir: currentDir ?? "", files: currentFiles });
+    return result;
+  }
+
+  function statusLetter(s: string): string {
+    switch (s) {
+      case "modified": return "M";
+      case "added": return "A";
+      case "deleted": return "D";
+      case "renamed": return "R";
+      case "copied": return "C";
+      default: return "?";
+    }
+  }
+
+  function statusColor(s: string): string {
+    switch (s) {
+      case "modified": return "var(--accent-amber)";
+      case "added": return "var(--accent-green)";
+      case "deleted": return "var(--accent-red)";
+      case "renamed":
+      case "copied": return "var(--accent-blue)";
+      default: return "var(--text-muted)";
+    }
+  }
 
   let searchInput = $state(getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -56,7 +106,11 @@
 
   function handleSelect(owner: string, name: string, number: number): void {
     selectPR(owner, name, number);
-    navigate(`/pulls/${owner}/${name}/${number}`);
+    if (getDetailTab() === "files") {
+      navigate(`/pulls/${owner}/${name}/${number}/files`);
+    } else {
+      navigate(`/pulls/${owner}/${name}/${number}`);
+    }
   }
 
   function isSelected(owner: string, name: string, number: number): boolean {
@@ -148,23 +202,77 @@
           <div class="repo-group">
             <h3 class="repo-header">{repo}</h3>
             {#each prs as pr (pr.ID)}
+              {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
               <PullItem
                 {pr}
                 showRepo={false}
-                selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                selected={prSelected}
                 onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
               />
+              {#if prSelected && getDetailTab() === "files"}
+                <div class="diff-files">
+                  {#if isDiffLoading() && !getDiff()}
+                    <div class="diff-files-state diff-files-state--loading">Loading files</div>
+                  {:else if getDiff()}
+                    {@const grouped = groupByDir(getDiff()!.files)}
+                    {#each grouped as group, gi (gi)}
+                      {#if group.dir}
+                        <div class="diff-dir-header">{group.dir}/</div>
+                      {/if}
+                      {#each group.files as f (f.path)}
+                        <button
+                          class="diff-file-row"
+                          class:diff-file-row--active={getActiveFile() === f.path}
+                          class:diff-file-row--nested={!!group.dir}
+                          onclick={() => requestScrollToFile(f.path)}
+                          title={f.path}
+                        >
+                          <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
+                          <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
+                        </button>
+                      {/each}
+                    {/each}
+                  {/if}
+                </div>
+              {/if}
             {/each}
           </div>
         {/each}
       {:else}
         {#each getPulls() as pr (pr.ID)}
+          {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
           <PullItem
             {pr}
             showRepo={true}
-            selected={isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+            selected={prSelected}
             onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
           />
+          {#if prSelected && getDetailTab() === "files"}
+            <div class="diff-files">
+              {#if isDiffLoading() && !getDiff()}
+                <div class="diff-files-state diff-files-state--loading">Loading files</div>
+              {:else if getDiff()}
+                {@const grouped = groupByDir(getDiff()!.files)}
+                {#each grouped as group, gi (gi)}
+                  {#if group.dir}
+                    <div class="diff-dir-header">{group.dir}/</div>
+                  {/if}
+                  {#each group.files as f (f.path)}
+                    <button
+                      class="diff-file-row"
+                      class:diff-file-row--active={getActiveFile() === f.path}
+                      class:diff-file-row--nested={!!group.dir}
+                      onclick={() => requestScrollToFile(f.path)}
+                      title={f.path}
+                    >
+                      <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
+                      <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
+                    </button>
+                  {/each}
+                {/each}
+              {/if}
+            </div>
+          {/if}
         {/each}
       {/if}
     {/if}
@@ -405,5 +513,80 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .diff-files {
+    border-bottom: 1px solid var(--border-muted);
+    padding: 4px 0;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  .diff-files-state {
+    padding: 6px 24px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .diff-files-state--loading {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  .diff-dir-header {
+    padding: 5px 12px 2px 24px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .diff-file-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    padding: 2px 12px 2px 24px;
+    text-align: left;
+    color: var(--text-secondary);
+    transition: background 0.15s ease;
+  }
+
+  .diff-file-row--nested {
+    padding-left: 36px;
+  }
+
+  .diff-file-row:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .diff-file-row--active {
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--text-primary);
+  }
+
+  .diff-file-status {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    width: 12px;
+    flex-shrink: 0;
+    text-align: center;
+  }
+
+  .diff-file-name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .diff-file-name--deleted {
+    text-decoration: line-through;
+    opacity: 0.7;
   }
 </style>

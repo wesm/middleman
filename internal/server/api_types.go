@@ -1,6 +1,9 @@
 package server
 
-import "github.com/wesm/middleman/internal/db"
+import (
+	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
+)
 
 // pullResponse extends db.PullRequest with resolved repo owner/name fields.
 type pullResponse struct {
@@ -40,6 +43,12 @@ type resolveItemResponse struct {
 	ItemType    string `json:"item_type" doc:"'pr' or 'issue'"`
 	Number      int    `json:"number"`
 	RepoTracked bool   `json:"repo_tracked"`
+}
+
+type diffResponse struct {
+	Stale               bool                `json:"stale"`
+	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
+	Files               []gitclone.DiffFile `json:"files"`
 }
 
 const activitySafetyCap = 5000

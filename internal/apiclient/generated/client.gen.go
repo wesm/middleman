@@ -56,6 +56,27 @@ type ApprovePRInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// DiffFile defines model for DiffFile.
+type DiffFile struct {
+	Additions        int64   `json:"additions"`
+	Deletions        int64   `json:"deletions"`
+	Hunks            *[]Hunk `json:"hunks"`
+	IsBinary         bool    `json:"is_binary"`
+	IsWhitespaceOnly bool    `json:"is_whitespace_only"`
+	OldPath          string  `json:"old_path"`
+	Path             string  `json:"path"`
+	Status           string  `json:"status"`
+}
+
+// DiffResponse defines model for DiffResponse.
+type DiffResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string     `json:"$schema,omitempty"`
+	Files               *[]DiffFile `json:"files"`
+	Stale               bool        `json:"stale"`
+	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -104,6 +125,16 @@ type GithubStateOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	State  string  `json:"state"`
+}
+
+// Hunk defines model for Hunk.
+type Hunk struct {
+	Lines    *[]Line `json:"lines"`
+	NewCount int64   `json:"new_count"`
+	NewStart int64   `json:"new_start"`
+	OldCount int64   `json:"old_count"`
+	OldStart int64   `json:"old_start"`
+	Section  *string `json:"section,omitempty"`
 }
 
 // Issue defines model for Issue.
@@ -172,6 +203,15 @@ type IssueResponse struct {
 	UpdatedAt      time.Time  `json:"UpdatedAt"`
 	RepoName       string     `json:"repo_name"`
 	RepoOwner      string     `json:"repo_owner"`
+}
+
+// Line defines model for Line.
+type Line struct {
+	Content   string `json:"content"`
+	NewNum    *int64 `json:"new_num,omitempty"`
+	NoNewline *bool  `json:"no_newline,omitempty"`
+	OldNum    *int64 `json:"old_num,omitempty"`
+	Type      string `json:"type"`
 }
 
 // MergePRBody defines model for MergePRBody.
@@ -381,6 +421,11 @@ type ListPullsParams struct {
 	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
+type GetReposByOwnerByNamePullsByNumberDiffParams struct {
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+}
+
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
 type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
 
@@ -527,6 +572,9 @@ type ClientInterface interface {
 	PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetReposByOwnerByNamePullsByNumberDiff request
+	GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrGithubStateWithBody request with any body
 	SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -760,6 +808,18 @@ func (c *Client) PostPrCommentWithBody(ctx context.Context, owner string, name s
 
 func (c *Client) PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostPrCommentRequest(c.Server, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberDiffRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1829,6 +1889,76 @@ func NewPostPrCommentRequestWithBody(server string, owner string, name string, n
 	return req, nil
 }
 
+// NewGetReposByOwnerByNamePullsByNumberDiffRequest generates requests for GetReposByOwnerByNamePullsByNumberDiff
+func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/diff", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetPrGithubStateRequest calls the generic SetPrGithubState builder with application/json body
 func NewSetPrGithubStateRequest(server string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2332,6 +2462,9 @@ type ClientWithResponsesInterface interface {
 
 	PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
 
+	// GetReposByOwnerByNamePullsByNumberDiffWithResponse request
+	GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error)
+
 	// SetPrGithubStateWithBodyWithResponse request with any body
 	SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
@@ -2663,6 +2796,29 @@ func (r PostPrCommentResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostPrCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetReposByOwnerByNamePullsByNumberDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNamePullsByNumberDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNamePullsByNumberDiffResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3019,6 +3175,15 @@ func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, own
 		return nil, err
 	}
 	return ParsePostPrCommentResponse(rsp)
+}
+
+// GetReposByOwnerByNamePullsByNumberDiffWithResponse request returning *GetReposByOwnerByNamePullsByNumberDiffResponse
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberDiff(ctx, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp)
 }
 
 // SetPrGithubStateWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateResponse
@@ -3558,6 +3723,39 @@ func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, err
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNamePullsByNumberDiffResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberDiffWithResponse call
+func ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNamePullsByNumberDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

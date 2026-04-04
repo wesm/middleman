@@ -11,8 +11,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"path/filepath"
+
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/web"
@@ -84,8 +87,10 @@ func run(configPath string) error {
 		}
 	}
 
+	cloneMgr := gitclone.New(filepath.Join(cfg.DataDir, "clones"), token)
+
 	syncer := ghclient.NewSyncer(
-		ghClient, database, repos, cfg.SyncDuration(),
+		ghClient, database, cloneMgr, repos, cfg.SyncDuration(),
 	)
 
 	assets, err := web.Assets()
@@ -94,7 +99,7 @@ func run(configPath string) error {
 	}
 
 	srv := server.NewWithConfig(
-		database, ghClient, syncer, assets,
+		database, ghClient, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{},
 	)
 
