@@ -26,3 +26,16 @@ export function setGlobalRepo(repo: string | undefined): void {
     // Storage blocked — filter still works for this session
   }
 }
+
+export function applyConfigRepo(
+  repo: { owner: string; name: string } | undefined,
+  hideSelector: boolean,
+): void {
+  if (hideSelector) {
+    if (repo) {
+      filterRepo = `${repo.owner}/${repo.name}`;
+    } else {
+      filterRepo = undefined;
+    }
+  }
+}

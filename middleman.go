@@ -17,6 +17,15 @@ import (
 	"github.com/wesm/middleman/internal/web"
 )
 
+// Type aliases so external callers don't need to import
+// the internal server package.
+type (
+	EmbedConfig = server.EmbedConfig
+	ThemeConfig = server.ThemeConfig
+	UIConfig    = server.UIConfig
+	RepoRef     = server.RepoRef
+)
+
 // Repo identifies a GitHub repository to monitor.
 type Repo struct {
 	Owner string
@@ -40,8 +49,7 @@ type Options struct {
 	Repos        []Repo
 	Activity     Activity
 	Assets       fs.FS
-	Embedded     bool
-	AppName      string
+	EmbedConfig  *server.EmbedConfig
 }
 
 // Instance holds a running middleman server and its resources.
@@ -109,8 +117,7 @@ func New(opts Options) (*Instance, error) {
 		database, gh, syncer, frontend,
 		cfg.BasePath, cfg,
 		server.ServerOptions{
-			Embedded: opts.Embedded,
-			AppName:  opts.AppName,
+			EmbedConfig: opts.EmbedConfig,
 		},
 	)
 

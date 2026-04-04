@@ -33,8 +33,7 @@
   import { navigate } from "../stores/router.svelte.js";
   import { subscribeSyncComplete } from "../stores/sync.svelte.js";
   import { getGroupByRepo, setGroupByRepo } from "../stores/grouping.svelte.js";
-
-  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+  import { isEmbedded } from "../stores/embed-config.svelte.js";
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
@@ -444,7 +443,7 @@
   {#if isSettingsLoaded() && !hasConfiguredRepos()}
     <div class="table-container">
       <div class="empty-state">No repositories configured.<br />
-        {#if !embedded}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
+        {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
       </div>
     </div>
   {:else if getViewMode() === "threaded"}

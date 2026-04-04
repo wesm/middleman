@@ -66,7 +66,7 @@ export async function tokenizeLine(
 // Shared reactive theme state. Initialized from the DOM and kept in sync
 // via a single MutationObserver (avoids one observer per DiffFile).
 let themeObserver: MutationObserver | null = null;
-let themeListeners: Set<(dark: boolean) => void> = new Set();
+const themeListeners: Set<(dark: boolean) => void> = new Set();
 
 function ensureThemeObserver(): void {
   if (themeObserver) return;

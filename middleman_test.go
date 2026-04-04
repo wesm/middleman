@@ -43,13 +43,16 @@ func TestNewEmbeddedBootstrapGlobals(t *testing.T) {
 		},
 	}
 
+	hideSync := true
 	inst, err := New(Options{
 		Token:    "test-token",
 		DataDir:  t.TempDir(),
 		BasePath: "/middleman/",
-		Embedded: true,
-		AppName:  "TestApp",
-		Assets:   frontend,
+		EmbedConfig: &EmbedConfig{
+			Theme: &ThemeConfig{Mode: "dark"},
+			UI:    &UIConfig{HideSync: &hideSync},
+		},
+		Assets: frontend,
 	})
 	require.NoError(t, err)
 	defer inst.Close()
@@ -60,8 +63,90 @@ func TestNewEmbeddedBootstrapGlobals(t *testing.T) {
 
 	body := rr.Body.String()
 	assert := Assert.New(t)
-	assert.Contains(body, `window.__MIDDLEMAN_EMBEDDED__=true`)
-	assert.Contains(body, `window.__MIDDLEMAN_APP_NAME__="TestApp"`)
+	assert.Contains(body, `window.__middleman_config=`)
+	assert.NotContains(body, `__MIDDLEMAN_EMBEDDED__`)
+}
+
+func TestEmbedConfigFullFlow(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(
+				`<!DOCTYPE html><html><head></head>` +
+					`<body>app</body></html>`,
+			),
+		},
+	}
+
+	hideStar := true
+	sidebarCollapsed := false
+	inst, err := New(Options{
+		Token:    "test-token",
+		DataDir:  t.TempDir(),
+		BasePath: "/app/",
+		EmbedConfig: &EmbedConfig{
+			Theme: &ThemeConfig{
+				Mode:   "dark",
+				Colors: map[string]string{"bgPrimary": "#1a1a2e"},
+				Fonts:  map[string]string{"sans": "SF Pro"},
+			},
+			UI: &UIConfig{
+				HideStar:         &hideStar,
+				SidebarCollapsed: &sidebarCollapsed,
+				Repo: &RepoRef{
+					Owner: "apache", Name: "arrow",
+				},
+			},
+		},
+		Assets: frontend,
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/app/", nil)
+	rr := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	assert := Assert.New(t)
+
+	assert.Contains(body, `window.__middleman_config=`)
+	assert.Contains(body, `"mode":"dark"`)
+	assert.Contains(body, `"bgPrimary":"#1a1a2e"`)
+	assert.Contains(body, `"sans":"SF Pro"`)
+	assert.Contains(body, `"hideStar":true`)
+	assert.Contains(body, `"sidebarCollapsed":false`)
+	assert.Contains(body, `"owner":"apache"`)
+	assert.NotContains(body, `__MIDDLEMAN_EMBEDDED__`)
+	assert.NotContains(body, `__MIDDLEMAN_APP_NAME__`)
+	assert.Contains(body, `window.__BASE_PATH__="/app/"`)
+}
+
+func TestNoEmbedConfigStandaloneMode(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(
+				`<!DOCTYPE html><html><head></head>` +
+					`<body>app</body></html>`,
+			),
+		},
+	}
+
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Assets:  frontend,
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	assert := Assert.New(t)
+	assert.Contains(body, `window.__BASE_PATH__="/"`)
+	assert.NotContains(body, `__middleman_config`)
 }
 
 func TestNewRequiresToken(t *testing.T) {

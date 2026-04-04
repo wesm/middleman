@@ -21,8 +21,8 @@
   import { getGroupByRepo, setGroupByRepo } from "../../stores/grouping.svelte.js";
   import type { DiffFile } from "../../api/types.js";
   import PullItem from "./PullItem.svelte";
-
-  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+  import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  import { toggleSidebar, isSidebarToggleEnabled } from "../../stores/sidebar.svelte.js";
 
   function filename(path: string): string {
     const i = path.lastIndexOf("/");
@@ -143,6 +143,17 @@
         onclick={() => setGroupByRepo(false)}
       >All</button>
     </div>
+    {#if isSidebarToggleEnabled()}
+      <button class="sidebar-toggle" onclick={toggleSidebar} title="Collapse sidebar">
+        <svg width="14" height="14" viewBox="0 0 16 16"
+          fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1" y="1" width="14" height="14" rx="2" />
+          <line x1="6" y1="1" x2="6" y2="15" />
+          <polyline points="10,6 8,8 10,10"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    {/if}
   </div>
   <div class="search-bar">
     <div class="search-input-wrap">
@@ -182,7 +193,7 @@
   <div class="list-body">
     {#if isSettingsLoaded() && !hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
-        {#if !embedded}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
+        {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
     {:else if isLoading() && getPulls().length === 0}
       <p class="state-message">Loading…</p>
     {:else if getError() !== null && getPulls().length === 0}
@@ -278,7 +289,7 @@
     {/if}
   </div>
   <div class="sidebar-footer">
-    {#if !embedded}
+    {#if !isEmbedded()}
       <button class="add-repo-link" onclick={() => navigate("/settings")}>
         + Add repository
       </button>
@@ -302,6 +313,10 @@
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
     background: var(--bg-surface);
+  }
+
+  .filter-bar :global(.sidebar-toggle) {
+    margin-left: auto;
   }
 
   .search-bar {
