@@ -139,8 +139,27 @@ export function reapplyTheme(): void {
     } else {
       dark = configMode === "dark";
     }
+  } else {
+    // Mode removed — restore standalone behavior from stored
+    // preference or system, and re-attach the OS listener if
+    // no stored preference exists.
+    const stored = storedTheme();
+    if (stored !== null) {
+      dark = stored === "dark";
+    } else {
+      const mq = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      );
+      dark = mq.matches;
+      const handler = (e: MediaQueryListEvent) => {
+        dark = e.matches;
+        applyDarkClass(dark);
+      };
+      mq.addEventListener("change", handler);
+      mediaCleanup = () =>
+        mq.removeEventListener("change", handler);
+    }
   }
-  // If configMode is unset, keep the current dark state (user-owned).
 
   applyDarkClass(dark);
   applyThemeOverrides(
