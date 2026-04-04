@@ -5,6 +5,7 @@ import {
   toggleTheme,
   isThemeToggleVisible,
   applyThemeOverrides,
+  reapplyTheme,
   cleanupTheme,
 } from "./theme.svelte.js";
 
@@ -81,6 +82,58 @@ describe("embedded mode with theme.mode", () => {
     window.__middleman_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(false);
+  });
+});
+
+describe("reapplyTheme after removing forced mode", () => {
+  it("restores localStorage preference when mode is removed", () => {
+    // Start with forced dark mode
+    window.__middleman_config = { theme: { mode: "dark" } };
+    window.__middleman_notify_config_changed?.();
+    initTheme();
+    expect(isDark()).toBe(true);
+
+    // Store a light preference, then remove forced mode
+    localStorage.setItem("middleman-theme", "light");
+    delete window.__middleman_config!.theme;
+    window.__middleman_notify_config_changed?.();
+    reapplyTheme();
+    expect(isDark()).toBe(false);
+  });
+
+  it("falls back to OS preference when no stored or manual choice", () => {
+    mockMatchMedia(true); // OS prefers dark
+    window.__middleman_config = { theme: { mode: "light" } };
+    window.__middleman_notify_config_changed?.();
+    initTheme();
+    expect(isDark()).toBe(false);
+
+    // Remove forced mode, no localStorage, no manual toggle
+    delete window.__middleman_config!.theme;
+    window.__middleman_notify_config_changed?.();
+    reapplyTheme();
+    expect(isDark()).toBe(true); // follows OS dark preference
+  });
+
+  it("preserves in-memory manual toggle when storage is blocked", () => {
+    window.__middleman_config = { theme: { mode: "light" } };
+    window.__middleman_notify_config_changed?.();
+    initTheme();
+    expect(isDark()).toBe(false);
+
+    // User manually toggles to dark (storage will fail silently)
+    const origSetItem = localStorage.setItem;
+    localStorage.setItem = () => { throw new Error("blocked"); };
+    toggleTheme();
+    expect(isDark()).toBe(true);
+    localStorage.setItem = origSetItem;
+
+    // Remove forced mode — should use in-memory manual choice, not OS
+    mockMatchMedia(false); // OS prefers light
+    delete window.__middleman_config!.theme;
+    window.__middleman_notify_config_changed?.();
+    reapplyTheme();
+    expect(isDark()).toBe(true); // kept manual dark choice
   });
 });
 
