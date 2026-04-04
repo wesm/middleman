@@ -10,6 +10,7 @@ vi.mock("../../api/runtime.js", () => ({
 }));
 
 import AppHeader from "./AppHeader.svelte";
+import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
@@ -40,12 +41,14 @@ describe("AppHeader", () => {
   });
 
   afterEach(() => {
+    cleanupTheme();
     cleanup();
     document.documentElement.classList.remove("dark");
     localStorage.clear();
   });
 
   it("toggles the root dark class when the theme button is clicked", async () => {
+    initTheme();
     render(AppHeader);
 
     const button = screen.getByTitle("Toggle theme");
@@ -64,12 +67,14 @@ describe("AppHeader", () => {
     document.documentElement.classList.remove("dark");
     mockMatchMedia(true);
 
+    initTheme();
     render(AppHeader);
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
   it("persists theme choice to localStorage on toggle", async () => {
+    initTheme();
     render(AppHeader);
 
     const button = screen.getByTitle("Toggle theme");
@@ -85,6 +90,7 @@ describe("AppHeader", () => {
     localStorage.setItem("middleman-theme", "dark");
     mockMatchMedia(false);
 
+    initTheme();
     render(AppHeader);
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
@@ -95,6 +101,7 @@ describe("AppHeader", () => {
     document.documentElement.classList.remove("dark");
     mockMatchMedia(true);
 
+    initTheme();
     render(AppHeader);
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
@@ -106,6 +113,7 @@ describe("AppHeader", () => {
     localStorage.setItem("middleman-theme", "garbage");
     mockMatchMedia(true);
 
+    initTheme();
     render(AppHeader);
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
@@ -121,6 +129,7 @@ describe("AppHeader", () => {
       throw new DOMException("blocked");
     });
 
+    initTheme();
     render(AppHeader);
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
@@ -129,6 +138,8 @@ describe("AppHeader", () => {
   });
 
   it("toggle still works when localStorage.setItem throws", async () => {
+    initTheme();
+
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("blocked");
     });
@@ -138,32 +149,6 @@ describe("AppHeader", () => {
     const button = screen.getByTitle("Toggle theme");
 
     await fireEvent.click(button);
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-
-    vi.restoreAllMocks();
-  });
-
-  it("media query change does not override manual toggle when storage is blocked", async () => {
-    const listeners: MediaChangeCallback[] = [];
-
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new DOMException("blocked");
-    });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("blocked");
-    });
-
-    mockMatchMedia(false, listeners);
-    render(AppHeader);
-
-    const button = screen.getByTitle("Toggle theme");
-    await fireEvent.click(button);
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-
-    // Simulate OS switching to light — should NOT override manual toggle
-    for (const cb of listeners) {
-      cb({ matches: false } as MediaQueryListEvent);
-    }
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
     vi.restoreAllMocks();

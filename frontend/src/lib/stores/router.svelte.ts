@@ -3,12 +3,14 @@ export type Route =
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
   | { page: "pulls"; view: "diff"; owner: string; name: string; number: number }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
-  | { page: "settings" };
+  | { page: "settings" }
+  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number };
+
+import { isEmbedded, getOnNavigate, getOnRouteChange } from "./embed-config.svelte.js";
 
 // Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
 const rawBase = window.__BASE_PATH__ ?? "/";
 const basePrefix = rawBase === "/" ? "" : rawBase.replace(/\/$/, "");
-const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
 
 export function getBasePath(): string {
   return rawBase;
@@ -23,6 +25,32 @@ function stripBase(path: string): string {
 
 function parseRoute(fullPath: string): Route {
   const path = stripBase(fullPath);
+  if (path.startsWith("/focus/")) {
+    const prMatch = path.match(
+      /^\/focus\/pr\/([^/]+)\/([^/]+)\/(\d+)$/,
+    );
+    if (prMatch) {
+      return {
+        page: "focus",
+        itemType: "pr",
+        owner: prMatch[1]!,
+        name: prMatch[2]!,
+        number: parseInt(prMatch[3]!, 10),
+      };
+    }
+    const issueMatch = path.match(
+      /^\/focus\/issue\/([^/]+)\/([^/]+)\/(\d+)$/,
+    );
+    if (issueMatch) {
+      return {
+        page: "focus",
+        itemType: "issue",
+        owner: issueMatch[1]!,
+        name: issueMatch[2]!,
+        number: parseInt(issueMatch[3]!, 10),
+      };
+    }
+  }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
     if (rest === "/board") return { page: "pulls", view: "board" };
@@ -46,7 +74,7 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "pulls", view: "list" };
   }
-  if (path === "/settings" && !embedded) return { page: "settings" };
+  if (path === "/settings" && !isEmbedded()) return { page: "settings" };
   if (path.startsWith("/issues")) {
     const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
     if (match) {
@@ -62,30 +90,104 @@ function parseRoute(fullPath: string): Route {
 
 let route = $state<Route>(parseRoute(window.location.pathname));
 
+// Fire onRouteChange for the initial route after the module loads.
+// Deferred so the embedder has time to set up the callback.
+if (typeof window !== "undefined") {
+  queueMicrotask(() => fireRouteChange(route));
+}
+
 export function getRoute(): Route {
   return route;
 }
 
-export function getPage(): "activity" | "pulls" | "issues" | "settings" {
+export function getPage():
+  "activity" | "pulls" | "issues" | "settings" | "focus" {
   return route.page;
+}
+
+export function isFocusMode(): boolean {
+  return route.page === "focus";
+}
+
+export function buildItemRoute(
+  type: "pr" | "issue",
+  owner: string,
+  name: string,
+  number: number,
+): string {
+  if (isFocusMode()) {
+    return `/focus/${type}/${owner}/${name}/${number}`;
+  }
+  return type === "pr"
+    ? `/pulls/${owner}/${name}/${number}`
+    : `/issues/${owner}/${name}/${number}`;
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {
   const fullPath = basePrefix + path;
   history.pushState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);
+  fireMiddlemanNavigateEvent(route);
+  fireRouteChange(route);
+}
+
+function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
+  const focus = r.page === "focus";
+  let navType: MiddlemanNavigateEvent["type"];
+  if (r.page === "focus") {
+    navType = r.itemType === "pr" ? "pull" : "issue";
+  } else if (r.page === "pulls") {
+    navType = r.view === "board" ? "board" : "pull";
+  } else if (r.page === "issues") {
+    navType = "issue";
+  } else {
+    navType = r.page as "activity";
+  }
+
+  const event: MiddlemanNavigateEvent = {
+    type: navType,
+    focus,
+    view: stripBase(window.location.pathname),
+  };
+
+  if (
+    r.page === "focus" ||
+    (r.page === "pulls" && r.selected) ||
+    (r.page === "issues" && r.selected)
+  ) {
+    const sel = r.page === "focus"
+      ? r
+      : (r as Extract<Route, { selected?: unknown }>).selected!;
+    event.owner = sel.owner;
+    event.name = sel.name;
+    event.number = sel.number;
+  }
+
+  return event;
+}
+
+function fireMiddlemanNavigateEvent(r: Route): void {
+  const cb = getOnNavigate();
+  if (cb) cb(buildRouteEvent(r));
+}
+
+function fireRouteChange(r: Route): void {
+  const cb = getOnRouteChange();
+  if (cb) cb(buildRouteEvent(r));
 }
 
 export function replaceUrl(path: string): void {
   const fullPath = basePrefix + path;
   history.replaceState(null, "", fullPath);
   route = parseRoute(fullPath);
+  fireRouteChange(route);
 }
 
 // Listen for browser back/forward.
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     route = parseRoute(window.location.pathname);
+    fireRouteChange(route);
   });
 }
 

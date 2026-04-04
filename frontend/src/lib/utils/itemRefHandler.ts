@@ -1,5 +1,5 @@
 import { client } from "../api/runtime.js";
-import { navigate } from "../stores/router.svelte.js";
+import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 
 let requestId = 0;
@@ -46,9 +46,12 @@ async function resolveAndNavigate(
       return;
     }
 
-    const path = data.item_type === "pr"
-      ? `/pulls/${owner}/${name}/${number}`
-      : `/issues/${owner}/${name}/${number}`;
+    const path = buildItemRoute(
+      data.item_type === "pr" ? "pr" : "issue",
+      owner,
+      name,
+      number,
+    );
     navigate(path);
   } catch {
     if (thisRequestId !== requestId) return;

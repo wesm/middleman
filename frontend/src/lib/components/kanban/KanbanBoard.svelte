@@ -8,8 +8,7 @@
   import { client } from "../../api/runtime.js";
   import { hasConfiguredRepos, isSettingsLoaded } from "../../stores/settings.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
-
-  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+  import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import { stopDetailPolling } from "../../stores/detail.svelte.js";
   import PullDetail from "../detail/PullDetail.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
@@ -88,7 +87,7 @@
 <div class="kanban-wrap">
   {#if isSettingsLoaded() && !hasConfiguredRepos()}
     <div class="empty-state">No repositories configured.<br />
-      {#if !embedded}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
+      {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}
     </div>
   {:else}
   <div class="kanban-board">
@@ -233,10 +232,9 @@
     overflow-y: auto;
   }
 
-  @media (max-width: 1023px) {
-    .drawer {
-      width: 100%;
-      min-width: 0;
-    }
+  :global(#app.container-narrow) .drawer,
+  :global(#app.container-medium) .drawer {
+    width: 100%;
+    min-width: 0;
   }
 </style>

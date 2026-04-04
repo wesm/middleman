@@ -10,7 +10,8 @@
 
   let { activity, onUpdate }: Props = $props();
 
-  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+  import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  const embedded = isEmbedded();
 
   const TIME_RANGES: { value: ActivitySettingsType["time_range"]; label: string }[] = [
     { value: "24h", label: "24h" },
