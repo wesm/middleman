@@ -339,9 +339,53 @@
         <div class="board-layout">
           <KanbanBoard />
         </div>
+      {:else}
+        {@const selectedPR = getSelectedPRFromRoute() ?? getSelectedPR()}
+        {@const detailTab = getDetailTab()}
+        <div class="list-layout">
+          <aside
+            class="sidebar"
+            class:sidebar--collapsed={isSidebarCollapsed()}
+          >
+            {#if !isSidebarCollapsed()}
+              <PullList />
+            {/if}
+          </aside>
+          <section class="detail-area" class:detail-area--empty={selectedPR === null}>
+            {#if selectedPR !== null}
+              <div class="detail-tabs">
+                <button
+                  class="detail-tab"
+                  class:detail-tab--active={detailTab === "conversation"}
+                  onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`)}
+                >
+                  Conversation
+                </button>
+                <button
+                  class="detail-tab"
+                  class:detail-tab--active={detailTab === "files"}
+                  onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`)}
+                >
+                  Files changed
+                </button>
+              </div>
+              {#if detailTab === "files"}
+                {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
+                  <DiffView owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} inline />
+                {/key}
+              {:else}
+                <PullDetail owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} />
+              {/if}
+            {:else}
+              <div class="placeholder-content">
+                <p class="placeholder-text">Select a PR</p>
+                <p class="placeholder-hint">j/k to navigate · 1/2 to switch views</p>
+              </div>
+            {/if}
+          </section>
+        </div>
+      {/if}
     {:else}
-      {@const selectedPR = getSelectedPRFromRoute() ?? getSelectedPR()}
-      {@const detailTab = getDetailTab()}
       <div class="list-layout">
         <aside
           class="sidebar"

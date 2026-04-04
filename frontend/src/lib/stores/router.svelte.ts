@@ -150,17 +150,22 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     view: stripBase(window.location.pathname),
   };
 
-  if (
-    r.page === "focus" ||
-    (r.page === "pulls" && r.selected) ||
-    (r.page === "issues" && r.selected)
-  ) {
-    const sel = r.page === "focus"
-      ? r
-      : (r as Extract<Route, { selected?: unknown }>).selected!;
-    event.owner = sel.owner;
-    event.name = sel.name;
-    event.number = sel.number;
+  if (r.page === "focus") {
+    event.owner = r.owner;
+    event.name = r.name;
+    event.number = r.number;
+  } else if (r.page === "pulls" && "view" in r && r.view === "diff") {
+    event.owner = r.owner;
+    event.name = r.name;
+    event.number = r.number;
+  } else if (r.page === "pulls" && "selected" in r && r.selected) {
+    event.owner = r.selected.owner;
+    event.name = r.selected.name;
+    event.number = r.selected.number;
+  } else if (r.page === "issues" && "selected" in r && r.selected) {
+    event.owner = r.selected.owner;
+    event.name = r.selected.name;
+    event.number = r.selected.number;
   }
 
   return event;
