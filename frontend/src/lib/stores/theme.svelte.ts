@@ -46,6 +46,8 @@ const RADII_MAP: Record<string, string> = {
 
 let dark = $state(false);
 let mediaCleanup: (() => void) | null = null;
+// In-memory manual override — survives when localStorage is blocked.
+let manualDark: boolean | null = null;
 // Track which CSS variables we've set so we can clear them on reset.
 const appliedVars = new Set<string>();
 
@@ -140,12 +142,15 @@ export function reapplyTheme(): void {
       dark = configMode === "dark";
     }
   } else {
-    // Mode removed — restore standalone behavior from stored
-    // preference or system, and re-attach the OS listener if
-    // no stored preference exists.
+    // Mode removed — restore standalone behavior. Check in order:
+    // 1. localStorage preference
+    // 2. In-memory manual toggle (survives storage-blocked contexts)
+    // 3. OS system preference with live listener
     const stored = storedTheme();
     if (stored !== null) {
       dark = stored === "dark";
+    } else if (manualDark !== null) {
+      dark = manualDark;
     } else {
       const mq = window.matchMedia(
         "(prefers-color-scheme: dark)",
@@ -188,11 +193,12 @@ export function toggleTheme(): void {
   mediaCleanup = null;
 
   dark = !dark;
+  manualDark = dark;
   applyDarkClass(dark);
   try {
     localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
   } catch {
-    // Storage blocked
+    // Storage blocked — manualDark preserves the choice in memory
   }
 }
 
