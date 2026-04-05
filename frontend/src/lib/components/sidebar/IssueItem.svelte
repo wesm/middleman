@@ -73,14 +73,16 @@
       {/if}
     </div>
   {/if}
+  {#if showRepo}
+    <div class="repo-row">
+      <span
+        class="repo-badge"
+        style="color: {repoColor(repoSlug)}; background: color-mix(in srgb, {repoColor(repoSlug)} 15%, transparent);"
+      >{repoSlug}</span>
+    </div>
+  {/if}
   <div class="meta-row">
     <span class="meta-left">
-      {#if showRepo}
-        <span
-          class="repo-badge"
-          style="color: {repoColor(repoSlug)}; background: color-mix(in srgb, {repoColor(repoSlug)} 15%, transparent);"
-        >{repoSlug}</span>
-      {/if}
       #{issue.Number} · {issue.Author}
     </span>
     <span class="meta-right">
@@ -182,19 +184,21 @@
     min-width: 0;
   }
 
+  .repo-row {
+    margin-bottom: 4px;
+  }
+
   .repo-badge {
     font-size: 9px;
     font-weight: 600;
     padding: 1px 5px;
     border-radius: 8px;
-    max-width: 80px;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
     display: inline-block;
-    vertical-align: middle;
+    max-width: 100%;
     line-height: 1.4;
-    margin-right: 4px;
   }
 
   .meta-right {

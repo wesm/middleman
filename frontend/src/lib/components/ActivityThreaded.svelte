@@ -431,10 +431,10 @@
     font-weight: 600;
     padding: 1px 4px;
     border-radius: 3px;
-    flex-shrink: 0;
-    max-width: 80px;
+    flex-shrink: 1;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: 40%;
   }
 </style>
