@@ -15,9 +15,33 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
+type EmbedConfig struct {
+	Theme *ThemeConfig `json:"theme,omitempty"`
+	UI    *UIConfig    `json:"ui,omitempty"`
+}
+
+type ThemeConfig struct {
+	Mode   string            `json:"mode,omitempty"`
+	Colors map[string]string `json:"colors,omitempty"`
+	Fonts  map[string]string `json:"fonts,omitempty"`
+	Radii  map[string]string `json:"radii,omitempty"`
+}
+
+type UIConfig struct {
+	HideSync         *bool    `json:"hideSync,omitempty"`
+	HideRepoSelector *bool    `json:"hideRepoSelector,omitempty"`
+	HideStar         *bool    `json:"hideStar,omitempty"`
+	SidebarCollapsed *bool    `json:"sidebarCollapsed,omitempty"`
+	Repo             *RepoRef `json:"repo,omitempty"`
+}
+
+type RepoRef struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
 type ServerOptions struct {
-	Embedded bool
-	AppName  string
+	EmbedConfig *EmbedConfig
 }
 
 // Server holds the HTTP mux and its dependencies.
@@ -167,18 +191,22 @@ func (s *Server) bootstrapScript() string {
 	safeBase, _ := json.Marshal(s.basePath)
 	var builder strings.Builder
 	builder.WriteString(`window.__BASE_PATH__=`)
-	builder.WriteString(string(safeBase))
+	builder.WriteString(scriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
-	if s.options.Embedded {
-		builder.WriteString(`window.__MIDDLEMAN_EMBEDDED__=true;`)
-		if s.options.AppName != "" {
-			safeAppName, _ := json.Marshal(s.options.AppName)
-			builder.WriteString(`window.__MIDDLEMAN_APP_NAME__=`)
-			builder.WriteString(string(safeAppName))
-			builder.WriteString(`;`)
-		}
+	if s.options.EmbedConfig != nil {
+		configJSON, _ := json.Marshal(s.options.EmbedConfig)
+		builder.WriteString(`window.__middleman_config=`)
+		builder.WriteString(scriptSafe(string(configJSON)))
+		builder.WriteString(`;`)
 	}
 	return builder.String()
+}
+
+// scriptSafe escapes sequences that could break out of an inline
+// <script> block. Replaces "</" with "<\/" so that payloads
+// containing "</script>" cannot close the tag early.
+func scriptSafe(s string) string {
+	return strings.ReplaceAll(s, "</", `<\/`)
 }
 
 // ServeHTTP implements http.Handler so Server can be used directly.

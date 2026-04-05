@@ -10,7 +10,8 @@
 
   let { repos, onUpdate }: Props = $props();
 
-  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
+  import { isEmbedded } from "../../stores/embed-config.svelte.js";
+  const embedded = isEmbedded();
 
   let inputValue = $state("");
   let adding = $state(false);

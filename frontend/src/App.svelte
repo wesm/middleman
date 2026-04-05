@@ -13,6 +13,17 @@
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import DiffView from "./lib/components/diff/DiffView.svelte";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { initTheme, cleanupTheme, reapplyTheme } from "./lib/stores/theme.svelte.js";
+  import {
+    isSidebarCollapsed,
+    toggleSidebar,
+    isSidebarToggleEnabled,
+    initSidebar,
+    setNarrowOverride,
+  } from "./lib/stores/sidebar.svelte.js";
+  import {
+    initContainerObserver, isNarrow,
+  } from "./lib/stores/container.svelte.js";
   import { getRoute, getPage, getView, navigate, replaceUrl, getBasePath, isDiffView, getDetailTab, getSelectedPRFromRoute } from "./lib/stores/router.svelte.ts";
   import { startPolling } from "./lib/stores/sync.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
@@ -43,12 +54,19 @@
 
   import { loadPulls } from "./lib/stores/pulls.svelte.js";
   import { loadIssues } from "./lib/stores/issues.svelte.js";
-  import { getGlobalRepo } from "./lib/stores/filter.svelte.js";
+  import { getGlobalRepo, applyConfigRepo } from "./lib/stores/filter.svelte.js";
+  import { getUIConfig } from "./lib/stores/embed-config.svelte.js";
   import { loadActivity } from "./lib/stores/activity.svelte.js";
 
   let appReady = $state(false);
 
   onMount(() => {
+    initTheme();
+    initSidebar();
+    const ui = getUIConfig();
+    applyConfigRepo(ui.repo, ui.hideRepoSelector);
+    const appEl = document.getElementById("app")!;
+    const cleanupContainer = initContainerObserver(appEl);
     const cleanupItemRefs = initItemRefHandler();
     void (async () => {
       try {
@@ -64,6 +82,8 @@
       void loadIssues();
     })();
     return () => {
+      cleanupTheme();
+      cleanupContainer();
       cleanupItemRefs();
     };
   });
@@ -80,6 +100,19 @@
     void loadPulls(getView() === "board" ? { state: "open" } : undefined);
     void loadIssues();
     void loadActivity();
+  });
+
+  $effect(() => {
+    if (isSidebarToggleEnabled()) {
+      setNarrowOverride(isNarrow());
+    }
+  });
+
+  // Re-apply theme when embedder updates config at runtime.
+  // getThemeMode/Colors/Fonts/Radii read the generation counter,
+  // so this effect re-runs on __middleman_notify_config_changed().
+  $effect(() => {
+    reapplyTheme();
   });
 
   // Sync route state: restore drawer, select items, clear stale state.
@@ -176,6 +209,17 @@
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+    // Sidebar toggle: Cmd+[ / Ctrl+[
+    if (
+      e.key === "[" &&
+      (e.metaKey || e.ctrlKey) &&
+      isSidebarToggleEnabled()
+    ) {
+      e.preventDefault();
+      toggleSidebar();
+      return;
+    }
+
     const page = getPage();
     if (page === "settings") return;
 
@@ -252,101 +296,132 @@
   });
 </script>
 
-<AppHeader />
-<FlashBanner />
+{#if getPage() === "focus"}
+  {@const r = getRoute()}
+  {#if r.page === "focus"}
+    <main class="focus-layout">
+      {#if r.itemType === "pr"}
+        <PullDetail owner={r.owner} name={r.name} number={r.number} />
+      {:else}
+        <IssueDetail owner={r.owner} name={r.name} number={r.number} />
+      {/if}
+    </main>
+  {/if}
+{:else}
+  <AppHeader />
+  <FlashBanner />
 
-<main class="app-main">
-  {#if !appReady}
-    <div class="loading-state">
-      <svg class="loading-spinner" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
-        <path d="M16 9a7 7 0 0 0-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-      </svg>
-      Loading
-    </div>
-  {:else if getPage() === "settings"}
-    <SettingsPage />
-  {:else if getPage() === "activity"}
-    <ActivityFeed onSelectItem={handleActivitySelect} />
-    {#if drawerItem}
-      <DetailDrawer
-        itemType={drawerItem.itemType}
-        owner={drawerItem.owner}
-        name={drawerItem.name}
-        number={drawerItem.number}
-        onClose={closeDrawer}
-      />
-    {/if}
-  {:else if getPage() === "pulls"}
-    {@const route = getRoute()}
-    {#if route.page === "pulls" && route.view === "board"}
-      <div class="board-layout">
-        <KanbanBoard />
+  <main class="app-main">
+    {#if !appReady}
+      <div class="loading-state">
+        <svg class="loading-spinner" width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
+          <path d="M16 9a7 7 0 0 0-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        Loading
       </div>
-    {:else}
-      {@const selectedPR = getSelectedPRFromRoute() ?? getSelectedPR()}
-      {@const detailTab = getDetailTab()}
-      <div class="list-layout">
-        <aside class="sidebar">
-          <PullList />
-        </aside>
-        <section class="detail-area" class:detail-area--empty={selectedPR === null}>
-          {#if selectedPR !== null}
-            <div class="detail-tabs">
-              <button
-                class="detail-tab"
-                class:detail-tab--active={detailTab === "conversation"}
-                onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`)}
-              >
-                Conversation
-              </button>
-              <button
-                class="detail-tab"
-                class:detail-tab--active={detailTab === "files"}
-                onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`)}
-              >
-                Files changed
-              </button>
-            </div>
-            {#if detailTab === "files"}
-              {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
-                <DiffView owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} inline />
-              {/key}
-            {:else}
-              <PullDetail owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} />
+    {:else if getPage() === "settings"}
+      <SettingsPage />
+    {:else if getPage() === "activity"}
+      <ActivityFeed onSelectItem={handleActivitySelect} />
+      {#if drawerItem}
+        <DetailDrawer
+          itemType={drawerItem.itemType}
+          owner={drawerItem.owner}
+          name={drawerItem.name}
+          number={drawerItem.number}
+          onClose={closeDrawer}
+        />
+      {/if}
+    {:else if getPage() === "pulls"}
+      {@const route = getRoute()}
+      {#if route.page === "pulls" && route.view === "board"}
+        <div class="board-layout">
+          <KanbanBoard />
+        </div>
+      {:else}
+        {@const selectedPR = getSelectedPRFromRoute() ?? getSelectedPR()}
+        {@const detailTab = getDetailTab()}
+        <div class="list-layout">
+          <aside
+            class="sidebar"
+            class:sidebar--collapsed={isSidebarCollapsed()}
+          >
+            {#if !isSidebarCollapsed()}
+              <PullList />
             {/if}
+          </aside>
+          <section class="detail-area" class:detail-area--empty={selectedPR === null}>
+            {#if selectedPR !== null}
+              <div class="detail-tabs">
+                <button
+                  class="detail-tab"
+                  class:detail-tab--active={detailTab === "conversation"}
+                  onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`)}
+                >
+                  Conversation
+                </button>
+                <button
+                  class="detail-tab"
+                  class:detail-tab--active={detailTab === "files"}
+                  onclick={() => navigate(`/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`)}
+                >
+                  Files changed
+                </button>
+              </div>
+              {#if detailTab === "files"}
+                {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
+                  <DiffView owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} inline />
+                {/key}
+              {:else}
+                <PullDetail owner={selectedPR.owner} name={selectedPR.name} number={selectedPR.number} />
+              {/if}
+            {:else}
+              <div class="placeholder-content">
+                <p class="placeholder-text">Select a PR</p>
+                <p class="placeholder-hint">j/k to navigate · 1/2 to switch views</p>
+              </div>
+            {/if}
+          </section>
+        </div>
+      {/if}
+    {:else}
+      <div class="list-layout">
+        <aside
+          class="sidebar"
+          class:sidebar--collapsed={isSidebarCollapsed()}
+        >
+          {#if !isSidebarCollapsed()}
+            <IssueList />
+          {/if}
+        </aside>
+        <section class="detail-area" class:detail-area--empty={getSelectedIssue() === null}>
+          {#if getSelectedIssue() !== null}
+            {@const sel = getSelectedIssue()!}
+            <IssueDetail owner={sel.owner} name={sel.name} number={sel.number} />
           {:else}
             <div class="placeholder-content">
-              <p class="placeholder-text">Select a PR</p>
-              <p class="placeholder-hint">j/k to navigate · 1/2 to switch views</p>
+              <p class="placeholder-text">Select an issue</p>
+              <p class="placeholder-hint">j/k to navigate</p>
             </div>
           {/if}
         </section>
       </div>
     {/if}
-  {:else}
-    <div class="list-layout">
-      <aside class="sidebar">
-        <IssueList />
-      </aside>
-      <section class="detail-area" class:detail-area--empty={getSelectedIssue() === null}>
-        {#if getSelectedIssue() !== null}
-          {@const sel = getSelectedIssue()!}
-          <IssueDetail owner={sel.owner} name={sel.name} number={sel.number} />
-        {:else}
-          <div class="placeholder-content">
-            <p class="placeholder-text">Select an issue</p>
-            <p class="placeholder-hint">j/k to navigate</p>
-          </div>
-        {/if}
-      </section>
-    </div>
-  {/if}
-</main>
+  </main>
 
-<StatusBar />
+  <StatusBar />
+{/if}
 
 <style>
+  .focus-layout {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+  }
+
   .app-main {
     flex: 1;
     overflow: hidden;
@@ -369,6 +444,12 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  .sidebar--collapsed {
+    width: 0;
+    overflow: hidden;
+    border-right: none;
   }
 
   .detail-area {

@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [svelte(), svelteTesting()],
   test: {
     environment: "jsdom",
-    exclude: ["tests/e2e/**", "node_modules/**"],
+    exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**"],
   },
   server: {
     proxy: {

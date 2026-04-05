@@ -109,10 +109,9 @@
     overflow-y: auto;
   }
 
-  @media (max-width: 1023px) {
-    .drawer-panel {
-      width: 100%;
-      min-width: 0;
-    }
+  :global(#app.container-narrow) .drawer-panel,
+  :global(#app.container-medium) .drawer-panel {
+    width: 100%;
+    min-width: 0;
   }
 </style>

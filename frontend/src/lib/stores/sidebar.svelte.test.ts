@@ -1,0 +1,88 @@
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  isSidebarCollapsed,
+  toggleSidebar,
+  isSidebarToggleEnabled,
+  initSidebar,
+} from "./sidebar.svelte.js";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const win = window as any;
+
+afterEach(() => {
+  delete win.__middleman_config;
+  try { localStorage.removeItem("middleman-sidebar"); } catch { /* noop */ }
+});
+
+describe("standalone mode", () => {
+  it("starts expanded by default", () => {
+    initSidebar();
+    expect(isSidebarCollapsed()).toBe(false);
+  });
+
+  it("toggle is enabled", () => {
+    initSidebar();
+    expect(isSidebarToggleEnabled()).toBe(true);
+  });
+
+  it("toggleSidebar flips state", () => {
+    initSidebar();
+    toggleSidebar();
+    expect(isSidebarCollapsed()).toBe(true);
+    toggleSidebar();
+    expect(isSidebarCollapsed()).toBe(false);
+  });
+
+  it("persists to localStorage", () => {
+    initSidebar();
+    toggleSidebar();
+    expect(
+      localStorage.getItem("middleman-sidebar"),
+    ).toBe("collapsed");
+  });
+});
+
+describe("embedded mode — embedder owns sidebar", () => {
+  it("uses config value when set to true", () => {
+    win.__middleman_config = {
+      ui: { sidebarCollapsed: true },
+    };
+    win.__middleman_notify_config_changed?.();
+    initSidebar();
+    expect(isSidebarCollapsed()).toBe(true);
+  });
+
+  it("uses config value when set to false", () => {
+    win.__middleman_config = {
+      ui: { sidebarCollapsed: false },
+    };
+    win.__middleman_notify_config_changed?.();
+    initSidebar();
+    expect(isSidebarCollapsed()).toBe(false);
+  });
+
+  it("toggle is disabled when embedder owns", () => {
+    win.__middleman_config = {
+      ui: { sidebarCollapsed: false },
+    };
+    win.__middleman_notify_config_changed?.();
+    initSidebar();
+    expect(isSidebarToggleEnabled()).toBe(false);
+  });
+});
+
+describe("embedded mode — user owns sidebar", () => {
+  it("defaults to expanded when not set", () => {
+    win.__middleman_config = { ui: {} };
+    win.__middleman_notify_config_changed?.();
+    initSidebar();
+    expect(isSidebarCollapsed()).toBe(false);
+  });
+
+  it("toggle is enabled when not set", () => {
+    win.__middleman_config = { ui: {} };
+    win.__middleman_notify_config_changed?.();
+    initSidebar();
+    expect(isSidebarToggleEnabled()).toBe(true);
+  });
+});

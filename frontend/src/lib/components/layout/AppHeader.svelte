@@ -1,60 +1,18 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
-
-  const THEME_KEY = "middleman-theme";
-  const embedded = typeof window !== "undefined" && window.__MIDDLEMAN_EMBEDDED__ === true;
-
-  function storedTheme(): string | null {
-    try {
-      const v = localStorage.getItem(THEME_KEY);
-      if (v === "dark" || v === "light") return v;
-      if (v !== null) localStorage.removeItem(THEME_KEY);
-    } catch {
-      // Storage blocked (e.g. private browsing) — fall back to system preference
-    }
-    return null;
-  }
-
-  function loadInitialTheme(): boolean {
-    const stored = storedTheme();
-    if (stored !== null) return stored === "dark";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-
-  let dark = $state(loadInitialTheme());
-  let manualOverride = storedTheme() !== null;
-
-  onMount(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-    const handleChange = (event: MediaQueryListEvent) => {
-      if (!manualOverride) {
-        dark = event.matches;
-      }
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange);
-    };
-  });
-
-  $effect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-  });
-
-  function toggleTheme(): void {
-    dark = !dark;
-    manualOverride = true;
-    try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch {
-      // Storage blocked — toggle still works for this session
-    }
-  }
+  import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
+  import { isNarrow } from "../../stores/container.svelte.js";
+  import {
+    isDark, toggleTheme, isThemeToggleVisible,
+  } from "../../stores/theme.svelte.js";
+  import {
+    isSidebarCollapsed,
+    toggleSidebar,
+    isSidebarToggleEnabled,
+  } from "../../stores/sidebar.svelte.js";
 
   async function handleSync(): Promise<void> {
     if (getSyncState()?.running) return;
@@ -66,38 +24,82 @@
 
 <header class="app-header">
   <div class="header-left">
+    {#if isSidebarCollapsed() && isSidebarToggleEnabled()}
+      <button
+        class="sidebar-toggle"
+        onclick={toggleSidebar}
+        title="Expand sidebar"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16"
+          fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1" y="1" width="14" height="14" rx="2" />
+          <line x1="6" y1="1" x2="6" y2="15" />
+          <polyline points="8,6 10,8 8,10"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    {/if}
     <span class="logo">middleman</span>
-    <RepoTypeahead
-      selected={getGlobalRepo()}
-      onchange={setGlobalRepo}
-    />
+    {#if !getUIConfig().hideRepoSelector}
+      <RepoTypeahead
+        selected={getGlobalRepo()}
+        onchange={setGlobalRepo}
+      />
+    {/if}
   </div>
 
   <nav class="header-center">
-    <div class="tab-group">
-      <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigate("/"); }}>
-        Activity
-      </button>
-      <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigate("/pulls")}>
-        PRs
-      </button>
-      <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigate("/issues")}>
-        Issues
-      </button>
-      <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
-        Board
-      </button>
-    </div>
+    {#if isNarrow()}
+      <select
+        class="nav-select"
+        value={getPage() === "pulls" && getView() === "board" ? "board" : getPage()}
+        onchange={(e) => {
+          const v = (e.target as HTMLSelectElement).value;
+          if (v === "activity") navigate("/");
+          else if (v === "pulls") navigate("/pulls");
+          else if (v === "issues") navigate("/issues");
+          else if (v === "board") navigate("/pulls/board");
+          else if (v === "settings") navigate("/settings");
+        }}
+      >
+        <option value="activity">Activity</option>
+        <option value="pulls">PRs</option>
+        <option value="issues">Issues</option>
+        <option value="board">Board</option>
+        {#if !isEmbedded() && getPage() === "settings"}
+          <option value="settings">Settings</option>
+        {/if}
+      </select>
+    {:else}
+      <div class="tab-group">
+        <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigate("/"); }}>
+          Activity
+        </button>
+        <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigate("/pulls")}>
+          PRs
+        </button>
+        <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigate("/issues")}>
+          Issues
+        </button>
+        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
+          Board
+        </button>
+      </div>
+    {/if}
   </nav>
 
   <div class="header-right">
-    <button class="action-btn" onclick={handleSync} disabled={syncing}>
-      {syncing ? "Syncing..." : "Sync"}
-    </button>
-    <button class="action-btn icon-btn" onclick={toggleTheme} title="Toggle theme">
-      {dark ? "☀" : "☾"}
-    </button>
-    {#if !embedded}
+    {#if !getUIConfig().hideSync}
+      <button class="action-btn" onclick={handleSync} disabled={syncing}>
+        {syncing ? "Syncing..." : "Sync"}
+      </button>
+    {/if}
+    {#if isThemeToggleVisible()}
+      <button class="action-btn icon-btn" onclick={toggleTheme} title="Toggle theme">
+        {isDark() ? "☀" : "☾"}
+      </button>
+    {/if}
+    {#if !isEmbedded()}
       <button
         class="action-btn icon-btn"
         class:active={getPage() === "settings"}
@@ -207,5 +209,29 @@
 
   .icon-btn {
     padding: 5px 10px;
+  }
+
+  .nav-select {
+    font-size: 12px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+  }
+
+  .sidebar-toggle {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .sidebar-toggle:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
 </style>

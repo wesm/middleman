@@ -40,16 +40,19 @@ func setupEmbeddedServer(
 	)
 }
 
-func TestBasePathInjectsEmbeddedBootstrap(t *testing.T) {
+func TestBootstrapInjectsEmbedConfig(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
 		},
 	}
 
+	hideSync := true
 	srv := setupEmbeddedServer(t, "/middleman/", frontend, ServerOptions{
-		Embedded: true,
-		AppName:  "TestApp",
+		EmbedConfig: &EmbedConfig{
+			Theme: &ThemeConfig{Mode: "dark"},
+			UI:    &UIConfig{HideSync: &hideSync},
+		},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
 	rr := httptest.NewRecorder()
@@ -57,7 +60,25 @@ func TestBasePathInjectsEmbeddedBootstrap(t *testing.T) {
 
 	body := rr.Body.String()
 	assert := Assert.New(t)
-	assert.Contains(body, `window.__BASE_PATH__="/middleman/"`)
-	assert.Contains(body, `window.__MIDDLEMAN_EMBEDDED__=true`)
-	assert.Contains(body, `window.__MIDDLEMAN_APP_NAME__="TestApp"`)
+	assert.Contains(body, `window.__middleman_config=`)
+	assert.Contains(body, `"mode":"dark"`)
+	assert.NotContains(body, `__MIDDLEMAN_EMBEDDED__`)
+}
+
+func TestBootstrapNoEmbedConfig(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+
+	srv := setupEmbeddedServer(t, "/app/", frontend, ServerOptions{})
+	req := httptest.NewRequest(http.MethodGet, "/app/", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	body := rr.Body.String()
+	assert := Assert.New(t)
+	assert.NotContains(body, `__middleman_config`)
+	assert.Contains(body, `window.__BASE_PATH__="/app/"`)
 }
