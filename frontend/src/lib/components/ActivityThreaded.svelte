@@ -432,9 +432,6 @@
     padding: 1px 4px;
     border-radius: 3px;
     flex-shrink: 0;
-    max-width: 80px;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
 </style>
