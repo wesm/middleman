@@ -1164,6 +1164,75 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
 }
 
+func TestMRListIncludesWorktreeLinks(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	prID := seedPR(t, database, "acme", "widget", 1)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(database.SetWorktreeLinks([]db.WorktreeLink{
+		{
+			MergeRequestID: prID,
+			WorktreeKey:    "wt-abc",
+			WorktreePath:   "/tmp/wt",
+			WorktreeBranch: "feature",
+			LinkedAt:       now,
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	require.Contains(body, `"worktree_links"`)
+	require.Contains(body, `"worktree_key":"wt-abc"`)
+	require.Contains(body, `"worktree_path":"/tmp/wt"`)
+	require.Contains(body, `"worktree_branch":"feature"`)
+}
+
+func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	prID := seedPR(t, database, "acme", "widget", 1)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(database.SetWorktreeLinks([]db.WorktreeLink{
+		{
+			MergeRequestID: prID,
+			WorktreeKey:    "wt-detail",
+			WorktreePath:   "/tmp/detail",
+			LinkedAt:       now,
+		},
+	}))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/repos/acme/widget/pulls/1", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	require.Contains(body, `"worktree_links"`)
+	require.Contains(body, `"worktree_key":"wt-detail"`)
+}
+
+func TestMRListEmptyLinksWhenNone(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	// Should contain an empty array, not null.
+	require.Contains(body, `"worktree_links":[]`)
+}
+
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)

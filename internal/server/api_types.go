@@ -5,18 +5,26 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 )
 
+type worktreeLinkResponse struct {
+	WorktreeKey    string `json:"worktree_key"`
+	WorktreePath   string `json:"worktree_path,omitempty"`
+	WorktreeBranch string `json:"worktree_branch,omitempty"`
+}
+
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
 type mergeRequestResponse struct {
 	db.MergeRequest
-	RepoOwner string `json:"repo_owner"`
-	RepoName  string `json:"repo_name"`
+	RepoOwner     string                 `json:"repo_owner"`
+	RepoName      string                 `json:"repo_name"`
+	WorktreeLinks []worktreeLinkResponse `json:"worktree_links"`
 }
 
 type mergeRequestDetailResponse struct {
-	MergeRequest *db.MergeRequest `json:"merge_request"`
-	Events       []db.MREvent     `json:"events"`
-	RepoOwner    string           `json:"repo_owner"`
-	RepoName     string           `json:"repo_name"`
+	MergeRequest  *db.MergeRequest       `json:"merge_request"`
+	Events        []db.MREvent           `json:"events"`
+	RepoOwner     string                 `json:"repo_owner"`
+	RepoName      string                 `json:"repo_name"`
+	WorktreeLinks []worktreeLinkResponse `json:"worktree_links"`
 }
 
 var validKanbanStates = map[string]bool{

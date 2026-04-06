@@ -283,45 +283,47 @@ type MergeRequest struct {
 // MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
 type MergeRequestDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string      `json:"$schema,omitempty"`
-	Events       *[]MREvent   `json:"events"`
-	MergeRequest MergeRequest `json:"merge_request"`
-	RepoName     string       `json:"repo_name"`
-	RepoOwner    string       `json:"repo_owner"`
+	Schema        *string                 `json:"$schema,omitempty"`
+	Events        *[]MREvent              `json:"events"`
+	MergeRequest  MergeRequest            `json:"merge_request"`
+	RepoName      string                  `json:"repo_name"`
+	RepoOwner     string                  `json:"repo_owner"`
+	WorktreeLinks *[]WorktreeLinkResponse `json:"worktree_links"`
 }
 
 // MergeRequestResponse defines model for MergeRequestResponse.
 type MergeRequestResponse struct {
-	Additions         int64      `json:"Additions"`
-	Author            string     `json:"Author"`
-	AuthorDisplayName string     `json:"AuthorDisplayName"`
-	BaseBranch        string     `json:"BaseBranch"`
-	Body              string     `json:"Body"`
-	CIChecksJSON      string     `json:"CIChecksJSON"`
-	CIStatus          string     `json:"CIStatus"`
-	ClosedAt          *time.Time `json:"ClosedAt"`
-	CommentCount      int64      `json:"CommentCount"`
-	CreatedAt         time.Time  `json:"CreatedAt"`
-	Deletions         int64      `json:"Deletions"`
-	HeadBranch        string     `json:"HeadBranch"`
-	HeadRepoCloneURL  string     `json:"HeadRepoCloneURL"`
-	ID                int64      `json:"ID"`
-	IsDraft           bool       `json:"IsDraft"`
-	KanbanStatus      string     `json:"KanbanStatus"`
-	LastActivityAt    time.Time  `json:"LastActivityAt"`
-	MergeableState    string     `json:"MergeableState"`
-	MergedAt          *time.Time `json:"MergedAt"`
-	Number            int64      `json:"Number"`
-	PlatformID        int64      `json:"PlatformID"`
-	RepoID            int64      `json:"RepoID"`
-	ReviewDecision    string     `json:"ReviewDecision"`
-	Starred           bool       `json:"Starred"`
-	State             string     `json:"State"`
-	Title             string     `json:"Title"`
-	URL               string     `json:"URL"`
-	UpdatedAt         time.Time  `json:"UpdatedAt"`
-	RepoName          string     `json:"repo_name"`
-	RepoOwner         string     `json:"repo_owner"`
+	Additions         int64                   `json:"Additions"`
+	Author            string                  `json:"Author"`
+	AuthorDisplayName string                  `json:"AuthorDisplayName"`
+	BaseBranch        string                  `json:"BaseBranch"`
+	Body              string                  `json:"Body"`
+	CIChecksJSON      string                  `json:"CIChecksJSON"`
+	CIStatus          string                  `json:"CIStatus"`
+	ClosedAt          *time.Time              `json:"ClosedAt"`
+	CommentCount      int64                   `json:"CommentCount"`
+	CreatedAt         time.Time               `json:"CreatedAt"`
+	Deletions         int64                   `json:"Deletions"`
+	HeadBranch        string                  `json:"HeadBranch"`
+	HeadRepoCloneURL  string                  `json:"HeadRepoCloneURL"`
+	ID                int64                   `json:"ID"`
+	IsDraft           bool                    `json:"IsDraft"`
+	KanbanStatus      string                  `json:"KanbanStatus"`
+	LastActivityAt    time.Time               `json:"LastActivityAt"`
+	MergeableState    string                  `json:"MergeableState"`
+	MergedAt          *time.Time              `json:"MergedAt"`
+	Number            int64                   `json:"Number"`
+	PlatformID        int64                   `json:"PlatformID"`
+	RepoID            int64                   `json:"RepoID"`
+	ReviewDecision    string                  `json:"ReviewDecision"`
+	Starred           bool                    `json:"Starred"`
+	State             string                  `json:"State"`
+	Title             string                  `json:"Title"`
+	URL               string                  `json:"URL"`
+	UpdatedAt         time.Time               `json:"UpdatedAt"`
+	RepoName          string                  `json:"repo_name"`
+	RepoOwner         string                  `json:"repo_owner"`
+	WorktreeLinks     *[]WorktreeLinkResponse `json:"worktree_links"`
 }
 
 // MrImportMetadataResponse defines model for MrImportMetadataResponse.
@@ -406,6 +408,13 @@ type SyncStatus struct {
 	LastRunAt   *time.Time `json:"last_run_at,omitempty"`
 	Progress    *string    `json:"progress,omitempty"`
 	Running     bool       `json:"running"`
+}
+
+// WorktreeLinkResponse defines model for WorktreeLinkResponse.
+type WorktreeLinkResponse struct {
+	WorktreeBranch *string `json:"worktree_branch,omitempty"`
+	WorktreeKey    string  `json:"worktree_key"`
+	WorktreePath   *string `json:"worktree_path,omitempty"`
 }
 
 // GetActivityParams defines parameters for GetActivity.
