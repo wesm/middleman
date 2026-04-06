@@ -203,9 +203,21 @@ future change, this would accept the host from the request body.
 
 ## CLI Entrypoint (`cmd/middleman/main.go`)
 
+The CLI always seeds a `"github.com"` entry from the global token
+(`github_token_env` / `gh auth token`). This ensures the settings UI
+add-repo flow works even when the config starts empty or contains only GHE
+repos. Repo-level `token_env` entries for github.com override the global
+token if present.
+
 ```go
-// Collect unique hosts and their tokens
-hostTokens := map[string]string{} // host -> token
+// Always seed github.com from the global token so the settings
+// UI can validate repos even when no github.com repos are
+// configured yet.
+globalToken := cfg.GitHubToken()
+hostTokens := map[string]string{"github.com": globalToken}
+
+// Overlay per-repo host tokens (may override github.com if a
+// repo explicitly sets token_env for it).
 for _, r := range cfg.Repos {
     host := r.PlatformHostOrDefault()
     if _, seen := hostTokens[host]; seen {
@@ -299,6 +311,8 @@ for host := range hostTokens {
 - Handlers use `ClientForRepo` instead of direct client
 - On-demand operations route to correct client
 - `handleAddRepo` validates via `ClientForHost("github.com")`
+- `handleAddRepo` works with empty config (github.com client seeded from global token)
+- `handleAddRepo` works with GHE-only config (github.com client still available)
 
 ### Embedded library tests (`middleman_test.go`)
 - Multi-host config with `ResolveToken` builds correct client map
