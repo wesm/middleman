@@ -700,7 +700,7 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 		} else if ghPR.GetMerged() {
 			// Merged MRs need special merge-base logic via the pull ref.
 			// Force recomputation to repair any previously incorrect SHAs.
-			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
+			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
 		} else if normalized.PlatformHeadSHA != "" && normalized.PlatformBaseSHA != "" {
 			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 			if err != nil {
@@ -828,7 +828,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		baseSHA := ghPR.GetBase().GetSHA()
 
 		if ghPR.GetMerged() {
-			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
+			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
 		} else if headSHA != "" && baseSHA != "" {
 			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
@@ -849,7 +849,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	return nil
 }
 
-// computeMergedPRDiffSHAs computes diff SHAs for a merged PR.
+// computeMergedMRDiffSHAs computes diff SHAs for a merged PR.
 // Uses merge-base(merge_commit^1, refs/pull/<number>/head) which works for all
 // GitHub merge strategies:
 //   - Merge commit: ^1 is the pre-merge base tip
@@ -860,8 +860,8 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 // correctly identifies the fork point.
 //
 // When force is false, skips PRs that already have diff SHAs (periodic sync).
-// When force is true, always recomputes (on-demand SyncPR).
-func (s *Syncer) computeMergedPRDiffSHAs(
+// When force is true, always recomputes (on-demand SyncMR).
+func (s *Syncer) computeMergedMRDiffSHAs(
 	ctx context.Context, repo RepoRef, repoID int64, number int, mergeCommitSHA string,
 	force bool,
 ) {

@@ -115,7 +115,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(t, err)
@@ -150,17 +150,17 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	// Seed incorrect diff SHAs (simulating prior SyncPR regression).
+	// Seed incorrect diff SHAs (simulating prior SyncMR regression).
 	require.NoError(t, syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
 
 	// Without force, the existing (incorrect) SHAs are preserved.
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(t, err)
 	assert.Equal(t, "bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, true)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, true)
 	shas, err = syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(t, err)
 	require.NotNil(t, shas)
@@ -195,7 +195,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
 
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 2, squashCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 2, squashCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 2)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
 
-	syncer.computeMergedPRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 3, rebaseLastCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 3, rebaseLastCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 3)
 	require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 // TestSyncFirstSeenMergedPR exercises the first-seen merged PR path through
 // RunOnce. The PR is inserted as open WITHOUT a clone manager (no diff SHAs
 // computed), then on the second sync (with clone manager) it transitions to
-// merged and computeMergedPRDiffSHAs must fill in the diff SHAs.
+// merged and computeMergedMRDiffSHAs must fill in the diff SHAs.
 func TestSyncFirstSeenMergedPR(t *testing.T) {
 	ctx := context.Background()
 	sourceDir := t.TempDir()
@@ -470,7 +470,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	}
 
 	// Second sync WITH clone manager via a new syncer sharing the same DB.
-	// PR transitions to merged, computeMergedPRDiffSHAs must run since
+	// PR transitions to merged, computeMergedMRDiffSHAs must run since
 	// diff SHAs are empty.
 	mc.openPRs = nil
 	mc.singlePR = mergedPR

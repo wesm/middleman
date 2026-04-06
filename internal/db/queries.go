@@ -24,7 +24,7 @@ func (d *DB) UpsertRepo(ctx context.Context, owner, name string) (int64, error) 
 	}
 	var id int64
 	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_repos WHERE owner = ? AND name = ?`, owner, name,
+		`SELECT id FROM middleman_repos WHERE platform = 'github' AND platform_host = 'github.com' AND owner = ? AND name = ?`, owner, name,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("get repo id after upsert: %w", err)
@@ -94,7 +94,7 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge, created_at
-		 FROM middleman_repos WHERE owner = ? AND name = ?`, owner, name,
+		 FROM middleman_repos WHERE platform = 'github' AND platform_host = 'github.com' AND owner = ? AND name = ?`, owner, name,
 	).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
