@@ -3,7 +3,7 @@ import type { components, operations } from "./generated/schema.js";
 export type Repo = components["schemas"]["Repo"];
 export type PullRequest =
   components["schemas"]["MergeRequest"] &
-  Partial<Pick<components["schemas"]["MergeRequestResponse"], "repo_owner" | "repo_name">>;
+  Partial<Pick<components["schemas"]["MergeRequestResponse"], "repo_owner" | "repo_name" | "worktree_links">>;
 export type Issue =
   components["schemas"]["Issue"] &
   Partial<Pick<components["schemas"]["IssueResponse"], "repo_owner" | "repo_name">>;
@@ -18,6 +18,9 @@ export type ActivityParams = NonNullable<operations["get-activity"]["parameters"
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];
 export type MergeParams = components["schemas"]["MergePRInputBody"];
+
+export type WorktreeLink =
+  components["schemas"]["WorktreeLinkResponse"];
 
 export interface IssueLabel {
   name: string;
