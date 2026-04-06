@@ -390,8 +390,8 @@ func TestAPIGetPull(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.PullRequest)
-	require.EqualValues(1, resp.JSON200.PullRequest.Number)
+	require.NotNil(resp.JSON200.MergeRequest)
+	require.EqualValues(1, resp.JSON200.MergeRequest.Number)
 	require.Equal("acme", resp.JSON200.RepoOwner)
 	require.Equal("widget", resp.JSON200.RepoName)
 }

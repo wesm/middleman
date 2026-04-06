@@ -144,11 +144,11 @@ type Issue struct {
 	ClosedAt       *time.Time `json:"ClosedAt"`
 	CommentCount   int64      `json:"CommentCount"`
 	CreatedAt      time.Time  `json:"CreatedAt"`
-	GitHubID       int64      `json:"GitHubID"`
 	ID             int64      `json:"ID"`
 	LabelsJSON     string     `json:"LabelsJSON"`
 	LastActivityAt time.Time  `json:"LastActivityAt"`
 	Number         int64      `json:"Number"`
+	PlatformID     int64      `json:"PlatformID"`
 	RepoID         int64      `json:"RepoID"`
 	Starred        bool       `json:"Starred"`
 	State          string     `json:"State"`
@@ -176,10 +176,10 @@ type IssueEvent struct {
 	CreatedAt    time.Time `json:"CreatedAt"`
 	DedupeKey    string    `json:"DedupeKey"`
 	EventType    string    `json:"EventType"`
-	GitHubID     *int64    `json:"GitHubID"`
 	ID           int64     `json:"ID"`
 	IssueID      int64     `json:"IssueID"`
 	MetadataJSON string    `json:"MetadataJSON"`
+	PlatformID   *int64    `json:"PlatformID"`
 	Summary      string    `json:"Summary"`
 }
 
@@ -190,11 +190,11 @@ type IssueResponse struct {
 	ClosedAt       *time.Time `json:"ClosedAt"`
 	CommentCount   int64      `json:"CommentCount"`
 	CreatedAt      time.Time  `json:"CreatedAt"`
-	GitHubID       int64      `json:"GitHubID"`
 	ID             int64      `json:"ID"`
 	LabelsJSON     string     `json:"LabelsJSON"`
 	LastActivityAt time.Time  `json:"LastActivityAt"`
 	Number         int64      `json:"Number"`
+	PlatformID     int64      `json:"PlatformID"`
 	RepoID         int64      `json:"RepoID"`
 	Starred        bool       `json:"Starred"`
 	State          string     `json:"State"`
@@ -212,6 +212,22 @@ type Line struct {
 	NoNewline *bool  `json:"no_newline,omitempty"`
 	OldNum    *int64 `json:"old_num,omitempty"`
 	Type      string `json:"type"`
+}
+
+// MREvent defines model for MREvent.
+type MREvent struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string   `json:"$schema,omitempty"`
+	Author         string    `json:"Author"`
+	Body           string    `json:"Body"`
+	CreatedAt      time.Time `json:"CreatedAt"`
+	DedupeKey      string    `json:"DedupeKey"`
+	EventType      string    `json:"EventType"`
+	ID             int64     `json:"ID"`
+	MergeRequestID int64     `json:"MergeRequestID"`
+	MetadataJSON   string    `json:"MetadataJSON"`
+	PlatformID     *int64    `json:"PlatformID"`
+	Summary        string    `json:"Summary"`
 }
 
 // MergePRBody defines model for MergePRBody.
@@ -232,20 +248,80 @@ type MergePRInputBody struct {
 	Method        string  `json:"method"`
 }
 
-// PREvent defines model for PREvent.
-type PREvent struct {
+// MergeRequest defines model for MergeRequest.
+type MergeRequest struct {
+	Additions         int64      `json:"Additions"`
+	Author            string     `json:"Author"`
+	AuthorDisplayName string     `json:"AuthorDisplayName"`
+	BaseBranch        string     `json:"BaseBranch"`
+	Body              string     `json:"Body"`
+	CIChecksJSON      string     `json:"CIChecksJSON"`
+	CIStatus          string     `json:"CIStatus"`
+	ClosedAt          *time.Time `json:"ClosedAt"`
+	CommentCount      int64      `json:"CommentCount"`
+	CreatedAt         time.Time  `json:"CreatedAt"`
+	Deletions         int64      `json:"Deletions"`
+	HeadBranch        string     `json:"HeadBranch"`
+	HeadRepoCloneURL  string     `json:"HeadRepoCloneURL"`
+	ID                int64      `json:"ID"`
+	IsDraft           bool       `json:"IsDraft"`
+	KanbanStatus      string     `json:"KanbanStatus"`
+	LastActivityAt    time.Time  `json:"LastActivityAt"`
+	MergeableState    string     `json:"MergeableState"`
+	MergedAt          *time.Time `json:"MergedAt"`
+	Number            int64      `json:"Number"`
+	PlatformID        int64      `json:"PlatformID"`
+	RepoID            int64      `json:"RepoID"`
+	ReviewDecision    string     `json:"ReviewDecision"`
+	Starred           bool       `json:"Starred"`
+	State             string     `json:"State"`
+	Title             string     `json:"Title"`
+	URL               string     `json:"URL"`
+	UpdatedAt         time.Time  `json:"UpdatedAt"`
+}
+
+// MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
+type MergeRequestDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string   `json:"$schema,omitempty"`
-	Author       string    `json:"Author"`
-	Body         string    `json:"Body"`
-	CreatedAt    time.Time `json:"CreatedAt"`
-	DedupeKey    string    `json:"DedupeKey"`
-	EventType    string    `json:"EventType"`
-	GitHubID     *int64    `json:"GitHubID"`
-	ID           int64     `json:"ID"`
-	MetadataJSON string    `json:"MetadataJSON"`
-	PRID         int64     `json:"PRID"`
-	Summary      string    `json:"Summary"`
+	Schema       *string      `json:"$schema,omitempty"`
+	Events       *[]MREvent   `json:"events"`
+	MergeRequest MergeRequest `json:"merge_request"`
+	RepoName     string       `json:"repo_name"`
+	RepoOwner    string       `json:"repo_owner"`
+}
+
+// MergeRequestResponse defines model for MergeRequestResponse.
+type MergeRequestResponse struct {
+	Additions         int64      `json:"Additions"`
+	Author            string     `json:"Author"`
+	AuthorDisplayName string     `json:"AuthorDisplayName"`
+	BaseBranch        string     `json:"BaseBranch"`
+	Body              string     `json:"Body"`
+	CIChecksJSON      string     `json:"CIChecksJSON"`
+	CIStatus          string     `json:"CIStatus"`
+	ClosedAt          *time.Time `json:"ClosedAt"`
+	CommentCount      int64      `json:"CommentCount"`
+	CreatedAt         time.Time  `json:"CreatedAt"`
+	Deletions         int64      `json:"Deletions"`
+	HeadBranch        string     `json:"HeadBranch"`
+	HeadRepoCloneURL  string     `json:"HeadRepoCloneURL"`
+	ID                int64      `json:"ID"`
+	IsDraft           bool       `json:"IsDraft"`
+	KanbanStatus      string     `json:"KanbanStatus"`
+	LastActivityAt    time.Time  `json:"LastActivityAt"`
+	MergeableState    string     `json:"MergeableState"`
+	MergedAt          *time.Time `json:"MergedAt"`
+	Number            int64      `json:"Number"`
+	PlatformID        int64      `json:"PlatformID"`
+	RepoID            int64      `json:"RepoID"`
+	ReviewDecision    string     `json:"ReviewDecision"`
+	Starred           bool       `json:"Starred"`
+	State             string     `json:"State"`
+	Title             string     `json:"Title"`
+	URL               string     `json:"URL"`
+	UpdatedAt         time.Time  `json:"UpdatedAt"`
+	RepoName          string     `json:"repo_name"`
+	RepoOwner         string     `json:"repo_owner"`
 }
 
 // PostCommentInputBody defines model for PostCommentInputBody.
@@ -262,80 +338,6 @@ type PostIssueCommentInputBody struct {
 	Body   string  `json:"body"`
 }
 
-// PullDetailResponse defines model for PullDetailResponse.
-type PullDetailResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema      *string     `json:"$schema,omitempty"`
-	Events      *[]PREvent  `json:"events"`
-	PullRequest PullRequest `json:"pull_request"`
-	RepoName    string      `json:"repo_name"`
-	RepoOwner   string      `json:"repo_owner"`
-}
-
-// PullRequest defines model for PullRequest.
-type PullRequest struct {
-	Additions         int64      `json:"Additions"`
-	Author            string     `json:"Author"`
-	AuthorDisplayName string     `json:"AuthorDisplayName"`
-	BaseBranch        string     `json:"BaseBranch"`
-	Body              string     `json:"Body"`
-	CIChecksJSON      string     `json:"CIChecksJSON"`
-	CIStatus          string     `json:"CIStatus"`
-	ClosedAt          *time.Time `json:"ClosedAt"`
-	CommentCount      int64      `json:"CommentCount"`
-	CreatedAt         time.Time  `json:"CreatedAt"`
-	Deletions         int64      `json:"Deletions"`
-	GitHubID          int64      `json:"GitHubID"`
-	HeadBranch        string     `json:"HeadBranch"`
-	ID                int64      `json:"ID"`
-	IsDraft           bool       `json:"IsDraft"`
-	KanbanStatus      string     `json:"KanbanStatus"`
-	LastActivityAt    time.Time  `json:"LastActivityAt"`
-	MergeableState    string     `json:"MergeableState"`
-	MergedAt          *time.Time `json:"MergedAt"`
-	Number            int64      `json:"Number"`
-	RepoID            int64      `json:"RepoID"`
-	ReviewDecision    string     `json:"ReviewDecision"`
-	Starred           bool       `json:"Starred"`
-	State             string     `json:"State"`
-	Title             string     `json:"Title"`
-	URL               string     `json:"URL"`
-	UpdatedAt         time.Time  `json:"UpdatedAt"`
-}
-
-// PullResponse defines model for PullResponse.
-type PullResponse struct {
-	Additions         int64      `json:"Additions"`
-	Author            string     `json:"Author"`
-	AuthorDisplayName string     `json:"AuthorDisplayName"`
-	BaseBranch        string     `json:"BaseBranch"`
-	Body              string     `json:"Body"`
-	CIChecksJSON      string     `json:"CIChecksJSON"`
-	CIStatus          string     `json:"CIStatus"`
-	ClosedAt          *time.Time `json:"ClosedAt"`
-	CommentCount      int64      `json:"CommentCount"`
-	CreatedAt         time.Time  `json:"CreatedAt"`
-	Deletions         int64      `json:"Deletions"`
-	GitHubID          int64      `json:"GitHubID"`
-	HeadBranch        string     `json:"HeadBranch"`
-	ID                int64      `json:"ID"`
-	IsDraft           bool       `json:"IsDraft"`
-	KanbanStatus      string     `json:"KanbanStatus"`
-	LastActivityAt    time.Time  `json:"LastActivityAt"`
-	MergeableState    string     `json:"MergeableState"`
-	MergedAt          *time.Time `json:"MergedAt"`
-	Number            int64      `json:"Number"`
-	RepoID            int64      `json:"RepoID"`
-	ReviewDecision    string     `json:"ReviewDecision"`
-	Starred           bool       `json:"Starred"`
-	State             string     `json:"State"`
-	Title             string     `json:"Title"`
-	URL               string     `json:"URL"`
-	UpdatedAt         time.Time  `json:"UpdatedAt"`
-	RepoName          string     `json:"repo_name"`
-	RepoOwner         string     `json:"repo_owner"`
-}
-
 // Repo defines model for Repo.
 type Repo struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -350,6 +352,8 @@ type Repo struct {
 	LastSyncStartedAt   *time.Time `json:"LastSyncStartedAt"`
 	Name                string     `json:"Name"`
 	Owner               string     `json:"Owner"`
+	Platform            string     `json:"Platform"`
+	PlatformHost        string     `json:"PlatformHost"`
 }
 
 // ResolveItemResponse defines model for ResolveItemResponse.
@@ -2552,7 +2556,7 @@ func (r ListIssuesResponse) StatusCode() int {
 type ListPullsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *[]PullResponse
+	JSON200                       *[]MergeRequestResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -2736,7 +2740,7 @@ func (r PostReposByOwnerByNameItemsByNumberResolveResponse) StatusCode() int {
 type GetReposByOwnerByNamePullsByNumberResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *PullDetailResponse
+	JSON200                       *MergeRequestDetailResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -2782,7 +2786,7 @@ func (r PostReposByOwnerByNamePullsByNumberApproveResponse) StatusCode() int {
 type PostPrCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *PREvent
+	JSON201                       *MREvent
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -2919,7 +2923,7 @@ func (r SetKanbanStateResponse) StatusCode() int {
 type PostReposByOwnerByNamePullsByNumberSyncResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *PullDetailResponse
+	JSON200                       *MergeRequestDetailResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -3388,7 +3392,7 @@ func ParseListPullsResponse(rsp *http.Response) (*ListPullsResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []PullResponse
+		var dest []MergeRequestResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3652,7 +3656,7 @@ func ParseGetReposByOwnerByNamePullsByNumberResponse(rsp *http.Response) (*GetRe
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PullDetailResponse
+		var dest MergeRequestDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3718,7 +3722,7 @@ func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest PREvent
+		var dest MREvent
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3909,7 +3913,7 @@ func ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp *http.Response) (*
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PullDetailResponse
+		var dest MergeRequestDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

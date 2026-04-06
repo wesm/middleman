@@ -32,7 +32,7 @@
         })
         .then(({ data }) => {
           if (data) {
-            prTitle = data.pull_request.Title;
+            prTitle = data.merge_request.Title;
           }
         });
     }

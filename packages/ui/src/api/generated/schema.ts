@@ -530,14 +530,14 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             /** Format: int64 */
-            GitHubID: number;
-            /** Format: int64 */
             ID: number;
             LabelsJSON: string;
             /** Format: date-time */
             LastActivityAt: string;
             /** Format: int64 */
             Number: number;
+            /** Format: int64 */
+            PlatformID: number;
             /** Format: int64 */
             RepoID: number;
             Starred: boolean;
@@ -573,12 +573,12 @@ export interface components {
             DedupeKey: string;
             EventType: string;
             /** Format: int64 */
-            GitHubID: number | null;
-            /** Format: int64 */
             ID: number;
             /** Format: int64 */
             IssueID: number;
             MetadataJSON: string;
+            /** Format: int64 */
+            PlatformID: number | null;
             Summary: string;
         };
         IssueResponse: {
@@ -591,14 +591,14 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             /** Format: int64 */
-            GitHubID: number;
-            /** Format: int64 */
             ID: number;
             LabelsJSON: string;
             /** Format: date-time */
             LastActivityAt: string;
             /** Format: int64 */
             Number: number;
+            /** Format: int64 */
+            PlatformID: number;
             /** Format: int64 */
             RepoID: number;
             Starred: boolean;
@@ -618,6 +618,28 @@ export interface components {
             /** Format: int64 */
             old_num?: number;
             type: string;
+        };
+        MREvent: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MREvent.json
+             */
+            readonly $schema?: string;
+            Author: string;
+            Body: string;
+            /** Format: date-time */
+            CreatedAt: string;
+            DedupeKey: string;
+            EventType: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            MergeRequestID: number;
+            MetadataJSON: string;
+            /** Format: int64 */
+            PlatformID: number | null;
+            Summary: string;
         };
         MergePRBody: {
             /**
@@ -641,27 +663,103 @@ export interface components {
             commit_title: string;
             method: string;
         };
-        PREvent: {
+        MergeRequest: {
+            /** Format: int64 */
+            Additions: number;
+            Author: string;
+            AuthorDisplayName: string;
+            BaseBranch: string;
+            Body: string;
+            CIChecksJSON: string;
+            CIStatus: string;
+            /** Format: date-time */
+            ClosedAt: string | null;
+            /** Format: int64 */
+            CommentCount: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: int64 */
+            Deletions: number;
+            HeadBranch: string;
+            HeadRepoCloneURL: string;
+            /** Format: int64 */
+            ID: number;
+            IsDraft: boolean;
+            KanbanStatus: string;
+            /** Format: date-time */
+            LastActivityAt: string;
+            MergeableState: string;
+            /** Format: date-time */
+            MergedAt: string | null;
+            /** Format: int64 */
+            Number: number;
+            /** Format: int64 */
+            PlatformID: number;
+            /** Format: int64 */
+            RepoID: number;
+            ReviewDecision: string;
+            Starred: boolean;
+            State: string;
+            Title: string;
+            URL: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        MergeRequestDetailResponse: {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/PREvent.json
+             * @example /api/v1/schemas/MergeRequestDetailResponse.json
              */
             readonly $schema?: string;
+            events: components["schemas"]["MREvent"][] | null;
+            merge_request: components["schemas"]["MergeRequest"];
+            repo_name: string;
+            repo_owner: string;
+        };
+        MergeRequestResponse: {
+            /** Format: int64 */
+            Additions: number;
             Author: string;
+            AuthorDisplayName: string;
+            BaseBranch: string;
             Body: string;
+            CIChecksJSON: string;
+            CIStatus: string;
+            /** Format: date-time */
+            ClosedAt: string | null;
+            /** Format: int64 */
+            CommentCount: number;
             /** Format: date-time */
             CreatedAt: string;
-            DedupeKey: string;
-            EventType: string;
             /** Format: int64 */
-            GitHubID: number | null;
+            Deletions: number;
+            HeadBranch: string;
+            HeadRepoCloneURL: string;
             /** Format: int64 */
             ID: number;
-            MetadataJSON: string;
+            IsDraft: boolean;
+            KanbanStatus: string;
+            /** Format: date-time */
+            LastActivityAt: string;
+            MergeableState: string;
+            /** Format: date-time */
+            MergedAt: string | null;
             /** Format: int64 */
-            PRID: number;
-            Summary: string;
+            Number: number;
+            /** Format: int64 */
+            PlatformID: number;
+            /** Format: int64 */
+            RepoID: number;
+            ReviewDecision: string;
+            Starred: boolean;
+            State: string;
+            Title: string;
+            URL: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+            repo_name: string;
+            repo_owner: string;
         };
         PostCommentInputBody: {
             /**
@@ -680,102 +778,6 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
-        };
-        PullDetailResponse: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/PullDetailResponse.json
-             */
-            readonly $schema?: string;
-            events: components["schemas"]["PREvent"][] | null;
-            pull_request: components["schemas"]["PullRequest"];
-            repo_name: string;
-            repo_owner: string;
-        };
-        PullRequest: {
-            /** Format: int64 */
-            Additions: number;
-            Author: string;
-            AuthorDisplayName: string;
-            BaseBranch: string;
-            Body: string;
-            CIChecksJSON: string;
-            CIStatus: string;
-            /** Format: date-time */
-            ClosedAt: string | null;
-            /** Format: int64 */
-            CommentCount: number;
-            /** Format: date-time */
-            CreatedAt: string;
-            /** Format: int64 */
-            Deletions: number;
-            /** Format: int64 */
-            GitHubID: number;
-            HeadBranch: string;
-            /** Format: int64 */
-            ID: number;
-            IsDraft: boolean;
-            KanbanStatus: string;
-            /** Format: date-time */
-            LastActivityAt: string;
-            MergeableState: string;
-            /** Format: date-time */
-            MergedAt: string | null;
-            /** Format: int64 */
-            Number: number;
-            /** Format: int64 */
-            RepoID: number;
-            ReviewDecision: string;
-            Starred: boolean;
-            State: string;
-            Title: string;
-            URL: string;
-            /** Format: date-time */
-            UpdatedAt: string;
-        };
-        PullResponse: {
-            /** Format: int64 */
-            Additions: number;
-            Author: string;
-            AuthorDisplayName: string;
-            BaseBranch: string;
-            Body: string;
-            CIChecksJSON: string;
-            CIStatus: string;
-            /** Format: date-time */
-            ClosedAt: string | null;
-            /** Format: int64 */
-            CommentCount: number;
-            /** Format: date-time */
-            CreatedAt: string;
-            /** Format: int64 */
-            Deletions: number;
-            /** Format: int64 */
-            GitHubID: number;
-            HeadBranch: string;
-            /** Format: int64 */
-            ID: number;
-            IsDraft: boolean;
-            KanbanStatus: string;
-            /** Format: date-time */
-            LastActivityAt: string;
-            MergeableState: string;
-            /** Format: date-time */
-            MergedAt: string | null;
-            /** Format: int64 */
-            Number: number;
-            /** Format: int64 */
-            RepoID: number;
-            ReviewDecision: string;
-            Starred: boolean;
-            State: string;
-            Title: string;
-            URL: string;
-            /** Format: date-time */
-            UpdatedAt: string;
-            repo_name: string;
-            repo_owner: string;
         };
         Repo: {
             /**
@@ -798,6 +800,8 @@ export interface components {
             LastSyncStartedAt: string | null;
             Name: string;
             Owner: string;
+            Platform: string;
+            PlatformHost: string;
         };
         ResolveItemResponse: {
             /**
@@ -951,7 +955,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PullResponse"][] | null;
+                    "application/json": components["schemas"]["MergeRequestResponse"][] | null;
                 };
             };
             /** @description Error */
@@ -1218,7 +1222,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PullDetailResponse"];
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
                 };
             };
             /** @description Error */
@@ -1292,7 +1296,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PREvent"];
+                    "application/json": components["schemas"]["MREvent"];
                 };
             };
             /** @description Error */
@@ -1502,7 +1506,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PullDetailResponse"];
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
                 };
             };
             /** @description Error */

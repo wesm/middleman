@@ -13,7 +13,7 @@ type mergeRequestResponse struct {
 }
 
 type mergeRequestDetailResponse struct {
-	MergeRequest *db.MergeRequest `json:"pull_request"`
+	MergeRequest *db.MergeRequest `json:"merge_request"`
 	Events       []db.MREvent     `json:"events"`
 	RepoOwner    string           `json:"repo_owner"`
 	RepoName     string           `json:"repo_name"`

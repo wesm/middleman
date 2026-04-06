@@ -88,6 +88,9 @@ func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, n
 }
 
 func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	ctx := context.Background()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
@@ -98,7 +101,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 
 	// Feature branch with a change.
 	gitRun(t, sourceDir, "checkout", "-b", "feature")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add feature")
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
@@ -118,15 +121,18 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
-	require.NoError(t, err)
-	require.NotNil(t, shas)
-	assert.Equal(t, prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
-	assert.Equal(t, forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
-	assert.Equal(t, forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
-	assert.NotEqual(t, prHead, shas.MergeBaseSHA, "diff should not be empty")
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal(prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
+	assert.Equal(forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
+	assert.Equal(forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
+	assert.NotEqual(prHead, shas.MergeBaseSHA, "diff should not be empty")
 }
 
 func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	ctx := context.Background()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
@@ -135,7 +141,7 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	forkPoint := gitRun(t, sourceDir, "rev-parse", "HEAD")
 
 	gitRun(t, sourceDir, "checkout", "-b", "feature")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add feature")
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
@@ -151,25 +157,28 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
 	// Seed incorrect diff SHAs (simulating prior SyncMR regression).
-	require.NoError(t, syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
+	require.NoError(syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
 
 	// Without force, the existing (incorrect) SHAs are preserved.
 	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
-	require.NoError(t, err)
-	assert.Equal(t, "bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
+	require.NoError(err)
+	assert.Equal("bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
 	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, true)
 	shas, err = syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
-	require.NoError(t, err)
-	require.NotNil(t, shas)
-	assert.Equal(t, prHead, shas.DiffHeadSHA, "force=true should overwrite with correct PR head")
-	assert.Equal(t, forkPoint, shas.DiffBaseSHA, "force=true should overwrite with correct fork point")
-	assert.Equal(t, forkPoint, shas.MergeBaseSHA, "force=true should overwrite with correct merge base")
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal(prHead, shas.DiffHeadSHA, "force=true should overwrite with correct PR head")
+	assert.Equal(forkPoint, shas.DiffBaseSHA, "force=true should overwrite with correct fork point")
+	assert.Equal(forkPoint, shas.MergeBaseSHA, "force=true should overwrite with correct merge base")
 }
 
 func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	ctx := context.Background()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
@@ -178,7 +187,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	forkPoint := gitRun(t, sourceDir, "rev-parse", "HEAD")
 
 	gitRun(t, sourceDir, "checkout", "-b", "feature")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add feature")
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
@@ -198,15 +207,18 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 2, squashCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 2)
-	require.NoError(t, err)
-	require.NotNil(t, shas)
-	assert.Equal(t, prHead, shas.DiffHeadSHA)
-	assert.Equal(t, forkPoint, shas.DiffBaseSHA)
-	assert.Equal(t, forkPoint, shas.MergeBaseSHA)
-	assert.NotEqual(t, prHead, shas.MergeBaseSHA)
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal(prHead, shas.DiffHeadSHA)
+	assert.Equal(forkPoint, shas.DiffBaseSHA)
+	assert.Equal(forkPoint, shas.MergeBaseSHA)
+	assert.NotEqual(prHead, shas.MergeBaseSHA)
 }
 
 func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	ctx := context.Background()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
@@ -216,17 +228,17 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 
 	// Feature branch with two commits.
 	gitRun(t, sourceDir, "checkout", "-b", "feature")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "a.txt"), []byte("a\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "a.txt"), []byte("a\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add a")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "b.txt"), []byte("b\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "b.txt"), []byte("b\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add b")
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
 
 	// Advance main so rebase produces new SHAs.
 	gitRun(t, sourceDir, "checkout", "main")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "main.txt"), []byte("main\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "main.txt"), []byte("main\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "advance main")
 
@@ -247,13 +259,13 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 3, rebaseLastCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 3)
-	require.NoError(t, err)
-	require.NotNil(t, shas)
-	assert.Equal(t, prHead, shas.DiffHeadSHA)
-	assert.Equal(t, forkPoint, shas.DiffBaseSHA)
-	assert.Equal(t, forkPoint, shas.MergeBaseSHA,
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal(prHead, shas.DiffHeadSHA)
+	assert.Equal(forkPoint, shas.DiffBaseSHA)
+	assert.Equal(forkPoint, shas.MergeBaseSHA,
 		"merge-base should be the original fork point, not the advanced main commit")
-	assert.NotEqual(t, prHead, shas.MergeBaseSHA)
+	assert.NotEqual(prHead, shas.MergeBaseSHA)
 }
 
 // TestSyncOpenToMergedTransition is an end-to-end test that exercises the full
@@ -261,6 +273,9 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 // (before merge); second sync discovers it missing from ListOpenPullRequests,
 // calls fetchAndUpdateClosed, and computes diff SHAs via the merged-PR path.
 func TestSyncOpenToMergedTransition(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	ctx := context.Background()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
@@ -271,7 +286,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 
 	// Create feature branch with a change.
 	gitRun(t, sourceDir, "checkout", "-b", "feature")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add feature")
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
@@ -283,7 +298,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	// Create pull ref before merging (as GitHub does for open PRs).
 	gitRun(t, sourceDir, "update-ref", "refs/pull/10/head", prHead)
 
-	// Set up bare clone BEFORE the merge — reflects the pre-merge state.
+	// Set up bare clone BEFORE the merge -- reflects the pre-merge state.
 	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
 
 	now := time.Now().UTC()
@@ -324,17 +339,17 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
-	require.NoError(t, err)
-	require.NotNil(t, pr)
-	assert.Equal(t, "open", pr.State)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("open", pr.State)
 
 	// Verify diff SHAs were computed during open-state sync.
 	shasBeforeMerge, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
-	require.NoError(t, err)
-	require.NotNil(t, shasBeforeMerge)
-	assert.Equal(t, prHead, shasBeforeMerge.DiffHeadSHA, "open-state diff_head_sha")
-	assert.Equal(t, forkPoint, shasBeforeMerge.DiffBaseSHA, "open-state diff_base_sha")
-	assert.Equal(t, forkPoint, shasBeforeMerge.MergeBaseSHA, "open-state merge_base_sha")
+	require.NoError(err)
+	require.NotNil(shasBeforeMerge)
+	assert.Equal(prHead, shasBeforeMerge.DiffHeadSHA, "open-state diff_head_sha")
+	assert.Equal(forkPoint, shasBeforeMerge.DiffBaseSHA, "open-state diff_base_sha")
+	assert.Equal(forkPoint, shasBeforeMerge.MergeBaseSHA, "open-state merge_base_sha")
 
 	// Now perform the merge in the source repo.
 	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
@@ -376,15 +391,15 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 
 	// Verify PR transitioned to merged state.
 	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
-	require.NoError(t, err)
-	require.NotNil(t, shas)
-	assert.Equal(t, "merged", shas.State, "PR state should be merged")
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal("merged", shas.State, "PR state should be merged")
 	// Diff SHAs should still reflect the correct fork point (either preserved
 	// from open-state sync or recomputed correctly by the merged path).
-	assert.Equal(t, prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
-	assert.Equal(t, forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
-	assert.Equal(t, forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
-	assert.NotEqual(t, prHead, shas.MergeBaseSHA, "diff should not be empty")
+	assert.Equal(prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
+	assert.Equal(forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
+	assert.Equal(forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
+	assert.NotEqual(prHead, shas.MergeBaseSHA, "diff should not be empty")
 }
 
 // TestSyncFirstSeenMergedPR exercises the first-seen merged PR path through
@@ -392,6 +407,9 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 // computed), then on the second sync (with clone manager) it transitions to
 // merged and computeMergedMRDiffSHAs must fill in the diff SHAs.
 func TestSyncFirstSeenMergedPR(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	ctx := context.Background()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
@@ -400,7 +418,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	forkPoint := gitRun(t, sourceDir, "rev-parse", "HEAD")
 
 	gitRun(t, sourceDir, "checkout", "-b", "feature")
-	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
 	gitRun(t, sourceDir, "add", ".")
 	gitRun(t, sourceDir, "commit", "-m", "add feature")
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
@@ -433,15 +451,15 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 
 	mc := &mockClient{openPRs: []*gh.PullRequest{openPR}}
 
-	// First sync WITHOUT clone manager — PR inserted as open, no diff SHAs.
+	// First sync WITHOUT clone manager -- PR inserted as open, no diff SHAs.
 	d := openTestDB(t)
 	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
 	syncer.RunOnce(ctx)
 
 	shasEmpty, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
-	require.NoError(t, err)
-	require.NotNil(t, shasEmpty)
-	assert.Empty(t, shasEmpty.DiffHeadSHA, "diff SHAs should be empty without clone manager")
+	require.NoError(err)
+	require.NotNil(shasEmpty)
+	assert.Empty(shasEmpty.DiffHeadSHA, "diff SHAs should be empty without clone manager")
 
 	// Merge the PR.
 	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
@@ -478,11 +496,11 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	syncer2.RunOnce(ctx)
 
 	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
-	require.NoError(t, err)
-	require.NotNil(t, shas)
-	assert.Equal(t, "merged", shas.State)
-	assert.Equal(t, prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
-	assert.Equal(t, forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
-	assert.Equal(t, forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
-	assert.NotEqual(t, prHead, shas.MergeBaseSHA, "diff should not be empty")
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal("merged", shas.State)
+	assert.Equal(prHead, shas.DiffHeadSHA, "diff_head_sha should be the PR head")
+	assert.Equal(forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
+	assert.Equal(forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
+	assert.NotEqual(prHead, shas.MergeBaseSHA, "diff should not be empty")
 }

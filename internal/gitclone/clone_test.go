@@ -58,21 +58,24 @@ func TestEnsureClone(t *testing.T) {
 }
 
 func TestMergeBase(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	remote := setupTestRepo(t)
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, "")
 
 	ctx := context.Background()
-	require.NoError(t, mgr.EnsureClone(ctx, "testowner", "testrepo", remote))
+	require.NoError(mgr.EnsureClone(ctx, "testowner", "testrepo", remote))
 
 	// Get the HEAD SHA.
 	clonePath := mgr.ClonePath("testowner", "testrepo")
 	out, err := exec.Command("git", "-C", clonePath, "rev-parse", "HEAD").Output()
-	require.NoError(t, err)
+	require.NoError(err)
 	headSHA := strings.TrimSpace(string(out))
 
 	// Merge base of HEAD with itself is HEAD.
 	mb, err := mgr.MergeBase(ctx, "testowner", "testrepo", headSHA, headSHA)
-	require.NoError(t, err)
-	assert.Equal(t, headSHA, mb)
+	require.NoError(err)
+	assert.Equal(headSHA, mb)
 }
