@@ -164,9 +164,9 @@ inst.StartSync(ctx)
 mux.Handle("/middleman/", inst.Handler())
 ```
 
-The `EmbedConfig` option controls theming (light/dark mode, custom colors, fonts, radii), UI defaults (hide sync controls, pin to a single repo, collapse sidebar), and action hooks that let the host inject custom buttons into PR and issue detail views.
+The `EmbedConfig` option controls theming (light/dark mode, custom colors, fonts, radii) and UI defaults (hide sync controls, pin to a single repo, collapse sidebar). The `EmbedHooks` option provides lifecycle callbacks (`OnMRSynced`, `OnSyncCompleted`) so the host can react to sync events.
 
-The frontend is also available as the `@middleman/ui` Svelte package, which exports individual views (`PRListView`, `KanbanBoardView`, `ActivityFeedView`, `DiffViewWrapper`), store factories, and context accessors for building custom interfaces on top of the middleman API.
+The frontend is also available as the `@middleman/ui` Svelte package, which exports individual views (`PRListView`, `KanbanBoardView`, `ActivityFeedView`, `DiffViewWrapper`), store factories, and context accessors. The `@middleman/ui` `Provider` component accepts an action registry for injecting custom buttons into PR and issue detail views.
 
 ## Architecture
 

@@ -1102,34 +1102,46 @@ func (d *DB) GetWorktreeLinksForMR(
 }
 
 // GetWorktreeLinksForMRs returns worktree links for the
-// given merge request IDs.
+// given merge request IDs. IDs are batched to stay within
+// SQLite's bind-parameter limit.
 func (d *DB) GetWorktreeLinksForMRs(
 	mrIDs []int64,
 ) ([]WorktreeLink, error) {
 	if len(mrIDs) == 0 {
 		return nil, nil
 	}
-	placeholders := make([]string, len(mrIDs))
-	args := make([]any, len(mrIDs))
-	for i, id := range mrIDs {
-		placeholders[i] = "?"
-		args[i] = id
+	const batchSize = 500
+	var all []WorktreeLink
+	for start := 0; start < len(mrIDs); start += batchSize {
+		end := min(start+batchSize, len(mrIDs))
+		batch := mrIDs[start:end]
+		placeholders := make([]string, len(batch))
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		query := `
+			SELECT id, merge_request_id, worktree_key,
+			       worktree_path, worktree_branch, linked_at
+			FROM middleman_mr_worktree_links
+			WHERE merge_request_id IN (` +
+			strings.Join(placeholders, ",") + `)
+			ORDER BY linked_at DESC`
+		rows, err := d.ro.Query(query, args...)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"get worktree links for MRs: %w", err,
+			)
+		}
+		links, err := scanWorktreeLinks(rows)
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, links...)
 	}
-	query := `
-		SELECT id, merge_request_id, worktree_key,
-		       worktree_path, worktree_branch, linked_at
-		FROM middleman_mr_worktree_links
-		WHERE merge_request_id IN (` +
-		strings.Join(placeholders, ",") + `)
-		ORDER BY linked_at DESC`
-	rows, err := d.ro.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"get worktree links for MRs: %w", err,
-		)
-	}
-	defer rows.Close()
-	return scanWorktreeLinks(rows)
+	return all, nil
 }
 
 // GetAllWorktreeLinks returns all worktree links ordered

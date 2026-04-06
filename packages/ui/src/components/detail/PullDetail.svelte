@@ -411,7 +411,7 @@
                 meta: { worktree_key: link.worktree_key },
               })}
             >
-              {navigateAction.label}: {link.worktree_branch || link.worktree_key}
+              {navigateAction.label}: {link.worktree_key}
             </button>
           {/each}
         </div>
