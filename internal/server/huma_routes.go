@@ -41,6 +41,10 @@ type getPullOutput struct {
 	Body mergeRequestDetailResponse
 }
 
+type getMRImportMetadataOutput struct {
+	Body mrImportMetadataResponse
+}
+
 type setKanbanStateInput struct {
 	Owner  string `path:"owner"`
 	Name   string `path:"name"`
@@ -216,6 +220,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/activity", s.listActivity)
 	huma.Get(api, "/pulls", s.listPulls)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/import-metadata", s.getMRImportMetadata)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-kanban-state",
 		Method:        http.MethodPut,
@@ -364,6 +369,31 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 			Events:       events,
 			RepoOwner:    input.Owner,
 			RepoName:     input.Name,
+		},
+	}, nil
+}
+
+func (s *Server) getMRImportMetadata(
+	ctx context.Context, input *repoNumberInput,
+) (*getMRImportMetadataOutput, error) {
+	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"failed to query merge request",
+		)
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("merge request not found")
+	}
+	return &getMRImportMetadataOutput{
+		Body: mrImportMetadataResponse{
+			Number:           mr.Number,
+			HeadBranch:       mr.HeadBranch,
+			PlatformHeadSHA:  mr.PlatformHeadSHA,
+			HeadRepoCloneURL: mr.HeadRepoCloneURL,
+			State:            mr.State,
+			IsDraft:          mr.IsDraft,
+			Title:            mr.Title,
 		},
 	}, nil
 }

@@ -1085,6 +1085,64 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 	require.Equal("closed", issue.State)
 }
 
+func TestAPIGetMRImportMetadata(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "acme", "widget")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	pr := &db.MergeRequest{
+		RepoID:           repoID,
+		PlatformID:       42000,
+		Number:           42,
+		URL:              "https://github.com/acme/widget/pull/42",
+		Title:            "Add feature X",
+		Author:           "octocat",
+		State:            "open",
+		IsDraft:          true,
+		Body:             "body",
+		HeadBranch:       "feature-x",
+		BaseBranch:       "main",
+		PlatformHeadSHA:  "abc123def456",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+	}
+	prID, err := database.UpsertMergeRequest(ctx, pr)
+	require.NoError(err)
+	require.NoError(database.EnsureKanbanState(ctx, prID))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/repos/acme/widget/pulls/42/import-metadata", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	require.Contains(body, `"number":42`)
+	require.Contains(body, `"head_branch":"feature-x"`)
+	require.Contains(body, `"platform_head_sha":"abc123def456"`)
+	require.Contains(body, `"head_repo_clone_url":"https://github.com/fork/widget.git"`)
+	require.Contains(body, `"state":"open"`)
+	require.Contains(body, `"is_draft":true`)
+	require.Contains(body, `"title":"Add feature X"`)
+}
+
+func TestAPIGetMRImportMetadataNotFound(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/repos/acme/widget/pulls/999/import-metadata", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+}
+
 func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupTestServer(t)

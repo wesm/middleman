@@ -324,6 +324,19 @@ type MergeRequestResponse struct {
 	RepoOwner         string     `json:"repo_owner"`
 }
 
+// MrImportMetadataResponse defines model for MrImportMetadataResponse.
+type MrImportMetadataResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string `json:"$schema,omitempty"`
+	HeadBranch       string  `json:"head_branch"`
+	HeadRepoCloneUrl string  `json:"head_repo_clone_url"`
+	IsDraft          bool    `json:"is_draft"`
+	Number           int64   `json:"number"`
+	PlatformHeadSha  string  `json:"platform_head_sha"`
+	State            string  `json:"state"`
+	Title            string  `json:"title"`
+}
+
 // PostCommentInputBody defines model for PostCommentInputBody.
 type PostCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -584,6 +597,9 @@ type ClientInterface interface {
 	SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetPrGithubState(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetReposByOwnerByNamePullsByNumberImportMetadata request
+	GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberMergeWithBody request with any body
 	PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -848,6 +864,18 @@ func (c *Client) SetPrGithubStateWithBody(ctx context.Context, owner string, nam
 
 func (c *Client) SetPrGithubState(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetPrGithubStateRequest(c.Server, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2024,6 +2052,54 @@ func NewSetPrGithubStateRequestWithBody(server string, owner string, name string
 	return req, nil
 }
 
+// NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest generates requests for GetReposByOwnerByNamePullsByNumberImportMetadata
+func NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/import-metadata", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostReposByOwnerByNamePullsByNumberMergeRequest calls the generic PostReposByOwnerByNamePullsByNumberMerge builder with application/json body
 func NewPostReposByOwnerByNamePullsByNumberMergeRequest(server string, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2474,6 +2550,9 @@ type ClientWithResponsesInterface interface {
 
 	SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
+	// GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse request
+	GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error)
+
 	// PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse request with any body
 	PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
 
@@ -2852,6 +2931,29 @@ func (r SetPrGithubStateResponse) StatusCode() int {
 	return 0
 }
 
+type GetReposByOwnerByNamePullsByNumberImportMetadataResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MrImportMetadataResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNamePullsByNumberImportMetadataResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNamePullsByNumberImportMetadataResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostReposByOwnerByNamePullsByNumberMergeResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -3205,6 +3307,15 @@ func (c *ClientWithResponses) SetPrGithubStateWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseSetPrGithubStateResponse(rsp)
+}
+
+// GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse request returning *GetReposByOwnerByNamePullsByNumberImportMetadataResponse
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberImportMetadata(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNamePullsByNumberImportMetadataResponse(rsp)
 }
 
 // PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostReposByOwnerByNamePullsByNumberMergeResponse
@@ -3789,6 +3900,39 @@ func ParseSetPrGithubStateResponse(rsp *http.Response) (*SetPrGithubStateRespons
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest GithubStateOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNamePullsByNumberImportMetadataResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse call
+func ParseGetReposByOwnerByNamePullsByNumberImportMetadataResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNamePullsByNumberImportMetadataResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MrImportMetadataResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

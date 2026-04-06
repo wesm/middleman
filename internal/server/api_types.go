@@ -51,6 +51,16 @@ type diffResponse struct {
 	Files               []gitclone.DiffFile `json:"files"`
 }
 
+type mrImportMetadataResponse struct {
+	Number           int    `json:"number"`
+	HeadBranch       string `json:"head_branch"`
+	PlatformHeadSHA  string `json:"platform_head_sha"`
+	HeadRepoCloneURL string `json:"head_repo_clone_url"`
+	State            string `json:"state"`
+	IsDraft          bool   `json:"is_draft"`
+	Title            string `json:"title"`
+}
+
 const activitySafetyCap = 5000
 
 type activityResponse struct {
