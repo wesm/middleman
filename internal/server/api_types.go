@@ -5,18 +5,18 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 )
 
-// pullResponse extends db.PullRequest with resolved repo owner/name fields.
-type pullResponse struct {
-	db.PullRequest
+// mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
+type mergeRequestResponse struct {
+	db.MergeRequest
 	RepoOwner string `json:"repo_owner"`
 	RepoName  string `json:"repo_name"`
 }
 
-type pullDetailResponse struct {
-	PullRequest *db.PullRequest `json:"pull_request"`
-	Events      []db.PREvent    `json:"events"`
-	RepoOwner   string          `json:"repo_owner"`
-	RepoName    string          `json:"repo_name"`
+type mergeRequestDetailResponse struct {
+	MergeRequest *db.MergeRequest `json:"pull_request"`
+	Events       []db.MREvent     `json:"events"`
+	RepoOwner    string           `json:"repo_owner"`
+	RepoName     string           `json:"repo_name"`
 }
 
 var validKanbanStates = map[string]bool{

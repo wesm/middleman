@@ -79,9 +79,9 @@ func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, e
 	return repo.ID, nil
 }
 
-// lookupPRID resolves the internal PR id from the common route tuple.
-func (s *Server) lookupPRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	return s.db.GetPRIDByRepoAndNumber(ctx, ref.owner, ref.name, ref.number)
+// lookupMRID resolves the internal MR id from the common route tuple.
+func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
+	return s.db.GetMRIDByRepoAndNumber(ctx, ref.owner, ref.name, ref.number)
 }
 
 // lookupIssueID resolves the internal issue id from the common route tuple.
