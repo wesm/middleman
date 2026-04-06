@@ -1035,3 +1035,116 @@ func (d *DB) GetRateLimit(
 	}
 	return &r, nil
 }
+
+// --- Worktree Links ---
+
+// SetWorktreeLinks replaces all worktree links atomically.
+// The existing rows are deleted and the provided links are
+// inserted in a single transaction.
+func (d *DB) SetWorktreeLinks(links []WorktreeLink) error {
+	return d.Tx(context.Background(), func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`DELETE FROM middleman_mr_worktree_links`,
+		); err != nil {
+			return fmt.Errorf("delete worktree links: %w", err)
+		}
+		if len(links) == 0 {
+			return nil
+		}
+		stmt, err := tx.Prepare(`
+			INSERT INTO middleman_mr_worktree_links
+			    (merge_request_id, worktree_key,
+			     worktree_path, worktree_branch, linked_at)
+			VALUES (?, ?, ?, ?, ?)`)
+		if err != nil {
+			return fmt.Errorf(
+				"prepare insert worktree link: %w", err,
+			)
+		}
+		defer stmt.Close()
+		for i := range links {
+			l := &links[i]
+			if _, err := stmt.Exec(
+				l.MergeRequestID, l.WorktreeKey,
+				l.WorktreePath, l.WorktreeBranch,
+				l.LinkedAt.UTC().Format(time.RFC3339),
+			); err != nil {
+				return fmt.Errorf(
+					"insert worktree link %s: %w",
+					l.WorktreeKey, err,
+				)
+			}
+		}
+		return nil
+	})
+}
+
+// GetWorktreeLinksForMR returns worktree links for a
+// specific merge request.
+func (d *DB) GetWorktreeLinksForMR(
+	mergeRequestID int64,
+) ([]WorktreeLink, error) {
+	rows, err := d.ro.Query(`
+		SELECT id, merge_request_id, worktree_key,
+		       worktree_path, worktree_branch, linked_at
+		FROM middleman_mr_worktree_links
+		WHERE merge_request_id = ?
+		ORDER BY linked_at DESC`,
+		mergeRequestID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get worktree links for MR: %w", err,
+		)
+	}
+	defer rows.Close()
+	return scanWorktreeLinks(rows)
+}
+
+// GetAllWorktreeLinks returns all worktree links ordered
+// by linked_at DESC.
+func (d *DB) GetAllWorktreeLinks() ([]WorktreeLink, error) {
+	rows, err := d.ro.Query(`
+		SELECT id, merge_request_id, worktree_key,
+		       worktree_path, worktree_branch, linked_at
+		FROM middleman_mr_worktree_links
+		ORDER BY linked_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get all worktree links: %w", err,
+		)
+	}
+	defer rows.Close()
+	return scanWorktreeLinks(rows)
+}
+
+func scanWorktreeLinks(
+	rows *sql.Rows,
+) ([]WorktreeLink, error) {
+	var links []WorktreeLink
+	for rows.Next() {
+		var l WorktreeLink
+		var path, branch sql.NullString
+		var linkedAtStr string
+		if err := rows.Scan(
+			&l.ID, &l.MergeRequestID, &l.WorktreeKey,
+			&path, &branch, &linkedAtStr,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"scan worktree link: %w", err,
+			)
+		}
+		t, err := time.Parse(time.RFC3339, linkedAtStr)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"parse linked_at %q: %w", linkedAtStr, err,
+			)
+		}
+		l.LinkedAt = t
+		l.WorktreePath = path.String
+		l.WorktreeBranch = branch.String
+		links = append(links, l)
+	}
+	return links, rows.Err()
+}
