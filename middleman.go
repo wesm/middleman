@@ -20,12 +20,13 @@ import (
 )
 
 // Type aliases so external callers don't need to import
-// the internal server package.
+// internal packages.
 type (
-	EmbedConfig = server.EmbedConfig
-	ThemeConfig = server.ThemeConfig
-	UIConfig    = server.UIConfig
-	RepoRef     = server.RepoRef
+	EmbedConfig  = server.EmbedConfig
+	ThemeConfig  = server.ThemeConfig
+	UIConfig     = server.UIConfig
+	RepoRef      = server.RepoRef
+	WorktreeLink = db.WorktreeLink
 )
 
 // Repo identifies a GitHub repository to monitor.
@@ -340,6 +341,19 @@ func (i *Instance) Close() error {
 	}
 	i.StopSync()
 	return i.db.Close()
+}
+
+// SetWorktreeLinks replaces all worktree links atomically.
+func (inst *Instance) SetWorktreeLinks(
+	links []WorktreeLink,
+) error {
+	return inst.db.SetWorktreeLinks(links)
+}
+
+// SetActiveWorktree sets the key of the currently focused
+// worktree, used by the frontend to highlight the active MR.
+func (inst *Instance) SetActiveWorktree(key string) {
+	inst.server.SetActiveWorktreeKey(key)
 }
 
 func buildConfig(opts Options) *config.Config {

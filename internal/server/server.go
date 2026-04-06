@@ -47,20 +47,38 @@ type ServerOptions struct {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db       *db.DB
-	syncer   *ghclient.Syncer
-	clones   *gitclone.Manager
-	cfg      *config.Config
-	cfgPath  string
-	cfgMu    sync.Mutex
-	basePath string
-	options  ServerOptions
-	version  string
-	handler  http.Handler
+	db               *db.DB
+	syncer           *ghclient.Syncer
+	clones           *gitclone.Manager
+	cfg              *config.Config
+	cfgPath          string
+	cfgMu            sync.Mutex
+	basePath         string
+	options          ServerOptions
+	version          string
+	handler          http.Handler
+	activeWorktreeMu sync.Mutex
+	activeWorktreeKey string
 }
 
 // SetVersion sets the version string returned by GET /api/v1/version.
 func (s *Server) SetVersion(v string) { s.version = v }
+
+// SetActiveWorktreeKey sets the key of the currently
+// focused worktree. Thread-safe.
+func (s *Server) SetActiveWorktreeKey(key string) {
+	s.activeWorktreeMu.Lock()
+	s.activeWorktreeKey = key
+	s.activeWorktreeMu.Unlock()
+}
+
+// ActiveWorktreeKey returns the key of the currently
+// focused worktree. Thread-safe.
+func (s *Server) ActiveWorktreeKey() string {
+	s.activeWorktreeMu.Lock()
+	defer s.activeWorktreeMu.Unlock()
+	return s.activeWorktreeKey
+}
 
 // New creates a Server without config persistence.
 // Pass cfg for repo filtering (can be nil for tests that

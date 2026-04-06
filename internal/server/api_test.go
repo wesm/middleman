@@ -1163,3 +1163,16 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 	require.Contains(spec, `"operationId":"post-issue-comment"`)
 	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
 }
+
+func TestSetActiveWorktreeKey(t *testing.T) {
+	assert := Assert.New(t)
+	srv, _ := setupTestServer(t)
+
+	assert.Empty(srv.ActiveWorktreeKey())
+
+	srv.SetActiveWorktreeKey("wt-abc")
+	assert.Equal("wt-abc", srv.ActiveWorktreeKey())
+
+	srv.SetActiveWorktreeKey("")
+	assert.Empty(srv.ActiveWorktreeKey())
+}
