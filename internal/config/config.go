@@ -27,12 +27,35 @@ const (
 )
 
 type Repo struct {
-	Owner string `toml:"owner" json:"owner"`
-	Name  string `toml:"name" json:"name"`
+	Owner        string `toml:"owner" json:"owner"`
+	Name         string `toml:"name" json:"name"`
+	PlatformHost string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
+	TokenEnv     string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 }
 
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
+}
+
+// PlatformHostOrDefault returns the configured platform host,
+// defaulting to "github.com" when empty.
+func (r Repo) PlatformHostOrDefault() string {
+	if r.PlatformHost == "" {
+		return "github.com"
+	}
+	return r.PlatformHost
+}
+
+// ResolveToken returns the token for this repo. When TokenEnv is
+// set, it reads from that env var. Falls back to globalToken if
+// the env var is empty or TokenEnv is not set.
+func (r Repo) ResolveToken(globalToken string) string {
+	if r.TokenEnv != "" {
+		if tok := os.Getenv(r.TokenEnv); tok != "" {
+			return tok
+		}
+	}
+	return globalToken
 }
 
 // normalize cleans up a Repo entry, extracting owner/name from
@@ -304,6 +327,34 @@ func (c *Config) Validate() error {
 	for i := range c.Repos {
 		if err := c.Repos[i].normalize(); err != nil {
 			return fmt.Errorf("config: repos[%d]: %w", i, err)
+		}
+	}
+
+	// Reject duplicate owner+name pairs.
+	seen := make(map[string]bool, len(c.Repos))
+	for _, r := range c.Repos {
+		key := r.Owner + "/" + r.Name
+		if seen[key] {
+			return fmt.Errorf(
+				"config: duplicate repo %q", key,
+			)
+		}
+		seen[key] = true
+	}
+
+	// Reject conflicting token_env for the same host.
+	hostToken := make(map[string]string, len(c.Repos))
+	for _, r := range c.Repos {
+		host := r.PlatformHostOrDefault()
+		if prev, ok := hostToken[host]; ok {
+			if prev != r.TokenEnv {
+				return fmt.Errorf(
+					"config: conflicting token_env for host %q: %q vs %q",
+					host, prev, r.TokenEnv,
+				)
+			}
+		} else {
+			hostToken[host] = r.TokenEnv
 		}
 	}
 
