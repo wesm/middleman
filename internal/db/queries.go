@@ -1101,6 +1101,37 @@ func (d *DB) GetWorktreeLinksForMR(
 	return scanWorktreeLinks(rows)
 }
 
+// GetWorktreeLinksForMRs returns worktree links for the
+// given merge request IDs.
+func (d *DB) GetWorktreeLinksForMRs(
+	mrIDs []int64,
+) ([]WorktreeLink, error) {
+	if len(mrIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(mrIDs))
+	args := make([]any, len(mrIDs))
+	for i, id := range mrIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := `
+		SELECT id, merge_request_id, worktree_key,
+		       worktree_path, worktree_branch, linked_at
+		FROM middleman_mr_worktree_links
+		WHERE merge_request_id IN (` +
+		strings.Join(placeholders, ",") + `)
+		ORDER BY linked_at DESC`
+	rows, err := d.ro.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get worktree links for MRs: %w", err,
+		)
+	}
+	defer rows.Close()
+	return scanWorktreeLinks(rows)
+}
+
 // GetAllWorktreeLinks returns all worktree links ordered
 // by linked_at DESC.
 func (d *DB) GetAllWorktreeLinks() ([]WorktreeLink, error) {

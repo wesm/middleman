@@ -330,11 +330,15 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		return nil, huma.Error500InternalServerError("repo lookup failed")
 	}
 
-	allLinks, err := s.db.GetAllWorktreeLinks()
+	mrIDs := make([]int64, len(mrs))
+	for i, mr := range mrs {
+		mrIDs[i] = mr.ID
+	}
+	links, err := s.db.GetWorktreeLinksForMRs(mrIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("load worktree links failed")
 	}
-	linksByMR := indexWorktreeLinksByMR(allLinks)
+	linksByMR := indexWorktreeLinksByMR(links)
 
 	out := make([]mergeRequestResponse, 0, len(mrs))
 	for _, mr := range mrs {

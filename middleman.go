@@ -101,6 +101,7 @@ type EmbedHooks struct {
 // MergeRequestSummary is a lightweight snapshot of a synced MR,
 // passed to EmbedHooks callbacks.
 type MergeRequestSummary struct {
+	MergeRequestID int64
 	RepoOwner      string
 	RepoName       string
 	Number         int
@@ -140,9 +141,9 @@ type Options struct {
 	SyncInterval time.Duration
 	Repos        []Repo
 	Activity     Activity
-	Assets      fs.FS
-	EmbedConfig *server.EmbedConfig
-	EmbedHooks  *EmbedHooks
+	Assets       fs.FS
+	EmbedConfig  *server.EmbedConfig
+	EmbedHooks   *EmbedHooks
 }
 
 // Instance holds a running middleman server and its resources.
@@ -272,6 +273,7 @@ func New(opts Options) (*Instance, error) {
 						}
 					}
 					cb(MergeRequestSummary{
+						MergeRequestID: mr.ID,
 						RepoOwner:      owner,
 						RepoName:       name,
 						Number:         mr.Number,
@@ -350,8 +352,12 @@ func (inst *Instance) SetWorktreeLinks(
 	return inst.db.SetWorktreeLinks(links)
 }
 
-// SetActiveWorktree sets the key of the currently focused
-// worktree, used by the frontend to highlight the active MR.
+// SetActiveWorktree sets the key of the currently focused worktree.
+// This is bootstrap-only state: it is injected into the initial HTML
+// page load. An already-loaded SPA will not see the change until the
+// next full page load. For live updates, mutate
+// window.__middleman_config.ui.activeWorktreeKey in the browser and
+// call window.__middleman_notify_config_changed().
 func (inst *Instance) SetActiveWorktree(key string) {
 	inst.server.SetActiveWorktreeKey(key)
 }
