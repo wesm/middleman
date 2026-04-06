@@ -28,11 +28,12 @@ type ThemeConfig struct {
 }
 
 type UIConfig struct {
-	HideSync         *bool    `json:"hideSync,omitempty"`
-	HideRepoSelector *bool    `json:"hideRepoSelector,omitempty"`
-	HideStar         *bool    `json:"hideStar,omitempty"`
-	SidebarCollapsed *bool    `json:"sidebarCollapsed,omitempty"`
-	Repo             *RepoRef `json:"repo,omitempty"`
+	HideSync          *bool    `json:"hideSync,omitempty"`
+	HideRepoSelector  *bool    `json:"hideRepoSelector,omitempty"`
+	HideStar          *bool    `json:"hideStar,omitempty"`
+	SidebarCollapsed  *bool    `json:"sidebarCollapsed,omitempty"`
+	Repo              *RepoRef `json:"repo,omitempty"`
+	ActiveWorktreeKey string   `json:"activeWorktreeKey,omitempty"`
 }
 
 type RepoRef struct {
@@ -47,17 +48,17 @@ type ServerOptions struct {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db               *db.DB
-	syncer           *ghclient.Syncer
-	clones           *gitclone.Manager
-	cfg              *config.Config
-	cfgPath          string
-	cfgMu            sync.Mutex
-	basePath         string
-	options          ServerOptions
-	version          string
-	handler          http.Handler
-	activeWorktreeMu sync.Mutex
+	db                *db.DB
+	syncer            *ghclient.Syncer
+	clones            *gitclone.Manager
+	cfg               *config.Config
+	cfgPath           string
+	cfgMu             sync.Mutex
+	basePath          string
+	options           ServerOptions
+	version           string
+	handler           http.Handler
+	activeWorktreeMu  sync.Mutex
 	activeWorktreeKey string
 }
 
@@ -150,20 +151,19 @@ func newServer(
 		if err != nil {
 			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
 		}
-		idx := string(indexBytes)
-		idx = strings.Replace(idx, "<head>",
-			`<head><script>`+s.bootstrapScript()+`</script>`, 1)
+		indexTemplate := string(indexBytes)
 		if basePath != "/" {
 			prefix := strings.TrimSuffix(basePath, "/")
-			idx = strings.ReplaceAll(idx, `src="/assets/`, `src="`+prefix+`/assets/`)
-			idx = strings.ReplaceAll(idx, `href="/assets/`, `href="`+prefix+`/assets/`)
+			indexTemplate = strings.ReplaceAll(indexTemplate, `src="/assets/`, `src="`+prefix+`/assets/`)
+			indexTemplate = strings.ReplaceAll(indexTemplate, `href="/assets/`, `href="`+prefix+`/assets/`)
 		}
-		indexHTML := []byte(idx)
 
 		serveIndex := func(w http.ResponseWriter) {
+			idx := strings.Replace(indexTemplate, "<head>",
+				`<head><script>`+s.bootstrapScript()+`</script>`, 1)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(indexHTML)
+			_, _ = w.Write([]byte(idx))
 		}
 
 		fileServer := http.FileServerFS(frontend)
@@ -207,8 +207,24 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(`window.__BASE_PATH__=`)
 	builder.WriteString(scriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
-	if s.options.EmbedConfig != nil {
-		configJSON, _ := json.Marshal(s.options.EmbedConfig)
+	cfg := s.options.EmbedConfig
+	if awKey := s.ActiveWorktreeKey(); awKey != "" {
+		if cfg == nil {
+			cfg = &EmbedConfig{}
+		} else {
+			cfgCopy := *cfg
+			cfg = &cfgCopy
+		}
+		if cfg.UI == nil {
+			cfg.UI = &UIConfig{}
+		} else {
+			uiCopy := *cfg.UI
+			cfg.UI = &uiCopy
+		}
+		cfg.UI.ActiveWorktreeKey = awKey
+	}
+	if cfg != nil {
+		configJSON, _ := json.Marshal(cfg)
 		builder.WriteString(`window.__middleman_config=`)
 		builder.WriteString(scriptSafe(string(configJSON)))
 		builder.WriteString(`;`)
