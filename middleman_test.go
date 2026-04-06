@@ -243,6 +243,54 @@ func TestNewDBPathSkipsDataDirCreation(t *testing.T) {
 	defer inst.Close()
 }
 
+func TestNewMultiHostRequiresResolveToken(t *testing.T) {
+	dir := t.TempDir()
+	_, err := New(Options{
+		Token:   "tok",
+		DataDir: dir,
+		Repos: []Repo{
+			{Owner: "a", Name: "b", PlatformHost: "github.com"},
+			{Owner: "c", Name: "d", PlatformHost: "ghe.corp.com"},
+		},
+	})
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "ResolveToken")
+}
+
+func TestNewMultiHostWithResolveToken(t *testing.T) {
+	dir := t.TempDir()
+	inst, err := New(Options{
+		ResolveToken: func(
+			_ context.Context, host string,
+		) (string, error) {
+			return "token-for-" + host, nil
+		},
+		DataDir: dir,
+		Repos: []Repo{
+			{Owner: "a", Name: "b", PlatformHost: "github.com"},
+			{Owner: "c", Name: "d", PlatformHost: "ghe.corp.com"},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+	inst.Close()
+}
+
+func TestNewSingleHostWithTokenStillWorks(t *testing.T) {
+	dir := t.TempDir()
+	inst, err := New(Options{
+		Token:   "tok",
+		DataDir: dir,
+		Repos: []Repo{
+			{Owner: "a", Name: "b"},
+			{Owner: "c", Name: "d"},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+	inst.Close()
+}
+
 func TestCloseIsIdempotent(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{

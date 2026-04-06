@@ -13,6 +13,7 @@ import (
 
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/web"
@@ -34,15 +35,60 @@ type Repo struct {
 	PlatformHost string // e.g. "github.com" or GHE hostname
 }
 
-// defaultPlatformHost returns the platform host from the first
-// repo that has one set, falling back to "github.com".
-func defaultPlatformHost(repos []Repo) string {
+// uniqueHosts returns the deduplicated list of platform hosts
+// from the given repos. Repos without PlatformHost default to
+// "github.com". If repos is empty, returns ["github.com"].
+func uniqueHosts(repos []Repo) []string {
+	seen := make(map[string]bool)
+	var hosts []string
 	for _, r := range repos {
-		if r.PlatformHost != "" {
-			return r.PlatformHost
+		h := r.PlatformHost
+		if h == "" {
+			h = "github.com"
+		}
+		if !seen[h] {
+			seen[h] = true
+			hosts = append(hosts, h)
 		}
 	}
-	return "github.com"
+	if len(hosts) == 0 {
+		return []string{"github.com"}
+	}
+	return hosts
+}
+
+// resolveHostTokens builds a map of host -> token. When
+// resolveToken is set it is called once per host; otherwise
+// staticToken is used for all hosts.
+func resolveHostTokens(
+	hosts []string,
+	staticToken string,
+	resolveToken func(ctx context.Context, host string) (string, error),
+) (map[string]string, error) {
+	tokens := make(map[string]string, len(hosts))
+	for _, host := range hosts {
+		if resolveToken != nil {
+			tok, err := resolveToken(
+				context.Background(), host,
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"middleman: resolve token for %s: %w",
+					host, err,
+				)
+			}
+			tokens[host] = tok
+		} else {
+			tokens[host] = staticToken
+		}
+		if tokens[host] == "" {
+			return nil, fmt.Errorf(
+				"middleman: token is required (empty for host %s)",
+				host,
+			)
+		}
+	}
+	return tokens, nil
 }
 
 // Activity configures the activity view defaults.
@@ -109,24 +155,23 @@ func New(opts Options) (*Instance, error) {
 		dbPath = filepath.Join(opts.DataDir, "middleman.db")
 	}
 
-	// Token: prefer ResolveToken over static Token.
-	token := opts.Token
-	if opts.ResolveToken != nil {
-		host := defaultPlatformHost(opts.Repos)
-		resolved, err := opts.ResolveToken(
-			context.Background(), host,
-		)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"middleman: resolve token: %w", err,
-			)
-		}
-		token = resolved
-	}
-	if token == "" {
+	// Collect unique hosts from repos.
+	hosts := uniqueHosts(opts.Repos)
+
+	// Multi-host requires ResolveToken.
+	if len(hosts) > 1 && opts.ResolveToken == nil {
 		return nil, fmt.Errorf(
-			"middleman: token is required",
+			"middleman: multi-host config requires " +
+				"ResolveToken (repos span multiple hosts)",
 		)
+	}
+
+	// Build per-host tokens.
+	hostTokens, err := resolveHostTokens(
+		hosts, opts.Token, opts.ResolveToken,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	cfg := buildConfig(opts)
@@ -145,29 +190,51 @@ func New(opts Options) (*Instance, error) {
 		)
 	}
 
-	host := defaultPlatformHost(opts.Repos)
-	rt := ghclient.NewRateTracker(database, host)
-
-	gh, err := ghclient.NewClient(token, host, rt)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"middleman: creating GitHub client: %w", err,
+	// Build per-host clients and rate trackers.
+	clients := make(map[string]ghclient.Client, len(hosts))
+	rateTrackers := make(
+		map[string]*ghclient.RateTracker, len(hosts),
+	)
+	for _, host := range hosts {
+		rt := ghclient.NewRateTracker(database, host)
+		rateTrackers[host] = rt
+		gh, cErr := ghclient.NewClient(
+			hostTokens[host], host, rt,
 		)
+		if cErr != nil {
+			database.Close()
+			return nil, fmt.Errorf(
+				"middleman: creating GitHub client for %s: %w",
+				host, cErr,
+			)
+		}
+		clients[host] = gh
 	}
 
+	// Build repo refs with resolved PlatformHost.
 	var refs []ghclient.RepoRef
 	for _, r := range opts.Repos {
+		h := r.PlatformHost
+		if h == "" {
+			h = "github.com"
+		}
 		refs = append(refs, ghclient.RepoRef{
 			Owner:        r.Owner,
 			Name:         r.Name,
-			PlatformHost: host,
+			PlatformHost: h,
 		})
 	}
 
+	// Clone manager (needs DataDir for clone storage).
+	var cloneMgr *gitclone.Manager
+	if opts.DataDir != "" {
+		cloneDir := filepath.Join(opts.DataDir, "clones")
+		cloneMgr = gitclone.New(cloneDir, hostTokens)
+	}
+
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{host: gh},
-		database, nil, refs, cfg.SyncDuration(),
-		map[string]*ghclient.RateTracker{host: rt},
+		clients, database, cloneMgr, refs,
+		cfg.SyncDuration(), rateTrackers,
 	)
 
 	srv := server.New(
