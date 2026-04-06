@@ -32,10 +32,16 @@ token_env = "GHE_TOKEN"                 # default: global github_token_env
 `PlatformHost` defaults to `"github.com"` when empty. `TokenEnv` defaults to
 the global `github_token_env` when empty.
 
+**`token_env` is effectively per-host, not per-repo.** All repos on the same
+host must resolve to the same token. Config validation rejects two repos on
+the same host with different `token_env` values. This matches reality: a
+GitHub token is scoped to a host, not a repo.
+
 ### Validation
 
 - Fail fast during `Config.Validate()` if any repo's resolved token is empty
 - Reject duplicate owner+name pairs across different hosts
+- Reject conflicting `token_env` values for repos on the same host
 - `parseGitHubRef` stays github.com-only; repos with `platform_host` must use
   explicit owner/name fields (no pasted URLs)
 
@@ -173,18 +179,27 @@ The server currently takes a single `github.Client` for on-demand operations
 
 ### Approach
 
-Add a `ClientForRepo(owner, name string) Client` method to `Syncer` that
-returns the appropriate client. The server calls this instead of holding its
-own client reference.
+Add two lookup methods to `Syncer`:
+
+- `ClientForRepo(owner, name string) (Client, error)` -- returns the client
+  for a tracked repo. Used by handlers that operate on a specific repo (merge,
+  comment, review, close, mark-ready, sync).
+- `ClientForHost(host string) (Client, error)` -- returns the client for a
+  host. Used by `handleAddRepo` to validate an untracked repo against the
+  GitHub API before adding it to config. The settings UI only adds repos on
+  the default host (github.com), so this always uses the `"github.com"` client.
 
 `server.New` and `server.NewWithConfig` drop the `ghClient Client` parameter;
 they get clients from the syncer.
 
 ### Handlers affected
 
-All handlers that use the client directly (merge, comment, review, close,
-mark-ready, sync) call `s.syncer.ClientForRepo(owner, name)` instead of
-`s.ghClient`.
+All handlers that operate on a specific tracked repo call
+`s.syncer.ClientForRepo(owner, name)` instead of `s.ghClient`.
+
+`handleAddRepo` calls `s.syncer.ClientForHost("github.com")` to validate the
+repo exists before adding it. When the settings UI gains GHE support in a
+future change, this would accept the host from the request body.
 
 ## CLI Entrypoint (`cmd/middleman/main.go`)
 
@@ -219,8 +234,23 @@ syncer := ghclient.NewSyncer(
 
 ## Embedded Library (`middleman.go`)
 
-The `Options` struct already supports `ResolveToken func(host string) string`.
-Adapt to build the client map using this function, grouping repos by host.
+### Token resolution rules
+
+- **Single-host configs** (all repos on the same host, or no repos): `Token`
+  is sufficient. The library uses it for the sole host.
+- **Multi-host configs** (repos on different hosts): `ResolveToken` is
+  required. `New()` returns an error if repos span multiple hosts and only
+  `Token` is provided, since a single token cannot authenticate against
+  multiple hosts.
+- When `ResolveToken` is set, it is called once per unique host. `Token` is
+  ignored.
+
+### Client map construction
+
+`New()` collects unique hosts from `opts.Repos`, resolves tokens per host
+(via `ResolveToken` or single `Token`), and builds the `clients`,
+`rateTrackers`, and `cloneTokens` maps the same way the CLI does. The
+resulting maps are passed to `NewSyncer` and `gitclone.New`.
 
 ## Rate Tracking
 
@@ -249,6 +279,7 @@ for host := range hostTokens {
 - Round-trip save/load preserves platform_host and token_env
 - Validation: repo with platform_host but no resolvable token fails
 - Validation: duplicate owner+name across different hosts is rejected
+- Validation: conflicting token_env for same host is rejected
 
 ### Clone manager tests (`internal/gitclone/`)
 - `ClonePath` includes host in path (`{baseDir}/{host}/{owner}/{name}.git`)
@@ -267,6 +298,12 @@ for host := range hostTokens {
 ### Server tests (`internal/server/`)
 - Handlers use `ClientForRepo` instead of direct client
 - On-demand operations route to correct client
+- `handleAddRepo` validates via `ClientForHost("github.com")`
+
+### Embedded library tests (`middleman_test.go`)
+- Multi-host config with `ResolveToken` builds correct client map
+- Multi-host config with only `Token` (no `ResolveToken`) returns error
+- Single-host config with `Token` works (backward compat)
 
 ### Rate tracker tests (`internal/github/`)
 - Multiple hosts tracked independently
