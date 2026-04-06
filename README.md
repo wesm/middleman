@@ -2,7 +2,7 @@
 
 A local-first GitHub dashboard for project maintainers. Syncs PRs and issues from your repos into SQLite, serves a fast Svelte 5 frontend from a single binary, and keeps you out of GitHub's notification inbox.
 
-Middleman runs entirely on your machine — no hosted service, no telemetry, no account to create. One binary, one config file, and you're up.
+Middleman runs entirely on your machine -- no hosted service, no telemetry, no account to create. One binary, one config file, and you're up.
 
 ## Features
 
@@ -14,7 +14,7 @@ Filter by time range (24h / 7d / 30d / 90d), event type, repo, item type (PRs vs
 
 ### Pull request management
 
-Browse, search, and filter PRs across repos. From the detail view you can:
+Browse, search, and filter PRs across repos. Group by repo or show a flat list. From the detail view you can:
 
 - **Comment** directly on a PR
 - **Approve** a PR
@@ -23,11 +23,17 @@ Browse, search, and filter PRs across repos. From the detail view you can:
 - **Close and reopen** PRs
 - **Star** items for quick filtering
 
-Review decisions, diff stats (additions/deletions), CI status, and branch info are visible at a glance.
+Review decisions, diff stats (additions/deletions), CI status, merge conflict indicators, and branch info are visible at a glance.
+
+### Diff view
+
+Inline diffs with a collapsible file tree sidebar. Files are grouped by directory and show status badges (modified, added, deleted, renamed) with per-file addition/deletion counts. Syntax highlighting via Shiki with light/dark theme support.
+
+Filter the file tree by name, toggle whitespace visibility, and adjust tab width. Navigate between files with `j`/`k`. Each file section is independently collapsible.
 
 ### Kanban board
 
-Track PRs through **New / Reviewing / Waiting / Awaiting Merge** columns with drag-and-drop. Kanban state is local to middleman — it doesn't touch your GitHub labels or projects.
+Track PRs through **New / Reviewing / Waiting / Awaiting Merge** columns with drag-and-drop. Kanban state is local to middleman -- it doesn't touch your GitHub labels or projects.
 
 ### Issue tracking
 
@@ -48,17 +54,18 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Move through the list |
+| `j` / `k` | Move through the list (or between files in diff view) |
 | `1` / `2` | Switch between list and kanban views |
 | `Escape` | Close detail view / clear selection |
 
 ### Other
 
-- **Dark mode** — auto-detects system preference, with a manual toggle
-- **Copy to clipboard** — one-click copy of PR/issue bodies and comments
-- **Settings UI** — add/remove repos and configure activity feed defaults from the browser
-- **Reverse proxy support** — deploy behind a proxy with the `base_path` config
-- **Version info** — `middleman version` prints the version, commit, and build date
+- **Dark mode** -- auto-detects system preference, with a manual toggle
+- **GitHub Enterprise** -- set `platform_host` per repo to connect to GHE instances
+- **Copy to clipboard** -- one-click copy of PR/issue bodies and comments
+- **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
+- **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
+- **Version info** -- `middleman version` prints the version, commit, and build date
 
 ## Quickstart
 
@@ -83,7 +90,7 @@ export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 ./middleman
 ```
 
-If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically — no env var needed.
+If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically -- no env var needed.
 
 On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8090**. Add repositories from the Settings page, or edit the config file directly:
 
@@ -120,21 +127,62 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
 | `activity.hide_bots` | `false` | Hide bot activity |
 
+### GitHub Enterprise
+
+Add `platform_host` and optionally `token_env` to repos hosted on a GHE instance:
+
+```toml
+[[repos]]
+owner = "team"
+name = "internal-app"
+platform_host = "github.corp.example.com"
+token_env = "GHE_TOKEN"
+```
+
+Each distinct host can use a separate token env var. Repos without `platform_host` default to `github.com`.
+
+## Embedding
+
+Middleman can be embedded as a Go library inside another application. The host creates an `Instance`, which provides an `http.Handler` for the API and frontend:
+
+```go
+inst, err := middleman.New(middleman.Options{
+    Token:        os.Getenv("GITHUB_TOKEN"),
+    DBPath:       "/path/to/middleman.db",
+    BasePath:     "/middleman/",
+    SyncInterval: 5 * time.Minute,
+    Repos: []middleman.Repo{
+        {Owner: "org", Name: "repo"},
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+defer inst.Close()
+inst.StartSync(ctx)
+
+mux.Handle("/middleman/", inst.Handler())
+```
+
+The `EmbedConfig` option controls theming (light/dark mode, custom colors, fonts, radii), UI defaults (hide sync controls, pin to a single repo, collapse sidebar), and action hooks that let the host inject custom buttons into PR and issue detail views.
+
+The frontend is also available as the `@middleman/ui` Svelte package, which exports individual views (`PRListView`, `KanbanBoardView`, `ActivityFeedView`, `DiffViewWrapper`), store factories, and context accessors for building custom interfaces on top of the middleman API.
+
 ## Architecture
 
-Middleman is a single Go binary with the Svelte frontend embedded at build time. No external services — just SQLite on disk.
+Middleman is a single Go binary with the Svelte frontend embedded at build time. No external services -- just SQLite on disk.
 
 ```
 middleman binary
-  ├── Config loader (TOML)
-  ├── Sync engine → GitHub API (go-github)
-  ├── SQLite database (WAL mode, pure Go driver)
-  └── HTTP server (Huma) → REST API + embedded SPA
+  |- Config loader (TOML)
+  |- Sync engine -> GitHub API (go-github)
+  |- SQLite database (WAL mode, pure Go driver)
+  +- HTTP server (Huma) -> REST API + embedded SPA
 ```
 
-- **No CGO required** — uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure Go SQLite implementation
-- **Loopback only** — binds to 127.0.0.1 by default; this is a personal tool, not a shared service
-- **Graceful shutdown** — handles SIGINT/SIGTERM cleanly
+- **No CGO required** -- uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure Go SQLite implementation
+- **Loopback only** -- binds to 127.0.0.1 by default; this is a personal tool, not a shared service
+- **Graceful shutdown** -- handles SIGINT/SIGTERM cleanly
 
 ## Development
 
