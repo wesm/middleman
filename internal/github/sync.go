@@ -205,8 +205,8 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 	}
 
 	for _, ghPR := range ghPRs {
-		if err := s.syncOpenPR(ctx, repo, repoID, ghPR, cloneFetchOK); err != nil {
-			slog.Error("sync PR failed",
+		if err := s.syncOpenMR(ctx, repo, repoID, ghPR, cloneFetchOK); err != nil {
+			slog.Error("sync MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghPR.GetNumber(),
 				"err", err,
@@ -214,14 +214,14 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 		}
 	}
 
-	// Handle PRs that were open in the DB but are no longer in the open list.
-	closedNumbers, err := s.db.GetPreviouslyOpenPRNumbers(ctx, repoID, stillOpen)
+	// Handle MRs that were open in the DB but are no longer in the open list.
+	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(ctx, repoID, stillOpen)
 	if err != nil {
-		return fmt.Errorf("get previously open PRs: %w", err)
+		return fmt.Errorf("get previously open MRs: %w", err)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK); err != nil {
-			slog.Error("update closed PR failed",
+			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 				"err", err,
@@ -239,15 +239,15 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 	return nil
 }
 
-// syncOpenPR upserts a single open PR and, if the data has changed,
+// syncOpenMR upserts a single open MR and, if the data has changed,
 // refreshes its timeline events and derived fields.
-func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghPR *gh.PullRequest, cloneFetchOK bool) error {
+func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghPR *gh.PullRequest, cloneFetchOK bool) error {
 	normalized := NormalizePR(repoID, ghPR)
 
-	// Check whether we already have this PR and whether it has changed.
-	existing, err := s.db.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
+	// Check whether we already have this MR and whether it has changed.
+	existing, err := s.db.GetMergeRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
 	if err != nil {
-		return fmt.Errorf("get existing PR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf("get existing MR #%d: %w", ghPR.GetNumber(), err)
 	}
 
 	needsTimeline := existing == nil || !existing.UpdatedAt.Equal(normalized.UpdatedAt)
@@ -294,19 +294,19 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		}
 	}
 
-	prID, err := s.db.UpsertPullRequest(ctx, normalized)
+	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
-		return fmt.Errorf("upsert PR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf("upsert MR #%d: %w", ghPR.GetNumber(), err)
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, prID); err != nil {
-		return fmt.Errorf("ensure kanban state for PR #%d: %w", ghPR.GetNumber(), err)
+	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		return fmt.Errorf("ensure kanban state for MR #%d: %w", ghPR.GetNumber(), err)
 	}
 
 	// Compute diff SHAs if clone is available and fetch succeeded.
 	if s.clones != nil && cloneFetchOK {
-		headSHA := normalized.GitHubHeadSHA
-		baseSHA := normalized.GitHubBaseSHA
+		headSHA := normalized.PlatformHeadSHA
+		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
 			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
@@ -328,14 +328,14 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	}
 
 	if needsTimeline {
-		if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
+		if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
 			return err
 		}
 	}
 
 	// Always refresh CI status — check runs change independently of the
-	// PR's updated_at field, so pending/in-progress checks would be missed
-	// if we only fetched them when the PR itself changed.
+	// MR's updated_at field, so pending/in-progress checks would be missed
+	// if we only fetched them when the MR itself changed.
 	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
 }
 
@@ -345,45 +345,45 @@ func (s *Syncer) refreshTimeline(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
-	prID int64,
+	mrID int64,
 	ghPR *gh.PullRequest,
 ) error {
 	number := ghPR.GetNumber()
 
 	comments, err := s.client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list comments for PR #%d: %w", number, err)
+		return fmt.Errorf("list comments for MR #%d: %w", number, err)
 	}
 
 	reviews, err := s.client.ListReviews(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list reviews for PR #%d: %w", number, err)
+		return fmt.Errorf("list reviews for MR #%d: %w", number, err)
 	}
 
 	commits, err := s.client.ListCommits(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list commits for PR #%d: %w", number, err)
+		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
-	var events []db.PREvent
+	var events []db.MREvent
 	for _, c := range comments {
-		events = append(events, NormalizeCommentEvent(prID, c))
+		events = append(events, NormalizeCommentEvent(mrID, c))
 	}
 	for _, r := range reviews {
-		events = append(events, NormalizeReviewEvent(prID, r))
+		events = append(events, NormalizeReviewEvent(mrID, r))
 	}
 	for _, c := range commits {
-		events = append(events, NormalizeCommitEvent(prID, c))
+		events = append(events, NormalizeCommitEvent(mrID, c))
 	}
 
-	if err := s.db.UpsertPREvents(ctx, events); err != nil {
-		return fmt.Errorf("upsert events for PR #%d: %w", number, err)
+	if err := s.db.UpsertMREvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert events for MR #%d: %w", number, err)
 	}
 
 	reviewDecision := DeriveReviewDecision(reviews)
 	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits)
 
-	return s.db.UpdatePRDerivedFields(ctx, repoID, number, db.PRDerivedFields{
+	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
 		ReviewDecision: reviewDecision,
 		CommentCount:   len(comments),
 		LastActivityAt: lastActivityAt,
@@ -434,7 +434,7 @@ func (s *Syncer) refreshCIStatus(
 	ciStatus := DeriveOverallCIStatus(checkRuns, combined)
 	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
 
-	return s.db.UpdatePRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
+	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
 }
 
 // computeLastActivity returns the most recent timestamp across the PR and its events.
@@ -607,7 +607,7 @@ func (s *Syncer) refreshIssueTimeline(
 	}
 
 	_, err = s.db.WriteDB().ExecContext(ctx,
-		`UPDATE issues SET comment_count = ?, last_activity_at = ?
+		`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
 		 WHERE id = ?`,
 		len(comments), lastActivity, issueID,
 	)
@@ -648,10 +648,10 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	return false
 }
 
-// SyncPR fetches fresh data for a single PR from GitHub and updates the DB.
+// SyncMR fetches fresh data for a single MR from GitHub and updates the DB.
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.
-func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) error {
+func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) error {
 	if !s.IsTrackedRepo(owner, name) {
 		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
 	}
@@ -665,13 +665,13 @@ func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) err
 
 	ghPR, err := s.client.GetPullRequest(ctx, owner, name, number)
 	if err != nil {
-		return fmt.Errorf("get PR %s/%s#%d: %w", owner, name, number, err)
+		return fmt.Errorf("get MR %s/%s#%d: %w", owner, name, number, err)
 	}
 
 	normalized := NormalizePR(repoID, ghPR)
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		existing, _ := s.db.GetPullRequest(ctx, owner, name, number)
+		existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
 		// Resolve directly instead of using s.resolveDisplayName to
 		// avoid racing with the shared displayNames map in RunOnce.
 		user, userErr := s.client.GetUser(ctx, normalized.Author)
@@ -682,39 +682,39 @@ func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) err
 		}
 	}
 
-	prID, err := s.db.UpsertPullRequest(ctx, normalized)
+	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
-		return fmt.Errorf("upsert PR #%d: %w", number, err)
+		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, prID); err != nil {
-		return fmt.Errorf("ensure kanban state for PR #%d: %w", number, err)
+	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		return fmt.Errorf("ensure kanban state for MR #%d: %w", number, err)
 	}
 
 	// Fetch bare clone and compute diff SHAs so the diff view is current.
 	if s.clones != nil {
 		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
 		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
-			slog.Warn("bare clone fetch failed during SyncPR",
+			slog.Warn("bare clone fetch failed during SyncMR",
 				"repo", owner+"/"+name, "number", number, "err", err)
 		} else if ghPR.GetMerged() {
-			// Merged PRs need special merge-base logic via the pull ref.
+			// Merged MRs need special merge-base logic via the pull ref.
 			// Force recomputation to repair any previously incorrect SHAs.
 			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
-		} else if normalized.GitHubHeadSHA != "" && normalized.GitHubBaseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.GitHubBaseSHA, normalized.GitHubHeadSHA)
+		} else if normalized.PlatformHeadSHA != "" && normalized.PlatformBaseSHA != "" {
+			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 			if err != nil {
-				slog.Warn("merge-base failed during SyncPR",
+				slog.Warn("merge-base failed during SyncMR",
 					"repo", owner+"/"+name, "number", number, "err", err)
-			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.GitHubHeadSHA, normalized.GitHubBaseSHA, mb); err != nil {
-				slog.Warn("update diff SHAs failed during SyncPR",
+			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA, mb); err != nil {
+				slog.Warn("update diff SHAs failed during SyncMR",
 					"repo", owner+"/"+name, "number", number, "err", err)
 			}
 		}
 	}
 
-	if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
-		return fmt.Errorf("refresh timeline for PR #%d: %w", number, err)
+	if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
+		return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
 	}
 
 	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
@@ -769,9 +769,9 @@ func (s *Syncer) SyncItemByNumber(
 	}
 
 	if ghIssue.PullRequestLinks != nil {
-		if err := s.SyncPR(ctx, owner, name, number); err != nil {
+		if err := s.SyncMR(ctx, owner, name, number); err != nil {
 			return "", fmt.Errorf(
-				"sync PR %s/%s#%d: %w", owner, name, number, err,
+				"sync MR %s/%s#%d: %w", owner, name, number, err,
 			)
 		}
 		return "pr", nil
@@ -807,13 +807,13 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		closedAt = &t
 	}
 
-	if err := s.db.UpdateClosedPRState(
+	if err := s.db.UpdateClosedMRState(
 		ctx, repoID, number, state,
 		ghPR.GetUpdatedAt().Time,
 		mergedAt, closedAt,
 		ghPR.GetHead().GetSHA(), ghPR.GetBase().GetSHA(),
 	); err != nil {
-		return fmt.Errorf("update closed PR #%d: %w", number, err)
+		return fmt.Errorf("update closed MR #%d: %w", number, err)
 	}
 
 	// Compute diff SHAs so the diff endpoint works.
