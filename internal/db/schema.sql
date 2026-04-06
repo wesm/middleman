@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS middleman_starred_items (
     UNIQUE(item_type, repo_id, number)
 );
 
+CREATE TABLE IF NOT EXISTS middleman_mr_worktree_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    merge_request_id INTEGER NOT NULL
+        REFERENCES middleman_merge_requests(id)
+        ON DELETE CASCADE,
+    worktree_key TEXT NOT NULL,
+    worktree_path TEXT,
+    worktree_branch TEXT,
+    linked_at TEXT NOT NULL,
+    UNIQUE(merge_request_id, worktree_key),
+    UNIQUE(worktree_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mr_worktree_links_key
+    ON middleman_mr_worktree_links(worktree_key);
+
 CREATE TABLE IF NOT EXISTS middleman_rate_limits (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     platform_host  TEXT NOT NULL UNIQUE,
