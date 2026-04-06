@@ -420,7 +420,12 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	comment, err := s.gh.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
 	if err != nil {
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
@@ -521,7 +526,12 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	comment, err := s.gh.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
 	if err != nil {
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
@@ -571,7 +581,12 @@ func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutp
 }
 
 func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {
-	review, err := s.gh.CreateReview(ctx, input.Owner, input.Name, input.Number, "APPROVE", input.Body.Body)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	review, err := client.CreateReview(ctx, input.Owner, input.Name, input.Number, "APPROVE", input.Body.Body)
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
@@ -587,7 +602,12 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 }
 
 func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	pr, err := s.gh.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	pr, err := client.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
@@ -609,7 +629,12 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error400BadRequest("invalid merge method: must be merge, squash, or rebase")
 	}
 
-	result, err := s.gh.MergePullRequest(
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	result, err := client.MergePullRequest(
 		ctx,
 		input.Owner,
 		input.Name,
@@ -658,6 +683,11 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
 	mr, err := s.db.GetMergeRequest(
 		ctx, input.Owner, input.Name, input.Number,
 	)
@@ -675,7 +705,7 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	if _, err := s.gh.EditPullRequest(
+	if _, err := client.EditPullRequest(
 		ctx, input.Owner, input.Name,
 		input.Number, input.Body.State,
 	); err != nil {
@@ -687,7 +717,7 @@ func (s *Server) setPRGitHubState(
 				ctx, input.Owner, input.Name,
 			)
 			if repoErr == nil {
-				ghPR, fetchErr := s.gh.GetPullRequest(
+				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
@@ -747,6 +777,11 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
 	issue, err := s.db.GetIssue(
 		ctx, input.Owner, input.Name, input.Number,
 	)
@@ -759,7 +794,7 @@ func (s *Server) setIssueGitHubState(
 		return nil, huma.Error404NotFound("issue not found")
 	}
 
-	if _, err := s.gh.EditIssue(
+	if _, err := client.EditIssue(
 		ctx, input.Owner, input.Name,
 		input.Number, input.Body.State,
 	); err != nil {
@@ -772,7 +807,7 @@ func (s *Server) setIssueGitHubState(
 				ctx, input.Owner, input.Name,
 			)
 			if repoErr == nil {
-				ghIssue, fetchErr := s.gh.GetIssue(
+				ghIssue, fetchErr := client.GetIssue(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
@@ -1102,7 +1137,7 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	host := s.repoHost(input.Owner, input.Name)
+	host := s.syncer.HostForRepo(input.Owner, input.Name)
 	result, err := s.clones.Diff(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {

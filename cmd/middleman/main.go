@@ -110,7 +110,7 @@ func run(configPath string) error {
 	}
 
 	srv := server.NewWithConfig(
-		database, ghClient, syncer, cloneMgr, assets,
+		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{},
 	)
 

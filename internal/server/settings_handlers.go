@@ -119,7 +119,13 @@ func (s *Server) handleAddRepo(
 		}
 	}
 
-	if _, err := s.gh.GetRepository(
+	ghClient, clientErr := s.syncer.ClientForHost("github.com")
+	if clientErr != nil {
+		writeError(w, http.StatusServiceUnavailable,
+			"no GitHub client available")
+		return
+	}
+	if _, err := ghClient.GetRepository(
 		r.Context(), body.Owner, body.Name,
 	); err != nil {
 		writeError(w, http.StatusBadGateway,

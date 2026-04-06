@@ -171,7 +171,7 @@ func New(opts Options) (*Instance, error) {
 	)
 
 	srv := server.New(
-		database, gh, syncer, frontend,
+		database, syncer, frontend,
 		cfg.BasePath, cfg,
 		server.ServerOptions{
 			EmbedConfig: opts.EmbedConfig,

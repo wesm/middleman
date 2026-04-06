@@ -161,18 +161,11 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 
 func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 	t.Helper()
+	return setupTestServerWithRepos(t, mock, defaultTestRepos)
+}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
-
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil)
-	srv := New(
-		database, mock, syncer, nil, "/",
-		nil, ServerOptions{},
-	)
-	return srv, database
+var defaultTestRepos = []ghclient.RepoRef{
+	{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 }
 
 func setupTestServerWithRepos(
@@ -187,7 +180,7 @@ func setupTestServerWithRepos(
 
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil)
 	srv := New(
-		database, mock, syncer, nil, "/",
+		database, syncer, nil, "/",
 		nil, ServerOptions{},
 	)
 	return srv, database
@@ -490,7 +483,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		PlatformHost: "github.com",
 	}}, time.Minute, nil)
 	srv := New(
-		database, mock, syncer, nil, "/",
+		database, syncer, nil, "/",
 		nil, ServerOptions{},
 	)
 
@@ -548,9 +541,9 @@ func TestAPIReadyForReview(t *testing.T) {
 			}, nil
 		},
 	}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil)
 	srv := New(
-		database, mock, syncer, nil, "/",
+		database, syncer, nil, "/",
 		nil, ServerOptions{},
 	)
 	client := setupTestClient(t, srv)

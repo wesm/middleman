@@ -81,7 +81,7 @@ func run(port int) error {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
-	srv := server.New(database, fc, syncer, assets, "/", cfg, server.ServerOptions{})
+	srv := server.New(database, syncer, assets, "/", cfg, server.ServerOptions{})
 
 	// Do not start the syncer's background loop. The seeded DB is the
 	// ground truth for E2E tests; RunOnce would overwrite it with
