@@ -58,8 +58,8 @@ func run(configPath string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	token := cfg.GitHubToken()
-	if token == "" {
+	globalToken := cfg.GitHubToken()
+	if globalToken == "" {
 		return fmt.Errorf(
 			"GitHub token not set: env var %q is empty",
 			cfg.GitHubTokenEnv,
@@ -78,11 +78,47 @@ func run(configPath string) error {
 	}
 	defer database.Close()
 
-	rt := ghclient.NewRateTracker(database, "github.com")
+	// Always seed github.com from the global token so the settings
+	// UI can validate repos even with empty or GHE-only configs.
+	hostTokens := map[string]string{"github.com": globalToken}
+	for _, r := range cfg.Repos {
+		host := r.PlatformHostOrDefault()
+		if _, seen := hostTokens[host]; seen {
+			continue
+		}
+		token := r.ResolveToken(globalToken)
+		if token == "" {
+			return fmt.Errorf(
+				"no token for host %s (repo %s/%s)",
+				host, r.Owner, r.Name,
+			)
+		}
+		hostTokens[host] = token
+	}
 
-	ghClient, err := ghclient.NewClient(token, "", rt)
-	if err != nil {
-		return fmt.Errorf("create GitHub client: %w", err)
+	rateTrackers := make(
+		map[string]*ghclient.RateTracker, len(hostTokens),
+	)
+	clients := make(
+		map[string]ghclient.Client, len(hostTokens),
+	)
+	cloneTokens := make(
+		map[string]string, len(hostTokens),
+	)
+	for host, token := range hostTokens {
+		rateTrackers[host] = ghclient.NewRateTracker(
+			database, host,
+		)
+		c, err := ghclient.NewClient(
+			token, host, rateTrackers[host],
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"create client for %s: %w", host, err,
+			)
+		}
+		clients[host] = c
+		cloneTokens[host] = token
 	}
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
@@ -90,18 +126,17 @@ func run(configPath string) error {
 		repos[i] = ghclient.RepoRef{
 			Owner:        r.Owner,
 			Name:         r.Name,
-			PlatformHost: "github.com",
+			PlatformHost: r.PlatformHostOrDefault(),
 		}
 	}
 
-	cloneMgr := gitclone.New(filepath.Join(cfg.DataDir, "clones"),
-		map[string]string{"github.com": token})
+	cloneMgr := gitclone.New(
+		filepath.Join(cfg.DataDir, "clones"), cloneTokens,
+	)
 
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": ghClient},
-		database, cloneMgr, repos,
-		cfg.SyncDuration(),
-		map[string]*ghclient.RateTracker{"github.com": rt},
+		clients, database, cloneMgr, repos,
+		cfg.SyncDuration(), rateTrackers,
 	)
 
 	assets, err := web.Assets()
