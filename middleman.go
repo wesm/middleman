@@ -145,7 +145,10 @@ func New(opts Options) (*Instance, error) {
 		)
 	}
 
-	gh := ghclient.NewClient(token)
+	host := defaultPlatformHost(opts.Repos)
+	rt := ghclient.NewRateTracker(database, host)
+
+	gh := ghclient.NewClient(token, rt)
 
 	var refs []ghclient.RepoRef
 	for _, r := range opts.Repos {
@@ -156,7 +159,7 @@ func New(opts Options) (*Instance, error) {
 	}
 
 	syncer := ghclient.NewSyncer(
-		gh, database, nil, refs, cfg.SyncDuration(),
+		gh, database, nil, refs, cfg.SyncDuration(), rt,
 	)
 
 	srv := server.New(

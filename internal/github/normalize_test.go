@@ -29,8 +29,13 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 		Deletions: new(5),
 		CreatedAt: ghTimestamp(now),
 		UpdatedAt: ghTimestamp(now),
-		Head:      &gh.PullRequestBranch{Ref: new("feature")},
-		Base:      &gh.PullRequestBranch{Ref: new("main")},
+		Head: &gh.PullRequestBranch{
+			Ref: new("feature"),
+			Repo: &gh.Repository{
+				CloneURL: new("https://github.com/fork/repo.git"),
+			},
+		},
+		Base: &gh.PullRequestBranch{Ref: new("main")},
 	}
 
 	pr := NormalizePR(7, ghPR)
@@ -48,6 +53,7 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 	assert.Equal(5, pr.Deletions)
 	assert.Equal("feature", pr.HeadBranch)
 	assert.Equal("main", pr.BaseBranch)
+	assert.Equal("https://github.com/fork/repo.git", pr.HeadRepoCloneURL)
 	assert.True(pr.CreatedAt.Equal(now))
 	assert.True(pr.UpdatedAt.Equal(now))
 	assert.True(pr.LastActivityAt.Equal(now))

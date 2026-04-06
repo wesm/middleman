@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS middleman_merge_requests (
     merged_at        DATETIME,
     closed_at        DATETIME,
     UNIQUE(repo_id, number),
-    UNIQUE(platform_id)
+    UNIQUE(repo_id, platform_id)
 );
 
 CREATE TABLE IF NOT EXISTS middleman_mr_events (
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS middleman_issues (
     last_activity_at DATETIME NOT NULL,
     closed_at        DATETIME,
     UNIQUE(repo_id, number),
-    UNIQUE(platform_id)
+    UNIQUE(repo_id, platform_id)
 );
 
 CREATE TABLE IF NOT EXISTS middleman_issue_events (

@@ -8,14 +8,19 @@ import (
 
 // collectPages centralizes the standard go-github pagination loop for list
 // endpoints that advance through a shared ListOptions page cursor.
+// onResp is called for each page response (may be nil).
 func collectPages[T any](
 	ctx context.Context,
 	listPage func(*gh.ListOptions) ([]T, *gh.Response, error),
+	onResp func(*gh.Response),
 ) ([]T, error) {
 	var all []T
 	opts := &gh.ListOptions{PerPage: 100}
 	for {
 		page, resp, err := listPage(opts)
+		if onResp != nil {
+			onResp(resp)
+		}
 		if err != nil {
 			return nil, err
 		}

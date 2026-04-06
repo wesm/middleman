@@ -416,6 +416,46 @@ func TestUpsertPullRequestMergeableState(t *testing.T) {
 	assert.Equal("clean", got.MergeableState)
 }
 
+func TestRateLimitCRUD(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	host := "github.com"
+	hourStart := baseTime()
+	resetAt := hourStart.Add(30 * time.Minute)
+
+	// Insert
+	require.NoError(d.UpsertRateLimit(host, 5, hourStart, 4995, &resetAt))
+
+	got, err := d.GetRateLimit(host)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(host, got.PlatformHost)
+	assert.Equal(5, got.RequestsHour)
+	assert.True(got.HourStart.Equal(hourStart))
+	assert.Equal(4995, got.RateRemaining)
+	require.NotNil(got.RateResetAt)
+	assert.True(got.RateResetAt.Equal(resetAt))
+
+	// Update via upsert
+	laterStart := hourStart.Add(time.Hour)
+	require.NoError(d.UpsertRateLimit(host, 10, laterStart, 4990, nil))
+
+	got2, err := d.GetRateLimit(host)
+	require.NoError(err)
+	require.NotNil(got2)
+	assert.Equal(10, got2.RequestsHour)
+	assert.True(got2.HourStart.Equal(laterStart))
+	assert.Equal(4990, got2.RateRemaining)
+	assert.Nil(got2.RateResetAt)
+
+	// Not found
+	missing, err := d.GetRateLimit("no.such.host")
+	require.NoError(err)
+	assert.Nil(missing)
+}
+
 func TestUpdatePRState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

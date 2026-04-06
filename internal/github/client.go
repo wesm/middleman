@@ -29,15 +29,35 @@ type Client interface {
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 }
 
-// NewClient creates a GitHub Client authenticated with the given token.
-func NewClient(token string) Client {
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+// NewClient creates a GitHub Client authenticated with the given
+// token. rateTracker may be nil if rate tracking is not needed.
+func NewClient(
+	token string, rateTracker *RateTracker,
+) Client {
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
 	tc := oauth2.NewClient(context.Background(), ts)
-	return &liveClient{gh: gh.NewClient(tc)}
+	return &liveClient{
+		gh:          gh.NewClient(tc),
+		rateTracker: rateTracker,
+	}
 }
 
 type liveClient struct {
-	gh *gh.Client
+	gh          *gh.Client
+	rateTracker *RateTracker
+}
+
+// trackRate records the request and updates rate limit state
+// from the response. Safe to call with nil response or nil
+// tracker.
+func (c *liveClient) trackRate(resp *gh.Response) {
+	if resp == nil || c.rateTracker == nil {
+		return
+	}
+	c.rateTracker.RecordRequest()
+	c.rateTracker.UpdateFromRate(resp.Rate)
 }
 
 func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -52,7 +72,7 @@ func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo strin
 			return nil, nil, fmt.Errorf("listing open pull requests for %s/%s: %w", owner, repo, err)
 		}
 		return page, resp, nil
-	})
+	}, c.trackRate)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +99,7 @@ func (c *liveClient) ListOpenIssues(
 			)
 		}
 		return issues, resp, nil
-	})
+	}, c.trackRate)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +117,8 @@ func (c *liveClient) ListOpenIssues(
 func (c *liveClient) GetIssue(
 	ctx context.Context, owner, repo string, number int,
 ) (*gh.Issue, error) {
-	issue, _, err := c.gh.Issues.Get(ctx, owner, repo, number)
+	issue, resp, err := c.gh.Issues.Get(ctx, owner, repo, number)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"getting issue %s/%s#%d: %w", owner, repo, number, err,
@@ -107,7 +128,8 @@ func (c *liveClient) GetIssue(
 }
 
 func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
-	pr, _, err := c.gh.PullRequests.Get(ctx, owner, repo, number)
+	pr, resp, err := c.gh.PullRequests.Get(ctx, owner, repo, number)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("getting pull request %s/%s#%d: %w", owner, repo, number, err)
 	}
@@ -115,7 +137,8 @@ func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, num
 }
 
 func (c *liveClient) GetUser(ctx context.Context, login string) (*gh.User, error) {
-	user, _, err := c.gh.Users.Get(ctx, login)
+	user, resp, err := c.gh.Users.Get(ctx, login)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("getting user %s: %w", login, err)
 	}
@@ -135,7 +158,7 @@ func (c *liveClient) ListIssueComments(
 			return nil, nil, fmt.Errorf("listing comments for %s/%s#%d: %w", owner, repo, number, err)
 		}
 		return page, resp, nil
-	})
+	}, c.trackRate)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +174,7 @@ func (c *liveClient) ListReviews(
 			return nil, nil, fmt.Errorf("listing reviews for %s/%s#%d: %w", owner, repo, number, err)
 		}
 		return page, resp, nil
-	})
+	}, c.trackRate)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +190,7 @@ func (c *liveClient) ListCommits(
 			return nil, nil, fmt.Errorf("listing commits for %s/%s#%d: %w", owner, repo, number, err)
 		}
 		return page, resp, nil
-	})
+	}, c.trackRate)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +200,8 @@ func (c *liveClient) ListCommits(
 func (c *liveClient) GetCombinedStatus(
 	ctx context.Context, owner, repo, ref string,
 ) (*gh.CombinedStatus, error) {
-	status, _, err := c.gh.Repositories.GetCombinedStatus(ctx, owner, repo, ref, nil)
+	status, resp, err := c.gh.Repositories.GetCombinedStatus(ctx, owner, repo, ref, nil)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("getting combined status for %s/%s@%s: %w", owner, repo, ref, err)
 	}
@@ -202,7 +226,7 @@ func (c *liveClient) ListCheckRunsForRef(
 			)
 		}
 		return result.CheckRuns, resp, nil
-	})
+	}, c.trackRate)
 	if err != nil {
 		return nil, err
 	}
@@ -212,9 +236,10 @@ func (c *liveClient) ListCheckRunsForRef(
 func (c *liveClient) CreateIssueComment(
 	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
-	comment, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{
+	comment, resp, err := c.gh.Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{
 		Body: new(body),
 	})
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("creating comment on %s/%s#%d: %w", owner, repo, number, err)
 	}
@@ -224,7 +249,8 @@ func (c *liveClient) CreateIssueComment(
 func (c *liveClient) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
-	r, _, err := c.gh.Repositories.Get(ctx, owner, repo)
+	r, resp, err := c.gh.Repositories.Get(ctx, owner, repo)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
 	}
@@ -235,12 +261,13 @@ func (c *liveClient) CreateReview(
 	ctx context.Context, owner, repo string, number int,
 	event string, body string,
 ) (*gh.PullRequestReview, error) {
-	review, _, err := c.gh.PullRequests.CreateReview(
+	review, resp, err := c.gh.PullRequests.CreateReview(
 		ctx, owner, repo, number, &gh.PullRequestReviewRequest{
 			Event: new(event),
 			Body:  new(body),
 		},
 	)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"creating review on %s/%s#%d: %w", owner, repo, number, err,
@@ -265,7 +292,9 @@ func (c *liveClient) MarkPullRequestReadyForReview(
 	}
 
 	pr := new(gh.PullRequest)
-	if _, err := c.gh.Do(ctx, req, pr); err != nil {
+	resp, err := c.gh.Do(ctx, req, pr)
+	c.trackRate(resp)
+	if err != nil {
 		return nil, fmt.Errorf(
 			"marking %s/%s#%d ready for review: %w",
 			owner, repo, number, err,
@@ -283,9 +312,10 @@ func (c *liveClient) MergePullRequest(
 		CommitTitle: commitTitle,
 		MergeMethod: method,
 	}
-	result, _, err := c.gh.PullRequests.Merge(
+	result, resp, err := c.gh.PullRequests.Merge(
 		ctx, owner, repo, number, commitMessage, opts,
 	)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"merging %s/%s#%d: %w", owner, repo, number, err,
@@ -297,9 +327,10 @@ func (c *liveClient) MergePullRequest(
 func (c *liveClient) EditPullRequest(
 	ctx context.Context, owner, repo string, number int, state string,
 ) (*gh.PullRequest, error) {
-	pr, _, err := c.gh.PullRequests.Edit(
+	pr, resp, err := c.gh.PullRequests.Edit(
 		ctx, owner, repo, number, &gh.PullRequest{State: &state},
 	)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing pull request %s/%s#%d: %w",
@@ -312,9 +343,10 @@ func (c *liveClient) EditPullRequest(
 func (c *liveClient) EditIssue(
 	ctx context.Context, owner, repo string, number int, state string,
 ) (*gh.Issue, error) {
-	issue, _, err := c.gh.Issues.Edit(
+	issue, resp, err := c.gh.Issues.Edit(
 		ctx, owner, repo, number, &gh.IssueRequest{State: &state},
 	)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing issue %s/%s#%d: %w",

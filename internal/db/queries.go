@@ -980,3 +980,58 @@ func (d *DB) IsStarred(
 	}
 	return count > 0, nil
 }
+
+// --- Rate Limits ---
+
+// UpsertRateLimit inserts or updates a rate limit row by platform_host.
+func (d *DB) UpsertRateLimit(
+	platformHost string,
+	requestsHour int,
+	hourStart time.Time,
+	rateRemaining int,
+	rateResetAt *time.Time,
+) error {
+	_, err := d.rw.Exec(`
+		INSERT INTO middleman_rate_limits
+		    (platform_host, requests_hour, hour_start,
+		     rate_remaining, rate_reset_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, datetime('now'))
+		ON CONFLICT(platform_host) DO UPDATE SET
+		    requests_hour  = excluded.requests_hour,
+		    hour_start     = excluded.hour_start,
+		    rate_remaining = excluded.rate_remaining,
+		    rate_reset_at  = excluded.rate_reset_at,
+		    updated_at     = datetime('now')`,
+		platformHost, requestsHour, hourStart,
+		rateRemaining, rateResetAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert rate limit: %w", err)
+	}
+	return nil
+}
+
+// GetRateLimit returns the rate limit row for a platform host,
+// or nil,nil if not found.
+func (d *DB) GetRateLimit(
+	platformHost string,
+) (*RateLimit, error) {
+	var r RateLimit
+	err := d.ro.QueryRow(`
+		SELECT id, platform_host, requests_hour, hour_start,
+		       rate_remaining, rate_reset_at, updated_at
+		FROM middleman_rate_limits
+		WHERE platform_host = ?`,
+		platformHost,
+	).Scan(
+		&r.ID, &r.PlatformHost, &r.RequestsHour, &r.HourStart,
+		&r.RateRemaining, &r.RateResetAt, &r.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get rate limit: %w", err)
+	}
+	return &r, nil
+}

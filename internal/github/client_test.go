@@ -10,6 +10,6 @@ import (
 var _ Client = (*liveClient)(nil)
 
 func TestNewClientReturnsNonNil(t *testing.T) {
-	c := NewClient("fake-token")
+	c := NewClient("fake-token", nil)
 	require.NotNil(t, c)
 }

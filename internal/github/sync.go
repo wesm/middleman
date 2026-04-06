@@ -33,6 +33,7 @@ type Syncer struct {
 	client       Client
 	db           *db.DB
 	clones       *gitclone.Manager
+	rateTracker  *RateTracker
 	repos        []RepoRef
 	reposMu      sync.Mutex
 	interval     time.Duration
@@ -44,16 +45,24 @@ type Syncer struct {
 	displayNames map[string]string // login -> display name, per sync run
 }
 
-// NewSyncer creates a Syncer that polls the given repos on the given interval.
-// clones may be nil if bare clone management is not configured.
-func NewSyncer(client Client, database *db.DB, clones *gitclone.Manager, repos []RepoRef, interval time.Duration) *Syncer {
+// NewSyncer creates a Syncer that polls the given repos on the
+// given interval. clones and rateTracker may be nil.
+func NewSyncer(
+	client Client,
+	database *db.DB,
+	clones *gitclone.Manager,
+	repos []RepoRef,
+	interval time.Duration,
+	rateTracker *RateTracker,
+) *Syncer {
 	s := &Syncer{
-		client:   client,
-		db:       database,
-		clones:   clones,
-		repos:    repos,
-		interval: interval,
-		stopCh:   make(chan struct{}),
+		client:      client,
+		db:          database,
+		clones:      clones,
+		rateTracker: rateTracker,
+		repos:       repos,
+		interval:    interval,
+		stopCh:      make(chan struct{}),
 	}
 	s.status.Store(&SyncStatus{})
 	return s
@@ -117,6 +126,21 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 	var lastErr string
 	for i, repo := range repos {
+		if rt := s.rateTracker; rt != nil {
+			if backoff, wait := rt.ShouldBackoff(); backoff {
+				s.status.Store(&SyncStatus{
+					Running: true,
+					Progress: fmt.Sprintf(
+						"rate limited, waiting %s", wait,
+					),
+				})
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
 		progress := fmt.Sprintf("%d/%d", i+1, len(repos))
 		repoName := repo.Owner + "/" + repo.Name
 		s.status.Store(&SyncStatus{

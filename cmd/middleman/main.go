@@ -78,7 +78,9 @@ func run(configPath string) error {
 	}
 	defer database.Close()
 
-	ghClient := ghclient.NewClient(token)
+	rt := ghclient.NewRateTracker(database, "github.com")
+
+	ghClient := ghclient.NewClient(token, rt)
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
@@ -90,7 +92,7 @@ func run(configPath string) error {
 	cloneMgr := gitclone.New(filepath.Join(cfg.DataDir, "clones"), token)
 
 	syncer := ghclient.NewSyncer(
-		ghClient, database, cloneMgr, repos, cfg.SyncDuration(),
+		ghClient, database, cloneMgr, repos, cfg.SyncDuration(), rt,
 	)
 
 	assets, err := web.Assets()

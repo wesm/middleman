@@ -178,7 +178,7 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 }
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
-	syncer := NewSyncer(&mockClient{}, nil, nil, nil, time.Minute)
+	syncer := NewSyncer(&mockClient{}, nil, nil, nil, time.Minute, nil)
 	syncer.Stop()
 	syncer.Stop() // must not panic
 }
@@ -214,7 +214,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil)
 	syncer.RunOnce(ctx)
 
 	// PR should be in the DB.
@@ -254,7 +254,7 @@ func TestSyncSingleFlight(t *testing.T) {
 	// Wrap in a counter client to detect calls.
 	_ = mc
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil)
 
 	// Simulate a concurrent run already in progress.
 	syncer.running.Store(true)
@@ -292,7 +292,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil)
 
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
@@ -362,7 +362,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 		return p, nil
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil)
 
 	// First sync: PR is new, full fetch triggers, returns "unknown".
 	syncer.RunOnce(ctx)
@@ -408,7 +408,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil)
 	syncer.RunOnce(ctx)
 
 	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -446,7 +446,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil)
 
 	before := time.Now()
 	syncer.RunOnce(ctx)
@@ -494,7 +494,7 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 	syncer := NewSyncer(
 		mock, database, nil,
 		[]RepoRef{{Owner: "o", Name: "r"}},
-		time.Hour,
+		time.Hour, nil,
 	)
 
 	syncer.Start(t.Context())
@@ -535,7 +535,7 @@ func TestIsTrackedRepo(t *testing.T) {
 	syncer := NewSyncer(mc, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget"},
 		{Owner: "corp", Name: "lib"},
-	}, time.Minute)
+	}, time.Minute, nil)
 
 	assert.True(syncer.IsTrackedRepo("acme", "widget"))
 	assert.True(syncer.IsTrackedRepo("corp", "lib"))
@@ -576,7 +576,7 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 
 	syncer := NewSyncer(mc, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget"},
-	}, time.Minute)
+	}, time.Minute, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -637,7 +637,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 
 	syncer := NewSyncer(mc, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget"},
-	}, time.Minute)
+	}, time.Minute, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -658,7 +658,7 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	mc := &mockClient{}
 	syncer := NewSyncer(mc, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget"},
-	}, time.Minute)
+	}, time.Minute, nil)
 
 	_, err := syncer.SyncItemByNumber(ctx, "other", "repo", 1)
 	require.Error(err)

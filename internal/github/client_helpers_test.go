@@ -22,7 +22,7 @@ func TestCollectPagesAccumulatesAllPages(t *testing.T) {
 		default:
 			return nil, nil, errors.New("unexpected page")
 		}
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []int{1, 2, 3}, items)
 	require.Equal(t, []int{0, 2}, callPages)
@@ -36,6 +36,6 @@ func TestCollectPagesStopsOnError(t *testing.T) {
 			return []int{1}, &gh.Response{NextPage: 2}, nil
 		}
 		return nil, nil, wantErr
-	})
+	}, nil)
 	require.ErrorIs(t, err, wantErr)
 }
