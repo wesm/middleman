@@ -1,7 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { client } from "../api/runtime.js";
-  import type { Repo } from "@middleman/ui/api/types";
+  import { getClient } from "../context.js";
+
+  const client = getClient();
+  import type { Repo } from "../api/types.js";
 
   interface Props {
     selected: string | undefined;

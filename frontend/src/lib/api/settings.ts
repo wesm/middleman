@@ -1,4 +1,4 @@
-import type { Settings } from "./types.js";
+import type { Settings } from "@middleman/ui/api/types";
 
 const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
 const BASE = `${basePath}/api/v1`;

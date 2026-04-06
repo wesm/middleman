@@ -1,7 +1,9 @@
 <script lang="ts">
-  import type { ActivitySettings as ActivitySettingsType } from "../../api/types.js";
+  import { getStores } from "@middleman/ui";
+  import type { ActivitySettings as ActivitySettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
-  import { hydrateActivityDefaults } from "../../stores/activity.svelte.js";
+
+  const { activity: activityStore } = getStores();
 
   interface Props {
     activity: ActivitySettingsType;
@@ -25,7 +27,7 @@
     try {
       const settings = await updateSettings({ activity: updated });
       onUpdate(settings.activity);
-      hydrateActivityDefaults(settings.activity);
+      activityStore.hydrateDefaults(settings.activity);
     } catch (err) {
       console.warn("Failed to save activity settings:", err);
     }

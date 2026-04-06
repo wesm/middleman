@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { getPulls } from "../../stores/pulls.svelte.js";
-  import { getIssues } from "../../stores/issues.svelte.js";
-  import { getSyncState } from "../../stores/sync.svelte.js";
+  import { getStores } from "@middleman/ui";
+
+  const { pulls, issues, sync } = getStores();
 
   const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
 
@@ -24,7 +24,7 @@
 
   function syncText(): string {
     void tick; // reactive dependency
-    const st = getSyncState();
+    const st = sync.getSyncState();
     if (st === null) return "";
     if (st.running) {
       if (st.current_repo && st.progress) {
@@ -42,27 +42,27 @@
 
   function repoCount(): number {
     const repos = new Set<string>();
-    for (const pr of getPulls()) repos.add(`${pr.repo_owner}/${pr.repo_name}`);
-    for (const issue of getIssues()) repos.add(`${issue.repo_owner}/${issue.repo_name}`);
+    for (const pr of pulls.getPulls()) repos.add(`${pr.repo_owner}/${pr.repo_name}`);
+    for (const issue of issues.getIssues()) repos.add(`${issue.repo_owner}/${issue.repo_name}`);
     return repos.size;
   }
 </script>
 
 <footer class="status-bar">
   <div class="status-left">
-    <span class="status-item">{getPulls().length} PRs</span>
+    <span class="status-item">{pulls.getPulls().length} PRs</span>
     <span class="status-sep">·</span>
-    <span class="status-item">{getIssues().length} issues</span>
+    <span class="status-item">{issues.getIssues().length} issues</span>
     <span class="status-sep">·</span>
     <span class="status-item">{repoCount()} repos</span>
   </div>
   <div class="status-right">
-    {#if getSyncState()?.last_error}
-      <span class="status-item status-item--error" title={getSyncState()?.last_error}>sync error</span>
+    {#if sync.getSyncState()?.last_error}
+      <span class="status-item status-item--error" title={sync.getSyncState()?.last_error}>sync error</span>
       <span class="status-sep">·</span>
     {/if}
-    <span class="status-item" class:status-item--active={getSyncState()?.running}>
-      {#if getSyncState()?.running}
+    <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
+      {#if sync.getSyncState()?.running}
         <span class="sync-dot"></span>
       {/if}
       {syncText()}
