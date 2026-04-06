@@ -1,7 +1,9 @@
 <script lang="ts">
-  import type { ConfigRepo } from "../../api/types.js";
+  import { getStores } from "@middleman/ui";
+  import type { ConfigRepo } from "@middleman/ui/api/types";
   import { addRepo, removeRepo, getSettings } from "../../api/settings.js";
-  import { refreshSyncStatus } from "../../stores/sync.svelte.js";
+
+  const { sync } = getStores();
 
   interface Props {
     repos: ConfigRepo[];
@@ -35,7 +37,7 @@
       inputValue = "";
       const settings = await getSettings();
       onUpdate(settings.repos);
-      void refreshSyncStatus();
+      void sync.refreshSyncStatus();
     } catch (err) {
       addError = err instanceof Error ? err.message : String(err);
     } finally {

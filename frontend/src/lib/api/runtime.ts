@@ -1,7 +1,7 @@
 import type { ClientOptions, QuerySerializerOptions } from "openapi-fetch";
 
-import { createAPIClient } from "./generated/client.js";
-import type { components } from "./generated/schema.js";
+import { createAPIClient } from "@middleman/ui/api/client";
+import type { components } from "@middleman/ui/api/schema";
 
 const basePath =
   typeof window !== "undefined" ? window.__BASE_PATH__ ?? "/" : "/";

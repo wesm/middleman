@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { getStores } from "@middleman/ui";
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
-  import { getSyncState, triggerSync } from "../../stores/sync.svelte.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
   import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
@@ -14,12 +14,14 @@
     isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
 
+  const { sync } = getStores();
+
   async function handleSync(): Promise<void> {
-    if (getSyncState()?.running) return;
-    await triggerSync();
+    if (sync.getSyncState()?.running) return;
+    await sync.triggerSync();
   }
 
-  const syncing = $derived(getSyncState()?.running ?? false);
+  const syncing = $derived(sync.getSyncState()?.running ?? false);
 </script>
 
 <header class="app-header">

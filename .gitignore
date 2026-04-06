@@ -3,6 +3,9 @@ dist/
 internal/web/dist/
 frontend/node_modules/
 frontend/dist/
+frontend/src/lib/api/generated/
+node_modules/
+packages/*/node_modules/
 frontend/playwright-report/
 frontend/test-results/
 .idea/

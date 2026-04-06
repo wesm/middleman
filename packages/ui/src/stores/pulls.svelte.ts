@@ -1,0 +1,349 @@
+import type { KanbanStatus, PullRequest } from "../api/types.js";
+import type { MiddlemanClient } from "../types.js";
+
+type PullsParams = {
+  repo?: string;
+  state?: string;
+  kanban?: KanbanStatus;
+  starred?: boolean;
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export interface PullsStoreOptions {
+  client: MiddlemanClient;
+  getGlobalRepo?: () => string | undefined;
+  getGroupByRepo?: () => boolean;
+  getView?: () => "list" | "board";
+}
+
+function apiErrorMessage(
+  error: { detail?: string; title?: string },
+  fallback: string,
+): string {
+  return error.detail ?? error.title ?? fallback;
+}
+
+export function createPullsStore(opts: PullsStoreOptions) {
+  const apiClient = opts.client;
+  const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
+  const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
+  const getView = opts.getView ?? ((): "list" | "board" => "list");
+
+  // --- state ---
+
+  let pulls = $state<PullRequest[]>([]);
+  let loading = $state(false);
+  let storeError = $state<string | null>(null);
+  let filterKanban = $state<KanbanStatus | undefined>(undefined);
+  let filterStarred = $state(false);
+  let filterState = $state<string>("open");
+  let searchQuery = $state<string | undefined>(undefined);
+  let selectedPR = $state<
+    { owner: string; name: string; number: number } | null
+  >(null);
+
+  // --- reads ---
+
+  function getPulls(): PullRequest[] {
+    return pulls;
+  }
+
+  function isLoading(): boolean {
+    return loading;
+  }
+
+  function getError(): string | null {
+    return storeError;
+  }
+
+  function getSelectedPR(): {
+    owner: string;
+    name: string;
+    number: number;
+  } | null {
+    return selectedPR;
+  }
+
+  /** Groups pulls by "owner/name" into a Map. */
+  function pullsByRepo(): Map<string, PullRequest[]> {
+    const map = new Map<string, PullRequest[]>();
+    for (const pr of pulls) {
+      const key =
+        `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`;
+      const existing = map.get(key);
+      if (existing !== undefined) {
+        existing.push(pr);
+      } else {
+        map.set(key, [pr]);
+      }
+    }
+    return map;
+  }
+
+  function getFilterKanban(): KanbanStatus | undefined {
+    return filterKanban;
+  }
+
+  function getFilterStarred(): boolean {
+    return filterStarred;
+  }
+
+  function setFilterStarred(v: boolean): void {
+    filterStarred = v;
+  }
+
+  function getFilterState(): string {
+    return filterState;
+  }
+
+  function setFilterState(s: string): void {
+    filterState = s;
+  }
+
+  /**
+   * Returns PRs in display order: grouped by repo when
+   * groupByRepo is true or when in board view, flat
+   * chronological otherwise.
+   */
+  function getDisplayOrderPRs(): PullRequest[] {
+    if (getGroupByRepo() || getView() === "board") {
+      const grouped = pullsByRepo();
+      const ordered: PullRequest[] = [];
+      for (const prs of grouped.values()) {
+        ordered.push(...prs);
+      }
+      return ordered;
+    }
+    return pulls;
+  }
+
+  function selectNextPR(): void {
+    const list = getDisplayOrderPRs();
+    if (list.length === 0) return;
+    const sel = selectedPR;
+    if (sel === null) {
+      const first = list[0];
+      if (first !== undefined) {
+        selectPR(
+          first.repo_owner ?? "",
+          first.repo_name ?? "",
+          first.Number,
+        );
+      }
+      return;
+    }
+    const idx = list.findIndex(
+      (pr) =>
+        (pr.repo_owner ?? "") === sel.owner &&
+        (pr.repo_name ?? "") === sel.name &&
+        pr.Number === sel.number,
+    );
+    const next = list[idx + 1];
+    if (next !== undefined) {
+      selectPR(
+        next.repo_owner ?? "",
+        next.repo_name ?? "",
+        next.Number,
+      );
+    }
+  }
+
+  function selectPrevPR(): void {
+    const list = getDisplayOrderPRs();
+    if (list.length === 0) return;
+    const sel = selectedPR;
+    if (sel === null) {
+      const last = list[list.length - 1];
+      if (last !== undefined) {
+        selectPR(
+          last.repo_owner ?? "",
+          last.repo_name ?? "",
+          last.Number,
+        );
+      }
+      return;
+    }
+    const idx = list.findIndex(
+      (pr) =>
+        (pr.repo_owner ?? "") === sel.owner &&
+        (pr.repo_name ?? "") === sel.name &&
+        pr.Number === sel.number,
+    );
+    if (idx > 0) {
+      const prev = list[idx - 1];
+      if (prev !== undefined) {
+        selectPR(
+          prev.repo_owner ?? "",
+          prev.repo_name ?? "",
+          prev.Number,
+        );
+      }
+    }
+  }
+
+  // --- writes ---
+
+  function setFilterKanban(
+    kanban: KanbanStatus | undefined,
+  ): void {
+    filterKanban = kanban;
+  }
+
+  function getSearchQuery(): string | undefined {
+    return searchQuery;
+  }
+
+  function setSearchQuery(q: string | undefined): void {
+    searchQuery = q;
+  }
+
+  function selectPR(
+    owner: string,
+    name: string,
+    number: number,
+  ): void {
+    selectedPR = { owner, name, number };
+  }
+
+  function clearSelection(): void {
+    selectedPR = null;
+  }
+
+  /** Returns the current kanban status for a PR. */
+  function getPullKanbanStatus(
+    owner: string,
+    name: string,
+    number: number,
+  ): KanbanStatus | undefined {
+    const pr = pulls.find(
+      (p) =>
+        p.repo_owner === owner &&
+        p.repo_name === name &&
+        p.Number === number,
+    );
+    return pr?.KanbanStatus as KanbanStatus | undefined;
+  }
+
+  /** Optimistically update a single PR's kanban status. */
+  function optimisticKanbanUpdate(
+    owner: string,
+    name: string,
+    number: number,
+    status: KanbanStatus,
+  ): void {
+    pulls = pulls.map((pr) =>
+      pr.repo_owner === owner &&
+      pr.repo_name === name &&
+      pr.Number === number
+        ? { ...pr, KanbanStatus: status }
+        : pr,
+    );
+  }
+
+  async function togglePRStar(
+    owner: string,
+    name: string,
+    number: number,
+    currentlyStarred: boolean,
+  ): Promise<void> {
+    try {
+      if (currentlyStarred) {
+        const { error } = await apiClient.DELETE("/starred", {
+          body: {
+            item_type: "pr",
+            owner,
+            name,
+            number,
+          },
+        });
+        if (error) {
+          throw new Error(
+            apiErrorMessage(error, "failed to unstar PR"),
+          );
+        }
+      } else {
+        const { error } = await apiClient.PUT("/starred", {
+          body: {
+            item_type: "pr",
+            owner,
+            name,
+            number,
+          },
+        });
+        if (error) {
+          throw new Error(
+            apiErrorMessage(error, "failed to star PR"),
+          );
+        }
+      }
+    } catch (err) {
+      storeError =
+        err instanceof Error ? err.message : String(err);
+      return;
+    }
+    await loadPulls();
+  }
+
+  async function loadPulls(
+    params?: PullsParams,
+  ): Promise<void> {
+    loading = true;
+    storeError = null;
+    try {
+      const globalRepo = getGlobalRepo();
+      const merged = {
+        state: filterState,
+        ...(globalRepo !== undefined && { repo: globalRepo }),
+        ...(filterKanban !== undefined && {
+          kanban: filterKanban,
+        }),
+        ...(filterStarred && { starred: true }),
+        ...(searchQuery !== undefined && { q: searchQuery }),
+        ...params,
+      };
+      const { data, error } = await apiClient.GET("/pulls", {
+        params: { query: merged },
+      });
+      if (error) {
+        throw new Error(
+          apiErrorMessage(error, "failed to load pulls"),
+        );
+      }
+      pulls = (data as PullRequest[]) ?? [];
+    } catch (err) {
+      storeError =
+        err instanceof Error ? err.message : String(err);
+    } finally {
+      loading = false;
+    }
+  }
+
+  return {
+    getPulls,
+    isLoading,
+    getError,
+    getSelectedPR,
+    pullsByRepo,
+    getFilterKanban,
+    getFilterStarred,
+    setFilterStarred,
+    getFilterState,
+    setFilterState,
+    getDisplayOrderPRs,
+    selectNextPR,
+    selectPrevPR,
+    setFilterKanban,
+    getSearchQuery,
+    setSearchQuery,
+    selectPR,
+    clearSelection,
+    getPullKanbanStatus,
+    optimisticKanbanUpdate,
+    togglePRStar,
+    loadPulls,
+  };
+}
+
+export type PullsStore = ReturnType<typeof createPullsStore>;
