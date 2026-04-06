@@ -3,6 +3,20 @@
 Enable middleman's standalone CLI to monitor repos across github.com and
 GitHub Enterprise instances in a single config.
 
+## Constraints and Scope
+
+- **No duplicate owner/name across hosts.** Config validation rejects two repos
+  with the same owner+name on different hosts. This keeps the API routes, DB
+  lookup helpers, and clone paths unambiguous without requiring host-qualified
+  identifiers throughout the stack. The DB schema allows it
+  (`UNIQUE(platform, platform_host, owner, name)`) but the config layer
+  forbids it.
+- **Settings UI does not support `platform_host` or `token_env` yet.** Repos
+  added via the settings UI default to github.com with the global token. GHE
+  repos must be added by editing the TOML config file.
+- **No GHE URL parsing.** `parseGitHubRef` stays github.com-only. Repos with
+  `platform_host` must use explicit `owner` and `name` fields.
+
 ## Config
 
 Add two optional fields to `config.Repo`:
@@ -16,12 +30,12 @@ token_env = "GHE_TOKEN"                 # default: global github_token_env
 ```
 
 `PlatformHost` defaults to `"github.com"` when empty. `TokenEnv` defaults to
-the global `github_token_env` when empty. No URL parsing for GHE hosts --
-users must specify explicit `owner` and `name`.
+the global `github_token_env` when empty.
 
 ### Validation
 
 - Fail fast during `Config.Validate()` if any repo's resolved token is empty
+- Reject duplicate owner+name pairs across different hosts
 - `parseGitHubRef` stays github.com-only; repos with `platform_host` must use
   explicit owner/name fields (no pasted URLs)
 
@@ -45,10 +59,10 @@ same API client and token.
 
 ```go
 type Syncer struct {
-    clients      map[string]Client  // host -> client
+    clients      map[string]Client       // host -> client
     db           *db.DB
     clones       *gitclone.Manager
-    rateTracker  *RateTracker
+    rateTrackers map[string]*RateTracker // host -> tracker
     repos        []RepoRef
     // ... (rest unchanged)
 }
@@ -67,8 +81,8 @@ type RepoRef struct {
 
 ### Constructor
 
-`NewSyncer` accepts the client map directly. Callers build clients before
-calling it.
+`NewSyncer` accepts the client map and rate tracker map directly. Callers
+build both before calling it.
 
 ```go
 func NewSyncer(
@@ -77,12 +91,13 @@ func NewSyncer(
     clones *gitclone.Manager,
     repos []RepoRef,
     interval time.Duration,
-    rateTracker *RateTracker,
+    rateTrackers map[string]*RateTracker,
 ) *Syncer
 ```
 
-The single-client `client Client` parameter and `platformHost string` parameter
-are replaced by `clients map[string]Client`.
+The single-client `client Client` parameter, `platformHost string` parameter,
+and single `rateTracker *RateTracker` parameter are all replaced by host-keyed
+maps.
 
 ### Client lookup
 
@@ -92,17 +107,64 @@ host, defaulting to the `"github.com"` entry.
 ### Sync loop
 
 `RunOnce` groups repos by host, then iterates groups. Within each group, the
-same client is reused. Rate backoff checks use the group's host.
+same client is reused. Rate backoff checks use the group host's `RateTracker`
+from the `rateTrackers` map.
 
 ### On-demand sync
 
 `SyncMR` and `SyncItemByNumber` look up the repo in `s.repos` to determine its
 host, then use the correct client. If the repo isn't tracked, return an error
-(existing behavior).
+(existing behavior). Since config validation forbids duplicate owner/name
+across hosts, owner+name is sufficient for lookup.
 
 ### Clone host
 
 `cloneHost()` is replaced by per-repo host lookup from `RepoRef.PlatformHost`.
+
+## Clone Manager (`internal/gitclone/`)
+
+### Current design
+
+`Manager` holds one `baseDir` and one `token`. Clones are stored under
+`{baseDir}/{owner}/{name}.git`. All git operations authenticate with the
+single token.
+
+### Problems with multi-host
+
+1. **Path collision.** Same owner/name on different hosts would share a clone
+   directory. Config validation forbids this (see Constraints), but the clone
+   paths should still be host-partitioned for correctness.
+2. **Wrong credentials.** A GHE repo would authenticate with the github.com
+   token, which will fail for private repos.
+
+### New design
+
+Partition clone storage by host and use per-host tokens:
+
+```go
+type Manager struct {
+    baseDir string
+    tokens  map[string]string // host -> token
+}
+
+func New(baseDir string, tokens map[string]string) *Manager
+```
+
+**Path layout:** `{baseDir}/{host}/{owner}/{name}.git`
+
+`ClonePath(host, owner, name)` gains a `host` parameter. All callers
+(`EnsureClone`, `RevParse`, `MergeBase`, `Diff`, `Show`) gain a `host`
+parameter or derive it from context.
+
+**Auth:** `git()` takes the host and looks up the token from the `tokens` map.
+If no token exists for a host, operations proceed without auth (public repos).
+
+**`SetToken` removal.** The current `SetToken(token)` method is replaced by
+the constructor accepting the full token map. The syncer builds the map at
+startup alongside the client map.
+
+**Backward compat:** The constructor accepts `map[string]string` -- callers
+that only have github.com pass `map[string]string{"github.com": token}`.
 
 ## Server Impact
 
@@ -127,7 +189,7 @@ mark-ready, sync) call `s.syncer.ClientForRepo(owner, name)` instead of
 ## CLI Entrypoint (`cmd/middleman/main.go`)
 
 ```go
-// Build per-host clients
+// Collect unique hosts and their tokens
 hostTokens := map[string]string{} // host -> token
 for _, r := range cfg.Repos {
     host := r.PlatformHostOrDefault()
@@ -137,13 +199,22 @@ for _, r := range cfg.Repos {
     hostTokens[host] = r.ResolveToken(cfg.GitHubTokenEnv)
 }
 
+// Build per-host rate trackers, clients, and clone token map
+rateTrackers := map[string]*RateTracker{}
 clients := map[string]Client{}
+cloneTokens := map[string]string{}
 for host, token := range hostTokens {
-    c, err := ghclient.NewClient(token, host, rt)
+    rateTrackers[host] = ghclient.NewRateTracker(database, host)
+    c, err := ghclient.NewClient(token, host, rateTrackers[host])
     clients[host] = c
+    cloneTokens[host] = token
 }
 
-syncer := ghclient.NewSyncer(clients, database, cloneMgr, repos, ...)
+cloneMgr := gitclone.New(cloneDir, cloneTokens)
+syncer := ghclient.NewSyncer(
+    clients, database, cloneMgr, repos,
+    cfg.SyncDuration(), rateTrackers,
+)
 ```
 
 ## Embedded Library (`middleman.go`)
@@ -153,8 +224,22 @@ Adapt to build the client map using this function, grouping repos by host.
 
 ## Rate Tracking
 
-Already per-host (keyed by `platformHost` in `middleman_rate_limits`). No
-schema changes needed. Multiple hosts create separate rate limit rows.
+`RateTracker` is already bound to a single host (keyed by `platformHost` in
+`middleman_rate_limits`). No schema changes needed.
+
+The Syncer holds `map[string]*RateTracker` keyed by host. Each client gets its
+own tracker at construction time. Multiple hosts create separate rate limit
+rows in the DB and track backoff independently.
+
+The CLI and embedded library both build the tracker map alongside the client
+map:
+
+```go
+rateTrackers := map[string]*RateTracker{}
+for host := range hostTokens {
+    rateTrackers[host] = ghclient.NewRateTracker(database, host)
+}
+```
 
 ## Test Plan
 
@@ -163,13 +248,21 @@ schema changes needed. Multiple hosts create separate rate limit rows.
 - Parse repos without those fields (defaults to github.com / global token)
 - Round-trip save/load preserves platform_host and token_env
 - Validation: repo with platform_host but no resolvable token fails
+- Validation: duplicate owner+name across different hosts is rejected
+
+### Clone manager tests (`internal/gitclone/`)
+- `ClonePath` includes host in path (`{baseDir}/{host}/{owner}/{name}.git`)
+- `git()` uses correct per-host token for auth
+- Missing host token results in unauthenticated git operations
+- Single-host backward compat with `map[string]string{"github.com": token}`
 
 ### Syncer tests (`internal/github/`)
 - Multi-host client dispatch: two hosts, verify correct client called per repo
-- Single-host backward compat: nil or single-entry map works
+- Single-host backward compat: single-entry maps work
 - `clientFor` returns correct client; defaults to github.com for empty host
 - `ClientForRepo` returns error for untracked repo
 - On-demand SyncMR dispatches to correct host's client
+- Rate backoff uses the correct host's tracker
 
 ### Server tests (`internal/server/`)
 - Handlers use `ClientForRepo` instead of direct client
@@ -181,4 +274,4 @@ schema changes needed. Multiple hosts create separate rate limit rows.
 - Concurrent access (race detector)
 
 ### Existing tests
-- All pass with single-entry client map (backward compatible)
+- All pass with single-entry client/tracker maps (backward compatible)
