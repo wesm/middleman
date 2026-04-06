@@ -53,23 +53,21 @@ func (d *DB) init() error {
 	return nil
 }
 
-// migrate applies idempotent column additions for existing databases.
+// migrate drops legacy table names (no backward compat needed pre-release).
 func (d *DB) migrate() {
-	migrations := []string{
-		"ALTER TABLE pull_requests ADD COLUMN ci_checks_json TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE repos ADD COLUMN allow_squash_merge INTEGER NOT NULL DEFAULT 1",
-		"ALTER TABLE repos ADD COLUMN allow_merge_commit INTEGER NOT NULL DEFAULT 1",
-		"ALTER TABLE repos ADD COLUMN allow_rebase_merge INTEGER NOT NULL DEFAULT 1",
-		"ALTER TABLE pull_requests ADD COLUMN author_display_name TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE pull_requests ADD COLUMN mergeable_state TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE pull_requests ADD COLUMN github_head_sha TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE pull_requests ADD COLUMN github_base_sha TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE pull_requests ADD COLUMN diff_head_sha TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE pull_requests ADD COLUMN diff_base_sha TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE pull_requests ADD COLUMN merge_base_sha TEXT NOT NULL DEFAULT ''",
+	oldTables := []string{
+		"repos", "pull_requests", "pr_events",
+		"kanban_state", "issues", "issue_events", "starred_items",
 	}
-	for _, m := range migrations {
-		_, _ = d.rw.Exec(m) // Ignore errors — column may already exist
+	for _, t := range oldTables {
+		_, _ = d.rw.Exec("DROP TABLE IF EXISTS " + t)
+	}
+	oldIndexes := []string{
+		"idx_pr_repo_state_activity", "idx_pr_state_activity",
+		"idx_events_pr_created",
+	}
+	for _, idx := range oldIndexes {
+		_, _ = d.rw.Exec("DROP INDEX IF EXISTS " + idx)
 	}
 }
 

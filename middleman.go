@@ -6,12 +6,14 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/web"
@@ -28,8 +30,65 @@ type (
 
 // Repo identifies a GitHub repository to monitor.
 type Repo struct {
-	Owner string
-	Name  string
+	Owner        string
+	Name         string
+	PlatformHost string // e.g. "github.com" or GHE hostname
+}
+
+// uniqueHosts returns the deduplicated list of platform hosts
+// from the given repos. Repos without PlatformHost default to
+// "github.com". If repos is empty, returns ["github.com"].
+func uniqueHosts(repos []Repo) []string {
+	seen := make(map[string]bool)
+	var hosts []string
+	for _, r := range repos {
+		h := r.PlatformHost
+		if h == "" {
+			h = "github.com"
+		}
+		if !seen[h] {
+			seen[h] = true
+			hosts = append(hosts, h)
+		}
+	}
+	if len(hosts) == 0 {
+		return []string{"github.com"}
+	}
+	return hosts
+}
+
+// resolveHostTokens builds a map of host -> token. When
+// resolveToken is set it is called once per host; otherwise
+// staticToken is used for all hosts.
+func resolveHostTokens(
+	hosts []string,
+	staticToken string,
+	resolveToken func(ctx context.Context, host string) (string, error),
+) (map[string]string, error) {
+	tokens := make(map[string]string, len(hosts))
+	for _, host := range hosts {
+		if resolveToken != nil {
+			tok, err := resolveToken(
+				context.Background(), host,
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"middleman: resolve token for %s: %w",
+					host, err,
+				)
+			}
+			tokens[host] = tok
+		} else {
+			tokens[host] = staticToken
+		}
+		if tokens[host] == "" {
+			return nil, fmt.Errorf(
+				"middleman: token is required (empty for host %s)",
+				host,
+			)
+		}
+	}
+	return tokens, nil
 }
 
 // Activity configures the activity view defaults.
@@ -42,8 +101,20 @@ type Activity struct {
 
 // Options configures a middleman Instance for embedding.
 type Options struct {
-	Token        string
-	DataDir      string
+	// Token is a static GitHub token. Used when ResolveToken
+	// is nil.
+	Token string
+	// ResolveToken returns a GitHub token for the given platform
+	// host (e.g. "github.com"). Preferred over Token for
+	// embedded use cases that need per-host auth.
+	ResolveToken func(ctx context.Context, host string) (string, error)
+	// DataDir is the directory for middleman state. Required if
+	// DBPath is not set.
+	DataDir string
+	// DBPath overrides the DataDir-derived database path. When
+	// set, the host owns the SQLite file and DataDir may be
+	// omitted.
+	DBPath       string
 	BasePath     string
 	SyncInterval time.Duration
 	Repos        []Repo
@@ -63,27 +134,47 @@ type Instance struct {
 }
 
 // New creates a middleman Instance from the given options.
-// Token and DataDir are required.
+// Either Token or ResolveToken must yield a non-empty token.
+// Either DBPath or DataDir must be provided.
 func New(opts Options) (*Instance, error) {
-	if opts.Token == "" {
+	// DB path: prefer explicit DBPath over DataDir-derived.
+	dbPath := opts.DBPath
+	if dbPath == "" {
+		if opts.DataDir == "" {
+			return nil, fmt.Errorf(
+				"middleman: either DBPath or DataDir " +
+					"is required",
+			)
+		}
+		if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
+			return nil, fmt.Errorf(
+				"middleman: create data directory %s: %w",
+				opts.DataDir, err,
+			)
+		}
+		dbPath = filepath.Join(opts.DataDir, "middleman.db")
+	}
+
+	// Collect unique hosts from repos.
+	hosts := uniqueHosts(opts.Repos)
+
+	// Multi-host requires ResolveToken.
+	if len(hosts) > 1 && opts.ResolveToken == nil {
 		return nil, fmt.Errorf(
-			"middleman: token is required",
+			"middleman: multi-host config requires " +
+				"ResolveToken (repos span multiple hosts)",
 		)
 	}
-	if opts.DataDir == "" {
-		return nil, fmt.Errorf(
-			"middleman: DataDir is required",
-		)
+
+	// Build per-host tokens.
+	hostTokens, err := resolveHostTokens(
+		hosts, opts.Token, opts.ResolveToken,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	cfg := buildConfig(opts)
-
-	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
-		return nil, fmt.Errorf(
-			"middleman: create data directory %s: %w",
-			opts.DataDir, err,
-		)
-	}
 
 	frontend, err := resolveAssets(opts)
 	if err != nil {
@@ -92,32 +183,66 @@ func New(opts Options) (*Instance, error) {
 		)
 	}
 
-	database, err := db.Open(cfg.DBPath())
+	database, err := db.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"middleman: opening database: %w", err,
 		)
 	}
 
-	gh := ghclient.NewClient(opts.Token)
+	// Build per-host clients and rate trackers.
+	clients := make(map[string]ghclient.Client, len(hosts))
+	rateTrackers := make(
+		map[string]*ghclient.RateTracker, len(hosts),
+	)
+	for _, host := range hosts {
+		rt := ghclient.NewRateTracker(database, host)
+		rateTrackers[host] = rt
+		gh, cErr := ghclient.NewClient(
+			hostTokens[host], host, rt,
+		)
+		if cErr != nil {
+			database.Close()
+			return nil, fmt.Errorf(
+				"middleman: creating GitHub client for %s: %w",
+				host, cErr,
+			)
+		}
+		clients[host] = gh
+	}
 
+	// Build repo refs with resolved PlatformHost.
 	var refs []ghclient.RepoRef
 	for _, r := range opts.Repos {
+		h := r.PlatformHost
+		if h == "" {
+			h = "github.com"
+		}
 		refs = append(refs, ghclient.RepoRef{
-			Owner: r.Owner,
-			Name:  r.Name,
+			Owner:        r.Owner,
+			Name:         r.Name,
+			PlatformHost: h,
 		})
 	}
 
+	// Clone manager (needs DataDir for clone storage).
+	var cloneMgr *gitclone.Manager
+	if opts.DataDir != "" {
+		cloneDir := filepath.Join(opts.DataDir, "clones")
+		cloneMgr = gitclone.New(cloneDir, hostTokens)
+	}
+
 	syncer := ghclient.NewSyncer(
-		gh, database, nil, refs, cfg.SyncDuration(),
+		clients, database, cloneMgr, refs,
+		cfg.SyncDuration(), rateTrackers,
 	)
 
 	srv := server.New(
-		database, gh, syncer, frontend,
+		database, syncer, frontend,
 		cfg.BasePath, cfg,
 		server.ServerOptions{
 			EmbedConfig: opts.EmbedConfig,
+			Clones:      cloneMgr,
 		},
 	)
 

@@ -98,7 +98,7 @@ export function createDetailStore(
       detail !== null &&
       detail.repo_owner === owner &&
       detail.repo_name === name &&
-      detail.pull_request.Number === number
+      detail.merge_request.Number === number
     );
   }
 
@@ -232,7 +232,7 @@ export function createDetailStore(
       name,
       number,
     )
-      ? (detail!.pull_request
+      ? (detail!.merge_request
           .KanbanStatus as KanbanStatus)
       : undefined;
     const prevPullsStatus =
@@ -245,8 +245,8 @@ export function createDetailStore(
     if (prevDetailStatus !== undefined) {
       detail = {
         ...detail!,
-        pull_request: {
-          ...detail!.pull_request,
+        merge_request: {
+          ...detail!.merge_request,
           KanbanStatus: status,
         },
       };
@@ -286,8 +286,8 @@ export function createDetailStore(
         ) {
           detail = {
             ...detail!,
-            pull_request: {
-              ...detail!.pull_request,
+            merge_request: {
+              ...detail!.merge_request,
               KanbanStatus: prevDetailStatus,
             },
           };
@@ -365,8 +365,8 @@ export function createDetailStore(
     if (detail !== null) {
       detail = {
         ...detail,
-        pull_request: {
-          ...detail.pull_request,
+        merge_request: {
+          ...detail.merge_request,
           Starred: !currentlyStarred,
         },
       };
@@ -413,8 +413,8 @@ export function createDetailStore(
       if (detail !== null) {
         detail = {
           ...detail,
-          pull_request: {
-            ...detail.pull_request,
+          merge_request: {
+            ...detail.merge_request,
             Starred: currentlyStarred,
           },
         };

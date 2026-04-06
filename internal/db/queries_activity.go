@@ -93,8 +93,8 @@ func (d *DB) ListActivity(
 			       p.url AS item_url, p.state AS item_state,
 			       p.author, p.created_at,
 			       '' AS body_preview
-			FROM pull_requests p
-			JOIN repos r ON p.repo_id = r.id
+			FROM middleman_merge_requests p
+			JOIN middleman_repos r ON p.repo_id = r.id
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id,
 			       r.owner, r.name,
@@ -102,8 +102,8 @@ func (d *DB) ListActivity(
 			       i.url, i.state,
 			       i.author, i.created_at,
 			       ''
-			FROM issues i
-			JOIN repos r ON i.repo_id = r.id
+			FROM middleman_issues i
+			JOIN middleman_repos r ON i.repo_id = r.id
 			UNION ALL
 			SELECT CASE e.event_type
 			           WHEN 'issue_comment' THEN 'comment'
@@ -115,9 +115,9 @@ func (d *DB) ListActivity(
 			       p.url, p.state,
 			       e.author, e.created_at,
 			       substr(COALESCE(e.body, ''), 1, 200)
-			FROM pr_events e
-			JOIN pull_requests p ON e.pr_id = p.id
-			JOIN repos r ON p.repo_id = r.id
+			FROM middleman_mr_events e
+			JOIN middleman_merge_requests p ON e.merge_request_id = p.id
+			JOIN middleman_repos r ON p.repo_id = r.id
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit')
 			UNION ALL
@@ -127,9 +127,9 @@ func (d *DB) ListActivity(
 			       i.url, i.state,
 			       e.author, e.created_at,
 			       substr(COALESCE(e.body, ''), 1, 200)
-			FROM issue_events e
-			JOIN issues i ON e.issue_id = i.id
-			JOIN repos r ON i.repo_id = r.id
+			FROM middleman_issue_events e
+			JOIN middleman_issues i ON e.issue_id = i.id
+			JOIN middleman_repos r ON i.repo_id = r.id
 			WHERE e.event_type = 'issue_comment'
 		) unified
 		%s

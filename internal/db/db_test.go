@@ -21,7 +21,7 @@ func openTestDB(t *testing.T) *DB {
 
 func TestOpenAndSchema(t *testing.T) {
 	d := openTestDB(t)
-	tables := []string{"repos", "pull_requests", "pr_events", "kanban_state"}
+	tables := []string{"middleman_repos", "middleman_merge_requests", "middleman_mr_events", "middleman_kanban_state"}
 	for _, tbl := range tables {
 		var name string
 		err := d.ReadDB().QueryRow(
@@ -56,7 +56,7 @@ func TestMigrateMergeableState(t *testing.T) {
 	d := openTestDB(t)
 	var val string
 	err := d.ReadDB().QueryRow(
-		"SELECT mergeable_state FROM pull_requests LIMIT 0",
+		"SELECT mergeable_state FROM middleman_merge_requests LIMIT 0",
 	).Scan(&val)
 	require.ErrorIs(t, err, sql.ErrNoRows)
 }

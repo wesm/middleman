@@ -20,11 +20,11 @@ func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	return id
 }
 
-func insertTestPR(t *testing.T, d *DB, repoID int64, number int, title string, activity time.Time) int64 {
+func insertTestMR(t *testing.T, d *DB, repoID int64, number int, title string, activity time.Time) int64 {
 	t.Helper()
-	pr := &PullRequest{
+	mr := &MergeRequest{
 		RepoID:         repoID,
-		GitHubID:       repoID*10000 + int64(number),
+		PlatformID:     repoID*10000 + int64(number),
 		Number:         number,
 		URL:            "https://github.com/example/repo/pull/" + title,
 		Title:          title,
@@ -37,8 +37,8 @@ func insertTestPR(t *testing.T, d *DB, repoID int64, number int, title string, a
 		UpdatedAt:      activity,
 		LastActivityAt: activity,
 	}
-	id, err := d.UpsertPullRequest(context.Background(), pr)
-	require.NoErrorf(t, err, "UpsertPullRequest %d", number)
+	id, err := d.UpsertMergeRequest(context.Background(), mr)
+	require.NoErrorf(t, err, "UpsertMergeRequest %d", number)
 	return id
 }
 
@@ -124,9 +124,9 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	now := baseTime()
 
-	pr := &PullRequest{
+	pr := &MergeRequest{
 		RepoID:         repoID,
-		GitHubID:       42,
+		PlatformID:     42,
 		Number:         7,
 		URL:            "https://github.com/owner/repo/pull/7",
 		Title:          "fix: something",
@@ -146,11 +146,11 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 		LastActivityAt: now,
 	}
 
-	id, err := d.UpsertPullRequest(ctx, pr)
+	id, err := d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 	assert.NotZero(id)
 
-	got, err := d.GetPullRequest(ctx, "owner", "repo", 7)
+	got, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal(id, got.ID)
@@ -165,11 +165,11 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	pr.UpdatedAt = now.Add(time.Hour)
 	pr.LastActivityAt = now.Add(time.Hour)
 
-	id2, err := d.UpsertPullRequest(ctx, pr)
+	id2, err := d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 	assert.Equal(id, id2)
 
-	got2, _ := d.GetPullRequest(ctx, "owner", "repo", 7)
+	got2, _ := d.GetMergeRequest(ctx, "owner", "repo", 7)
 	require.NotNil(got2)
 	assert.Equal("fix: something updated", got2.Title)
 	assert.Equal(20, got2.Additions)
@@ -177,7 +177,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.True(got2.CreatedAt.Equal(now))
 
 	// Missing PR returns nil.
-	missing, err := d.GetPullRequest(ctx, "owner", "repo", 999)
+	missing, err := d.GetMergeRequest(ctx, "owner", "repo", 999)
 	require.NoError(err)
 	assert.Nil(missing)
 }
@@ -190,11 +190,11 @@ func TestListPullRequests(t *testing.T) {
 	base := baseTime()
 
 	// Insert 3 PRs with different last_activity_at.
-	insertTestPR(t, d, repoID, 1, "oldest", base)
-	insertTestPR(t, d, repoID, 2, "middle", base.Add(time.Hour))
-	insertTestPR(t, d, repoID, 3, "newest", base.Add(2*time.Hour))
+	insertTestMR(t, d, repoID, 1, "oldest", base)
+	insertTestMR(t, d, repoID, 2, "middle", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 3, "newest", base.Add(2*time.Hour))
 
-	prs, err := d.ListPullRequests(ctx, ListPullsOpts{})
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{})
 	require.NoError(t, err)
 	require.Len(t, prs, 3)
 	// Newest first.
@@ -209,10 +209,10 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	repo2 := insertTestRepo(t, d, "owner", "repo2")
 	base := baseTime()
 
-	insertTestPR(t, d, repo1, 1, "pr in repo1", base)
-	insertTestPR(t, d, repo2, 1, "pr in repo2", base)
+	insertTestMR(t, d, repo1, 1, "pr in repo1", base)
+	insertTestMR(t, d, repo2, 1, "pr in repo2", base)
 
-	prs, err := d.ListPullRequests(ctx, ListPullsOpts{RepoOwner: "owner", RepoName: "repo1"})
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{RepoOwner: "owner", RepoName: "repo1"})
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, repo1, prs[0].RepoID)
@@ -225,10 +225,10 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
 
-	insertTestPR(t, d, repoID, 1, "add feature", base)
-	insertTestPR(t, d, repoID, 2, "fix bug", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 1, "add feature", base)
+	insertTestMR(t, d, repoID, 2, "fix bug", base.Add(time.Hour))
 
-	prs, err := d.ListPullRequests(ctx, ListPullsOpts{Search: "feature"})
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{Search: "feature"})
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, 1, prs[0].Number)
@@ -243,9 +243,9 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
 
-	id1 := insertTestPR(t, d, repoID, 1, "pr 1", base)
-	id2 := insertTestPR(t, d, repoID, 2, "pr 2", base.Add(time.Hour))
-	id3 := insertTestPR(t, d, repoID, 3, "pr 3", base.Add(2*time.Hour))
+	id1 := insertTestMR(t, d, repoID, 1, "pr 1", base)
+	id2 := insertTestMR(t, d, repoID, 2, "pr 2", base.Add(time.Hour))
+	id3 := insertTestMR(t, d, repoID, 3, "pr 3", base.Add(2*time.Hour))
 
 	// Set PR 2 to "reviewing".
 	require.NoError(d.SetKanbanState(ctx, id2, "reviewing"))
@@ -253,7 +253,7 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	require.NoError(d.EnsureKanbanState(ctx, id1))
 	require.NoError(d.EnsureKanbanState(ctx, id3))
 
-	prs, err := d.ListPullRequests(ctx, ListPullsOpts{KanbanState: "reviewing"})
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "reviewing"})
 	require.NoError(err)
 	require.Len(prs, 1)
 	assert.Equal(2, prs[0].Number)
@@ -267,7 +267,7 @@ func TestKanbanState(t *testing.T) {
 	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
-	prID := insertTestPR(t, d, repoID, 1, "pr", baseTime())
+	prID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
 
 	// Before EnsureKanbanState, GetKanbanState returns nil.
 	k, err := d.GetKanbanState(ctx, prID)
@@ -301,31 +301,31 @@ func TestPREvents(t *testing.T) {
 	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
-	prID := insertTestPR(t, d, repoID, 1, "pr", baseTime())
+	prID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
 	base := baseTime()
 
-	events := []PREvent{
+	events := []MREvent{
 		{
-			PRID:      prID,
-			EventType: "comment",
-			Author:    "alice",
-			Summary:   "LGTM",
-			CreatedAt: base,
-			DedupeKey: "comment-1",
+			MergeRequestID: prID,
+			EventType:      "comment",
+			Author:         "alice",
+			Summary:        "LGTM",
+			CreatedAt:      base,
+			DedupeKey:      "comment-1",
 		},
 		{
-			PRID:      prID,
-			EventType: "review",
-			Author:    "bob",
-			Summary:   "approved",
-			CreatedAt: base.Add(time.Hour),
-			DedupeKey: "review-1",
+			MergeRequestID: prID,
+			EventType:      "review",
+			Author:         "bob",
+			Summary:        "approved",
+			CreatedAt:      base.Add(time.Hour),
+			DedupeKey:      "review-1",
 		},
 	}
 
-	require.NoError(d.UpsertPREvents(ctx, events))
+	require.NoError(d.UpsertMREvents(ctx, events))
 
-	got, err := d.ListPREvents(ctx, prID)
+	got, err := d.ListMREvents(ctx, prID)
 	require.NoError(err)
 	require.Len(got, 2)
 	// Newest first.
@@ -333,18 +333,18 @@ func TestPREvents(t *testing.T) {
 	assert.Equal("comment-1", got[1].DedupeKey)
 
 	// Inserting duplicate dedupe_key must be silently ignored.
-	dup := []PREvent{
+	dup := []MREvent{
 		{
-			PRID:      prID,
-			EventType: "comment",
-			Author:    "alice",
-			Summary:   "dupe",
-			CreatedAt: base,
-			DedupeKey: "comment-1",
+			MergeRequestID: prID,
+			EventType:      "comment",
+			Author:         "alice",
+			Summary:        "dupe",
+			CreatedAt:      base,
+			DedupeKey:      "comment-1",
 		},
 	}
-	require.NoError(d.UpsertPREvents(ctx, dup))
-	got2, _ := d.ListPREvents(ctx, prID)
+	require.NoError(d.UpsertMREvents(ctx, dup))
+	got2, _ := d.ListMREvents(ctx, prID)
 	assert.Len(got2, 2)
 }
 
@@ -353,13 +353,13 @@ func TestGetPRIDByRepoAndNumber(t *testing.T) {
 	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
-	insertTestPR(t, d, repoID, 5, "pr five", baseTime())
+	insertTestMR(t, d, repoID, 5, "pr five", baseTime())
 
-	id, err := d.GetPRIDByRepoAndNumber(ctx, "o", "r", 5)
+	id, err := d.GetMRIDByRepoAndNumber(ctx, "o", "r", 5)
 	require.NoError(t, err)
 	Assert.NotZero(t, id)
 
-	_, err = d.GetPRIDByRepoAndNumber(ctx, "o", "r", 999)
+	_, err = d.GetMRIDByRepoAndNumber(ctx, "o", "r", 999)
 	require.Error(t, err)
 }
 
@@ -369,13 +369,13 @@ func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	base := baseTime()
-	insertTestPR(t, d, repoID, 1, "pr1", base)
-	insertTestPR(t, d, repoID, 2, "pr2", base.Add(time.Hour))
-	insertTestPR(t, d, repoID, 3, "pr3", base.Add(2*time.Hour))
+	insertTestMR(t, d, repoID, 1, "pr1", base)
+	insertTestMR(t, d, repoID, 2, "pr2", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 3, "pr3", base.Add(2*time.Hour))
 
 	// PRs 1 and 3 are still open; 2 was closed externally.
 	stillOpen := map[int]bool{1: true, 3: true}
-	closed, err := d.GetPreviouslyOpenPRNumbers(ctx, repoID, stillOpen)
+	closed, err := d.GetPreviouslyOpenMRNumbers(ctx, repoID, stillOpen)
 	require.NoError(t, err)
 	Assert.Equal(t, []int{2}, closed)
 }
@@ -388,9 +388,9 @@ func TestUpsertPullRequestMergeableState(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	now := baseTime()
-	pr := &PullRequest{
+	pr := &MergeRequest{
 		RepoID:         repoID,
-		GitHubID:       9001,
+		PlatformID:     9001,
 		Number:         42,
 		State:          "open",
 		MergeableState: "dirty",
@@ -399,21 +399,61 @@ func TestUpsertPullRequestMergeableState(t *testing.T) {
 		LastActivityAt: now,
 	}
 
-	_, err := d.UpsertPullRequest(ctx, pr)
+	_, err := d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 
-	got, err := d.GetPullRequest(ctx, "acme", "widget", 42)
+	got, err := d.GetMergeRequest(ctx, "acme", "widget", 42)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("dirty", got.MergeableState)
 
 	pr.MergeableState = "clean"
-	_, err = d.UpsertPullRequest(ctx, pr)
+	_, err = d.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
 
-	got, err = d.GetPullRequest(ctx, "acme", "widget", 42)
+	got, err = d.GetMergeRequest(ctx, "acme", "widget", 42)
 	require.NoError(err)
 	assert.Equal("clean", got.MergeableState)
+}
+
+func TestRateLimitCRUD(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	host := "github.com"
+	hourStart := baseTime()
+	resetAt := hourStart.Add(30 * time.Minute)
+
+	// Insert
+	require.NoError(d.UpsertRateLimit(host, 5, hourStart, 4995, &resetAt))
+
+	got, err := d.GetRateLimit(host)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(host, got.PlatformHost)
+	assert.Equal(5, got.RequestsHour)
+	assert.True(got.HourStart.Equal(hourStart))
+	assert.Equal(4995, got.RateRemaining)
+	require.NotNil(got.RateResetAt)
+	assert.True(got.RateResetAt.Equal(resetAt))
+
+	// Update via upsert
+	laterStart := hourStart.Add(time.Hour)
+	require.NoError(d.UpsertRateLimit(host, 10, laterStart, 4990, nil))
+
+	got2, err := d.GetRateLimit(host)
+	require.NoError(err)
+	require.NotNil(got2)
+	assert.Equal(10, got2.RequestsHour)
+	assert.True(got2.HourStart.Equal(laterStart))
+	assert.Equal(4990, got2.RateRemaining)
+	assert.Nil(got2.RateResetAt)
+
+	// Not found
+	missing, err := d.GetRateLimit("no.such.host")
+	require.NoError(err)
+	assert.Nil(missing)
 }
 
 func TestUpdatePRState(t *testing.T) {
@@ -423,12 +463,12 @@ func TestUpdatePRState(t *testing.T) {
 	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
-	insertTestPR(t, d, repoID, 1, "pr", baseTime())
+	insertTestMR(t, d, repoID, 1, "pr", baseTime())
 
 	mergedAt := baseTime().Add(time.Hour)
-	require.NoError(d.UpdatePRState(ctx, repoID, 1, "merged", &mergedAt, nil))
+	require.NoError(d.UpdateMRState(ctx, repoID, 1, "merged", &mergedAt, nil))
 
-	pr, err := d.GetPullRequest(ctx, "o", "r", 1)
+	pr, err := d.GetMergeRequest(ctx, "o", "r", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("merged", pr.State)

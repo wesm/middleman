@@ -8,6 +8,9 @@ import (
 )
 
 func TestParseRawZ(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	// git diff --raw -z output: status\0path\0 (NUL-delimited)
 	// M for modified, A for added, D for deleted
 	// Renames: R100\0oldpath\0newpath\0
@@ -17,23 +20,26 @@ func TestParseRawZ(t *testing.T) {
 		":100644 100644 abc def R100\x00src/before.go\x00src/after.go\x00"
 
 	files := ParseRawZ([]byte(raw))
-	require.Len(t, files, 4)
+	require.Len(files, 4)
 
-	assert.Equal(t, "src/main.go", files[0].Path)
-	assert.Equal(t, "modified", files[0].Status)
+	assert.Equal("src/main.go", files[0].Path)
+	assert.Equal("modified", files[0].Status)
 
-	assert.Equal(t, "src/new.go", files[1].Path)
-	assert.Equal(t, "added", files[1].Status)
+	assert.Equal("src/new.go", files[1].Path)
+	assert.Equal("added", files[1].Status)
 
-	assert.Equal(t, "src/old.go", files[2].Path)
-	assert.Equal(t, "deleted", files[2].Status)
+	assert.Equal("src/old.go", files[2].Path)
+	assert.Equal("deleted", files[2].Status)
 
-	assert.Equal(t, "src/after.go", files[3].Path)
-	assert.Equal(t, "src/before.go", files[3].OldPath)
-	assert.Equal(t, "renamed", files[3].Status)
+	assert.Equal("src/after.go", files[3].Path)
+	assert.Equal("src/before.go", files[3].OldPath)
+	assert.Equal("renamed", files[3].Status)
 }
 
 func TestParsePatch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	patch := `diff --git a/src/main.go b/src/main.go
 index abc..def 100644
 --- a/src/main.go
@@ -54,33 +60,36 @@ index abc..def 100644
 	}
 
 	files := ParsePatch([]byte(patch), rawFiles)
-	require.Len(t, files, 1)
+	require.Len(files, 1)
 
 	f := files[0]
-	assert.Equal(t, "src/main.go", f.Path)
-	assert.Equal(t, 2, f.Additions)
-	assert.Equal(t, 1, f.Deletions)
-	assert.False(t, f.IsBinary)
+	assert.Equal("src/main.go", f.Path)
+	assert.Equal(2, f.Additions)
+	assert.Equal(1, f.Deletions)
+	assert.False(f.IsBinary)
 
-	require.Len(t, f.Hunks, 1)
+	require.Len(f.Hunks, 1)
 	h := f.Hunks[0]
-	assert.Equal(t, 10, h.OldStart)
-	assert.Equal(t, 6, h.OldCount)
-	assert.Equal(t, 10, h.NewStart)
-	assert.Equal(t, 8, h.NewCount)
-	assert.Equal(t, "func main() {", h.Section)
+	assert.Equal(10, h.OldStart)
+	assert.Equal(6, h.OldCount)
+	assert.Equal(10, h.NewStart)
+	assert.Equal(8, h.NewCount)
+	assert.Equal("func main() {", h.Section)
 
 	// Check line types.
 	types := make([]string, len(h.Lines))
 	for i, l := range h.Lines {
 		types[i] = l.Type
 	}
-	assert.Equal(t, []string{
+	assert.Equal([]string{
 		"context", "context", "add", "add", "context", "delete", "context",
 	}, types)
 }
 
 func TestParsePatchNoNewline(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	patch := `diff --git a/file.txt b/file.txt
 index abc..def 100644
 --- a/file.txt
@@ -96,12 +105,12 @@ index abc..def 100644
 		{Path: "file.txt", OldPath: "file.txt", Status: "modified"},
 	}
 	files := ParsePatch([]byte(patch), rawFiles)
-	require.Len(t, files, 1)
-	require.Len(t, files[0].Hunks, 1)
+	require.Len(files, 1)
+	require.Len(files[0].Hunks, 1)
 
 	lines := files[0].Hunks[0].Lines
-	require.Len(t, lines, 3) // context + delete + add
+	require.Len(lines, 3) // context + delete + add
 
-	assert.True(t, lines[1].NoNewline, "deleted line should have no_newline")
-	assert.True(t, lines[2].NoNewline, "added line should have no_newline")
+	assert.True(lines[1].NoNewline, "deleted line should have no_newline")
+	assert.True(lines[2].NoNewline, "added line should have no_newline")
 }

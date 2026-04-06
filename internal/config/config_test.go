@@ -598,6 +598,133 @@ func TestEnsureDefaultIdempotent(t *testing.T) {
 	require.Equal(info1.ModTime(), info2.ModTime())
 }
 
+func TestLoadRepoPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+platform_host = "github.example.com"
+token_env = "GHE_TOKEN"
+
+[[repos]]
+owner = "ibis-project"
+name = "ibis"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 2)
+	assert.Equal("github.example.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("GHE_TOKEN", cfg.Repos[0].TokenEnv)
+	assert.Empty(cfg.Repos[1].PlatformHost)
+	assert.Empty(cfg.Repos[1].TokenEnv)
+}
+
+func TestRepoPlatformHostOrDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"empty defaults to github.com", "", "github.com"},
+		{"explicit host preserved", "github.example.com", "github.example.com"},
+		{"github.com explicit", "github.com", "github.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := Repo{
+				Owner:        "a",
+				Name:         "b",
+				PlatformHost: tt.host,
+			}
+			Assert.Equal(t, tt.want, r.PlatformHostOrDefault())
+		})
+	}
+}
+
+func TestRepoResolveToken(t *testing.T) {
+	t.Run("token_env set and populated", func(t *testing.T) {
+		t.Setenv("MY_GHE_TOKEN", "ghe-secret")
+		r := Repo{Owner: "a", Name: "b", TokenEnv: "MY_GHE_TOKEN"}
+		Assert.Equal(t, "ghe-secret", r.ResolveToken("global-token"))
+	})
+
+	t.Run("token_env set but empty falls back to global", func(t *testing.T) {
+		t.Setenv("MY_GHE_TOKEN", "")
+		r := Repo{Owner: "a", Name: "b", TokenEnv: "MY_GHE_TOKEN"}
+		Assert.Equal(t, "global-token", r.ResolveToken("global-token"))
+	})
+
+	t.Run("token_env not set falls back to global", func(t *testing.T) {
+		r := Repo{Owner: "a", Name: "b"}
+		Assert.Equal(t, "global-token", r.ResolveToken("global-token"))
+	})
+}
+
+func TestValidateRejectsDuplicateOwnerName(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "duplicate repo")
+}
+
+func TestValidateRejectsConflictingTokenEnv(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "org1"
+name = "repo1"
+platform_host = "github.example.com"
+token_env = "GHE_TOKEN_A"
+
+[[repos]]
+owner = "org2"
+name = "repo2"
+platform_host = "github.example.com"
+token_env = "GHE_TOKEN_B"
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "conflicting token_env")
+}
+
+func TestSaveRoundTripPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+platform_host = "github.example.com"
+token_env = "GHE_TOKEN"
+
+[[repos]]
+owner = "ibis-project"
+name = "ibis"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 2)
+	assert.Equal("github.example.com", cfg2.Repos[0].PlatformHost)
+	assert.Equal("GHE_TOKEN", cfg2.Repos[0].TokenEnv)
+	assert.Empty(cfg2.Repos[1].PlatformHost)
+	assert.Empty(cfg2.Repos[1].TokenEnv)
+}
+
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `

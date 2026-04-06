@@ -41,9 +41,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#1: open, alice, has reviews+comments+4 commits
 	w1Created := now.Add(-10 * 24 * time.Hour)
-	w1ID, err := d.UpsertPullRequest(ctx, &db.PullRequest{
+	w1ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1001,
+		PlatformID:          1001,
 		Number:            1,
 		URL:               "https://github.com/acme/widgets/pull/1",
 		Title:             "Add widget caching layer",
@@ -65,9 +65,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#2: open, bob, dirty merge state
 	w2Created := now.Add(-8 * 24 * time.Hour)
-	w2ID, err := d.UpsertPullRequest(ctx, &db.PullRequest{
+	w2ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1002,
+		PlatformID:          1002,
 		Number:            2,
 		URL:               "https://github.com/acme/widgets/pull/2",
 		Title:             "Fix race condition in event loop",
@@ -90,9 +90,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#3: merged 4d ago, carol
 	w3Merged := now.Add(-4 * 24 * time.Hour)
-	_, err = d.UpsertPullRequest(ctx, &db.PullRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1003,
+		PlatformID:          1003,
 		Number:            3,
 		URL:               "https://github.com/acme/widgets/pull/3",
 		Title:             "Upgrade dependency versions",
@@ -115,9 +115,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#4: merged 25d ago, alice
 	w4Merged := now.Add(-25 * 24 * time.Hour)
-	_, err = d.UpsertPullRequest(ctx, &db.PullRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1004,
+		PlatformID:          1004,
 		Number:            4,
 		URL:               "https://github.com/acme/widgets/pull/4",
 		Title:             "Refactor storage backend",
@@ -140,9 +140,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#5: closed not merged, 5d ago, bob
 	w5Closed := now.Add(-5 * 24 * time.Hour)
-	_, err = d.UpsertPullRequest(ctx, &db.PullRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1005,
+		PlatformID:          1005,
 		Number:            5,
 		URL:               "https://github.com/acme/widgets/pull/5",
 		Title:             "Experimental new API",
@@ -164,9 +164,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#6: open draft, carol
 	w6Created := now.Add(-3 * 24 * time.Hour)
-	_, err = d.UpsertPullRequest(ctx, &db.PullRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1006,
+		PlatformID:          1006,
 		Number:            6,
 		URL:               "https://github.com/acme/widgets/pull/6",
 		Title:             "WIP: new dashboard layout",
@@ -188,9 +188,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#7: open, dependabot[bot]
 	w7Created := now.Add(-1 * 24 * time.Hour)
-	_, err = d.UpsertPullRequest(ctx, &db.PullRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
-		GitHubID:          1007,
+		PlatformID:          1007,
 		Number:            7,
 		URL:               "https://github.com/acme/widgets/pull/7",
 		Title:             "Bump lodash from 4.17.20 to 4.17.21",
@@ -211,9 +211,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// tools#1: open, dave
 	t1Created := now.Add(-6 * 24 * time.Hour)
-	t1ID, err := d.UpsertPullRequest(ctx, &db.PullRequest{
+	t1ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            toolsID,
-		GitHubID:          2001,
+		PlatformID:          2001,
 		Number:            1,
 		URL:               "https://github.com/acme/tools/pull/1",
 		Title:             "Add CLI flag parser",
@@ -234,9 +234,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// tools#2: merged 60d ago, alice
 	t2Merged := now.Add(-60 * 24 * time.Hour)
-	_, err = d.UpsertPullRequest(ctx, &db.PullRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            toolsID,
-		GitHubID:          2002,
+		PlatformID:          2002,
 		Number:            2,
 		URL:               "https://github.com/acme/tools/pull/2",
 		Title:             "Initial project setup",
@@ -263,7 +263,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	wi10Created := now.Add(-5 * 24 * time.Hour)
 	wi10ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
-		GitHubID:       3010,
+		PlatformID:       3010,
 		Number:         10,
 		URL:            "https://github.com/acme/widgets/issues/10",
 		Title:          "Widget rendering broken on Safari",
@@ -282,7 +282,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	wi11Created := now.Add(-20 * 24 * time.Hour)
 	wi11ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
-		GitHubID:       3011,
+		PlatformID:       3011,
 		Number:         11,
 		URL:            "https://github.com/acme/widgets/issues/11",
 		Title:          "Add dark mode support",
@@ -301,7 +301,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	wi12Closed := now.Add(-3 * 24 * time.Hour)
 	wi12ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
-		GitHubID:       3012,
+		PlatformID:       3012,
 		Number:         12,
 		URL:            "https://github.com/acme/widgets/issues/12",
 		Title:          "Crash on empty input",
@@ -321,7 +321,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	wi13Created := now.Add(-2 * 24 * time.Hour)
 	wi13ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
-		GitHubID:       3013,
+		PlatformID:       3013,
 		Number:         13,
 		URL:            "https://github.com/acme/widgets/issues/13",
 		Title:          "Security advisory: prototype pollution",
@@ -340,7 +340,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	ti5Created := now.Add(-7 * 24 * time.Hour)
 	ti5ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         toolsID,
-		GitHubID:       4005,
+		PlatformID:       4005,
 		Number:         5,
 		URL:            "https://github.com/acme/tools/issues/5",
 		Title:          "Support config file loading",
@@ -359,9 +359,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), 4 commits (alice)
 	commitBase := now.Add(-9 * 24 * time.Hour)
-	err = d.UpsertPREvents(ctx, []db.PREvent{
+	err = d.UpsertMREvents(ctx, []db.MREvent{
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "issue_comment",
 			Author:    "bob",
 			Body:      "Looks like a solid approach. Minor nit on naming.",
@@ -369,7 +369,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w1-comment-bob-1",
 		},
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "issue_comment",
 			Author:    "carol",
 			Body:      "I agree, caching here will help a lot.",
@@ -377,7 +377,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w1-comment-carol-1",
 		},
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "review",
 			Author:    "bob",
 			Summary:   "APPROVED",
@@ -386,7 +386,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w1-review-bob-1",
 		},
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "commit",
 			Author:    "alice",
 			Summary:   "abc1111",
@@ -395,7 +395,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w1-commit-1",
 		},
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "commit",
 			Author:    "alice",
 			Summary:   "abc2222",
@@ -404,7 +404,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w1-commit-2",
 		},
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "commit",
 			Author:    "alice",
 			Summary:   "abc3333",
@@ -413,7 +413,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w1-commit-3",
 		},
 		{
-			PRID:      w1ID,
+			MergeRequestID:      w1ID,
 			EventType: "commit",
 			Author:    "alice",
 			Summary:   "abc4444",
@@ -427,9 +427,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	}
 
 	// widgets PR#2: 1 comment (alice), 1 review (alice CHANGES_REQUESTED)
-	err = d.UpsertPREvents(ctx, []db.PREvent{
+	err = d.UpsertMREvents(ctx, []db.MREvent{
 		{
-			PRID:      w2ID,
+			MergeRequestID:      w2ID,
 			EventType: "issue_comment",
 			Author:    "alice",
 			Body:      "Have you considered using a mutex here instead?",
@@ -437,7 +437,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			DedupeKey: "w2-comment-alice-1",
 		},
 		{
-			PRID:      w2ID,
+			MergeRequestID:      w2ID,
 			EventType: "review",
 			Author:    "alice",
 			Summary:   "CHANGES_REQUESTED",
@@ -451,9 +451,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	}
 
 	// tools PR#1: 1 comment (alice)
-	err = d.UpsertPREvents(ctx, []db.PREvent{
+	err = d.UpsertMREvents(ctx, []db.MREvent{
 		{
-			PRID:      t1ID,
+			MergeRequestID:      t1ID,
 			EventType: "issue_comment",
 			Author:    "alice",
 			Body:      "Nice work! Should we support short flags too?",

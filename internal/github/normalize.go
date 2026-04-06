@@ -26,13 +26,13 @@ func sanitizeURL(raw string) string {
 	return ""
 }
 
-// NormalizePR converts a GitHub PullRequest to a db.PullRequest.
+// NormalizePR converts a GitHub PullRequest to a db.MergeRequest.
 // If the PR is merged, State is set to "merged". LastActivityAt is
 // initialized to UpdatedAt.
-func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
-	pr := &db.PullRequest{
+func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.MergeRequest {
+	mr := &db.MergeRequest{
 		RepoID:            repoID,
-		GitHubID:          ghPR.GetID(),
+		PlatformID:        ghPR.GetID(),
 		Number:            ghPR.GetNumber(),
 		URL:               ghPR.GetHTMLURL(),
 		Title:             ghPR.GetTitle(),
@@ -46,67 +46,70 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.PullRequest {
 	}
 
 	if ghPR.GetMerged() {
-		pr.State = "merged"
+		mr.State = "merged"
 	}
 
 	if ghPR.CreatedAt != nil {
-		pr.CreatedAt = ghPR.CreatedAt.Time
+		mr.CreatedAt = ghPR.CreatedAt.Time
 	}
 	if ghPR.UpdatedAt != nil {
-		pr.UpdatedAt = ghPR.UpdatedAt.Time
-		pr.LastActivityAt = ghPR.UpdatedAt.Time
+		mr.UpdatedAt = ghPR.UpdatedAt.Time
+		mr.LastActivityAt = ghPR.UpdatedAt.Time
 	}
 	if ghPR.MergedAt != nil {
 		t := ghPR.MergedAt.Time
-		pr.MergedAt = &t
+		mr.MergedAt = &t
 	}
 	if ghPR.ClosedAt != nil {
 		t := ghPR.ClosedAt.Time
-		pr.ClosedAt = &t
+		mr.ClosedAt = &t
 	}
 	if ghPR.GetHead() != nil {
-		pr.HeadBranch = ghPR.GetHead().GetRef()
-		pr.GitHubHeadSHA = ghPR.GetHead().GetSHA()
+		mr.HeadBranch = ghPR.GetHead().GetRef()
+		mr.PlatformHeadSHA = ghPR.GetHead().GetSHA()
+		if ghPR.GetHead().GetRepo() != nil {
+			mr.HeadRepoCloneURL = ghPR.GetHead().GetRepo().GetCloneURL()
+		}
 	}
 	if ghPR.GetBase() != nil {
-		pr.BaseBranch = ghPR.GetBase().GetRef()
-		pr.GitHubBaseSHA = ghPR.GetBase().GetSHA()
+		mr.BaseBranch = ghPR.GetBase().GetRef()
+		mr.PlatformBaseSHA = ghPR.GetBase().GetSHA()
 	}
-	pr.MergeableState = ghPR.GetMergeableState()
+	mr.MergeableState = ghPR.GetMergeableState()
 
-	return pr
+	return mr
 }
 
-// NormalizeCommentEvent converts a GitHub IssueComment to a db.PREvent.
-func NormalizeCommentEvent(prID int64, c *gh.IssueComment) db.PREvent {
+// NormalizeCommentEvent converts a GitHub IssueComment to a db.MREvent.
+func NormalizeCommentEvent(mrID int64, c *gh.IssueComment) db.MREvent {
 	event := normalizeIssueCommentBase(c)
-	event.PRID = prID
+	event.MergeRequestID = mrID
 	event.DedupeKey = fmt.Sprintf("comment-%d", c.GetID())
 	return event
 }
 
-// NormalizeReviewEvent converts a GitHub PullRequestReview to a db.PREvent.
-func NormalizeReviewEvent(prID int64, r *gh.PullRequestReview) db.PREvent {
-	event := db.PREvent{
-		PRID:      prID,
-		EventType: "review",
-		DedupeKey: fmt.Sprintf("review-%d", r.GetID()),
-		Author:    loginOrEmpty(r.GetUser()),
-		Body:      r.GetBody(),
-		Summary:   r.GetState(),
+// NormalizeReviewEvent converts a GitHub PullRequestReview to a db.MREvent.
+func NormalizeReviewEvent(mrID int64, r *gh.PullRequestReview) db.MREvent {
+	event := db.MREvent{
+		MergeRequestID: mrID,
+		EventType:      "review",
+		DedupeKey:      fmt.Sprintf("review-%d", r.GetID()),
+		Author:         loginOrEmpty(r.GetUser()),
+		Body:           r.GetBody(),
+		Summary:        r.GetState(),
 	}
 	ghID := r.GetID()
-	event.GitHubID = &ghID
+	event.PlatformID = &ghID
 	if r.SubmittedAt != nil {
 		event.CreatedAt = r.SubmittedAt.Time
 	}
 	return event
 }
 
-// NormalizeCommitEvent converts a GitHub RepositoryCommit to a db.PREvent.
+// NormalizeCommitEvent converts a GitHub RepositoryCommit to a db.MREvent.
 // Author is taken from the GitHub user login if available, falling back to
 // the git commit author name.
-func NormalizeCommitEvent(prID int64, c *gh.RepositoryCommit) db.PREvent {
+func NormalizeCommitEvent(mrID int64, c *gh.RepositoryCommit) db.MREvent {
 	sha := c.GetSHA()
 	dedupeKey := sha
 	if len(sha) > 12 {
@@ -118,12 +121,12 @@ func NormalizeCommitEvent(prID int64, c *gh.RepositoryCommit) db.PREvent {
 		author = c.GetCommit().GetAuthor().GetName()
 	}
 
-	event := db.PREvent{
-		PRID:      prID,
-		EventType: "commit",
-		DedupeKey: fmt.Sprintf("commit-%s", dedupeKey),
-		Author:    author,
-		Summary:   sha,
+	event := db.MREvent{
+		MergeRequestID: mrID,
+		EventType:      "commit",
+		DedupeKey:      fmt.Sprintf("commit-%s", dedupeKey),
+		Author:         author,
+		Summary:        sha,
 	}
 	if c.GetCommit() != nil {
 		event.Body = c.GetCommit().GetMessage()
@@ -306,7 +309,7 @@ type Label struct {
 func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
 	issue := &db.Issue{
 		RepoID:       repoID,
-		GitHubID:     ghIssue.GetID(),
+		PlatformID:   ghIssue.GetID(),
 		Number:       ghIssue.GetNumber(),
 		URL:          ghIssue.GetHTMLURL(),
 		Title:        ghIssue.GetTitle(),
@@ -350,7 +353,7 @@ func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent
 	event := normalizeIssueCommentBase(c)
 	return db.IssueEvent{
 		IssueID:   issueID,
-		GitHubID:  event.GitHubID,
+		PlatformID: event.PlatformID,
 		EventType: event.EventType,
 		Author:    event.Author,
 		Summary:   event.Summary,
@@ -360,14 +363,14 @@ func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent
 	}
 }
 
-func normalizeIssueCommentBase(c *gh.IssueComment) db.PREvent {
-	event := db.PREvent{
+func normalizeIssueCommentBase(c *gh.IssueComment) db.MREvent {
+	event := db.MREvent{
 		EventType: "issue_comment",
 		Author:    loginOrEmpty(c.GetUser()),
 		Body:      c.GetBody(),
 	}
 	ghID := c.GetID()
-	event.GitHubID = &ghID
+	event.PlatformID = &ghID
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time
 	}

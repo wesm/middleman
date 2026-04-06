@@ -4,6 +4,8 @@ import "time"
 
 type Repo struct {
 	ID                  int64
+	Platform            string
+	PlatformHost        string
 	Owner               string
 	Name                string
 	LastSyncStartedAt   *time.Time
@@ -19,10 +21,10 @@ func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
-type PullRequest struct {
+type MergeRequest struct {
 	ID                int64
 	RepoID            int64
-	GitHubID          int64
+	PlatformID        int64
 	Number            int
 	URL               string
 	Title             string
@@ -33,11 +35,12 @@ type PullRequest struct {
 	Body              string
 	HeadBranch        string
 	BaseBranch        string
-	GitHubHeadSHA     string `json:"-"`
-	GitHubBaseSHA     string `json:"-"`
+	PlatformHeadSHA   string `json:"-"`
+	PlatformBaseSHA   string `json:"-"`
 	DiffHeadSHA       string `json:"-"`
 	DiffBaseSHA       string `json:"-"`
 	MergeBaseSHA      string `json:"-"`
+	HeadRepoCloneURL  string
 	Additions         int
 	Deletions         int
 	CommentCount      int
@@ -63,26 +66,26 @@ type CICheck struct {
 	App        string `json:"app"`        // app name (e.g., "GitHub Actions")
 }
 
-type PREvent struct {
-	ID           int64
-	PRID         int64
-	GitHubID     *int64
-	EventType    string
-	Author       string
-	Summary      string
-	Body         string
-	MetadataJSON string
-	CreatedAt    time.Time
-	DedupeKey    string
+type MREvent struct {
+	ID             int64
+	MergeRequestID int64
+	PlatformID     *int64
+	EventType      string
+	Author         string
+	Summary        string
+	Body           string
+	MetadataJSON   string
+	CreatedAt      time.Time
+	DedupeKey      string
 }
 
 type KanbanState struct {
-	PRID      int64
-	Status    string
-	UpdatedAt time.Time
+	MergeRequestID int64
+	Status         string
+	UpdatedAt      time.Time
 }
 
-type ListPullsOpts struct {
+type ListMergeRequestsOpts struct {
 	RepoOwner   string
 	RepoName    string
 	State       string
@@ -96,7 +99,7 @@ type ListPullsOpts struct {
 type Issue struct {
 	ID             int64
 	RepoID         int64
-	GitHubID       int64
+	PlatformID     int64
 	Number         int
 	URL            string
 	Title          string
@@ -115,7 +118,7 @@ type Issue struct {
 type IssueEvent struct {
 	ID           int64
 	IssueID      int64
-	GitHubID     *int64
+	PlatformID   *int64
 	EventType    string
 	Author       string
 	Summary      string
@@ -140,6 +143,17 @@ type StarredItem struct {
 	RepoID    int64
 	Number    int
 	StarredAt time.Time
+}
+
+// RateLimit tracks per-host API rate limit state.
+type RateLimit struct {
+	ID            int64
+	PlatformHost  string
+	RequestsHour  int
+	HourStart     time.Time
+	RateRemaining int
+	RateResetAt   *time.Time
+	UpdatedAt     time.Time
 }
 
 // ActivityItem represents one row in the unified activity feed.

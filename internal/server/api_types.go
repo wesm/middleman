@@ -5,18 +5,18 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 )
 
-// pullResponse extends db.PullRequest with resolved repo owner/name fields.
-type pullResponse struct {
-	db.PullRequest
+// mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
+type mergeRequestResponse struct {
+	db.MergeRequest
 	RepoOwner string `json:"repo_owner"`
 	RepoName  string `json:"repo_name"`
 }
 
-type pullDetailResponse struct {
-	PullRequest *db.PullRequest `json:"pull_request"`
-	Events      []db.PREvent    `json:"events"`
-	RepoOwner   string          `json:"repo_owner"`
-	RepoName    string          `json:"repo_name"`
+type mergeRequestDetailResponse struct {
+	MergeRequest *db.MergeRequest `json:"merge_request"`
+	Events       []db.MREvent     `json:"events"`
+	RepoOwner    string           `json:"repo_owner"`
+	RepoName     string           `json:"repo_name"`
 }
 
 var validKanbanStates = map[string]bool{
@@ -49,6 +49,16 @@ type diffResponse struct {
 	Stale               bool                `json:"stale"`
 	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
 	Files               []gitclone.DiffFile `json:"files"`
+}
+
+type mrImportMetadataResponse struct {
+	Number           int    `json:"number"`
+	HeadBranch       string `json:"head_branch"`
+	PlatformHeadSHA  string `json:"platform_head_sha"`
+	HeadRepoCloneURL string `json:"head_repo_clone_url"`
+	State            string `json:"state"`
+	IsDraft          bool   `json:"is_draft"`
+	Title            string `json:"title"`
 }
 
 const activitySafetyCap = 5000

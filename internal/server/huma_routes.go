@@ -28,7 +28,7 @@ type listPullsInput struct {
 }
 
 type listPullsOutput struct {
-	Body []pullResponse
+	Body []mergeRequestResponse
 }
 
 type repoNumberInput struct {
@@ -38,7 +38,11 @@ type repoNumberInput struct {
 }
 
 type getPullOutput struct {
-	Body pullDetailResponse
+	Body mergeRequestDetailResponse
+}
+
+type getMRImportMetadataOutput struct {
+	Body mrImportMetadataResponse
 }
 
 type setKanbanStateInput struct {
@@ -65,7 +69,7 @@ type postCommentInput struct {
 
 type postCommentOutput struct {
 	Status int `status:"201"`
-	Body   db.PREvent
+	Body   db.MREvent
 }
 
 type listIssuesInput struct {
@@ -174,7 +178,7 @@ type acceptedOutput struct {
 }
 
 type syncPROutput struct {
-	Body pullDetailResponse
+	Body mergeRequestDetailResponse
 }
 
 type syncIssueOutput struct {
@@ -216,6 +220,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/activity", s.listActivity)
 	huma.Get(api, "/pulls", s.listPulls)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/import-metadata", s.getMRImportMetadata)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-kanban-state",
 		Method:        http.MethodPut,
@@ -302,7 +307,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		}
 	}
 
-	opts := db.ListPullsOpts{
+	opts := db.ListMergeRequestsOpts{
 		State:       input.State,
 		KanbanState: input.Kanban,
 		Starred:     input.Starred,
@@ -315,7 +320,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		opts.RepoName = name
 	}
 
-	prs, err := s.db.ListPullRequests(ctx, opts)
+	mrs, err := s.db.ListMergeRequests(ctx, opts)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list pulls failed")
 	}
@@ -325,16 +330,16 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		return nil, huma.Error500InternalServerError("repo lookup failed")
 	}
 
-	out := make([]pullResponse, 0, len(prs))
-	for _, pr := range prs {
-		rp, ok := repoByID[pr.RepoID]
+	out := make([]mergeRequestResponse, 0, len(mrs))
+	for _, mr := range mrs {
+		rp, ok := repoByID[mr.RepoID]
 		if !ok {
 			continue
 		}
-		out = append(out, pullResponse{
-			PullRequest: pr,
-			RepoOwner:   rp.Owner,
-			RepoName:    rp.Name,
+		out = append(out, mergeRequestResponse{
+			MergeRequest: mr,
+			RepoOwner:    rp.Owner,
+			RepoName:     rp.Name,
 		})
 	}
 
@@ -342,28 +347,53 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 }
 
 func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullOutput, error) {
-	pr, err := s.db.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
+	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
-	if pr == nil {
+	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	events, err := s.db.ListPREvents(ctx, pr.ID)
+	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list pr events failed")
+		return nil, huma.Error500InternalServerError("list mr events failed")
 	}
 	if events == nil {
-		events = []db.PREvent{}
+		events = []db.MREvent{}
 	}
 
 	return &getPullOutput{
-		Body: pullDetailResponse{
-			PullRequest: pr,
-			Events:      events,
-			RepoOwner:   input.Owner,
-			RepoName:    input.Name,
+		Body: mergeRequestDetailResponse{
+			MergeRequest: mr,
+			Events:       events,
+			RepoOwner:    input.Owner,
+			RepoName:     input.Name,
+		},
+	}, nil
+}
+
+func (s *Server) getMRImportMetadata(
+	ctx context.Context, input *repoNumberInput,
+) (*getMRImportMetadataOutput, error) {
+	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"failed to query merge request",
+		)
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("merge request not found")
+	}
+	return &getMRImportMetadataOutput{
+		Body: mrImportMetadataResponse{
+			Number:           mr.Number,
+			HeadBranch:       mr.HeadBranch,
+			PlatformHeadSHA:  mr.PlatformHeadSHA,
+			HeadRepoCloneURL: mr.HeadRepoCloneURL,
+			State:            mr.State,
+			IsDraft:          mr.IsDraft,
+			Title:            mr.Title,
 		},
 	}, nil
 }
@@ -374,11 +404,11 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 	}
 
 	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
-	prID, err := s.lookupPRID(ctx, ref)
+	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
-	if err := s.db.SetKanbanState(ctx, prID, input.Body.Status); err != nil {
+	if err := s.db.SetKanbanState(ctx, mrID, input.Body.Status); err != nil {
 		return nil, huma.Error500InternalServerError("set kanban state failed")
 	}
 
@@ -390,19 +420,24 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	comment, err := s.gh.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
 	if err != nil {
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
 
 	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
-	prID, err := s.lookupPRID(ctx, ref)
+	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	event := ghclient.NormalizeCommentEvent(prID, comment)
-	if err := s.db.UpsertPREvents(ctx, []db.PREvent{event}); err != nil {
+	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		_ = err
 	}
 
@@ -491,7 +526,12 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	comment, err := s.gh.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
 	if err != nil {
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
@@ -541,23 +581,33 @@ func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutp
 }
 
 func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {
-	review, err := s.gh.CreateReview(ctx, input.Owner, input.Name, input.Number, "APPROVE", input.Body.Body)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	review, err := client.CreateReview(ctx, input.Owner, input.Name, input.Number, "APPROVE", input.Body.Body)
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
 
 	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
-	prID, lookupErr := s.lookupPRID(ctx, ref)
+	mrID, lookupErr := s.lookupMRID(ctx, ref)
 	if lookupErr == nil {
-		event := ghclient.NormalizeReviewEvent(prID, review)
-		_ = s.db.UpsertPREvents(ctx, []db.PREvent{event})
+		event := ghclient.NormalizeReviewEvent(mrID, review)
+		_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
 }
 
 func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	pr, err := s.gh.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	pr, err := client.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
@@ -565,8 +615,8 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if err == nil && repoObj != nil {
 		normalized := ghclient.NormalizePR(repoObj.ID, pr)
-		if prID, upsertErr := s.db.UpsertPullRequest(ctx, normalized); upsertErr == nil {
-			_ = s.db.EnsureKanbanState(ctx, prID)
+		if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
+			_ = s.db.EnsureKanbanState(ctx, mrID)
 		}
 	}
 
@@ -579,7 +629,12 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error400BadRequest("invalid merge method: must be merge, squash, or rebase")
 	}
 
-	result, err := s.gh.MergePullRequest(
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	result, err := client.MergePullRequest(
 		ctx,
 		input.Owner,
 		input.Name,
@@ -593,7 +648,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		if errors.As(err, &ghErr) &&
 			(ghErr.Response.StatusCode == 405 || ghErr.Response.StatusCode == 409) {
 			go func() {
-				if syncErr := s.syncer.SyncPR(
+				if syncErr := s.syncer.SyncMR(
 					context.WithoutCancel(ctx), input.Owner, input.Name, input.Number,
 				); syncErr != nil {
 					slog.Warn("background sync after merge failure", "err", syncErr)
@@ -607,7 +662,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if repoObj != nil {
 		now := time.Now()
-		_ = s.db.UpdatePRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
+		_ = s.db.UpdateMRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
 	}
 
 	return &mergePROutput{
@@ -628,7 +683,12 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	pr, err := s.db.GetPullRequest(
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	mr, err := s.db.GetMergeRequest(
 		ctx, input.Owner, input.Name, input.Number,
 	)
 	if err != nil {
@@ -636,16 +696,16 @@ func (s *Server) setPRGitHubState(
 			"get pull request: " + err.Error(),
 		)
 	}
-	if pr == nil {
+	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
 	}
-	if pr.State == "merged" {
+	if mr.State == "merged" {
 		return nil, huma.Error409Conflict(
 			"cannot change state of a merged pull request",
 		)
 	}
 
-	if _, err := s.gh.EditPullRequest(
+	if _, err := client.EditPullRequest(
 		ctx, input.Owner, input.Name,
 		input.Number, input.Body.State,
 	); err != nil {
@@ -657,12 +717,12 @@ func (s *Server) setPRGitHubState(
 				ctx, input.Owner, input.Name,
 			)
 			if repoErr == nil {
-				ghPR, fetchErr := s.gh.GetPullRequest(
+				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
 					normalized := ghclient.NormalizePR(repoID, ghPR)
-					_, _ = s.db.UpsertPullRequest(ctx, normalized)
+					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
 					if ghPR.GetMerged() {
 						return nil, huma.Error409Conflict(
 							"cannot change state of a merged pull request",
@@ -694,12 +754,12 @@ func (s *Server) setPRGitHubState(
 		now := time.Now()
 		closedAt = &now
 	}
-	if err := s.db.UpdatePRState(
+	if err := s.db.UpdateMRState(
 		ctx, repoID, input.Number,
 		input.Body.State, nil, closedAt,
 	); err != nil {
 		return nil, huma.Error500InternalServerError(
-			"update pr state: " + err.Error(),
+			"update mr state: " + err.Error(),
 		)
 	}
 
@@ -717,6 +777,11 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
 	issue, err := s.db.GetIssue(
 		ctx, input.Owner, input.Name, input.Number,
 	)
@@ -729,7 +794,7 @@ func (s *Server) setIssueGitHubState(
 		return nil, huma.Error404NotFound("issue not found")
 	}
 
-	if _, err := s.gh.EditIssue(
+	if _, err := client.EditIssue(
 		ctx, input.Owner, input.Name,
 		input.Number, input.Body.State,
 	); err != nil {
@@ -742,7 +807,7 @@ func (s *Server) setIssueGitHubState(
 				ctx, input.Owner, input.Name,
 			)
 			if repoErr == nil {
-				ghIssue, fetchErr := s.gh.GetIssue(
+				ghIssue, fetchErr := client.GetIssue(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
@@ -812,34 +877,34 @@ func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, 
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
-	if err := s.syncer.SyncPR(ctx, input.Owner, input.Name, input.Number); err != nil {
+	if err := s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number); err != nil {
 		if strings.Contains(err.Error(), "is not tracked") {
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error502BadGateway("sync PR: " + err.Error())
 	}
 
-	pr, err := s.db.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
+	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
 	}
-	if pr == nil {
+	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found after sync")
 	}
 
-	events, err := s.db.ListPREvents(ctx, pr.ID)
+	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list pr events: " + err.Error())
+		return nil, huma.Error500InternalServerError("list mr events: " + err.Error())
 	}
 	if events == nil {
-		events = []db.PREvent{}
+		events = []db.MREvent{}
 	}
 
-	return &syncPROutput{Body: pullDetailResponse{
-		PullRequest: pr,
-		Events:      events,
-		RepoOwner:   input.Owner,
-		RepoName:    input.Name,
+	return &syncPROutput{Body: mergeRequestDetailResponse{
+		MergeRequest: mr,
+		Events:       events,
+		RepoOwner:    input.Owner,
+		RepoName:     input.Name,
 	}}, nil
 }
 
@@ -1072,7 +1137,8 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA, hideWhitespace)
+	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	result, err := s.clones.Diff(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
@@ -1083,9 +1149,9 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	// Compute staleness.
 	switch shas.State {
 	case "merged":
-		result.Stale = shas.DiffHeadSHA != shas.GitHubHeadSHA
+		result.Stale = shas.DiffHeadSHA != shas.PlatformHeadSHA
 	default: // open, closed
-		result.Stale = shas.DiffHeadSHA != shas.GitHubHeadSHA || shas.DiffBaseSHA != shas.GitHubBaseSHA
+		result.Stale = shas.DiffHeadSHA != shas.PlatformHeadSHA || shas.DiffBaseSHA != shas.PlatformBaseSHA
 	}
 
 	return &getDiffOutput{Body: diffResponse{

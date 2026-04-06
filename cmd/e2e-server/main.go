@@ -71,17 +71,17 @@ func run(port int) error {
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
-		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name}
+		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name, PlatformHost: "github.com"}
 	}
 
-	syncer := ghclient.NewSyncer(fc, database, nil, repos, time.Hour)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": fc}, database, nil, repos, time.Hour, nil)
 
 	assets, err := web.Assets()
 	if err != nil {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
-	srv := server.New(database, fc, syncer, assets, "/", cfg, server.ServerOptions{})
+	srv := server.New(database, syncer, assets, "/", cfg, server.ServerOptions{})
 
 	// Do not start the syncer's background loop. The seeded DB is the
 	// ground truth for E2E tests; RunOnce would overwrite it with

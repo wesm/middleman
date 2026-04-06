@@ -34,19 +34,19 @@ func TestSeedFixtures_PRCounts(t *testing.T) {
 	d, _ := OpenFixtureTestDB(t)
 	ctx := context.Background()
 
-	allPRs, err := d.ListPullRequests(ctx, db.ListPullsOpts{State: "all"})
+	allPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "all"})
 	require.NoError(err)
 	assert.Len(allPRs, 9)
 
-	openPRs, err := d.ListPullRequests(ctx, db.ListPullsOpts{State: "open"})
+	openPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "open"})
 	require.NoError(err)
 	assert.Len(openPRs, 5)
 
-	mergedPRs, err := d.ListPullRequests(ctx, db.ListPullsOpts{State: "merged"})
+	mergedPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "merged"})
 	require.NoError(err)
 	assert.Len(mergedPRs, 3)
 
-	closedPRs, err := d.ListPullRequests(ctx, db.ListPullsOpts{State: "closed"})
+	closedPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "closed"})
 	require.NoError(err)
 	// "closed" state filter returns state IN ('closed','merged'), so 4 total
 	assert.Len(closedPRs, 4)

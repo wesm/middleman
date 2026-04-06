@@ -109,7 +109,7 @@
   });
 
   let ciExpanded = $state(false);
-  const checks = $derived(parseCIChecks(detailStore.getDetail()?.pull_request?.CIChecksJSON ?? ""));
+  const checks = $derived(parseCIChecks(detailStore.getDetail()?.merge_request?.CIChecksJSON ?? ""));
   const failedChecks = $derived(checks.filter(c => c.conclusion === "failure"));
 
   function parseCIChecks(json: string): CICheck[] {
@@ -169,7 +169,7 @@
 {:else}
   {@const detail = detailStore.getDetail()}
   {#if detail !== null}
-    {@const pr = detail.pull_request}
+    {@const pr = detail.merge_request}
     <div class="pull-detail">
       <!-- Header -->
       <div class="detail-header">
@@ -376,7 +376,7 @@
 
       {#if showMergeModal && repoSettings}
         {@const d = detailStore.getDetail()!}
-        {@const p = d.pull_request}
+        {@const p = d.merge_request}
         <MergeModal
           {owner}
           {name}

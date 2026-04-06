@@ -42,12 +42,12 @@ type RepoRef struct {
 
 type ServerOptions struct {
 	EmbedConfig *EmbedConfig
+	Clones      *gitclone.Manager // optional clone manager for diff view
 }
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
 	db       *db.DB
-	gh       ghclient.Client
 	syncer   *ghclient.Syncer
 	clones   *gitclone.Manager
 	cfg      *config.Config
@@ -67,7 +67,6 @@ func (s *Server) SetVersion(v string) { s.version = v }
 // don't need filtering).
 func New(
 	database *db.DB,
-	gh ghclient.Client,
 	syncer *ghclient.Syncer,
 	frontend fs.FS,
 	basePath string,
@@ -75,7 +74,7 @@ func New(
 	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, gh, syncer, nil, frontend,
+		database, syncer, opts.Clones, frontend,
 		basePath, cfg, "", opts,
 	)
 }
@@ -84,7 +83,6 @@ func New(
 // settings/repo endpoints.
 func NewWithConfig(
 	database *db.DB,
-	gh ghclient.Client,
 	syncer *ghclient.Syncer,
 	clones *gitclone.Manager,
 	frontend fs.FS,
@@ -93,14 +91,13 @@ func NewWithConfig(
 	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, gh, syncer, clones, frontend,
+		database, syncer, clones, frontend,
 		cfg.BasePath, cfg, cfgPath, opts,
 	)
 }
 
 func newServer(
 	database *db.DB,
-	gh ghclient.Client,
 	syncer *ghclient.Syncer,
 	clones *gitclone.Manager,
 	frontend fs.FS,
@@ -114,7 +111,6 @@ func newServer(
 	s := &Server{
 		db:       database,
 		basePath: basePath,
-		gh:       gh,
 		syncer:   syncer,
 		clones:   clones,
 		cfg:      cfg,

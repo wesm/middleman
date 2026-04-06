@@ -43,36 +43,59 @@ func run(t *testing.T, dir string, name string, args ...string) {
 func TestEnsureClone(t *testing.T) {
 	remote := setupTestRepo(t)
 	clonesDir := t.TempDir()
-	mgr := New(clonesDir, "")
+	mgr := New(clonesDir, nil)
 
 	ctx := context.Background()
-	err := mgr.EnsureClone(ctx, "testowner", "testrepo", remote)
+	err := mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 
-	clonePath := filepath.Join(clonesDir, "testowner", "testrepo.git")
+	clonePath := filepath.Join(
+		clonesDir, "github.com", "testowner", "testrepo.git")
 	assert.DirExists(t, clonePath)
 
 	// Second call should be a no-op fetch, not re-clone.
-	err = mgr.EnsureClone(ctx, "testowner", "testrepo", remote)
+	err = mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 }
 
 func TestMergeBase(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	remote := setupTestRepo(t)
 	clonesDir := t.TempDir()
-	mgr := New(clonesDir, "")
+	mgr := New(clonesDir, nil)
 
 	ctx := context.Background()
-	require.NoError(t, mgr.EnsureClone(ctx, "testowner", "testrepo", remote))
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
 
 	// Get the HEAD SHA.
-	clonePath := mgr.ClonePath("testowner", "testrepo")
-	out, err := exec.Command("git", "-C", clonePath, "rev-parse", "HEAD").Output()
-	require.NoError(t, err)
+	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	out, err := exec.Command(
+		"git", "-C", clonePath, "rev-parse", "HEAD").Output()
+	require.NoError(err)
 	headSHA := strings.TrimSpace(string(out))
 
 	// Merge base of HEAD with itself is HEAD.
-	mb, err := mgr.MergeBase(ctx, "testowner", "testrepo", headSHA, headSHA)
-	require.NoError(t, err)
-	assert.Equal(t, headSHA, mb)
+	mb, err := mgr.MergeBase(
+		ctx, "github.com", "testowner", "testrepo", headSHA, headSHA)
+	require.NoError(err)
+	assert.Equal(headSHA, mb)
+}
+
+func TestClonePathIncludesHost(t *testing.T) {
+	mgr := New("/tmp/clones", nil)
+
+	path := mgr.ClonePath("github.com", "owner", "repo")
+	assert.Equal(t,
+		filepath.Join("/tmp/clones", "github.com", "owner", "repo.git"),
+		path)
+
+	// Different host produces a different path.
+	ghePath := mgr.ClonePath("github.example.com", "owner", "repo")
+	assert.Equal(t,
+		filepath.Join("/tmp/clones", "github.example.com", "owner", "repo.git"),
+		ghePath)
+	assert.NotEqual(t, path, ghePath)
 }

@@ -24,15 +24,17 @@ type SyncStatus struct {
 
 // RepoRef identifies a GitHub repository.
 type RepoRef struct {
-	Owner string
-	Name  string
+	Owner        string
+	Name         string
+	PlatformHost string // "github.com" or GHE hostname
 }
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	client       Client
+	clients      map[string]Client // host -> client
 	db           *db.DB
 	clones       *gitclone.Manager
+	rateTrackers map[string]*RateTracker // host -> tracker
 	repos        []RepoRef
 	reposMu      sync.Mutex
 	interval     time.Duration
@@ -41,22 +43,103 @@ type Syncer struct {
 	stopCh       chan struct{}
 	stopOnce     sync.Once
 	wg           sync.WaitGroup
-	displayNames map[string]string // login -> display name, per sync run
+	displayNames map[string]string // "host\x00login" -> display name, per sync run
 }
 
-// NewSyncer creates a Syncer that polls the given repos on the given interval.
-// clones may be nil if bare clone management is not configured.
-func NewSyncer(client Client, database *db.DB, clones *gitclone.Manager, repos []RepoRef, interval time.Duration) *Syncer {
+// NewSyncer creates a Syncer that polls the given repos on the
+// given interval. clients maps host -> Client; rateTrackers maps
+// host -> RateTracker. Both may contain nil values. clones may
+// be nil.
+func NewSyncer(
+	clients map[string]Client,
+	database *db.DB,
+	clones *gitclone.Manager,
+	repos []RepoRef,
+	interval time.Duration,
+	rateTrackers map[string]*RateTracker,
+) *Syncer {
+	if clients == nil {
+		clients = make(map[string]Client)
+	}
+	if rateTrackers == nil {
+		rateTrackers = make(map[string]*RateTracker)
+	}
 	s := &Syncer{
-		client:   client,
-		db:       database,
-		clones:   clones,
-		repos:    repos,
-		interval: interval,
-		stopCh:   make(chan struct{}),
+		clients:      clients,
+		db:           database,
+		clones:       clones,
+		rateTrackers: rateTrackers,
+		repos:        repos,
+		interval:     interval,
+		stopCh:       make(chan struct{}),
 	}
 	s.status.Store(&SyncStatus{})
 	return s
+}
+
+// clientFor returns the Client for the given repo's host,
+// falling back to "github.com" if no match is found.
+func (s *Syncer) clientFor(repo RepoRef) Client {
+	host := repo.PlatformHost
+	if host == "" {
+		host = "github.com"
+	}
+	if c, ok := s.clients[host]; ok {
+		return c
+	}
+	return s.clients["github.com"]
+}
+
+// ClientForRepo returns the Client for a tracked repo by
+// owner/name, or an error if the repo is not tracked.
+func (s *Syncer) ClientForRepo(
+	owner, name string,
+) (Client, error) {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for _, r := range s.repos {
+		if r.Owner == owner && r.Name == name {
+			return s.clientFor(r), nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"repo %s/%s is not tracked", owner, name,
+	)
+}
+
+// ClientForHost returns the Client for a specific host,
+// or an error if no client is configured for that host.
+func (s *Syncer) ClientForHost(
+	host string,
+) (Client, error) {
+	if c, ok := s.clients[host]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf(
+		"no client configured for host %s", host,
+	)
+}
+
+// hostFor returns the platform host for a repo identified by
+// owner/name. Returns "github.com" if not found.
+func (s *Syncer) hostFor(owner, name string) string {
+	for _, r := range s.repos {
+		if r.Owner == owner && r.Name == name {
+			if r.PlatformHost != "" {
+				return r.PlatformHost
+			}
+			return "github.com"
+		}
+	}
+	return "github.com"
+}
+
+// HostForRepo returns the platform host for a tracked repo.
+// Thread-safe.
+func (s *Syncer) HostForRepo(owner, name string) string {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	return s.hostFor(owner, name)
 }
 
 // SetRepos atomically replaces the list of repositories to sync.
@@ -117,6 +200,25 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 	var lastErr string
 	for i, repo := range repos {
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if rt := s.rateTrackers[host]; rt != nil {
+			if backoff, wait := rt.ShouldBackoff(); backoff {
+				s.status.Store(&SyncStatus{
+					Running: true,
+					Progress: fmt.Sprintf(
+						"rate limited, waiting %s", wait,
+					),
+				})
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
 		progress := fmt.Sprintf("%d/%d", i+1, len(repos))
 		repoName := repo.Owner + "/" + repo.Name
 		s.status.Store(&SyncStatus{
@@ -149,7 +251,9 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
-	ghRepo, err := s.client.GetRepository(ctx, repo.Owner, repo.Name)
+	client := s.clientFor(repo)
+
+	ghRepo, err := client.GetRepository(ctx, repo.Owner, repo.Name)
 	if err != nil {
 		slog.Warn("get repo settings failed",
 			"repo", repo.Owner+"/"+repo.Name, "err", err,
@@ -167,10 +271,14 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	}
 
 	// Fetch bare clone before PR data so refs are available for merge-base.
+	host := repo.PlatformHost
+	if host == "" {
+		host = "github.com"
+	}
 	cloneFetchOK := false
 	if s.clones != nil {
-		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", repo.Owner, repo.Name)
-		if err := s.clones.EnsureClone(ctx, repo.Owner, repo.Name, remoteURL); err != nil {
+		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, repo.Owner, repo.Name)
+		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, remoteURL); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -194,7 +302,8 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 
 // doSyncRepo performs the actual GitHub API calls and DB writes for one repo.
 func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, cloneFetchOK bool) error {
-	ghPRs, err := s.client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
+	client := s.clientFor(repo)
+	ghPRs, err := client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
 	if err != nil {
 		return fmt.Errorf("list open PRs: %w", err)
 	}
@@ -205,8 +314,8 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 	}
 
 	for _, ghPR := range ghPRs {
-		if err := s.syncOpenPR(ctx, repo, repoID, ghPR, cloneFetchOK); err != nil {
-			slog.Error("sync PR failed",
+		if err := s.syncOpenMR(ctx, repo, repoID, ghPR, cloneFetchOK); err != nil {
+			slog.Error("sync MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghPR.GetNumber(),
 				"err", err,
@@ -214,14 +323,14 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 		}
 	}
 
-	// Handle PRs that were open in the DB but are no longer in the open list.
-	closedNumbers, err := s.db.GetPreviouslyOpenPRNumbers(ctx, repoID, stillOpen)
+	// Handle MRs that were open in the DB but are no longer in the open list.
+	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(ctx, repoID, stillOpen)
 	if err != nil {
-		return fmt.Errorf("get previously open PRs: %w", err)
+		return fmt.Errorf("get previously open MRs: %w", err)
 	}
 	for _, number := range closedNumbers {
 		if err := s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK); err != nil {
-			slog.Error("update closed PR failed",
+			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 				"err", err,
@@ -239,15 +348,15 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 	return nil
 }
 
-// syncOpenPR upserts a single open PR and, if the data has changed,
+// syncOpenMR upserts a single open MR and, if the data has changed,
 // refreshes its timeline events and derived fields.
-func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghPR *gh.PullRequest, cloneFetchOK bool) error {
+func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghPR *gh.PullRequest, cloneFetchOK bool) error {
 	normalized := NormalizePR(repoID, ghPR)
 
-	// Check whether we already have this PR and whether it has changed.
-	existing, err := s.db.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
+	// Check whether we already have this MR and whether it has changed.
+	existing, err := s.db.GetMergeRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
 	if err != nil {
-		return fmt.Errorf("get existing PR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf("get existing MR #%d: %w", ghPR.GetNumber(), err)
 	}
 
 	needsTimeline := existing == nil || !existing.UpdatedAt.Equal(normalized.UpdatedAt)
@@ -260,8 +369,9 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 
 	// The list endpoint doesn't return diff stats. Fetch the individual
 	// PR when data is new/changed or diff stats are missing.
+	client := s.clientFor(repo)
 	if needsFullFetch {
-		fullPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
+		fullPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
 		if err != nil {
 			slog.Warn("get full PR for diff stats failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -287,28 +397,36 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		if name, ok := s.resolveDisplayName(ctx, normalized.Author); ok {
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if name, ok := s.resolveDisplayName(ctx, client, host, normalized.Author); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
 			normalized.AuthorDisplayName = existing.AuthorDisplayName
 		}
 	}
 
-	prID, err := s.db.UpsertPullRequest(ctx, normalized)
+	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
-		return fmt.Errorf("upsert PR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf("upsert MR #%d: %w", ghPR.GetNumber(), err)
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, prID); err != nil {
-		return fmt.Errorf("ensure kanban state for PR #%d: %w", ghPR.GetNumber(), err)
+	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		return fmt.Errorf("ensure kanban state for MR #%d: %w", ghPR.GetNumber(), err)
 	}
 
 	// Compute diff SHAs if clone is available and fetch succeeded.
+	repoHost := repo.PlatformHost
+	if repoHost == "" {
+		repoHost = "github.com"
+	}
 	if s.clones != nil && cloneFetchOK {
-		headSHA := normalized.GitHubHeadSHA
-		baseSHA := normalized.GitHubBaseSHA
+		headSHA := normalized.PlatformHeadSHA
+		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.clones.MergeBase(ctx, repoHost, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
 				slog.Warn("merge-base computation failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -328,14 +446,14 @@ func (s *Syncer) syncOpenPR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	}
 
 	if needsTimeline {
-		if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
+		if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
 			return err
 		}
 	}
 
 	// Always refresh CI status — check runs change independently of the
-	// PR's updated_at field, so pending/in-progress checks would be missed
-	// if we only fetched them when the PR itself changed.
+	// MR's updated_at field, so pending/in-progress checks would be missed
+	// if we only fetched them when the MR itself changed.
 	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
 }
 
@@ -345,45 +463,46 @@ func (s *Syncer) refreshTimeline(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
-	prID int64,
+	mrID int64,
 	ghPR *gh.PullRequest,
 ) error {
 	number := ghPR.GetNumber()
+	client := s.clientFor(repo)
 
-	comments, err := s.client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
+	comments, err := client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list comments for PR #%d: %w", number, err)
+		return fmt.Errorf("list comments for MR #%d: %w", number, err)
 	}
 
-	reviews, err := s.client.ListReviews(ctx, repo.Owner, repo.Name, number)
+	reviews, err := client.ListReviews(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list reviews for PR #%d: %w", number, err)
+		return fmt.Errorf("list reviews for MR #%d: %w", number, err)
 	}
 
-	commits, err := s.client.ListCommits(ctx, repo.Owner, repo.Name, number)
+	commits, err := client.ListCommits(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list commits for PR #%d: %w", number, err)
+		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
-	var events []db.PREvent
+	var events []db.MREvent
 	for _, c := range comments {
-		events = append(events, NormalizeCommentEvent(prID, c))
+		events = append(events, NormalizeCommentEvent(mrID, c))
 	}
 	for _, r := range reviews {
-		events = append(events, NormalizeReviewEvent(prID, r))
+		events = append(events, NormalizeReviewEvent(mrID, r))
 	}
 	for _, c := range commits {
-		events = append(events, NormalizeCommitEvent(prID, c))
+		events = append(events, NormalizeCommitEvent(mrID, c))
 	}
 
-	if err := s.db.UpsertPREvents(ctx, events); err != nil {
-		return fmt.Errorf("upsert events for PR #%d: %w", number, err)
+	if err := s.db.UpsertMREvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert events for MR #%d: %w", number, err)
 	}
 
 	reviewDecision := DeriveReviewDecision(reviews)
 	lastActivityAt := computeLastActivity(ghPR, comments, reviews, commits)
 
-	return s.db.UpdatePRDerivedFields(ctx, repoID, number, db.PRDerivedFields{
+	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
 		ReviewDecision: reviewDecision,
 		CommentCount:   len(comments),
 		LastActivityAt: lastActivityAt,
@@ -411,7 +530,8 @@ func (s *Syncer) refreshCIStatus(
 
 	// Fetch both sources. On failure, skip the DB write to preserve
 	// existing data rather than wiping it with empty values.
-	combined, err := s.client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
+	client := s.clientFor(repo)
+	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		slog.Warn("get combined status failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -421,7 +541,7 @@ func (s *Syncer) refreshCIStatus(
 		return nil
 	}
 
-	checkRuns, err := s.client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
+	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -434,7 +554,7 @@ func (s *Syncer) refreshCIStatus(
 	ciStatus := DeriveOverallCIStatus(checkRuns, combined)
 	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
 
-	return s.db.UpdatePRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
+	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
 }
 
 // computeLastActivity returns the most recent timestamp across the PR and its events.
@@ -474,12 +594,13 @@ func computeLastActivity(
 // callers can preserve existing data. Uses an in-memory cache to avoid
 // duplicate API calls within a sync run.
 func (s *Syncer) resolveDisplayName(
-	ctx context.Context, login string,
+	ctx context.Context, client Client, host, login string,
 ) (string, bool) {
-	if name, ok := s.displayNames[login]; ok {
+	key := host + "\x00" + login
+	if name, ok := s.displayNames[key]; ok {
 		return name, true
 	}
-	user, err := s.client.GetUser(ctx, login)
+	user, err := client.GetUser(ctx, login)
 	if err != nil {
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
@@ -487,7 +608,7 @@ func (s *Syncer) resolveDisplayName(
 		return "", false
 	}
 	name := sanitizeDisplayName(user.GetName())
-	s.displayNames[login] = name
+	s.displayNames[key] = name
 	return name, true
 }
 
@@ -496,7 +617,8 @@ func (s *Syncer) resolveDisplayName(
 func (s *Syncer) syncIssues(
 	ctx context.Context, repo RepoRef, repoID int64,
 ) error {
-	ghIssues, err := s.client.ListOpenIssues(
+	client := s.clientFor(repo)
+	ghIssues, err := client.ListOpenIssues(
 		ctx, repo.Owner, repo.Name,
 	)
 	if err != nil {
@@ -578,8 +700,9 @@ func (s *Syncer) refreshIssueTimeline(
 	ghIssue *gh.Issue,
 ) error {
 	number := ghIssue.GetNumber()
+	client := s.clientFor(repo)
 
-	comments, err := s.client.ListIssueComments(
+	comments, err := client.ListIssueComments(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
@@ -607,7 +730,7 @@ func (s *Syncer) refreshIssueTimeline(
 	}
 
 	_, err = s.db.WriteDB().ExecContext(ctx,
-		`UPDATE issues SET comment_count = ?, last_activity_at = ?
+		`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
 		 WHERE id = ?`,
 		len(comments), lastActivity, issueID,
 	)
@@ -617,7 +740,8 @@ func (s *Syncer) refreshIssueTimeline(
 func (s *Syncer) fetchAndUpdateClosedIssue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) error {
-	ghIssue, err := s.client.GetIssue(
+	client := s.clientFor(repo)
+	ghIssue, err := client.GetIssue(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
@@ -648,33 +772,35 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	return false
 }
 
-// SyncPR fetches fresh data for a single PR from GitHub and updates the DB.
+// SyncMR fetches fresh data for a single MR from GitHub and updates the DB.
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.
-func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) error {
+func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) error {
 	if !s.IsTrackedRepo(owner, name) {
 		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
 	}
 
-	repo := RepoRef{Owner: owner, Name: name}
+	host := s.hostFor(owner, name)
+	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
+	client := s.clientFor(repo)
 
 	repoID, err := s.db.UpsertRepo(ctx, owner, name)
 	if err != nil {
 		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
 	}
 
-	ghPR, err := s.client.GetPullRequest(ctx, owner, name, number)
+	ghPR, err := client.GetPullRequest(ctx, owner, name, number)
 	if err != nil {
-		return fmt.Errorf("get PR %s/%s#%d: %w", owner, name, number, err)
+		return fmt.Errorf("get MR %s/%s#%d: %w", owner, name, number, err)
 	}
 
 	normalized := NormalizePR(repoID, ghPR)
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		existing, _ := s.db.GetPullRequest(ctx, owner, name, number)
+		existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
 		// Resolve directly instead of using s.resolveDisplayName to
 		// avoid racing with the shared displayNames map in RunOnce.
-		user, userErr := s.client.GetUser(ctx, normalized.Author)
+		user, userErr := client.GetUser(ctx, normalized.Author)
 		if userErr == nil {
 			normalized.AuthorDisplayName = sanitizeDisplayName(user.GetName())
 		} else if existing != nil {
@@ -682,39 +808,39 @@ func (s *Syncer) SyncPR(ctx context.Context, owner, name string, number int) err
 		}
 	}
 
-	prID, err := s.db.UpsertPullRequest(ctx, normalized)
+	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
-		return fmt.Errorf("upsert PR #%d: %w", number, err)
+		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, prID); err != nil {
-		return fmt.Errorf("ensure kanban state for PR #%d: %w", number, err)
+	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		return fmt.Errorf("ensure kanban state for MR #%d: %w", number, err)
 	}
 
 	// Fetch bare clone and compute diff SHAs so the diff view is current.
 	if s.clones != nil {
-		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
-		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
-			slog.Warn("bare clone fetch failed during SyncPR",
+		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, owner, name)
+		if err := s.clones.EnsureClone(ctx, host, owner, name, remoteURL); err != nil {
+			slog.Warn("bare clone fetch failed during SyncMR",
 				"repo", owner+"/"+name, "number", number, "err", err)
 		} else if ghPR.GetMerged() {
-			// Merged PRs need special merge-base logic via the pull ref.
+			// Merged MRs need special merge-base logic via the pull ref.
 			// Force recomputation to repair any previously incorrect SHAs.
-			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
-		} else if normalized.GitHubHeadSHA != "" && normalized.GitHubBaseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.GitHubBaseSHA, normalized.GitHubHeadSHA)
+			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
+		} else if normalized.PlatformHeadSHA != "" && normalized.PlatformBaseSHA != "" {
+			mb, err := s.clones.MergeBase(ctx, host, owner, name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 			if err != nil {
-				slog.Warn("merge-base failed during SyncPR",
+				slog.Warn("merge-base failed during SyncMR",
 					"repo", owner+"/"+name, "number", number, "err", err)
-			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.GitHubHeadSHA, normalized.GitHubBaseSHA, mb); err != nil {
-				slog.Warn("update diff SHAs failed during SyncPR",
+			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA, mb); err != nil {
+				slog.Warn("update diff SHAs failed during SyncMR",
 					"repo", owner+"/"+name, "number", number, "err", err)
 			}
 		}
 	}
 
-	if err := s.refreshTimeline(ctx, repo, repoID, prID, ghPR); err != nil {
-		return fmt.Errorf("refresh timeline for PR #%d: %w", number, err)
+	if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
+		return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
 	}
 
 	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
@@ -727,14 +853,16 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
 	}
 
-	repo := RepoRef{Owner: owner, Name: name}
+	host := s.hostFor(owner, name)
+	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
+	client := s.clientFor(repo)
 
 	repoID, err := s.db.UpsertRepo(ctx, owner, name)
 	if err != nil {
 		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
 	}
 
-	ghIssue, err := s.client.GetIssue(ctx, owner, name, number)
+	ghIssue, err := client.GetIssue(ctx, owner, name, number)
 	if err != nil {
 		return fmt.Errorf("get issue %s/%s#%d: %w", owner, name, number, err)
 	}
@@ -761,7 +889,10 @@ func (s *Syncer) SyncItemByNumber(
 
 	// GitHub's Issues API returns both issues and PRs. If the
 	// response has PullRequestLinks, it's a PR.
-	ghIssue, err := s.client.GetIssue(ctx, owner, name, number)
+	host := s.hostFor(owner, name)
+	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
+	client := s.clientFor(repo)
+	ghIssue, err := client.GetIssue(ctx, owner, name, number)
 	if err != nil {
 		return "", fmt.Errorf(
 			"get item %s/%s#%d: %w", owner, name, number, err,
@@ -769,9 +900,9 @@ func (s *Syncer) SyncItemByNumber(
 	}
 
 	if ghIssue.PullRequestLinks != nil {
-		if err := s.SyncPR(ctx, owner, name, number); err != nil {
+		if err := s.SyncMR(ctx, owner, name, number); err != nil {
 			return "", fmt.Errorf(
-				"sync PR %s/%s#%d: %w", owner, name, number, err,
+				"sync MR %s/%s#%d: %w", owner, name, number, err,
 			)
 		}
 		return "pr", nil
@@ -787,7 +918,8 @@ func (s *Syncer) SyncItemByNumber(
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int, cloneFetchOK bool) error {
-	ghPR, err := s.client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
+	client := s.clientFor(repo)
+	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		return fmt.Errorf("get closed PR #%d: %w", number, err)
 	}
@@ -807,13 +939,13 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		closedAt = &t
 	}
 
-	if err := s.db.UpdateClosedPRState(
+	if err := s.db.UpdateClosedMRState(
 		ctx, repoID, number, state,
 		ghPR.GetUpdatedAt().Time,
 		mergedAt, closedAt,
 		ghPR.GetHead().GetSHA(), ghPR.GetBase().GetSHA(),
 	); err != nil {
-		return fmt.Errorf("update closed PR #%d: %w", number, err)
+		return fmt.Errorf("update closed MR #%d: %w", number, err)
 	}
 
 	// Compute diff SHAs so the diff endpoint works.
@@ -823,14 +955,18 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	// is always a pre-merge commit on the base branch lineage, and the pull
 	// ref always points to the original PR head. We only do this when no diff
 	// SHAs exist yet; PRs synced while open already have valid diff SHAs.
+	closedHost := repo.PlatformHost
+	if closedHost == "" {
+		closedHost = "github.com"
+	}
 	if s.clones != nil && cloneFetchOK {
 		headSHA := ghPR.GetHead().GetSHA()
 		baseSHA := ghPR.GetBase().GetSHA()
 
 		if ghPR.GetMerged() {
-			s.computeMergedPRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
+			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
 		} else if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.clones.MergeBase(ctx, closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
 				slog.Warn("merge-base for closed PR failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -849,7 +985,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	return nil
 }
 
-// computeMergedPRDiffSHAs computes diff SHAs for a merged PR.
+// computeMergedMRDiffSHAs computes diff SHAs for a merged PR.
 // Uses merge-base(merge_commit^1, refs/pull/<number>/head) which works for all
 // GitHub merge strategies:
 //   - Merge commit: ^1 is the pre-merge base tip
@@ -860,8 +996,8 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 // correctly identifies the fork point.
 //
 // When force is false, skips PRs that already have diff SHAs (periodic sync).
-// When force is true, always recomputes (on-demand SyncPR).
-func (s *Syncer) computeMergedPRDiffSHAs(
+// When force is true, always recomputes (on-demand SyncMR).
+func (s *Syncer) computeMergedMRDiffSHAs(
 	ctx context.Context, repo RepoRef, repoID int64, number int, mergeCommitSHA string,
 	force bool,
 ) {
@@ -886,8 +1022,12 @@ func (s *Syncer) computeMergedPRDiffSHAs(
 	// Resolve the PR head from the pull ref. GitHub keeps these refs
 	// indefinitely, pointing to the original PR head commit regardless
 	// of merge strategy.
+	mergedHost := repo.PlatformHost
+	if mergedHost == "" {
+		mergedHost = "github.com"
+	}
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
-	prHead, err := s.clones.RevParse(ctx, repo.Owner, repo.Name, pullRef)
+	prHead, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, pullRef)
 	if err != nil {
 		slog.Warn("rev-parse pull ref for merged PR failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -899,7 +1039,7 @@ func (s *Syncer) computeMergedPRDiffSHAs(
 	// Use the merge commit's first parent as the base for merge-base.
 	// This avoids the post-merge ancestor problem where prHead is reachable
 	// from the current base branch tip (making merge-base return prHead).
-	preMergeBase, err := s.clones.RevParse(ctx, repo.Owner, repo.Name, mergeCommitSHA+"^1")
+	preMergeBase, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
 	if err != nil {
 		slog.Warn("rev-parse merge commit parent failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -908,7 +1048,7 @@ func (s *Syncer) computeMergedPRDiffSHAs(
 		return
 	}
 
-	mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, preMergeBase, prHead)
+	mb, err := s.clones.MergeBase(ctx, mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
 	if err != nil {
 		slog.Warn("merge-base for merged PR failed",
 			"repo", repo.Owner+"/"+repo.Name,

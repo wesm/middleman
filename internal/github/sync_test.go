@@ -26,17 +26,19 @@ func openTestDB(t *testing.T) *db.DB {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	openPRs          []*gh.PullRequest
-	singlePR         *gh.PullRequest
-	getPullRequestFn func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn       func(context.Context, string, string, int) (*gh.Issue, error)
-	comments         []*gh.IssueComment
-	reviews          []*gh.PullRequestReview
-	commits          []*gh.RepositoryCommit
-	ciStatus         *gh.CombinedStatus
+	openPRs           []*gh.PullRequest
+	singlePR          *gh.PullRequest
+	getPullRequestFn  func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn        func(context.Context, string, string, int) (*gh.Issue, error)
+	comments          []*gh.IssueComment
+	reviews           []*gh.PullRequestReview
+	commits           []*gh.RepositoryCommit
+	ciStatus          *gh.CombinedStatus
+	listOpenPRsCalled bool
 }
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+	m.listOpenPRsCalled = true
 	return m.openPRs, nil
 }
 
@@ -178,7 +180,7 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 }
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
-	syncer := NewSyncer(&mockClient{}, nil, nil, nil, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil)
 	syncer.Stop()
 	syncer.Stop() // must not panic
 }
@@ -214,11 +216,11 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 	syncer.RunOnce(ctx)
 
 	// PR should be in the DB.
-	pr, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(1, pr.Number)
@@ -230,7 +232,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert.Equal("new", ks.Status)
 
 	// Commit event should have been stored.
-	events, err := d.ListPREvents(ctx, pr.ID)
+	events, err := d.ListMREvents(ctx, pr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
 	found := false
@@ -254,7 +256,7 @@ func TestSyncSingleFlight(t *testing.T) {
 	// Wrap in a counter client to detect calls.
 	_ = mc
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 
 	// Simulate a concurrent run already in progress.
 	syncer.running.Store(true)
@@ -292,12 +294,12 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("dirty", stored.MergeableState)
@@ -318,7 +320,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored2)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should be preserved when full fetch is skipped")
@@ -362,12 +364,12 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 		return p, nil
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 
 	// First sync: PR is new, full fetch triggers, returns "unknown".
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("unknown", stored.MergeableState)
@@ -377,7 +379,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	// trigger another full fetch. The callback now returns "clean".
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored2)
 	assert.Equal("clean", stored2.MergeableState, "second sync should resolve unknown to clean")
@@ -408,10 +410,10 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.Equal("dirty", stored.MergeableState)
 	require.Equal(10, stored.Additions)
@@ -427,7 +429,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should survive a failed full fetch")
 	assert.Equal(10, stored2.Additions, "Additions should survive a failed full fetch")
@@ -446,7 +448,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 
 	before := time.Now()
 	syncer.RunOnce(ctx)
@@ -492,9 +494,9 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 
 	database := openTestDB(t)
 	syncer := NewSyncer(
-		mock, database, nil,
-		[]RepoRef{{Owner: "o", Name: "r"}},
-		time.Hour,
+		map[string]Client{"github.com": mock}, database, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Hour, nil,
 	)
 
 	syncer.Start(t.Context())
@@ -532,10 +534,10 @@ func TestIsTrackedRepo(t *testing.T) {
 	database := openTestDB(t)
 	mc := &mockClient{}
 
-	syncer := NewSyncer(mc, database, nil, []RepoRef{
-		{Owner: "acme", Name: "widget"},
-		{Owner: "corp", Name: "lib"},
-	}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "corp", Name: "lib", PlatformHost: "github.com"},
+	}, time.Minute, nil)
 
 	assert.True(syncer.IsTrackedRepo("acme", "widget"))
 	assert.True(syncer.IsTrackedRepo("corp", "lib"))
@@ -574,9 +576,9 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 		},
 	}
 
-	syncer := NewSyncer(mc, database, nil, []RepoRef{
-		{Owner: "acme", Name: "widget"},
-	}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	}, time.Minute, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -635,15 +637,15 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 		},
 	}
 
-	syncer := NewSyncer(mc, database, nil, []RepoRef{
-		{Owner: "acme", Name: "widget"},
-	}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	}, time.Minute, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
 	assert.Equal("pr", itemType)
 
-	pr, err := database.GetPullRequest(ctx, "acme", "widget", number)
+	pr, err := database.GetMergeRequest(ctx, "acme", "widget", number)
 	require.NoError(err)
 	assert.NotNil(pr)
 	assert.Equal(title, pr.Title)
@@ -656,11 +658,47 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	ctx := context.Background()
 
 	mc := &mockClient{}
-	syncer := NewSyncer(mc, database, nil, []RepoRef{
-		{Owner: "acme", Name: "widget"},
-	}, time.Minute)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	}, time.Minute, nil)
 
 	_, err := syncer.SyncItemByNumber(ctx, "other", "repo", 1)
 	require.Error(err)
 	assert.Contains(err.Error(), "not tracked")
+}
+
+func TestSyncerMultiHostClientDispatch(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	gheMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	clients := map[string]Client{
+		"github.com":   ghMock,
+		"ghe.corp.com": gheMock,
+	}
+	repos := []RepoRef{
+		{Owner: "pub", Name: "repo", PlatformHost: "github.com"},
+		{Owner: "corp", Name: "internal", PlatformHost: "ghe.corp.com"},
+	}
+
+	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil)
+	syncer.RunOnce(ctx)
+
+	assert.True(ghMock.listOpenPRsCalled,
+		"github.com mock should have been called")
+	assert.True(gheMock.listOpenPRsCalled,
+		"ghe.corp.com mock should have been called")
 }
