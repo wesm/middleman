@@ -49,16 +49,21 @@ func TestDiff(t *testing.T) {
 
 	// Clone into manager.
 	clonesDir := t.TempDir()
-	mgr := New(clonesDir, "")
-	require.NoError(mgr.EnsureClone(context.Background(), "test", "repo", remote))
+	mgr := New(clonesDir, nil)
+	require.NoError(mgr.EnsureClone(
+		context.Background(), "github.com", "test", "repo", remote))
 
 	// Compute merge base.
-	mb, err := mgr.MergeBase(context.Background(), "test", "repo", mainSHA, featureSHA)
+	mb, err := mgr.MergeBase(
+		context.Background(), "github.com", "test", "repo",
+		mainSHA, featureSHA)
 	require.NoError(err)
 	assert.Equal(mainSHA, mb) // merge base is the initial commit
 
 	// Run diff.
-	result, err := mgr.Diff(context.Background(), "test", "repo", mb, featureSHA, false)
+	result, err := mgr.Diff(
+		context.Background(), "github.com", "test", "repo",
+		mb, featureSHA, false)
 	require.NoError(err)
 	require.Len(result.Files, 2)
 

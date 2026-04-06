@@ -46,8 +46,8 @@ func initTestRepo(t *testing.T, dir string) {
 // adds the pull refspec, and fetches.
 func setupBareClone(t *testing.T, sourceDir, clonesDir, owner, name string) *gitclone.Manager {
 	t.Helper()
-	mgr := gitclone.New(clonesDir, "")
-	barePath := mgr.ClonePath(owner, name)
+	mgr := gitclone.New(clonesDir, nil)
+	barePath := mgr.ClonePath("github.com", owner, name)
 	gitRun(t, "", "clone", "--bare", sourceDir, barePath)
 	gitRun(t, barePath, "config", "--add", "remote.origin.fetch",
 		"+refs/pull/*/head:refs/pull/*/head")
@@ -357,7 +357,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
 
 	// Re-fetch the bare clone to pick up the merge commit.
-	barePath := mgr.ClonePath("owner", "repo")
+	barePath := mgr.ClonePath("github.com", "owner", "repo")
 	gitRun(t, barePath, "fetch", "--prune", "origin")
 
 	closedState := "closed"

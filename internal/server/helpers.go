@@ -89,6 +89,22 @@ func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int6
 	return s.db.GetIssueIDByRepoAndNumber(ctx, ref.owner, ref.name, ref.number)
 }
 
+// repoHost returns the platform host for the given owner/name from
+// config, falling back to "github.com" if not found or not configured.
+func (s *Server) repoHost(owner, name string) string {
+	if s.cfg == nil {
+		return "github.com"
+	}
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	for _, r := range s.cfg.Repos {
+		if r.Owner == owner && r.Name == name {
+			return r.PlatformHostOrDefault()
+		}
+	}
+	return "github.com"
+}
+
 // parseRepoFilter splits the repo query parameter when it is in owner/name
 // form and otherwise returns empty parts so callers can ignore invalid input.
 func parseRepoFilter(repo string) (owner, name string) {

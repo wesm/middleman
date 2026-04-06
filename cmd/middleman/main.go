@@ -92,7 +92,8 @@ func run(configPath string) error {
 		}
 	}
 
-	cloneMgr := gitclone.New(filepath.Join(cfg.DataDir, "clones"), token)
+	cloneMgr := gitclone.New(filepath.Join(cfg.DataDir, "clones"),
+		map[string]string{"github.com": token})
 
 	syncer := ghclient.NewSyncer(
 		ghClient, database, cloneMgr, repos,

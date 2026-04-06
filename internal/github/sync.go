@@ -206,7 +206,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	cloneFetchOK := false
 	if s.clones != nil {
 		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", s.cloneHost(), repo.Owner, repo.Name)
-		if err := s.clones.EnsureClone(ctx, repo.Owner, repo.Name, remoteURL); err != nil {
+		if err := s.clones.EnsureClone(ctx, s.cloneHost(), repo.Owner, repo.Name, remoteURL); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -344,7 +344,7 @@ func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		headSHA := normalized.PlatformHeadSHA
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.clones.MergeBase(ctx, s.cloneHost(), repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
 				slog.Warn("merge-base computation failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -730,7 +730,7 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 	// Fetch bare clone and compute diff SHAs so the diff view is current.
 	if s.clones != nil {
 		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", s.cloneHost(), owner, name)
-		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
+		if err := s.clones.EnsureClone(ctx, s.cloneHost(), owner, name, remoteURL); err != nil {
 			slog.Warn("bare clone fetch failed during SyncMR",
 				"repo", owner+"/"+name, "number", number, "err", err)
 		} else if ghPR.GetMerged() {
@@ -738,7 +738,7 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 			// Force recomputation to repair any previously incorrect SHAs.
 			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
 		} else if normalized.PlatformHeadSHA != "" && normalized.PlatformBaseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, owner, name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+			mb, err := s.clones.MergeBase(ctx, s.cloneHost(), owner, name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 			if err != nil {
 				slog.Warn("merge-base failed during SyncMR",
 					"repo", owner+"/"+name, "number", number, "err", err)
@@ -866,7 +866,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		if ghPR.GetMerged() {
 			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
 		} else if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.clones.MergeBase(ctx, s.cloneHost(), repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
 				slog.Warn("merge-base for closed PR failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -923,7 +923,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// indefinitely, pointing to the original PR head commit regardless
 	// of merge strategy.
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
-	prHead, err := s.clones.RevParse(ctx, repo.Owner, repo.Name, pullRef)
+	prHead, err := s.clones.RevParse(ctx, s.cloneHost(), repo.Owner, repo.Name, pullRef)
 	if err != nil {
 		slog.Warn("rev-parse pull ref for merged PR failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -935,7 +935,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// Use the merge commit's first parent as the base for merge-base.
 	// This avoids the post-merge ancestor problem where prHead is reachable
 	// from the current base branch tip (making merge-base return prHead).
-	preMergeBase, err := s.clones.RevParse(ctx, repo.Owner, repo.Name, mergeCommitSHA+"^1")
+	preMergeBase, err := s.clones.RevParse(ctx, s.cloneHost(), repo.Owner, repo.Name, mergeCommitSHA+"^1")
 	if err != nil {
 		slog.Warn("rev-parse merge commit parent failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -944,7 +944,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 		return
 	}
 
-	mb, err := s.clones.MergeBase(ctx, repo.Owner, repo.Name, preMergeBase, prHead)
+	mb, err := s.clones.MergeBase(ctx, s.cloneHost(), repo.Owner, repo.Name, preMergeBase, prHead)
 	if err != nil {
 		slog.Warn("merge-base for merged PR failed",
 			"repo", repo.Owner+"/"+repo.Name,
