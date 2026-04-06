@@ -60,6 +60,7 @@ type Server struct {
 	handler           http.Handler
 	activeWorktreeMu  sync.Mutex
 	activeWorktreeKey string
+	activeWorktreeSet bool
 }
 
 // SetVersion sets the version string returned by GET /api/v1/version.
@@ -70,15 +71,17 @@ func (s *Server) SetVersion(v string) { s.version = v }
 func (s *Server) SetActiveWorktreeKey(key string) {
 	s.activeWorktreeMu.Lock()
 	s.activeWorktreeKey = key
+	s.activeWorktreeSet = true
 	s.activeWorktreeMu.Unlock()
 }
 
 // ActiveWorktreeKey returns the key of the currently
-// focused worktree. Thread-safe.
-func (s *Server) ActiveWorktreeKey() string {
+// focused worktree and whether it was explicitly set.
+// Thread-safe.
+func (s *Server) ActiveWorktreeKey() (string, bool) {
 	s.activeWorktreeMu.Lock()
 	defer s.activeWorktreeMu.Unlock()
-	return s.activeWorktreeKey
+	return s.activeWorktreeKey, s.activeWorktreeSet
 }
 
 // New creates a Server without config persistence.
@@ -208,7 +211,7 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(scriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
 	cfg := s.options.EmbedConfig
-	if awKey := s.ActiveWorktreeKey(); awKey != "" {
+	if awKey, set := s.ActiveWorktreeKey(); set {
 		if cfg == nil {
 			cfg = &EmbedConfig{}
 		} else {

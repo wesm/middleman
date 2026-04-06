@@ -1237,11 +1237,17 @@ func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)
 
-	assert.Empty(srv.ActiveWorktreeKey())
+	key, set := srv.ActiveWorktreeKey()
+	assert.Empty(key)
+	assert.False(set)
 
 	srv.SetActiveWorktreeKey("wt-abc")
-	assert.Equal("wt-abc", srv.ActiveWorktreeKey())
+	key, set = srv.ActiveWorktreeKey()
+	assert.Equal("wt-abc", key)
+	assert.True(set)
 
 	srv.SetActiveWorktreeKey("")
-	assert.Empty(srv.ActiveWorktreeKey())
+	key, set = srv.ActiveWorktreeKey()
+	assert.Empty(key)
+	assert.True(set, "should still be 'set' even when cleared")
 }
