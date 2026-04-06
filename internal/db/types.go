@@ -145,6 +145,16 @@ type StarredItem struct {
 	StarredAt time.Time
 }
 
+// WorktreeLink associates a merge request with an external worktree.
+type WorktreeLink struct {
+	ID             int64
+	MergeRequestID int64
+	WorktreeKey    string
+	WorktreePath   string
+	WorktreeBranch string
+	LinkedAt       time.Time
+}
+
 // RateLimit tracks per-host API rate limit state.
 type RateLimit struct {
 	ID            int64

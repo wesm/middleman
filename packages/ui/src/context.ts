@@ -5,6 +5,7 @@ import type {
   NavigateCallback,
   EventCallback,
   PrepareRouteCallback,
+  HostStateAccessors,
   StoreInstances,
   UIConfig,
   SidebarAccessors,
@@ -18,6 +19,7 @@ export const PREPARE_ROUTE_KEY = Symbol("middleman-prepare-route");
 export const STORES_KEY = Symbol("middleman-stores");
 export const UI_CONFIG_KEY = Symbol("middleman-ui-config");
 export const SIDEBAR_KEY = Symbol("middleman-sidebar");
+export const HOST_STATE_KEY = Symbol("middleman-host-state");
 
 export function getClient(): MiddlemanClient {
   return getContext(API_CLIENT_KEY);
@@ -42,4 +44,7 @@ export function getUIConfig(): UIConfig {
 }
 export function getSidebar(): SidebarAccessors {
   return getContext(SIDEBAR_KEY);
+}
+export function getHostState(): HostStateAccessors {
+  return getContext(HOST_STATE_KEY);
 }

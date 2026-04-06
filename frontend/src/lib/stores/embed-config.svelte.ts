@@ -5,9 +5,11 @@ export interface ActionHook {
 }
 
 export interface ActionContext {
+  surface: string;
   owner: string;
   name: string;
   number: number;
+  meta?: Record<string, unknown>;
 }
 
 interface UIDefaults {
@@ -76,6 +78,10 @@ export function getUIConfig(): UIDefaults {
     sidebarCollapsed: ui.sidebarCollapsed,
     repo: ui.repo,
   };
+}
+
+export function getActiveWorktreeKey(): string | undefined {
+  return readConfig()?.ui?.activeWorktreeKey;
 }
 
 export function getPullRequestActions(): ActionHook[] {

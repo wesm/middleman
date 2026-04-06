@@ -28,11 +28,12 @@ type ThemeConfig struct {
 }
 
 type UIConfig struct {
-	HideSync         *bool    `json:"hideSync,omitempty"`
-	HideRepoSelector *bool    `json:"hideRepoSelector,omitempty"`
-	HideStar         *bool    `json:"hideStar,omitempty"`
-	SidebarCollapsed *bool    `json:"sidebarCollapsed,omitempty"`
-	Repo             *RepoRef `json:"repo,omitempty"`
+	HideSync          *bool    `json:"hideSync,omitempty"`
+	HideRepoSelector  *bool    `json:"hideRepoSelector,omitempty"`
+	HideStar          *bool    `json:"hideStar,omitempty"`
+	SidebarCollapsed  *bool    `json:"sidebarCollapsed,omitempty"`
+	Repo              *RepoRef `json:"repo,omitempty"`
+	ActiveWorktreeKey string   `json:"activeWorktreeKey,omitempty"`
 }
 
 type RepoRef struct {
@@ -47,20 +48,41 @@ type ServerOptions struct {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db       *db.DB
-	syncer   *ghclient.Syncer
-	clones   *gitclone.Manager
-	cfg      *config.Config
-	cfgPath  string
-	cfgMu    sync.Mutex
-	basePath string
-	options  ServerOptions
-	version  string
-	handler  http.Handler
+	db                *db.DB
+	syncer            *ghclient.Syncer
+	clones            *gitclone.Manager
+	cfg               *config.Config
+	cfgPath           string
+	cfgMu             sync.Mutex
+	basePath          string
+	options           ServerOptions
+	version           string
+	handler           http.Handler
+	activeWorktreeMu  sync.Mutex
+	activeWorktreeKey string
+	activeWorktreeSet bool
 }
 
 // SetVersion sets the version string returned by GET /api/v1/version.
 func (s *Server) SetVersion(v string) { s.version = v }
+
+// SetActiveWorktreeKey sets the key of the currently
+// focused worktree. Thread-safe.
+func (s *Server) SetActiveWorktreeKey(key string) {
+	s.activeWorktreeMu.Lock()
+	s.activeWorktreeKey = key
+	s.activeWorktreeSet = true
+	s.activeWorktreeMu.Unlock()
+}
+
+// ActiveWorktreeKey returns the key of the currently
+// focused worktree and whether it was explicitly set.
+// Thread-safe.
+func (s *Server) ActiveWorktreeKey() (string, bool) {
+	s.activeWorktreeMu.Lock()
+	defer s.activeWorktreeMu.Unlock()
+	return s.activeWorktreeKey, s.activeWorktreeSet
+}
 
 // New creates a Server without config persistence.
 // Pass cfg for repo filtering (can be nil for tests that
@@ -132,20 +154,19 @@ func newServer(
 		if err != nil {
 			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
 		}
-		idx := string(indexBytes)
-		idx = strings.Replace(idx, "<head>",
-			`<head><script>`+s.bootstrapScript()+`</script>`, 1)
+		indexTemplate := string(indexBytes)
 		if basePath != "/" {
 			prefix := strings.TrimSuffix(basePath, "/")
-			idx = strings.ReplaceAll(idx, `src="/assets/`, `src="`+prefix+`/assets/`)
-			idx = strings.ReplaceAll(idx, `href="/assets/`, `href="`+prefix+`/assets/`)
+			indexTemplate = strings.ReplaceAll(indexTemplate, `src="/assets/`, `src="`+prefix+`/assets/`)
+			indexTemplate = strings.ReplaceAll(indexTemplate, `href="/assets/`, `href="`+prefix+`/assets/`)
 		}
-		indexHTML := []byte(idx)
 
 		serveIndex := func(w http.ResponseWriter) {
+			idx := strings.Replace(indexTemplate, "<head>",
+				`<head><script>`+s.bootstrapScript()+`</script>`, 1)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(indexHTML)
+			_, _ = w.Write([]byte(idx))
 		}
 
 		fileServer := http.FileServerFS(frontend)
@@ -189,8 +210,24 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(`window.__BASE_PATH__=`)
 	builder.WriteString(scriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
-	if s.options.EmbedConfig != nil {
-		configJSON, _ := json.Marshal(s.options.EmbedConfig)
+	cfg := s.options.EmbedConfig
+	if awKey, set := s.ActiveWorktreeKey(); set {
+		if cfg == nil {
+			cfg = &EmbedConfig{}
+		} else {
+			cfgCopy := *cfg
+			cfg = &cfgCopy
+		}
+		if cfg.UI == nil {
+			cfg.UI = &UIConfig{}
+		} else {
+			uiCopy := *cfg.UI
+			cfg.UI = &uiCopy
+		}
+		cfg.UI.ActiveWorktreeKey = awKey
+	}
+	if cfg != nil {
+		configJSON, _ := json.Marshal(cfg)
 		builder.WriteString(`window.__middleman_config=`)
 		builder.WriteString(scriptSafe(string(configJSON)))
 		builder.WriteString(`;`)

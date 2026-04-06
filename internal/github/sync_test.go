@@ -702,3 +702,99 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 	assert.True(gheMock.listOpenPRsCalled,
 		"ghe.corp.com mock should have been called")
 }
+
+func TestOnMRSyncedCalledDuringSync(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{buildOpenPR(1, now)},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil,
+	)
+
+	var called []struct {
+		owner  string
+		name   string
+		number int
+	}
+	syncer.SetOnMRSynced(func(owner, name string, mr *db.MergeRequest) {
+		called = append(called, struct {
+			owner  string
+			name   string
+			number int
+		}{owner, name, mr.Number})
+	})
+
+	syncer.RunOnce(ctx)
+
+	require.Len(called, 1)
+	assert.Equal("owner", called[0].owner)
+	assert.Equal("repo", called[0].name)
+	assert.Equal(1, called[0].number)
+}
+
+func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "lib", PlatformHost: "github.com"},
+		},
+		time.Minute, nil,
+	)
+
+	var gotKeys []string
+	syncer.SetOnSyncCompleted(func(keys []string) {
+		gotKeys = keys
+	})
+
+	syncer.RunOnce(ctx)
+
+	require.Len(gotKeys, 2)
+	assert.Equal("acme/widget", gotKeys[0])
+	assert.Equal("acme/lib", gotKeys[1])
+}
+
+func TestNilHooksNoOp(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Minute, nil,
+	)
+
+	// No hooks set -- should not panic.
+	syncer.RunOnce(ctx)
+}

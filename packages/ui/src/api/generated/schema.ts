@@ -716,6 +716,7 @@ export interface components {
             merge_request: components["schemas"]["MergeRequest"];
             repo_name: string;
             repo_owner: string;
+            worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestResponse: {
             /** Format: int64 */
@@ -760,6 +761,7 @@ export interface components {
             UpdatedAt: string;
             repo_name: string;
             repo_owner: string;
+            worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         PostCommentInputBody: {
             /**
@@ -851,6 +853,11 @@ export interface components {
             last_run_at?: string;
             progress?: string;
             running: boolean;
+        };
+        WorktreeLinkResponse: {
+            worktree_branch?: string;
+            worktree_key: string;
+            worktree_path?: string;
         };
     };
     responses: never;

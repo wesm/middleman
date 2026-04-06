@@ -20,12 +20,13 @@ import (
 )
 
 // Type aliases so external callers don't need to import
-// the internal server package.
+// internal packages.
 type (
-	EmbedConfig = server.EmbedConfig
-	ThemeConfig = server.ThemeConfig
-	UIConfig    = server.UIConfig
-	RepoRef     = server.RepoRef
+	EmbedConfig  = server.EmbedConfig
+	ThemeConfig  = server.ThemeConfig
+	UIConfig     = server.UIConfig
+	RepoRef      = server.RepoRef
+	WorktreeLink = db.WorktreeLink
 )
 
 // Repo identifies a GitHub repository to monitor.
@@ -91,6 +92,27 @@ func resolveHostTokens(
 	return tokens, nil
 }
 
+// EmbedHooks provides lifecycle callbacks for embedded consumers.
+type EmbedHooks struct {
+	OnMRSynced      func(MergeRequestSummary)
+	OnSyncCompleted func(repoKeys []string)
+}
+
+// MergeRequestSummary is a lightweight snapshot of a synced MR,
+// passed to EmbedHooks callbacks.
+type MergeRequestSummary struct {
+	MergeRequestID int64
+	RepoOwner      string
+	RepoName       string
+	Number         int
+	State          string
+	Title          string
+	IsDraft        bool
+	CIStatus       string
+	ReviewDecision string
+	PlatformHost   string
+}
+
 // Activity configures the activity view defaults.
 type Activity struct {
 	ViewMode   string
@@ -121,6 +143,7 @@ type Options struct {
 	Activity     Activity
 	Assets       fs.FS
 	EmbedConfig  *server.EmbedConfig
+	EmbedHooks   *EmbedHooks
 }
 
 // Instance holds a running middleman server and its resources.
@@ -237,6 +260,40 @@ func New(opts Options) (*Instance, error) {
 		cfg.SyncDuration(), rateTrackers,
 	)
 
+	if opts.EmbedHooks != nil {
+		if opts.EmbedHooks.OnMRSynced != nil {
+			cb := opts.EmbedHooks.OnMRSynced
+			syncer.SetOnMRSynced(
+				func(owner, name string, mr *db.MergeRequest) {
+					host := "github.com"
+					for _, r := range opts.Repos {
+						if r.Owner == owner && r.Name == name && r.PlatformHost != "" {
+							host = r.PlatformHost
+							break
+						}
+					}
+					cb(MergeRequestSummary{
+						MergeRequestID: mr.ID,
+						RepoOwner:      owner,
+						RepoName:       name,
+						Number:         mr.Number,
+						State:          mr.State,
+						Title:          mr.Title,
+						IsDraft:        mr.IsDraft,
+						CIStatus:       mr.CIStatus,
+						ReviewDecision: mr.ReviewDecision,
+						PlatformHost:   host,
+					})
+				},
+			)
+		}
+		if opts.EmbedHooks.OnSyncCompleted != nil {
+			syncer.SetOnSyncCompleted(
+				opts.EmbedHooks.OnSyncCompleted,
+			)
+		}
+	}
+
 	srv := server.New(
 		database, syncer, frontend,
 		cfg.BasePath, cfg,
@@ -286,6 +343,23 @@ func (i *Instance) Close() error {
 	}
 	i.StopSync()
 	return i.db.Close()
+}
+
+// SetWorktreeLinks replaces all worktree links atomically.
+func (inst *Instance) SetWorktreeLinks(
+	links []WorktreeLink,
+) error {
+	return inst.db.SetWorktreeLinks(links)
+}
+
+// SetActiveWorktree sets the key of the currently focused worktree.
+// This is bootstrap-only state: it is injected into the initial HTML
+// page load. An already-loaded SPA will not see the change until the
+// next full page load. For live updates, mutate
+// window.__middleman_config.ui.activeWorktreeKey in the browser and
+// call window.__middleman_notify_config_changed().
+func (inst *Instance) SetActiveWorktree(key string) {
+	inst.server.SetActiveWorktreeKey(key)
 }
 
 func buildConfig(opts Options) *config.Config {

@@ -53,6 +53,7 @@
     isEmbedded,
     getPullRequestActions,
     getIssueActions,
+    getActiveWorktreeKey,
     invokeAction,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
@@ -373,18 +374,31 @@
     pull: getPullRequestActions().map((a) => ({
       id: a.id,
       label: a.label,
-      handler: (ctx) => invokeAction(a, ctx),
+      handler: (ctx) => invokeAction(a, {
+        surface: ctx.surface,
+        owner: ctx.owner,
+        name: ctx.name,
+        number: ctx.number,
+        ...ctx.meta != null && { meta: ctx.meta },
+      }),
     })),
     issue: getIssueActions().map((a) => ({
       id: a.id,
       label: a.label,
-      handler: (ctx) => invokeAction(a, ctx),
+      handler: (ctx) => invokeAction(a, {
+        surface: ctx.surface,
+        owner: ctx.owner,
+        name: ctx.name,
+        number: ctx.number,
+        ...ctx.meta != null && { meta: ctx.meta },
+      }),
     })),
   }}
   hostState={{
     getGlobalRepo,
     getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
     getView,
+    getActiveWorktreeKey,
   }}
   config={{
     hideStar: getUIConfig().hideStar,

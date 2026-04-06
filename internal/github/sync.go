@@ -31,19 +31,21 @@ type RepoRef struct {
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	clients      map[string]Client // host -> client
-	db           *db.DB
-	clones       *gitclone.Manager
-	rateTrackers map[string]*RateTracker // host -> tracker
-	repos        []RepoRef
-	reposMu      sync.Mutex
-	interval     time.Duration
-	running      atomic.Bool
-	status       atomic.Value // stores *SyncStatus
-	stopCh       chan struct{}
-	stopOnce     sync.Once
-	wg           sync.WaitGroup
-	displayNames map[string]string // "host\x00login" -> display name, per sync run
+	clients         map[string]Client // host -> client
+	db              *db.DB
+	clones          *gitclone.Manager
+	rateTrackers    map[string]*RateTracker // host -> tracker
+	repos           []RepoRef
+	reposMu         sync.Mutex
+	interval        time.Duration
+	running         atomic.Bool
+	status          atomic.Value // stores *SyncStatus
+	stopCh          chan struct{}
+	stopOnce        sync.Once
+	wg              sync.WaitGroup
+	displayNames    map[string]string // "host\x00login" -> display name, per sync run
+	onMRSynced      func(owner, name string, mr *db.MergeRequest)
+	onSyncCompleted func(repoKeys []string)
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
@@ -75,6 +77,22 @@ func NewSyncer(
 	}
 	s.status.Store(&SyncStatus{})
 	return s
+}
+
+// SetOnMRSynced registers a callback invoked after each MR
+// is upserted during a sync pass.
+func (s *Syncer) SetOnMRSynced(
+	fn func(owner, name string, mr *db.MergeRequest),
+) {
+	s.onMRSynced = fn
+}
+
+// SetOnSyncCompleted registers a callback invoked at the end
+// of each RunOnce pass with the repo keys that were synced.
+func (s *Syncer) SetOnSyncCompleted(
+	fn func(repoKeys []string),
+) {
+	s.onSyncCompleted = fn
 }
 
 // clientFor returns the Client for the given repo's host,
@@ -237,6 +255,15 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 
 	slog.Info("sync complete", "repos", len(repos))
+
+	if s.onSyncCompleted != nil {
+		keys := make([]string, len(repos))
+		for i, r := range repos {
+			keys[i] = r.Owner + "/" + r.Name
+		}
+		s.onSyncCompleted(keys)
+	}
+
 	s.status.Store(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),
@@ -454,7 +481,28 @@ func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	// Always refresh CI status — check runs change independently of the
 	// MR's updated_at field, so pending/in-progress checks would be missed
 	// if we only fetched them when the MR itself changed.
-	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
+	if err := s.refreshCIStatus(ctx, repo, repoID, ghPR); err != nil {
+		return err
+	}
+
+	// Fire the hook after all derived fields (ReviewDecision, CIStatus)
+	// are persisted so the callback receives up-to-date state.
+	if s.onMRSynced != nil {
+		fresh, err := s.db.GetMergeRequest(
+			ctx, repo.Owner, repo.Name, ghPR.GetNumber(),
+		)
+		if err != nil {
+			slog.Warn("get MR for onMRSynced hook failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", ghPR.GetNumber(),
+				"err", err,
+			)
+		} else {
+			s.onMRSynced(repo.Owner, repo.Name, fresh)
+		}
+	}
+
+	return nil
 }
 
 // refreshTimeline fetches comments, reviews, and commits for a PR and

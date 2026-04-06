@@ -66,6 +66,7 @@ export interface HostStateAccessors {
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
   getView?: () => "list" | "board";
+  getActiveWorktreeKey?: () => string | undefined;
 }
 
 export interface UIConfig {

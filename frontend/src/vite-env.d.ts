@@ -44,6 +44,7 @@ interface MiddlemanConfig {
     hideStar?: boolean;
     sidebarCollapsed?: boolean;
     repo?: { owner: string; name: string };
+    activeWorktreeKey?: string;
   };
   actions?: {
     pullRequest?: ActionHookDef[];
@@ -57,9 +58,11 @@ interface ActionHookDef {
   id: string;
   label: string;
   handler: (context: {
+    surface: string;
     owner: string;
     name: string;
     number: number;
+    meta?: Record<string, unknown>;
   }) => void | Promise<void>;
 }
 

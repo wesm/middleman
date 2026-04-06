@@ -330,16 +330,31 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		return nil, huma.Error500InternalServerError("repo lookup failed")
 	}
 
+	mrIDs := make([]int64, len(mrs))
+	for i, mr := range mrs {
+		mrIDs[i] = mr.ID
+	}
+	links, err := s.db.GetWorktreeLinksForMRs(mrIDs)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("load worktree links failed")
+	}
+	linksByMR := indexWorktreeLinksByMR(links)
+
 	out := make([]mergeRequestResponse, 0, len(mrs))
 	for _, mr := range mrs {
 		rp, ok := repoByID[mr.RepoID]
 		if !ok {
 			continue
 		}
+		wl := linksByMR[mr.ID]
+		if wl == nil {
+			wl = []worktreeLinkResponse{}
+		}
 		out = append(out, mergeRequestResponse{
-			MergeRequest: mr,
-			RepoOwner:    rp.Owner,
-			RepoName:     rp.Name,
+			MergeRequest:  mr,
+			RepoOwner:     rp.Owner,
+			RepoName:      rp.Name,
+			WorktreeLinks: wl,
 		})
 	}
 
@@ -363,12 +378,21 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 		events = []db.MREvent{}
 	}
 
+	dbLinks, err := s.db.GetWorktreeLinksForMR(mr.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"load worktree links failed",
+		)
+	}
+	wl := toWorktreeLinkResponses(dbLinks)
+
 	return &getPullOutput{
 		Body: mergeRequestDetailResponse{
-			MergeRequest: mr,
-			Events:       events,
-			RepoOwner:    input.Owner,
-			RepoName:     input.Name,
+			MergeRequest:  mr,
+			Events:        events,
+			RepoOwner:     input.Owner,
+			RepoName:      input.Name,
+			WorktreeLinks: wl,
 		},
 	}, nil
 }
@@ -900,11 +924,19 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		events = []db.MREvent{}
 	}
 
+	syncLinks, err := s.db.GetWorktreeLinksForMR(mr.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"load worktree links: " + err.Error(),
+		)
+	}
+
 	return &syncPROutput{Body: mergeRequestDetailResponse{
-		MergeRequest: mr,
-		Events:       events,
-		RepoOwner:    input.Owner,
-		RepoName:     input.Name,
+		MergeRequest:  mr,
+		Events:        events,
+		RepoOwner:     input.Owner,
+		RepoName:      input.Name,
+		WorktreeLinks: toWorktreeLinkResponses(syncLinks),
 	}}, nil
 }
 

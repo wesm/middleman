@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CICheck, KanbanStatus } from "../../api/types.js";
-  import { getStores, getClient, getNavigate, getActions, getUIConfig } from "../../context.js";
+  import { getStores, getClient, getNavigate, getActions, getUIConfig, getHostState } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -15,6 +15,7 @@
   const navigate = getNavigate();
   const actions = getActions();
   const uiConfig = getUIConfig();
+  const hostState = getHostState();
 
   interface Props {
     owner: string;
@@ -160,6 +161,30 @@
     const select = e.target as HTMLSelectElement;
     void detailStore.updateKanbanState(owner, name, number, select.value as KanbanStatus);
   }
+
+  const worktreeLinks = $derived(
+    detailStore.getDetail()?.worktree_links ?? [],
+  );
+  const hasWorktreeLinks = $derived(
+    worktreeLinks.length > 0,
+  );
+  const importAction = $derived(
+    (actions.pull ?? []).find(
+      (a) => a.id === "import-worktree",
+    ),
+  );
+  const navigateAction = $derived(
+    (actions.pull ?? []).find(
+      (a) => a.id === "navigate-worktree",
+    ),
+  );
+  const otherActions = $derived(
+    (actions.pull ?? []).filter(
+      (a) =>
+        a.id !== "import-worktree" &&
+        a.id !== "navigate-worktree",
+    ),
+  );
 </script>
 
 {#if detailStore.isDetailLoading()}
@@ -249,6 +274,9 @@
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
           <span class="chip chip--muted">+{pr.Additions}/-{pr.Deletions}</span>
+        {/if}
+        {#if hasWorktreeLinks}
+          <span class="chip chip--teal">Worktree</span>
         {/if}
       </div>
 
@@ -361,12 +389,41 @@
         </div>
       {/if}
 
-      {#if actions.pull ?? [].length > 0}
+      {#if !hasWorktreeLinks && importAction}
         <div class="actions-row">
-          {#each actions.pull ?? [] as action (action.id)}
+          <button
+            class="btn--embedding-action"
+            onclick={() => importAction.handler({
+              surface: "pull-detail", owner, name, number,
+            })}
+          >
+            {importAction.label}
+          </button>
+        </div>
+      {/if}
+      {#if hasWorktreeLinks && navigateAction}
+        <div class="actions-row">
+          {#each worktreeLinks as link (link.worktree_key)}
             <button
               class="btn--embedding-action"
-              onclick={() => action.handler({ surface: "pull-detail", owner, name, number })}
+              onclick={() => navigateAction.handler({
+                surface: "pull-detail", owner, name, number,
+                meta: { worktree_key: link.worktree_key },
+              })}
+            >
+              {navigateAction.label}: {link.worktree_key}
+            </button>
+          {/each}
+        </div>
+      {/if}
+      {#if otherActions.length > 0}
+        <div class="actions-row">
+          {#each otherActions as action (action.id)}
+            <button
+              class="btn--embedding-action"
+              onclick={() => action.handler({
+                surface: "pull-detail", owner, name, number,
+              })}
             >
               {action.label}
             </button>
@@ -608,6 +665,15 @@
   .chip--muted {
     background: var(--bg-inset);
     color: var(--text-muted);
+  }
+
+  .chip--teal {
+    background: color-mix(
+      in srgb,
+      var(--accent-teal, var(--accent-green)) 15%,
+      transparent
+    );
+    color: var(--accent-teal, var(--accent-green));
   }
 
   .chip--clickable {

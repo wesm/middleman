@@ -475,3 +475,94 @@ func TestUpdatePRState(t *testing.T) {
 	require.NotNil(pr.MergedAt)
 	assert.True(pr.MergedAt.Equal(mergedAt))
 }
+
+func TestSetWorktreeLinks(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	mrID1 := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
+	mrID2 := insertTestMR(t, d, repoID, 2, "pr2", baseTime().Add(time.Hour))
+
+	now := baseTime()
+	links := []WorktreeLink{
+		{MergeRequestID: mrID1, WorktreeKey: "wt-1", WorktreePath: "/tmp/wt1", WorktreeBranch: "feature-1", LinkedAt: now},
+		{MergeRequestID: mrID2, WorktreeKey: "wt-2", WorktreePath: "/tmp/wt2", WorktreeBranch: "feature-2", LinkedAt: now.Add(time.Hour)},
+	}
+	require.NoError(d.SetWorktreeLinks(links))
+
+	all, err := d.GetAllWorktreeLinks()
+	require.NoError(err)
+	require.Len(all, 2)
+	// Newest first.
+	assert.Equal("wt-2", all[0].WorktreeKey)
+	assert.Equal("wt-1", all[1].WorktreeKey)
+	assert.Equal("/tmp/wt1", all[1].WorktreePath)
+	assert.Equal("feature-1", all[1].WorktreeBranch)
+
+	// Bulk replace with a different set.
+	replacement := []WorktreeLink{
+		{MergeRequestID: mrID1, WorktreeKey: "wt-3", WorktreePath: "/tmp/wt3", WorktreeBranch: "hotfix", LinkedAt: now},
+	}
+	require.NoError(d.SetWorktreeLinks(replacement))
+
+	all2, err := d.GetAllWorktreeLinks()
+	require.NoError(err)
+	require.Len(all2, 1)
+	assert.Equal("wt-3", all2[0].WorktreeKey)
+}
+
+func TestGetWorktreeLinksForMR(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	mrID1 := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
+	mrID2 := insertTestMR(t, d, repoID, 2, "pr2", baseTime().Add(time.Hour))
+
+	now := baseTime()
+	links := []WorktreeLink{
+		{MergeRequestID: mrID1, WorktreeKey: "wt-a", LinkedAt: now},
+		{MergeRequestID: mrID2, WorktreeKey: "wt-b", LinkedAt: now},
+	}
+	require.NoError(d.SetWorktreeLinks(links))
+
+	forMR1, err := d.GetWorktreeLinksForMR(mrID1)
+	require.NoError(err)
+	require.Len(forMR1, 1)
+	assert.Equal("wt-a", forMR1[0].WorktreeKey)
+
+	// Empty when no links for a given MR.
+	forMR999, err := d.GetWorktreeLinksForMR(999)
+	require.NoError(err)
+	assert.Empty(forMR999)
+}
+
+func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	mrID := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
+
+	links := []WorktreeLink{
+		{MergeRequestID: mrID, WorktreeKey: "wt-del", LinkedAt: baseTime()},
+	}
+	require.NoError(d.SetWorktreeLinks(links))
+
+	all, err := d.GetAllWorktreeLinks()
+	require.NoError(err)
+	require.Len(all, 1)
+
+	// Delete the MR; the ON DELETE CASCADE should remove the link.
+	_, err = d.WriteDB().ExecContext(ctx,
+		`DELETE FROM middleman_merge_requests WHERE id = ?`, mrID)
+	require.NoError(err)
+
+	after, err := d.GetAllWorktreeLinks()
+	require.NoError(err)
+	require.Empty(after)
+}

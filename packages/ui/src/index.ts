@@ -31,6 +31,7 @@ export {
   getPrepareRoute,
   getUIConfig,
   getSidebar,
+  getHostState,
 } from "./context.js";
 
 // Store factories
