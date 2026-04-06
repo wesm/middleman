@@ -71,10 +71,10 @@ func run(port int) error {
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
-		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name}
+		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name, PlatformHost: "github.com"}
 	}
 
-	syncer := ghclient.NewSyncer(fc, database, nil, repos, time.Hour, nil, "")
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": fc}, database, nil, repos, time.Hour, nil)
 
 	assets, err := web.Assets()
 	if err != nil {

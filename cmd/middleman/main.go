@@ -88,7 +88,9 @@ func run(configPath string) error {
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
 		repos[i] = ghclient.RepoRef{
-			Owner: r.Owner, Name: r.Name,
+			Owner:        r.Owner,
+			Name:         r.Name,
+			PlatformHost: "github.com",
 		}
 	}
 
@@ -96,8 +98,10 @@ func run(configPath string) error {
 		map[string]string{"github.com": token})
 
 	syncer := ghclient.NewSyncer(
-		ghClient, database, cloneMgr, repos,
-		cfg.SyncDuration(), rt, "",
+		map[string]ghclient.Client{"github.com": ghClient},
+		database, cloneMgr, repos,
+		cfg.SyncDuration(),
+		map[string]*ghclient.RateTracker{"github.com": rt},
 	)
 
 	assets, err := web.Assets()

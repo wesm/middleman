@@ -158,14 +158,16 @@ func New(opts Options) (*Instance, error) {
 	var refs []ghclient.RepoRef
 	for _, r := range opts.Repos {
 		refs = append(refs, ghclient.RepoRef{
-			Owner: r.Owner,
-			Name:  r.Name,
+			Owner:        r.Owner,
+			Name:         r.Name,
+			PlatformHost: host,
 		})
 	}
 
 	syncer := ghclient.NewSyncer(
-		gh, database, nil, refs, cfg.SyncDuration(), rt,
-		host,
+		map[string]ghclient.Client{host: gh},
+		database, nil, refs, cfg.SyncDuration(),
+		map[string]*ghclient.RateTracker{host: rt},
 	)
 
 	srv := server.New(

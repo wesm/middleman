@@ -62,7 +62,7 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 	t.Helper()
 	d := openTestDB(t)
 	mc := &mockClient{}
-	syncer := NewSyncer(mc, d, mgr, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil, "")
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 	syncer.RunOnce(ctx) // creates repo row
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(err)
@@ -160,13 +160,13 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	require.NoError(syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
 
 	// Without force, the existing (incorrect) SHAs are preserved.
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false)
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 1, mergeCommit, true)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, true)
 	shas, err = syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(shas)
@@ -204,7 +204,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
 
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 2, squashCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 2, squashCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 2)
 	require.NoError(err)
@@ -256,7 +256,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
 
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo"}, repoID, 3, rebaseLastCommit, false)
+	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 3, rebaseLastCommit, false)
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 3)
 	require.NoError(err)
@@ -335,7 +335,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	}
 
 	d := openTestDB(t)
-	syncer := NewSyncer(mc, d, mgr, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil, "")
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
@@ -453,7 +453,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 
 	// First sync WITHOUT clone manager -- PR inserted as open, no diff SHAs.
 	d := openTestDB(t)
-	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil, "")
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 	syncer.RunOnce(ctx)
 
 	shasEmpty, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
@@ -492,7 +492,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	// diff SHAs are empty.
 	mc.openPRs = nil
 	mc.singlePR = mergedPR
-	syncer2 := NewSyncer(mc, d, mgr, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute, nil, "")
+	syncer2 := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
 	syncer2.RunOnce(ctx)
 
 	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
