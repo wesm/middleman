@@ -50,7 +50,7 @@
   const hasWorktree = $derived(
     (pr.worktree_links?.length ?? 0) > 0,
   );
-  const isActiveWorktree = $derived(() => {
+  const isActiveWorktree = $derived.by(() => {
     const key = hostState.getActiveWorktreeKey?.();
     if (!key || !pr.worktree_links) return false;
     return pr.worktree_links.some(
@@ -62,7 +62,7 @@
 <button
   class="pull-item"
   class:selected
-  class:active-worktree={isActiveWorktree()}
+  class:active-worktree={isActiveWorktree}
   bind:this={el}
   onclick={onclick}
 >
