@@ -78,9 +78,9 @@ func run(configPath string) error {
 	}
 	defer database.Close()
 
-	// Always seed github.com from the global token so the settings
-	// UI can validate repos even with empty or GHE-only configs.
-	hostTokens := map[string]string{"github.com": globalToken}
+	// Build per-host tokens from repo config first, so explicit
+	// token_env overrides are honored (including for github.com).
+	hostTokens := make(map[string]string, len(cfg.Repos)+1)
 	for _, r := range cfg.Repos {
 		host := r.PlatformHostOrDefault()
 		if _, seen := hostTokens[host]; seen {
@@ -94,6 +94,12 @@ func run(configPath string) error {
 			)
 		}
 		hostTokens[host] = token
+	}
+	// Seed github.com from the global token if no repo already
+	// provided one, so the settings UI can validate repos even
+	// with empty or GHE-only configs.
+	if _, ok := hostTokens["github.com"]; !ok {
+		hostTokens["github.com"] = globalToken
 	}
 
 	rateTrackers := make(

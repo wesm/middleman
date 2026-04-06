@@ -146,7 +146,9 @@ func (s *Server) handleAddRepo(
 	refs := make([]ghclient.RepoRef, len(s.cfg.Repos))
 	for i, rp := range s.cfg.Repos {
 		refs[i] = ghclient.RepoRef{
-			Owner: rp.Owner, Name: rp.Name,
+			Owner:        rp.Owner,
+			Name:         rp.Name,
+			PlatformHost: rp.PlatformHostOrDefault(),
 		}
 	}
 	s.syncer.SetRepos(refs)
@@ -202,7 +204,9 @@ func (s *Server) handleDeleteRepo(
 	refs := make([]ghclient.RepoRef, len(s.cfg.Repos))
 	for i, rp := range s.cfg.Repos {
 		refs[i] = ghclient.RepoRef{
-			Owner: rp.Owner, Name: rp.Name,
+			Owner:        rp.Owner,
+			Name:         rp.Name,
+			PlatformHost: rp.PlatformHostOrDefault(),
 		}
 	}
 	s.syncer.SetRepos(refs)

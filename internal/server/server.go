@@ -42,6 +42,7 @@ type RepoRef struct {
 
 type ServerOptions struct {
 	EmbedConfig *EmbedConfig
+	Clones      *gitclone.Manager // optional clone manager for diff view
 }
 
 // Server holds the HTTP mux and its dependencies.
@@ -73,7 +74,7 @@ func New(
 	opts ServerOptions,
 ) *Server {
 	return newServer(
-		database, syncer, nil, frontend,
+		database, syncer, opts.Clones, frontend,
 		basePath, cfg, "", opts,
 	)
 }

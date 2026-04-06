@@ -242,6 +242,7 @@ func New(opts Options) (*Instance, error) {
 		cfg.BasePath, cfg,
 		server.ServerOptions{
 			EmbedConfig: opts.EmbedConfig,
+			Clones:      cloneMgr,
 		},
 	)
 

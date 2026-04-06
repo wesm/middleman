@@ -342,19 +342,25 @@ func (c *Config) Validate() error {
 		seen[key] = true
 	}
 
-	// Reject conflicting token_env for the same host.
+	// Reject conflicting token_env for the same host. Compare
+	// effective env name: empty TokenEnv means "use global
+	// github_token_env", so treat "" as equivalent to the global.
 	hostToken := make(map[string]string, len(c.Repos))
 	for _, r := range c.Repos {
 		host := r.PlatformHostOrDefault()
+		effective := r.TokenEnv
+		if effective == "" {
+			effective = c.GitHubTokenEnv
+		}
 		if prev, ok := hostToken[host]; ok {
-			if prev != r.TokenEnv {
+			if prev != effective {
 				return fmt.Errorf(
 					"config: conflicting token_env for host %q: %q vs %q",
-					host, prev, r.TokenEnv,
+					host, prev, effective,
 				)
 			}
 		} else {
-			hostToken[host] = r.TokenEnv
+			hostToken[host] = effective
 		}
 	}
 

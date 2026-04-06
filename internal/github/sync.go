@@ -43,7 +43,7 @@ type Syncer struct {
 	stopCh       chan struct{}
 	stopOnce     sync.Once
 	wg           sync.WaitGroup
-	displayNames map[string]string // login -> display name, per sync run
+	displayNames map[string]string // "host\x00login" -> display name, per sync run
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
@@ -397,7 +397,11 @@ func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		if name, ok := s.resolveDisplayName(ctx, client, normalized.Author); ok {
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if name, ok := s.resolveDisplayName(ctx, client, host, normalized.Author); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
 			normalized.AuthorDisplayName = existing.AuthorDisplayName
@@ -590,9 +594,10 @@ func computeLastActivity(
 // callers can preserve existing data. Uses an in-memory cache to avoid
 // duplicate API calls within a sync run.
 func (s *Syncer) resolveDisplayName(
-	ctx context.Context, client Client, login string,
+	ctx context.Context, client Client, host, login string,
 ) (string, bool) {
-	if name, ok := s.displayNames[login]; ok {
+	key := host + "\x00" + login
+	if name, ok := s.displayNames[key]; ok {
 		return name, true
 	}
 	user, err := client.GetUser(ctx, login)
@@ -603,7 +608,7 @@ func (s *Syncer) resolveDisplayName(
 		return "", false
 	}
 	name := sanitizeDisplayName(user.GetName())
-	s.displayNames[login] = name
+	s.displayNames[key] = name
 	return name, true
 }
 
