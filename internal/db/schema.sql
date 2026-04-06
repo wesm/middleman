@@ -1,5 +1,7 @@
-CREATE TABLE IF NOT EXISTS repos (
+CREATE TABLE IF NOT EXISTS middleman_repos (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform              TEXT NOT NULL DEFAULT 'github',
+    platform_host         TEXT NOT NULL DEFAULT 'github.com',
     owner                 TEXT NOT NULL,
     name                  TEXT NOT NULL,
     last_sync_started_at  DATETIME,
@@ -9,13 +11,13 @@ CREATE TABLE IF NOT EXISTS repos (
     allow_merge_commit    INTEGER NOT NULL DEFAULT 1,
     allow_rebase_merge    INTEGER NOT NULL DEFAULT 1,
     created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(owner, name)
+    UNIQUE(platform, platform_host, owner, name)
 );
 
-CREATE TABLE IF NOT EXISTS pull_requests (
+CREATE TABLE IF NOT EXISTS middleman_merge_requests (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id          INTEGER NOT NULL REFERENCES repos(id),
-    github_id        INTEGER NOT NULL,
+    repo_id          INTEGER NOT NULL REFERENCES middleman_repos(id),
+    platform_id      INTEGER NOT NULL,
     number           INTEGER NOT NULL,
     url              TEXT NOT NULL DEFAULT '',
     title            TEXT NOT NULL DEFAULT '',
@@ -32,53 +34,55 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     review_decision  TEXT NOT NULL DEFAULT '',
     ci_status        TEXT NOT NULL DEFAULT '',
     ci_checks_json   TEXT NOT NULL DEFAULT '',
-    github_head_sha  TEXT NOT NULL DEFAULT '',
-    github_base_sha  TEXT NOT NULL DEFAULT '',
+    platform_head_sha TEXT NOT NULL DEFAULT '',
+    platform_base_sha TEXT NOT NULL DEFAULT '',
     diff_head_sha    TEXT NOT NULL DEFAULT '',
     diff_base_sha    TEXT NOT NULL DEFAULT '',
     merge_base_sha   TEXT NOT NULL DEFAULT '',
+    head_repo_clone_url TEXT NOT NULL DEFAULT '',
+    mergeable_state  TEXT NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL,
     updated_at       DATETIME NOT NULL,
     last_activity_at DATETIME NOT NULL,
     merged_at        DATETIME,
     closed_at        DATETIME,
     UNIQUE(repo_id, number),
-    UNIQUE(github_id)
+    UNIQUE(platform_id)
 );
 
-CREATE TABLE IF NOT EXISTS pr_events (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    pr_id         INTEGER NOT NULL REFERENCES pull_requests(id),
-    github_id     INTEGER,
-    event_type    TEXT NOT NULL,
-    author        TEXT NOT NULL DEFAULT '',
-    summary       TEXT NOT NULL DEFAULT '',
-    body          TEXT NOT NULL DEFAULT '',
-    metadata_json TEXT NOT NULL DEFAULT '',
-    created_at    DATETIME NOT NULL,
-    dedupe_key    TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS middleman_mr_events (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    merge_request_id INTEGER NOT NULL REFERENCES middleman_merge_requests(id),
+    platform_id      INTEGER,
+    event_type       TEXT NOT NULL,
+    author           TEXT NOT NULL DEFAULT '',
+    summary          TEXT NOT NULL DEFAULT '',
+    body             TEXT NOT NULL DEFAULT '',
+    metadata_json    TEXT NOT NULL DEFAULT '',
+    created_at       DATETIME NOT NULL,
+    dedupe_key       TEXT NOT NULL,
     UNIQUE(dedupe_key)
 );
 
-CREATE TABLE IF NOT EXISTS kanban_state (
-    pr_id      INTEGER PRIMARY KEY REFERENCES pull_requests(id),
-    status     TEXT NOT NULL DEFAULT 'new',
-    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS middleman_kanban_state (
+    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id),
+    status           TEXT NOT NULL DEFAULT 'new',
+    updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_pr_repo_state_activity
-    ON pull_requests(repo_id, state, last_activity_at DESC);
-CREATE INDEX IF NOT EXISTS idx_pr_state_activity
-    ON pull_requests(state, last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mr_repo_state_activity
+    ON middleman_merge_requests(repo_id, state, last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mr_state_activity
+    ON middleman_merge_requests(state, last_activity_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kanban_status
-    ON kanban_state(status, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_events_pr_created
-    ON pr_events(pr_id, created_at DESC);
+    ON middleman_kanban_state(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mr_events_created
+    ON middleman_mr_events(merge_request_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS issues (
+CREATE TABLE IF NOT EXISTS middleman_issues (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id          INTEGER NOT NULL REFERENCES repos(id),
-    github_id        INTEGER NOT NULL,
+    repo_id          INTEGER NOT NULL REFERENCES middleman_repos(id),
+    platform_id      INTEGER NOT NULL,
     number           INTEGER NOT NULL,
     url              TEXT NOT NULL DEFAULT '',
     title            TEXT NOT NULL DEFAULT '',
@@ -92,13 +96,13 @@ CREATE TABLE IF NOT EXISTS issues (
     last_activity_at DATETIME NOT NULL,
     closed_at        DATETIME,
     UNIQUE(repo_id, number),
-    UNIQUE(github_id)
+    UNIQUE(platform_id)
 );
 
-CREATE TABLE IF NOT EXISTS issue_events (
+CREATE TABLE IF NOT EXISTS middleman_issue_events (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id      INTEGER NOT NULL REFERENCES issues(id),
-    github_id     INTEGER,
+    issue_id      INTEGER NOT NULL REFERENCES middleman_issues(id),
+    platform_id   INTEGER,
     event_type    TEXT NOT NULL,
     author        TEXT NOT NULL DEFAULT '',
     summary       TEXT NOT NULL DEFAULT '',
@@ -109,19 +113,29 @@ CREATE TABLE IF NOT EXISTS issue_events (
     UNIQUE(dedupe_key)
 );
 
-CREATE TABLE IF NOT EXISTS starred_items (
+CREATE TABLE IF NOT EXISTS middleman_starred_items (
     item_type  TEXT NOT NULL,
-    repo_id    INTEGER NOT NULL REFERENCES repos(id),
+    repo_id    INTEGER NOT NULL REFERENCES middleman_repos(id),
     number     INTEGER NOT NULL,
     starred_at DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(item_type, repo_id, number)
 );
 
+CREATE TABLE IF NOT EXISTS middleman_rate_limits (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform_host  TEXT NOT NULL UNIQUE,
+    requests_hour  INTEGER NOT NULL DEFAULT 0,
+    hour_start     DATETIME NOT NULL,
+    rate_remaining INTEGER NOT NULL DEFAULT -1,
+    rate_reset_at  DATETIME,
+    updated_at     DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_issues_repo_state_activity
-    ON issues(repo_id, state, last_activity_at DESC);
+    ON middleman_issues(repo_id, state, last_activity_at DESC);
 CREATE INDEX IF NOT EXISTS idx_issues_state_activity
-    ON issues(state, last_activity_at DESC);
-CREATE INDEX IF NOT EXISTS idx_issue_events_issue_created
-    ON issue_events(issue_id, created_at DESC);
+    ON middleman_issues(state, last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_issue_events_created
+    ON middleman_issue_events(issue_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_starred_items_type
-    ON starred_items(item_type, starred_at DESC);
+    ON middleman_starred_items(item_type, starred_at DESC);
