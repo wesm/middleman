@@ -243,9 +243,9 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.PullRequest{
+	pr := &db.MergeRequest{
 		RepoID:         repoID,
-		GitHubID:       int64(number) * 1000,
+		PlatformID:     int64(number) * 1000,
 		Number:         number,
 		URL:            "https://github.com/" + owner + "/" + name + "/pull/" + string(rune('0'+number)),
 		Title:          "Test PR #" + string(rune('0'+number)),
@@ -265,7 +265,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 		LastActivityAt: now,
 	}
 
-	prID, err := database.UpsertPullRequest(ctx, pr)
+	prID, err := database.UpsertMergeRequest(ctx, pr)
 	require.NoError(t, err)
 
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
@@ -424,7 +424,7 @@ func TestAPISetKanbanState(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.Equal("reviewing", pr.KanbanStatus)
@@ -558,9 +558,9 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	prID, err := database.UpsertPullRequest(context.Background(), &db.PullRequest{
+	prID, err := database.UpsertMergeRequest(context.Background(), &db.MergeRequest{
 		RepoID:         repoID,
-		GitHubID:       1001,
+		PlatformID:     1001,
 		Number:         1,
 		URL:            "https://github.com/acme/widget/pull/1",
 		Title:          "Ready PR",
@@ -589,7 +589,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 
-	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.False(pr.IsDraft)
@@ -681,7 +681,7 @@ func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, st
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issue := &db.Issue{
-		RepoID: repoID, GitHubID: int64(number) * 1000, Number: number,
+		RepoID: repoID, PlatformID: int64(number) * 1000, Number: number,
 		URL:   "https://github.com/" + owner + "/" + name + "/issues/1",
 		Title: "Test Issue", Author: "testuser", State: state,
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
@@ -706,7 +706,7 @@ func TestAPIClosePR(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("closed", pr.State)
 	require.NotNil(pr.ClosedAt)
@@ -722,7 +722,7 @@ func TestAPIReopenPR(t *testing.T) {
 	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
 	require.NoError(err)
 	now := time.Now()
-	require.NoError(database.UpdatePRState(ctx, repo.ID, 1, "closed", nil, &now))
+	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "closed", nil, &now))
 
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
@@ -732,7 +732,7 @@ func TestAPIReopenPR(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, err := database.GetPullRequest(ctx, "acme", "widget", 1)
+	pr, err := database.GetMergeRequest(ctx, "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("open", pr.State)
 	require.Nil(pr.ClosedAt, "closed_at should be cleared on reopen")
@@ -747,7 +747,7 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
 	require.NoError(err)
 	now := time.Now()
-	require.NoError(database.UpdatePRState(ctx, repo.ID, 1, "merged", &now, &now))
+	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "merged", &now, &now))
 
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
@@ -820,8 +820,8 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 
 	repo, _ := database.GetRepoByOwnerName(ctx, "acme", "widget")
 	now := time.Now()
-	_ = database.UpdatePRState(ctx, repo.ID, 2, "closed", nil, &now)
-	_ = database.UpdatePRState(ctx, repo.ID, 3, "merged", &now, &now)
+	_ = database.UpdateMRState(ctx, repo.ID, 2, "closed", nil, &now)
+	_ = database.UpdateMRState(ctx, repo.ID, 3, "merged", &now, &now)
 
 	client := setupTestClient(t, srv)
 
@@ -919,7 +919,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	pr, _ := database.GetPullRequest(context.Background(), "acme", "widget", 1)
+	pr, _ := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.Equal("closed", pr.State)
 }
 
@@ -1107,7 +1107,7 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 			strings.Contains(spec, `"operationId":"post-pr-comment","requestBody"`),
 		"expected post-pr-comment operation to be present",
 	)
-	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PREvent"}}},"description":"Created"}`)
+	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MREvent"}}},"description":"Created"}`)
 	require.Contains(spec, `"operationId":"post-issue-comment"`)
 	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
 }

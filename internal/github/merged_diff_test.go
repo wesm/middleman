@@ -74,15 +74,15 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, number int, headSHA string) {
 	t.Helper()
 	now := time.Now().UTC()
-	_, err := d.UpsertPullRequest(ctx, &db.PullRequest{
-		RepoID:        repoID,
-		Number:        number,
-		Title:         fmt.Sprintf("test PR #%d", number),
-		State:         "merged",
-		URL:           fmt.Sprintf("https://github.com/owner/repo/pull/%d", number),
-		GitHubHeadSHA: headSHA,
-		UpdatedAt:     now,
-		CreatedAt:     now,
+	_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		Number:          number,
+		Title:           fmt.Sprintf("test PR #%d", number),
+		State:           "merged",
+		URL:             fmt.Sprintf("https://github.com/owner/repo/pull/%d", number),
+		PlatformHeadSHA: headSHA,
+		UpdatedAt:       now,
+		CreatedAt:       now,
 	})
 	require.NoError(t, err)
 }
@@ -323,7 +323,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	syncer := NewSyncer(mc, d, mgr, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
 	syncer.RunOnce(ctx)
 
-	pr, err := d.GetPullRequest(ctx, "owner", "repo", number)
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
 	require.NoError(t, err)
 	require.NotNil(t, pr)
 	assert.Equal(t, "open", pr.State)

@@ -21,9 +21,9 @@ func TestResolveItemNumber(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	// Seed a PR at number 10
-	_, err = database.UpsertPullRequest(ctx, &PullRequest{
+	_, err = database.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
-		GitHubID:       10000,
+		PlatformID:     10000,
 		Number:         10,
 		URL:            "https://github.com/acme/widget/pull/10",
 		Title:          "PR ten",
@@ -38,7 +38,7 @@ func TestResolveItemNumber(t *testing.T) {
 	// Seed an issue at number 20
 	_, err = database.UpsertIssue(ctx, &Issue{
 		RepoID:         repoID,
-		GitHubID:       20000,
+		PlatformID:     20000,
 		Number:         20,
 		URL:            "https://github.com/acme/widget/issues/20",
 		Title:          "Issue twenty",

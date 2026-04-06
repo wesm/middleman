@@ -17,7 +17,7 @@ func insertTestIssue(
 	t.Helper()
 	issue := &Issue{
 		RepoID:         repoID,
-		GitHubID:       repoID*10000 + int64(number),
+		PlatformID:     repoID*10000 + int64(number),
 		Number:         number,
 		URL:            "https://github.com/example/repo/issues/" + title,
 		Title:          title,
@@ -40,26 +40,26 @@ func TestListActivity(t *testing.T) {
 	repoA := insertTestRepo(t, d, "alice", "alpha")
 	repoB := insertTestRepo(t, d, "bob", "beta")
 
-	prID1 := insertTestPR(t, d, repoA, 1, "Fix bug", base)
-	prID2 := insertTestPR(
+	prID1 := insertTestMR(t, d, repoA, 1, "Fix bug", base)
+	prID2 := insertTestMR(
 		t, d, repoB, 2, "Add feature", base.Add(1*time.Minute))
 	issueID1 := insertTestIssue(
 		t, d, repoA, 10, "Crash on startup", base.Add(2*time.Minute))
 
-	err := d.UpsertPREvents(ctx, []PREvent{
-		{PRID: prID1, EventType: "issue_comment", Author: "carol",
+	err := d.UpsertMREvents(ctx, []MREvent{
+		{MergeRequestID: prID1, EventType: "issue_comment", Author: "carol",
 			Body:      "Looks good to me",
 			CreatedAt: base.Add(3 * time.Minute),
 			DedupeKey: "comment-1"},
-		{PRID: prID2, EventType: "review", Author: "dave",
+		{MergeRequestID: prID2, EventType: "review", Author: "dave",
 			Summary:   "APPROVED",
 			CreatedAt: base.Add(4 * time.Minute),
 			DedupeKey: "review-1"},
-		{PRID: prID1, EventType: "commit", Author: "alice",
+		{MergeRequestID: prID1, EventType: "commit", Author: "alice",
 			Summary: "abc123", Body: "fix: handle nil",
 			CreatedAt: base.Add(5 * time.Minute),
 			DedupeKey: "commit-abc123"},
-		{PRID: prID1, EventType: "review_comment", Author: "eve",
+		{MergeRequestID: prID1, EventType: "review_comment", Author: "eve",
 			Body:      "nit: rename var",
 			CreatedAt: base.Add(6 * time.Minute),
 			DedupeKey: "review_comment-1"},
@@ -175,8 +175,8 @@ func TestListActivity(t *testing.T) {
 		require.NoError(err)
 		newest := all[0]
 
-		err = d.UpsertPREvents(ctx, []PREvent{
-			{PRID: prID1, EventType: "issue_comment", Author: "grace",
+		err = d.UpsertMREvents(ctx, []MREvent{
+			{MergeRequestID: prID1, EventType: "issue_comment", Author: "grace",
 				Body:      "New comment",
 				CreatedAt: base.Add(10 * time.Minute),
 				DedupeKey: "comment-new"},

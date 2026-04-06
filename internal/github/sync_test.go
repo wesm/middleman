@@ -218,7 +218,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// PR should be in the DB.
-	pr, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(1, pr.Number)
@@ -230,7 +230,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert.Equal("new", ks.Status)
 
 	// Commit event should have been stored.
-	events, err := d.ListPREvents(ctx, pr.ID)
+	events, err := d.ListMREvents(ctx, pr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
 	found := false
@@ -297,7 +297,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("dirty", stored.MergeableState)
@@ -318,7 +318,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored2)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should be preserved when full fetch is skipped")
@@ -367,7 +367,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	// First sync: PR is new, full fetch triggers, returns "unknown".
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("unknown", stored.MergeableState)
@@ -377,7 +377,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	// trigger another full fetch. The callback now returns "clean".
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored2)
 	assert.Equal("clean", stored2.MergeableState, "second sync should resolve unknown to clean")
@@ -411,7 +411,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	syncer := NewSyncer(mc, d, nil, []RepoRef{{Owner: "owner", Name: "repo"}}, time.Minute)
 	syncer.RunOnce(ctx)
 
-	stored, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.Equal("dirty", stored.MergeableState)
 	require.Equal(10, stored.Additions)
@@ -427,7 +427,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	stored2, err := d.GetPullRequest(ctx, "owner", "repo", 1)
+	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should survive a failed full fetch")
 	assert.Equal(10, stored2.Additions, "Additions should survive a failed full fetch")
@@ -643,7 +643,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("pr", itemType)
 
-	pr, err := database.GetPullRequest(ctx, "acme", "widget", number)
+	pr, err := database.GetMergeRequest(ctx, "acme", "widget", number)
 	require.NoError(err)
 	assert.NotNil(pr)
 	assert.Equal(title, pr.Title)

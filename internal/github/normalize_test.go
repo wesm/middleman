@@ -36,7 +36,7 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 	pr := NormalizePR(7, ghPR)
 
 	assert.Equal(int64(7), pr.RepoID)
-	assert.Equal(int64(1001), pr.GitHubID)
+	assert.Equal(int64(1001), pr.PlatformID)
 	assert.Equal(42, pr.Number)
 	assert.Equal("https://github.com/owner/repo/pull/42", pr.URL)
 	assert.Equal("My PR", pr.Title)
@@ -85,13 +85,13 @@ func TestNormalizeCommentEvent(t *testing.T) {
 
 	event := NormalizeCommentEvent(10, c)
 
-	assert.Equal(int64(10), event.PRID)
+	assert.Equal(int64(10), event.MergeRequestID)
 	assert.Equal("issue_comment", event.EventType)
 	assert.Equal("comment-555", event.DedupeKey)
 	assert.Equal("carol", event.Author)
 	assert.Equal("looks good", event.Body)
-	require.NotNil(t, event.GitHubID)
-	assert.Equal(int64(555), *event.GitHubID)
+	require.NotNil(t, event.PlatformID)
+	assert.Equal(int64(555), *event.PlatformID)
 	assert.True(event.CreatedAt.Equal(now))
 }
 
@@ -115,8 +115,8 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 	assert.Equal("issue-comment-777", event.DedupeKey)
 	assert.Equal("dana", event.Author)
 	assert.Equal("needs follow-up", event.Body)
-	require.NotNil(t, event.GitHubID)
-	assert.Equal(int64(777), *event.GitHubID)
+	require.NotNil(t, event.PlatformID)
+	assert.Equal(int64(777), *event.PlatformID)
 	assert.True(event.CreatedAt.Equal(now))
 }
 
