@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -28,8 +29,20 @@ type (
 
 // Repo identifies a GitHub repository to monitor.
 type Repo struct {
-	Owner string
-	Name  string
+	Owner        string
+	Name         string
+	PlatformHost string // e.g. "github.com" or GHE hostname
+}
+
+// defaultPlatformHost returns the platform host from the first
+// repo that has one set, falling back to "github.com".
+func defaultPlatformHost(repos []Repo) string {
+	for _, r := range repos {
+		if r.PlatformHost != "" {
+			return r.PlatformHost
+		}
+	}
+	return "github.com"
 }
 
 // Activity configures the activity view defaults.
@@ -42,8 +55,20 @@ type Activity struct {
 
 // Options configures a middleman Instance for embedding.
 type Options struct {
-	Token        string
-	DataDir      string
+	// Token is a static GitHub token. Used when ResolveToken
+	// is nil.
+	Token string
+	// ResolveToken returns a GitHub token for the given platform
+	// host (e.g. "github.com"). Preferred over Token for
+	// embedded use cases that need per-host auth.
+	ResolveToken func(ctx context.Context, host string) (string, error)
+	// DataDir is the directory for middleman state. Required if
+	// DBPath is not set.
+	DataDir string
+	// DBPath overrides the DataDir-derived database path. When
+	// set, the host owns the SQLite file and DataDir may be
+	// omitted.
+	DBPath       string
 	BasePath     string
 	SyncInterval time.Duration
 	Repos        []Repo
@@ -63,27 +88,48 @@ type Instance struct {
 }
 
 // New creates a middleman Instance from the given options.
-// Token and DataDir are required.
+// Either Token or ResolveToken must yield a non-empty token.
+// Either DBPath or DataDir must be provided.
 func New(opts Options) (*Instance, error) {
-	if opts.Token == "" {
+	// DB path: prefer explicit DBPath over DataDir-derived.
+	dbPath := opts.DBPath
+	if dbPath == "" {
+		if opts.DataDir == "" {
+			return nil, fmt.Errorf(
+				"middleman: either DBPath or DataDir " +
+					"is required",
+			)
+		}
+		if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
+			return nil, fmt.Errorf(
+				"middleman: create data directory %s: %w",
+				opts.DataDir, err,
+			)
+		}
+		dbPath = filepath.Join(opts.DataDir, "middleman.db")
+	}
+
+	// Token: prefer ResolveToken over static Token.
+	token := opts.Token
+	if opts.ResolveToken != nil {
+		host := defaultPlatformHost(opts.Repos)
+		resolved, err := opts.ResolveToken(
+			context.Background(), host,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"middleman: resolve token: %w", err,
+			)
+		}
+		token = resolved
+	}
+	if token == "" {
 		return nil, fmt.Errorf(
 			"middleman: token is required",
 		)
 	}
-	if opts.DataDir == "" {
-		return nil, fmt.Errorf(
-			"middleman: DataDir is required",
-		)
-	}
 
 	cfg := buildConfig(opts)
-
-	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
-		return nil, fmt.Errorf(
-			"middleman: create data directory %s: %w",
-			opts.DataDir, err,
-		)
-	}
 
 	frontend, err := resolveAssets(opts)
 	if err != nil {
@@ -92,14 +138,14 @@ func New(opts Options) (*Instance, error) {
 		)
 	}
 
-	database, err := db.Open(cfg.DBPath())
+	database, err := db.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"middleman: opening database: %w", err,
 		)
 	}
 
-	gh := ghclient.NewClient(opts.Token)
+	gh := ghclient.NewClient(token)
 
 	var refs []ghclient.RepoRef
 	for _, r := range opts.Repos {

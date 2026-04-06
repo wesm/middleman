@@ -1,8 +1,12 @@
 package middleman
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -163,6 +167,80 @@ func TestNewRequiresDataDir(t *testing.T) {
 	})
 	require.Error(t, err)
 	Assert.Contains(t, err.Error(), "DataDir")
+}
+
+func TestNewWithDBPath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "shared.db")
+	inst, err := New(Options{
+		Token:  "test-token",
+		DBPath: dbPath,
+		Repos:  []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err)
+}
+
+func TestNewWithResolveToken(t *testing.T) {
+	dir := t.TempDir()
+	called := false
+	inst, err := New(Options{
+		ResolveToken: func(
+			_ context.Context, host string,
+		) (string, error) {
+			called = true
+			require.Equal(t, "github.com", host)
+			return "resolved-token", nil
+		},
+		DataDir: dir,
+		Repos:   []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+	require.True(t, called)
+}
+
+func TestNewResolveTokenError(t *testing.T) {
+	_, err := New(Options{
+		ResolveToken: func(
+			_ context.Context, _ string,
+		) (string, error) {
+			return "", fmt.Errorf("auth failed")
+		},
+		DataDir: t.TempDir(),
+	})
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "auth failed")
+}
+
+func TestNewResolveTokenOverridesStatic(t *testing.T) {
+	dir := t.TempDir()
+	inst, err := New(Options{
+		Token: "static-token",
+		ResolveToken: func(
+			_ context.Context, _ string,
+		) (string, error) {
+			return "dynamic-token", nil
+		},
+		DataDir: dir,
+		Repos:   []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+}
+
+func TestNewDBPathSkipsDataDirCreation(t *testing.T) {
+	// When DBPath is set, DataDir should not be required
+	// and no directory creation should be attempted.
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	inst, err := New(Options{
+		Token:  "test-token",
+		DBPath: dbPath,
+	})
+	require.NoError(t, err)
+	defer inst.Close()
 }
 
 func TestCloseIsIdempotent(t *testing.T) {
