@@ -3,6 +3,7 @@
   import {
     API_CLIENT_KEY, ACTIONS_KEY, NAVIGATE_KEY, EVENT_KEY,
     PREPARE_ROUTE_KEY, STORES_KEY, UI_CONFIG_KEY, SIDEBAR_KEY,
+    HOST_STATE_KEY,
   } from "./context.js";
   import type {
     MiddlemanClient, ActionRegistry, NavigateCallback,
@@ -174,6 +175,7 @@
     setContext(STORES_KEY, si);
     setContext(UI_CONFIG_KEY, cfg);
     setContext(SIDEBAR_KEY, sb);
+    setContext(HOST_STATE_KEY, hs);
 
     return si;
   }
