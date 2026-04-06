@@ -34,6 +34,7 @@ type Syncer struct {
 	db           *db.DB
 	clones       *gitclone.Manager
 	rateTracker  *RateTracker
+	platformHost string // e.g. "github.com" or GHE hostname
 	repos        []RepoRef
 	reposMu      sync.Mutex
 	interval     time.Duration
@@ -46,7 +47,8 @@ type Syncer struct {
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
-// given interval. clones and rateTracker may be nil.
+// given interval. platformHost selects the clone URL host
+// (defaults to "github.com"). clones and rateTracker may be nil.
 func NewSyncer(
 	client Client,
 	database *db.DB,
@@ -54,18 +56,28 @@ func NewSyncer(
 	repos []RepoRef,
 	interval time.Duration,
 	rateTracker *RateTracker,
+	platformHost string,
 ) *Syncer {
 	s := &Syncer{
-		client:      client,
-		db:          database,
-		clones:      clones,
-		rateTracker: rateTracker,
-		repos:       repos,
-		interval:    interval,
-		stopCh:      make(chan struct{}),
+		client:       client,
+		db:           database,
+		clones:       clones,
+		rateTracker:  rateTracker,
+		platformHost: platformHost,
+		repos:        repos,
+		interval:     interval,
+		stopCh:       make(chan struct{}),
 	}
 	s.status.Store(&SyncStatus{})
 	return s
+}
+
+// cloneHost returns the host to use in clone URLs.
+func (s *Syncer) cloneHost() string {
+	if s.platformHost == "" {
+		return "github.com"
+	}
+	return s.platformHost
 }
 
 // SetRepos atomically replaces the list of repositories to sync.
@@ -193,7 +205,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	// Fetch bare clone before PR data so refs are available for merge-base.
 	cloneFetchOK := false
 	if s.clones != nil {
-		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", repo.Owner, repo.Name)
+		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", s.cloneHost(), repo.Owner, repo.Name)
 		if err := s.clones.EnsureClone(ctx, repo.Owner, repo.Name, remoteURL); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
@@ -717,7 +729,7 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 
 	// Fetch bare clone and compute diff SHAs so the diff view is current.
 	if s.clones != nil {
-		remoteURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
+		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", s.cloneHost(), owner, name)
 		if err := s.clones.EnsureClone(ctx, owner, name, remoteURL); err != nil {
 			slog.Warn("bare clone fetch failed during SyncMR",
 				"repo", owner+"/"+name, "number", number, "err", err)

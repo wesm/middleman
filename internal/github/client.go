@@ -30,18 +30,39 @@ type Client interface {
 }
 
 // NewClient creates a GitHub Client authenticated with the given
-// token. rateTracker may be nil if rate tracking is not needed.
+// token. platformHost selects the API endpoint: "" or "github.com"
+// uses the public API; any other value creates an Enterprise
+// client. rateTracker may be nil if rate tracking is not needed.
 func NewClient(
-	token string, rateTracker *RateTracker,
-) Client {
+	token string,
+	platformHost string,
+	rateTracker *RateTracker,
+) (Client, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
-	return &liveClient{
-		gh:          gh.NewClient(tc),
-		rateTracker: rateTracker,
+
+	var ghClient *gh.Client
+	if platformHost == "" || platformHost == "github.com" {
+		ghClient = gh.NewClient(tc)
+	} else {
+		baseURL := "https://" + platformHost + "/api/v3/"
+		uploadURL := "https://" + platformHost +
+			"/api/uploads/"
+		var err error
+		ghClient, err = gh.NewClient(tc).
+			WithEnterpriseURLs(baseURL, uploadURL)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"create enterprise client: %w", err,
+			)
+		}
 	}
+	return &liveClient{
+		gh:          ghClient,
+		rateTracker: rateTracker,
+	}, nil
 }
 
 type liveClient struct {

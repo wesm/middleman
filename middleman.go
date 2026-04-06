@@ -148,7 +148,12 @@ func New(opts Options) (*Instance, error) {
 	host := defaultPlatformHost(opts.Repos)
 	rt := ghclient.NewRateTracker(database, host)
 
-	gh := ghclient.NewClient(token, rt)
+	gh, err := ghclient.NewClient(token, host, rt)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"middleman: creating GitHub client: %w", err,
+		)
+	}
 
 	var refs []ghclient.RepoRef
 	for _, r := range opts.Repos {
@@ -160,6 +165,7 @@ func New(opts Options) (*Instance, error) {
 
 	syncer := ghclient.NewSyncer(
 		gh, database, nil, refs, cfg.SyncDuration(), rt,
+		host,
 	)
 
 	srv := server.New(

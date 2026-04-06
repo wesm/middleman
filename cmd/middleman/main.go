@@ -80,7 +80,10 @@ func run(configPath string) error {
 
 	rt := ghclient.NewRateTracker(database, "github.com")
 
-	ghClient := ghclient.NewClient(token, rt)
+	ghClient, err := ghclient.NewClient(token, "", rt)
+	if err != nil {
+		return fmt.Errorf("create GitHub client: %w", err)
+	}
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
@@ -92,7 +95,8 @@ func run(configPath string) error {
 	cloneMgr := gitclone.New(filepath.Join(cfg.DataDir, "clones"), token)
 
 	syncer := ghclient.NewSyncer(
-		ghClient, database, cloneMgr, repos, cfg.SyncDuration(), rt,
+		ghClient, database, cloneMgr, repos,
+		cfg.SyncDuration(), rt, "",
 	)
 
 	assets, err := web.Assets()

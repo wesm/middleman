@@ -74,7 +74,7 @@ func run(port int) error {
 		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name}
 	}
 
-	syncer := ghclient.NewSyncer(fc, database, nil, repos, time.Hour, nil)
+	syncer := ghclient.NewSyncer(fc, database, nil, repos, time.Hour, nil, "")
 
 	assets, err := web.Assets()
 	if err != nil {

@@ -24,7 +24,7 @@ func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {
 	t.Cleanup(func() { database.Close() })
 
 	mock := &mockGH{}
-	syncer := ghclient.NewSyncer(mock, database, nil, nil, time.Minute, nil)
+	syncer := ghclient.NewSyncer(mock, database, nil, nil, time.Minute, nil, "")
 	return New(
 		database, mock, syncer, frontend, basePath,
 		nil, ServerOptions{},
