@@ -1,6 +1,7 @@
 package github
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -81,4 +82,40 @@ func TestRateTrackerBackoff(t *testing.T) {
 	backoff, wait = rt.ShouldBackoff()
 	assert.False(backoff)
 	assert.Zero(wait)
+}
+
+func TestRateTrackerHourRollover(t *testing.T) {
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	for range 5 {
+		rt.RecordRequest()
+	}
+	Assert.Equal(t, 5, rt.RequestsThisHour())
+
+	// Simulate hour rollover by manipulating internal state.
+	rt.mu.Lock()
+	rt.hourStart = time.Now().Add(-2 * time.Hour)
+	rt.mu.Unlock()
+
+	rt.RecordRequest()
+	Assert.Equal(t, 1, rt.RequestsThisHour(),
+		"counter should reset after hour boundary")
+}
+
+func TestRateTrackerConcurrentAccess(t *testing.T) {
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Go(func() {
+			rt.RecordRequest()
+			rt.RequestsThisHour()
+			rt.Remaining()
+			rt.ShouldBackoff()
+		})
+	}
+	wg.Wait()
+	Assert.GreaterOrEqual(t, rt.RequestsThisHour(), 1)
 }
