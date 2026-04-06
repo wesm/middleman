@@ -43,7 +43,9 @@ type Syncer struct {
 	stopCh       chan struct{}
 	stopOnce     sync.Once
 	wg           sync.WaitGroup
-	displayNames map[string]string // "host\x00login" -> display name, per sync run
+	displayNames    map[string]string // "host\x00login" -> display name, per sync run
+	onMRSynced      func(owner, name string, mr *db.MergeRequest)
+	onSyncCompleted func(repoKeys []string)
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
@@ -75,6 +77,22 @@ func NewSyncer(
 	}
 	s.status.Store(&SyncStatus{})
 	return s
+}
+
+// SetOnMRSynced registers a callback invoked after each MR
+// is upserted during a sync pass.
+func (s *Syncer) SetOnMRSynced(
+	fn func(owner, name string, mr *db.MergeRequest),
+) {
+	s.onMRSynced = fn
+}
+
+// SetOnSyncCompleted registers a callback invoked at the end
+// of each RunOnce pass with the repo keys that were synced.
+func (s *Syncer) SetOnSyncCompleted(
+	fn func(repoKeys []string),
+) {
+	s.onSyncCompleted = fn
 }
 
 // clientFor returns the Client for the given repo's host,
@@ -237,6 +255,15 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 
 	slog.Info("sync complete", "repos", len(repos))
+
+	if s.onSyncCompleted != nil {
+		keys := make([]string, len(repos))
+		for i, r := range repos {
+			keys[i] = r.Owner + "/" + r.Name
+		}
+		s.onSyncCompleted(keys)
+	}
+
 	s.status.Store(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),
@@ -411,6 +438,10 @@ func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", ghPR.GetNumber(), err)
+	}
+
+	if s.onMRSynced != nil {
+		s.onMRSynced(repo.Owner, repo.Name, normalized)
 	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
