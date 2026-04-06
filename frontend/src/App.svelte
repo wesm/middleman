@@ -375,6 +375,7 @@
       id: a.id,
       label: a.label,
       handler: (ctx) => invokeAction(a, {
+        surface: ctx.surface,
         owner: ctx.owner,
         name: ctx.name,
         number: ctx.number,
@@ -385,6 +386,7 @@
       id: a.id,
       label: a.label,
       handler: (ctx) => invokeAction(a, {
+        surface: ctx.surface,
         owner: ctx.owner,
         name: ctx.name,
         number: ctx.number,

@@ -162,9 +162,9 @@ describe("invokeAction", () => {
   it("passes correct context to handler", () => {
     const handler = vi.fn();
     const action: ActionHook = { id: "a", label: "A", handler };
-    invokeAction(action, { owner: "org", name: "repo", number: 42 });
+    invokeAction(action, { surface: "pull-detail", owner: "org", name: "repo", number: 42 });
     expect(handler).toHaveBeenCalledWith({
-      owner: "org", name: "repo", number: 42,
+      surface: "pull-detail", owner: "org", name: "repo", number: 42,
     });
   });
 
@@ -174,7 +174,7 @@ describe("invokeAction", () => {
       id: "b", label: "B",
       handler: () => { throw new Error("boom"); },
     };
-    invokeAction(action, { owner: "o", name: "n", number: 1 });
+    invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
     expect(spy).toHaveBeenCalledWith(
       "Embedding action error:", expect.any(Error),
     );
@@ -187,7 +187,7 @@ describe("invokeAction", () => {
       id: "c", label: "C",
       handler: () => Promise.reject(new Error("async boom")),
     };
-    invokeAction(action, { owner: "o", name: "n", number: 1 });
+    invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
     await vi.waitFor(() => {
       expect(spy).toHaveBeenCalledWith(
         "Embedding action error:", expect.any(Error),

@@ -5,6 +5,7 @@ export interface ActionHook {
 }
 
 export interface ActionContext {
+  surface: string;
   owner: string;
   name: string;
   number: number;

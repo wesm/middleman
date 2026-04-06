@@ -58,6 +58,7 @@ interface ActionHookDef {
   id: string;
   label: string;
   handler: (context: {
+    surface: string;
     owner: string;
     name: string;
     number: number;
