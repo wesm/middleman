@@ -1128,7 +1128,12 @@ func (s *Server) resolveItem(
 	itemType, err := s.syncer.SyncItemByNumber(
 		ctx, owner, name, number,
 	)
-	if err != nil {
+	// A DiffSyncError means the PR row was upserted but the diff
+	// computation failed. Resolution doesn't need diff data, so treat
+	// the result as success and let the next detail fetch surface the
+	// staleness via warnings.
+	var diffErr *ghclient.DiffSyncError
+	if err != nil && !errors.As(err, &diffErr) {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) {
 			if ghErr.Response != nil &&
@@ -1143,6 +1148,14 @@ func (s *Server) resolveItem(
 		}
 		return nil, huma.Error500InternalServerError(
 			"resolve item: " + err.Error(),
+		)
+	}
+	if diffErr != nil {
+		slog.Warn("resolve item: diff sync failed but PR row was synced",
+			"owner", owner,
+			"name", name,
+			"number", number,
+			"err", err,
 		)
 	}
 

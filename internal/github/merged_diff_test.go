@@ -610,3 +610,94 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	require.NotNil(shas)
 	assert.Empty(shas.DiffHeadSHA, "diff SHAs should remain unset when computation failed")
 }
+
+// TestSyncItemByNumberReturnsTypeOnDiffSyncError verifies that when SyncMR
+// returns a *DiffSyncError for a merged PR, SyncItemByNumber still reports
+// the item type as "pr" so the resolve endpoint can route the user to the
+// PR detail view. The diff failure is preserved in the returned error so
+// the caller can surface it as a warning if it cares.
+func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	ctx := context.Background()
+	sourceDir := t.TempDir()
+	clonesDir := t.TempDir()
+
+	initTestRepo(t, sourceDir)
+
+	// Set up a feature branch with a pull ref so the bare clone has a
+	// usable PR head; the merge commit will live only in source after the
+	// snapshot, making computeMergedMRDiffSHAs fail to rev-parse it.
+	gitRun(t, sourceDir, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	gitRun(t, sourceDir, "add", ".")
+	gitRun(t, sourceDir, "commit", "-m", "add feature")
+	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
+	gitRun(t, sourceDir, "update-ref", "refs/pull/77/head", prHead)
+
+	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+
+	gitRun(t, sourceDir, "checkout", "main")
+	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
+	mergeCommit := gitRun(t, sourceDir, "rev-parse", "HEAD")
+	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
+
+	// Cut the clone off from new commits so the merge commit can never
+	// reach it via fetch.
+	emptyRemote := t.TempDir()
+	initTestRepo(t, emptyRemote)
+	barePath := mgr.ClonePath("github.com", "owner", "repo")
+	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
+
+	number := 77
+	title := "diff failure resolve repro"
+	url := "https://github.com/owner/repo/pull/77"
+	ghID := int64(77000)
+	headRef := "feature"
+	baseRef := "main"
+	state := "closed"
+	merged := true
+	now := time.Now().UTC()
+	mergedPR := &gh.PullRequest{
+		ID:             &ghID,
+		Number:         &number,
+		Title:          &title,
+		HTMLURL:        &url,
+		State:          &state,
+		Merged:         &merged,
+		MergeCommitSHA: &mergeCommit,
+		UpdatedAt:      makeTimestamp(now),
+		CreatedAt:      makeTimestamp(now),
+		MergedAt:       makeTimestamp(now),
+		ClosedAt:       makeTimestamp(now),
+		Head:           &gh.PullRequestBranch{Ref: &headRef, SHA: &prHead},
+		Base:           &gh.PullRequestBranch{Ref: &baseRef, SHA: &postmergeBaseSHA},
+	}
+
+	mc := &mockClient{
+		singlePR: mergedPR,
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return &gh.Issue{
+				Number:           &number,
+				PullRequestLinks: &gh.PullRequestLinks{HTMLURL: &url},
+			}, nil
+		},
+	}
+	d := openTestDB(t)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil)
+
+	itemType, err := syncer.SyncItemByNumber(ctx, "owner", "repo", number)
+	require.Error(err)
+	var diffErr *DiffSyncError
+	require.ErrorAs(err, &diffErr)
+	assert.Equal("pr", itemType, "type should be reported even when diff sync failed")
+
+	// PR row was still upserted, so the resolve endpoint can route the user.
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("merged", mr.State)
+}

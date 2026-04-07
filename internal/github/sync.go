@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -1165,6 +1166,17 @@ func (s *Syncer) SyncItemByNumber(
 
 	if ghIssue.PullRequestLinks != nil {
 		if err := s.SyncMR(ctx, owner, name, number); err != nil {
+			// A DiffSyncError means the PR row, timeline, and CI status
+			// were upserted successfully and only the diff computation
+			// failed. The item type is known, so resolution can still
+			// succeed; surface the error so callers that care about diff
+			// freshness can react, but report itemType so callers that
+			// just need to route the user (e.g. /items/{n}/resolve) can
+			// proceed.
+			var diffErr *DiffSyncError
+			if errors.As(err, &diffErr) {
+				return "pr", err
+			}
 			return "", fmt.Errorf(
 				"sync MR %s/%s#%d: %w", owner, name, number, err,
 			)
