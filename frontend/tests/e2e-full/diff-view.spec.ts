@@ -519,3 +519,172 @@ test.describe("diff view performance", () => {
     await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });
   });
 });
+
+// --- Git-backed tests (real diff pipeline, no route mocking) ---
+// These use a real git repo created by testutil.SetupDiffRepo for
+// acme/widgets PR #1. The diff contains:
+//   - internal/handler.go: modified (2 hunks, log->slog + added line)
+//   - internal/cache.go: added
+//   - config.yaml: deleted
+//   - README.md: whitespace-only change
+
+test.describe("diff view (git-backed)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem("diff-tab-width");
+      localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-collapsed-files");
+      localStorage.removeItem("diff-sidebar-width");
+    });
+  });
+
+  test("real diff loads and renders all changed files", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    // Should have 4 changed files from the test repo.
+    await expect(page.locator(".diff-file")).toHaveCount(4);
+    await expect(page.locator(".file-tree .tree-file")).toHaveCount(4);
+  });
+
+  test("modified file has multiple hunks with correct content", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    // Find the handler.go file by its data attribute.
+    const handlerFile = page.locator(
+      '[data-file-path="internal/handler.go"]',
+    );
+    await expect(handlerFile).toBeVisible();
+
+    // Should have 2 hunks (two separate modified regions).
+    const hunks = handlerFile.locator(".hunk-header");
+    await expect(hunks).toHaveCount(2);
+
+    // Deleted line: old log.Println call.
+    const deletedLines = handlerFile.locator(".diff-line--del");
+    await expect(deletedLines.first()).toBeVisible();
+
+    // Added line: new slog.Info call.
+    const addedLines = handlerFile.locator(".diff-line--add");
+    await expect(addedLines.first()).toBeVisible();
+
+    // Verify actual diff content -- the old log import was replaced.
+    await expect(handlerFile.locator(".diff-line--del .code").first())
+      .toContainText("log");
+    await expect(handlerFile.locator(".diff-line--add .code").first())
+      .toContainText("slog");
+  });
+
+  test("added file shows A badge and only addition lines", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const cacheFile = page.locator(
+      '[data-file-path="internal/cache.go"]',
+    );
+    await expect(cacheFile).toBeVisible();
+
+    // All lines should be additions (no deletions or context).
+    const deletedLines = cacheFile.locator(".diff-line--del");
+    await expect(deletedLines).toHaveCount(0);
+
+    // File tree badge should be "A".
+    const treeBadge = page.locator(".file-tree .tree-file", {
+      hasText: "cache.go",
+    }).locator(".file-badge");
+    await expect(treeBadge).toHaveText("A");
+  });
+
+  test("deleted file shows D badge and only deletion lines", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const configFile = page.locator(
+      '[data-file-path="config.yaml"]',
+    );
+    await expect(configFile).toBeVisible();
+
+    // All lines should be deletions.
+    const addedLines = configFile.locator(".diff-line--add");
+    await expect(addedLines).toHaveCount(0);
+
+    // File tree badge should be "D".
+    const treeBadge = page.locator(".file-tree .tree-file", {
+      hasText: "config.yaml",
+    }).locator(".file-badge");
+    await expect(treeBadge).toHaveText("D");
+  });
+
+  test("diff is not marked as stale", async ({ page }) => {
+    // Fetch the diff API directly (not through the SPA) to verify
+    // server-side staleness computation in isolation.
+    const resp = await page.request.get(
+      "/api/v1/repos/acme/widgets/pulls/1/diff",
+    );
+    const body = await resp.json();
+    expect(body.stale).toBe(false);
+
+    // Also verify the UI doesn't show the banner.
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.locator(".stale-banner")).not.toBeAttached();
+  });
+
+  test("top bar shows real file count and addition/deletion stats", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const stats = page.locator(".topbar-stats");
+    await expect(stats).toContainText("4 files");
+
+    // Additions and deletions should be non-zero (from real git diff).
+    const statsText = await stats.textContent();
+    const addMatch = statsText?.match(/\+(\d+)/);
+    const delMatch = statsText?.match(/-(\d+)/);
+    expect(Number(addMatch?.[1])).toBeGreaterThan(0);
+    expect(Number(delMatch?.[1])).toBeGreaterThan(0);
+  });
+
+  test("hide whitespace toggle filters whitespace-only files", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    // Initially 4 files visible.
+    await expect(page.locator(".diff-file")).toHaveCount(4);
+
+    // Toggle hide whitespace.
+    await page.locator(".toggle-switch").click();
+
+    // README.md is whitespace-only and should be hidden.
+    // Wait for the re-fetch to complete.
+    await expect(page.locator(".diff-file")).toHaveCount(3, { timeout: 10_000 });
+
+    // Footer should indicate hidden file count.
+    await expect(page.locator(".tree-footer"))
+      .toContainText("1 whitespace-only file hidden", { timeout: 5_000 });
+  });
+
+  test("collapsed region appears between hunks in modified file", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const handlerFile = page.locator(
+      '[data-file-path="internal/handler.go"]',
+    );
+
+    // With 2 hunks separated by unchanged lines, there should be
+    // a collapsed region between them.
+    const collapsed = handlerFile.locator(".collapsed-region");
+    await expect(collapsed).toHaveCount(1);
+    await expect(collapsed).toContainText("unchanged lines");
+  });
+});

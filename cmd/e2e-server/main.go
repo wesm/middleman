@@ -59,6 +59,11 @@ func run(port int, roborevEndpoint string) error {
 		return fmt.Errorf("seed fixtures: %w", err)
 	}
 
+	diffRepo, err := testutil.SetupDiffRepo(ctx, tmpDir, database)
+	if err != nil {
+		return fmt.Errorf("setup diff repo: %w", err)
+	}
+
 	cfg := &config.Config{
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "widgets"},
@@ -77,6 +82,18 @@ func run(port int, roborevEndpoint string) error {
 
 	fc := result.FixtureClient()
 
+	// Patch the fixture client's PR for acme/widgets#1 with the real
+	// SHAs from the test repo. Without this, the detail store's
+	// background sync (POST /repos/.../pulls/1/sync) would upsert the
+	// PR with empty platform SHAs, overwriting what SetupDiffRepo set.
+	for _, pr := range fc.OpenPRs["acme/widgets"] {
+		if pr.GetNumber() == 1 {
+			pr.Head.SHA = &diffRepo.HeadSHA
+			pr.Base.SHA = &diffRepo.BaseSHA
+			break
+		}
+	}
+
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
 		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name, PlatformHost: "github.com"}
@@ -89,7 +106,9 @@ func run(port int, roborevEndpoint string) error {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
-	srv := server.New(database, syncer, assets, "/", cfg, server.ServerOptions{})
+	srv := server.New(database, syncer, assets, "/", cfg, server.ServerOptions{
+		Clones: diffRepo.Manager,
+	})
 
 	// Do not start the syncer's background loop. The seeded DB is the
 	// ground truth for E2E tests; RunOnce would overwrite it with
