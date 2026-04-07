@@ -14,7 +14,8 @@
     isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
 
-  const { sync } = getStores();
+  const stores = getStores();
+  const { sync } = stores;
 
   async function handleSync(): Promise<void> {
     if (sync.getSyncState()?.running) return;
@@ -61,6 +62,7 @@
           else if (v === "pulls") navigate("/pulls");
           else if (v === "issues") navigate("/issues");
           else if (v === "board") navigate("/pulls/board");
+          else if (v === "reviews") navigate("/reviews");
           else if (v === "settings") navigate("/settings");
         }}
       >
@@ -68,6 +70,7 @@
         <option value="pulls">PRs</option>
         <option value="issues">Issues</option>
         <option value="board">Board</option>
+        <option value="reviews">Reviews</option>
         {#if !isEmbedded() && getPage() === "settings"}
           <option value="settings">Settings</option>
         {/if}
@@ -85,6 +88,14 @@
         </button>
         <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
           Board
+        </button>
+        <button class="view-tab"
+          class:active={getPage() === "reviews"}
+          onclick={() => navigate("/reviews")}>
+          Reviews
+          {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
+            <span class="daemon-indicator" title="Daemon unavailable"></span>
+          {/if}
         </button>
       </div>
     {/if}
@@ -220,6 +231,17 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
+  }
+
+  .daemon-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    margin-left: 4px;
+    vertical-align: middle;
+    opacity: 0.6;
   }
 
   .sidebar-toggle {

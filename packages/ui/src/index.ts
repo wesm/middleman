@@ -20,6 +20,10 @@ export type {
   DiffStore,
   GroupingStore,
   SettingsStore,
+  DaemonStore,
+  JobsStore,
+  ReviewStore,
+  LogStore,
 } from "./types.js";
 
 export {
@@ -32,6 +36,7 @@ export {
   getUIConfig,
   getSidebar,
   getHostState,
+  getRoborevClient,
 } from "./context.js";
 
 // Store factories
@@ -53,6 +58,18 @@ export {
 export {
   createSettingsStore,
 } from "./stores/settings.svelte.js";
+export {
+  createDaemonStore,
+} from "./stores/roborev/daemon.svelte.js";
+export {
+  createJobsStore,
+} from "./stores/roborev/jobs.svelte.js";
+export {
+  createReviewStore,
+} from "./stores/roborev/review.svelte.js";
+export {
+  createLogStore,
+} from "./stores/roborev/log.svelte.js";
 
 // Provider and views
 export { default as Provider } from "./Provider.svelte";
@@ -71,3 +88,6 @@ export {
 export {
   default as DiffViewWrapper,
 } from "./views/DiffViewWrapper.svelte";
+export {
+  default as ReviewsView,
+} from "./views/ReviewsView.svelte";

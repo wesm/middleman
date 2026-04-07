@@ -7,6 +7,7 @@
     ActivityFeedView,
     KanbanBoardView,
     DiffViewWrapper,
+    ReviewsView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -16,6 +17,7 @@
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
+  import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import {
     initTheme,
@@ -279,6 +281,7 @@
 
     const page = getPage();
     if (page === "settings") return;
+    if (page === "reviews") return;
 
     if (page === "activity") {
       if (
@@ -368,6 +371,8 @@
 
 <Provider
   {client}
+  roborevBaseUrl="/api/roborev"
+  onError={showFlash}
   onNavigate={(e) =>
     navigate(typeof e === "string" ? e : e.path)}
   actions={{
@@ -501,13 +506,20 @@
             isSidebarCollapsed={isSidebarCollapsed()}
           />
         {/if}
-      {:else}
+      {:else if getPage() === "issues"}
         {@const selectedIssue =
           stores?.issues.getSelectedIssue() ?? null}
         <IssueListView
           {selectedIssue}
           isSidebarCollapsed={isSidebarCollapsed()}
         />
+      {:else if getPage() === "reviews"}
+        {@const route = getRoute()}
+        {#if route.page === "reviews" && route.jobId != null}
+          <ReviewsView jobId={route.jobId} />
+        {:else}
+          <ReviewsView />
+        {/if}
       {/if}
     </main>
 

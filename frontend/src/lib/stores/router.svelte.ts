@@ -4,7 +4,8 @@ export type Route =
   | { page: "pulls"; view: "diff"; owner: string; name: string; number: number }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
   | { page: "settings" }
-  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number };
+  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
+  | { page: "reviews"; jobId?: number };
 
 import { isEmbedded, getOnNavigate, getOnRouteChange } from "./embed-config.svelte.js";
 
@@ -85,6 +86,16 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "issues" };
   }
+  const reviewsMatch = path.match(/^\/reviews(?:\/(\d+))?$/);
+  if (reviewsMatch) {
+    if (reviewsMatch[1]) {
+      return {
+        page: "reviews",
+        jobId: parseInt(reviewsMatch[1], 10),
+      };
+    }
+    return { page: "reviews" };
+  }
   return { page: "activity" };
 }
 
@@ -101,7 +112,7 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "pulls" | "issues" | "settings" | "focus" {
+  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" {
   return route.page;
 }
 
@@ -140,6 +151,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = r.view === "board" ? "board" : "pull";
   } else if (r.page === "issues") {
     navType = "issue";
+  } else if (r.page === "reviews") {
+    navType = "reviews";
   } else {
     navType = r.page as "activity";
   }

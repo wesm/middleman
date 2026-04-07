@@ -9,14 +9,16 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.buildDate=$(BUILD_DATE)
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
+ROBOREV_SRC ?= $(HOME)/code/roborev
+ROBOREV_REF ?= main
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air" ]; then printf "%s" "$$(go env GOBIN)/air"; \
 	elif [ -x "$$(go env GOPATH | cut -d: -f1)/bin/air" ]; then printf "%s" "$$(go env GOPATH | cut -d: -f1)/bin/air"; \
 	fi)
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
-        frontend frontend-dev frontend-dev-bun frontend-check api-generate \
-        dev test test-short test-e2e vet lint testify-helper-check tidy svelte-skills clean install-hooks help
+        frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        dev test test-short test-e2e test-e2e-roborev vet lint testify-helper-check tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -88,6 +90,11 @@ api-generate:
 		> src/lib/api/generated/client.ts
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
 
+# Regenerate roborev TypeScript client types from checked-in OpenAPI spec
+roborev-api-generate:
+	cd packages/ui && bunx openapi-typescript src/api/roborev/openapi.json -o src/api/roborev/generated/schema.ts
+	@echo "Roborev API types generated"
+
 # Ensure air is installed for backend live reload
 check-air:
 	@if [ -z "$(AIR_BIN)" ]; then \
@@ -111,10 +118,19 @@ test: ensure-embed-dir
 test-short: ensure-embed-dir
 	go test ./... -short -count=1
 
-# Run full-stack E2E tests (Playwright against real Go server)
+# Run integration tests that execute real git commands (excluded from test-short)
+test-integration: ensure-embed-dir
+	go test -tags integration ./... -v -count=1
+
+# Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
 	go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
-	cd frontend && bun run playwright test --config=playwright-e2e.config.ts
+	cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=chromium
+
+# Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
+test-e2e-roborev:
+	ROBOREV_SRC="$(ROBOREV_SRC)" ROBOREV_REF="$(ROBOREV_REF)" \
+		./scripts/run-roborev-e2e.sh
 
 # Vet
 vet: ensure-embed-dir
@@ -172,6 +188,7 @@ help:
 	@echo "  test           - Run all tests"
 	@echo "  test-short     - Run fast tests only"
 	@echo "  test-e2e       - Run full-stack E2E Playwright tests"
+	@echo "  test-e2e-roborev - Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF)"
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"

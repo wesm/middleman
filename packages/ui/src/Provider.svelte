@@ -1,10 +1,24 @@
 <script lang="ts">
-  import { setContext } from "svelte";
+  import { setContext, onDestroy } from "svelte";
   import {
     API_CLIENT_KEY, ACTIONS_KEY, NAVIGATE_KEY, EVENT_KEY,
     PREPARE_ROUTE_KEY, STORES_KEY, UI_CONFIG_KEY, SIDEBAR_KEY,
     HOST_STATE_KEY,
+    ROBOREV_CLIENT_KEY,
   } from "./context.js";
+  import { createRoborevClient } from "./api/roborev/client.js";
+  import {
+    createDaemonStore,
+  } from "./stores/roborev/daemon.svelte.js";
+  import {
+    createJobsStore,
+  } from "./stores/roborev/jobs.svelte.js";
+  import {
+    createReviewStore,
+  } from "./stores/roborev/review.svelte.js";
+  import {
+    createLogStore,
+  } from "./stores/roborev/log.svelte.js";
   import type {
     MiddlemanClient, ActionRegistry, NavigateCallback,
     EventCallback, PrepareRouteCallback, HostStateAccessors,
@@ -60,6 +74,8 @@
     config?: UIConfig;
     sidebar?: SidebarAccessors;
     getPage?: () => string;
+    roborevBaseUrl?: string;
+    onError?: (msg: string) => void;
     stores?: StoreInstances | undefined;
     children?: import("svelte").Snippet;
   }
@@ -78,6 +94,8 @@
       toggleSidebar: () => {},
     },
     getPage = () => "",
+    roborevBaseUrl = undefined,
+    onError = undefined,
     stores = $bindable(),
     children,
   }: Props = $props();
@@ -95,6 +113,8 @@
     prep: PrepareRouteCallback | undefined,
     sb: SidebarAccessors,
     gp: () => string,
+    roborevBase: string | undefined,
+    errorCb: ((msg: string) => void) | undefined,
   ): StoreInstances {
     const grouping = createGroupingStore();
     const settingsStore = createSettingsStore();
@@ -167,6 +187,51 @@
       settings: settingsStore,
     };
 
+    if (roborevBase) {
+      const bp = (cfg.basePath ?? "/").replace(/\/$/, "");
+      const roborevClient = createRoborevClient(
+        bp + roborevBase,
+      );
+
+      const jobsOpts: Parameters<typeof createJobsStore>[0] = {
+        client: roborevClient,
+        navigate: nav,
+      };
+      if (errorCb) jobsOpts.onError = errorCb;
+      const jobsStore = createJobsStore(jobsOpts);
+      si.roborevJobs = jobsStore;
+
+      const reviewOpts: Parameters<typeof createReviewStore>[0] = {
+        client: roborevClient,
+      };
+      if (errorCb) reviewOpts.onError = errorCb;
+      const reviewStore = createReviewStore(reviewOpts);
+      si.roborevReview = reviewStore;
+
+      const logStore = createLogStore({
+        client: roborevClient,
+        baseUrl: bp + roborevBase,
+      });
+      si.roborevLog = logStore;
+
+      const daemon = createDaemonStore({
+        client: roborevClient,
+        healthBaseUrl: bp + "/api/v1",
+        onRecover: () => {
+          void jobsStore.loadJobs();
+          const selectedId =
+            reviewStore.getSelectedJobId();
+          if (selectedId !== undefined) {
+            void reviewStore.loadReview(selectedId);
+          }
+        },
+      });
+      si.roborevDaemon = daemon;
+
+      setContext(ROBOREV_CLIENT_KEY, roborevClient);
+      daemon.startPolling();
+    }
+
     setContext(API_CLIENT_KEY, cl);
     setContext(ACTIONS_KEY, act);
     setContext(NAVIGATE_KEY, nav);
@@ -184,8 +249,12 @@
   stores = init(
     client, hostState, config, actions,
     onNavigate, onEvent, prepareRoute,
-    sidebar, getPage,
+    sidebar, getPage, roborevBaseUrl, onError,
   );
+
+  onDestroy(() => {
+    stores?.roborevDaemon?.stopPolling();
+  });
 </script>
 
 {#if children}

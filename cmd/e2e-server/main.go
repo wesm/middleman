@@ -22,15 +22,19 @@ import (
 
 func main() {
 	port := flag.Int("port", 4174, "port to listen on")
+	roborev := flag.String(
+		"roborev", "",
+		"roborev daemon endpoint (enables proxy)",
+	)
 	flag.Parse()
 
-	if err := run(*port); err != nil {
+	if err := run(*port, *roborev); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(port int) error {
+func run(port int, roborevEndpoint string) error {
 	tmpDir, err := os.MkdirTemp("", "middleman-e2e-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -65,6 +69,10 @@ func run(port int) error {
 			ViewMode:  "flat",
 			TimeRange: "7d",
 		},
+	}
+
+	if roborevEndpoint != "" {
+		cfg.Roborev.Endpoint = roborevEndpoint
 	}
 
 	fc := result.FixtureClient()
