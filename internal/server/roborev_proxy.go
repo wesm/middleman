@@ -26,14 +26,6 @@ func roborevProxy(target string) http.Handler {
 		FlushInterval: -1,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(targetURL)
-			// Strip the /api/roborev prefix so the daemon sees
-			// its own path namespace.
-			r.Out.URL.Path = strings.TrimPrefix(
-				r.Out.URL.Path, "/api/roborev",
-			)
-			if r.Out.URL.Path == "" {
-				r.Out.URL.Path = "/"
-			}
 		},
 		ErrorHandler: func(
 			w http.ResponseWriter, _ *http.Request, _ error,
@@ -43,7 +35,9 @@ func roborevProxy(target string) http.Handler {
 			})
 		},
 	}
-	return proxy
+	// StripPrefix removes /api/roborev before the proxy
+	// sees the request, handling both Path and RawPath.
+	return http.StripPrefix("/api/roborev", proxy)
 }
 
 type roborevStatusResponse struct {
