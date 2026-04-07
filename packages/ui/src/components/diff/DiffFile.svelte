@@ -59,26 +59,28 @@
     };
   });
 
-  const theme = $derived(isDark ? "github-dark" as const : "github-light" as const);
-
-  // Syntax-highlighted tokens cache.
-  // Map from "hunkIdx:lineIdx" -> TokenSpan[]
-  let tokenCache = $state<Map<string, TokenSpan[]>>(new Map());
+  // Dual-theme token caches — both themes are computed on load so switching
+  // is instant (just read a different cache, zero async work).
+  let darkTokens = $state<Map<string, TokenSpan[]>>(new Map());
+  let lightTokens = $state<Map<string, TokenSpan[]>>(new Map());
   let tokenVersion = 0;
+
+  const activeTokens = $derived(isDark ? darkTokens : lightTokens);
 
   // Tokenize in small batches to avoid blocking the main thread.
   const BATCH_SIZE = 50;
 
-  // Recompute highlights when file or theme changes.
+  // Tokenize for BOTH themes when file data changes.
   // Skipped for collapsed or off-screen files; runs when they become visible.
+  // Does NOT depend on `theme` — theme switches just swap which cache is read.
   $effect(() => {
     const version = ++tokenVersion;
     if (collapsed || !inViewport) return;
 
     const currentFile = renderedFile;
-    const currentTheme = theme;
     const currentLang = lang;
-    const newCache = new Map<string, TokenSpan[]>();
+    const newDark = new Map<string, TokenSpan[]>();
+    const newLight = new Map<string, TokenSpan[]>();
 
     void (async () => {
       const items: Array<{ key: string; content: string }> = [];
@@ -93,17 +95,22 @@
         if (version !== tokenVersion) return;
         const batch = items.slice(i, i + BATCH_SIZE);
         const results = await Promise.all(
-          batch.map(async (item) => ({
-            key: item.key,
-            spans: await tokenizeLine(item.content, currentLang, currentTheme),
-          })),
+          batch.map(async (item) => {
+            const [dark, light] = await Promise.all([
+              tokenizeLine(item.content, currentLang, "github-dark"),
+              tokenizeLine(item.content, currentLang, "github-light"),
+            ]);
+            return { key: item.key, dark, light };
+          }),
         );
         if (version !== tokenVersion) return;
         for (const r of results) {
-          newCache.set(r.key, r.spans);
+          newDark.set(r.key, r.dark);
+          newLight.set(r.key, r.light);
         }
         // Update reactively after each batch so lines get highlighted progressively.
-        tokenCache = new Map(newCache);
+        darkTokens = new Map(newDark);
+        lightTokens = new Map(newLight);
         // Yield to the browser between batches.
         if (i + BATCH_SIZE < items.length) {
           await new Promise((r) => requestAnimationFrame(r));
@@ -113,7 +120,7 @@
   });
 
   function getTokens(hunkIdx: number, lineIdx: number): TokenSpan[] {
-    return tokenCache.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
+    return activeTokens.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
   }
 
   function computeCollapsedLines(hunks: DiffHunk[], hunkIdx: number): number {
@@ -186,6 +193,8 @@
 <style>
   .diff-file {
     border-top: 2px solid var(--diff-border);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 500px;
   }
 
   .file-header {

@@ -82,24 +82,33 @@
 
   let fileTreeEl: HTMLDivElement | undefined = $state();
 
-  // Drag handle for resizing. Applies width directly to the DOM during drag
-  // to avoid Svelte re-renders on every pixel. State syncs once on mouseup.
+  // Drag handle for resizing. Applies width directly to the DOM via rAF
+  // to avoid Svelte re-renders and coalesce mousemove events to one
+  // layout pass per frame. State syncs once on mouseup.
   function startDrag(e: MouseEvent): void {
     e.preventDefault();
     dragging = true;
     const startX = e.clientX;
     const startWidth = sidebarWidth;
+    let rafId = 0;
+    let pendingWidth = startWidth;
 
     function onMove(ev: MouseEvent): void {
-      const newWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
-      if (fileTreeEl) fileTreeEl.style.width = `${newWidth}px`;
+      pendingWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          if (fileTreeEl) fileTreeEl.style.width = `${pendingWidth}px`;
+        });
+      }
     }
 
-    function onUp(ev: MouseEvent): void {
+    function onUp(): void {
+      cancelAnimationFrame(rafId);
       dragging = false;
-      const finalWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
-      sidebarWidth = finalWidth;
-      safeSetItem("diff-sidebar-width", String(finalWidth));
+      sidebarWidth = pendingWidth;
+      if (fileTreeEl) fileTreeEl.style.width = `${pendingWidth}px`;
+      safeSetItem("diff-sidebar-width", String(pendingWidth));
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     }
