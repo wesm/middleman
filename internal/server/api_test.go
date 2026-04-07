@@ -232,7 +232,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	t.Helper()
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(ctx, owner, name)
+	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -445,7 +445,7 @@ func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(context.Background(), "acme", "widget")
+	_, err := database.UpsertRepo(context.Background(), "github.com", "acme", "widget")
 	require.NoError(err)
 
 	resp, err := client.HTTP.ListReposWithResponse(context.Background())
@@ -548,7 +548,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(context.Background(), "acme", "widget")
+	repoID, err := database.UpsertRepo(context.Background(), "github.com", "acme", "widget")
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -670,7 +670,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) {
 	t.Helper()
 	ctx := context.Background()
-	repoID, err := database.UpsertRepo(ctx, owner, name)
+	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -1084,7 +1084,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(ctx, "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)

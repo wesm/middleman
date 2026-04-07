@@ -184,6 +184,19 @@ middleman binary
 - **Loopback only** -- binds to 127.0.0.1 by default; this is a personal tool, not a shared service
 - **Graceful shutdown** -- handles SIGINT/SIGTERM cleanly
 
+## Database
+
+Middleman uses SQLite with a schema defined in `internal/db/schema.sql`. The schema is applied via `CREATE TABLE IF NOT EXISTS` on startup.
+
+**There is no migration system yet.** The database tracks its schema version in a `middleman_schema_version` table, and the binary embeds a matching `SchemaVersion` constant. On startup:
+
+- **Fresh database** (version 0): schema is applied and the version is stamped.
+- **Matching version**: proceeds normally.
+- **Stale database** (version < binary): refuses to start. Delete the database file and let middleman recreate it.
+- **Newer database** (version > binary): refuses to start. Upgrade middleman.
+
+When real migrations are implemented, the stale case will run forward migrations instead of refusing. Until then, after a schema change, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (kanban columns, stars, and worktree links) is lost.
+
 ## Development
 
 Run the Go backend and Vite dev server in parallel:

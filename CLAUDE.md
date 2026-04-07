@@ -97,7 +97,7 @@ make vet        # go vet
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output
-- Schema changes should use `ALTER TABLE ADD COLUMN` migrations in `db.init()` for backward compatibility with existing databases
+- Schema changes require bumping `SchemaVersion` in `db.go`. There is no migration system yet — the binary refuses to open a database with a mismatched version. Users delete and recreate the database after schema changes.
 
 ## Git Workflow
 
