@@ -1,11 +1,27 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Mock highlight utils to avoid loading Shiki in tests.
 vi.mock("../../utils/highlight.js", () => ({
   tokenizeLineDual: () => Promise.resolve([]),
   langFromPath: () => "text",
 }));
+
+// jsdom does not ship IntersectionObserver; stub it so DiffFile's onMount
+// observer setup does not throw during render.
+beforeAll(() => {
+  class IntersectionObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] { return []; }
+    root: Element | null = null;
+    rootMargin = "";
+    thresholds: readonly number[] = [];
+  }
+  (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver =
+    IntersectionObserverStub;
+});
 
 import DiffFile from "./DiffFile.svelte";
 import type { DiffFile as DiffFileType } from "../../api/types.js";

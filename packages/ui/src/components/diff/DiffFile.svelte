@@ -43,6 +43,12 @@
 
   onMount(() => {
     let observer: IntersectionObserver | undefined;
+    // Guard for jsdom / SSR-ish test environments where IntersectionObserver
+    // is not provided — treat the file as visible so tokenization still runs.
+    if (typeof IntersectionObserver === "undefined") {
+      inViewport = true;
+      return;
+    }
     if (fileEl) {
       observer = new IntersectionObserver(
         (entries) => { inViewport = entries[0]!.isIntersecting; },
