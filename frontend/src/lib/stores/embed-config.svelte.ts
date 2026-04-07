@@ -84,6 +84,10 @@ export function getActiveWorktreeKey(): string | undefined {
   return readConfig()?.ui?.activeWorktreeKey;
 }
 
+export function getHost(): string | undefined {
+  return readConfig()?.ui?.host;
+}
+
 export function getPullRequestActions(): ActionHook[] {
   return readConfig()?.actions?.pullRequest ?? [];
 }

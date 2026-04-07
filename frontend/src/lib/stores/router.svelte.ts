@@ -5,9 +5,17 @@ export type Route =
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
   | { page: "settings" }
   | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
+  | { page: "focus"; itemType: "mrs"; repo?: string }
+  | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number };
 
-import { isEmbedded, getOnNavigate, getOnRouteChange } from "./embed-config.svelte.js";
+import {
+  isEmbedded,
+  getOnNavigate,
+  getOnRouteChange,
+  getUIConfig as getEmbedUIConfig,
+  getHost,
+} from "./embed-config.svelte.js";
 
 // Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
 const rawBase = window.__BASE_PATH__ ?? "/";
@@ -27,6 +35,20 @@ function stripBase(path: string): string {
 function parseRoute(fullPath: string): Route {
   const path = stripBase(fullPath);
   if (path.startsWith("/focus/")) {
+    if (path === "/focus/mrs") {
+      const sp = new URLSearchParams(window.location.search);
+      const repo = sp.get("repo");
+      const r: Route = { page: "focus", itemType: "mrs" };
+      if (repo) r.repo = repo;
+      return r;
+    }
+    if (path === "/focus/issues") {
+      const sp = new URLSearchParams(window.location.search);
+      const repo = sp.get("repo");
+      const r: Route = { page: "focus", itemType: "issues" };
+      if (repo) r.repo = repo;
+      return r;
+    }
     const prMatch = path.match(
       /^\/focus\/pr\/([^/]+)\/([^/]+)\/(\d+)$/,
     );
@@ -146,7 +168,13 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   const focus = r.page === "focus";
   let navType: MiddlemanNavigateEvent["type"];
   if (r.page === "focus") {
-    navType = r.itemType === "pr" ? "pull" : "issue";
+    if (r.itemType === "mrs") {
+      navType = "pull";
+    } else if (r.itemType === "issues") {
+      navType = "issue";
+    } else {
+      navType = r.itemType === "pr" ? "pull" : "issue";
+    }
   } else if (r.page === "pulls") {
     navType = r.view === "board" ? "board" : "pull";
   } else if (r.page === "issues") {
@@ -163,11 +191,13 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     view: stripBase(window.location.pathname),
   };
 
-  if (r.page === "focus") {
+  if (r.page === "focus" && "owner" in r) {
     event.owner = r.owner;
     event.name = r.name;
     event.number = r.number;
-  } else if (r.page === "pulls" && "view" in r && r.view === "diff") {
+  } else if (
+    r.page === "pulls" && "view" in r && r.view === "diff"
+  ) {
     event.owner = r.owner;
     event.name = r.name;
     event.number = r.number;
@@ -179,6 +209,21 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     event.owner = r.selected.owner;
     event.name = r.selected.name;
     event.number = r.selected.number;
+  }
+
+  // Populate repo from focus list route or global config.
+  if (r.page === "focus" && "repo" in r && r.repo) {
+    event.repo = r.repo;
+  } else {
+    const cfgRepo = getEmbedUIConfig().repo;
+    if (cfgRepo) {
+      event.repo = `${cfgRepo.owner}/${cfgRepo.name}`;
+    }
+  }
+
+  const host = getHost();
+  if (host) {
+    event.host = host;
   }
 
   return event;

@@ -91,3 +91,6 @@ export {
 export {
   default as ReviewsView,
 } from "./views/ReviewsView.svelte";
+export {
+  default as FocusListView,
+} from "./views/FocusListView.svelte";
