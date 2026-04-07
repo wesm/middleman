@@ -2,6 +2,7 @@ package gitclone
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,8 +163,50 @@ func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 	assert.Equal(newSHA, got)
 }
 
+// TestEnsureCloneMigratesCloneWithNoRefspec covers a clone that has no
+// fetch refspec at all (the state left by a vanilla `git clone --bare`
+// before any middleman-specific refspec was added). In that case
+// `git config --get-all remote.origin.fetch` exits 1, which must not
+// short-circuit ensureRefspecs.
+func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	remote, work := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx := context.Background()
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	// Remove every fetch refspec so the key is entirely unset, matching
+	// the state of a clone that was created by an older code path which
+	// did not install any refspec.
+	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	run(t, clonePath, "git", "config", "--unset-all", "remote.origin.fetch")
+	refspecs := getFetchRefspecs(t, clonePath)
+	require.Empty(refspecs)
+
+	// Push a new commit that would be invisible without the branch refspec.
+	newSHA := commitAndPush(t, work, "fourth.go", "package main\n", "fourth")
+
+	// Next EnsureClone should install both refspecs and fetch the commit.
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	refspecs = getFetchRefspecs(t, clonePath)
+	assert.Contains(refspecs, "+refs/heads/*:refs/heads/*")
+	assert.Contains(refspecs, "+refs/pull/*/head:refs/pull/*/head")
+
+	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
+	require.NoError(err)
+	assert.Equal(newSHA, got)
+}
+
 // getFetchRefspecs returns the current fetch refspecs configured for the
-// "origin" remote in a bare clone.
+// "origin" remote in a bare clone. Returns an empty slice when the key
+// is unset; `git config --get-all` signals that with exit code 1.
 func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", clonePath,
@@ -171,7 +214,13 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.Output()
-	require.NoError(t, err)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil // key unset
+		}
+		require.NoError(t, err)
+	}
 	var result []string
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {

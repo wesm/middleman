@@ -71,15 +71,17 @@ func defaultRefspecs() []string {
 
 // ensureRefspecs idempotently adds any missing fetch refspecs to an
 // existing clone. This upgrades clones created before branch/pull ref
-// support was in place.
+// support was in place, including vanilla `git clone --bare` output with
+// no configured fetch refspec at all.
 func (m *Manager) ensureRefspecs(
 	ctx context.Context, host, clonePath string,
 ) {
-	out, err := m.git(ctx, host, clonePath,
+	// `git config --get-all` exits 1 with no output when the key is unset.
+	// Treat any read failure as "no existing refspecs" and fall through to
+	// the add loop, which is idempotent on its own and will log its own
+	// warnings if the add commands fail for a real reason.
+	out, _ := m.git(ctx, host, clonePath,
 		"config", "--get-all", "remote.origin.fetch")
-	if err != nil {
-		return // can't read config, skip silently
-	}
 	existing := make(map[string]bool)
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
