@@ -129,10 +129,10 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 				}
 				if ident, ok := node.Lhs[i].(*ast.Ident); ok {
 					if ident.Name == "assert" && isAssertNewCall(pass, rhs, tName) {
-						assertHelper.obj = identObject(pass, ident)
+						assertHelper.add(identObject(pass, ident))
 					}
 					if ident.Name == "require" && isRequireNewCall(pass, rhs, tName) {
-						requireHelper.obj = identObject(pass, ident)
+						requireHelper.add(identObject(pass, ident))
 					}
 				}
 			}
@@ -142,14 +142,14 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 					continue
 				}
 				if node.Names[i].Name == "assert" && isAssertNewCall(pass, value, tName) {
-					assertHelper.obj = identObject(pass, node.Names[i])
+					assertHelper.add(identObject(pass, node.Names[i]))
 				}
 				if node.Names[i].Name == "require" && isRequireNewCall(pass, value, tName) {
-					requireHelper.obj = identObject(pass, node.Names[i])
+					requireHelper.add(identObject(pass, node.Names[i]))
 				}
 			}
 		case *ast.CallExpr:
-			switch callKind(pass, node, assertHelper.obj, requireHelper.obj) {
+			switch callKind(pass, node, assertHelper, requireHelper) {
 			case "assert":
 				assertCallPositions = append(assertCallPositions, node)
 			case "require":
@@ -182,8 +182,8 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 		return
 	}
 
-	hasAssertHelper := assertHelper.obj != nil && assertHelper.used
-	hasRequireHelper := requireHelper.obj != nil && requireHelper.used
+	hasAssertHelper := len(assertHelper.objs) > 0 && assertHelper.used
+	hasRequireHelper := len(requireHelper.objs) > 0 && requireHelper.used
 	reported := false
 	if len(assertCallPositions) >= 2 && !hasAssertHelper {
 		pass.Reportf(assertCallPositions[len(assertCallPositions)-1].Pos(), assertDiagnosticMessage, total)
@@ -207,8 +207,26 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 }
 
 type helperState struct {
-	obj  types.Object
+	objs map[types.Object]struct{}
 	used bool
+}
+
+func (s *helperState) add(obj types.Object) {
+	if obj == nil {
+		return
+	}
+	if s.objs == nil {
+		s.objs = make(map[types.Object]struct{})
+	}
+	s.objs[obj] = struct{}{}
+}
+
+func (s helperState) has(obj types.Object) bool {
+	if obj == nil {
+		return false
+	}
+	_, ok := s.objs[obj]
+	return ok
 }
 
 func identObject(pass *analysis.Pass, ident *ast.Ident) types.Object {
@@ -250,7 +268,7 @@ func isHelperNewCall(pass *analysis.Pass, expr ast.Expr, tName string, importPat
 	return ok && arg.Name == tName
 }
 
-func callKind(pass *analysis.Pass, call *ast.CallExpr, assertHelperObj, requireHelperObj types.Object) string {
+func callKind(pass *analysis.Pass, call *ast.CallExpr, assertHelper, requireHelper helperState) string {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return ""
@@ -261,9 +279,9 @@ func callKind(pass *analysis.Pass, call *ast.CallExpr, assertHelperObj, requireH
 	}
 	obj := pass.TypesInfo.Uses[pkg]
 	switch {
-	case assertHelperObj != nil && obj == assertHelperObj:
+	case assertHelper.has(obj):
 		return "assert-helper"
-	case requireHelperObj != nil && obj == requireHelperObj:
+	case requireHelper.has(obj):
 		return "require-helper"
 	}
 

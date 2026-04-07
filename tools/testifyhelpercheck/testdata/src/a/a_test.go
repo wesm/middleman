@@ -72,3 +72,17 @@ func TestRequireHelperDoesNotHideAssertDrift(t *testing.T) {
 	Require.NoError(t, nil)
 	Require.NotNil(t, &struct{}{})
 }
+
+func TestOuterHelperStillCountsAfterShadowing(t *testing.T) {
+	assert := Assert.New(t)
+	assert.Equal(1, 1)
+
+	{
+		assert := Assert.New(t)
+		assert.True(true)
+	}
+
+	assert.Equal(2, 2)
+	Require.NoError(t, nil)
+	Require.NotNil(t, &struct{}{})
+}
