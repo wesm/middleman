@@ -40,27 +40,31 @@
 
   const repoLabel = $derived(repo ?? "All repositories");
 
+  const repoParams = $derived(
+    repo ? { repo } : undefined,
+  );
+
   $effect(() => {
     if (listType === "mrs") {
-      void pulls.loadPulls();
+      void pulls.loadPulls(repoParams);
     } else {
-      void issues.loadIssues();
+      void issues.loadIssues(repoParams);
     }
 
     refreshHandle = setInterval(() => {
       if (listType === "mrs") {
-        void pulls.loadPulls();
+        void pulls.loadPulls(repoParams);
       } else {
-        void issues.loadIssues();
+        void issues.loadIssues(repoParams);
       }
     }, 15_000);
 
     if (sync.getSyncState()?.running) {
       sync.onNextSyncComplete(() => {
         if (listType === "mrs") {
-          void pulls.loadPulls();
+          void pulls.loadPulls(repoParams);
         } else {
-          void issues.loadIssues();
+          void issues.loadIssues(repoParams);
         }
       });
     }
@@ -80,10 +84,10 @@
         value.trim() === "" ? undefined : value.trim();
       if (listType === "mrs") {
         pulls.setSearchQuery(q);
-        void pulls.loadPulls();
+        void pulls.loadPulls(repoParams);
       } else {
         issues.setIssueSearchQuery(q);
-        void issues.loadIssues();
+        void issues.loadIssues(repoParams);
       }
     }, 300);
   }
@@ -140,7 +144,7 @@
             class:state-btn--active={prFilterState === s}
             onclick={() => {
               pulls.setFilterState(s);
-              void pulls.loadPulls();
+              void pulls.loadPulls(repoParams);
             }}
           >
             {s === "open"
@@ -157,7 +161,7 @@
             class:state-btn--active={issueFilterState === s}
             onclick={() => {
               issues.setIssueFilterState(s);
-              void issues.loadIssues();
+              void issues.loadIssues(repoParams);
             }}
           >
             {s === "open"
@@ -245,7 +249,7 @@
         <p class="state-message">Waiting for first sync...</p>
       {:else if prItems.length === 0}
         <p class="state-message">No pull requests found.</p>
-      {:else if groupingMode === "byWorkflow"}
+      {:else if groupingMode === "byWorkflow" && prFilterState === "open"}
         {#each workflowGroups as wg (wg.group)}
           <div class="workflow-group">
             <h3 class="group-header">{wg.label}</h3>

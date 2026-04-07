@@ -33,17 +33,20 @@ function stripBase(path: string): string {
 }
 
 function parseRoute(fullPath: string): Route {
-  const path = stripBase(fullPath);
+  const qIdx = fullPath.indexOf("?");
+  const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
+  const search = qIdx >= 0 ? fullPath.slice(qIdx + 1) : "";
+  const path = stripBase(pathname);
   if (path.startsWith("/focus/")) {
     if (path === "/focus/mrs") {
-      const sp = new URLSearchParams(window.location.search);
+      const sp = new URLSearchParams(search);
       const repo = sp.get("repo");
       const r: Route = { page: "focus", itemType: "mrs" };
       if (repo) r.repo = repo;
       return r;
     }
     if (path === "/focus/issues") {
-      const sp = new URLSearchParams(window.location.search);
+      const sp = new URLSearchParams(search);
       const repo = sp.get("repo");
       const r: Route = { page: "focus", itemType: "issues" };
       if (repo) r.repo = repo;
