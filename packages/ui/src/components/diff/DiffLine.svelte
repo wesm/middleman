@@ -1,9 +1,5 @@
 <script lang="ts">
-  interface DualToken {
-    content: string;
-    darkColor?: string;
-    lightColor?: string;
-  }
+  import type { DualToken } from "../../utils/highlight.js";
 
   interface Props {
     type: "context" | "add" | "delete";

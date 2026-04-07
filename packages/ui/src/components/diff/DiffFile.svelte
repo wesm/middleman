@@ -4,7 +4,7 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  import { tokenizeLine, langFromPath, type TokenSpan } from "../../utils/highlight.js";
+  import { tokenizeLineDual, langFromPath, type DualToken } from "../../utils/highlight.js";
   import DiffLineComponent from "./DiffLine.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
 
@@ -21,9 +21,12 @@
   const lang = $derived(langFromPath(file.path));
 
   // Track viewport visibility so off-screen files skip expensive tokenization
-  // on whitespace toggles and theme switches.
+  // on whitespace toggles and theme switches. Starts false so the initial
+  // render on large diffs doesn't eagerly tokenize every file before the
+  // IntersectionObserver reports visibility — the first observer callback
+  // fires synchronously for on-screen files.
   let fileEl: HTMLDivElement | undefined = $state();
-  let inViewport = $state(true);
+  let inViewport = $state(false);
 
   // Local copy of file data, only synced when expanded AND visible. Collapsed
   // or off-screen files keep stale content so whitespace toggles and theme
@@ -51,11 +54,11 @@
     return () => { observer?.disconnect(); };
   });
 
-  // Dual-theme token caches — both themes computed on load. Each span carries
-  // both colors as CSS custom properties, so theme switch is pure CSS (zero
-  // DOM updates, zero re-renders).
-  let darkTokens = $state<Map<string, TokenSpan[]>>(new Map());
-  let lightTokens = $state<Map<string, TokenSpan[]>>(new Map());
+  // Dual-theme token cache — each span carries both colors as CSS custom
+  // properties, so theme switch is pure CSS (zero DOM updates, zero
+  // re-renders). Tokenization happens once per line using Shiki's native
+  // dual-theme API, which guarantees aligned token boundaries across themes.
+  let tokens = $state<Map<string, DualToken[]>>(new Map());
   let tokenVersion = 0;
 
   // Tokenize in small batches to avoid blocking the main thread.
@@ -66,12 +69,15 @@
   // Does NOT depend on `theme` — theme switches just swap which cache is read.
   $effect(() => {
     const version = ++tokenVersion;
+    // Clear the cache up front so stale tokens keyed by hunkIdx:lineIdx from
+    // a previous file don't briefly render against the new content while the
+    // fresh tokenization runs asynchronously.
+    tokens = new Map();
     if (collapsed || !inViewport) return;
 
     const currentFile = renderedFile;
     const currentLang = lang;
-    const newDark = new Map<string, TokenSpan[]>();
-    const newLight = new Map<string, TokenSpan[]>();
+    const next = new Map<string, DualToken[]>();
 
     void (async () => {
       const items: Array<{ key: string; content: string }> = [];
@@ -86,22 +92,17 @@
         if (version !== tokenVersion) return;
         const batch = items.slice(i, i + BATCH_SIZE);
         const results = await Promise.all(
-          batch.map(async (item) => {
-            const [dark, light] = await Promise.all([
-              tokenizeLine(item.content, currentLang, "github-dark"),
-              tokenizeLine(item.content, currentLang, "github-light"),
-            ]);
-            return { key: item.key, dark, light };
-          }),
+          batch.map(async (item) => ({
+            key: item.key,
+            spans: await tokenizeLineDual(item.content, currentLang),
+          })),
         );
         if (version !== tokenVersion) return;
         for (const r of results) {
-          newDark.set(r.key, r.dark);
-          newLight.set(r.key, r.light);
+          next.set(r.key, r.spans);
         }
         // Update reactively after each batch so lines get highlighted progressively.
-        darkTokens = new Map(newDark);
-        lightTokens = new Map(newLight);
+        tokens = new Map(next);
         // Yield to the browser between batches.
         if (i + BATCH_SIZE < items.length) {
           await new Promise((r) => requestAnimationFrame(r));
@@ -110,25 +111,11 @@
     })();
   });
 
-  interface DualToken {
-    content: string;
-    darkColor?: string;
-    lightColor?: string;
-  }
-
   function getTokens(hunkIdx: number, lineIdx: number): DualToken[] {
     const key = `${hunkIdx}:${lineIdx}`;
-    const dark = darkTokens.get(key);
-    const light = lightTokens.get(key);
-    if (!dark && !light) {
-      return [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
-    }
-    const base = dark ?? light!;
-    return base.map((span, i) => ({
-      content: span.content,
-      darkColor: dark?.[i]?.color,
-      lightColor: light?.[i]?.color,
-    }));
+    const cached = tokens.get(key);
+    if (cached) return cached;
+    return [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
   }
 
   function computeCollapsedLines(hunks: DiffHunk[], hunkIdx: number): number {
@@ -201,8 +188,6 @@
 <style>
   .diff-file {
     border-top: 2px solid var(--diff-border);
-    content-visibility: auto;
-    contain-intrinsic-size: auto 500px;
   }
 
   .file-header {

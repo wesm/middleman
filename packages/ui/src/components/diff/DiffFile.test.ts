@@ -3,10 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock highlight utils to avoid loading Shiki in tests.
 vi.mock("../../utils/highlight.js", () => ({
-  tokenizeLine: () => Promise.resolve([]),
+  tokenizeLineDual: () => Promise.resolve([]),
   langFromPath: () => "text",
-  isDarkTheme: () => false,
-  subscribeTheme: () => () => {},
 }));
 
 import DiffFile from "./DiffFile.svelte";
