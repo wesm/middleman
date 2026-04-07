@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import type { DiffFile } from "../../api/types.js";
 
   interface Props {
@@ -81,7 +80,10 @@
     return lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
   }
 
-  // Drag handle for resizing.
+  let fileTreeEl: HTMLDivElement | undefined = $state();
+
+  // Drag handle for resizing. Applies width directly to the DOM during drag
+  // to avoid Svelte re-renders on every pixel. State syncs once on mouseup.
   function startDrag(e: MouseEvent): void {
     e.preventDefault();
     dragging = true;
@@ -90,12 +92,14 @@
 
     function onMove(ev: MouseEvent): void {
       const newWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
-      sidebarWidth = newWidth;
+      if (fileTreeEl) fileTreeEl.style.width = `${newWidth}px`;
     }
 
-    function onUp(): void {
+    function onUp(ev: MouseEvent): void {
       dragging = false;
-      safeSetItem("diff-sidebar-width", String(sidebarWidth));
+      const finalWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
+      sidebarWidth = finalWidth;
+      safeSetItem("diff-sidebar-width", String(finalWidth));
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     }
@@ -103,10 +107,6 @@
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }
-
-  onMount(() => {
-    // Restore width from localStorage (already done in state init).
-  });
 </script>
 
 {#if sidebarCollapsed}
@@ -116,7 +116,7 @@
     </button>
   </div>
 {:else}
-  <div class="file-tree" style="width: {sidebarWidth}px">
+  <div class="file-tree" bind:this={fileTreeEl} style="width: {sidebarWidth}px">
     <div class="tree-header">
       <span class="tree-title">Files</span>
       <button class="collapse-btn" onclick={() => { sidebarCollapsed = true; }} title="Hide file tree">

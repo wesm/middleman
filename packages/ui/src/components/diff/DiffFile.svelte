@@ -21,21 +21,43 @@
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
 
-  // Local copy of file data, only synced when expanded. Collapsed files keep
-  // stale content so whitespace toggles don't trigger expensive re-renders
-  // and re-tokenization for hidden content.
-  // svelte-ignore state_referenced_locally — synced from file prop via $effect when expanded
+  // Track viewport visibility so off-screen files skip expensive tokenization
+  // on whitespace toggles and theme switches.
+  let fileEl: HTMLDivElement | undefined = $state();
+  let inViewport = $state(true);
+
+  // Local copy of file data, only synced when expanded AND visible. Collapsed
+  // or off-screen files keep stale content so whitespace toggles and theme
+  // switches don't trigger expensive re-renders and re-tokenization for
+  // content no one can see.
+  // svelte-ignore state_referenced_locally — synced from file prop via $effect
   let renderedFile = $state(file);
 
   $effect(() => {
-    if (!collapsed) {
+    if (!collapsed && inViewport) {
       renderedFile = file;
     }
   });
 
   // Use shared theme detection (single MutationObserver for all DiffFile instances).
   let isDark = $state(isDarkTheme());
-  onMount(() => subscribeTheme((dark) => { isDark = dark; }));
+  onMount(() => {
+    const unsubTheme = subscribeTheme((dark) => { isDark = dark; });
+
+    let observer: IntersectionObserver | undefined;
+    if (fileEl) {
+      observer = new IntersectionObserver(
+        (entries) => { inViewport = entries[0]!.isIntersecting; },
+        { rootMargin: "200px 0px" },
+      );
+      observer.observe(fileEl);
+    }
+
+    return () => {
+      unsubTheme();
+      observer?.disconnect();
+    };
+  });
 
   const theme = $derived(isDark ? "github-dark" as const : "github-light" as const);
 
@@ -48,9 +70,10 @@
   const BATCH_SIZE = 50;
 
   // Recompute highlights when file or theme changes.
+  // Skipped for collapsed or off-screen files; runs when they become visible.
   $effect(() => {
     const version = ++tokenVersion;
-    if (collapsed) return;
+    if (collapsed || !inViewport) return;
 
     const currentFile = renderedFile;
     const currentTheme = theme;
@@ -114,7 +137,7 @@
   }
 </script>
 
-<div class="diff-file" data-file-path={file.path}>
+<div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
   <button class="file-header" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
     <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
       <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
