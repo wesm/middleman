@@ -4,7 +4,7 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  import { tokenizeLine, langFromPath, isDarkTheme, subscribeTheme, type TokenSpan } from "../../utils/highlight.js";
+  import { tokenizeLine, langFromPath, type TokenSpan } from "../../utils/highlight.js";
   import DiffLineComponent from "./DiffLine.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
 
@@ -39,11 +39,7 @@
     }
   });
 
-  // Use shared theme detection (single MutationObserver for all DiffFile instances).
-  let isDark = $state(isDarkTheme());
   onMount(() => {
-    const unsubTheme = subscribeTheme((dark) => { isDark = dark; });
-
     let observer: IntersectionObserver | undefined;
     if (fileEl) {
       observer = new IntersectionObserver(
@@ -53,19 +49,15 @@
       observer.observe(fileEl);
     }
 
-    return () => {
-      unsubTheme();
-      observer?.disconnect();
-    };
+    return () => { observer?.disconnect(); };
   });
 
-  // Dual-theme token caches — both themes are computed on load so switching
-  // is instant (just read a different cache, zero async work).
+  // Dual-theme token caches — both themes computed on load. Each span carries
+  // both colors as CSS custom properties, so theme switch is pure CSS (zero
+  // DOM updates, zero re-renders).
   let darkTokens = $state<Map<string, TokenSpan[]>>(new Map());
   let lightTokens = $state<Map<string, TokenSpan[]>>(new Map());
   let tokenVersion = 0;
-
-  const activeTokens = $derived(isDark ? darkTokens : lightTokens);
 
   // Tokenize in small batches to avoid blocking the main thread.
   const BATCH_SIZE = 50;
@@ -119,8 +111,25 @@
     })();
   });
 
-  function getTokens(hunkIdx: number, lineIdx: number): TokenSpan[] {
-    return activeTokens.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
+  interface DualToken {
+    content: string;
+    darkColor?: string;
+    lightColor?: string;
+  }
+
+  function getTokens(hunkIdx: number, lineIdx: number): DualToken[] {
+    const key = `${hunkIdx}:${lineIdx}`;
+    const dark = darkTokens.get(key);
+    const light = lightTokens.get(key);
+    if (!dark && !light) {
+      return [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
+    }
+    const base = dark ?? light!;
+    return base.map((span, i) => ({
+      content: span.content,
+      darkColor: dark?.[i]?.color,
+      lightColor: light?.[i]?.color,
+    }));
   }
 
   function computeCollapsedLines(hunks: DiffHunk[], hunkIdx: number): number {
