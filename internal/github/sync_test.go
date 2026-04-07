@@ -888,10 +888,13 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
+	var mu sync.Mutex
 	var hookCalls []int
 	syncer.SetOnMRSynced(
 		func(_ string, _ string, mr *db.MergeRequest) {
+			mu.Lock()
 			hookCalls = append(hookCalls, mr.Number)
+			mu.Unlock()
 		},
 	)
 
@@ -904,6 +907,8 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 
 	// Wait for at least one fast-sync tick.
 	assert.Eventually(func() bool {
+		mu.Lock()
+		defer mu.Unlock()
 		return len(hookCalls) >= 1
 	}, 2*time.Second, 20*time.Millisecond)
 
