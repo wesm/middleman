@@ -452,7 +452,9 @@ export function createDetailStore(
         err instanceof Error ? err.message : String(err);
       return;
     }
-    await loadDetail(owner, name, number);
+    // Silent refresh: avoid flipping loading flag, which would
+    // unmount the detail tree and reset scroll position.
+    await refreshDetail(owner, name, number);
   }
 
   return {

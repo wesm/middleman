@@ -327,7 +327,9 @@ export function createIssuesStore(
         err instanceof Error ? err.message : String(err);
       return;
     }
-    await loadIssueDetail(owner, name, number);
+    // Silent refresh: avoid flipping loading flag, which would
+    // unmount the detail tree and reset scroll position.
+    await refreshIssueDetail(owner, name, number);
   }
 
   async function toggleIssueStar(
