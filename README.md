@@ -188,16 +188,14 @@ middleman binary
 
 Middleman uses SQLite with a schema defined in `internal/db/schema.sql`. The schema is applied via `CREATE TABLE IF NOT EXISTS` on startup.
 
-**There is no migration system yet.** During this pre-release phase, schema changes are made directly to `schema.sql` and only take full effect on fresh databases. Existing databases get new tables and columns (via `ALTER TABLE ADD COLUMN` in `db.init()`), but changes to existing column constraints (like adding `ON DELETE CASCADE` to foreign keys) do not apply retroactively.
+**There is no migration system yet.** The database tracks its schema version in a `middleman_schema_version` table, and the binary embeds a matching `SchemaVersion` constant. On startup:
 
-Before releasing a stable version, we plan to:
+- **Fresh database** (version 0): schema is applied and the version is stamped.
+- **Matching version**: proceeds normally.
+- **Stale database** (version < binary): refuses to start. Delete the database file and let middleman recreate it.
+- **Newer database** (version > binary): refuses to start. Upgrade middleman.
 
-1. Add a `schema_version` integer to the database (via `PRAGMA user_version`)
-2. Embed a version constant in the binary that matches the current schema
-3. Refuse to start if the database version is newer than the binary
-4. Run forward migrations automatically when the binary is newer than the database
-
-Until then, if you hit issues after a schema change, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; only local state (kanban columns, stars) is lost.
+When real migrations are implemented, the stale case will run forward migrations instead of refusing. Until then, after a schema change, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; only local state (kanban columns, stars) is lost.
 
 ## Development
 

@@ -9,6 +9,18 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// SchemaVersion is the current schema version. Bump this whenever
+// schema.sql changes. The database stores its version in SQLite's
+// PRAGMA user_version. On open:
+//   - Fresh DB (version 0): schema is applied, version is set.
+//   - Matching version: proceed normally.
+//   - Stale DB (version < SchemaVersion): refuse to open.
+//     The user must delete the database and let middleman recreate it.
+//
+// When real migrations are implemented, the stale case will run
+// forward migrations instead of refusing.
+const SchemaVersion = 1
+
 //go:embed schema.sql
 var schemaSQL string
 
@@ -19,7 +31,8 @@ type DB struct {
 }
 
 // Open opens (or creates) a SQLite database at path, applies the schema, and
-// enables WAL mode.
+// enables WAL mode. Returns an error if the database was created by a newer
+// or older version of middleman.
 func Open(path string) (*DB, error) {
 	rw, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	if err != nil {
@@ -46,31 +59,64 @@ func (d *DB) init() error {
 	if _, err := d.rw.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		return fmt.Errorf("enable WAL: %w", err)
 	}
-	if _, err := d.rw.Exec(schemaSQL); err != nil {
-		return fmt.Errorf("apply schema: %w", err)
+
+	version := d.readSchemaVersion()
+
+	switch {
+	case version == 0:
+		// Fresh database — apply schema and stamp version.
+		if _, err := d.rw.Exec(schemaSQL); err != nil {
+			return fmt.Errorf("apply schema: %w", err)
+		}
+		d.writeSchemaVersion(SchemaVersion)
+
+	case version == SchemaVersion:
+		// Schema matches — nothing to do.
+
+	case version > SchemaVersion:
+		return fmt.Errorf(
+			"middleman schema version %d is newer than this "+
+				"binary (expects %d); upgrade middleman",
+			version, SchemaVersion,
+		)
+
+	default:
+		return fmt.Errorf(
+			"middleman schema version %d is older than this "+
+				"binary (expects %d); delete the database file "+
+				"and let middleman recreate it",
+			version, SchemaVersion,
+		)
 	}
-	d.migrate()
+
 	return nil
 }
 
-// migrate drops legacy table names and retrofits schema changes
-// that CREATE TABLE IF NOT EXISTS cannot apply to existing databases.
-func (d *DB) migrate() {
-	oldTables := []string{
-		"repos", "pull_requests", "pr_events",
-		"kanban_state", "issues", "issue_events", "starred_items",
+// readSchemaVersion returns the middleman schema version stored in the
+// database, or 0 if the version table does not exist yet.
+func (d *DB) readSchemaVersion() int {
+	var version int
+	err := d.rw.QueryRow(
+		`SELECT version FROM middleman_schema_version LIMIT 1`,
+	).Scan(&version)
+	if err != nil {
+		return 0
 	}
-	for _, t := range oldTables {
-		_, _ = d.rw.Exec("DROP TABLE IF EXISTS " + t)
-	}
-	oldIndexes := []string{
-		"idx_pr_repo_state_activity", "idx_pr_state_activity",
-		"idx_events_pr_created",
-	}
-	for _, idx := range oldIndexes {
-		_, _ = d.rw.Exec("DROP INDEX IF EXISTS " + idx)
-	}
+	return version
+}
 
+// writeSchemaVersion upserts the schema version row.
+func (d *DB) writeSchemaVersion(version int) {
+	_, _ = d.rw.Exec(
+		`CREATE TABLE IF NOT EXISTS middleman_schema_version (
+			version INTEGER NOT NULL
+		)`,
+	)
+	_, _ = d.rw.Exec(`DELETE FROM middleman_schema_version`)
+	_, _ = d.rw.Exec(
+		`INSERT INTO middleman_schema_version (version) VALUES (?)`,
+		version,
+	)
 }
 
 // Close closes both database connections.

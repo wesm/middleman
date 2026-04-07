@@ -54,11 +54,48 @@ func TestOpenIdempotent(t *testing.T) {
 	d2.Close()
 }
 
-func TestMigrateMergeableState(t *testing.T) {
+func TestSchemaVersionStamped(t *testing.T) {
 	d := openTestDB(t)
-	var val string
+	var version int
 	err := d.ReadDB().QueryRow(
-		"SELECT mergeable_state FROM middleman_merge_requests LIMIT 0",
-	).Scan(&val)
-	require.ErrorIs(t, err, sql.ErrNoRows)
+		"SELECT version FROM middleman_schema_version LIMIT 1",
+	).Scan(&version)
+	require.NoError(t, err)
+	require.Equal(t, SchemaVersion, version)
+}
+
+func TestSchemaVersionMatchReopens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+
+	d1, err := Open(path)
+	require.NoError(t, err)
+	d1.Close()
+
+	d2, err := Open(path)
+	require.NoError(t, err)
+	d2.Close()
+}
+
+func TestSchemaVersionTooNew(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+
+	// Create a DB with a version table stamped higher than the binary.
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(
+		`CREATE TABLE middleman_schema_version (version INTEGER NOT NULL)`,
+	)
+	require.NoError(err)
+	_, err = raw.Exec(
+		`INSERT INTO middleman_schema_version (version) VALUES (9999)`,
+	)
+	require.NoError(err)
+	raw.Close()
+
+	_, err = Open(path)
+	require.Error(err)
+	require.Contains(err.Error(), "newer than this binary")
 }
