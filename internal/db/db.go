@@ -10,15 +10,15 @@ import (
 )
 
 // SchemaVersion is the current schema version. Bump this whenever
-// schema.sql changes. The database stores its version in SQLite's
-// PRAGMA user_version. On open:
-//   - Fresh DB (version 0): schema is applied, version is set.
+// schema.sql changes. The database stores its version in a
+// middleman_schema_version table. On open:
+//   - Fresh DB (no middleman tables): schema is applied, version is set.
 //   - Matching version: proceed normally.
 //   - Stale DB (version < SchemaVersion): refuse to open.
-//     The user must delete the database and let middleman recreate it.
+//   - Legacy DB (middleman tables exist but no version table): refuse.
 //
-// When real migrations are implemented, the stale case will run
-// forward migrations instead of refusing.
+// When real migrations are implemented, the stale/legacy cases will
+// run forward migrations instead of refusing.
 const SchemaVersion = 1
 
 //go:embed schema.sql
@@ -64,6 +64,13 @@ func (d *DB) init() error {
 
 	switch {
 	case version == 0:
+		if d.hasMiddlemanTables() {
+			return fmt.Errorf(
+				"database has middleman tables but no schema " +
+					"version; delete the database file and let " +
+					"middleman recreate it",
+			)
+		}
 		// Fresh database — apply schema and stamp version.
 		if _, err := d.rw.Exec(schemaSQL); err != nil {
 			return fmt.Errorf("apply schema: %w", err)
@@ -103,6 +110,19 @@ func (d *DB) readSchemaVersion() int {
 		return 0
 	}
 	return version
+}
+
+// hasMiddlemanTables checks whether any middleman_* tables (other than
+// the version table itself) already exist in the database.
+func (d *DB) hasMiddlemanTables() bool {
+	var count int
+	err := d.rw.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master
+		 WHERE type = 'table'
+		   AND name LIKE 'middleman_%'
+		   AND name != 'middleman_schema_version'`,
+	).Scan(&count)
+	return err == nil && count > 0
 }
 
 // writeSchemaVersion upserts the schema version row.

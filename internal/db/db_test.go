@@ -99,3 +99,22 @@ func TestSchemaVersionTooNew(t *testing.T) {
 	require.Error(err)
 	require.Contains(err.Error(), "newer than this binary")
 }
+
+func TestSchemaVersionRejectsLegacyUnversionedDB(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+
+	// Create a DB with middleman tables but no version table.
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(
+		`CREATE TABLE middleman_repos (id INTEGER PRIMARY KEY)`,
+	)
+	require.NoError(err)
+	raw.Close()
+
+	_, err = Open(path)
+	require.Error(err)
+	require.Contains(err.Error(), "no schema version")
+}
