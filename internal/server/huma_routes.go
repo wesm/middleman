@@ -920,11 +920,18 @@ func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, 
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
-	if err := s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number); err != nil {
-		if strings.Contains(err.Error(), "is not tracked") {
-			return nil, huma.Error403Forbidden(err.Error())
+	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
+	// via DiffSyncError. The PR row, timeline, and CI status are all current
+	// in either case, so degrade gracefully: keep the response, but report
+	// the diff problem as a warning so the UI can explain why the diff view
+	// is stale or empty.
+	var diffErr *ghclient.DiffSyncError
+	syncErr := s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number)
+	if syncErr != nil && !errors.As(syncErr, &diffErr) {
+		if strings.Contains(syncErr.Error(), "is not tracked") {
+			return nil, huma.Error403Forbidden(syncErr.Error())
 		}
-		return nil, huma.Error502BadGateway("sync PR: " + err.Error())
+		return nil, huma.Error502BadGateway("sync PR: " + syncErr.Error())
 	}
 
 	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
@@ -950,12 +957,18 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		)
 	}
 
+	var warnings []string
+	if diffErr != nil {
+		warnings = append(warnings, diffErr.Error())
+	}
+
 	return &syncPROutput{Body: mergeRequestDetailResponse{
 		MergeRequest:  mr,
 		Events:        events,
 		RepoOwner:     input.Owner,
 		RepoName:      input.Name,
 		WorktreeLinks: toWorktreeLinkResponses(syncLinks),
+		Warnings:      warnings,
 	}}, nil
 }
 

@@ -132,7 +132,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false)
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(err)
@@ -174,13 +174,13 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	require.NoError(syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
 
 	// Without force, the existing (incorrect) SHAs are preserved.
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false)
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, false))
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, true)
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 1, mergeCommit, true))
 	shas, err = syncer.db.GetDiffSHAs(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(shas)
@@ -218,7 +218,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
 
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 2, squashCommit, false)
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 2, squashCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 2)
 	require.NoError(err)
@@ -270,7 +270,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	syncer, repoID := setupSyncer(t, ctx, mgr)
 	insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
 
-	syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 3, rebaseLastCommit, false)
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 3, rebaseLastCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "owner", "repo", 3)
 	require.NoError(err)
@@ -517,4 +517,96 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	assert.Equal(forkPoint, shas.DiffBaseSHA, "diff_base_sha should be the fork point")
 	assert.Equal(forkPoint, shas.MergeBaseSHA, "merge_base_sha should be the fork point")
 	assert.NotEqual(prHead, shas.MergeBaseSHA, "diff should not be empty")
+}
+
+// TestSyncMRWrapsDiffFailureAsDiffSyncError verifies that when SyncMR cannot
+// compute diff SHAs for a merged PR (here: the bare clone is missing the
+// merge commit), it still upserts the PR row, refreshes the timeline, and
+// returns the failure as a *DiffSyncError. The handler distinguishes this
+// from hard sync failures so the user sees a warning instead of a 502.
+func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	ctx := context.Background()
+	sourceDir := t.TempDir()
+	clonesDir := t.TempDir()
+
+	initTestRepo(t, sourceDir)
+
+	// Push a feature commit and create a pull ref so the bare clone has
+	// a usable PR head; the merge commit will live only in source after
+	// the bare clone snapshot, making computeMergedMRDiffSHAs fail to
+	// rev-parse it.
+	gitRun(t, sourceDir, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, "feature.txt"), []byte("feature\n"), 0o644))
+	gitRun(t, sourceDir, "add", ".")
+	gitRun(t, sourceDir, "commit", "-m", "add feature")
+	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
+	gitRun(t, sourceDir, "update-ref", "refs/pull/42/head", prHead)
+
+	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+
+	// Now merge in the source repo *after* the bare clone has snapshotted,
+	// so the merge commit is unreachable from the clone.
+	gitRun(t, sourceDir, "checkout", "main")
+	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
+	mergeCommit := gitRun(t, sourceDir, "rev-parse", "HEAD")
+	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
+
+	// Replace the clone's origin with a path that has no new commits, so
+	// `git fetch` succeeds but the merge commit never enters the clone.
+	emptyRemote := t.TempDir()
+	initTestRepo(t, emptyRemote)
+	barePath := mgr.ClonePath("github.com", "owner", "repo")
+	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
+
+	number := 42
+	title := "diff failure repro"
+	url := "https://github.com/owner/repo/pull/42"
+	ghID := int64(42000)
+	headRef := "feature"
+	baseRef := "main"
+	state := "closed"
+	merged := true
+	now := time.Now().UTC()
+	mergedPR := &gh.PullRequest{
+		ID:             &ghID,
+		Number:         &number,
+		Title:          &title,
+		HTMLURL:        &url,
+		State:          &state,
+		Merged:         &merged,
+		MergeCommitSHA: &mergeCommit,
+		UpdatedAt:      makeTimestamp(now),
+		CreatedAt:      makeTimestamp(now),
+		MergedAt:       makeTimestamp(now),
+		ClosedAt:       makeTimestamp(now),
+		Head:           &gh.PullRequestBranch{Ref: &headRef, SHA: &prHead},
+		Base:           &gh.PullRequestBranch{Ref: &baseRef, SHA: &postmergeBaseSHA},
+	}
+
+	mc := &mockClient{singlePR: mergedPR}
+	d := openTestDB(t)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil)
+
+	err := syncer.SyncMR(ctx, "owner", "repo", number)
+	require.Error(err)
+	var diffErr *DiffSyncError
+	require.ErrorAs(err, &diffErr)
+	require.Error(diffErr.Err)
+
+	// PR row was still upserted despite the diff failure.
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("merged", mr.State, "PR state should be persisted")
+
+	// Diff SHAs are absent because rev-parse never found the merge commit.
+	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Empty(shas.DiffHeadSHA, "diff SHAs should remain unset when computation failed")
 }
