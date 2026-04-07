@@ -327,6 +327,10 @@ export function createIssuesStore(
         err instanceof Error ? err.message : String(err);
       return;
     }
+    // Supersede any in-flight syncIssueDetail so its stale response
+    // cannot overwrite the detail we are about to fetch.
+    ++issueSyncGeneration;
+    detailSyncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
     await refreshIssueDetail(owner, name, number);
