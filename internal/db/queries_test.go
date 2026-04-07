@@ -42,6 +42,243 @@ func insertTestMR(t *testing.T, d *DB, repoID int64, number int, title string, a
 	return id
 }
 
+// insertTestRepoWithHost inserts a repo with a specific platform_host.
+func insertTestRepoWithHost(
+	t *testing.T, d *DB, owner, name, host string,
+) int64 {
+	t.Helper()
+	ctx := context.Background()
+	_, err := d.WriteDB().ExecContext(ctx,
+		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
+		 VALUES ('github', ?, ?, ?)
+		 ON CONFLICT(platform, platform_host, owner, name) DO NOTHING`,
+		host, owner, name,
+	)
+	require.NoError(t, err)
+	var id int64
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT id FROM middleman_repos
+		 WHERE platform = 'github' AND platform_host = ?
+		   AND owner = ? AND name = ?`,
+		host, owner, name,
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+func TestPurgeOtherHosts(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	// Insert repos for two hosts.
+	ghRepoID := insertTestRepoWithHost(
+		t, d, "acme", "widget", "github.com",
+	)
+	gheRepoID := insertTestRepoWithHost(
+		t, d, "corp", "internal", "ghes.company.com",
+	)
+
+	// Insert MRs for both hosts.
+	ghMRID := insertTestMR(
+		t, d, ghRepoID, 1, "gh PR", base,
+	)
+	gheMRID := insertTestMR(
+		t, d, gheRepoID, 2, "ghe PR", base,
+	)
+
+	// Insert events for both MRs.
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: ghMRID,
+			EventType:      "comment",
+			Author:         "alice",
+			CreatedAt:      base,
+			DedupeKey:      "gh-evt-1",
+		},
+	}))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: gheMRID,
+			EventType:      "comment",
+			Author:         "bob",
+			CreatedAt:      base,
+			DedupeKey:      "ghe-evt-1",
+		},
+	}))
+
+	// Insert worktree links for both MRs.
+	require.NoError(d.SetWorktreeLinks([]WorktreeLink{
+		{
+			MergeRequestID: ghMRID,
+			WorktreeKey:    "wt-gh",
+			LinkedAt:       base,
+		},
+		{
+			MergeRequestID: gheMRID,
+			WorktreeKey:    "wt-ghe",
+			LinkedAt:       base,
+		},
+	}))
+
+	// Insert starred items for both repos.
+	require.NoError(d.SetStarred(ctx, "pr", ghRepoID, 1))
+	require.NoError(d.SetStarred(ctx, "pr", gheRepoID, 2))
+
+	// Insert rate limits for both hosts.
+	require.NoError(d.UpsertRateLimit(
+		"github.com", 10, base, 4990, nil,
+	))
+	require.NoError(d.UpsertRateLimit(
+		"ghes.company.com", 5, base, 4995, nil,
+	))
+
+	// Purge all hosts except github.com.
+	require.NoError(d.PurgeOtherHosts("github.com"))
+
+	// github.com data should remain.
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("github.com", repos[0].PlatformHost)
+	assert.Equal("acme", repos[0].Owner)
+
+	// github.com MR should remain.
+	ghMR, err := d.GetMergeRequest(ctx, "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(ghMR)
+
+	// github.com events should remain.
+	ghEvents, err := d.ListMREvents(ctx, ghMRID)
+	require.NoError(err)
+	assert.Len(ghEvents, 1)
+
+	// github.com worktree links should remain.
+	ghLinks, err := d.GetWorktreeLinksForMR(ghMRID)
+	require.NoError(err)
+	assert.Len(ghLinks, 1)
+
+	// github.com starred items should remain.
+	starred, err := d.IsStarred(ctx, "pr", ghRepoID, 1)
+	require.NoError(err)
+	assert.True(starred)
+
+	// ghes.company.com repo should be gone.
+	var gheCount int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_repos
+		 WHERE platform_host = 'ghes.company.com'`,
+	).Scan(&gheCount)
+	require.NoError(err)
+	assert.Equal(0, gheCount)
+
+	// ghes.company.com MR should be gone.
+	var gheMRCount int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_merge_requests
+		 WHERE repo_id = ?`, gheRepoID,
+	).Scan(&gheMRCount)
+	require.NoError(err)
+	assert.Equal(0, gheMRCount)
+
+	// ghes.company.com events should be gone.
+	var gheEvtCount int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_mr_events
+		 WHERE dedupe_key = 'ghe-evt-1'`,
+	).Scan(&gheEvtCount)
+	require.NoError(err)
+	assert.Equal(0, gheEvtCount)
+
+	// github.com rate limits should remain.
+	ghRL, err := d.GetRateLimit("github.com")
+	require.NoError(err)
+	require.NotNil(ghRL)
+	assert.Equal(10, ghRL.RequestsHour)
+
+	// ghes.company.com rate limits should be gone.
+	gheRL, err := d.GetRateLimit("ghes.company.com")
+	require.NoError(err)
+	assert.Nil(gheRL)
+}
+
+// TestCascadeDeleteRepo verifies that deleting a repo on a fresh DB
+// cascades to all dependent tables (mr_events, kanban_state, issue_events).
+func TestCascadeDeleteRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	// Create MR with events and kanban state.
+	mrID := insertTestMR(t, d, repoID, 1, "test PR", base)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: mrID,
+			EventType:      "comment",
+			Author:         "alice",
+			CreatedAt:      base,
+			DedupeKey:      "cascade-mr-evt",
+		},
+	}))
+	require.NoError(d.SetKanbanState(ctx, mrID, "reviewing"))
+
+	// Create issue with events.
+	issueID := insertTestIssue(t, d, repoID, 10, "test issue", base)
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
+		{
+			IssueID:   issueID,
+			EventType: "comment",
+			Author:    "bob",
+			CreatedAt: base,
+			DedupeKey: "cascade-issue-evt",
+		},
+	}))
+
+	// Direct delete of the repo should cascade through all dependents.
+	_, err := d.WriteDB().ExecContext(ctx,
+		`DELETE FROM middleman_repos WHERE id = ?`, repoID,
+	)
+	require.NoError(err)
+
+	// All dependent rows should be gone.
+	var count int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_merge_requests`,
+	).Scan(&count)
+	require.NoError(err)
+	assert.Equal(0, count)
+
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_mr_events`,
+	).Scan(&count)
+	require.NoError(err)
+	assert.Equal(0, count)
+
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_kanban_state`,
+	).Scan(&count)
+	require.NoError(err)
+	assert.Equal(0, count)
+
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_issues`,
+	).Scan(&count)
+	require.NoError(err)
+	assert.Equal(0, count)
+
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_issue_events`,
+	).Scan(&count)
+	require.NoError(err)
+	assert.Equal(0, count)
+}
+
 func TestUpsertAndListRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

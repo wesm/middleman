@@ -22,3 +22,4 @@ tmp/
 cmd/e2e-server/e2e-server
 .claude/worktrees/
 .claude/settings.local.json
+.superset

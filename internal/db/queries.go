@@ -9,6 +9,31 @@ import (
 	"time"
 )
 
+// PurgeOtherHosts deletes all data for platform hosts other
+// than keepHost. Deletes in FK-dependency order so it works
+// on existing DBs where CASCADE may not be retrofitted.
+func (d *DB) PurgeOtherHosts(keepHost string) error {
+	return d.Tx(context.Background(), func(tx *sql.Tx) error {
+		queries := []string{
+			`DELETE FROM middleman_starred_items WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
+			`DELETE FROM middleman_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
+			`DELETE FROM middleman_kanban_state WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
+			`DELETE FROM middleman_mr_events WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
+			`DELETE FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
+			`DELETE FROM middleman_issue_events WHERE issue_id IN (SELECT id FROM middleman_issues WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
+			`DELETE FROM middleman_issues WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
+			`DELETE FROM middleman_repos WHERE platform_host != ?`,
+			`DELETE FROM middleman_rate_limits WHERE platform_host != ?`,
+		}
+		for _, q := range queries {
+			if _, err := tx.Exec(q, keepHost); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // --- Repos ---
 
 // UpsertRepo inserts a repo if it does not exist, then returns its ID.

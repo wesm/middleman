@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS middleman_repos (
 
 CREATE TABLE IF NOT EXISTS middleman_merge_requests (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id          INTEGER NOT NULL REFERENCES middleman_repos(id),
+    repo_id          INTEGER NOT NULL REFERENCES middleman_repos(id) ON DELETE CASCADE,
     platform_id      INTEGER NOT NULL,
     number           INTEGER NOT NULL,
     url              TEXT NOT NULL DEFAULT '',
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS middleman_merge_requests (
 
 CREATE TABLE IF NOT EXISTS middleman_mr_events (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    merge_request_id INTEGER NOT NULL REFERENCES middleman_merge_requests(id),
+    merge_request_id INTEGER NOT NULL REFERENCES middleman_merge_requests(id) ON DELETE CASCADE,
     platform_id      INTEGER,
     event_type       TEXT NOT NULL,
     author           TEXT NOT NULL DEFAULT '',
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS middleman_mr_events (
 );
 
 CREATE TABLE IF NOT EXISTS middleman_kanban_state (
-    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id),
+    merge_request_id INTEGER PRIMARY KEY REFERENCES middleman_merge_requests(id) ON DELETE CASCADE,
     status           TEXT NOT NULL DEFAULT 'new',
     updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -81,7 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_mr_events_created
 
 CREATE TABLE IF NOT EXISTS middleman_issues (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id          INTEGER NOT NULL REFERENCES middleman_repos(id),
+    repo_id          INTEGER NOT NULL REFERENCES middleman_repos(id) ON DELETE CASCADE,
     platform_id      INTEGER NOT NULL,
     number           INTEGER NOT NULL,
     url              TEXT NOT NULL DEFAULT '',
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS middleman_issues (
 
 CREATE TABLE IF NOT EXISTS middleman_issue_events (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id      INTEGER NOT NULL REFERENCES middleman_issues(id),
+    issue_id      INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
     platform_id   INTEGER,
     event_type    TEXT NOT NULL,
     author        TEXT NOT NULL DEFAULT '',
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS middleman_issue_events (
 
 CREATE TABLE IF NOT EXISTS middleman_starred_items (
     item_type  TEXT NOT NULL,
-    repo_id    INTEGER NOT NULL REFERENCES middleman_repos(id),
+    repo_id    INTEGER NOT NULL REFERENCES middleman_repos(id) ON DELETE CASCADE,
     number     INTEGER NOT NULL,
     starred_at DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(item_type, repo_id, number)

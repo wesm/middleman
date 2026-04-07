@@ -27,6 +27,7 @@ type (
 	UIConfig     = server.UIConfig
 	RepoRef      = server.RepoRef
 	WorktreeLink = db.WorktreeLink
+	WatchedMR    = ghclient.WatchedMR
 )
 
 // Repo identifies a GitHub repository to monitor.
@@ -95,7 +96,7 @@ func resolveHostTokens(
 // EmbedHooks provides lifecycle callbacks for embedded consumers.
 type EmbedHooks struct {
 	OnMRSynced      func(MergeRequestSummary)
-	OnSyncCompleted func(repoKeys []string)
+	OnSyncCompleted func(results []RepoSyncResult)
 }
 
 // MergeRequestSummary is a lightweight snapshot of a synced MR,
@@ -111,6 +112,16 @@ type MergeRequestSummary struct {
 	CIStatus       string
 	ReviewDecision string
 	PlatformHost   string
+	CIChecksJSON   string
+	UpdatedAt      time.Time
+}
+
+// RepoSyncResult holds the outcome of syncing a single repo.
+type RepoSyncResult struct {
+	Owner        string
+	Name         string
+	PlatformHost string
+	Error        string // empty on success
 }
 
 // Activity configures the activity view defaults.
@@ -136,14 +147,15 @@ type Options struct {
 	// DBPath overrides the DataDir-derived database path. When
 	// set, the host owns the SQLite file and DataDir may be
 	// omitted.
-	DBPath       string
-	BasePath     string
-	SyncInterval time.Duration
-	Repos        []Repo
-	Activity     Activity
-	Assets       fs.FS
-	EmbedConfig  *server.EmbedConfig
-	EmbedHooks   *EmbedHooks
+	DBPath        string
+	BasePath      string
+	SyncInterval  time.Duration
+	WatchInterval time.Duration
+	Repos         []Repo
+	Activity      Activity
+	Assets        fs.FS
+	EmbedConfig   *server.EmbedConfig
+	EmbedHooks    *EmbedHooks
 }
 
 // Instance holds a running middleman server and its resources.
@@ -260,6 +272,10 @@ func New(opts Options) (*Instance, error) {
 		cfg.SyncDuration(), rateTrackers,
 	)
 
+	if opts.WatchInterval > 0 {
+		syncer.SetWatchInterval(opts.WatchInterval)
+	}
+
 	if opts.EmbedHooks != nil {
 		if opts.EmbedHooks.OnMRSynced != nil {
 			cb := opts.EmbedHooks.OnMRSynced
@@ -283,13 +299,29 @@ func New(opts Options) (*Instance, error) {
 						CIStatus:       mr.CIStatus,
 						ReviewDecision: mr.ReviewDecision,
 						PlatformHost:   host,
+						CIChecksJSON:   mr.CIChecksJSON,
+						UpdatedAt:      mr.UpdatedAt,
 					})
 				},
 			)
 		}
 		if opts.EmbedHooks.OnSyncCompleted != nil {
+			cb := opts.EmbedHooks.OnSyncCompleted
 			syncer.SetOnSyncCompleted(
-				opts.EmbedHooks.OnSyncCompleted,
+				func(results []ghclient.RepoSyncResult) {
+					out := make(
+						[]RepoSyncResult, len(results),
+					)
+					for i, r := range results {
+						out[i] = RepoSyncResult{
+							Owner:        r.Owner,
+							Name:         r.Name,
+							PlatformHost: r.PlatformHost,
+							Error:        r.Error,
+						}
+					}
+					cb(out)
+				},
 			)
 		}
 	}
@@ -343,6 +375,18 @@ func (i *Instance) Close() error {
 	}
 	i.StopSync()
 	return i.db.Close()
+}
+
+// PurgeOtherHosts deletes all data for platform hosts other
+// than keepHost.
+func (inst *Instance) PurgeOtherHosts(keepHost string) error {
+	return inst.db.PurgeOtherHosts(keepHost)
+}
+
+// SetWatchedMRs sets the list of merge requests to sync on a
+// fast interval. Replaces any previous watch list.
+func (inst *Instance) SetWatchedMRs(mrs []WatchedMR) {
+	inst.syncer.SetWatchedMRs(mrs)
 }
 
 // SetWorktreeLinks replaces all worktree links atomically.

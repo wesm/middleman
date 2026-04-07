@@ -29,6 +29,22 @@ type RepoRef struct {
 	PlatformHost string // "github.com" or GHE hostname
 }
 
+// RepoSyncResult holds the outcome of syncing a single repo.
+type RepoSyncResult struct {
+	Owner        string
+	Name         string
+	PlatformHost string
+	Error        string // empty on success
+}
+
+// WatchedMR identifies a merge request to sync on a fast interval.
+type WatchedMR struct {
+	Owner        string
+	Name         string
+	Number       int
+	PlatformHost string // "github.com" or GHE hostname
+}
+
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
 	clients         map[string]Client // host -> client
@@ -38,6 +54,9 @@ type Syncer struct {
 	repos           []RepoRef
 	reposMu         sync.Mutex
 	interval        time.Duration
+	watchInterval   time.Duration
+	watchedMRs      []WatchedMR
+	watchMu         sync.Mutex
 	running         atomic.Bool
 	status          atomic.Value // stores *SyncStatus
 	stopCh          chan struct{}
@@ -45,7 +64,7 @@ type Syncer struct {
 	wg              sync.WaitGroup
 	displayNames    map[string]string // "host\x00login" -> display name, per sync run
 	onMRSynced      func(owner, name string, mr *db.MergeRequest)
-	onSyncCompleted func(repoKeys []string)
+	onSyncCompleted func(results []RepoSyncResult)
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
@@ -79,6 +98,22 @@ func NewSyncer(
 	return s
 }
 
+// SetWatchInterval sets the fast-sync interval for watched MRs.
+// Must be called before Start.
+func (s *Syncer) SetWatchInterval(d time.Duration) {
+	s.watchInterval = d
+}
+
+// SetWatchedMRs replaces the fast-sync watch list. Each watched
+// MR is synced on the watch interval via SyncMR, independent of
+// the bulk sync cycle.
+func (s *Syncer) SetWatchedMRs(mrs []WatchedMR) {
+	s.watchMu.Lock()
+	s.watchedMRs = make([]WatchedMR, len(mrs))
+	copy(s.watchedMRs, mrs)
+	s.watchMu.Unlock()
+}
+
 // SetOnMRSynced registers a callback invoked after each MR
 // is upserted during a sync pass.
 func (s *Syncer) SetOnMRSynced(
@@ -88,9 +123,9 @@ func (s *Syncer) SetOnMRSynced(
 }
 
 // SetOnSyncCompleted registers a callback invoked at the end
-// of each RunOnce pass with the repo keys that were synced.
+// of each RunOnce pass with per-repo sync results.
 func (s *Syncer) SetOnSyncCompleted(
-	fn func(repoKeys []string),
+	fn func(results []RepoSyncResult),
 ) {
 	s.onSyncCompleted = fn
 }
@@ -170,6 +205,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 
 // Start runs an immediate sync then launches a background ticker.
 // It returns as soon as the goroutine is started; call Stop to shut it down.
+// A second goroutine runs watched-MR fast-syncs on a shorter interval.
 func (s *Syncer) Start(ctx context.Context) {
 	s.wg.Go(func() {
 		s.RunOnce(ctx)
@@ -186,6 +222,82 @@ func (s *Syncer) Start(ctx context.Context) {
 			}
 		}
 	})
+
+	watchInt := s.watchInterval
+	if watchInt <= 0 {
+		watchInt = 30 * time.Second
+	}
+	s.wg.Go(func() {
+		ticker := time.NewTicker(watchInt)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.syncWatchedMRs(ctx)
+			case <-s.stopCh:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	})
+}
+
+// syncWatchedMRs syncs each MR on the watch list via SyncMR.
+// Fires onMRSynced (inside SyncMR) but not onSyncCompleted.
+// Checks per-host rate limits before issuing API calls.
+func (s *Syncer) syncWatchedMRs(ctx context.Context) {
+	s.watchMu.Lock()
+	mrs := make([]WatchedMR, len(s.watchedMRs))
+	copy(mrs, s.watchedMRs)
+	s.watchMu.Unlock()
+
+	if len(mrs) == 0 {
+		return
+	}
+
+	// Check backoff once per host to avoid redundant checks.
+	blockedHosts := make(map[string]bool)
+	for _, mr := range mrs {
+		host := mr.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if _, checked := blockedHosts[host]; checked {
+			continue
+		}
+		if rt := s.rateTrackers[host]; rt != nil {
+			if backoff, _ := rt.ShouldBackoff(); backoff {
+				blockedHosts[host] = true
+				continue
+			}
+		}
+		blockedHosts[host] = false
+	}
+
+	for _, mr := range mrs {
+		host := mr.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if blockedHosts[host] {
+			slog.Debug("skipping fast-sync for rate-limited host",
+				"host", host,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"number", mr.Number,
+			)
+			continue
+		}
+		if err := s.syncMRWithHost(ctx, mr.Owner, mr.Name, mr.Number, host); err != nil {
+			slog.Warn("fast-sync watched MR failed",
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"number", mr.Number,
+				"err", err,
+			)
+		}
+	}
 }
 
 // Stop signals the background goroutine to exit. Safe to call multiple times.
@@ -217,6 +329,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	slog.Info("sync started", "repos", len(repos))
 
 	var lastErr string
+	results := make([]RepoSyncResult, 0, len(repos))
 	for i, repo := range repos {
 		host := repo.PlatformHost
 		if host == "" {
@@ -248,20 +361,23 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 			"repo", repoName,
 			"progress", progress,
 		)
+		result := RepoSyncResult{
+			Owner:        repo.Owner,
+			Name:         repo.Name,
+			PlatformHost: host,
+		}
 		if err := s.syncRepo(ctx, repo); err != nil {
 			slog.Error("sync repo failed", "repo", repoName, "err", err)
 			lastErr = err.Error()
+			result.Error = err.Error()
 		}
+		results = append(results, result)
 	}
 
 	slog.Info("sync complete", "repos", len(repos))
 
 	if s.onSyncCompleted != nil {
-		keys := make([]string, len(repos))
-		for i, r := range repos {
-			keys[i] = r.Owner + "/" + r.Name
-		}
-		s.onSyncCompleted(keys)
+		s.onSyncCompleted(results)
 	}
 
 	s.status.Store(&SyncStatus{
@@ -824,11 +940,27 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) error {
+	return s.syncMRWithHost(ctx, owner, name, number, "")
+}
+
+// syncMRWithHost is the internal implementation of SyncMR.
+// When hostHint is non-empty it is used instead of resolving via
+// s.hostFor, avoiding ambiguity when the same owner/name exists on
+// multiple hosts.
+func (s *Syncer) syncMRWithHost(
+	ctx context.Context,
+	owner, name string,
+	number int,
+	hostHint string,
+) error {
 	if !s.IsTrackedRepo(owner, name) {
 		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
 	}
 
-	host := s.hostFor(owner, name)
+	host := hostHint
+	if host == "" {
+		host = s.hostFor(owner, name)
+	}
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
 	client := s.clientFor(repo)
 
@@ -891,7 +1023,24 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 		return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
 	}
 
-	return s.refreshCIStatus(ctx, repo, repoID, ghPR)
+	if err := s.refreshCIStatus(ctx, repo, repoID, ghPR); err != nil {
+		return err
+	}
+
+	if s.onMRSynced != nil {
+		fresh, err := s.db.GetMergeRequest(ctx, owner, name, number)
+		if err != nil {
+			slog.Warn("get MR for onMRSynced hook in SyncMR",
+				"repo", owner+"/"+name,
+				"number", number,
+				"err", err,
+			)
+		} else {
+			s.onMRSynced(owner, name, fresh)
+		}
+	}
+
+	return nil
 }
 
 // SyncIssue fetches fresh data for a single issue from GitHub and updates the DB.

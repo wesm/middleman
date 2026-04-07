@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ type mockClient struct {
 	reviews           []*gh.PullRequestReview
 	commits           []*gh.RepositoryCommit
 	ciStatus          *gh.CombinedStatus
+	checkRuns         []*gh.CheckRun
 	listOpenPRsCalled bool
 }
 
@@ -94,7 +96,7 @@ func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.C
 }
 
 func (m *mockClient) ListCheckRunsForRef(_ context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
-	return nil, nil
+	return m.checkRuns, nil
 }
 
 func (m *mockClient) CreateIssueComment(
@@ -723,17 +725,22 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 		time.Minute, nil,
 	)
 
-	var called []struct {
-		owner  string
-		name   string
-		number int
+	type hookCall struct {
+		owner        string
+		name         string
+		number       int
+		ciChecksJSON string
+		updatedAt    time.Time
 	}
+	var called []hookCall
 	syncer.SetOnMRSynced(func(owner, name string, mr *db.MergeRequest) {
-		called = append(called, struct {
-			owner  string
-			name   string
-			number int
-		}{owner, name, mr.Number})
+		called = append(called, hookCall{
+			owner:        owner,
+			name:         name,
+			number:       mr.Number,
+			ciChecksJSON: mr.CIChecksJSON,
+			updatedAt:    mr.UpdatedAt,
+		})
 	})
 
 	syncer.RunOnce(ctx)
@@ -742,6 +749,55 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 	assert.Equal("owner", called[0].owner)
 	assert.Equal("repo", called[0].name)
 	assert.Equal(1, called[0].number)
+	assert.True(called[0].updatedAt.Equal(now),
+		"UpdatedAt should match the PR's UpdatedAt")
+}
+
+func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	ciState := "success"
+	checkName := "build"
+	checkStatus := "completed"
+	checkConclusion := "success"
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{buildOpenPR(1, now)},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		ciStatus: &gh.CombinedStatus{State: &ciState},
+	}
+	mc.checkRuns = []*gh.CheckRun{
+		{
+			Name:       &checkName,
+			Status:     &checkStatus,
+			Conclusion: &checkConclusion,
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "owner", Name: "repo",
+			PlatformHost: "github.com",
+		}},
+		time.Minute, nil,
+	)
+
+	var gotJSON string
+	syncer.SetOnMRSynced(
+		func(_ string, _ string, mr *db.MergeRequest) {
+			gotJSON = mr.CIChecksJSON
+		},
+	)
+
+	syncer.RunOnce(ctx)
+
+	assert.Contains(gotJSON, "build",
+		"CIChecksJSON should contain check run name")
 }
 
 func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
@@ -766,16 +822,22 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 		time.Minute, nil,
 	)
 
-	var gotKeys []string
-	syncer.SetOnSyncCompleted(func(keys []string) {
-		gotKeys = keys
+	var gotResults []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		gotResults = results
 	})
 
 	syncer.RunOnce(ctx)
 
-	require.Len(gotKeys, 2)
-	assert.Equal("acme/widget", gotKeys[0])
-	assert.Equal("acme/lib", gotKeys[1])
+	require.Len(gotResults, 2)
+	assert.Equal("acme", gotResults[0].Owner)
+	assert.Equal("widget", gotResults[0].Name)
+	assert.Equal("github.com", gotResults[0].PlatformHost)
+	assert.Empty(gotResults[0].Error)
+	assert.Equal("acme", gotResults[1].Owner)
+	assert.Equal("lib", gotResults[1].Name)
+	assert.Equal("github.com", gotResults[1].PlatformHost)
+	assert.Empty(gotResults[1].Error)
 }
 
 func TestNilHooksNoOp(t *testing.T) {
@@ -797,4 +859,286 @@ func TestNilHooksNoOp(t *testing.T) {
 
 	// No hooks set -- should not panic.
 	syncer.RunOnce(ctx)
+}
+
+func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(7, now)
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: pr,
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app",
+			PlatformHost: "github.com",
+		}},
+		time.Hour, nil, // bulk sync at 1h -- won't fire during test
+	)
+	syncer.SetWatchInterval(50 * time.Millisecond)
+
+	var hookCalls []int
+	syncer.SetOnMRSynced(
+		func(_ string, _ string, mr *db.MergeRequest) {
+			hookCalls = append(hookCalls, mr.Number)
+		},
+	)
+
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+	})
+
+	syncer.Start(ctx)
+	defer syncer.Stop()
+
+	// Wait for at least one fast-sync tick.
+	assert.Eventually(func() bool {
+		return len(hookCalls) >= 1
+	}, 2*time.Second, 20*time.Millisecond)
+
+	// Verify the MR was persisted.
+	mr, err := d.GetMergeRequest(ctx, "acme", "app", 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(7, mr.Number)
+}
+
+func TestEmptyWatchListNoOp(t *testing.T) {
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	mc := &mockClient{
+		openPRs: []*gh.PullRequest{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app",
+			PlatformHost: "github.com",
+		}},
+		time.Hour, nil,
+	)
+	syncer.SetWatchInterval(50 * time.Millisecond)
+
+	callCount := 0
+	syncer.SetOnMRSynced(
+		func(_ string, _ string, _ *db.MergeRequest) {
+			callCount++
+		},
+	)
+
+	// Leave watch list empty.
+	syncer.Start(ctx)
+
+	// Let several ticks pass.
+	time.Sleep(200 * time.Millisecond)
+	syncer.Stop()
+
+	Assert.Equal(t, 0, callCount,
+		"empty watch list should not trigger any MR syncs")
+}
+
+func TestSetWatchedMRsReplacesList(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	// Return different PRs based on the requested number.
+	mc.getPullRequestFn = func(
+		_ context.Context, _, _ string, number int,
+	) (*gh.PullRequest, error) {
+		return buildOpenPR(number, now), nil
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app",
+			PlatformHost: "github.com",
+		}},
+		time.Hour, nil,
+	)
+	syncer.SetWatchInterval(50 * time.Millisecond)
+
+	var mu sync.Mutex
+	syncedNumbers := map[int]int{} // number -> count
+	syncer.SetOnMRSynced(
+		func(_ string, _ string, mr *db.MergeRequest) {
+			mu.Lock()
+			syncedNumbers[mr.Number]++
+			mu.Unlock()
+		},
+	)
+
+	// Start with PR #1 on the watch list.
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 1},
+	})
+	syncer.Start(ctx)
+	defer syncer.Stop()
+
+	// Wait for PR #1 to be synced.
+	assert.Eventually(func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return syncedNumbers[1] >= 1
+	}, 2*time.Second, 20*time.Millisecond)
+
+	// Replace with PR #2 only.
+	mu.Lock()
+	countPR1Before := syncedNumbers[1]
+	mu.Unlock()
+
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 2},
+	})
+
+	// Wait for PR #2 to be synced.
+	assert.Eventually(func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return syncedNumbers[2] >= 1
+	}, 2*time.Second, 20*time.Millisecond)
+
+	// PR #1 should not accumulate many more syncs after replacement.
+	// Allow at most 1 extra (for an in-flight tick at replacement time).
+	mu.Lock()
+	countPR1After := syncedNumbers[1]
+	mu.Unlock()
+	assert.LessOrEqual(countPR1After, countPR1Before+1,
+		"PR #1 should stop being synced after watch list replacement")
+}
+
+func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: buildOpenPR(5, now),
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	rt := NewRateTracker(d, "github.com")
+	// Exhaust the rate limit with a future reset.
+	futureReset := time.Now().Add(30 * time.Minute)
+	rt.UpdateFromRate(gh.Rate{
+		Remaining: 0,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app",
+			PlatformHost: "github.com",
+		}},
+		time.Hour,
+		map[string]*RateTracker{"github.com": rt},
+	)
+	syncer.SetWatchInterval(50 * time.Millisecond)
+
+	callCount := 0
+	syncer.SetOnMRSynced(
+		func(_ string, _ string, _ *db.MergeRequest) {
+			callCount++
+		},
+	)
+
+	syncer.SetWatchedMRs([]WatchedMR{
+		{
+			Owner: "acme", Name: "app",
+			Number: 5, PlatformHost: "github.com",
+		},
+	})
+
+	// Call syncWatchedMRs directly to avoid the bulk RunOnce goroutine.
+	syncer.syncWatchedMRs(ctx)
+
+	assert.Equal(0, callCount,
+		"watched MRs should be skipped when host is rate-limited")
+}
+
+func TestWatchedMROnGHEHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	gheMC := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: buildOpenPR(3, now),
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"ghes.corp.com": gheMC}, d, nil,
+		[]RepoRef{{
+			Owner: "corp", Name: "internal",
+			PlatformHost: "ghes.corp.com",
+		}},
+		time.Hour, nil,
+	)
+
+	// Insert the repo with the GHE host so SyncMR can find it.
+	_, err := d.WriteDB().ExecContext(ctx,
+		`INSERT INTO middleman_repos
+		    (platform, platform_host, owner, name)
+		 VALUES ('github', 'ghes.corp.com', 'corp', 'internal')
+		 ON CONFLICT DO NOTHING`,
+	)
+	require.NoError(err)
+
+	var hookedOwner, hookedName string
+	syncer.SetOnMRSynced(
+		func(owner, name string, _ *db.MergeRequest) {
+			hookedOwner = owner
+			hookedName = name
+		},
+	)
+
+	syncer.SetWatchedMRs([]WatchedMR{
+		{
+			Owner: "corp", Name: "internal",
+			Number: 3, PlatformHost: "ghes.corp.com",
+		},
+	})
+
+	syncer.syncWatchedMRs(ctx)
+
+	// The MR should have been synced via the GHE client.
+	mr, err := d.GetMergeRequest(ctx, "corp", "internal", 3)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(3, mr.Number)
+	assert.Equal("corp", hookedOwner)
+	assert.Equal("internal", hookedName)
 }
