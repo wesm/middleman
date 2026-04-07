@@ -56,6 +56,16 @@ export {
   createGroupingStore,
 } from "./stores/grouping.svelte.js";
 export {
+  classifyPR,
+  groupByWorkflow,
+  workflowGroupOrder,
+  workflowGroupLabels,
+} from "./stores/workflow.svelte.js";
+export type {
+  WorkflowGroup,
+  WorkflowGroupEntry,
+} from "./stores/workflow.svelte.js";
+export {
   createSettingsStore,
 } from "./stores/settings.svelte.js";
 export {

@@ -1,11 +1,29 @@
 <script lang="ts">
-  import { getStores, getNavigate, getSidebar } from "../context.js";
+  import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../context.js";
+  import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
 
-  const { pulls, issues, sync, settings } = getStores();
+  const { pulls, issues, sync, settings, grouping } = getStores();
   const navigate = getNavigate();
+  const actions = getActions();
+  const hostState = getHostState();
   const { isEmbedded } = getSidebar();
+
+  const importAction = $derived(
+    (actions.pull ?? []).find(
+      (a) => a.id === "import-worktree",
+    ),
+  );
+  const activeWorktreeKey = $derived(
+    hostState.getActiveWorktreeKey?.(),
+  );
+  const groupingMode = $derived(
+    grouping.getGroupingMode(),
+  );
+  const workflowGroups = $derived(
+    groupByWorkflow(pulls.getPulls(), activeWorktreeKey),
+  );
 
   interface Props {
     listType: "mrs" | "issues";
@@ -151,6 +169,20 @@
         {/each}
       {/if}
     </div>
+    {#if listType === "mrs"}
+      <div class="group-toggle">
+        <button
+          class="group-btn"
+          class:group-btn--active={groupingMode === "byWorkflow"}
+          onclick={() => grouping.setGroupingMode("byWorkflow")}
+        >Status</button>
+        <button
+          class="group-btn"
+          class:group-btn--active={groupingMode === "flat"}
+          onclick={() => grouping.setGroupingMode("flat")}
+        >All</button>
+      </div>
+    {/if}
   </div>
   <div class="search-bar">
     <div class="search-input-wrap">
@@ -213,12 +245,33 @@
         <p class="state-message">Waiting for first sync...</p>
       {:else if prItems.length === 0}
         <p class="state-message">No pull requests found.</p>
+      {:else if groupingMode === "byWorkflow"}
+        {#each workflowGroups as wg (wg.group)}
+          <div class="workflow-group">
+            <h3 class="group-header">{wg.label}</h3>
+            {#each wg.items as pr (pr.ID)}
+              <PullItem
+                {pr}
+                showRepo={!repo}
+                selected={false}
+                {importAction}
+                onclick={() =>
+                  handlePRSelect(
+                    pr.repo_owner ?? "",
+                    pr.repo_name ?? "",
+                    pr.Number,
+                  )}
+              />
+            {/each}
+          </div>
+        {/each}
       {:else}
         {#each prItems as pr (pr.ID)}
           <PullItem
             {pr}
             showRepo={!repo}
             selected={false}
+            {importAction}
             onclick={() =>
               handlePRSelect(
                 pr.repo_owner ?? "",
@@ -311,6 +364,50 @@
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
     background: var(--bg-surface);
+  }
+
+  .group-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-inset);
+    border-radius: 6px;
+    padding: 2px;
+    margin-left: auto;
+  }
+
+  .group-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .group-btn--active {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .workflow-group {
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .group-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 6px 12px 4px;
+    background: var(--bg-inset);
+    border-bottom: 1px solid var(--border-muted);
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   .search-bar {
