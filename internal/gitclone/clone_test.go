@@ -173,7 +173,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	var result []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			result = append(result, line)
 		}
