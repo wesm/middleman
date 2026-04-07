@@ -124,7 +124,9 @@ function parseRoute(fullPath: string): Route {
   return { page: "activity" };
 }
 
-let route = $state<Route>(parseRoute(window.location.pathname));
+let route = $state<Route>(
+  parseRoute(window.location.pathname + window.location.search),
+);
 
 // Fire onRouteChange for the initial route after the module loads.
 // Deferred so the embedder has time to set up the callback.
@@ -252,7 +254,9 @@ export function replaceUrl(path: string): void {
 // Listen for browser back/forward.
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    route = parseRoute(window.location.pathname);
+    route = parseRoute(
+      window.location.pathname + window.location.search,
+    );
     fireRouteChange(route);
   });
 }
