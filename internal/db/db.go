@@ -119,7 +119,7 @@ func (d *DB) hasMiddlemanTables() bool {
 	err := d.rw.QueryRow(
 		`SELECT COUNT(*) FROM sqlite_master
 		 WHERE type = 'table'
-		   AND name LIKE 'middleman_%'
+		   AND name GLOB 'middleman_*'
 		   AND name != 'middleman_schema_version'`,
 	).Scan(&count)
 	return err == nil && count > 0

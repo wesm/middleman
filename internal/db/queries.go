@@ -119,7 +119,9 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 }
 
 // GetRepoByOwnerName returns the repo for the given owner/name, or nil if not found.
-// If the same owner/name exists on multiple hosts, the first match is returned.
+// Config validation rejects duplicate owner/name across hosts, so this should
+// always be unambiguous. The ORDER BY provides deterministic results as a
+// safety net if stale data from a previous config exists in the database.
 func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo, error) {
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
@@ -127,7 +129,8 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge, created_at
-		 FROM middleman_repos WHERE owner = ? AND name = ?`, owner, name,
+		 FROM middleman_repos WHERE owner = ? AND name = ?
+		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
 	).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
