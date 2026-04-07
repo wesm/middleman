@@ -190,6 +190,7 @@
           class="diff-area"
           bind:this={diffArea}
           onscroll={onDiffScroll}
+          style:tab-size={tabWidth}
         >
           {#each diff.files as file (file.path)}
             <DiffFileComponent
@@ -197,7 +198,6 @@
               {owner}
               {name}
               {number}
-              {tabWidth}
             />
           {/each}
         </div>

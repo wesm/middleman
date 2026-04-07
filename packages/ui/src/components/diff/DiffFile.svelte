@@ -13,10 +13,9 @@
     owner: string;
     name: string;
     number: number;
-    tabWidth: number;
   }
 
-  const { file, owner, name, number, tabWidth }: Props = $props();
+  const { file, owner, name, number }: Props = $props();
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
@@ -167,7 +166,7 @@
     </span>
   </button>
   {#if !collapsed}
-    <div class="file-content" style:tab-size={tabWidth}>
+    <div class="file-content">
       {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}

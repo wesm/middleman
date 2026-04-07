@@ -49,7 +49,7 @@ describe("DiffFile", () => {
 
   it("renders file content when not collapsed", () => {
     render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1, tabWidth: 4 },
+      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
     });
 
     expect(screen.getByText("src/foo.ts")).toBeTruthy();
@@ -58,7 +58,7 @@ describe("DiffFile", () => {
 
   it("hides content after clicking the header to collapse", async () => {
     render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1, tabWidth: 4 },
+      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
     });
 
     const header = screen.getByTitle("Collapse file");
@@ -70,7 +70,7 @@ describe("DiffFile", () => {
 
   it("shows content again after toggling collapse twice", async () => {
     render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1, tabWidth: 4 },
+      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
     });
 
     const header = screen.getByTitle("Collapse file");
