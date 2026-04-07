@@ -13,8 +13,10 @@ vi.mock("../../utils/highlight.js", () => ({
 // the suite so it does not leak into sibling test files.
 type GlobalWithIO = { IntersectionObserver?: unknown };
 let originalIntersectionObserver: unknown;
+let originalIntersectionObserverExisted = false;
 
 beforeAll(() => {
+  originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
   originalIntersectionObserver = (globalThis as GlobalWithIO).IntersectionObserver;
   class IntersectionObserverStub {
     private readonly callback: IntersectionObserverCallback;
@@ -46,7 +48,11 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  (globalThis as GlobalWithIO).IntersectionObserver = originalIntersectionObserver;
+  if (originalIntersectionObserverExisted) {
+    (globalThis as GlobalWithIO).IntersectionObserver = originalIntersectionObserver;
+  } else {
+    delete (globalThis as GlobalWithIO).IntersectionObserver;
+  }
 });
 
 import DiffFile from "./DiffFile.svelte";
