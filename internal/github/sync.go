@@ -23,21 +23,66 @@ type SyncStatus struct {
 	LastError   string    `json:"last_error,omitempty"`
 }
 
+// DiffSyncErrorCode categorizes the reason a diff sync failed. The frontend
+// uses this category to render a user-facing message that does not leak local
+// clone paths, refs, SHAs, or git stderr.
+type DiffSyncErrorCode string
+
+const (
+	// DiffSyncCodeCloneUnavailable means the local bare clone could not be
+	// created or updated (network failure, disk full, permission denied).
+	DiffSyncCodeCloneUnavailable DiffSyncErrorCode = "clone_unavailable"
+	// DiffSyncCodeCommitUnreachable means a commit needed to compute the diff
+	// (PR head, merge commit, or its first parent) is not present in the local
+	// clone and could not be fetched.
+	DiffSyncCodeCommitUnreachable DiffSyncErrorCode = "commit_unreachable"
+	// DiffSyncCodeMergeBaseFailed means git merge-base could not compute the
+	// fork point between the PR head and the base.
+	DiffSyncCodeMergeBaseFailed DiffSyncErrorCode = "merge_base_failed"
+	// DiffSyncCodeInternal covers database failures and other unexpected
+	// internal errors during diff computation.
+	DiffSyncCodeInternal DiffSyncErrorCode = "internal"
+)
+
 // DiffSyncError reports a non-fatal failure to compute or update the diff SHAs
 // for a PR. SyncMR returns this when only the diff portion of the sync failed:
 // the PR row, timeline, and CI status were updated successfully, so callers
 // should still treat the PR data as fresh, but the diff view will be stale or
 // missing until the underlying problem is fixed.
+//
+// Code categorizes the failure for client-facing messaging via UserMessage.
+// Err preserves the underlying detail for server-side logging only — never
+// expose Err.Error() to API clients, since it can contain clone paths, refs,
+// SHAs, and git stderr.
 type DiffSyncError struct {
-	Err error
+	Code DiffSyncErrorCode
+	Err  error
 }
 
 func (e *DiffSyncError) Error() string {
-	return "diff sync failed: " + e.Err.Error()
+	return fmt.Sprintf("diff sync failed (%s): %v", e.Code, e.Err)
 }
 
 func (e *DiffSyncError) Unwrap() error {
 	return e.Err
+}
+
+// UserMessage returns a sanitized message safe to surface to API clients.
+// It never includes clone paths, refs, SHAs, or other internal details from
+// the underlying error.
+func (e *DiffSyncError) UserMessage() string {
+	switch e.Code {
+	case DiffSyncCodeCloneUnavailable:
+		return "Diff data is unavailable: the local repository clone could not be prepared."
+	case DiffSyncCodeCommitUnreachable:
+		return "Diff data is unavailable: a required commit is missing from the local clone."
+	case DiffSyncCodeMergeBaseFailed:
+		return "Diff data is unavailable: could not determine the merge base for this pull request."
+	case DiffSyncCodeInternal:
+		return "Diff data is unavailable: internal error while updating diff data."
+	default:
+		return "Diff data is unavailable."
+	}
 }
 
 // RepoRef identifies a GitHub repository.
@@ -1067,19 +1112,21 @@ func (s *Syncer) syncMRWithHost(
 	}
 
 	if diffErr != nil {
-		return &DiffSyncError{Err: diffErr}
+		return diffErr
 	}
 	return nil
 }
 
 // syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.
 // Returns nil when there is no clone manager (the caller has already opted
-// out of diff support); returns an error describing the first failure
-// encountered along the clone or diff path.
+// out of diff support); otherwise returns a *DiffSyncError describing the
+// first failure encountered along the clone or diff path. The returned
+// pointer is nil on success and the caller should check it directly rather
+// than assigning to an error interface to avoid the typed-nil trap.
 func (s *Syncer) syncMRDiff(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 	ghPR *gh.PullRequest, normalized *db.MergeRequest,
-) error {
+) *DiffSyncError {
 	if s.clones == nil {
 		return nil
 	}
@@ -1089,7 +1136,10 @@ func (s *Syncer) syncMRDiff(
 	}
 	remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, repo.Owner, repo.Name)
 	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, remoteURL); err != nil {
-		return fmt.Errorf("ensure bare clone for #%d: %w", number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeCloneUnavailable,
+			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
+		}
 	}
 
 	if ghPR.GetMerged() {
@@ -1103,10 +1153,16 @@ func (s *Syncer) syncMRDiff(
 	}
 	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 	if err != nil {
-		return fmt.Errorf("merge-base for #%d: %w", number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeMergeBaseFailed,
+			Err:  fmt.Errorf("merge-base for #%d: %w", number, err),
+		}
 	}
 	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA, mb); err != nil {
-		return fmt.Errorf("update diff SHAs for #%d: %w", number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeInternal,
+			Err:  fmt.Errorf("update diff SHAs for #%d: %w", number, err),
+		}
 	}
 	return nil
 }
@@ -1279,13 +1335,13 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 // When force is false, skips PRs that already have diff SHAs (periodic sync).
 // When force is true, always recomputes (on-demand SyncMR).
 //
-// Returns an error describing the failure when any git or DB operation fails.
-// A nil return covers both success and the no-op skip cases (empty merge SHA,
-// existing valid diff SHAs without force).
+// Returns a *DiffSyncError describing the failure when any git or DB
+// operation fails. A nil return covers both success and the no-op skip cases
+// (empty merge SHA, existing valid diff SHAs without force).
 func (s *Syncer) computeMergedMRDiffSHAs(
 	ctx context.Context, repo RepoRef, repoID int64, number int, mergeCommitSHA string,
 	force bool,
-) error {
+) *DiffSyncError {
 	if mergeCommitSHA == "" {
 		return nil
 	}
@@ -1293,7 +1349,10 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	if !force {
 		existing, err := s.db.GetDiffSHAs(ctx, repo.Owner, repo.Name, number)
 		if err != nil {
-			return fmt.Errorf("get diff SHAs for merged PR #%d: %w", number, err)
+			return &DiffSyncError{
+				Code: DiffSyncCodeInternal,
+				Err:  fmt.Errorf("get diff SHAs for merged PR #%d: %w", number, err),
+			}
 		}
 		if existing == nil || existing.DiffHeadSHA != "" {
 			return nil // already has diff SHAs or PR not found
@@ -1310,7 +1369,10 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
 	prHead, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, pullRef)
 	if err != nil {
-		return fmt.Errorf("rev-parse %s for merged PR #%d: %w", pullRef, number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeCommitUnreachable,
+			Err:  fmt.Errorf("rev-parse %s for merged PR #%d: %w", pullRef, number, err),
+		}
 	}
 
 	// Use the merge commit's first parent as the base for merge-base.
@@ -1318,12 +1380,18 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// from the current base branch tip (making merge-base return prHead).
 	preMergeBase, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
 	if err != nil {
-		return fmt.Errorf("rev-parse %s^1 for merged PR #%d: %w", mergeCommitSHA, number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeCommitUnreachable,
+			Err:  fmt.Errorf("rev-parse %s^1 for merged PR #%d: %w", mergeCommitSHA, number, err),
+		}
 	}
 
 	mb, err := s.clones.MergeBase(ctx, mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
 	if err != nil {
-		return fmt.Errorf("merge-base for merged PR #%d: %w", number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeMergeBaseFailed,
+			Err:  fmt.Errorf("merge-base for merged PR #%d: %w", number, err),
+		}
 	}
 
 	if prHead == "" || mb == "" {
@@ -1331,7 +1399,10 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	}
 
 	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, prHead, mb, mb); err != nil {
-		return fmt.Errorf("update diff SHAs for merged PR #%d: %w", number, err)
+		return &DiffSyncError{
+			Code: DiffSyncCodeInternal,
+			Err:  fmt.Errorf("update diff SHAs for merged PR #%d: %w", number, err),
+		}
 	}
 	return nil
 }

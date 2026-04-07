@@ -598,6 +598,18 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	require.ErrorAs(err, &diffErr)
 	require.Error(diffErr.Err)
 
+	// The categorized code lets the handler render a sanitized message.
+	// rev-parse on the missing merge commit's first parent fails, so the
+	// diff path classifies this as commit_unreachable.
+	assert.Equal(DiffSyncCodeCommitUnreachable, diffErr.Code)
+
+	// UserMessage must NOT leak clone paths, refs, SHAs, or git stderr.
+	userMsg := diffErr.UserMessage()
+	assert.NotContains(userMsg, barePath, "user message should not leak local clone path")
+	assert.NotContains(userMsg, mergeCommit, "user message should not leak SHAs")
+	assert.NotContains(userMsg, "refs/pull/", "user message should not leak git refs")
+	assert.NotContains(userMsg, "rev-parse", "user message should not leak git command stderr")
+
 	// PR row was still upserted despite the diff failure.
 	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
 	require.NoError(err)

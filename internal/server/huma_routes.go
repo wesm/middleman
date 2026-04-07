@@ -959,7 +959,16 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 
 	var warnings []string
 	if diffErr != nil {
-		warnings = append(warnings, diffErr.Error())
+		// Log the underlying detail server-side so operators can debug,
+		// but only surface the sanitized user-facing message to clients.
+		slog.Warn("diff sync failed during sync PR",
+			"owner", input.Owner,
+			"name", input.Name,
+			"number", input.Number,
+			"code", diffErr.Code,
+			"err", diffErr.Err,
+		)
+		warnings = append(warnings, diffErr.UserMessage())
 	}
 
 	return &syncPROutput{Body: mergeRequestDetailResponse{
