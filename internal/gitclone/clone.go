@@ -46,30 +46,57 @@ func (m *Manager) EnsureClone(
 	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); os.IsNotExist(err) {
 		return m.cloneBare(ctx, host, clonePath, remoteURL)
 	}
-	m.ensurePullRefspec(ctx, host, clonePath)
+	m.ensureRefspecs(ctx, host, clonePath)
 	return m.fetch(ctx, host, clonePath)
 }
 
-const pullRefspec = "+refs/pull/*/head:refs/pull/*/head"
+// Fetch refspecs configured on every bare clone.
+//
+//   - branchRefspec is required so `git fetch` updates local refs/heads/*.
+//     git clone --bare does NOT install a default fetch refspec, so without
+//     this, branch refs stay frozen at initial-clone time and the merge
+//     commits of merged PRs never reach the clone.
+//   - pullRefspec makes `refs/pull/<N>/head` available, which is how we
+//     resolve PR heads that live on forks.
+const (
+	branchRefspec = "+refs/heads/*:refs/heads/*"
+	pullRefspec   = "+refs/pull/*/head:refs/pull/*/head"
+)
 
-// ensurePullRefspec idempotently adds the pull refs fetch refspec to an
-// existing clone. This upgrades clones created before pull ref support.
-func (m *Manager) ensurePullRefspec(
+// defaultRefspecs returns the full list of fetch refspecs every clone should
+// have. Used by both cloneBare (fresh clones) and ensureRefspecs (migration).
+func defaultRefspecs() []string {
+	return []string{branchRefspec, pullRefspec}
+}
+
+// ensureRefspecs idempotently adds any missing fetch refspecs to an
+// existing clone. This upgrades clones created before branch/pull ref
+// support was in place, including vanilla `git clone --bare` output with
+// no configured fetch refspec at all.
+func (m *Manager) ensureRefspecs(
 	ctx context.Context, host, clonePath string,
 ) {
-	out, err := m.git(ctx, host, clonePath,
+	// `git config --get-all` exits 1 with no output when the key is unset.
+	// Treat any read failure as "no existing refspecs" and fall through to
+	// the add loop, which is idempotent on its own and will log its own
+	// warnings if the add commands fail for a real reason.
+	out, _ := m.git(ctx, host, clonePath,
 		"config", "--get-all", "remote.origin.fetch")
-	if err != nil {
-		return // can't read config, skip silently
+	existing := make(map[string]bool)
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			existing[line] = true
+		}
 	}
-	if strings.Contains(string(out), "refs/pull/*/head") {
-		return // already configured
-	}
-	_, err = m.git(ctx, host, clonePath,
-		"config", "--add", "remote.origin.fetch", pullRefspec)
-	if err != nil {
-		slog.Warn("failed to add pull refspec to existing clone",
-			"path", clonePath, "err", err)
+	for _, refspec := range defaultRefspecs() {
+		if existing[refspec] {
+			continue
+		}
+		if _, err := m.git(ctx, host, clonePath,
+			"config", "--add", "remote.origin.fetch", refspec); err != nil {
+			slog.Warn("failed to add refspec to existing clone",
+				"path", clonePath, "refspec", refspec, "err", err)
+		}
 	}
 }
 
@@ -85,13 +112,15 @@ func (m *Manager) cloneBare(
 		return fmt.Errorf("git clone --bare: %w", err)
 	}
 
-	// Add pull refs fetch refspec so we get refs/pull/*/head.
+	// Install fetch refspecs so future fetches pull both branch heads and
+	// pull refs. git clone --bare does not install a default refspec.
 	// On failure, remove the partial clone so the next call retries.
-	_, err = m.git(ctx, host, clonePath,
-		"config", "--add", "remote.origin.fetch", pullRefspec)
-	if err != nil {
-		os.RemoveAll(clonePath)
-		return fmt.Errorf("add pull refs refspec: %w", err)
+	for _, refspec := range defaultRefspecs() {
+		if _, err := m.git(ctx, host, clonePath,
+			"config", "--add", "remote.origin.fetch", refspec); err != nil {
+			os.RemoveAll(clonePath)
+			return fmt.Errorf("add fetch refspec %q: %w", refspec, err)
+		}
 	}
 
 	// Fetch immediately after clone so pull refs are available before
