@@ -149,6 +149,16 @@ func newServer(
 	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
 	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.handleDeleteRepo)
 
+	// Roborev proxy
+	if cfg != nil {
+		roborevTarget := cfg.RoborevEndpoint()
+		mux.Handle("/api/roborev/", roborevProxy(roborevTarget))
+		mux.HandleFunc(
+			"GET /api/v1/roborev/status",
+			handleRoborevStatus(cfg),
+		)
+	}
+
 	if frontend != nil {
 		indexBytes, err := fs.ReadFile(frontend, "index.html")
 		if err != nil {
@@ -291,11 +301,15 @@ func checkCSRF(w http.ResponseWriter, r *http.Request) bool {
 // ListenAndServe starts the HTTP server on addr.
 func (s *Server) ListenAndServe(addr string) error {
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      s,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:        addr,
+		Handler:     s,
+		ReadTimeout: 15 * time.Second,
+		// WriteTimeout is 0 (disabled) because the roborev
+		// proxy streams SSE/NDJSON responses that are
+		// long-lived by design. A non-zero value would kill
+		// /api/roborev/api/stream/events and /api/job/log
+		// after the deadline.
+		IdleTimeout: 60 * time.Second,
 	}
 	return srv.ListenAndServe()
 }

@@ -1,0 +1,132 @@
+<script lang="ts">
+  import { getStores } from "../../context.js";
+
+  const stores = getStores();
+  const daemon = stores.roborevDaemon;
+</script>
+
+{#if daemon}
+  <div class="daemon-status">
+    <span
+      class="conn-indicator"
+      class:connected={daemon.isAvailable()}
+      title={daemon.isAvailable()
+        ? "Connected"
+        : "Disconnected"}
+    >
+      <span class="conn-dot"></span>
+      {daemon.isAvailable() ? "Connected" : "Disconnected"}
+    </span>
+
+    {#if daemon.isAvailable()}
+      <span class="separator"></span>
+
+      <span class="status-item" title="Daemon version">
+        v{daemon.getVersion()}
+      </span>
+
+      <span class="separator"></span>
+
+      <span class="status-item" title="Active / max workers">
+        Workers {daemon.getActiveWorkers()}/{daemon.getMaxWorkers()}
+      </span>
+
+      <span class="separator"></span>
+
+      <span class="status-counts">
+        <span class="count count-queued" title="Queued">
+          {daemon.getQueuedJobs()} queued
+        </span>
+        <span class="count count-running" title="Running">
+          {daemon.getRunningJobs()} running
+        </span>
+        <span class="count count-done" title="Done">
+          {daemon.getCompletedJobs()} done
+        </span>
+        <span class="count count-failed" title="Failed">
+          {daemon.getFailedJobs()} failed
+        </span>
+      </span>
+    {:else}
+      <button
+        class="retry-btn"
+        onclick={() => daemon.checkHealth()}
+      >
+        Retry
+      </button>
+    {/if}
+  </div>
+{/if}
+
+<style>
+  .daemon-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-muted);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .conn-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 500;
+  }
+
+  .conn-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--review-failed);
+    flex-shrink: 0;
+  }
+
+  .connected .conn-dot {
+    background: var(--review-done);
+  }
+
+  .separator {
+    width: 1px;
+    height: 12px;
+    background: var(--border-muted);
+    flex-shrink: 0;
+  }
+
+  .status-item {
+    white-space: nowrap;
+  }
+
+  .status-counts {
+    display: flex;
+    gap: 8px;
+  }
+
+  .count {
+    white-space: nowrap;
+  }
+
+  .count-queued { color: var(--review-queued); }
+  .count-running { color: var(--review-running); }
+  .count-done { color: var(--review-done); }
+  .count-failed { color: var(--review-failed); }
+
+  .retry-btn {
+    padding: 2px 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .retry-btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+</style>

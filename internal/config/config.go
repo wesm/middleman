@@ -153,6 +153,10 @@ type Activity struct {
 	HideBots   bool   `toml:"hide_bots" json:"hide_bots"`
 }
 
+type Roborev struct {
+	Endpoint string `toml:"endpoint,omitempty"`
+}
+
 type Config struct {
 	SyncInterval   string   `toml:"sync_interval"`
 	GitHubTokenEnv string   `toml:"github_token_env"`
@@ -162,6 +166,7 @@ type Config struct {
 	DataDir        string   `toml:"data_dir"`
 	Repos          []Repo   `toml:"repos"`
 	Activity       Activity `toml:"activity"`
+	Roborev        Roborev  `toml:"roborev"`
 }
 
 func DefaultConfigPath() string {
@@ -450,6 +455,15 @@ func (c *Config) DBPath() string {
 	return filepath.Join(c.DataDir, "middleman.db")
 }
 
+// RoborevEndpoint returns the configured roborev daemon endpoint,
+// falling back to the default localhost address.
+func (c *Config) RoborevEndpoint() string {
+	if c.Roborev.Endpoint != "" {
+		return c.Roborev.Endpoint
+	}
+	return "http://127.0.0.1:7373"
+}
+
 // configFile is the subset of Config written to disk.
 type configFile struct {
 	SyncInterval   string   `toml:"sync_interval"`
@@ -460,6 +474,7 @@ type configFile struct {
 	DataDir        string   `toml:"data_dir,omitempty"`
 	Repos          []Repo   `toml:"repos"`
 	Activity       Activity `toml:"activity"`
+	Roborev        Roborev  `toml:"roborev,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -471,6 +486,7 @@ func (c *Config) Save(path string) error {
 		Port:           c.Port,
 		Repos:          c.Repos,
 		Activity:       c.Activity,
+		Roborev:        c.Roborev,
 	}
 	if c.BasePath != defaultBasePath {
 		f.BasePath = c.BasePath

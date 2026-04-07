@@ -1,0 +1,21 @@
+services:
+  roborev:
+    build:
+      context: ${ROBOREV_SRC:?Set ROBOREV_SRC}
+      dockerfile: ${COMPOSE_DIR:?Set COMPOSE_DIR}/roborev/Dockerfile
+      args:
+        ROBOREV_REF: ${ROBOREV_REF:-main}
+    ports:
+      - "${ROBOREV_PORT:-17373}:7373"
+    command: ["daemon", "run", "--addr", "127.0.0.1:7374", "--workers", "0"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://127.0.0.1:7373/api/status || exit 1",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    volumes:
+      - ${ROBOREV_DB_PATH:?Set ROBOREV_DB_PATH}:/data/reviews.db

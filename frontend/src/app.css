@@ -34,6 +34,17 @@
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
 
+  /* Review status colors */
+  --review-queued: var(--accent-amber);
+  --review-running: var(--accent-blue);
+  --review-done: var(--accent-green);
+  --review-failed: var(--accent-red);
+  --review-canceled: var(--text-muted);
+
+  /* Verdict colors */
+  --verdict-pass: var(--accent-green);
+  --verdict-fail: var(--accent-red);
+
   /* Diff view — light theme (GitHub Light palette) */
   --diff-bg: #ffffff;
   --diff-header-bg: #f6f8fa;
@@ -86,6 +97,17 @@
   --kanban-reviewing: var(--accent-amber);
   --kanban-waiting: var(--accent-purple);
   --kanban-awaiting-merge: var(--accent-green);
+
+  /* Review status colors */
+  --review-queued: var(--accent-amber);
+  --review-running: var(--accent-blue);
+  --review-done: var(--accent-green);
+  --review-failed: var(--accent-red);
+  --review-canceled: var(--text-muted);
+
+  /* Verdict colors */
+  --verdict-pass: var(--accent-green);
+  --verdict-fail: var(--accent-red);
 
   /* Diff view — dark theme (GitHub Dark palette) */
   --diff-bg: #0d1117;

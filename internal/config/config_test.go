@@ -745,3 +745,32 @@ name = "b"
 	require.NoError(t, err)
 	assert.Empty(cfg2.GitHubTokenEnv)
 }
+
+func TestRoborevConfigRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[roborev]
+endpoint = "http://custom:9999"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("http://custom:9999", cfg.RoborevEndpoint())
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(t, err)
+	assert.Equal("http://custom:9999", cfg2.RoborevEndpoint())
+}
+
+func TestRoborevEndpointDefault(t *testing.T) {
+	cfg := &Config{}
+	Assert.Equal(
+		t, "http://127.0.0.1:7373", cfg.RoborevEndpoint(),
+	)
+}

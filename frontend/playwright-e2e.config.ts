@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e-full",
+  testIgnore: /support\//,
   fullyParallel: true,
   timeout: 30_000,
   expect: {
@@ -12,7 +13,9 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "../cmd/e2e-server/e2e-server -port 4174",
+    command: process.env.ROBOREV_ENDPOINT
+      ? `../cmd/e2e-server/e2e-server -port 4174 -roborev ${process.env.ROBOREV_ENDPOINT}`
+      : "../cmd/e2e-server/e2e-server -port 4174",
     port: 4174,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
@@ -20,6 +23,16 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: /roborev/,
+      use: {
+        ...devices["Desktop Chrome"],
+      },
+    },
+    {
+      name: "roborev",
+      testMatch: /roborev/,
+      fullyParallel: false,
+      workers: 1,
       use: {
         ...devices["Desktop Chrome"],
       },

@@ -27,13 +27,14 @@ export interface ActionRegistry {
 export interface NavigateEvent {
   path: string;
   route: {
-    page: "pulls" | "issues" | "activity" | "diff" | "board";
+    page: "pulls" | "issues" | "activity" | "diff" | "board" | "reviews";
     view?: string;
     tab?: string;
     presentation?: "fullLayout" | "focus";
     owner?: string;
     name?: string;
     number?: number;
+    jobId?: number;
   };
   repo?: { host?: string; owner: string; name: string };
 }
@@ -84,6 +85,10 @@ export type { SyncStore } from "./stores/sync.svelte.js";
 export type { DiffStore } from "./stores/diff.svelte.js";
 export type { GroupingStore } from "./stores/grouping.svelte.js";
 export type { SettingsStore } from "./stores/settings.svelte.js";
+export type { DaemonStore } from "./stores/roborev/daemon.svelte.js";
+export type { JobsStore } from "./stores/roborev/jobs.svelte.js";
+export type { ReviewStore } from "./stores/roborev/review.svelte.js";
+export type { LogStore } from "./stores/roborev/log.svelte.js";
 
 import type { PullsStore } from "./stores/pulls.svelte.js";
 import type { IssuesStore } from "./stores/issues.svelte.js";
@@ -93,6 +98,10 @@ import type { SyncStore } from "./stores/sync.svelte.js";
 import type { DiffStore } from "./stores/diff.svelte.js";
 import type { GroupingStore } from "./stores/grouping.svelte.js";
 import type { SettingsStore } from "./stores/settings.svelte.js";
+import type { DaemonStore } from "./stores/roborev/daemon.svelte.js";
+import type { JobsStore } from "./stores/roborev/jobs.svelte.js";
+import type { ReviewStore } from "./stores/roborev/review.svelte.js";
+import type { LogStore } from "./stores/roborev/log.svelte.js";
 
 export interface StoreInstances {
   pulls: PullsStore;
@@ -103,6 +112,10 @@ export interface StoreInstances {
   diff: DiffStore;
   grouping: GroupingStore;
   settings: SettingsStore;
+  roborevDaemon?: DaemonStore;
+  roborevJobs?: JobsStore;
+  roborevReview?: ReviewStore;
+  roborevLog?: LogStore;
 }
 
 export interface SidebarAccessors {

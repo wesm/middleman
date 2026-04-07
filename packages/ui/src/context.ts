@@ -10,6 +10,7 @@ import type {
   UIConfig,
   SidebarAccessors,
 } from "./types.js";
+import type { RoborevClient } from "./api/roborev/client.js";
 
 export const API_CLIENT_KEY = Symbol("middleman-api-client");
 export const ACTIONS_KEY = Symbol("middleman-actions");
@@ -47,4 +48,9 @@ export function getSidebar(): SidebarAccessors {
 }
 export function getHostState(): HostStateAccessors {
   return getContext(HOST_STATE_KEY);
+}
+
+export const ROBOREV_CLIENT_KEY = Symbol("roborev-client");
+export function getRoborevClient(): RoborevClient | undefined {
+  return getContext(ROBOREV_CLIENT_KEY);
 }
