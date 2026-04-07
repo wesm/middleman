@@ -61,6 +61,13 @@
   let tokens = $state<Map<string, DualToken[]>>(new Map());
   let tokenVersion = 0;
 
+  // Plain (non-reactive) tracking of the last tokenized source and whether
+  // tokenization finished. Used to distinguish source changes (which need a
+  // fresh cache) from visibility flips (which should reuse the cache).
+  let lastSourceFile: DiffFileType | undefined;
+  let lastSourceLang: string | undefined;
+  let tokenizationComplete = false;
+
   // Tokenize in small batches to avoid blocking the main thread.
   const BATCH_SIZE = 50;
 
@@ -69,14 +76,26 @@
   // Does NOT depend on `theme` — theme switches just swap which cache is read.
   $effect(() => {
     const version = ++tokenVersion;
-    // Clear the cache up front so stale tokens keyed by hunkIdx:lineIdx from
-    // a previous file don't briefly render against the new content while the
-    // fresh tokenization runs asynchronously.
-    tokens = new Map();
-    if (collapsed || !inViewport) return;
-
     const currentFile = renderedFile;
     const currentLang = lang;
+    const sourceChanged =
+      currentFile !== lastSourceFile || currentLang !== lastSourceLang;
+
+    if (sourceChanged) {
+      lastSourceFile = currentFile;
+      lastSourceLang = currentLang;
+      tokenizationComplete = false;
+    }
+
+    if (collapsed || !inViewport) return;
+    // Already fully tokenized for this source — scrolling back into view or
+    // re-expanding should reuse the cached tokens, not rebuild them.
+    if (tokenizationComplete) return;
+
+    // About to (re)start tokenization for this source — clear any stale or
+    // partial entries so the first batch doesn't render a mix of old and
+    // new keys while the async tokenization walks the hunks.
+    tokens = new Map();
     const next = new Map<string, DualToken[]>();
 
     void (async () => {
@@ -107,6 +126,9 @@
         if (i + BATCH_SIZE < items.length) {
           await new Promise((r) => requestAnimationFrame(r));
         }
+      }
+      if (version === tokenVersion) {
+        tokenizationComplete = true;
       }
     })();
   });
