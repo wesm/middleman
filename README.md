@@ -195,7 +195,7 @@ Middleman uses SQLite with a schema defined in `internal/db/schema.sql`. The sch
 - **Stale database** (version < binary): refuses to start. Delete the database file and let middleman recreate it.
 - **Newer database** (version > binary): refuses to start. Upgrade middleman.
 
-When real migrations are implemented, the stale case will run forward migrations instead of refusing. Until then, after a schema change, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; only local state (kanban columns, stars) is lost.
+When real migrations are implemented, the stale case will run forward migrations instead of refusing. Until then, after a schema change, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (kanban columns, stars, and worktree links) is lost.
 
 ## Development
 

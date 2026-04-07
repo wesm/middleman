@@ -15,7 +15,7 @@ func TestResolveItemNumber(t *testing.T) {
 	database := openTestDB(t)
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(ctx, "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)

@@ -37,19 +37,26 @@ func (d *DB) PurgeOtherHosts(keepHost string) error {
 // --- Repos ---
 
 // UpsertRepo inserts a repo if it does not exist, then returns its ID.
-func (d *DB) UpsertRepo(ctx context.Context, owner, name string) (int64, error) {
+// host is the platform hostname (e.g. "github.com" or a GHE hostname).
+func (d *DB) UpsertRepo(ctx context.Context, host, owner, name string) (int64, error) {
+	if host == "" {
+		host = "github.com"
+	}
 	_, err := d.rw.ExecContext(ctx,
 		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
-		 VALUES ('github', 'github.com', ?, ?)
+		 VALUES ('github', ?, ?, ?)
 		 ON CONFLICT(platform, platform_host, owner, name) DO NOTHING`,
-		owner, name,
+		host, owner, name,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert repo: %w", err)
 	}
 	var id int64
 	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_repos WHERE platform = 'github' AND platform_host = 'github.com' AND owner = ? AND name = ?`, owner, name,
+		`SELECT id FROM middleman_repos
+		 WHERE platform = 'github' AND platform_host = ?
+		   AND owner = ? AND name = ?`,
+		host, owner, name,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("get repo id after upsert: %w", err)
@@ -112,6 +119,7 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 }
 
 // GetRepoByOwnerName returns the repo for the given owner/name, or nil if not found.
+// If the same owner/name exists on multiple hosts, the first match is returned.
 func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo, error) {
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
@@ -119,7 +127,7 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge, created_at
-		 FROM middleman_repos WHERE platform = 'github' AND platform_host = 'github.com' AND owner = ? AND name = ?`, owner, name,
+		 FROM middleman_repos WHERE owner = ? AND name = ?`, owner, name,
 	).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,

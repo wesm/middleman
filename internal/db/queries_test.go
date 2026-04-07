@@ -15,7 +15,7 @@ func baseTime() time.Time {
 
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	t.Helper()
-	id, err := d.UpsertRepo(context.Background(), owner, name)
+	id, err := d.UpsertRepo(context.Background(), "github.com", owner, name)
 	require.NoErrorf(t, err, "UpsertRepo(%s/%s)", owner, name)
 	return id
 }
@@ -285,14 +285,14 @@ func TestUpsertAndListRepos(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	id1, err := d.UpsertRepo(ctx, "alice", "alpha")
+	id1, err := d.UpsertRepo(ctx, "github.com", "alice", "alpha")
 	require.NoError(err)
-	id2, err := d.UpsertRepo(ctx, "bob", "beta")
+	id2, err := d.UpsertRepo(ctx, "github.com", "bob", "beta")
 	require.NoError(err)
 	assert.NotEqual(id1, id2)
 
 	// Idempotency: re-inserting should return the same ID.
-	id1Again, err := d.UpsertRepo(ctx, "alice", "alpha")
+	id1Again, err := d.UpsertRepo(ctx, "github.com", "alice", "alpha")
 	require.NoError(err)
 	assert.Equal(id1, id1Again)
 

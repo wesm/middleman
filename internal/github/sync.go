@@ -389,7 +389,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	repoID, err := s.db.UpsertRepo(ctx, repo.Owner, repo.Name)
+	repoID, err := s.db.UpsertRepo(ctx, repo.PlatformHost, repo.Owner, repo.Name)
 	if err != nil {
 		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
 	}
@@ -936,6 +936,28 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	return false
 }
 
+// isTrackedRepoOnHost checks whether the given repo on a specific host
+// is in the configured list. Used by the watched-MR path where the
+// host is known and must match exactly.
+func (s *Syncer) isTrackedRepoOnHost(owner, name, host string) bool {
+	if host == "" {
+		host = "github.com"
+	}
+	s.reposMu.Lock()
+	repos := s.repos
+	s.reposMu.Unlock()
+	for _, r := range repos {
+		rHost := r.PlatformHost
+		if rHost == "" {
+			rHost = "github.com"
+		}
+		if r.Owner == owner && r.Name == name && rHost == host {
+			return true
+		}
+	}
+	return false
+}
+
 // SyncMR fetches fresh data for a single MR from GitHub and updates the DB.
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.
@@ -953,18 +975,21 @@ func (s *Syncer) syncMRWithHost(
 	number int,
 	hostHint string,
 ) error {
-	if !s.IsTrackedRepo(owner, name) {
-		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
-	}
-
 	host := hostHint
 	if host == "" {
 		host = s.hostFor(owner, name)
 	}
+
+	if !s.isTrackedRepoOnHost(owner, name, host) {
+		return fmt.Errorf(
+			"repo %s/%s on %s is not tracked", owner, name, host,
+		)
+	}
+
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
 	client := s.clientFor(repo)
 
-	repoID, err := s.db.UpsertRepo(ctx, owner, name)
+	repoID, err := s.db.UpsertRepo(ctx, host, owner, name)
 	if err != nil {
 		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
 	}
@@ -1054,7 +1079,7 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
 	client := s.clientFor(repo)
 
-	repoID, err := s.db.UpsertRepo(ctx, owner, name)
+	repoID, err := s.db.UpsertRepo(ctx, host, owner, name)
 	if err != nil {
 		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
 	}

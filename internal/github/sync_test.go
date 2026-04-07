@@ -1108,15 +1108,6 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 		time.Hour, nil,
 	)
 
-	// Insert the repo with the GHE host so SyncMR can find it.
-	_, err := d.WriteDB().ExecContext(ctx,
-		`INSERT INTO middleman_repos
-		    (platform, platform_host, owner, name)
-		 VALUES ('github', 'ghes.corp.com', 'corp', 'internal')
-		 ON CONFLICT DO NOTHING`,
-	)
-	require.NoError(err)
-
 	var hookedOwner, hookedName string
 	syncer.SetOnMRSynced(
 		func(owner, name string, _ *db.MergeRequest) {
@@ -1141,4 +1132,55 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 	assert.Equal(3, mr.Number)
 	assert.Equal("corp", hookedOwner)
 	assert.Equal("internal", hookedName)
+
+	// Verify the MR is associated with the GHE repo row, not github.com.
+	repo, err := d.GetRepoByOwnerName(ctx, "corp", "internal")
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Equal("ghes.corp.com", repo.PlatformHost)
+	assert.Equal(repo.ID, mr.RepoID)
+}
+
+func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: buildOpenPR(1, now),
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	// Track acme/app only on github.com.
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app",
+			PlatformHost: "github.com",
+		}},
+		time.Hour, nil,
+	)
+
+	callCount := 0
+	syncer.SetOnMRSynced(
+		func(_ string, _ string, _ *db.MergeRequest) {
+			callCount++
+		},
+	)
+
+	// Watch the same owner/name but on a different host.
+	syncer.SetWatchedMRs([]WatchedMR{
+		{
+			Owner: "acme", Name: "app",
+			Number: 1, PlatformHost: "ghes.other.com",
+		},
+	})
+
+	syncer.syncWatchedMRs(ctx)
+
+	Assert.Equal(t, 0, callCount,
+		"watched MR on untracked host should not be synced")
 }
