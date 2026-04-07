@@ -669,18 +669,37 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	)
 	if err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) &&
-			(ghErr.Response.StatusCode == 405 || ghErr.Response.StatusCode == 409) {
-			go func() {
-				if syncErr := s.syncer.SyncMR(
-					context.WithoutCancel(ctx), input.Owner, input.Name, input.Number,
-				); syncErr != nil {
-					slog.Warn("background sync after merge failure", "err", syncErr)
-				}
-			}()
-			return nil, huma.Error409Conflict(ghErr.Message)
+		if errors.As(err, &ghErr) {
+			slog.Warn("github merge failed",
+				"owner", input.Owner, "repo", input.Name,
+				"number", input.Number, "method", input.Body.Method,
+				"status", ghErr.Response.StatusCode,
+				"message", ghErr.Message)
+
+			if ghErr.Response.StatusCode == http.StatusMethodNotAllowed ||
+				ghErr.Response.StatusCode == http.StatusConflict {
+				go func() {
+					if syncErr := s.syncer.SyncMR(
+						context.WithoutCancel(ctx), input.Owner, input.Name, input.Number,
+					); syncErr != nil {
+						slog.Warn("background sync after merge failure", "err", syncErr)
+					}
+				}()
+				return nil, huma.Error409Conflict(ghErr.Message)
+			}
+
+			// Forward 4xx GitHub errors as-is so the user sees the real cause
+			// (e.g. 422 validation, 403 forbidden). 5xx becomes 502.
+			if ghErr.Response.StatusCode >= 400 && ghErr.Response.StatusCode < 500 {
+				return nil, huma.NewError(ghErr.Response.StatusCode, ghErr.Message)
+			}
+			return nil, huma.Error502BadGateway("GitHub: " + ghErr.Message)
 		}
-		return nil, huma.Error502BadGateway("GitHub merge error")
+		slog.Warn("github merge transport error",
+			"owner", input.Owner, "repo", input.Name,
+			"number", input.Number, "method", input.Body.Method,
+			"err", err)
+		return nil, huma.Error502BadGateway("GitHub merge error: " + err.Error())
 	}
 
 	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
