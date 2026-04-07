@@ -5,7 +5,7 @@ let highlighterPromise: Promise<Highlighter> | null = null;
 const LANGS = [
   "go", "typescript", "javascript", "tsx", "jsx", "python", "rust", "json",
   "yaml", "markdown", "sql", "shellscript", "css", "html", "toml",
-  "dockerfile", "makefile",
+  "dockerfile", "makefile", "svelte",
 ];
 
 function getHighlighter(): Promise<Highlighter> {
@@ -23,7 +23,7 @@ const EXT_TO_LANG: Record<string, string> = {
   jsx: "jsx", py: "python", rs: "rust", json: "json",
   yaml: "yaml", yml: "yaml", md: "markdown", sql: "sql",
   sh: "shellscript", bash: "shellscript", css: "css", html: "html",
-  toml: "toml", mk: "makefile",
+  toml: "toml", mk: "makefile", svelte: "svelte",
 };
 
 const BASENAME_TO_LANG: Record<string, string> = {
