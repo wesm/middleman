@@ -126,7 +126,8 @@ type approvePRInput struct {
 }
 
 type actionStatusBody struct {
-	Status string `json:"status"`
+	Status        string `json:"status"`
+	ApprovedCount int    `json:"approved_count,omitempty"`
 }
 
 type actionStatusOutput struct {
@@ -261,6 +262,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/repos", s.listRepos)
 	huma.Get(api, "/repos/{owner}/{name}", s.getRepo)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)
+	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve-workflows", s.approveWorkflows)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/merge", s.mergePR)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/sync", s.syncPR)
@@ -370,9 +372,23 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
+	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return &getPullOutput{Body: body}, nil
+}
+
+func (s *Server) buildPullDetailResponse(
+	ctx context.Context,
+	owner, name string,
+	mr *db.MergeRequest,
+	useLivePR bool,
+) (mergeRequestDetailResponse, error) {
 	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list mr events failed")
+		return mergeRequestDetailResponse{}, huma.Error500InternalServerError("list mr events failed")
 	}
 	if events == nil {
 		events = []db.MREvent{}
@@ -380,21 +396,19 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 
 	dbLinks, err := s.db.GetWorktreeLinksForMR(mr.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
+		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
 			"load worktree links failed",
 		)
 	}
-	wl := toWorktreeLinkResponses(dbLinks)
 
-	return &getPullOutput{
-		Body: mergeRequestDetailResponse{
-			MergeRequest:  mr,
-			Events:        events,
-			RepoOwner:     input.Owner,
-			RepoName:      input.Name,
-			WorktreeLinks: wl,
-			Warnings:      s.diffWarnings(mr),
-		},
+	return mergeRequestDetailResponse{
+		MergeRequest:     mr,
+		Events:           events,
+		RepoOwner:        owner,
+		RepoName:         name,
+		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
+		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, useLivePR),
+		Warnings:         s.diffWarnings(mr),
 	}, nil
 }
 
@@ -435,6 +449,47 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 		return []string{"Diff data is out of date for this pull request."}
 	}
 	return nil
+}
+
+func (s *Server) workflowApprovalState(
+	ctx context.Context,
+	owner, name string,
+	mr *db.MergeRequest,
+	useLivePR bool,
+) workflowApprovalResponse {
+	client, err := s.syncer.ClientForRepo(owner, name)
+	if err != nil {
+		return workflowApprovalResponse{}
+	}
+
+	currentState := mr.State
+	headSHA := mr.PlatformHeadSHA
+	if useLivePR {
+		pr, err := client.GetPullRequest(ctx, owner, name, mr.Number)
+		if err != nil || pr == nil {
+			return workflowApprovalResponse{}
+		}
+		currentState = pr.GetState()
+		headSHA = pr.GetHead().GetSHA()
+	}
+
+	if currentState != "open" || headSHA == "" {
+		return workflowApprovalResponse{Checked: true}
+	}
+
+	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, owner, name, headSHA)
+	if err != nil {
+		return workflowApprovalResponse{}
+	}
+
+	state := ghclient.WorkflowApprovalStateFromRuns(
+		ghclient.FilterWorkflowRunsAwaitingApproval(runs, mr.Number, headSHA),
+	)
+	return workflowApprovalResponse{
+		Checked:  state.Checked,
+		Required: state.Required,
+		Count:    state.Count,
+	}
 }
 
 func (s *Server) getMRImportMetadata(
@@ -663,6 +718,62 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
+}
+
+func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
+	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request failed")
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	pr, err := client.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error502BadGateway("GitHub API error")
+	}
+	if pr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+
+	headSHA := pr.GetHead().GetSHA()
+	if pr.GetState() != "open" || headSHA == "" {
+		return &actionStatusOutput{Body: actionStatusBody{Status: "approved_workflows"}}, nil
+	}
+
+	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, input.Owner, input.Name, headSHA)
+	if err != nil {
+		return nil, huma.Error502BadGateway("GitHub API error")
+	}
+	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, input.Number, headSHA)
+
+	approvedCount := 0
+	for _, run := range pending {
+		if err := client.ApproveWorkflowRun(ctx, input.Owner, input.Name, run.GetID()); err != nil {
+			if approvedCount > 0 {
+				if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
+					slog.Warn("sync after workflow approval failure", "err", syncErr)
+				}
+			}
+			return nil, huma.Error502BadGateway(err.Error())
+		}
+		approvedCount++
+	}
+
+	if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
+		slog.Warn("sync after workflow approval", "err", syncErr)
+	}
+
+	return &actionStatusOutput{Body: actionStatusBody{
+		Status:        "approved_workflows",
+		ApprovedCount: approvedCount,
+	}}, nil
 }
 
 func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
@@ -982,25 +1093,12 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error404NotFound("pull request not found after sync")
 	}
 
-	events, err := s.db.ListMREvents(ctx, mr.ID)
+	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, false)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list mr events: " + err.Error())
-	}
-	if events == nil {
-		events = []db.MREvent{}
+		return nil, err
 	}
 
-	syncLinks, err := s.db.GetWorktreeLinksForMR(mr.ID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"load worktree links: " + err.Error(),
-		)
-	}
-
-	var warnings []string
 	if diffErr != nil {
-		// Log the underlying detail server-side so operators can debug,
-		// but only surface the sanitized user-facing message to clients.
 		slog.Warn("diff sync failed during sync PR",
 			"owner", input.Owner,
 			"name", input.Name,
@@ -1008,17 +1106,12 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 			"code", diffErr.Code,
 			"err", diffErr.Err,
 		)
-		warnings = append(warnings, diffErr.UserMessage())
+		// Replace inferred warnings with the explicit error, which is
+		// more specific than the row-state-based diffWarnings.
+		body.Warnings = []string{diffErr.UserMessage()}
 	}
 
-	return &syncPROutput{Body: mergeRequestDetailResponse{
-		MergeRequest:  mr,
-		Events:        events,
-		RepoOwner:     input.Owner,
-		RepoName:      input.Name,
-		WorktreeLinks: toWorktreeLinkResponses(syncLinks),
-		Warnings:      warnings,
-	}}, nil
+	return &syncPROutput{Body: body}, nil
 }
 
 func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIssueOutput, error) {

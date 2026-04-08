@@ -32,16 +32,18 @@ func openTestDB(t *testing.T) *db.DB {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	openPRs           []*gh.PullRequest
-	singlePR          *gh.PullRequest
-	getPullRequestFn  func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn        func(context.Context, string, string, int) (*gh.Issue, error)
-	comments          []*gh.IssueComment
-	reviews           []*gh.PullRequestReview
-	commits           []*gh.RepositoryCommit
-	ciStatus          *gh.CombinedStatus
-	checkRuns         []*gh.CheckRun
-	listOpenPRsCalled bool
+	openPRs              []*gh.PullRequest
+	singlePR             *gh.PullRequest
+	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn           func(context.Context, string, string, int) (*gh.Issue, error)
+	comments             []*gh.IssueComment
+	reviews              []*gh.PullRequestReview
+	commits              []*gh.RepositoryCommit
+	ciStatus             *gh.CombinedStatus
+	checkRuns            []*gh.CheckRun
+	workflowRuns         []*gh.WorkflowRun
+	approveWorkflowRunFn func(context.Context, string, string, int64) error
+	listOpenPRsCalled    bool
 }
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -102,6 +104,21 @@ func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.C
 
 func (m *mockClient) ListCheckRunsForRef(_ context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
 	return m.checkRuns, nil
+}
+
+func (m *mockClient) ListWorkflowRunsForHeadSHA(
+	_ context.Context, _, _, _ string,
+) ([]*gh.WorkflowRun, error) {
+	return m.workflowRuns, nil
+}
+
+func (m *mockClient) ApproveWorkflowRun(
+	ctx context.Context, owner, repo string, runID int64,
+) error {
+	if m.approveWorkflowRunFn != nil {
+		return m.approveWorkflowRunFn(ctx, owner, repo, runID)
+	}
+	return nil
 }
 
 func (m *mockClient) CreateIssueComment(

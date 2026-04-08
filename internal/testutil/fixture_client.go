@@ -120,6 +120,20 @@ func (c *FixtureClient) ListCheckRunsForRef(
 	return nil, nil
 }
 
+// ListWorkflowRunsForHeadSHA returns nil (read-only stub).
+func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
+	_ context.Context, _, _, _ string,
+) ([]*gh.WorkflowRun, error) {
+	return nil, nil
+}
+
+// ApproveWorkflowRun returns an error (mutations not supported).
+func (c *FixtureClient) ApproveWorkflowRun(
+	_ context.Context, _, _ string, _ int64,
+) error {
+	return errFixtureReadOnly
+}
+
 // CreateIssueComment returns an error (mutations not supported).
 func (c *FixtureClient) CreateIssueComment(
 	_ context.Context, _, _ string, _ int, _ string,

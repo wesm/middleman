@@ -219,6 +219,14 @@ export function createDetailStore(
     }
   }
 
+  async function refreshDetailOnly(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<void> {
+    await refreshDetail(owner, name, number);
+  }
+
   async function updateKanbanState(
     owner: string,
     name: string,
@@ -476,6 +484,7 @@ export function createDetailStore(
     getDetailError,
     clearDetail,
     loadDetail,
+    refreshDetailOnly,
     updateKanbanState,
     startDetailPolling,
     stopDetailPolling,

@@ -171,8 +171,10 @@ func (m *Manager) git(
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(filteredGitEnv(),
 		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
 	)
 	if token := m.tokens[host]; token != "" {
 		// GitHub's smart HTTP endpoint requires Basic auth, not Bearer.
@@ -196,6 +198,49 @@ func (m *Manager) git(
 		return nil, fmt.Errorf("%w: %s", err, msg)
 	}
 	return out, nil
+}
+
+// filteredGitEnv returns the process environment with dangerous GIT_*
+// variables stripped. The git() method sets its own GIT_CONFIG_* vars
+// for auth, so inherited values must be removed to avoid conflicts
+// (glibc getenv returns the first match). Interactive/credential
+// helpers are also stripped since all operations are non-interactive.
+func filteredGitEnv() []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if isBlockedEnvVar(e) {
+			continue
+		}
+		env = append(env, e)
+	}
+	return env
+}
+
+func isBlockedEnvVar(e string) bool {
+	// Worktree/index vars — inherited from parent git processes
+	// (e.g., running middleman inside a git hook or worktree).
+	if strings.HasPrefix(e, "GIT_DIR=") ||
+		strings.HasPrefix(e, "GIT_WORK_TREE=") ||
+		strings.HasPrefix(e, "GIT_INDEX_FILE=") ||
+		strings.HasPrefix(e, "GIT_OBJECT_DIRECTORY=") ||
+		strings.HasPrefix(e, "GIT_ALTERNATE_OBJECT_DIRECTORIES=") {
+		return true
+	}
+	// Config injection — git() sets GIT_CONFIG_COUNT/KEY/VALUE for
+	// auth; inherited GIT_CONFIG, GIT_CONFIG_PARAMETERS,
+	// GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, etc. would shadow or
+	// override them.
+	if strings.HasPrefix(e, "GIT_CONFIG") {
+		return true
+	}
+	// Credential/interactive helpers — all operations are
+	// non-interactive with GIT_TERMINAL_PROMPT=0.
+	if strings.HasPrefix(e, "GIT_ASKPASS=") ||
+		strings.HasPrefix(e, "GIT_SSH_COMMAND=") ||
+		strings.HasPrefix(e, "SSH_ASKPASS=") {
+		return true
+	}
+	return false
 }
 
 // isNotFoundError checks if git stderr indicates a missing object or ref.
