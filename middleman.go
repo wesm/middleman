@@ -94,6 +94,20 @@ func resolveHostTokens(
 }
 
 // EmbedHooks provides lifecycle callbacks for embedded consumers.
+//
+// Concurrency:
+//   - OnMRSynced fires after each merge request is synced. Sync
+//     processes repos in parallel, so this callback may be
+//     invoked from multiple goroutines concurrently (one per
+//     in-flight repo sync). Implementations must be safe for
+//     concurrent use and must not block indefinitely or they
+//     will stall sync progress.
+//   - OnSyncCompleted fires once at the end of each sync pass on
+//     the goroutine that drives the sync, so it is not invoked
+//     concurrently with itself.
+//
+// Hooks should be set before calling StartSync. Mutating the
+// hook fields while a sync is in flight is not safe.
 type EmbedHooks struct {
 	OnMRSynced      func(MergeRequestSummary)
 	OnSyncCompleted func(results []RepoSyncResult)
