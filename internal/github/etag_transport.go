@@ -3,7 +3,9 @@ package github
 import (
 	"errors"
 	"net/http"
+	urlpkg "net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +15,13 @@ import (
 
 const etagTTL = 30 * time.Minute
 
-var etagEligiblePath = regexp.MustCompile(`^/repos/[^/]+/[^/]+/(pulls|issues)$`)
+// etagEligiblePath matches list endpoints that return a collection
+// ETag. Supports both github.com (`/repos/{owner}/{name}/{pulls,issues}`)
+// and GitHub Enterprise (`/api/v3/repos/...`), since GHE clients route
+// through the same RoundTripper.
+var etagEligiblePath = regexp.MustCompile(
+	`^(?:/api/v3)?/repos/[^/]+/[^/]+/(pulls|issues)$`,
+)
 
 type etagEntry struct {
 	etag     string
@@ -92,6 +100,36 @@ func hasLinkNext(resp *http.Response) bool {
 		}
 	}
 	return false
+}
+
+// invalidateRepo drops any cached ETag entries whose URL path targets
+// the given repo's PR or issue list endpoints. Used by the sync engine
+// to force an unconditional refetch after a partial failure so the
+// next cycle re-applies per-item state that the previous cycle failed
+// to persist. The cache is keyed by full URL (including query string),
+// so this iterates the sync.Map and deletes by path match rather than
+// computing the exact URL up front.
+func (t *etagTransport) invalidateRepo(owner, name string) {
+	prefixes := []string{
+		"/repos/" + owner + "/" + name + "/pulls",
+		"/repos/" + owner + "/" + name + "/issues",
+		"/api/v3/repos/" + owner + "/" + name + "/pulls",
+		"/api/v3/repos/" + owner + "/" + name + "/issues",
+	}
+	t.cache.Range(func(k, _ any) bool {
+		urlStr, ok := k.(string)
+		if !ok {
+			return true
+		}
+		parsed, err := urlpkg.Parse(urlStr)
+		if err != nil {
+			return true
+		}
+		if slices.Contains(prefixes, parsed.Path) {
+			t.cache.Delete(k)
+		}
+		return true
+	})
 }
 
 // IsNotModified returns true if the error represents a 304 Not Modified

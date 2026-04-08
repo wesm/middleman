@@ -46,6 +46,14 @@ type Client interface {
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
 	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
+	// InvalidateListETagsForRepo drops any cached conditional-GET
+	// validators for the given repo's list endpoints so the next
+	// ListOpenPullRequests / ListOpenIssues call issues an
+	// unconditional fetch. Used to recover from a partial-failure
+	// sync where a successful 200 populated the ETag cache but a
+	// downstream per-item write failed, which would otherwise leave
+	// the DB inconsistent until the natural TTL expires.
+	InvalidateListETagsForRepo(owner, repo string)
 }
 
 func graphQLEndpointForHost(platformHost string) string {
@@ -53,6 +61,7 @@ func graphQLEndpointForHost(platformHost string) string {
 		return "https://api.github.com/graphql"
 	}
 	return "https://" + platformHost + "/api/graphql"
+
 }
 
 // NewClient creates a GitHub Client authenticated with the given
@@ -68,7 +77,8 @@ func NewClient(
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
-	tc.Transport = &etagTransport{base: tc.Transport}
+	et := &etagTransport{base: tc.Transport}
+	tc.Transport = et
 
 	var ghClient *gh.Client
 	if platformHost == "" || platformHost == "github.com" {
@@ -91,6 +101,7 @@ func NewClient(
 		httpClient:      tc,
 		rateTracker:     rateTracker,
 		graphQLEndpoint: graphQLEndpointForHost(platformHost),
+		etag:            et,
 	}, nil
 }
 
@@ -99,6 +110,17 @@ type liveClient struct {
 	httpClient      *http.Client
 	rateTracker     *RateTracker
 	graphQLEndpoint string
+	etag            *etagTransport
+}
+
+// InvalidateListETagsForRepo evicts any cached ETag entries for the
+// repo's PR and issue list endpoints, so the next list call issues an
+// unconditional GET. Safe to call when the transport is nil (tests).
+func (c *liveClient) InvalidateListETagsForRepo(owner, repo string) {
+	if c.etag == nil {
+		return
+	}
+	c.etag.invalidateRepo(owner, repo)
 }
 
 const forcePushTimelineQuery = `

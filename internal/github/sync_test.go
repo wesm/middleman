@@ -41,6 +41,7 @@ type mockClient struct {
 	singlePR             *gh.PullRequest
 	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn           func(context.Context, string, string, int) (*gh.Issue, error)
+	listOpenPRsFn        func(context.Context, string, string) ([]*gh.PullRequest, error)
 	comments             []*gh.IssueComment
 	reviews              []*gh.PullRequestReview
 	commits              []*gh.RepositoryCommit
@@ -53,10 +54,18 @@ type mockClient struct {
 	listOpenPRsCalled    bool
 	getUserCalls         atomic.Int32
 	getCombinedCalls     atomic.Int32
+	invalidateCalls      atomic.Int32
 }
 
-func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+func (m *mockClient) InvalidateListETagsForRepo(_, _ string) {
+	m.invalidateCalls.Add(1)
+}
+
+func (m *mockClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	m.listOpenPRsCalled = true
+	if m.listOpenPRsFn != nil {
+		return m.listOpenPRsFn(ctx, owner, repo)
+	}
 	if m.listOpenPRsErr != nil {
 		return nil, m.listOpenPRsErr
 	}
@@ -2782,4 +2791,189 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 	require.NotNil(issue, "issue sync must run even when PR list returns 304")
 	assert.Equal(issueNumber, issue.Number)
 	assert.Equal(issueTitle, issue.Title)
+}
+
+// TestSyncerPartialFailureInvalidatesETagOnNextCycle is the
+// regression test for the Task C fix. It reproduces the sequence
+// where a 200 list response succeeded (populating the ETag cache
+// in the real transport) but a downstream step — here, the issue
+// list fetch — failed, leaving the DB inconsistent. Before the
+// fix, the next cycle saw 304 on the PR list and followed the
+// "nothing to do" branch, never retrying the failed step until
+// the TTL expired. After the fix, doSyncRepo records the partial
+// failure in failedRepos, calls InvalidateListETagsForRepo at the
+// top of the next cycle, and the list call issues unconditionally
+// so the retry can happen.
+func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	// Build an open issue that should appear in the DB only after
+	// the retry pass succeeds.
+	issueNumber := 7
+	issueTitle := "post-retry issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/7"
+	issueBody := ""
+	issueID := int64(777)
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	mc := &mockClient{
+		openPRs:    []*gh.PullRequest{buildOpenPR(1, now)},
+		openIssues: []*gh.Issue{openIssue},
+		comments:   []*gh.IssueComment{},
+		reviews:    []*gh.PullRequestReview{},
+		commits:    []*gh.RepositoryCommit{},
+	}
+	// First cycle: PR list succeeds, issue list fails with a
+	// non-304 error, so doSyncRepo's syncIssues call marks
+	// failure without aborting the whole repo sync.
+	mc.listOpenIssuesErr = fmt.Errorf("transient issue list failure")
+	mc.getIssueFn = func(_ context.Context, _, _ string, n int) (*gh.Issue, error) {
+		if n == issueNumber {
+			return openIssue, nil
+		}
+		return nil, nil
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil,
+	)
+
+	// First cycle: PR sync completes but issue sync errors out.
+	// doSyncRepo logs the error and calls markFailure(). The repo
+	// result has no hard error (issue failure is non-fatal for the
+	// repo as a whole), but failedRepos is marked.
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	assert.Nil(issue, "first cycle should not have persisted the issue because list failed")
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.True(flagged, "failedRepos must be set after partial failure")
+
+	// Re-arm the mock so the second cycle sees a successful issue
+	// list. Before the fix, the PR list would have returned 304
+	// and the repo would have been marked success without retrying
+	// anything — but issues have their own ETag so they would
+	// actually still fire here. To make this test actually prove
+	// the invalidation call, the assertion below on
+	// invalidateCalls is the load-bearing check: without the fix,
+	// the helper is never invoked because failedRepos never gets
+	// set.
+	mc.listOpenIssuesErr = nil
+
+	invalidateBefore := mc.invalidateCalls.Load()
+
+	syncer.RunOnce(ctx)
+
+	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
+		"next cycle should call InvalidateListETagsForRepo because repo was marked failed")
+
+	issue2, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue2, "second cycle should have persisted the recovered issue")
+	assert.Equal(issueNumber, issue2.Number)
+
+	// Flag should be cleared after a clean pass.
+	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged, "failedRepos must be cleared after successful retry")
+}
+
+// blockingCtxMockClient blocks in ListOpenPullRequests until either
+// the provided channel is closed or the ctx is canceled. Unlike
+// blockingMockClient (which ignores ctx), this variant is used by
+// TestSyncerStopCancelsTriggerRun to verify Stop cancels an
+// in-flight TriggerRun via the syncer's lifetime context.
+type blockingCtxMockClient struct {
+	mockClient
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingCtxMockClient) ListOpenPullRequests(
+	ctx context.Context, _, _ string,
+) ([]*gh.PullRequest, error) {
+	if b.entered != nil {
+		select {
+		case b.entered <- struct{}{}:
+		default:
+		}
+	}
+	select {
+	case <-b.release:
+		return nil, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// TestSyncerStopCancelsTriggerRun verifies that Stop cancels the
+// syncer's lifetime context, which in turn unblocks a TriggerRun
+// whose GitHub call is waiting on ctx.Done(). Before the fix, Stop
+// only closed stopCh and waited on wg; a TriggerRun mid-flight in a
+// slow call held wg forever because its caller-supplied ctx
+// (wrapped in context.WithoutCancel by the handlers) was immune to
+// Stop.
+func TestSyncerStopCancelsTriggerRun(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	mock := &blockingCtxMockClient{
+		entered: entered,
+		release: release,
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Hour, nil,
+	)
+
+	// The handler wraps the request ctx in context.WithoutCancel,
+	// so the TriggerRun's caller context is effectively immune to
+	// per-request cancellation. Only the syncer's lifetime ctx can
+	// unblock the work.
+	syncer.TriggerRun(context.WithoutCancel(context.Background()))
+
+	// Wait for the blocked ListOpenPullRequests to enter. Using a
+	// channel rather than time.Sleep so the test is deterministic
+	// and fast.
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		require.FailNow("TriggerRun did not start ListOpenPullRequests")
+	}
+
+	// Call Stop in a goroutine and assert it returns quickly.
+	stopped := make(chan struct{})
+	go func() {
+		syncer.Stop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		close(release) // unblock the mock so the test can tear down
+		require.FailNow("Stop did not return after ctx cancellation")
+	}
 }

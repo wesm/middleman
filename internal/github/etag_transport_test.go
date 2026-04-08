@@ -424,6 +424,86 @@ func TestETagTransport_304ExtendsCacheLifetime(t *testing.T) {
 		"stable 304 stream must not trigger additional unconditional fetches")
 }
 
+// TestETagTransport_GHEPathCaches verifies the matcher accepts the
+// /api/v3 prefix used by GitHub Enterprise. Without this, GHE clients
+// silently skipped the cache entirely because the regex was anchored
+// at /repos/... and GHE requests arrive as /api/v3/repos/....
+func TestETagTransport_GHEPathCaches(t *testing.T) {
+	assert := assert.New(t)
+	url := "https://ghe.example.com/api/v3/repos/o/n/pulls"
+	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.Header().Set("ETag", `"ghe-1"`)
+		rec.WriteHeader(200)
+		return rec.Result(), nil
+	})}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	_, err := et.RoundTrip(req)
+	require.NoError(t, err)
+
+	val, ok := et.cache.Load(url)
+	assert.True(ok, "GHE path should populate cache")
+	entry := val.(etagEntry)
+	assert.Equal(`"ghe-1"`, entry.etag)
+
+	// Follow-up request should carry If-None-Match for the GHE URL.
+	saw := false
+	et.base = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		saw = r.Header.Get("If-None-Match") == `"ghe-1"`
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(304)
+		return rec.Result(), nil
+	})
+	req2, _ := http.NewRequest("GET", url, nil)
+	_, err = et.RoundTrip(req2)
+	require.NoError(t, err)
+	assert.True(saw, "second GHE request must send If-None-Match")
+
+	// Issues path also works under GHE prefix.
+	issuesURL := "https://ghe.example.com/api/v3/repos/o/n/issues"
+	et.base = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.Header().Set("ETag", `"ghe-issues"`)
+		rec.WriteHeader(200)
+		return rec.Result(), nil
+	})
+	req3, _ := http.NewRequest("GET", issuesURL, nil)
+	_, err = et.RoundTrip(req3)
+	require.NoError(t, err)
+	_, ok = et.cache.Load(issuesURL)
+	assert.True(ok, "GHE issues path should populate cache")
+}
+
+// TestETagTransport_InvalidateRepo verifies that invalidateRepo
+// drops only the entries for the targeted repo, covering both the
+// public github.com path and the GHE /api/v3 prefix, and leaves
+// unrelated entries intact.
+func TestETagTransport_InvalidateRepo(t *testing.T) {
+	assert := assert.New(t)
+	et := &etagTransport{}
+	now := time.Now()
+	et.cache.Store("https://api.github.com/repos/o/n/pulls", etagEntry{etag: `"1"`, cachedAt: now})
+	et.cache.Store("https://api.github.com/repos/o/n/pulls?state=open", etagEntry{etag: `"2"`, cachedAt: now})
+	et.cache.Store("https://api.github.com/repos/o/n/issues", etagEntry{etag: `"3"`, cachedAt: now})
+	et.cache.Store("https://ghe.example.com/api/v3/repos/o/n/pulls", etagEntry{etag: `"4"`, cachedAt: now})
+	et.cache.Store("https://api.github.com/repos/other/other/pulls", etagEntry{etag: `"5"`, cachedAt: now})
+
+	et.invalidateRepo("o", "n")
+
+	for _, u := range []string{
+		"https://api.github.com/repos/o/n/pulls",
+		"https://api.github.com/repos/o/n/pulls?state=open",
+		"https://api.github.com/repos/o/n/issues",
+		"https://ghe.example.com/api/v3/repos/o/n/pulls",
+	} {
+		_, ok := et.cache.Load(u)
+		assert.Falsef(ok, "invalidateRepo should drop %s", u)
+	}
+	_, ok := et.cache.Load("https://api.github.com/repos/other/other/pulls")
+	assert.True(ok, "invalidateRepo must not touch unrelated repos")
+}
+
 func TestIsNotModified(t *testing.T) {
 	resp304 := &http.Response{StatusCode: 304}
 	err304 := &gh.ErrorResponse{Response: resp304}

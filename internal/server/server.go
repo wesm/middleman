@@ -220,8 +220,6 @@ func newServer(
 		s.handler = mux
 	}
 
-	s.hub = NewEventHub()
-
 	return s
 }
 
