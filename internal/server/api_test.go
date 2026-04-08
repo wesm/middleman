@@ -539,7 +539,8 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 }
 
 // TestAPIGetPullNoDiffWarningWhenSHAsPresent verifies the warning does
-// not fire when the row already carries valid diff SHAs.
+// not fire when the row already carries valid diff SHAs that match the
+// latest platform head.
 func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -561,9 +562,14 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
+	headSHA := "deadbeef00000000000000000000000000000001"
+	require.NoError(database.UpdatePlatformSHAs(
+		ctx, repoID, 2, headSHA,
+		"deadbeef00000000000000000000000000000010",
+	))
 	require.NoError(database.UpdateDiffSHAs(
 		ctx, repoID, 2,
-		"deadbeef00000000000000000000000000000001",
+		headSHA,
 		"deadbeef00000000000000000000000000000002",
 		"deadbeef00000000000000000000000000000003",
 	))
@@ -578,6 +584,60 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	if resp.JSON200.Warnings != nil {
 		assert.Empty(*resp.JSON200.Warnings)
 	}
+}
+
+// TestAPIGetPullEmitsStaleDiffWarning covers the case where a diff sync
+// populated the row but a later push advanced the platform head while
+// the next diff sync failed. The recorded DiffHeadSHA is valid but no
+// longer matches PlatformHeadSHA, so the UI would show a diff from the
+// previous revision without any indication of drift. The warning must
+// fire in that case.
+func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 3)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	// Platform reports the latest head; the recorded diff SHAs are from
+	// an earlier push that no longer matches.
+	require.NoError(database.UpdatePlatformSHAs(
+		ctx, repoID, 3,
+		"deadbeef00000000000000000000000000000099",
+		"deadbeef00000000000000000000000000000010",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 3,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000002",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 3,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when diff is stale")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
 }
 
 func TestAPISetKanbanState(t *testing.T) {

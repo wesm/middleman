@@ -1127,14 +1127,14 @@ func (s *Syncer) syncMRWithHost(
 
 // syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.
 // Returns nil when there is no clone manager (the caller has already opted
-// out of diff support); otherwise returns a *DiffSyncError describing the
-// first failure encountered along the clone or diff path. The returned
-// pointer is nil on success and the caller should check it directly rather
-// than assigning to an error interface to avoid the typed-nil trap.
+// out of diff support); otherwise returns an error wrapping a
+// *DiffSyncError that describes the first failure encountered along the
+// clone or diff path. Callers can recover the structured categorization via
+// errors.As.
 func (s *Syncer) syncMRDiff(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 	ghPR *gh.PullRequest, normalized *db.MergeRequest,
-) *DiffSyncError {
+) error {
 	if s.clones == nil {
 		return nil
 	}
@@ -1343,13 +1343,13 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 // When force is false, skips PRs that already have diff SHAs (periodic sync).
 // When force is true, always recomputes (on-demand SyncMR).
 //
-// Returns a *DiffSyncError describing the failure when any git or DB
-// operation fails. A nil return covers both success and the no-op skip cases
-// (empty merge SHA, existing valid diff SHAs without force).
+// Returns a *DiffSyncError (wrapped as an error) describing the failure when
+// any git or DB operation fails. A nil return covers both success and the
+// no-op skip cases (empty merge SHA, existing valid diff SHAs without force).
 func (s *Syncer) computeMergedMRDiffSHAs(
 	ctx context.Context, repo RepoRef, repoID int64, number int, mergeCommitSHA string,
 	force bool,
-) *DiffSyncError {
+) error {
 	if mergeCommitSHA == "" {
 		return nil
 	}

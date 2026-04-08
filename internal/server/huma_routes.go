@@ -419,10 +419,17 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	if mr.State != "open" && mr.State != "merged" {
 		return nil
 	}
-	if mr.DiffHeadSHA != "" {
-		return nil
+	if mr.DiffHeadSHA == "" {
+		return []string{"Diff data is unavailable for this pull request."}
 	}
-	return []string{"Diff data is unavailable for this pull request."}
+	// For open PRs, also detect stale diff data: if the recorded diff head
+	// does not match the latest platform head, a prior diff-sync attempt
+	// failed after new commits were pushed and the UI would show an old
+	// diff without this warning.
+	if mr.State == "open" && mr.PlatformHeadSHA != "" && mr.DiffHeadSHA != mr.PlatformHeadSHA {
+		return []string{"Diff data is out of date for this pull request."}
+	}
+	return nil
 }
 
 func (s *Server) getMRImportMetadata(
