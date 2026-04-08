@@ -61,6 +61,27 @@ export type CollapsedReposStore = ReturnType<typeof createCollapsedReposStore>;
 
 Default state: every repo expanded (not in either set).
 
+**Reactivity**: the body of `isCollapsed` must read the reactive `Set`
+directly — e.g., `return collapsedInPulls.has(repoKey);` — so that Svelte's
+reactivity graph tracks the call. `toggle` must re-assign the Set (not
+mutate in place), because Svelte 5 `$state` detects assignment, not
+mutation of a non-proxy `Set`. Concretely:
+
+```ts
+function toggle(surface, repoKey) {
+  if (surface === "pulls") {
+    const next = new Set(collapsedInPulls);
+    if (next.has(repoKey)) next.delete(repoKey);
+    else next.add(repoKey);
+    collapsedInPulls = next; // triggers reactivity
+    writeStorage("pulls", next);
+  } else { /* same for issues */ }
+}
+```
+
+This keeps `{@const collapsed = collapsedRepos.isCollapsed("pulls", repo)}`
+in the component template recomputing on every toggle.
+
 ### Store wiring
 
 `StoreInstances` and the store type imports live in `packages/ui/src/types.ts`,
@@ -224,6 +245,21 @@ inherit` is required because `<button>` elements do not inherit the page
 font family by default. The hover background is identical whether the group
 is collapsed or expanded — this is intentional (hover state reflects the
 header as a whole, not the nested content).
+
+**Double-border under a collapsed header**: the enclosing `.repo-group`
+already has `border-bottom: 1px solid var(--border-default)` (existing
+rule). When collapsed, the header's own `border-bottom` sits directly
+against the group's bottom border, producing two adjacent lines. Suppress
+the header's border-bottom in the collapsed state:
+
+```css
+.repo-header[aria-expanded="false"] {
+  border-bottom: none;
+}
+```
+
+This rule lives in the same scoped `<style>` block as the merged
+`.repo-header` rule in both `PullList.svelte` and `IssueList.svelte`.
 
 ### Accessibility
 
