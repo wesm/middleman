@@ -52,26 +52,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
     };
   }
 
-  async function refreshSyncStatus(): Promise<void> {
-    const [syncResult, rateResult] =
-      await Promise.allSettled([
-        apiClient.GET("/sync/status"),
-        apiClient.GET("/rate-limits"),
-      ]);
-
-    if (syncResult.status === "fulfilled") {
-      const { data, error } = syncResult.value;
-      if (!error && data) {
-        status = data;
-      }
-    }
-
-    if (rateResult.status === "fulfilled") {
-      const { data, error } = rateResult.value;
-      if (!error && data) {
-        rateLimits = data.hosts ?? {};
-      }
-    }
+  function applySyncStatus(next: SyncStatus | null): void {
+    status = next;
 
     const isRunning = status?.running ?? false;
 
@@ -86,6 +68,32 @@ export function createSyncStore(opts: SyncStoreOptions) {
     wasRunning = isRunning;
 
     adjustPollingSpeed(isRunning);
+  }
+
+  async function refreshSyncStatus(): Promise<void> {
+    const [syncResult, rateResult] =
+      await Promise.allSettled([
+        apiClient.GET("/sync/status"),
+        apiClient.GET("/rate-limits"),
+      ]);
+
+    if (syncResult.status === "fulfilled") {
+      const { data, error } = syncResult.value;
+      if (!error && data) {
+        applySyncStatus(data);
+      }
+    }
+
+    if (rateResult.status === "fulfilled") {
+      const { data, error } = rateResult.value;
+      if (!error && data) {
+        rateLimits = data.hosts ?? {};
+      }
+    }
+  }
+
+  function setSyncStatus(next: SyncStatus): void {
+    applySyncStatus(next);
   }
 
   async function triggerSync(): Promise<void> {
@@ -157,6 +165,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     onNextSyncComplete,
     subscribeSyncComplete,
     refreshSyncStatus,
+    setSyncStatus,
     triggerSync,
     startPolling,
     stopPolling,

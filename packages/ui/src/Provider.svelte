@@ -199,8 +199,8 @@
         void issuesStore.loadIssues();
         void activityStore.loadActivity();
       },
-      onSyncStatus: () => {
-        void syncStore.refreshSyncStatus();
+      onSyncStatus: (status) => {
+        syncStore.setSyncStatus(status);
       },
     });
 
