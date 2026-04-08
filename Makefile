@@ -57,6 +57,7 @@ frontend:
 	cd frontend && bun install && bun run build
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
+	printf 'ok\n' > internal/web/dist/stub.html
 
 # Run Vite dev server with dependencies installed (use alongside `make dev`)
 frontend-dev:

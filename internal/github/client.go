@@ -20,6 +20,8 @@ type Client interface {
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (*gh.CombinedStatus, error)
 	ListCheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*gh.CheckRun, error)
+	ListWorkflowRunsForHeadSHA(ctx context.Context, owner, repo, headSHA string) ([]*gh.WorkflowRun, error)
+	ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
@@ -252,6 +254,59 @@ func (c *liveClient) ListCheckRunsForRef(
 		return nil, err
 	}
 	return all, nil
+}
+
+func (c *liveClient) ListWorkflowRunsForHeadSHA(
+	ctx context.Context, owner, repo, headSHA string,
+) ([]*gh.WorkflowRun, error) {
+	opts := &gh.ListWorkflowRunsOptions{
+		HeadSHA:     headSHA,
+		Status:      "action_required",
+		ListOptions: gh.ListOptions{PerPage: 100},
+	}
+	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.WorkflowRun, *gh.Response, error) {
+		opts.ListOptions = *pageOpts
+		result, resp, err := c.gh.Actions.ListRepositoryWorkflowRuns(
+			ctx, owner, repo, opts,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"listing workflow runs for %s/%s@%s: %w",
+				owner, repo, headSHA, err,
+			)
+		}
+		return result.WorkflowRuns, resp, nil
+	}, c.trackRate)
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+func (c *liveClient) ApproveWorkflowRun(
+	ctx context.Context, owner, repo string, runID int64,
+) error {
+	req, err := c.gh.NewRequest(
+		"POST",
+		fmt.Sprintf("repos/%s/%s/actions/runs/%d/approve", owner, repo, runID),
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"building workflow approval request for %s/%s run %d: %w",
+			owner, repo, runID, err,
+		)
+	}
+
+	resp, err := c.gh.Do(ctx, req, nil)
+	c.trackRate(resp)
+	if err != nil {
+		return fmt.Errorf(
+			"approving workflow run %s/%s#%d: %w",
+			owner, repo, runID, err,
+		)
+	}
+	return nil
 }
 
 func (c *liveClient) CreateIssueComment(

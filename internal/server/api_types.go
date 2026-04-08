@@ -19,16 +19,20 @@ type mergeRequestResponse struct {
 	WorktreeLinks []worktreeLinkResponse `json:"worktree_links"`
 }
 
+type workflowApprovalResponse struct {
+	Checked  bool `json:"checked"`
+	Required bool `json:"required"`
+	Count    int  `json:"count"`
+}
+
 type mergeRequestDetailResponse struct {
-	MergeRequest  *db.MergeRequest       `json:"merge_request"`
-	Events        []db.MREvent           `json:"events"`
-	RepoOwner     string                 `json:"repo_owner"`
-	RepoName      string                 `json:"repo_name"`
-	WorktreeLinks []worktreeLinkResponse `json:"worktree_links"`
-	// Warnings carries non-fatal sync errors. The PR data is fresh, but the
-	// caller may want to surface these messages so the user understands why
-	// derived views (such as the diff) are stale or unavailable.
-	Warnings []string `json:"warnings,omitempty"`
+	MergeRequest     *db.MergeRequest         `json:"merge_request"`
+	Events           []db.MREvent             `json:"events"`
+	RepoOwner        string                   `json:"repo_owner"`
+	RepoName         string                   `json:"repo_name"`
+	WorktreeLinks    []worktreeLinkResponse   `json:"worktree_links"`
+	WorkflowApproval workflowApprovalResponse `json:"workflow_approval"`
+	Warnings         []string                 `json:"warnings,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{

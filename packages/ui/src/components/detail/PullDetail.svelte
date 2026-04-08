@@ -7,6 +7,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import CommentBox from "./CommentBox.svelte";
   import ApproveButton from "./ApproveButton.svelte";
+  import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
 
@@ -110,6 +111,9 @@
   });
 
   let ciExpanded = $state(false);
+  const workflowApproval = $derived(
+    detailStore.getDetail()?.workflow_approval,
+  );
   const checks = $derived(parseCIChecks(detailStore.getDetail()?.merge_request?.CIChecksJSON ?? ""));
   const failedChecks = $derived(checks.filter(c => c.conclusion === "failure"));
 
@@ -371,6 +375,14 @@
               <ReadyForReviewButton {owner} {name} {number} />
             {/if}
             <ApproveButton {owner} {name} {number} />
+            {#if workflowApproval?.checked && workflowApproval.required}
+              <ApproveWorkflowsButton
+                {owner}
+                {name}
+                {number}
+                count={workflowApproval.count ?? 0}
+              />
+            {/if}
             {#if repoSettings}
               <button class="btn--merge" onclick={() => { showMergeModal = true; }}>
                 {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}

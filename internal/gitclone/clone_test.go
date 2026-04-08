@@ -47,11 +47,18 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func filteredGitTestEnv() []string {
+	return append(filteredGitEnv(),
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+}
+
 func run(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = filteredGitTestEnv()
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "command %s %v failed: %s", name, args, out)
 }
@@ -232,6 +239,33 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	return result
 }
 
+func TestEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	// Worktree/index vars
+	t.Setenv("GIT_WORK_TREE", t.TempDir())
+	t.Setenv("GIT_DIR", "")
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(t.TempDir(), "index"))
+	t.Setenv("GIT_OBJECT_DIRECTORY", t.TempDir())
+	t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", t.TempDir())
+	// Config injection vars
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "http.extraHeader")
+	t.Setenv("GIT_CONFIG_VALUE_0", "X-Bad: injected")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'http.extraHeader=X-Bad: injected'")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	// Credential/interactive helpers
+	t.Setenv("GIT_ASKPASS", "/bin/false")
+	t.Setenv("GIT_SSH_COMMAND", "/bin/false")
+	t.Setenv("SSH_ASKPASS", "/bin/false")
+
+	err := mgr.EnsureClone(context.Background(), "github.com", "testowner", "testrepo", remote)
+	require.NoError(t, err)
+}
+
 func TestMergeBase(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -246,8 +280,9 @@ func TestMergeBase(t *testing.T) {
 
 	// Get the HEAD SHA.
 	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
-	out, err := exec.Command(
-		"git", "-C", clonePath, "rev-parse", "HEAD").Output()
+	cmd := exec.Command("git", "-C", clonePath, "rev-parse", "HEAD")
+	cmd.Env = filteredGitTestEnv()
+	out, err := cmd.Output()
 	require.NoError(err)
 	headSHA := strings.TrimSpace(string(out))
 

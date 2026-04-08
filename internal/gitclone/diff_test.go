@@ -82,7 +82,9 @@ func TestDiff(t *testing.T) {
 
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	out, err := exec.Command("git", "-C", dir, "rev-parse", ref).Output()
+	cmd := exec.Command("git", "-C", dir, "rev-parse", ref)
+	cmd.Env = filteredGitEnv()
+	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

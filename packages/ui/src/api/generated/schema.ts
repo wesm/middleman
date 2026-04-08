@@ -206,6 +206,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/pulls/{number}/approve-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post repos by owner by name pulls by number approve workflows */
+        post: operations["post-repos-by-owner-by-name-pulls-by-number-approve-workflows"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}/comments": {
         parameters: {
             query?: never;
@@ -399,6 +416,8 @@ export interface components {
              * @example /api/v1/schemas/ActionStatusBody.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            approved_count?: number;
             status: string;
         };
         ActivityItemResponse: {
@@ -734,6 +753,7 @@ export interface components {
             repo_name: string;
             repo_owner: string;
             warnings?: string[] | null;
+            workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestResponse: {
@@ -887,6 +907,12 @@ export interface components {
             last_run_at?: string;
             progress?: string;
             running: boolean;
+        };
+        WorkflowApprovalResponse: {
+            checked: boolean;
+            /** Format: int64 */
+            count: number;
+            required: boolean;
         };
         WorktreeLinkResponse: {
             worktree_branch?: string;
@@ -1293,6 +1319,39 @@ export interface operations {
                 "application/json": components["schemas"]["ApprovePRInputBody"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "post-repos-by-owner-by-name-pulls-by-number-approve-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

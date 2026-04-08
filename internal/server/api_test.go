@@ -24,12 +24,14 @@ import (
 
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
-	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn           func(context.Context, string, string, int) (*gh.Issue, error)
-	markReadyForReviewFn func(context.Context, string, string, int) (*gh.PullRequest, error)
-	editPullRequestFn    func(context.Context, string, string, int, string) (*gh.PullRequest, error)
-	editIssueFn          func(context.Context, string, string, int, string) (*gh.Issue, error)
-	mergePullRequestFn   func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
+	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
+	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
+	editPullRequestFn         func(context.Context, string, string, int, string) (*gh.PullRequest, error)
+	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
+	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
+	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
+	approveWorkflowRunFn      func(context.Context, string, string, int64) error
 }
 
 func (m *mockGH) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -51,9 +53,9 @@ func (m *mockGH) GetUser(_ context.Context, login string) (*gh.User, error) {
 	return &gh.User{Login: &login}, nil
 }
 
-func (m *mockGH) GetPullRequest(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
 	if m.getPullRequestFn != nil {
-		return m.getPullRequestFn(context.Background(), "", "", 0)
+		return m.getPullRequestFn(ctx, owner, repo, number)
 	}
 	return nil, nil
 }
@@ -86,6 +88,24 @@ func (m *mockGH) ListCheckRunsForRef(
 	_ context.Context, _, _, _ string,
 ) ([]*gh.CheckRun, error) {
 	return nil, nil
+}
+
+func (m *mockGH) ListWorkflowRunsForHeadSHA(
+	ctx context.Context, owner, repo, headSHA string,
+) ([]*gh.WorkflowRun, error) {
+	if m.listWorkflowRunsForHeadFn != nil {
+		return m.listWorkflowRunsForHeadFn(ctx, owner, repo, headSHA)
+	}
+	return nil, nil
+}
+
+func (m *mockGH) ApproveWorkflowRun(
+	ctx context.Context, owner, repo string, runID int64,
+) error {
+	if m.approveWorkflowRunFn != nil {
+		return m.approveWorkflowRunFn(ctx, owner, repo, runID)
+	}
+	return nil
 }
 
 func (m *mockGH) CreateIssueComment(
@@ -477,6 +497,299 @@ func TestAPIGetPull(t *testing.T) {
 	require.EqualValues(1, resp.JSON200.MergeRequest.Number)
 	require.Equal("acme", resp.JSON200.RepoOwner)
 	require.Equal("widget", resp.JSON200.RepoName)
+}
+
+func TestAPIGetPullIncludesWorkflowApproval(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			sha := "abc123"
+			state := "open"
+			return &gh.PullRequest{
+				Number: &number,
+				State:  &state,
+				Head:   &gh.PullRequestBranch{SHA: &sha},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, owner, repo, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("acme", owner)
+			require.Equal("widget", repo)
+			require.Equal("abc123", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(55)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.WorkflowApproval)
+	assert.True(resp.JSON200.WorkflowApproval.Checked)
+	assert.True(resp.JSON200.WorkflowApproval.Required)
+	assert.EqualValues(1, resp.JSON200.WorkflowApproval.Count)
+}
+
+func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			sha := "abc123"
+			state := "open"
+			title := "Synced PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("abc123", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(77)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.WorkflowApproval)
+	assert.True(resp.JSON200.WorkflowApproval.Checked)
+	assert.True(resp.JSON200.WorkflowApproval.Required)
+	assert.EqualValues(1, resp.JSON200.WorkflowApproval.Count)
+}
+
+func TestAPIApproveWorkflows(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	approvedRunIDs := []int64{}
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			sha := "abc123"
+			state := "open"
+			title := "Workflow PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("abc123", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(81)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+				{
+					ID:           new(int64(82)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+				{
+					ID:           new(int64(99)),
+					HeadSHA:      new("zzz999"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+			}, nil
+		},
+		approveWorkflowRunFn: func(_ context.Context, owner, repo string, runID int64) error {
+			require.Equal("acme", owner)
+			require.Equal("widget", repo)
+			approvedRunIDs = append(approvedRunIDs, runID)
+			return nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.ApprovedCount)
+	assert.Equal("approved_workflows", resp.JSON200.Status)
+	assert.EqualValues(2, *resp.JSON200.ApprovedCount)
+	assert.Equal([]int64{81, 82}, approvedRunIDs)
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("abc123", pr.PlatformHeadSHA)
+}
+
+func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1002)
+			sha := "abc123"
+			state := "open"
+			title := "Workflow PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("abc123", headSHA)
+			return nil, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.Equal("approved_workflows", resp.JSON200.Status)
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("abc123", pr.PlatformHeadSHA)
+}
+
+func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	approvedRunIDs := []int64{}
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1003)
+			sha := "abc123"
+			state := "open"
+			title := "Workflow PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("abc123", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(91)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+				{
+					ID:           new(int64(92)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+			}, nil
+		},
+		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+			approvedRunIDs = append(approvedRunIDs, runID)
+			if runID == 92 {
+				return fmt.Errorf("permission denied")
+			}
+			return nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
+	assert.Contains(*resp.ApplicationproblemJSONDefault.Detail, "permission denied")
+	assert.Equal([]int64{91, 92}, approvedRunIDs)
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("abc123", pr.PlatformHeadSHA)
 }
 
 func TestAPIGetPullNotFound(t *testing.T) {
