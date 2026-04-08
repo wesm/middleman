@@ -142,6 +142,23 @@ type Syncer struct {
 	displayNameGroup   singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced         func(owner, name string, mr *db.MergeRequest)
 	onSyncCompleted    func(results []RepoSyncResult)
+	onStatusChange     func(status *SyncStatus)
+	// statusMu serializes publishStatus so worker goroutines
+	// can't interleave updates and deliver out-of-order snapshots
+	// to SSE subscribers.
+	statusMu sync.Mutex
+}
+
+// publishStatus stores a status snapshot and invokes the
+// onStatusChange callback if one is registered. Used in place of
+// s.status.Store so SSE subscribers see every state transition.
+func (s *Syncer) publishStatus(status *SyncStatus) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.Store(status)
+	if s.onStatusChange != nil {
+		s.onStatusChange(status)
+	}
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
@@ -274,6 +291,25 @@ func (s *Syncer) SetParallelism(n int) {
 		n = 1
 	}
 	s.parallelism.Store(int32(n))
+}
+
+// SetOnStatusChange registers a callback invoked whenever the
+// sync status transitions (start, per-repo progress, rate-limit
+// wait, completion). Used by the server to broadcast live sync
+// state over SSE.
+func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
+	s.onStatusChange = fn
+}
+
+// TriggerRun kicks off a non-blocking RunOnce on the Syncer's
+// wait group so callers can request an ad-hoc sync without
+// blocking the caller. The run participates in the Syncer's
+// lifecycle: Stop will wait for an in-flight TriggerRun to
+// finish before returning.
+func (s *Syncer) TriggerRun(ctx context.Context) {
+	s.wg.Go(func() {
+		s.RunOnce(ctx)
+	})
 }
 
 // clientFor returns the Client for the given repo's host,
@@ -611,7 +647,7 @@ func (s *Syncer) runWorker(
 		}
 		if rt := s.rateTrackers[host]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
-				s.status.Store(&SyncStatus{
+				s.publishStatus(&SyncStatus{
 					Running: true,
 					Progress: fmt.Sprintf(
 						"rate limited, waiting %s", wait,
@@ -668,7 +704,7 @@ func (s *Syncer) runWorker(
 				break
 			}
 			if state.maxShown.CompareAndSwap(cur, done) {
-				s.status.Store(&SyncStatus{
+				s.publishStatus(&SyncStatus{
 					Running:  true,
 					Progress: fmt.Sprintf("%d/%d", done, state.total),
 				})
@@ -697,7 +733,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	s.reposMu.Unlock()
 
 	total := len(repos)
-	s.status.Store(&SyncStatus{
+	s.publishStatus(&SyncStatus{
 		Running:  true,
 		Progress: fmt.Sprintf("0/%d", total),
 	})
@@ -829,7 +865,7 @@ dispatch:
 			err = context.Canceled
 		}
 		slog.Info("sync canceled", "repos", total, "err", err)
-		s.status.Store(&SyncStatus{
+		s.publishStatus(&SyncStatus{
 			Running:   false,
 			LastRunAt: time.Now(),
 			LastError: err.Error(),
@@ -843,7 +879,7 @@ dispatch:
 		s.onSyncCompleted(results)
 	}
 
-	s.status.Store(&SyncStatus{
+	s.publishStatus(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),
 		LastError: lastErr,

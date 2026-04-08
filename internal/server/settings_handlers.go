@@ -152,7 +152,7 @@ func (s *Server) handleAddRepo(
 		}
 	}
 	s.syncer.SetRepos(refs)
-	go s.syncer.RunOnce(context.WithoutCancel(r.Context()))
+	s.syncer.TriggerRun(context.WithoutCancel(r.Context()))
 
 	writeJSON(w, http.StatusCreated,
 		config.Repo{Owner: body.Owner, Name: body.Name})

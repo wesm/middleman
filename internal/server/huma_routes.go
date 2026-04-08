@@ -1106,7 +1106,7 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 }
 
 func (s *Server) triggerSync(ctx context.Context, _ *struct{}) (*acceptedOutput, error) {
-	go s.syncer.RunOnce(context.WithoutCancel(ctx))
+	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
 }
 

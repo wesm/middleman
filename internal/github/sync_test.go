@@ -2495,3 +2495,76 @@ func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
 	assert.Equal(int32(1), mock.getCombinedCalls.Load(),
 		"GetCombinedStatus should be called when no check runs exist")
 }
+
+// TestSyncer_OnStatusChangeCallback verifies the onStatusChange
+// callback fires for each status transition during RunOnce. The
+// SSE server uses this to broadcast live sync state.
+func TestSyncer_OnStatusChangeCallback(t *testing.T) {
+	assert := Assert.New(t)
+	mock := &mockClient{openPRs: []*gh.PullRequest{}}
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(context.Background(), "github.com", "o", "n")
+	require.NoError(t, err)
+	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
+	s := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil, repos, time.Hour, nil, 0,
+	)
+
+	var mu sync.Mutex
+	var statuses []*SyncStatus
+	s.SetOnStatusChange(func(status *SyncStatus) {
+		mu.Lock()
+		statuses = append(statuses, status)
+		mu.Unlock()
+	})
+
+	s.RunOnce(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.GreaterOrEqual(t, len(statuses), 2,
+		"should fire at least started + completed")
+	assert.True(statuses[0].Running,
+		"first callback should be running=true")
+	assert.False(statuses[len(statuses)-1].Running,
+		"last callback should be running=false")
+}
+
+// TestSyncer_TriggerRunRunsRunOnce verifies TriggerRun kicks off
+// a RunOnce and participates in the Syncer's wait group so Stop
+// blocks until the triggered run completes.
+func TestSyncer_TriggerRunRunsRunOnce(t *testing.T) {
+	assert := Assert.New(t)
+	mock := &mockClient{openPRs: []*gh.PullRequest{}}
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(context.Background(), "github.com", "o", "n")
+	require.NoError(t, err)
+	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
+	s := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil, repos, time.Hour, nil, 0,
+	)
+
+	done := make(chan struct{}, 1)
+	s.SetOnStatusChange(func(status *SyncStatus) {
+		if !status.Running {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	s.TriggerRun(context.Background())
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow(t,
+			"TriggerRun did not complete RunOnce within 1s")
+	}
+	s.Stop()
+	assert.True(mock.listOpenPRsCalled,
+		"TriggerRun should invoke ListOpenPullRequests")
+}
