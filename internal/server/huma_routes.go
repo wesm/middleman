@@ -413,28 +413,26 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	if !s.syncer.HasDiffSync() {
 		return nil
 	}
-	// Closed-not-merged PRs may legitimately lack diff SHAs (the merged
-	// path never ran for them); only complain about open and merged PRs
-	// where the sync pipeline is expected to have populated the row.
-	if mr.State != "open" && mr.State != "merged" {
-		return nil
-	}
+	// Closed (including merged) PRs also get diff SHAs populated via
+	// fetchAndUpdateClosed, so the warning logic must cover every state
+	// that getDiff would render, not just open and merged.
 	if mr.DiffHeadSHA == "" {
 		return []string{"Diff data is unavailable for this pull request."}
 	}
-	// For open PRs, also detect stale diff data: if the recorded diff head
-	// or base does not match the latest platform SHAs, a prior diff-sync
-	// attempt failed after new commits landed (on the PR branch or the
-	// base branch) and the UI would show an old diff without this warning.
-	// Mirrors the staleness logic in getDiff so the warning and the
-	// rendered diff stay in sync.
-	if mr.State == "open" {
-		if mr.PlatformHeadSHA != "" && mr.DiffHeadSHA != mr.PlatformHeadSHA {
+	// Mirror getDiff's staleness check exactly so the warning and the
+	// rendered diff agree on freshness:
+	//   merged → head drift only (the diff is base..PR-head, base never
+	//            advances after merge)
+	//   open / closed → head or base drift (either side can advance and
+	//                   invalidate the recorded diff)
+	if mr.State == "merged" {
+		if mr.DiffHeadSHA != mr.PlatformHeadSHA {
 			return []string{"Diff data is out of date for this pull request."}
 		}
-		if mr.PlatformBaseSHA != "" && mr.DiffBaseSHA != mr.PlatformBaseSHA {
-			return []string{"Diff data is out of date for this pull request."}
-		}
+		return nil
+	}
+	if mr.DiffHeadSHA != mr.PlatformHeadSHA || mr.DiffBaseSHA != mr.PlatformBaseSHA {
+		return []string{"Diff data is out of date for this pull request."}
 	}
 	return nil
 }

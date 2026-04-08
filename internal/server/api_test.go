@@ -696,6 +696,217 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	assert.Contains(warnings[0], "out of date")
 }
 
+// TestAPIGetPullEmitsStaleDiffWarningOnMergedPR pins the staleness
+// branch for merged PRs. getDiff treats merged PRs as stale when the
+// recorded DiffHeadSHA no longer matches PlatformHeadSHA, so the
+// warning must fire in the same case. Without this coverage a merged
+// PR with a stale recorded diff would render outdated content with no
+// indication.
+func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 5)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 5, "merged", now, &mergedAt, &mergedAt,
+		"deadbeef00000000000000000000000000000099",
+		"deadbeef00000000000000000000000000000010",
+	))
+	// Recorded diff was computed against an earlier head; the merge
+	// commit advanced the platform head past it.
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 5,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 5,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when merged diff is stale")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
+}
+
+// TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed covers a closed
+// (not merged) PR whose fetchAndUpdateClosed path failed to populate
+// diff SHAs - for example because the clone fetch errored out. The
+// previous diffWarnings implementation suppressed warnings for any
+// non-open/non-merged state and the user would silently see no diff.
+func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 6)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	closedAt := now
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 6, "closed", now, nil, &closedAt,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000010",
+	))
+	// Diff SHAs intentionally left empty to simulate a closed PR whose
+	// diff sync errored out.
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 6,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when closed PR diff is missing")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "unavailable")
+}
+
+// TestAPIGetPullEmitsStaleDiffWarningOnClosedPR covers a closed (not
+// merged) PR whose head or base advanced after the diff sync recorded
+// SHAs. getDiff treats this as stale; diffWarnings must agree so the
+// detail page shows a warning instead of silently rendering an old
+// diff.
+func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 7)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	closedAt := now
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 7, "closed", now, nil, &closedAt,
+		"deadbeef00000000000000000000000000000099",
+		"deadbeef00000000000000000000000000000010",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 7,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when closed PR diff is stale")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
+}
+
+// TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift pins the
+// asymmetry between merged and open/closed staleness: merged PRs only
+// care about head SHA drift because the base never advances after
+// merge. A merged PR whose head matches but base differs must NOT
+// emit a warning.
+func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 8)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now
+	headSHA := "deadbeef00000000000000000000000000000001"
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 8, "merged", now, &mergedAt, &mergedAt,
+		headSHA,
+		"deadbeef00000000000000000000000000000099",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 8,
+		headSHA,
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 8,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	if resp.JSON200.Warnings != nil {
+		assert.Empty(*resp.JSON200.Warnings)
+	}
+}
+
 // TestAPISyncPRSanitizesDiffFailureWarning drives the syncPR handler
 // through a real diff-sync failure and asserts the HTTP response body
 // contains only the sanitized UserMessage. Previous roborev reviews
