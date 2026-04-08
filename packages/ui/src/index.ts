@@ -19,6 +19,7 @@ export type {
   SyncStore,
   DiffStore,
   GroupingStore,
+  CollapsedReposStore,
   SettingsStore,
   DaemonStore,
   JobsStore,
@@ -65,6 +66,9 @@ export type {
   WorkflowGroup,
   WorkflowGroupEntry,
 } from "./stores/workflow.svelte.js";
+export {
+  createCollapsedReposStore,
+} from "./stores/collapsedRepos.svelte.js";
 export {
   createSettingsStore,
 } from "./stores/settings.svelte.js";

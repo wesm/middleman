@@ -61,6 +61,9 @@
     createGroupingStore,
   } from "./stores/grouping.svelte.js";
   import {
+    createCollapsedReposStore,
+  } from "./stores/collapsedRepos.svelte.js";
+  import {
     createSettingsStore,
   } from "./stores/settings.svelte.js";
 
@@ -117,6 +120,7 @@
     errorCb: ((msg: string) => void) | undefined,
   ): StoreInstances {
     const grouping = createGroupingStore();
+    const collapsedRepos = createCollapsedReposStore();
     const settingsStore = createSettingsStore();
 
     const pullsOpts: PullsStoreOptions = { client: cl };
@@ -187,6 +191,7 @@
       sync: syncStore,
       diff: diffStore,
       grouping,
+      collapsedRepos,
       settings: settingsStore,
     };
 

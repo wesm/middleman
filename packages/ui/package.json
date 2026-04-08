@@ -23,6 +23,7 @@
     "./stores/diff": { "svelte": "./src/stores/diff.svelte.ts", "default": "./src/stores/diff.svelte.ts" },
     "./stores/grouping": { "svelte": "./src/stores/grouping.svelte.ts", "default": "./src/stores/grouping.svelte.ts" },
     "./stores/workflow": { "svelte": "./src/stores/workflow.svelte.ts", "default": "./src/stores/workflow.svelte.ts" },
+    "./stores/collapsedRepos": { "svelte": "./src/stores/collapsedRepos.svelte.ts", "default": "./src/stores/collapsedRepos.svelte.ts" },
     "./stores/settings": { "svelte": "./src/stores/settings.svelte.ts", "default": "./src/stores/settings.svelte.ts" },
     "./stores/flash": { "svelte": "./src/stores/flash.svelte.ts", "default": "./src/stores/flash.svelte.ts" },
     "./api/roborev/client": { "default": "./src/api/roborev/client.ts" },
