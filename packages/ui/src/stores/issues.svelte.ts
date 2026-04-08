@@ -9,6 +9,7 @@ export interface IssuesStoreOptions {
   client: MiddlemanClient;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
+  getPage?: () => string;
 }
 
 function apiErrorMessage(
@@ -26,6 +27,13 @@ export function createIssuesStore(
     opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo =
     opts.getGroupByRepo ?? (() => false);
+  const getPage = opts.getPage ?? (() => "");
+
+  async function refreshIssuesIfActive(): Promise<void> {
+    if (getPage() === "issues") {
+      await loadIssues();
+    }
+  }
 
   // --- list state ---
 
@@ -250,6 +258,8 @@ export function createIssuesStore(
       if (gen === issueSyncGeneration)
         detailSyncing = false;
     }
+    if (gen === issueSyncGeneration)
+      await refreshIssuesIfActive();
   }
 
   async function refreshIssueDetail(
@@ -257,11 +267,13 @@ export function createIssuesStore(
     name: string,
     number: number,
   ): Promise<void> {
+    const gen = issueSyncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/issues/{number}",
         { params: { path: { owner, name, number } } },
       );
+      if (gen !== issueSyncGeneration) return;
       if (data !== undefined) {
         issueDetail = {
           ...data,
@@ -327,7 +339,18 @@ export function createIssuesStore(
         err instanceof Error ? err.message : String(err);
       return;
     }
-    await loadIssueDetail(owner, name, number);
+    // Supersede any in-flight syncIssueDetail so its stale response
+    // cannot overwrite the detail we are about to fetch.
+    const gen = ++issueSyncGeneration;
+    detailSyncing = false;
+    // Silent refresh: avoid flipping loading flag, which would
+    // unmount the detail tree and reset scroll position.
+    await refreshIssueDetail(owner, name, number);
+    // Pull authoritative state from GitHub so issue row metadata
+    // catches up. Skip if the user navigated away mid-refresh.
+    if (gen === issueSyncGeneration) {
+      void syncIssueDetail(owner, name, number, gen);
+    }
   }
 
   async function toggleIssueStar(
