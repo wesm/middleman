@@ -1053,12 +1053,15 @@ func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
 
 	// Pre-load three repos so the worker would naturally drain
 	// all three if the ctx check were missing.
-	work := make(chan RepoRef, 3)
+	work := make(chan repoWork, 3)
 	for i := range 3 {
-		work <- RepoRef{
-			Owner:        "o",
-			Name:         fmt.Sprintf("r%d", i),
-			PlatformHost: "github.com",
+		work <- repoWork{
+			index: i,
+			repo: RepoRef{
+				Owner:        "o",
+				Name:         fmt.Sprintf("r%d", i),
+				PlatformHost: "github.com",
+			},
 		}
 	}
 	close(work)
@@ -1078,6 +1081,7 @@ func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
 		lastErr:   &lastErr,
 		canceled:  &canceled,
 		total:     3,
+		results:   make([]RepoSyncResult, 3),
 	}
 	syncer.runWorker(ctx, work, state)
 

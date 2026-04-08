@@ -433,7 +433,18 @@ type runState struct {
 	// cannot mask cancellation.
 	canceled *atomic.Bool
 	total    int
-	results  *[]RepoSyncResult
+	// results is a preallocated slice indexed by repo position so
+	// OnSyncCompleted receives results in the configured repo order
+	// regardless of worker completion order. Each index is written
+	// by exactly one worker, so no mutex is needed.
+	results []RepoSyncResult
+}
+
+// repoWork pairs a repo with its index in the configured repo list
+// so workers can write results to the correct preallocated slot.
+type repoWork struct {
+	index int
+	repo  RepoRef
 }
 
 // runWorker drains the work channel until it is closed or ctx
@@ -443,10 +454,11 @@ type runState struct {
 // the dispatch loop.
 func (s *Syncer) runWorker(
 	ctx context.Context,
-	work <-chan RepoRef,
+	work <-chan repoWork,
 	state *runState,
 ) {
-	for repo := range work {
+	for item := range work {
+		repo := item.repo
 		// Defense-in-depth against the dispatch race: the
 		// dispatch loop pre-checks ctx before its select, but
 		// a cancel can still land in the micro-window between
@@ -483,11 +495,6 @@ func (s *Syncer) runWorker(
 		}
 		repoName := repo.Owner + "/" + repo.Name
 		slog.Info("syncing repo", "repo", repoName)
-		result := RepoSyncResult{
-			Owner:        repo.Owner,
-			Name:         repo.Name,
-			PlatformHost: host,
-		}
 		if err := s.syncRepo(ctx, repo); err != nil {
 			// Bail without counting this repo only when the
 			// *run* context itself is canceled and the error
@@ -509,7 +516,8 @@ func (s *Syncer) runWorker(
 			state.errMu.Lock()
 			*state.lastErr = errStr
 			state.errMu.Unlock()
-			result.Error = errStr
+			// Each index is written by exactly one worker.
+			state.results[item.index].Error = errStr
 		}
 		// Latch the canceled flag if ctx was canceled during
 		// syncRepo. A misbehaving Client implementation can
@@ -521,9 +529,6 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
-		state.errMu.Lock()
-		*state.results = append(*state.results, result)
-		state.errMu.Unlock()
 		done := state.completed.Add(1)
 		s.status.Store(&SyncStatus{
 			Running:     true,
@@ -563,14 +568,26 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 	workers := min(max(int(s.parallelism.Load()), 1), total)
 
-	work := make(chan RepoRef)
+	work := make(chan repoWork)
+	results := make([]RepoSyncResult, total)
+	for i, r := range repos {
+		host := r.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		results[i] = RepoSyncResult{
+			Owner:        r.Owner,
+			Name:         r.Name,
+			PlatformHost: host,
+		}
+	}
+
 	var (
 		completed atomic.Int32
 		errMu     sync.Mutex
 		lastErr   string
 		canceled  atomic.Bool
 		wg        sync.WaitGroup
-		results   []RepoSyncResult
 	)
 
 	state := &runState{
@@ -579,7 +596,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 		lastErr:   &lastErr,
 		canceled:  &canceled,
 		total:     total,
-		results:   &results,
+		results:   results,
 	}
 	for range workers {
 		wg.Go(func() {
@@ -588,7 +605,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 
 dispatch:
-	for _, r := range repos {
+	for i, r := range repos {
 		// Check ctx before entering the select. Go's select picks
 		// pseudo-randomly when both branches are ready, so a naked
 		// `select { case work <- r: case <-ctx.Done(): }` can still
@@ -599,8 +616,9 @@ dispatch:
 			canceled.Store(true)
 			break dispatch
 		}
+		item := repoWork{index: i, repo: r}
 		select {
-		case work <- r:
+		case work <- item:
 		case <-ctx.Done():
 			canceled.Store(true)
 			break dispatch
