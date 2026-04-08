@@ -347,6 +347,94 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	require.Contains(string(resp.Body), "connection refused")
+}
+
+func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},
+				Message:  "Required status check is failing",
+			}
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusUnprocessableEntity, resp.StatusCode())
+	require.Contains(string(resp.Body), "Required status check is failing")
+}
+
+func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusForbidden},
+				Message:  "Resource not accessible by integration",
+			}
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusForbidden, resp.StatusCode())
+	require.Contains(string(resp.Body), "Resource not accessible by integration")
+}
+
+func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
+				Message:  "Service unavailable",
+			}
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	require.Contains(string(resp.Body), "Service unavailable")
 }
 
 func TestAPIClientConstruction(t *testing.T) {
