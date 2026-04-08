@@ -2797,10 +2797,12 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 // behavior for issues: after a successful list fetch, subsequent
 // calls return 304 (not-modified) unless InvalidateListETagsForRepo
 // was called. This proves invalidation is load-bearing — without it
-// the retry never fires and the issue stays missing from the DB.
+// the retry never fires and stale state persists.
 type partialFailureMock struct {
 	mockClient
-	issuesCached bool
+	issuesCached         bool
+	listIssueCommentsErr error // injected error for ListIssueComments
+	getIssueErr          error // injected error for GetIssue (closure path)
 }
 
 func (m *partialFailureMock) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
@@ -2814,22 +2816,35 @@ func (m *partialFailureMock) ListOpenIssues(_ context.Context, _, _ string) ([]*
 	return m.openIssues, nil
 }
 
+func (m *partialFailureMock) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
+	return m.comments, nil
+}
+
+func (m *partialFailureMock) GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error) {
+	if m.getIssueErr != nil {
+		return nil, m.getIssueErr
+	}
+	if m.getIssueFn != nil {
+		return m.getIssueFn(ctx, owner, repo, number)
+	}
+	return nil, nil
+}
+
 func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string) {
 	m.invalidateCalls.Add(1)
 	m.issuesCached = false
 }
 
-// TestSyncerPartialFailureInvalidatesETagOnNextCycle verifies that a
-// partial failure within doSyncRepo causes the next sync cycle to
-// bypass ETag caching for that repo. The mock simulates ETag transport
-// behavior: after a successful list fetch, subsequent ListOpenIssues
-// calls return 304 unless InvalidateListETagsForRepo was called.
-// Without the invalidation path, cycle 2 sees 304 and skips issue
-// sync entirely — the issue never lands in DB. With the fix,
-// doSyncRepo records the partial failure in failedRepos and calls
-// InvalidateListETagsForRepo at the top of the next cycle, forcing
-// an unconditional fetch that retries the failed items.
-func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
+// TestSyncerSyncOpenIssueFailureMarksRepoFailed verifies that when
+// the open-issue list succeeds but syncOpenIssue fails for an
+// individual item (here via a ListIssueComments error during timeline
+// refresh), syncIssues returns an error, doSyncRepo calls
+// markFailure, and the next cycle forces an unconditional refetch
+// via ETag invalidation.
+func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	ctx := context.Background()
@@ -2839,7 +2854,7 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
 	issueNumber := 7
-	issueTitle := "post-retry issue"
+	issueTitle := "per-item failure issue"
 	issueState := "open"
 	issueURL := "https://github.com/owner/repo/issues/7"
 	issueBody := ""
@@ -2861,48 +2876,157 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 	mc.comments = []*gh.IssueComment{}
 	mc.reviews = []*gh.PullRequestReview{}
 	mc.commits = []*gh.RepositoryCommit{}
-	// First cycle: issue list fails with a non-304 error.
-	mc.listOpenIssuesErr = fmt.Errorf("transient issue list failure")
-	mc.getIssueFn = func(_ context.Context, _, _ string, n int) (*gh.Issue, error) {
-		if n == issueNumber {
-			return openIssue, nil
-		}
-		return nil, nil
-	}
+	// Issue list succeeds, but timeline refresh fails for the item.
+	mc.listIssueCommentsErr = fmt.Errorf("transient comments failure")
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
 		d, nil, repos, time.Minute, nil,
 	)
 
-	// Cycle 1: PR sync completes but issue list errors out.
+	// Cycle 1: issue list succeeds, issue is upserted to DB, but
+	// refreshIssueTimeline fails → syncOpenIssue returns error →
+	// hadItemFailure → syncIssues returns error → markFailure.
 	syncer.RunOnce(ctx)
 
+	// Issue row lands in DB (upsert happened before timeline).
 	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
 	require.NoError(err)
-	assert.Nil(issue, "first cycle should not have persisted the issue because list failed")
-	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
-	assert.True(flagged, "failedRepos must be set after partial failure")
+	require.NotNil(issue, "issue should be upserted even though timeline failed")
 
-	// Clear the transient error. The mock now simulates warm ETag
-	// cache: ListOpenIssues returns 304 unless invalidated. Without
-	// the fix, the issue would stay missing from DB permanently.
-	mc.listOpenIssuesErr = nil
-	mc.issuesCached = true // simulate warm cache from a prior 200
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.True(flagged, "failedRepos must be set after per-item syncOpenIssue failure")
+
+	// Clear the error and simulate warm cache.
+	mc.listIssueCommentsErr = nil
+	mc.issuesCached = true
 
 	invalidateBefore := mc.invalidateCalls.Load()
 
-	// Cycle 2: invalidation clears the mock cache, allowing a fresh
-	// fetch that delivers the issue data.
+	// Cycle 2: invalidation clears mock cache → fresh list → retry.
 	syncer.RunOnce(ctx)
 
 	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
-		"next cycle should call InvalidateListETagsForRepo because repo was marked failed")
+		"next cycle should call InvalidateListETagsForRepo")
 
-	issue2, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged, "failedRepos must be cleared after successful retry")
+}
+
+// TestSyncerClosedIssueFailureMarksRepoFailed verifies that when
+// the open-issue list succeeds but fetchAndUpdateClosedIssue fails
+// for a previously-open issue (here via a GetIssue API error),
+// syncIssues returns an error, doSyncRepo marks the repo failed,
+// and the next cycle retries after ETag invalidation.
+func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueNumber := 7
+	issueTitle := "will-close issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/7"
+	issueBody := ""
+	issueID := int64(777)
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	// Seed issue #7 as open in DB via an initial sync with the
+	// issue present in the open list.
+	seedMC := &mockClient{
+		openPRs:    []*gh.PullRequest{buildOpenPR(1, now)},
+		openIssues: []*gh.Issue{openIssue},
+		comments:   []*gh.IssueComment{},
+		reviews:    []*gh.PullRequestReview{},
+		commits:    []*gh.RepositoryCommit{},
+	}
+
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": seedMC},
+		d, nil, repos, time.Minute, nil,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	seeded, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
 	require.NoError(err)
-	require.NotNil(issue2, "second cycle should have persisted the recovered issue")
-	assert.Equal(issueNumber, issue2.Number)
+	require.NotNil(seeded, "seed cycle should persist issue #7")
+
+	// Now build the real mock: open list returns EMPTY (issue #7
+	// no longer open) → closure detection finds #7. GetIssue for
+	// the closure path fails.
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.openIssues = []*gh.Issue{} // issue #7 not in open list
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	mc.getIssueErr = fmt.Errorf("transient API failure fetching closed issue")
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil,
+	)
+
+	// Cycle 1: list succeeds (empty), closure detection finds #7,
+	// fetchAndUpdateClosedIssue fails → hadItemFailure → markFailure.
+	syncer.RunOnce(ctx)
+
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.True(flagged, "failedRepos must be set after fetchAndUpdateClosedIssue failure")
+
+	// Verify issue is still open in DB (closure update failed).
+	stillOpen, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stillOpen)
+	assert.Equal("open", stillOpen.State, "issue should still be open because closure update failed")
+
+	// Clear error, simulate warm cache, provide closed issue data.
+	mc.getIssueErr = nil
+	closedState := "closed"
+	closedIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &closedState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now.Add(time.Hour)),
+	}
+	mc.getIssueFn = func(_ context.Context, _, _ string, n int) (*gh.Issue, error) {
+		if n == issueNumber {
+			return closedIssue, nil
+		}
+		return nil, nil
+	}
+	mc.issuesCached = true
+
+	invalidateBefore := mc.invalidateCalls.Load()
+
+	// Cycle 2: invalidation → fresh list (empty) → closure
+	// detection re-finds #7 → fetchAndUpdateClosedIssue succeeds.
+	syncer.RunOnce(ctx)
+
+	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
+		"next cycle should call InvalidateListETagsForRepo")
+
+	updated, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(updated)
+	assert.Equal("closed", updated.State, "issue should be closed after successful retry")
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
