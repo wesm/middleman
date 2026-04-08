@@ -9,11 +9,16 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.buildDate=$(BUILD_DATE)
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
+
+EXE_SUFFIX := $(if $(filter windows,$(shell go env GOOS)),.exe,)
+BINARY := middleman$(EXE_SUFFIX)
+GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/')
+
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
-	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air" ]; then printf "%s" "$$(go env GOBIN)/air"; \
-	elif [ -x "$$(go env GOPATH | cut -d: -f1)/bin/air" ]; then printf "%s" "$$(go env GOPATH | cut -d: -f1)/bin/air"; \
+	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
+	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
 	fi)
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
@@ -28,28 +33,25 @@ ensure-embed-dir:
 
 # Build the binary (debug, with embedded frontend)
 build: frontend
-	go build -ldflags="$(LDFLAGS)" -o middleman ./cmd/middleman
-	@chmod +x middleman
+	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/middleman
 
 # Build with optimizations (release)
 build-release: frontend
-	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o middleman ./cmd/middleman
-	@chmod +x middleman
+	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/middleman
 
 # Install to ~/.local/bin, $GOBIN, or $GOPATH/bin
 install: build-release
 	@if [ -d "$(HOME)/.local/bin" ]; then \
-		echo "Installing to ~/.local/bin/middleman"; \
-		cp middleman "$(HOME)/.local/bin/middleman"; \
+		echo "Installing to ~/.local/bin/$(BINARY)"; \
+		cp $(BINARY) "$(HOME)/.local/bin/$(BINARY)"; \
 	else \
 		INSTALL_DIR="$${GOBIN:-$$(go env GOBIN)}"; \
 		if [ -z "$$INSTALL_DIR" ]; then \
-			GOPATH_FIRST="$$(go env GOPATH | cut -d: -f1)"; \
-			INSTALL_DIR="$$GOPATH_FIRST/bin"; \
+			INSTALL_DIR="$(GOPATH_FIRST)/bin"; \
 		fi; \
 		mkdir -p "$$INSTALL_DIR"; \
-		echo "Installing to $$INSTALL_DIR/middleman"; \
-		cp middleman "$$INSTALL_DIR/middleman"; \
+		echo "Installing to $$INSTALL_DIR/$(BINARY)"; \
+		cp $(BINARY) "$$INSTALL_DIR/$(BINARY)"; \
 	fi
 
 # Build frontend SPA and copy into embed directory
@@ -125,7 +127,7 @@ test-integration: ensure-embed-dir
 
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
-	go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+	go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=chromium
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
@@ -168,7 +170,7 @@ install-hooks:
 
 # Clean build artifacts
 clean:
-	rm -f middleman
+	rm -f middleman middleman.exe
 	rm -rf internal/web/dist dist/
 
 # Show help

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const server = `../cmd/e2e-server/e2e-server${process.platform === "win32" ? ".exe" : ""}`;
+
 export default defineConfig({
   testDir: "./tests/e2e-full",
   testIgnore: /support\//,
@@ -14,8 +16,8 @@ export default defineConfig({
   },
   webServer: {
     command: process.env.ROBOREV_ENDPOINT
-      ? `../cmd/e2e-server/e2e-server -port 4174 -roborev ${process.env.ROBOREV_ENDPOINT}`
-      : "../cmd/e2e-server/e2e-server -port 4174",
+      ? `${server} -port 4174 -roborev ${process.env.ROBOREV_ENDPOINT}`
+      : `${server} -port 4174`,
     port: 4174,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
