@@ -257,11 +257,13 @@ export function createIssuesStore(
     name: string,
     number: number,
   ): Promise<void> {
+    const gen = issueSyncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/issues/{number}",
         { params: { path: { owner, name, number } } },
       );
+      if (gen !== issueSyncGeneration) return;
       if (data !== undefined) {
         issueDetail = {
           ...data,
@@ -329,11 +331,16 @@ export function createIssuesStore(
     }
     // Supersede any in-flight syncIssueDetail so its stale response
     // cannot overwrite the detail we are about to fetch.
-    ++issueSyncGeneration;
+    const gen = ++issueSyncGeneration;
     detailSyncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
     await refreshIssueDetail(owner, name, number);
+    // Pull authoritative state from GitHub so issue row metadata
+    // catches up. Skip if the user navigated away mid-refresh.
+    if (gen === issueSyncGeneration) {
+      void syncIssueDetail(owner, name, number, gen);
+    }
   }
 
   async function toggleIssueStar(

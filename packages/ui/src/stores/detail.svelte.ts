@@ -113,11 +113,13 @@ export function createDetailStore(
     name: string,
     number: number,
   ): Promise<void> {
+    const gen = syncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/pulls/{number}",
         { params: { path: { owner, name, number } } },
       );
+      if (gen !== syncGeneration) return;
       if (data !== undefined) {
         detail = {
           ...data,
@@ -454,11 +456,17 @@ export function createDetailStore(
     }
     // Supersede any in-flight syncDetail so its stale response
     // cannot overwrite the detail we are about to fetch.
-    ++syncGeneration;
+    const gen = ++syncGeneration;
     syncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
     await refreshDetail(owner, name, number);
+    // Pull authoritative state from GitHub so PR row metadata
+    // (last_activity_at, comment_count) and the pulls list catch
+    // up. Skip if the user navigated away mid-refresh.
+    if (gen === syncGeneration) {
+      void syncDetail(owner, name, number, gen);
+    }
   }
 
   return {
