@@ -46,14 +46,13 @@ type Client interface {
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
 	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
-	// InvalidateListETagsForRepo drops any cached conditional-GET
+	// InvalidateListETagsForRepo drops cached conditional-GET
 	// validators for the given repo's list endpoints so the next
-	// ListOpenPullRequests / ListOpenIssues call issues an
-	// unconditional fetch. Used to recover from a partial-failure
-	// sync where a successful 200 populated the ETag cache but a
-	// downstream per-item write failed, which would otherwise leave
-	// the DB inconsistent until the natural TTL expires.
-	InvalidateListETagsForRepo(owner, repo string)
+	// list call issues an unconditional fetch. The endpoints
+	// parameter selects which caches to clear ("pulls", "issues").
+	// If empty, both are cleared. Used to recover from a
+	// partial-failure sync.
+	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
 func graphQLEndpointForHost(platformHost string) string {
@@ -113,14 +112,18 @@ type liveClient struct {
 	etag            *etagTransport
 }
 
-// InvalidateListETagsForRepo evicts any cached ETag entries for the
-// repo's PR and issue list endpoints, so the next list call issues an
-// unconditional GET. Safe to call when the transport is nil (tests).
-func (c *liveClient) InvalidateListETagsForRepo(owner, repo string) {
+// InvalidateListETagsForRepo evicts cached ETag entries for the repo's
+// list endpoints. Pass "pulls" and/or "issues" to scope the
+// invalidation; if no endpoints are given, both are cleared.
+// Safe to call when the transport is nil (tests).
+func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ...string) {
 	if c.etag == nil {
 		return
 	}
-	c.etag.invalidateRepo(owner, repo)
+	if len(endpoints) == 0 {
+		endpoints = []string{"pulls", "issues"}
+	}
+	c.etag.invalidateRepo(owner, repo, endpoints...)
 }
 
 const forcePushTimelineQuery = `

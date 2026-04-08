@@ -57,7 +57,7 @@ type mockClient struct {
 	invalidateCalls      atomic.Int32
 }
 
-func (m *mockClient) InvalidateListETagsForRepo(_, _ string) {
+func (m *mockClient) InvalidateListETagsForRepo(_, _ string, _ ...string) {
 	m.invalidateCalls.Add(1)
 }
 
@@ -2850,10 +2850,21 @@ func (m *partialFailureMock) GetIssue(ctx context.Context, owner, repo string, n
 	return nil, nil
 }
 
-func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string) {
+func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string, endpoints ...string) {
 	m.invalidateCalls.Add(1)
-	m.issuesCached = false
-	m.prsCached = false
+	if len(endpoints) == 0 {
+		m.prsCached = false
+		m.issuesCached = false
+		return
+	}
+	for _, ep := range endpoints {
+		switch ep {
+		case "pulls":
+			m.prsCached = false
+		case "issues":
+			m.issuesCached = false
+		}
+	}
 }
 
 // TestSyncerSyncOpenIssueFailureMarksRepoFailed verifies that when
@@ -3140,10 +3151,16 @@ func TestSyncerMRTimelineFailureMarksRepoFailed(t *testing.T) {
 
 	// Cycle 2: forceMR=true overrides needsTimeline for MR even though
 	// UpdatedAt unchanged → timeline retried → review event lands.
+	// Issue cache should remain warm (only pulls invalidated).
 	syncer.RunOnce(ctx)
 
 	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
 		"next cycle should call InvalidateListETagsForRepo")
+
+	// Issue cache must still be warm — MR-only failure should not
+	// invalidate issue ETags.
+	assert.True(mc.issuesCached,
+		"issue cache should stay warm when only MR path failed")
 
 	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)

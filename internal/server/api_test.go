@@ -196,7 +196,7 @@ func (m *mockGH) ListIssuesPage(
 
 // InvalidateListETagsForRepo is a no-op for the server test mock,
 // which has no underlying HTTP cache.
-func (m *mockGH) InvalidateListETagsForRepo(_, _ string) {}
+func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
 
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {

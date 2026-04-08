@@ -1113,10 +1113,18 @@ func (s *Syncer) indexSyncRepo(
 	// the repo's list ETags so the following calls are
 	// unconditional, forcing a fresh 200 that we can re-apply.
 	priorFail := s.consumeRepoFailed(repo)
-	if priorFail != 0 {
-		client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
-	}
+	forceMR := priorFail&failMR != 0
 	forceIssues := priorFail&failIssues != 0
+	if priorFail != 0 {
+		var endpoints []string
+		if forceMR {
+			endpoints = append(endpoints, "pulls")
+		}
+		if forceIssues {
+			endpoints = append(endpoints, "issues")
+		}
+		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, endpoints...)
+	}
 
 	// Track partial-failure signals per path so the next cycle only
 	// forces refresh on the paths that actually failed.

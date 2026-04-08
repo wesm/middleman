@@ -102,19 +102,17 @@ func hasLinkNext(resp *http.Response) bool {
 	return false
 }
 
-// invalidateRepo drops any cached ETag entries whose URL path targets
-// the given repo's PR or issue list endpoints. Used by the sync engine
-// to force an unconditional refetch after a partial failure so the
-// next cycle re-applies per-item state that the previous cycle failed
-// to persist. The cache is keyed by full URL (including query string),
-// so this iterates the sync.Map and deletes by path match rather than
-// computing the exact URL up front.
-func (t *etagTransport) invalidateRepo(owner, name string) {
-	prefixes := []string{
-		"/repos/" + owner + "/" + name + "/pulls",
-		"/repos/" + owner + "/" + name + "/issues",
-		"/api/v3/repos/" + owner + "/" + name + "/pulls",
-		"/api/v3/repos/" + owner + "/" + name + "/issues",
+// invalidateRepo drops cached ETag entries for the given repo's list
+// endpoints. The endpoints parameter controls which to invalidate:
+// "pulls", "issues", or both. Used by the sync engine to force an
+// unconditional refetch after a partial failure so the next cycle
+// re-applies per-item state that the previous cycle failed to persist.
+func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) {
+	base := "/repos/" + owner + "/" + name + "/"
+	gheBase := "/api/v3/repos/" + owner + "/" + name + "/"
+	var prefixes []string
+	for _, ep := range endpoints {
+		prefixes = append(prefixes, base+ep, gheBase+ep)
 	}
 	t.cache.Range(func(k, _ any) bool {
 		urlStr, ok := k.(string)

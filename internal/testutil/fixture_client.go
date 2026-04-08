@@ -199,4 +199,4 @@ func (c *FixtureClient) ListIssuesPage(
 
 // InvalidateListETagsForRepo is a no-op for the fixture client,
 // which has no underlying HTTP cache.
-func (c *FixtureClient) InvalidateListETagsForRepo(_, _ string) {}
+func (c *FixtureClient) InvalidateListETagsForRepo(_, _ string, _ ...string) {}

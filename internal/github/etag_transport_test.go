@@ -476,32 +476,69 @@ func TestETagTransport_GHEPathCaches(t *testing.T) {
 }
 
 // TestETagTransport_InvalidateRepo verifies that invalidateRepo
-// drops only the entries for the targeted repo, covering both the
-// public github.com path and the GHE /api/v3 prefix, and leaves
-// unrelated entries intact.
+// drops only the entries for the targeted repo and endpoints,
+// covering both public github.com and GHE /api/v3 paths, and
+// leaves unrelated entries intact.
 func TestETagTransport_InvalidateRepo(t *testing.T) {
 	assert := assert.New(t)
-	et := &etagTransport{}
-	now := time.Now()
-	et.cache.Store("https://api.github.com/repos/o/n/pulls", etagEntry{etag: `"1"`, cachedAt: now})
-	et.cache.Store("https://api.github.com/repos/o/n/pulls?state=open", etagEntry{etag: `"2"`, cachedAt: now})
-	et.cache.Store("https://api.github.com/repos/o/n/issues", etagEntry{etag: `"3"`, cachedAt: now})
-	et.cache.Store("https://ghe.example.com/api/v3/repos/o/n/pulls", etagEntry{etag: `"4"`, cachedAt: now})
-	et.cache.Store("https://api.github.com/repos/other/other/pulls", etagEntry{etag: `"5"`, cachedAt: now})
 
-	et.invalidateRepo("o", "n")
-
-	for _, u := range []string{
-		"https://api.github.com/repos/o/n/pulls",
-		"https://api.github.com/repos/o/n/pulls?state=open",
-		"https://api.github.com/repos/o/n/issues",
-		"https://ghe.example.com/api/v3/repos/o/n/pulls",
-	} {
-		_, ok := et.cache.Load(u)
-		assert.Falsef(ok, "invalidateRepo should drop %s", u)
+	seed := func(et *etagTransport) {
+		now := time.Now()
+		et.cache.Store("https://api.github.com/repos/o/n/pulls", etagEntry{etag: `"1"`, cachedAt: now})
+		et.cache.Store("https://api.github.com/repos/o/n/pulls?state=open", etagEntry{etag: `"2"`, cachedAt: now})
+		et.cache.Store("https://api.github.com/repos/o/n/issues", etagEntry{etag: `"3"`, cachedAt: now})
+		et.cache.Store("https://ghe.example.com/api/v3/repos/o/n/pulls", etagEntry{etag: `"4"`, cachedAt: now})
+		et.cache.Store("https://api.github.com/repos/other/other/pulls", etagEntry{etag: `"5"`, cachedAt: now})
 	}
-	_, ok := et.cache.Load("https://api.github.com/repos/other/other/pulls")
-	assert.True(ok, "invalidateRepo must not touch unrelated repos")
+
+	t.Run("all endpoints", func(t *testing.T) {
+		et := &etagTransport{}
+		seed(et)
+		et.invalidateRepo("o", "n", "pulls", "issues")
+
+		for _, u := range []string{
+			"https://api.github.com/repos/o/n/pulls",
+			"https://api.github.com/repos/o/n/pulls?state=open",
+			"https://api.github.com/repos/o/n/issues",
+			"https://ghe.example.com/api/v3/repos/o/n/pulls",
+		} {
+			_, ok := et.cache.Load(u)
+			assert.Falsef(ok, "invalidateRepo should drop %s", u)
+		}
+		_, ok := et.cache.Load("https://api.github.com/repos/other/other/pulls")
+		assert.True(ok, "invalidateRepo must not touch unrelated repos")
+	})
+
+	t.Run("pulls only", func(t *testing.T) {
+		et := &etagTransport{}
+		seed(et)
+		et.invalidateRepo("o", "n", "pulls")
+
+		for _, u := range []string{
+			"https://api.github.com/repos/o/n/pulls",
+			"https://api.github.com/repos/o/n/pulls?state=open",
+			"https://ghe.example.com/api/v3/repos/o/n/pulls",
+		} {
+			_, ok := et.cache.Load(u)
+			assert.Falsef(ok, "pulls-only should drop %s", u)
+		}
+		_, ok := et.cache.Load("https://api.github.com/repos/o/n/issues")
+		assert.True(ok, "pulls-only should preserve issues cache")
+	})
+
+	t.Run("issues only", func(t *testing.T) {
+		et := &etagTransport{}
+		seed(et)
+		et.invalidateRepo("o", "n", "issues")
+
+		_, ok := et.cache.Load("https://api.github.com/repos/o/n/issues")
+		assert.False(ok, "issues-only should drop issues cache")
+
+		_, ok = et.cache.Load("https://api.github.com/repos/o/n/pulls")
+		assert.True(ok, "issues-only should preserve pulls cache")
+		_, ok = et.cache.Load("https://ghe.example.com/api/v3/repos/o/n/pulls")
+		assert.True(ok, "issues-only should preserve GHE pulls cache")
+	})
 }
 
 func TestIsNotModified(t *testing.T) {
