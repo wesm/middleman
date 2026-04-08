@@ -9,7 +9,7 @@ import (
 
 func TestNeedsHelper(t *testing.T) {
 	Require.NoError(t, nil)
-	Require.NotNil(t, &struct{}{})
+	Require.NotNil(t, &struct{}{}) // want "test has 4 direct testify package calls; create a local require helper with require := require.New\\(t\\) and use it for repeated checks"
 	Assert.Equal(t, 1, 1)
 	Assert.True(t, true) // want "test has 4 direct testify package calls; create a local assert helper with assert := Assert.New\\(t\\) and use it for repeated checks"
 }
@@ -25,7 +25,7 @@ func TestHasHelper(t *testing.T) {
 func TestSubtestNeedsHelper(t *testing.T) {
 	t.Run("nested", func(t *testing.T) {
 		Require.NoError(t, nil)
-		Require.NotNil(t, &struct{}{})
+		Require.NotNil(t, &struct{}{}) // want "test has 4 direct testify package calls; create a local require helper with require := require.New\\(t\\) and use it for repeated checks"
 		Assert.Equal(t, 1, 1)
 		Assert.True(t, true) // want "test has 4 direct testify package calls; create a local assert helper with assert := Assert.New\\(t\\) and use it for repeated checks"
 	})
@@ -71,6 +71,15 @@ func TestRequireHelperDoesNotHideAssertDrift(t *testing.T) {
 	Assert.True(t, true) // want "test has 4 direct testify package calls; create a local assert helper with assert := Assert.New\\(t\\) and use it for repeated checks"
 	Require.NoError(t, nil)
 	Require.NotNil(t, &struct{}{})
+}
+
+func TestMixedWithAssertHelperFlagsRequire(t *testing.T) {
+	assert := Assert.New(t)
+	assert.True(true)
+	Assert.Equal(t, 1, 1)
+	Require.NoError(t, nil)
+	Require.NotNil(t, &struct{}{})
+	Require.NoError(t, nil) // want "test has 4 direct testify package calls; create a local require helper with require := require.New\\(t\\) and use it for repeated checks"
 }
 
 func TestOuterHelperStillCountsAfterShadowing(t *testing.T) {
