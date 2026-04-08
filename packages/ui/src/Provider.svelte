@@ -128,7 +128,10 @@
     };
     const detailStore = createDetailStore(detailOpts);
 
-    const issuesOpts: IssuesStoreOptions = { client: cl };
+    const issuesOpts: IssuesStoreOptions = {
+      client: cl,
+      getPage: gp,
+    };
     if (hs.getGlobalRepo) {
       issuesOpts.getGlobalRepo = hs.getGlobalRepo;
     }

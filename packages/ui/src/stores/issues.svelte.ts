@@ -9,6 +9,7 @@ export interface IssuesStoreOptions {
   client: MiddlemanClient;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
+  getPage?: () => string;
 }
 
 function apiErrorMessage(
@@ -26,6 +27,13 @@ export function createIssuesStore(
     opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo =
     opts.getGroupByRepo ?? (() => false);
+  const getPage = opts.getPage ?? (() => "");
+
+  async function refreshIssuesIfActive(): Promise<void> {
+    if (getPage() === "issues") {
+      await loadIssues();
+    }
+  }
 
   // --- list state ---
 
@@ -250,6 +258,8 @@ export function createIssuesStore(
       if (gen === issueSyncGeneration)
         detailSyncing = false;
     }
+    if (gen === issueSyncGeneration)
+      await refreshIssuesIfActive();
   }
 
   async function refreshIssueDetail(
