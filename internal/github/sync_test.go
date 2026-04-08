@@ -2842,8 +2842,8 @@ func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string) {
 // the open-issue list succeeds but syncOpenIssue fails for an
 // individual item (here via a ListIssueComments error during timeline
 // refresh), syncIssues returns an error, doSyncRepo calls
-// markFailure, and the next cycle forces an unconditional refetch
-// via ETag invalidation.
+// markFailure, and the next cycle forces a timeline refresh via
+// forceRefresh even though UpdatedAt hasn't changed.
 func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2870,6 +2870,17 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 		UpdatedAt: makeTimestamp(now),
 	}
 
+	commentID := int64(999)
+	commentBody := "recovery comment"
+	commentUser := "commenter"
+	recoveryComment := &gh.IssueComment{
+		ID:        &commentID,
+		Body:      &commentBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+		User:      &gh.User{Login: &commentUser},
+	}
+
 	mc := &partialFailureMock{}
 	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
 	mc.openIssues = []*gh.Issue{openIssue}
@@ -2894,20 +2905,34 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(issue, "issue should be upserted even though timeline failed")
 
+	// No events should exist because timeline refresh failed.
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	assert.Empty(events, "no events should exist after failed timeline refresh")
+
 	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.True(flagged, "failedRepos must be set after per-item syncOpenIssue failure")
 
-	// Clear the error and simulate warm cache.
+	// Clear the error, provide a comment, simulate warm cache.
 	mc.listIssueCommentsErr = nil
+	mc.comments = []*gh.IssueComment{recoveryComment}
 	mc.issuesCached = true
 
 	invalidateBefore := mc.invalidateCalls.Load()
 
-	// Cycle 2: invalidation clears mock cache → fresh list → retry.
+	// Cycle 2: forceRefresh overrides needsTimeline even though
+	// UpdatedAt hasn't changed → timeline refresh retried → comment lands.
 	syncer.RunOnce(ctx)
 
 	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
 		"next cycle should call InvalidateListETagsForRepo")
+
+	// Verify timeline was actually refreshed: the comment should be in DB.
+	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	events, err = d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	assert.Len(events, 1, "comment should be persisted after forced timeline retry")
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")

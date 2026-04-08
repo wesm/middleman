@@ -1085,7 +1085,8 @@ func (s *Syncer) indexSyncRepo(
 	// last time, leaving the DB stale until the TTL expired. Evict
 	// the repo's list ETags so the following calls are
 	// unconditional, forcing a fresh 200 that we can re-apply.
-	if s.consumeRepoFailed(repo) {
+	forceRefresh := s.consumeRepoFailed(repo)
+	if forceRefresh {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
 	}
 	// Track partial-failure signals across the function so we can
@@ -1186,7 +1187,7 @@ func (s *Syncer) indexSyncRepo(
 	// Issues have an independent etag, so this still runs even when the
 	// PR list returned 304.
 	if err := s.indexSyncIssues(
-		ctx, repo, repoID,
+		ctx, repo, repoID, forceRefresh,
 	); err != nil {
 		slog.Error("index sync issues failed",
 			"repo", repo.Owner+"/"+repo.Name, "err", err,
@@ -1683,10 +1684,12 @@ func (s *Syncer) resolveDisplayName(
 
 // --- Issue sync ---
 
-// indexSyncIssues performs list-only upsert for issues. No
-// detail fetch (GetIssue, timeline) happens here.
+// indexSyncIssues syncs issues from list endpoint data and
+// refreshes timeline when data changed or forceRefresh is set.
+// Issues have no separate detail phase, so timeline refresh
+// happens inline here via syncOpenIssue.
 func (s *Syncer) indexSyncIssues(
-	ctx context.Context, repo RepoRef, repoID int64,
+	ctx context.Context, repo RepoRef, repoID int64, forceRefresh bool,
 ) error {
 	client := s.clientFor(repo)
 	ghIssues, err := client.ListOpenIssues(
@@ -1709,12 +1712,11 @@ func (s *Syncer) indexSyncIssues(
 
 	var hadItemFailure bool
 	for _, ghIssue := range ghIssues {
-		normalized := NormalizeIssue(repoID, ghIssue)
-		if _, uErr := s.db.UpsertIssue(ctx, normalized); uErr != nil {
-			slog.Error("index upsert issue failed",
+		if err := s.syncOpenIssue(ctx, repo, repoID, ghIssue, forceRefresh); err != nil {
+			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghIssue.GetNumber(),
-				"err", uErr,
+				"err", err,
 			)
 			hadItemFailure = true
 		}
@@ -1744,6 +1746,41 @@ func (s *Syncer) indexSyncIssues(
 		return fmt.Errorf("one or more issue sync items failed")
 	}
 	return nil
+}
+
+func (s *Syncer) syncOpenIssue(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghIssue *gh.Issue,
+	forceRefresh bool,
+) error {
+	normalized := NormalizeIssue(repoID, ghIssue)
+
+	existing, err := s.db.GetIssue(
+		ctx, repo.Owner, repo.Name, ghIssue.GetNumber(),
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing issue #%d: %w", ghIssue.GetNumber(), err,
+		)
+	}
+
+	needsTimeline := forceRefresh || existing == nil ||
+		!existing.UpdatedAt.Equal(normalized.UpdatedAt)
+
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf(
+			"upsert issue #%d: %w", ghIssue.GetNumber(), err,
+		)
+	}
+
+	if !needsTimeline {
+		return nil
+	}
+
+	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
 }
 
 func (s *Syncer) refreshIssueTimeline(
