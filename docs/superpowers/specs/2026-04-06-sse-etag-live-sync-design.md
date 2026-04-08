@@ -254,9 +254,9 @@ func TestOnlyAppRunStartsServerAndSyncer(t *testing.T) {
     //       fd, ok := decl.(*ast.FuncDecl); if !ok continue
     //       if fd.Recv != nil { continue }           // must not be a method
     //       if fd.Name.Name != "Run" { continue }
-    //       if runDecl != nil { t.Fatalf("multiple Run decls") }
+    //       require.Nilf(t, runDecl, "multiple Run decls")
     //       runDecl = fd
-    //   if runDecl == nil { t.Fatalf("no package-level Run in app.go") }
+    //   require.NotNil(t, runDecl, "no package-level Run in app.go")
     //   // Validate signature: (ctx context.Context, cfg *config.Config,
     //   //   configPath string, ghClient ghclient.Client, addr string) error
     //   // using types info from runDecl.Name's *types.Func so a rename
@@ -282,7 +282,7 @@ func TestOnlyAppRunStartsServerAndSyncer(t *testing.T) {
     //   } {
     //       mset := types.NewMethodSet(tup.t)
     //       sel := mset.Lookup(nil, tup.name) // same-package lookup OK
-    //       if sel == nil { t.Fatalf("method not found: %s", tup.name) }
+    //       require.NotNilf(t, sel, "method not found: %s", tup.name)
     //       forbidden[sel.Obj().(*types.Func)] = true
     //   }
     //
@@ -323,10 +323,9 @@ func TestOnlyAppRunStartsServerAndSyncer(t *testing.T) {
     //       fn, ok := selection.Obj().(*types.Func); if !ok { return c }
     //       if !c.forbidden[fn] { return c }
     //       // Pointer-identity check against the validated Run node.
-    //       if c.enclosing != c.runDecl {
-    //           c.t.Fatalf("forbidden %s reference outside Run: %s",
-    //               fn.Name(), c.info.Fset.Position(sel.Pos()))
-    //       }
+    //       require.Samef(c.t, c.runDecl, c.enclosing,
+    //           "forbidden %s reference outside Run: %s",
+    //           fn.Name(), c.info.Fset.Position(sel.Pos()))
     //       return c
     //   }
     //   for _, f := range pkg.Syntax {
@@ -366,10 +365,10 @@ Note: `data_changed` fires after every sync completion, even when ETags caused a
 
 Handler:
 1. Set headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`
-2. Obtain an `*http.ResponseController` via `http.NewResponseController(w)`. This exposes a `Flush() error` method (unlike the bare `http.Flusher` interface, whose `Flush()` returns no error), so the handler can detect flush failures and return promptly. **Immediately clear the connection-level write deadline** with `rc.SetWriteDeadline(time.Time{})` — this overrides the server's `WriteTimeout: 30s` for this response only, allowing the SSE connection to remain open indefinitely. (The server keeps its normal `WriteTimeout` for all non-SSE endpoints; see WriteTimeout section.) Call `rc.Flush()` to push headers; if it returns an error, return immediately (flushing unsupported or the underlying writer is broken).
+2. Obtain an `*http.ResponseController` via `http.NewResponseController(w)`. This exposes a `Flush() error` method (unlike the bare `http.Flusher` interface, whose `Flush()` returns no error), so the handler can detect flush failures and return promptly. **Immediately clear the connection-level write deadline** with `rc.SetWriteDeadline(time.Time{})` — this overrides the server's `WriteTimeout: 30s` for this response only, allowing the SSE connection to remain open indefinitely. (The server keeps its normal `WriteTimeout` for all non-SSE endpoints; see WriteTimeout section.) **Check the returned error and return on failure:** if the underlying `ResponseWriter` does not support deadline control, `SetWriteDeadline` returns `http.ErrNotSupported`, and silently ignoring that error would leave the server's 30s `WriteTimeout` armed for the whole SSE lifetime — the stream would be killed mid-flight on the first write past 30s. Logging the error and returning closes the connection cleanly so the client reconnects rather than hanging on a broken stream. Apply the same check to every later `SetWriteDeadline` call in the loop: an expired-then-stuck deadline or a runtime change in writer capability would otherwise arm a stale deadline against subsequent writes. Call `rc.Flush()` to push headers; if it returns an error, return immediately (flushing unsupported or the underlying writer is broken).
 3. Subscribe to hub with `r.Context()`, receiving both the event channel (`ch`) and the hub's `done` channel. Because the hub pre-loads the cached `lastSyncStatus` into the new channel under the broadcast lock (see Event Hub), the very first receive from the channel in step 5's select loop is a `sync_status` event carrying the current state. The handler doesn't need to fetch `Syncer.Status()` separately, and there is no window between snapshot read and subscribe.
 4. Start a 30s keepalive ticker
-5. Select loop with a **two-level select** pattern to bound post-shutdown work. Each iteration begins with a non-blocking `done` check: `select { case <-done: return; default: }`. Only if `done` is not yet closed does the handler enter the full four-branch select: `case <-done`, `case event, ok := <-ch`, `case <-ticker.C`, `case <-r.Context().Done()`. The `done` case is duplicated in the full select for the case where `done` closes while the handler is blocked waiting for an event. **Shutdown bound:** if `done` closes while the handler is in the full select and `ch` also has a buffered event ready, Go may pick `ch` once (non-deterministic select). The handler writes that one event (bounded by one `writeDeadline`, 5s), returns to the loop top, hits the non-blocking `done` check, and exits. Worst case: one extra event write after `done` closes, bounded by one `writeDeadline` (5s). The handler therefore exits within at most `2 * writeDeadline` (10s) of `hub.Close()` — one deadline if mid-write when `done` closes, one more if a buffered event is picked. This fits within a reasonable shutdown timeout (the current 5s in `Run` should be increased to 15s to provide margin). On channel receive, use the **two-value form** and return immediately when `ok` is false. The hub closes a subscriber's channel both when its context is canceled (the normal cleanup path) and when a non-blocking broadcast send finds the channel full (the slow-consumer path described in Event Hub). Treating both cases identically — exit the handler — ensures the loop never spins on a closed channel emitting zero-value `Event{}` frames as bogus empty SSE writes. When `ok` is true, set a per-write deadline before each event write via `rc.SetWriteDeadline(time.Now().Add(5 * time.Second))`, then marshal the event to SSE wire format (`event: <type>\ndata: <json>\n\n`), write, call `rc.Flush()`. If `Write` returns an error or `rc.Flush()` returns an error, return immediately (client disconnected, flush failed, or write deadline exceeded). **After a successful write+flush, clear the deadline** with `rc.SetWriteDeadline(time.Time{})` before returning to the select loop. This is required because an expired deadline is sticky — `SetWriteDeadline` with a past time causes subsequent writes to fail immediately. Without clearing, the 5s deadline set before a write would expire during the idle gap before the next event (up to 30s for keepalive), and the next write would fail on entry. The per-write deadline is required because the handler cleared the server's connection-level `WriteTimeout` at step 2 — without a per-write deadline, a stalled TCP receive window on a slow consumer could pin the handler in `Write` indefinitely, the handler would never observe a hub-side channel close, and the slow-consumer eviction described in Event Hub would not actually disconnect the client. On ticker, the same pattern: set 5s deadline, write SSE comment (`: keepalive\n\n`), call `rc.Flush()`, return on write or flush failure, clear deadline on success. On context cancel, return. The very first iteration of this loop will drain the cached `sync_status` from the channel and flush it out, so the client receives the current state immediately after the headers — no separate "write then flush" step outside the loop is required.
+5. Select loop with a **two-level select** pattern to bound post-shutdown work. Each iteration begins with a non-blocking `done` check: `select { case <-done: return; default: }`. Only if `done` is not yet closed does the handler enter the full four-branch select: `case <-done`, `case event, ok := <-ch`, `case <-ticker.C`, `case <-r.Context().Done()`. The `done` case is duplicated in the full select for the case where `done` closes while the handler is blocked waiting for an event. **Shutdown bound:** if `done` closes while the handler is in the full select and `ch` also has a buffered event ready, Go may pick `ch` once (non-deterministic select). The handler writes that one event (bounded by one `writeDeadline`, 5s), returns to the loop top, hits the non-blocking `done` check, and exits. Worst case: one extra event write after `done` closes, bounded by one `writeDeadline` (5s). The handler therefore exits within at most `2 * writeDeadline` (10s) of `hub.Close()` — one deadline if mid-write when `done` closes, one more if a buffered event is picked. This fits within a reasonable shutdown timeout (the current 5s in `Run` should be increased to 15s to provide margin). On channel receive, use the **two-value form** and return immediately when `ok` is false. The hub closes a subscriber's channel both when its context is canceled (the normal cleanup path) and when a non-blocking broadcast send finds the channel full (the slow-consumer path described in Event Hub). Treating both cases identically — exit the handler — ensures the loop never spins on a closed channel emitting zero-value `Event{}` frames as bogus empty SSE writes. When `ok` is true, set a per-write deadline before each event write via `rc.SetWriteDeadline(time.Now().Add(5 * time.Second))` **and return on any deadline-set error** (same rationale as the initial clear in step 2: a stuck or unsupported deadline makes the stream unsafe), then marshal the event to SSE wire format (`event: <type>\ndata: <json>\n\n`), write, call `rc.Flush()`. If `Write` returns an error or `rc.Flush()` returns an error, return immediately (client disconnected, flush failed, or write deadline exceeded). **After a successful write+flush, clear the deadline** with `rc.SetWriteDeadline(time.Time{})` before returning to the select loop, **and return if this clear itself errors** — the armed 5s deadline would otherwise persist and kill the next write. Clearing the deadline is required because an expired deadline is sticky: `SetWriteDeadline` with a past time causes subsequent writes to fail immediately. Without clearing, the 5s deadline set before a write would expire during the idle gap before the next event (up to 30s for keepalive), and the next write would fail on entry. The per-write deadline is required because the handler cleared the server's connection-level `WriteTimeout` at step 2 — without a per-write deadline, a stalled TCP receive window on a slow consumer could pin the handler in `Write` indefinitely, the handler would never observe a hub-side channel close, and the slow-consumer eviction described in Event Hub would not actually disconnect the client. On ticker, the same pattern: set 5s deadline (return on error), write SSE comment (`: keepalive\n\n`), call `rc.Flush()`, return on write or flush failure, clear deadline on success (return on error). On context cancel, return. The very first iteration of this loop will drain the cached `sync_status` from the channel and flush it out, so the client receives the current state immediately after the headers — no separate "write then flush" step outside the loop is required.
 6. Keepalive ticker is stopped via defer
 
 SSE is exempt from CSRF checks (GET request -- the existing CSRF check in `ServeHTTP` only applies to non-GET methods).
@@ -953,17 +952,12 @@ When SSE is connected:
       ```go
       tickerStamp := tickerEnterStamp.Load()
       stopStamp := stopReturnStamp.Load()
-      if tickerStamp == 0 {
-          t.Fatalf("ticker goroutine never entered")
-      }
-      if stopStamp == 0 {
-          t.Fatalf("Stop() never returned")
-      }
-      if tickerStamp >= stopStamp {
-          t.Fatalf("Stop() returned before ticker entered "+
+      require.NotZero(t, tickerStamp, "ticker goroutine never entered")
+      require.NotZero(t, stopStamp, "Stop() never returned")
+      require.Lessf(t, tickerStamp, stopStamp,
+          "Stop() returned before ticker entered "+
               "(tickerStamp=%d stopStamp=%d): wg.Add(2) reservation "+
               "race not closed", tickerStamp, stopStamp)
-      }
       ```
    7. **No `RunOnce` after `Stop` returned** assertion. Snapshot `runOnceEnterStamp` AFTER `tickerExitedCh` has fired (the quiescence barrier guarantees no further `runOnceEnter` hook can run, so the snapshot is final):
       ```go
@@ -974,9 +968,10 @@ When SSE is connected:
       // RunOnce entry stamp must EITHER be unset (no RunOnce ran)
       // OR predate stopReturnStamp. A RunOnce entry stamped after
       // stopReturnStamp means a sync escaped shutdown.
-      if runStamp != 0 && runStamp >= stopStamp {
-          t.Fatalf("RunOnce entered after Stop returned "+
-              "(runStamp=%d stopStamp=%d)", runStamp, stopStamp)
+      if runStamp != 0 {
+          require.Lessf(t, runStamp, stopStamp,
+              "RunOnce entered after Stop returned "+
+                  "(runStamp=%d stopStamp=%d)", runStamp, stopStamp)
       }
       ```
       The quiescence barrier closes the false-pass window in step 7: without it, a broken implementation could let a `RunOnce` start *between* the test's `runOnceEnterStamp.Load()` and the actual ticker exit, and the test would silently miss the escape. With the barrier, the load happens only after every possible `RunOnce` has both started and finished.

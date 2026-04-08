@@ -91,7 +91,7 @@ func TestEventHub_SubscribeReceivesBroadcast(t *testing.T) {
 	case ev := <-ch:
 		assert.Equal(t, "data_changed", ev.Type)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
+		require.FailNow(t, "timed out waiting for event")
 	}
 }
 
@@ -103,12 +103,14 @@ func TestEventHub_UnsubscribeOnContextCancel(t *testing.T) {
 	ch, _ := hub.Subscribe(ctx)
 	cancel()
 
-	// Wait for cleanup goroutine
-	time.Sleep(50 * time.Millisecond)
-
-	// Channel should be closed
-	_, ok := <-ch
-	assert.False(t, ok, "channel should be closed after context cancel")
+	// Receive blocks until the cleanup goroutine closes the channel.
+	// No sleep needed — a closed channel yields ok=false immediately.
+	select {
+	case _, ok := <-ch:
+		assert.False(t, ok, "channel should be closed after context cancel")
+	case <-time.After(time.Second):
+		require.FailNow(t, "channel not closed after context cancel")
+	}
 }
 
 func TestEventHub_ConcurrentBroadcastSafety(t *testing.T) {
@@ -302,7 +304,7 @@ func TestEventHub_SyncStatusCachedForNewSubscribers(t *testing.T) {
 	case ev := <-ch:
 		assert.Equal(t, "sync_status", ev.Type)
 	case <-time.After(time.Second):
-		t.Fatal("expected cached sync_status")
+		require.FailNow(t, "expected cached sync_status")
 	}
 }
 
@@ -319,7 +321,7 @@ func TestEventHub_DataChangedNotCached(t *testing.T) {
 
 	select {
 	case <-ch:
-		t.Fatal("data_changed should not be cached for new subscribers")
+		require.FailNow(t, "data_changed should not be cached for new subscribers")
 	case <-time.After(50 * time.Millisecond):
 		// expected
 	}
@@ -336,7 +338,7 @@ func TestEventHub_NoCacheBeforeAnyBroadcast(t *testing.T) {
 
 	select {
 	case <-ch:
-		t.Fatal("expected no pre-loaded event")
+		require.FailNow(t, "expected no pre-loaded event")
 	case <-time.After(50 * time.Millisecond):
 		// expected
 	}
@@ -396,7 +398,7 @@ func TestEventHub_CloseUnsubscribesAll(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("done channel should be closed")
+		require.FailNow(t, "done channel should be closed")
 	}
 
 	// subscriber channels should be closed
@@ -1188,7 +1190,7 @@ func TestSyncer_StopWaitsForInflightRunOnce(t *testing.T) {
 	// Verify Stop hasn't returned yet
 	select {
 	case <-stopDone:
-		t.Fatal("Stop returned before RunOnce finished")
+		require.FailNow(t, "Stop returned before RunOnce finished")
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -1198,7 +1200,7 @@ func TestSyncer_StopWaitsForInflightRunOnce(t *testing.T) {
 	select {
 	case <-stopDone:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Stop did not return after context cancel")
+		require.FailNow(t, "Stop did not return after context cancel")
 	}
 }
 ```
@@ -1248,8 +1250,13 @@ func TestSyncer_StartAfterStopIsNoop(t *testing.T) {
 	s.Stop()
 	ctx := context.Background()
 	s.Start(ctx)
-	time.Sleep(100 * time.Millisecond)
-	assert.Zero(t, callCount.Load(), "Start after Stop should not launch RunOnce")
+	// Give any stray RunOnce launch room to land, then assert none did.
+	// require.Never keeps the probe running without pinning to a single
+	// post-hoc sleep duration.
+	require.Never(t, func() bool {
+		return callCount.Load() > 0
+	}, 200*time.Millisecond, 10*time.Millisecond,
+		"Start after Stop should not launch RunOnce")
 }
 
 func TestSyncer_DoubleStartIsNoop(t *testing.T) {
@@ -1310,15 +1317,21 @@ func TestSyncer_TriggerRunWithoutStart(t *testing.T) {
 	select {
 	case <-stopDone:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Stop deadlocked without Start")
+		require.FailNow(t, "Stop deadlocked without Start")
 	}
 }
 
 func TestSyncer_TriggerRunAfterStop(t *testing.T) {
 	callCount := atomic.Int32{}
+	entered := make(chan struct{}, 1)
 	mock := &mockClient{
 		listOpenPRsFunc: func(ctx context.Context, owner, name string) ([]*gh.PullRequest, error) {
-			callCount.Add(1)
+			if callCount.Add(1) == 1 {
+				select {
+				case entered <- struct{}{}:
+				default:
+				}
+			}
 			return nil, nil
 		},
 		openIssues: []*gh.Issue{},
@@ -1329,13 +1342,17 @@ func TestSyncer_TriggerRunAfterStop(t *testing.T) {
 	s := NewSyncer(mock, d, repos, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
-	time.Sleep(50 * time.Millisecond) // let initial RunOnce complete
+	// Wait for the initial RunOnce to actually enter instead of sleeping.
+	<-entered
 	cancel()
-	s.Stop()
+	s.Stop() // blocks until in-flight RunOnce returns
 	before := callCount.Load()
 	s.TriggerRun() // should be no-op (stopped=true)
-	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, before, callCount.Load(), "TriggerRun after Stop should not fire")
+	// Probe for a window long enough to catch any stray launch.
+	require.Never(t, func() bool {
+		return callCount.Load() != before
+	}, 200*time.Millisecond, 10*time.Millisecond,
+		"TriggerRun after Stop should not fire")
 }
 
 func TestSyncer_StopShutdownCompleteIdempotent(t *testing.T) {
@@ -1368,9 +1385,9 @@ func TestSyncer_StopShutdownCompleteIdempotent(t *testing.T) {
 	// Neither should return yet (RunOnce blocked)
 	select {
 	case <-stopA:
-		t.Fatal("Stop A returned early")
+		require.FailNow(t, "Stop A returned early")
 	case <-stopB:
-		t.Fatal("Stop B returned early")
+		require.FailNow(t, "Stop B returned early")
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -1380,12 +1397,12 @@ func TestSyncer_StopShutdownCompleteIdempotent(t *testing.T) {
 	select {
 	case <-stopA:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Stop A did not return")
+		require.FailNow(t, "Stop A did not return")
 	}
 	select {
 	case <-stopB:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Stop B did not return")
+		require.FailNow(t, "Stop B did not return")
 	}
 }
 ```
@@ -1581,7 +1598,7 @@ func TestServer_ShutdownBeforeServe_ReleasesPort(t *testing.T) {
 		conn, dialErr := net.DialTimeout("tcp", boundAddr, 100*time.Millisecond)
 		if dialErr == nil {
 			conn.Close()
-			t.Fatal("port still held after Shutdown")
+			require.FailNow(t, "port still held after Shutdown")
 		}
 	} else {
 		ln.Close()
@@ -1675,8 +1692,14 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	rc := http.NewResponseController(w)
-	// Clear server-wide WriteTimeout for this SSE response
-	_ = rc.SetWriteDeadline(time.Time{})
+	// Clear server-wide WriteTimeout for this SSE response. If the
+	// ResponseWriter does not support deadline control, the server's
+	// WriteTimeout (30s) would silently kill this long-lived response
+	// mid-stream. Close the connection instead of proceeding blind.
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		slog.Error("sse: clear write deadline", "err", err)
+		return
+	}
 	if err := rc.Flush(); err != nil {
 		return
 	}
@@ -1705,23 +1728,35 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 				slog.Error("sse: marshal event", "type", ev.Type, "err", err)
 				continue
 			}
-			_ = rc.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				slog.Error("sse: set write deadline", "err", err)
+				return
+			}
 			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data); err != nil {
 				return
 			}
 			if err := rc.Flush(); err != nil {
 				return
 			}
-			_ = rc.SetWriteDeadline(time.Time{})
+			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+				slog.Error("sse: clear write deadline", "err", err)
+				return
+			}
 		case <-ticker.C:
-			_ = rc.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				slog.Error("sse: set write deadline", "err", err)
+				return
+			}
 			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
 				return
 			}
 			if err := rc.Flush(); err != nil {
 				return
 			}
-			_ = rc.SetWriteDeadline(time.Time{})
+			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+				slog.Error("sse: clear write deadline", "err", err)
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
@@ -1824,7 +1859,7 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	case ev := <-events:
 		assert.Equal(t, "sync_status", ev)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for initial sync_status")
+		require.FailNow(t, "timed out waiting for initial sync_status")
 	}
 
 	// Now safe to broadcast — handler is subscribed
@@ -1835,7 +1870,7 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	case ev := <-events:
 		assert.Equal(t, "data_changed", ev, "valid event should arrive after marshal failure")
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for data_changed after marshal failure")
+		require.FailNow(t, "timed out waiting for data_changed after marshal failure")
 	}
 
 	// Close body to unblock reader goroutine, then drain channel.
@@ -2123,19 +2158,36 @@ func TestRun_ShutdownHappyPath(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Bind a probe listener on a concrete port, then close it so Run can
+	// take it. We use the probe address to wait until Run's listener is
+	// actually accepting connections before cancelling — no sleep needed.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := probe.Addr().String()
+	require.NoError(t, probe.Close())
+
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, cfg, "", &mockBootstrapClient{}, "127.0.0.1:0")
+		done <- Run(ctx, cfg, "", &mockBootstrapClient{}, addr)
 	}()
 
-	time.Sleep(100 * time.Millisecond) // let server start
+	// Poll until the server is dialable, which proves Serve is running.
+	require.Eventually(t, func() bool {
+		c, dErr := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if dErr != nil {
+			return false
+		}
+		c.Close()
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "server never started listening")
+
 	cancel()
 
 	select {
 	case err := <-done:
 		assert.NoError(t, err)
 	case <-time.After(10 * time.Second):
-		t.Fatal("Run did not return after cancel")
+		require.FailNow(t, "Run did not return after cancel")
 	}
 }
 
@@ -2207,7 +2259,7 @@ func TestBootstrap_ShutdownOrderingSyncInflight(t *testing.T) {
 	select {
 	case <-stopDone:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Stop did not return — RunOnce still blocked")
+		require.FailNow(t, "Stop did not return — RunOnce still blocked")
 	}
 }
 ```
@@ -2280,6 +2332,8 @@ package asttest
 import (
 	"go/types"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // SyncerForbiddenSet returns a map of *types.Func for methods on *Syncer
@@ -2288,18 +2342,14 @@ import (
 func SyncerForbiddenSet(t *testing.T, syncerPkg *types.Package) map[*types.Func]bool {
 	t.Helper()
 	syncerObj := syncerPkg.Scope().Lookup("Syncer")
-	if syncerObj == nil {
-		t.Fatal("Syncer type not found in package")
-	}
+	require.NotNil(t, syncerObj, "Syncer type not found in package")
 	syncerPtr := types.NewPointer(syncerObj.Type())
 	mset := types.NewMethodSet(syncerPtr)
 
 	forbidden := map[*types.Func]bool{}
 	for _, name := range []string{"RunOnce", "Start", "Stop"} {
 		sel := mset.Lookup(nil, name)
-		if sel == nil {
-			t.Fatalf("method %s not found on *Syncer", name)
-		}
+		require.NotNilf(t, sel, "method %s not found on *Syncer", name)
 		forbidden[sel.Obj().(*types.Func)] = true
 	}
 	return forbidden
@@ -2311,18 +2361,14 @@ func SyncerForbiddenSet(t *testing.T, syncerPkg *types.Package) map[*types.Func]
 func ServerForbiddenSet(t *testing.T, serverPkg *types.Package) map[*types.Func]bool {
 	t.Helper()
 	serverObj := serverPkg.Scope().Lookup("Server")
-	if serverObj == nil {
-		t.Fatal("Server type not found in package")
-	}
+	require.NotNil(t, serverObj, "Server type not found in package")
 	serverPtr := types.NewPointer(serverObj.Type())
 	mset := types.NewMethodSet(serverPtr)
 
 	forbidden := map[*types.Func]bool{}
 	for _, name := range []string{"Listen", "Serve", "Shutdown"} {
 		sel := mset.Lookup(nil, name)
-		if sel == nil {
-			t.Fatalf("method %s not found on *Server", name)
-		}
+		require.NotNilf(t, sel, "method %s not found on *Server", name)
 		forbidden[sel.Obj().(*types.Func)] = true
 	}
 	return forbidden
