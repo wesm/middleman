@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -20,6 +21,68 @@ type SyncStatus struct {
 	Progress    string    `json:"progress,omitempty"`
 	LastRunAt   time.Time `json:"last_run_at,omitzero"`
 	LastError   string    `json:"last_error,omitempty"`
+}
+
+// DiffSyncErrorCode categorizes the reason a diff sync failed. The frontend
+// uses this category to render a user-facing message that does not leak local
+// clone paths, refs, SHAs, or git stderr.
+type DiffSyncErrorCode string
+
+const (
+	// DiffSyncCodeCloneUnavailable means the local bare clone could not be
+	// created or updated (network failure, disk full, permission denied).
+	DiffSyncCodeCloneUnavailable DiffSyncErrorCode = "clone_unavailable"
+	// DiffSyncCodeCommitUnreachable means a commit needed to compute the diff
+	// (PR head, merge commit, or its first parent) is not present in the local
+	// clone and could not be fetched.
+	DiffSyncCodeCommitUnreachable DiffSyncErrorCode = "commit_unreachable"
+	// DiffSyncCodeMergeBaseFailed means git merge-base could not compute the
+	// fork point between the PR head and the base.
+	DiffSyncCodeMergeBaseFailed DiffSyncErrorCode = "merge_base_failed"
+	// DiffSyncCodeInternal covers database failures and other unexpected
+	// internal errors during diff computation.
+	DiffSyncCodeInternal DiffSyncErrorCode = "internal"
+)
+
+// DiffSyncError reports a non-fatal failure to compute or update the diff SHAs
+// for a PR. SyncMR returns this when only the diff portion of the sync failed:
+// the PR row, timeline, and CI status were updated successfully, so callers
+// should still treat the PR data as fresh, but the diff view will be stale or
+// missing until the underlying problem is fixed.
+//
+// Code categorizes the failure for client-facing messaging via UserMessage.
+// Err preserves the underlying detail for server-side logging only — never
+// expose Err.Error() to API clients, since it can contain clone paths, refs,
+// SHAs, and git stderr.
+type DiffSyncError struct {
+	Code DiffSyncErrorCode
+	Err  error
+}
+
+func (e *DiffSyncError) Error() string {
+	return fmt.Sprintf("diff sync failed (%s): %v", e.Code, e.Err)
+}
+
+func (e *DiffSyncError) Unwrap() error {
+	return e.Err
+}
+
+// UserMessage returns a sanitized message safe to surface to API clients.
+// It never includes clone paths, refs, SHAs, or other internal details from
+// the underlying error.
+func (e *DiffSyncError) UserMessage() string {
+	switch e.Code {
+	case DiffSyncCodeCloneUnavailable:
+		return "Diff data is unavailable: the local repository clone could not be prepared."
+	case DiffSyncCodeCommitUnreachable:
+		return "Diff data is unavailable: a required commit is missing from the local clone."
+	case DiffSyncCodeMergeBaseFailed:
+		return "Diff data is unavailable: could not determine the merge base for this pull request."
+	case DiffSyncCodeInternal:
+		return "Diff data is unavailable: internal error while updating diff data."
+	default:
+		return "Diff data is unavailable."
+	}
 }
 
 // RepoRef identifies a GitHub repository.
@@ -102,6 +165,14 @@ func NewSyncer(
 // Must be called before Start.
 func (s *Syncer) SetWatchInterval(d time.Duration) {
 	s.watchInterval = d
+}
+
+// HasDiffSync reports whether the syncer has a clone manager configured
+// and is therefore expected to populate diff SHAs for tracked PRs. The
+// HTTP layer uses this to decide whether a missing diff is a sync issue
+// worth warning about, or simply a deployment that opted out of diffs.
+func (s *Syncer) HasDiffSync() bool {
+	return s.clones != nil
 }
 
 // SetWatchedMRs replaces the fast-sync watch list. Each watched
@@ -1022,27 +1093,10 @@ func (s *Syncer) syncMRWithHost(
 		return fmt.Errorf("ensure kanban state for MR #%d: %w", number, err)
 	}
 
-	// Fetch bare clone and compute diff SHAs so the diff view is current.
-	if s.clones != nil {
-		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, owner, name)
-		if err := s.clones.EnsureClone(ctx, host, owner, name, remoteURL); err != nil {
-			slog.Warn("bare clone fetch failed during SyncMR",
-				"repo", owner+"/"+name, "number", number, "err", err)
-		} else if ghPR.GetMerged() {
-			// Merged MRs need special merge-base logic via the pull ref.
-			// Force recomputation to repair any previously incorrect SHAs.
-			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
-		} else if normalized.PlatformHeadSHA != "" && normalized.PlatformBaseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, host, owner, name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
-			if err != nil {
-				slog.Warn("merge-base failed during SyncMR",
-					"repo", owner+"/"+name, "number", number, "err", err)
-			} else if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA, mb); err != nil {
-				slog.Warn("update diff SHAs failed during SyncMR",
-					"repo", owner+"/"+name, "number", number, "err", err)
-			}
-		}
-	}
+	// Run the diff sync, but don't let its failure abort the rest of SyncMR:
+	// timeline and CI status are independent and the user still wants them
+	// fresh. Capture the error and surface it via DiffSyncError at the end.
+	diffErr := s.syncMRDiff(ctx, repo, repoID, number, ghPR, normalized)
 
 	if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
 		return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
@@ -1065,6 +1119,59 @@ func (s *Syncer) syncMRWithHost(
 		}
 	}
 
+	if diffErr != nil {
+		return diffErr
+	}
+	return nil
+}
+
+// syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.
+// Returns nil when there is no clone manager (the caller has already opted
+// out of diff support); otherwise returns an error wrapping a
+// *DiffSyncError that describes the first failure encountered along the
+// clone or diff path. Callers can recover the structured categorization via
+// errors.As.
+func (s *Syncer) syncMRDiff(
+	ctx context.Context, repo RepoRef, repoID int64, number int,
+	ghPR *gh.PullRequest, normalized *db.MergeRequest,
+) error {
+	if s.clones == nil {
+		return nil
+	}
+	host := repo.PlatformHost
+	if host == "" {
+		host = "github.com"
+	}
+	remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, repo.Owner, repo.Name)
+	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, remoteURL); err != nil {
+		return &DiffSyncError{
+			Code: DiffSyncCodeCloneUnavailable,
+			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
+		}
+	}
+
+	if ghPR.GetMerged() {
+		// Merged MRs need special merge-base logic via the pull ref.
+		// Force recomputation to repair any previously incorrect SHAs.
+		return s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), true)
+	}
+
+	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
+		return nil
+	}
+	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	if err != nil {
+		return &DiffSyncError{
+			Code: DiffSyncCodeMergeBaseFailed,
+			Err:  fmt.Errorf("merge-base for #%d: %w", number, err),
+		}
+	}
+	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA, mb); err != nil {
+		return &DiffSyncError{
+			Code: DiffSyncCodeInternal,
+			Err:  fmt.Errorf("update diff SHAs for #%d: %w", number, err),
+		}
+	}
 	return nil
 }
 
@@ -1123,6 +1230,17 @@ func (s *Syncer) SyncItemByNumber(
 
 	if ghIssue.PullRequestLinks != nil {
 		if err := s.SyncMR(ctx, owner, name, number); err != nil {
+			// A DiffSyncError means the PR row, timeline, and CI status
+			// were upserted successfully and only the diff computation
+			// failed. The item type is known, so resolution can still
+			// succeed; surface the error so callers that care about diff
+			// freshness can react, but report itemType so callers that
+			// just need to route the user (e.g. /items/{n}/resolve) can
+			// proceed.
+			var diffErr *DiffSyncError
+			if errors.As(err, &diffErr) {
+				return "pr", err
+			}
 			return "", fmt.Errorf(
 				"sync MR %s/%s#%d: %w", owner, name, number, err,
 			)
@@ -1186,7 +1304,12 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		baseSHA := ghPR.GetBase().GetSHA()
 
 		if ghPR.GetMerged() {
-			s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false)
+			if err := s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false); err != nil {
+				slog.Warn("compute merged PR diff SHAs failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number, "err", err,
+				)
+			}
 		} else if headSHA != "" && baseSHA != "" {
 			mb, err := s.clones.MergeBase(ctx, closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
@@ -1219,25 +1342,28 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 //
 // When force is false, skips PRs that already have diff SHAs (periodic sync).
 // When force is true, always recomputes (on-demand SyncMR).
+//
+// Returns a *DiffSyncError (wrapped as an error) describing the failure when
+// any git or DB operation fails. A nil return covers both success and the
+// no-op skip cases (empty merge SHA, existing valid diff SHAs without force).
 func (s *Syncer) computeMergedMRDiffSHAs(
 	ctx context.Context, repo RepoRef, repoID int64, number int, mergeCommitSHA string,
 	force bool,
-) {
+) error {
 	if mergeCommitSHA == "" {
-		return
+		return nil
 	}
 
 	if !force {
 		existing, err := s.db.GetDiffSHAs(ctx, repo.Owner, repo.Name, number)
 		if err != nil {
-			slog.Warn("get diff SHAs for merged PR failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", err,
-			)
-			return
+			return &DiffSyncError{
+				Code: DiffSyncCodeInternal,
+				Err:  fmt.Errorf("get diff SHAs for merged PR #%d: %w", number, err),
+			}
 		}
 		if existing == nil || existing.DiffHeadSHA != "" {
-			return // already has diff SHAs or PR not found
+			return nil // already has diff SHAs or PR not found
 		}
 	}
 
@@ -1251,11 +1377,10 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
 	prHead, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, pullRef)
 	if err != nil {
-		slog.Warn("rev-parse pull ref for merged PR failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number, "ref", pullRef, "err", err,
-		)
-		return
+		return &DiffSyncError{
+			Code: DiffSyncCodeCommitUnreachable,
+			Err:  fmt.Errorf("rev-parse %s for merged PR #%d: %w", pullRef, number, err),
+		}
 	}
 
 	// Use the merge commit's first parent as the base for merge-base.
@@ -1263,30 +1388,29 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// from the current base branch tip (making merge-base return prHead).
 	preMergeBase, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
 	if err != nil {
-		slog.Warn("rev-parse merge commit parent failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number, "merge_commit", mergeCommitSHA, "err", err,
-		)
-		return
+		return &DiffSyncError{
+			Code: DiffSyncCodeCommitUnreachable,
+			Err:  fmt.Errorf("rev-parse %s^1 for merged PR #%d: %w", mergeCommitSHA, number, err),
+		}
 	}
 
 	mb, err := s.clones.MergeBase(ctx, mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
 	if err != nil {
-		slog.Warn("merge-base for merged PR failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number, "err", err,
-		)
-		return
+		return &DiffSyncError{
+			Code: DiffSyncCodeMergeBaseFailed,
+			Err:  fmt.Errorf("merge-base for merged PR #%d: %w", number, err),
+		}
 	}
 
 	if prHead == "" || mb == "" {
-		return
+		return nil
 	}
 
 	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, prHead, mb, mb); err != nil {
-		slog.Warn("update diff SHAs for merged PR failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number, "err", err,
-		)
+		return &DiffSyncError{
+			Code: DiffSyncCodeInternal,
+			Err:  fmt.Errorf("update diff SHAs for merged PR #%d: %w", number, err),
+		}
 	}
+	return nil
 }

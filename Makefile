@@ -74,8 +74,8 @@ frontend-check:
 api-generate:
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.json
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
-	cd frontend && bunx openapi-typescript openapi/openapi.json -o src/lib/api/generated/schema.ts
-	cd frontend && printf '%s\n' \
+	cd packages/ui && bunx openapi-typescript ../../frontend/openapi/openapi.json -o src/api/generated/schema.ts
+	printf '%s\n' \
 		'/**' \
 		' * This file was auto-generated from frontend/openapi/openapi.json.' \
 		' * Do not make direct changes to the file.' \
@@ -87,7 +87,7 @@ api-generate:
 		'export function createAPIClient(baseUrl: string, options: Pick<ClientOptions, "fetch" | "querySerializer"> = {}) {' \
 		'  return createClient<paths>({ baseUrl, ...options });' \
 		'}' \
-		> src/lib/api/generated/client.ts
+		> packages/ui/src/api/generated/client.ts
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
 
 # Regenerate roborev TypeScript client types from checked-in OpenAPI spec

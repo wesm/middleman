@@ -25,6 +25,10 @@ type mergeRequestDetailResponse struct {
 	RepoOwner     string                 `json:"repo_owner"`
 	RepoName      string                 `json:"repo_name"`
 	WorktreeLinks []worktreeLinkResponse `json:"worktree_links"`
+	// Warnings carries non-fatal sync errors. The PR data is fresh, but the
+	// caller may want to surface these messages so the user understands why
+	// derived views (such as the diff) are stale or unavailable.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{

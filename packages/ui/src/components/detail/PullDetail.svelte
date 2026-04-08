@@ -354,6 +354,15 @@
         </div>
       {/if}
 
+      <!-- Diff sync warnings (stale or unavailable diff data) -->
+      {#if detail.warnings && detail.warnings.length > 0}
+        {#each detail.warnings as warning}
+          <div class="merge-warning merge-warning--info">
+            <span>{warning}</span>
+          </div>
+        {/each}
+      {/if}
+
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if pr.State !== "merged"}
         <div class="actions-row">

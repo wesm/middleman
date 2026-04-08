@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/wesm/middleman/internal/apiclient"
 	"github.com/wesm/middleman/internal/apiclient/generated"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
@@ -487,6 +489,515 @@ func TestAPIGetPullNotFound(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode())
 	require.NotNil(t, resp.ApplicationproblemJSONDefault)
+}
+
+// TestAPIGetPullEmitsDiffWarningWhenSHAsMissing covers the case where a
+// previous diff sync failed and left the PR row without diff SHAs. The
+// resolveItem path treats DiffSyncError as success and the resolve
+// response has no warnings field, so the only place a client can learn
+// the diff is unavailable is the next getPull call. This regression
+// test pins that behavior so the warning can't silently disappear.
+func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	// HasDiffSync gates the inferred warning, so the syncer must be
+	// constructed with a non-nil clone manager. The manager itself is
+	// never invoked by getPull.
+	clonesDir := t.TempDir()
+	clones := gitclone.New(clonesDir, nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 1)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when diff is missing")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	warning := warnings[0]
+	assert.Contains(warning, "Diff data is unavailable")
+
+	// Sanitization invariants: the warning must not leak any internal
+	// detail even when emitted from the read path.
+	assert.NotContains(warning, clonesDir)
+	assert.NotContains(warning, "refs/")
+	assert.NotContains(warning, "rev-parse")
+}
+
+// TestAPIGetPullNoDiffWarningWhenSHAsPresent verifies the warning does
+// not fire when the row already carries valid diff SHAs that match the
+// latest platform head.
+func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 2)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	headSHA := "deadbeef00000000000000000000000000000001"
+	baseSHA := "deadbeef00000000000000000000000000000010"
+	require.NoError(database.UpdatePlatformSHAs(
+		ctx, repoID, 2, headSHA, baseSHA,
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 2,
+		headSHA,
+		baseSHA,
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 2,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	if resp.JSON200.Warnings != nil {
+		assert.Empty(*resp.JSON200.Warnings)
+	}
+}
+
+// TestAPIGetPullEmitsStaleDiffWarning covers the case where a diff sync
+// populated the row but a later push advanced the platform head while
+// the next diff sync failed. The recorded DiffHeadSHA is valid but no
+// longer matches PlatformHeadSHA, so the UI would show a diff from the
+// previous revision without any indication of drift. The warning must
+// fire in that case.
+func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 3)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	// Platform reports the latest head; the recorded diff SHAs are from
+	// an earlier push that no longer matches.
+	require.NoError(database.UpdatePlatformSHAs(
+		ctx, repoID, 3,
+		"deadbeef00000000000000000000000000000099",
+		"deadbeef00000000000000000000000000000010",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 3,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000002",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 3,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when diff is stale")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
+}
+
+// TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift covers the symmetric
+// case to the head-drift test: the PR head is unchanged but the base
+// branch advanced and the next diff sync failed. diffWarnings must
+// mirror getDiff staleness logic, which treats base drift as stale
+// for open PRs.
+func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 4)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	// Head matches, but the platform base advanced past the recorded
+	// diff base — for example a merge landed on main after the diff
+	// sync ran.
+	headSHA := "deadbeef00000000000000000000000000000001"
+	require.NoError(database.UpdatePlatformSHAs(
+		ctx, repoID, 4,
+		headSHA,
+		"deadbeef00000000000000000000000000000099",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 4,
+		headSHA,
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000020",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 4,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when base drifted")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
+}
+
+// TestAPIGetPullEmitsStaleDiffWarningOnMergedPR pins the staleness
+// branch for merged PRs. getDiff treats merged PRs as stale when the
+// recorded DiffHeadSHA no longer matches PlatformHeadSHA, so the
+// warning must fire in the same case. Without this coverage a merged
+// PR with a stale recorded diff would render outdated content with no
+// indication.
+func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 5)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 5, "merged", now, &mergedAt, &mergedAt,
+		"deadbeef00000000000000000000000000000099",
+		"deadbeef00000000000000000000000000000010",
+	))
+	// Recorded diff was computed against an earlier head; the merge
+	// commit advanced the platform head past it.
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 5,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 5,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when merged diff is stale")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
+}
+
+// TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed covers a closed
+// (not merged) PR whose fetchAndUpdateClosed path failed to populate
+// diff SHAs - for example because the clone fetch errored out. The
+// previous diffWarnings implementation suppressed warnings for any
+// non-open/non-merged state and the user would silently see no diff.
+func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 6)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	closedAt := now
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 6, "closed", now, nil, &closedAt,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000010",
+	))
+	// Diff SHAs intentionally left empty to simulate a closed PR whose
+	// diff sync errored out.
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 6,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when closed PR diff is missing")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "unavailable")
+}
+
+// TestAPIGetPullEmitsStaleDiffWarningOnClosedPR covers a closed (not
+// merged) PR whose head or base advanced after the diff sync recorded
+// SHAs. getDiff treats this as stale; diffWarnings must agree so the
+// detail page shows a warning instead of silently rendering an old
+// diff.
+func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 7)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	closedAt := now
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 7, "closed", now, nil, &closedAt,
+		"deadbeef00000000000000000000000000000099",
+		"deadbeef00000000000000000000000000000010",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 7,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when closed PR diff is stale")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	assert.Contains(warnings[0], "out of date")
+}
+
+// TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift pins the
+// asymmetry between merged and open/closed staleness: merged PRs only
+// care about head SHA drift because the base never advances after
+// merge. A merged PR whose head matches but base differs must NOT
+// emit a warning.
+func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 8)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now
+	headSHA := "deadbeef00000000000000000000000000000001"
+	require.NoError(database.UpdateClosedMRState(
+		ctx, repoID, 8, "merged", now, &mergedAt, &mergedAt,
+		headSHA,
+		"deadbeef00000000000000000000000000000099",
+	))
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 8,
+		headSHA,
+		"deadbeef00000000000000000000000000000010",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 8,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	if resp.JSON200.Warnings != nil {
+		assert.Empty(*resp.JSON200.Warnings)
+	}
+}
+
+// TestAPISyncPRSanitizesDiffFailureWarning drives the syncPR handler
+// through a real diff-sync failure and asserts the HTTP response body
+// contains only the sanitized UserMessage. Previous roborev reviews
+// flagged that nothing pins the boundary between the raw Error() chain
+// (which may carry clone paths, refs, SHAs, and git stderr) and the
+// sanitized client-facing string; a future refactor could reintroduce
+// the leak without breaking any lower-level test. This test closes
+// that gap by wiring a real Syncer to a clone Manager whose base dir
+// is unreadable, so EnsureClone fails and the handler must surface
+// only the sanitized warning.
+func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	// Create a clone base dir that cannot be used: 0o000 blocks every
+	// git command rooted under it, so syncMRDiff fails at the clone
+	// stage. The exact error message will contain the locked path,
+	// which is precisely the detail that must NOT reach the client.
+	lockedBase := filepath.Join(t.TempDir(), "locked-clones")
+	require.NoError(os.MkdirAll(lockedBase, 0o755))
+	require.NoError(os.Chmod(lockedBase, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(lockedBase, 0o755) })
+	clones := gitclone.New(lockedBase, nil)
+
+	// Mock returns a live open PR with head and base SHAs populated,
+	// so syncMRDiff enters the merge-base path rather than the early
+	// return for missing SHAs.
+	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	prState := "open"
+	prID := int64(9001)
+	prNumber := 9
+	title := "sync-warning repro"
+	body := "body"
+	url := "https://github.com/acme/widget/pull/9"
+	headSHA := "deadbeef00000000000000000000000000000099"
+	baseSHA := "deadbeef00000000000000000000000000000088"
+	login := "author"
+	headRef := "feature"
+	baseRef := "main"
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    &prNumber,
+				State:     &prState,
+				Title:     &title,
+				Body:      &body,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &login},
+				Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+			}, nil
+		},
+	}
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+		context.Background(), "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	// Diff-sync failures are non-fatal: the handler must return 200
+	// with the PR row and a warning, not a 502.
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings)
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	warning := warnings[0]
+	assert.Contains(warning, "Diff data is unavailable")
+
+	// Sanitization invariants: the warning must not leak any internal
+	// detail from the underlying error chain. This is the regression
+	// test the reviewer asked for.
+	assert.NotContains(warning, lockedBase, "warning must not leak clone path")
+	assert.NotContains(warning, "chdir", "warning must not leak chdir stderr")
+	assert.NotContains(warning, "fetch", "warning must not leak git command name")
+	assert.NotContains(warning, "ensure bare clone", "warning must not leak fmt.Errorf chain")
+	assert.NotContains(warning, "github.com/acme", "warning must not leak remote URL path")
 }
 
 func TestAPISetKanbanState(t *testing.T) {

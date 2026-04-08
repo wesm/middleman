@@ -288,6 +288,7 @@ type MergeRequestDetailResponse struct {
 	MergeRequest  MergeRequest            `json:"merge_request"`
 	RepoName      string                  `json:"repo_name"`
 	RepoOwner     string                  `json:"repo_owner"`
+	Warnings      *[]string               `json:"warnings,omitempty"`
 	WorktreeLinks *[]WorktreeLinkResponse `json:"worktree_links"`
 }
 

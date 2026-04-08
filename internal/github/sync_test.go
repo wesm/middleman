@@ -187,6 +187,46 @@ func TestSyncerStopIsIdempotent(t *testing.T) {
 	syncer.Stop() // must not panic
 }
 
+func TestDiffSyncErrorUserMessageSanitized(t *testing.T) {
+	assert := Assert.New(t)
+	// A representative leak: clone path, ref, SHA, and command stderr.
+	leaky := fmt.Errorf(
+		"rev-parse refs/pull/42/head for merged PR #42: " +
+			"exec /home/user/.middleman/clones/github.com/owner/repo.git: " +
+			"fatal: ambiguous argument 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'")
+
+	cases := []struct {
+		name string
+		code DiffSyncErrorCode
+	}{
+		{"clone unavailable", DiffSyncCodeCloneUnavailable},
+		{"commit unreachable", DiffSyncCodeCommitUnreachable},
+		{"merge base failed", DiffSyncCodeMergeBaseFailed},
+		{"internal", DiffSyncCodeInternal},
+		{"unknown code", DiffSyncErrorCode("not_a_real_code")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &DiffSyncError{Code: tc.code, Err: leaky}
+			msg := e.UserMessage()
+			assert.NotEmpty(msg, "user message should never be empty")
+			assert.NotContains(msg, "/home/user", "user message must not leak filesystem paths")
+			assert.NotContains(msg, "refs/pull/", "user message must not leak git refs")
+			assert.NotContains(msg, "deadbeef", "user message must not leak SHAs")
+			assert.NotContains(msg, "rev-parse", "user message must not leak git command names")
+			assert.NotContains(msg, "fatal:", "user message must not leak git stderr")
+		})
+	}
+
+	// Error() (used for server-side logs) is allowed to include the
+	// underlying detail; only UserMessage() is the public surface.
+	e := &DiffSyncError{Code: DiffSyncCodeCommitUnreachable, Err: leaky}
+	assert.Contains(e.Error(), "commit_unreachable",
+		"server-side Error() should include the categorization")
+	assert.Contains(e.Error(), "deadbeef",
+		"server-side Error() may include underlying detail for debugging")
+}
+
 func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

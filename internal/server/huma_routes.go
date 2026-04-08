@@ -393,8 +393,48 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 			RepoOwner:     input.Owner,
 			RepoName:      input.Name,
 			WorktreeLinks: wl,
+			Warnings:      s.diffWarnings(mr),
 		},
 	}, nil
+}
+
+// diffWarnings returns warnings inferred from the persisted PR row. The
+// resolveItem and syncPR paths log diff sync failures via slog and (in
+// syncPR's case) surface them in the immediate response, but neither
+// persists the failure. Without inferring from the row state, a client
+// that lands on the PR detail page after resolveItem (which has no
+// warnings field) or after a refresh would see no indication that the
+// diff is unavailable. We therefore emit a sanitized warning whenever a
+// PR that should have diff data is missing it.
+func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
+	if mr == nil {
+		return nil
+	}
+	if !s.syncer.HasDiffSync() {
+		return nil
+	}
+	// Closed (including merged) PRs also get diff SHAs populated via
+	// fetchAndUpdateClosed, so the warning logic must cover every state
+	// that getDiff would render, not just open and merged.
+	if mr.DiffHeadSHA == "" {
+		return []string{"Diff data is unavailable for this pull request."}
+	}
+	// Mirror getDiff's staleness check exactly so the warning and the
+	// rendered diff agree on freshness:
+	//   merged → head drift only (the diff is base..PR-head, base never
+	//            advances after merge)
+	//   open / closed → head or base drift (either side can advance and
+	//                   invalidate the recorded diff)
+	if mr.State == "merged" {
+		if mr.DiffHeadSHA != mr.PlatformHeadSHA {
+			return []string{"Diff data is out of date for this pull request."}
+		}
+		return nil
+	}
+	if mr.DiffHeadSHA != mr.PlatformHeadSHA || mr.DiffBaseSHA != mr.PlatformBaseSHA {
+		return []string{"Diff data is out of date for this pull request."}
+	}
+	return nil
 }
 
 func (s *Server) getMRImportMetadata(
@@ -920,11 +960,18 @@ func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, 
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
-	if err := s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number); err != nil {
-		if strings.Contains(err.Error(), "is not tracked") {
-			return nil, huma.Error403Forbidden(err.Error())
+	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
+	// via DiffSyncError. The PR row, timeline, and CI status are all current
+	// in either case, so degrade gracefully: keep the response, but report
+	// the diff problem as a warning so the UI can explain why the diff view
+	// is stale or empty.
+	var diffErr *ghclient.DiffSyncError
+	syncErr := s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number)
+	if syncErr != nil && !errors.As(syncErr, &diffErr) {
+		if strings.Contains(syncErr.Error(), "is not tracked") {
+			return nil, huma.Error403Forbidden(syncErr.Error())
 		}
-		return nil, huma.Error502BadGateway("sync PR: " + err.Error())
+		return nil, huma.Error502BadGateway("sync PR: " + syncErr.Error())
 	}
 
 	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
@@ -950,12 +997,27 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		)
 	}
 
+	var warnings []string
+	if diffErr != nil {
+		// Log the underlying detail server-side so operators can debug,
+		// but only surface the sanitized user-facing message to clients.
+		slog.Warn("diff sync failed during sync PR",
+			"owner", input.Owner,
+			"name", input.Name,
+			"number", input.Number,
+			"code", diffErr.Code,
+			"err", diffErr.Err,
+		)
+		warnings = append(warnings, diffErr.UserMessage())
+	}
+
 	return &syncPROutput{Body: mergeRequestDetailResponse{
 		MergeRequest:  mr,
 		Events:        events,
 		RepoOwner:     input.Owner,
 		RepoName:      input.Name,
 		WorktreeLinks: toWorktreeLinkResponses(syncLinks),
+		Warnings:      warnings,
 	}}, nil
 }
 
@@ -1115,7 +1177,14 @@ func (s *Server) resolveItem(
 	itemType, err := s.syncer.SyncItemByNumber(
 		ctx, owner, name, number,
 	)
-	if err != nil {
+	// A DiffSyncError means the PR row was upserted but the diff
+	// computation failed. Resolution doesn't need diff data, so treat
+	// the result as success here. The resolve response has no warnings
+	// field, so the staleness reaches the client when they navigate to
+	// the PR detail page: getPull infers the warning from the persisted
+	// row state via diffWarnings.
+	var diffErr *ghclient.DiffSyncError
+	if err != nil && !errors.As(err, &diffErr) {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) {
 			if ghErr.Response != nil &&
@@ -1130,6 +1199,14 @@ func (s *Server) resolveItem(
 		}
 		return nil, huma.Error500InternalServerError(
 			"resolve item: " + err.Error(),
+		)
+	}
+	if diffErr != nil {
+		slog.Warn("resolve item: diff sync failed but PR row was synced",
+			"owner", owner,
+			"name", name,
+			"number", number,
+			"err", err,
 		)
 	}
 
