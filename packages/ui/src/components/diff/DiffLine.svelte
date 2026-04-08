@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { TokenSpan } from "../../utils/highlight.js";
+  import type { DualToken } from "../../utils/highlight.js";
 
   interface Props {
     type: "context" | "add" | "delete";
@@ -7,7 +7,7 @@
     oldNum?: number;
     newNum?: number;
     noNewline?: boolean;
-    tokens: TokenSpan[];
+    tokens: DualToken[];
   }
 
   const { type, oldNum, newNum, noNewline, tokens }: Props = $props();
@@ -35,7 +35,7 @@
     class:marker--add={type === "add"}
     class:marker--del={type === "delete"}
   >{marker}</span>
-  <pre class="code">{#each tokens as span}<span style:color={span.color}>{span.content}</span>{/each}{#if noNewline}<span class="no-newline"> (no newline at end of file)</span>{/if}</pre>
+  <pre class="code">{#each tokens as span}<span style:--dc={span.darkColor} style:--lc={span.lightColor}>{span.content}</span>{/each}{#if noNewline}<span class="no-newline"> (no newline at end of file)</span>{/if}</pre>
 </div>
 
 <style>
@@ -108,6 +108,16 @@
     overflow-x: visible;
     background: transparent;
     border: none;
+  }
+
+  /* Token colors via CSS custom properties — theme switch is pure CSS,
+     no JS re-renders needed. Each span carries --dc (dark) and --lc (light). */
+  .code span:not(.no-newline) {
+    color: var(--lc, inherit);
+  }
+
+  :global(html.dark) .code span:not(.no-newline) {
+    color: var(--dc, inherit);
   }
 
   .no-newline {

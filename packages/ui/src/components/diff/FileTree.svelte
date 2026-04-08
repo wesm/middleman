@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import type { DiffFile } from "../../api/types.js";
 
   interface Props {
@@ -81,21 +80,35 @@
     return lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
   }
 
-  // Drag handle for resizing.
+  let fileTreeEl: HTMLDivElement | undefined = $state();
+
+  // Drag handle for resizing. Applies width directly to the DOM via rAF
+  // to avoid Svelte re-renders and coalesce mousemove events to one
+  // layout pass per frame. State syncs once on mouseup.
   function startDrag(e: MouseEvent): void {
     e.preventDefault();
     dragging = true;
     const startX = e.clientX;
     const startWidth = sidebarWidth;
+    let rafId = 0;
+    let pendingWidth = startWidth;
 
     function onMove(ev: MouseEvent): void {
-      const newWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
-      sidebarWidth = newWidth;
+      pendingWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          if (fileTreeEl) fileTreeEl.style.width = `${pendingWidth}px`;
+        });
+      }
     }
 
     function onUp(): void {
+      cancelAnimationFrame(rafId);
       dragging = false;
-      safeSetItem("diff-sidebar-width", String(sidebarWidth));
+      sidebarWidth = pendingWidth;
+      if (fileTreeEl) fileTreeEl.style.width = `${pendingWidth}px`;
+      safeSetItem("diff-sidebar-width", String(pendingWidth));
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     }
@@ -103,10 +116,6 @@
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }
-
-  onMount(() => {
-    // Restore width from localStorage (already done in state init).
-  });
 </script>
 
 {#if sidebarCollapsed}
@@ -116,7 +125,7 @@
     </button>
   </div>
 {:else}
-  <div class="file-tree" style="width: {sidebarWidth}px">
+  <div class="file-tree" bind:this={fileTreeEl} style="width: {sidebarWidth}px">
     <div class="tree-header">
       <span class="tree-title">Files</span>
       <button class="collapse-btn" onclick={() => { sidebarCollapsed = true; }} title="Hide file tree">

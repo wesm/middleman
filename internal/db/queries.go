@@ -603,6 +603,26 @@ func (d *DB) UpdateDiffSHAs(ctx context.Context, repoID int64, number int, diffH
 	return nil
 }
 
+// UpdatePlatformSHAs stores the platform head/base SHAs for a merge
+// request. Called after normalizing GitHub API data or in test setup.
+func (d *DB) UpdatePlatformSHAs(
+	ctx context.Context,
+	repoID int64, number int,
+	platformHead, platformBase string,
+) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_merge_requests
+		 SET platform_head_sha = ?, platform_base_sha = ?
+		 WHERE repo_id = ? AND number = ?`,
+		platformHead, platformBase, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"update platform SHAs for MR %d: %w", number, err)
+	}
+	return nil
+}
+
 // DiffSHAs holds the SHA columns needed by the diff endpoint.
 type DiffSHAs struct {
 	PlatformHeadSHA string

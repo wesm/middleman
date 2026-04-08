@@ -38,60 +38,42 @@ export function langFromPath(path: string): string | undefined {
   return EXT_TO_LANG[ext];
 }
 
-export interface TokenSpan {
+export interface DualToken {
   content: string;
-  color?: string;
+  darkColor?: string;
+  lightColor?: string;
 }
 
-export async function tokenizeLine(
+// Tokenize a single line for both light and dark themes in one grammar pass.
+// Uses Shiki's native dual-theme support so token boundaries are guaranteed
+// aligned across themes — zipping by index would be unsafe otherwise.
+export async function tokenizeLineDual(
   code: string,
   lang: string | undefined,
-  theme: "github-dark" | "github-light",
-): Promise<TokenSpan[]> {
+): Promise<DualToken[]> {
   if (!lang) {
     return [{ content: code }];
   }
   try {
     const hl = await getHighlighter();
-    const tokens = hl.codeToTokensBase(code, { lang: lang as BundledLanguage, theme });
-    if (tokens.length === 0) return [{ content: code }];
-    const line = tokens[0];
+    const lines = hl.codeToTokensWithThemes(code, {
+      lang: lang as BundledLanguage,
+      themes: { dark: "github-dark", light: "github-light" },
+    });
+    if (lines.length === 0) return [{ content: code }];
+    const line = lines[0];
     if (!line) return [{ content: code }];
-    return line.map((t) => ({ content: t.content, ...(t.color != null ? { color: t.color } : {}) }));
+    return line.map((t) => {
+      const darkColor = t.variants.dark?.color;
+      const lightColor = t.variants.light?.color;
+      return {
+        content: t.content,
+        ...(darkColor != null ? { darkColor } : {}),
+        ...(lightColor != null ? { lightColor } : {}),
+      };
+    });
   } catch {
     return [{ content: code }];
   }
 }
 
-// Shared reactive theme state. Initialized from the DOM and kept in sync
-// via a single MutationObserver (avoids one observer per DiffFile).
-let themeObserver: MutationObserver | null = null;
-const themeListeners: Set<(dark: boolean) => void> = new Set();
-
-function ensureThemeObserver(): void {
-  if (themeObserver) return;
-  themeObserver = new MutationObserver(() => {
-    const dark = document.documentElement.classList.contains("dark");
-    for (const fn of themeListeners) fn(dark);
-  });
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["class"],
-  });
-}
-
-export function subscribeTheme(callback: (dark: boolean) => void): () => void {
-  ensureThemeObserver();
-  themeListeners.add(callback);
-  return () => {
-    themeListeners.delete(callback);
-    if (themeListeners.size === 0 && themeObserver) {
-      themeObserver.disconnect();
-      themeObserver = null;
-    }
-  };
-}
-
-export function isDarkTheme(): boolean {
-  return document.documentElement.classList.contains("dark");
-}

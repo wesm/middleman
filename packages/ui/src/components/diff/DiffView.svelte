@@ -190,17 +190,15 @@
           class="diff-area"
           bind:this={diffArea}
           onscroll={onDiffScroll}
+          style:tab-size={tabWidth}
         >
-          {#each diff.files as file, i (file.path)}
-            <div class="diff-file-reveal" style="animation-delay: {Math.min(i * 30, 300)}ms">
-              <DiffFileComponent
-                {file}
-                {owner}
-                {name}
-                {number}
-                {tabWidth}
-              />
-            </div>
+          {#each diff.files as file (file.path)}
+            <DiffFileComponent
+              {file}
+              {owner}
+              {name}
+              {number}
+            />
           {/each}
         </div>
       </div>
@@ -337,22 +335,7 @@
     color: var(--accent-red);
   }
 
-  .diff-file-reveal {
-    animation: file-appear 0.25s ease both;
-  }
-
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  @keyframes file-appear {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
   }
 </style>

@@ -1,13 +1,59 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Mock highlight utils to avoid loading Shiki in tests.
 vi.mock("../../utils/highlight.js", () => ({
-  tokenizeLine: () => Promise.resolve([]),
+  tokenizeLineDual: () => Promise.resolve([]),
   langFromPath: () => "text",
-  isDarkTheme: () => false,
-  subscribeTheme: () => () => {},
 }));
+
+// jsdom does not ship IntersectionObserver; install a stub that reports the
+// observed element as visible immediately so the tokenization effect actually
+// runs under test. The original global (if any) is saved and restored after
+// the suite so it does not leak into sibling test files.
+type GlobalWithIO = { IntersectionObserver?: unknown };
+let originalIntersectionObserver: unknown;
+let originalIntersectionObserverExisted = false;
+
+beforeAll(() => {
+  originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
+  originalIntersectionObserver = (globalThis as GlobalWithIO).IntersectionObserver;
+  class IntersectionObserverStub {
+    private readonly callback: IntersectionObserverCallback;
+    root: Element | null = null;
+    rootMargin = "";
+    thresholds: readonly number[] = [];
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback;
+    }
+    observe(target: Element): void {
+      // Report the element as visible immediately so viewport-gated work
+      // (like tokenization in DiffFile) actually executes under test.
+      const entry = {
+        isIntersecting: true,
+        intersectionRatio: 1,
+        target,
+        boundingClientRect: {} as DOMRectReadOnly,
+        intersectionRect: {} as DOMRectReadOnly,
+        rootBounds: null,
+        time: 0,
+      } as IntersectionObserverEntry;
+      this.callback([entry], this as unknown as IntersectionObserver);
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] { return []; }
+  }
+  (globalThis as GlobalWithIO).IntersectionObserver = IntersectionObserverStub;
+});
+
+afterAll(() => {
+  if (originalIntersectionObserverExisted) {
+    (globalThis as GlobalWithIO).IntersectionObserver = originalIntersectionObserver;
+  } else {
+    delete (globalThis as GlobalWithIO).IntersectionObserver;
+  }
+});
 
 import DiffFile from "./DiffFile.svelte";
 import type { DiffFile as DiffFileType } from "../../api/types.js";
@@ -49,7 +95,7 @@ describe("DiffFile", () => {
 
   it("renders file content when not collapsed", () => {
     render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1, tabWidth: 4 },
+      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
     });
 
     expect(screen.getByText("src/foo.ts")).toBeTruthy();
@@ -58,7 +104,7 @@ describe("DiffFile", () => {
 
   it("hides content after clicking the header to collapse", async () => {
     render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1, tabWidth: 4 },
+      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
     });
 
     const header = screen.getByTitle("Collapse file");
@@ -70,7 +116,7 @@ describe("DiffFile", () => {
 
   it("shows content again after toggling collapse twice", async () => {
     render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1, tabWidth: 4 },
+      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
     });
 
     const header = screen.getByTitle("Collapse file");

@@ -4,7 +4,7 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  import { tokenizeLine, langFromPath, isDarkTheme, subscribeTheme, type TokenSpan } from "../../utils/highlight.js";
+  import { tokenizeLineDual, langFromPath, type DualToken } from "../../utils/highlight.js";
   import DiffLineComponent from "./DiffLine.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
 
@@ -13,49 +13,103 @@
     owner: string;
     name: string;
     number: number;
-    tabWidth: number;
   }
 
-  const { file, owner, name, number, tabWidth }: Props = $props();
+  const { file, owner, name, number }: Props = $props();
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
 
-  // Local copy of file data, only synced when expanded. Collapsed files keep
-  // stale content so whitespace toggles don't trigger expensive re-renders
-  // and re-tokenization for hidden content.
-  // svelte-ignore state_referenced_locally — synced from file prop via $effect when expanded
+  // Track viewport visibility so off-screen files skip expensive tokenization
+  // on whitespace toggles and theme switches. Starts false so the initial
+  // render on large diffs doesn't eagerly tokenize every file before the
+  // IntersectionObserver reports visibility — the first observer callback
+  // fires synchronously for on-screen files.
+  let fileEl: HTMLDivElement | undefined = $state();
+  let inViewport = $state(false);
+
+  // Local copy of file data, only synced when expanded AND visible. Collapsed
+  // or off-screen files keep stale content so whitespace toggles and theme
+  // switches don't trigger expensive re-renders and re-tokenization for
+  // content no one can see.
+  // svelte-ignore state_referenced_locally — synced from file prop via $effect
   let renderedFile = $state(file);
 
   $effect(() => {
-    if (!collapsed) {
+    if (!collapsed && inViewport) {
+      const prev = renderedFile;
       renderedFile = file;
+      // Clear stale tokens synchronously so any render before the
+      // tokenization effect runs falls through to raw content
+      // instead of showing cached tokens from the old file.
+      if (file !== prev) {
+        tokens = new Map();
+      }
     }
   });
 
-  // Use shared theme detection (single MutationObserver for all DiffFile instances).
-  let isDark = $state(isDarkTheme());
-  onMount(() => subscribeTheme((dark) => { isDark = dark; }));
+  onMount(() => {
+    let observer: IntersectionObserver | undefined;
+    // Guard for jsdom / SSR-ish test environments where IntersectionObserver
+    // is not provided — treat the file as visible so tokenization still runs.
+    if (typeof IntersectionObserver === "undefined") {
+      inViewport = true;
+      return;
+    }
+    if (fileEl) {
+      observer = new IntersectionObserver(
+        (entries) => { inViewport = entries[0]!.isIntersecting; },
+        { rootMargin: "200px 0px" },
+      );
+      observer.observe(fileEl);
+    }
 
-  const theme = $derived(isDark ? "github-dark" as const : "github-light" as const);
+    return () => { observer?.disconnect(); };
+  });
 
-  // Syntax-highlighted tokens cache.
-  // Map from "hunkIdx:lineIdx" -> TokenSpan[]
-  let tokenCache = $state<Map<string, TokenSpan[]>>(new Map());
+  // Dual-theme token cache — each span carries both colors as CSS custom
+  // properties, so theme switch is pure CSS (zero DOM updates, zero
+  // re-renders). Tokenization happens once per line using Shiki's native
+  // dual-theme API, which guarantees aligned token boundaries across themes.
+  let tokens = $state<Map<string, DualToken[]>>(new Map());
   let tokenVersion = 0;
+
+  // Plain (non-reactive) tracking of the last tokenized source and whether
+  // tokenization finished. Used to distinguish source changes (which need a
+  // fresh cache) from visibility flips (which should reuse the cache).
+  let lastSourceFile: DiffFileType | undefined;
+  let lastSourceLang: string | undefined;
+  let tokenizationComplete = false;
 
   // Tokenize in small batches to avoid blocking the main thread.
   const BATCH_SIZE = 50;
 
-  // Recompute highlights when file or theme changes.
+  // Tokenize for BOTH themes when file data changes.
+  // Skipped for collapsed or off-screen files; runs when they become visible.
+  // Does NOT depend on `theme` — theme switches just swap which cache is read.
   $effect(() => {
     const version = ++tokenVersion;
-    if (collapsed) return;
-
     const currentFile = renderedFile;
-    const currentTheme = theme;
     const currentLang = lang;
-    const newCache = new Map<string, TokenSpan[]>();
+    const sourceChanged =
+      currentFile !== lastSourceFile || currentLang !== lastSourceLang;
+
+    if (sourceChanged) {
+      lastSourceFile = currentFile;
+      lastSourceLang = currentLang;
+      tokenizationComplete = false;
+    }
+
+    if (collapsed || !inViewport) return;
+    // Already fully tokenized for this source — scrolling back into view or
+    // re-expanding should reuse the cached tokens, not rebuild them.
+    if (tokenizationComplete) return;
+
+    // About to (re)start tokenization for this source — clear any stale or
+    // partial entries so the first batch doesn't render a mix of old and
+    // new keys while the async tokenization walks the hunks.
+    tokens = new Map();
+    const next = new Map<string, DualToken[]>();
 
     void (async () => {
       const items: Array<{ key: string; content: string }> = [];
@@ -72,25 +126,31 @@
         const results = await Promise.all(
           batch.map(async (item) => ({
             key: item.key,
-            spans: await tokenizeLine(item.content, currentLang, currentTheme),
+            spans: await tokenizeLineDual(item.content, currentLang),
           })),
         );
         if (version !== tokenVersion) return;
         for (const r of results) {
-          newCache.set(r.key, r.spans);
+          next.set(r.key, r.spans);
         }
         // Update reactively after each batch so lines get highlighted progressively.
-        tokenCache = new Map(newCache);
+        tokens = new Map(next);
         // Yield to the browser between batches.
         if (i + BATCH_SIZE < items.length) {
           await new Promise((r) => requestAnimationFrame(r));
         }
       }
+      if (version === tokenVersion) {
+        tokenizationComplete = true;
+      }
     })();
   });
 
-  function getTokens(hunkIdx: number, lineIdx: number): TokenSpan[] {
-    return tokenCache.get(`${hunkIdx}:${lineIdx}`) ?? [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
+  function getTokens(hunkIdx: number, lineIdx: number): DualToken[] {
+    const key = `${hunkIdx}:${lineIdx}`;
+    const cached = tokens.get(key);
+    if (cached) return cached;
+    return [{ content: renderedFile.hunks[hunkIdx]!.lines[lineIdx]!.content }];
   }
 
   function computeCollapsedLines(hunks: DiffHunk[], hunkIdx: number): number {
@@ -114,7 +174,7 @@
   }
 </script>
 
-<div class="diff-file" data-file-path={file.path}>
+<div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
   <button class="file-header" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
     <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
       <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -128,7 +188,7 @@
     </span>
   </button>
   {#if !collapsed}
-    <div class="file-content" style:tab-size={tabWidth}>
+    <div class="file-content">
       {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
