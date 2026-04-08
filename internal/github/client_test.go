@@ -141,3 +141,19 @@ func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
 		})
 	}
 }
+
+// TestNewClientWiresETagTransport verifies that NewClient installs the
+// etagTransport at the top of the underlying http.Client's transport
+// chain. The transport's behavior is exercised exhaustively in
+// etag_transport_test.go; this test guards against the constructor
+// silently dropping or reordering the wrap so the wired-up chain
+// stays in sync with the transport's contract.
+func TestNewClientWiresETagTransport(t *testing.T) {
+	c, err := NewClient("fake-token", "", nil)
+	require.NoError(t, err)
+	lc, ok := c.(*liveClient)
+	require.Truef(t, ok, "expected *liveClient, got %T", c)
+	transport := lc.gh.Client().Transport
+	_, ok = transport.(*etagTransport)
+	require.Truef(t, ok, "expected *etagTransport at top of transport chain, got %T", transport)
+}

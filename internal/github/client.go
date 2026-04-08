@@ -68,6 +68,7 @@ func NewClient(
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
+	tc.Transport = &etagTransport{base: tc.Transport}
 
 	var ghClient *gh.Client
 	if platformHost == "" || platformHost == "github.com" {
