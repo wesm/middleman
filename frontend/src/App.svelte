@@ -8,6 +8,7 @@
     KanbanBoardView,
     DiffViewWrapper,
     ReviewsView,
+    FocusListView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -421,7 +422,17 @@
     {@const r = getRoute()}
     {#if r.page === "focus"}
       <main class="focus-layout">
-        {#if r.itemType === "pr"}
+        {#if r.itemType === "mrs"}
+          <FocusListView
+            listType="mrs"
+            {...r.repo ? { repo: r.repo } : {}}
+          />
+        {:else if r.itemType === "issues"}
+          <FocusListView
+            listType="issues"
+            {...r.repo ? { repo: r.repo } : {}}
+          />
+        {:else if r.itemType === "pr"}
           <PRListView
             selectedPR={{
               owner: r.owner,

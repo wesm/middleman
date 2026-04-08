@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PullRequest } from "../../api/types.js";
+  import type { Action } from "../../types.js";
   import { getStores, getHostState } from "../../context.js";
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
@@ -12,9 +13,16 @@
     selected: boolean;
     showRepo: boolean;
     onclick: () => void;
+    importAction?: Action | undefined;
   }
 
-  const { pr, selected, showRepo, onclick }: Props = $props();
+  const {
+    pr,
+    selected,
+    showRepo,
+    onclick,
+    importAction,
+  }: Props = $props();
 
   const repoSlug = $derived(
     `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`,
@@ -57,6 +65,42 @@
       (l) => l.worktree_key === key,
     );
   });
+
+  type PRState = "open" | "draft" | "closed" | "merged";
+  const prState = $derived.by((): PRState => {
+    if (pr.State === "merged") return "merged";
+    if (pr.State === "closed") return "closed";
+    if (pr.IsDraft) return "draft";
+    return "open";
+  });
+
+  const stateColors: Record<PRState, string> = {
+    open: "var(--accent-green)",
+    draft: "var(--accent-amber)",
+    closed: "var(--accent-red)",
+    merged: "var(--accent-purple)",
+  };
+
+  const worktreeName = $derived(
+    pr.worktree_links?.[0]?.worktree_branch ??
+    pr.worktree_links?.[0]?.worktree_key,
+  );
+
+  const showImport = $derived(
+    importAction &&
+    !hasWorktree &&
+    pr.State === "open",
+  );
+
+  function handleImportClick(e: MouseEvent): void {
+    e.stopPropagation();
+    importAction?.handler({
+      surface: "pull-list",
+      owner: pr.repo_owner ?? "",
+      name: pr.repo_name ?? "",
+      number: pr.Number,
+    });
+  }
 </script>
 
 <button
@@ -66,7 +110,10 @@
   bind:this={el}
   onclick={onclick}
 >
-  <p class="title">{pr.Title}</p>
+  <p class="title">
+    <span class="state-dot" style="background: {stateColors[prState]}"></span>
+    {pr.Title}
+  </p>
   {#if showRepo}
     <div class="repo-row">
       <span
@@ -80,10 +127,45 @@
       #{pr.Number} · {pr.Author}
     </span>
     <span class="meta-right">
-      {#if hasWorktree}
+      {#if showImport}
+        <span
+          class="import-btn"
+          role="button"
+          tabindex="0"
+          onclick={handleImportClick}
+          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleImportClick(e as unknown as MouseEvent); } }}
+          title="Import to worktree"
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a.75.75 0 01.75.75v6.19l1.72-1.72a.75.75 0 111.06 1.06l-3 3a.75.75 0 01-1.06 0l-3-3a.75.75 0 011.06-1.06l1.72 1.72V1.75A.75.75 0 018 1zM3.5 10a.75.75 0 01.75.75v1.5c0 .138.112.25.25.25h7a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 0111.5 14h-7A1.75 1.75 0 012.75 12.25v-1.5A.75.75 0 013.5 10z"/>
+          </svg>
+        </span>
+      {/if}
+      {#if hasWorktree && worktreeName}
+        <span class="worktree-name" title="Linked to {worktreeName}">{worktreeName}</span>
+      {:else if hasWorktree}
         <span class="worktree-badge" title="Linked to worktree">
           <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
             <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v.878A2.25 2.25 0 005.75 8.5h1.5v2.128a2.251 2.251 0 101.5 0V8.5h1.5a2.25 2.25 0 002.25-2.25v-.878a2.25 2.25 0 10-1.5 0v.878a.75.75 0 01-.75.75h-5.5a.75.75 0 01-.75-.75v-.878zM8 12.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3.25-9.75a.75.75 0 100 1.5.75.75 0 000-1.5z"/>
+          </svg>
+        </span>
+      {/if}
+      {#if pr.CIStatus === "success"}
+        <span class="ci-icon ci-icon--success" title="CI passing">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+          </svg>
+        </span>
+      {:else if pr.CIStatus === "failure"}
+        <span class="ci-icon ci-icon--failure" title="CI failing">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+          </svg>
+        </span>
+      {:else if pr.CIStatus === "pending"}
+        <span class="ci-icon ci-icon--pending" title="CI pending">
+          <svg width="10" height="10" viewBox="0 0 16 16">
+            <circle cx="8" cy="8" r="4" fill="currentColor"/>
           </svg>
         </span>
       {/if}
@@ -145,6 +227,9 @@
   }
 
   .title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
@@ -152,6 +237,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 4px;
+  }
+
+  .state-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
   .meta-row {
@@ -234,6 +326,56 @@
     align-items: center;
     color: var(--accent-teal, var(--accent-green));
     flex-shrink: 0;
+  }
+
+  .worktree-name {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--accent-teal, var(--accent-green));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .ci-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .ci-icon--success {
+    color: var(--accent-green);
+  }
+
+  .ci-icon--failure {
+    color: var(--accent-red);
+  }
+
+  .ci-icon--pending {
+    color: var(--accent-amber);
+  }
+
+  .import-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+
+  .pull-item:hover .import-btn {
+    opacity: 0.6;
+  }
+
+  .import-btn:hover {
+    opacity: 1 !important;
+    color: var(--accent-blue);
   }
 
   .conflict-dot {

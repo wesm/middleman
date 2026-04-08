@@ -56,6 +56,16 @@ export {
   createGroupingStore,
 } from "./stores/grouping.svelte.js";
 export {
+  classifyPR,
+  groupByWorkflow,
+  workflowGroupOrder,
+  workflowGroupLabels,
+} from "./stores/workflow.svelte.js";
+export type {
+  WorkflowGroup,
+  WorkflowGroupEntry,
+} from "./stores/workflow.svelte.js";
+export {
   createSettingsStore,
 } from "./stores/settings.svelte.js";
 export {
@@ -91,3 +101,6 @@ export {
 export {
   default as ReviewsView,
 } from "./views/ReviewsView.svelte";
+export {
+  default as FocusListView,
+} from "./views/FocusListView.svelte";

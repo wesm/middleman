@@ -44,6 +44,7 @@ interface MiddlemanConfig {
     hideStar?: boolean;
     sidebarCollapsed?: boolean;
     repo?: { owner: string; name: string };
+    host?: string;
     activeWorktreeKey?: string;
   };
   actions?: {
@@ -73,6 +74,8 @@ interface MiddlemanNavigateEvent {
   number?: number;
   focus: boolean;
   view: string;
+  repo?: string;
+  host?: string;
 }
 
 interface Window {

@@ -1,11 +1,29 @@
 <script lang="ts">
   import type { DiffFile } from "../../api/types.js";
-  import { getStores, getNavigate, getSidebar } from "../../context.js";
+  import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
+  import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import PullItem from "./PullItem.svelte";
 
   const { pulls, sync, diff, grouping, settings } = getStores();
   const navigate = getNavigate();
+  const actions = getActions();
+  const hostState = getHostState();
   const { isEmbedded, isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+
+  const importAction = $derived(
+    (actions.pull ?? []).find(
+      (a) => a.id === "import-worktree",
+    ),
+  );
+  const activeWorktreeKey = $derived(
+    hostState.getActiveWorktreeKey?.(),
+  );
+  const groupingMode = $derived(
+    grouping.getGroupingMode(),
+  );
+  const workflowGroups = $derived(
+    groupByWorkflow(pulls.getPulls(), activeWorktreeKey),
+  );
 
   interface Props {
     getDetailTab?: () => string;
@@ -107,6 +125,33 @@
   }
 </script>
 
+{#snippet diffFilesInline()}
+  <div class="diff-files">
+    {#if diff.isDiffLoading() && !diff.getDiff()}
+      <div class="diff-files-state diff-files-state--loading">Loading files</div>
+    {:else if diff.getDiff()}
+      {@const grouped = groupByDir(diff.getDiff()!.files)}
+      {#each grouped as group, gi (gi)}
+        {#if group.dir}
+          <div class="diff-dir-header">{group.dir}/</div>
+        {/if}
+        {#each group.files as f (f.path)}
+          <button
+            class="diff-file-row"
+            class:diff-file-row--active={diff.getActiveFile() === f.path}
+            class:diff-file-row--nested={!!group.dir}
+            onclick={() => diff.requestScrollToFile(f.path)}
+            title={f.path}
+          >
+            <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
+            <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
+          </button>
+        {/each}
+      {/each}
+    {/if}
+  </div>
+{/snippet}
+
 <div class="pull-list">
   <div class="filter-bar">
     <span class="count-badge">{pulls.getPulls().length} PRs</span>
@@ -122,13 +167,18 @@
     <div class="group-toggle">
       <button
         class="group-btn"
-        class:group-btn--active={grouping.getGroupByRepo()}
-        onclick={() => grouping.setGroupByRepo(true)}
-      >By Repo</button>
+        class:group-btn--active={groupingMode === "byRepo"}
+        onclick={() => grouping.setGroupingMode("byRepo")}
+      >Repo</button>
       <button
         class="group-btn"
-        class:group-btn--active={!grouping.getGroupByRepo()}
-        onclick={() => grouping.setGroupByRepo(false)}
+        class:group-btn--active={groupingMode === "byWorkflow"}
+        onclick={() => grouping.setGroupingMode("byWorkflow")}
+      >Status</button>
+      <button
+        class="group-btn"
+        class:group-btn--active={groupingMode === "flat"}
+        onclick={() => grouping.setGroupingMode("flat")}
       >All</button>
     </div>
     {#if isSidebarToggleEnabled()}
@@ -196,7 +246,7 @@
     {:else if pulls.getPulls().length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
-      {#if grouping.getGroupByRepo()}
+      {#if groupingMode === "byRepo"}
         {#each [...pulls.pullsByRepo().entries()] as [repo, prs] (repo)}
           <div class="repo-group">
             <h3 class="repo-header">{repo}</h3>
@@ -206,33 +256,30 @@
                 {pr}
                 showRepo={false}
                 selected={prSelected}
+                {importAction}
                 onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
               />
               {#if prSelected && _getDetailTab() === "files"}
-                <div class="diff-files">
-                  {#if diff.isDiffLoading() && !diff.getDiff()}
-                    <div class="diff-files-state diff-files-state--loading">Loading files</div>
-                  {:else if diff.getDiff()}
-                    {@const grouped = groupByDir(diff.getDiff()!.files)}
-                    {#each grouped as group, gi (gi)}
-                      {#if group.dir}
-                        <div class="diff-dir-header">{group.dir}/</div>
-                      {/if}
-                      {#each group.files as f (f.path)}
-                        <button
-                          class="diff-file-row"
-                          class:diff-file-row--active={diff.getActiveFile() === f.path}
-                          class:diff-file-row--nested={!!group.dir}
-                          onclick={() => diff.requestScrollToFile(f.path)}
-                          title={f.path}
-                        >
-                          <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
-                          <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
-                        </button>
-                      {/each}
-                    {/each}
-                  {/if}
-                </div>
+                {@render diffFilesInline()}
+              {/if}
+            {/each}
+          </div>
+        {/each}
+      {:else if groupingMode === "byWorkflow"}
+        {#each workflowGroups as wg (wg.group)}
+          <div class="repo-group">
+            <h3 class="repo-header">{wg.label}</h3>
+            {#each wg.items as pr (pr.ID)}
+              {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+              <PullItem
+                {pr}
+                showRepo={true}
+                selected={prSelected}
+                {importAction}
+                onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+              />
+              {#if prSelected && _getDetailTab() === "files"}
+                {@render diffFilesInline()}
               {/if}
             {/each}
           </div>
@@ -244,33 +291,11 @@
             {pr}
             showRepo={true}
             selected={prSelected}
+            {importAction}
             onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
           />
           {#if prSelected && _getDetailTab() === "files"}
-            <div class="diff-files">
-              {#if diff.isDiffLoading() && !diff.getDiff()}
-                <div class="diff-files-state diff-files-state--loading">Loading files</div>
-              {:else if diff.getDiff()}
-                {@const grouped = groupByDir(diff.getDiff()!.files)}
-                {#each grouped as group, gi (gi)}
-                  {#if group.dir}
-                    <div class="diff-dir-header">{group.dir}/</div>
-                  {/if}
-                  {#each group.files as f (f.path)}
-                    <button
-                      class="diff-file-row"
-                      class:diff-file-row--active={diff.getActiveFile() === f.path}
-                      class:diff-file-row--nested={!!group.dir}
-                      onclick={() => diff.requestScrollToFile(f.path)}
-                      title={f.path}
-                    >
-                      <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
-                      <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
-                    </button>
-                  {/each}
-                {/each}
-              {/if}
-            </div>
+            {@render diffFilesInline()}
           {/if}
         {/each}
       {/if}
