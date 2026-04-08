@@ -4,7 +4,7 @@
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import PullItem from "./PullItem.svelte";
 
-  const { pulls, sync, diff, grouping, settings } = getStores();
+  const { pulls, sync, diff, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
   const actions = getActions();
   const hostState = getHostState();
@@ -248,21 +248,40 @@
     {:else}
       {#if groupingMode === "byRepo"}
         {#each [...pulls.pullsByRepo().entries()] as [repo, prs] (repo)}
+          {@const collapsed = collapsedRepos.isCollapsed("pulls", repo)}
           <div class="repo-group">
-            <h3 class="repo-header">{repo}</h3>
-            {#each prs as pr (pr.ID)}
-              {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
-              <PullItem
-                {pr}
-                showRepo={false}
-                selected={prSelected}
-                {importAction}
-                onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
-              />
-              {#if prSelected && _getDetailTab() === "files"}
-                {@render diffFilesInline()}
-              {/if}
-            {/each}
+            <button
+              type="button"
+              class="repo-header"
+              aria-expanded={!collapsed}
+              onclick={() => collapsedRepos.toggle("pulls", repo)}
+            >
+              <svg
+                class="repo-header__chevron"
+                class:repo-header__chevron--collapsed={collapsed}
+                width="10" height="10" viewBox="0 0 10 10"
+                fill="none" stroke="currentColor" stroke-width="1.5"
+              >
+                <polyline points="2,3 5,7 8,3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="repo-header__name">{repo}</span>
+              <span class="repo-header__count">{prs.length}</span>
+            </button>
+            {#if !collapsed}
+              {#each prs as pr (pr.ID)}
+                {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                <PullItem
+                  {pr}
+                  showRepo={false}
+                  selected={prSelected}
+                  {importAction}
+                  onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                />
+                {#if prSelected && _getDetailTab() === "files"}
+                  {@render diffFilesInline()}
+                {/if}
+              {/each}
+            {/if}
           </div>
         {/each}
       {:else if groupingMode === "byWorkflow"}
@@ -470,6 +489,50 @@
     position: sticky;
     top: 0;
     z-index: 1;
+
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .repo-header:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .repo-header[aria-expanded="false"] {
+    border-bottom: none;
+  }
+
+  .repo-header__chevron {
+    color: var(--text-muted);
+    transition: transform 120ms ease;
+    flex-shrink: 0;
+  }
+
+  .repo-header__chevron--collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .repo-header__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .repo-header__count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .sidebar-footer {
