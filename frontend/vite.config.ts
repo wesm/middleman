@@ -9,7 +9,7 @@ export default defineConfig({
     environment: "jsdom",
     include: [
       "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
-      "../packages/ui/src/stores/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
     exclude: ["tests/e2e/**", "tests/e2e-full/**", "node_modules/**"],
   },
