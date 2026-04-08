@@ -2,6 +2,7 @@ package testifyhelpercheck
 
 import (
 	"go/ast"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -47,15 +48,11 @@ func run(pass *analysis.Pass) (any, error) {
 
 type importSet struct {
 	testing map[string]struct{}
-	assert  map[string]struct{}
-	require map[string]struct{}
 }
 
 func importNames(file *ast.File) importSet {
 	set := importSet{
 		testing: make(map[string]struct{}),
-		assert:  make(map[string]struct{}),
-		require: make(map[string]struct{}),
 	}
 
 	for _, spec := range file.Imports {
@@ -70,16 +67,6 @@ func importNames(file *ast.File) importSet {
 				name = "testing"
 			}
 			set.testing[name] = struct{}{}
-		case "github.com/stretchr/testify/assert":
-			if name == "" {
-				name = "assert"
-			}
-			set.assert[name] = struct{}{}
-		case "github.com/stretchr/testify/require":
-			if name == "" {
-				name = "require"
-			}
-			set.require[name] = struct{}{}
 		}
 	}
 
@@ -126,8 +113,7 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 		return
 	}
 
-	hasAssertHelper := false
-	hasRequireHelper := false
+	var assertHelper, requireHelper helperState
 	var assertCallPositions []ast.Node
 	var requireCallPositions []ast.Node
 
@@ -142,11 +128,11 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 					continue
 				}
 				if ident, ok := node.Lhs[i].(*ast.Ident); ok {
-					if ident.Name == "assert" && isAssertNewCall(rhs, tName, imports.assert) {
-						hasAssertHelper = true
+					if ident.Name == "assert" && isAssertNewCall(pass, rhs, tName) {
+						assertHelper.add(identObject(pass, ident))
 					}
-					if ident.Name == "require" && isRequireNewCall(rhs, tName, imports.require) {
-						hasRequireHelper = true
+					if ident.Name == "require" && isRequireNewCall(pass, rhs, tName) {
+						requireHelper.add(identObject(pass, ident))
 					}
 				}
 			}
@@ -155,19 +141,23 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 				if i >= len(node.Names) {
 					continue
 				}
-				if node.Names[i].Name == "assert" && isAssertNewCall(value, tName, imports.assert) {
-					hasAssertHelper = true
+				if node.Names[i].Name == "assert" && isAssertNewCall(pass, value, tName) {
+					assertHelper.add(identObject(pass, node.Names[i]))
 				}
-				if node.Names[i].Name == "require" && isRequireNewCall(value, tName, imports.require) {
-					hasRequireHelper = true
+				if node.Names[i].Name == "require" && isRequireNewCall(pass, value, tName) {
+					requireHelper.add(identObject(pass, node.Names[i]))
 				}
 			}
 		case *ast.CallExpr:
-			switch directCallKind(node, imports.assert, imports.require) {
+			switch callKind(pass, node, assertHelper, requireHelper) {
 			case "assert":
 				assertCallPositions = append(assertCallPositions, node)
 			case "require":
 				requireCallPositions = append(requireCallPositions, node)
+			case "assert-helper":
+				assertHelper.used = true
+			case "require-helper":
+				requireHelper.used = true
 			}
 		}
 
@@ -192,31 +182,60 @@ func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports
 		return
 	}
 
+	hasAssertHelper := len(assertHelper.objs) > 0 && assertHelper.used
+	hasRequireHelper := len(requireHelper.objs) > 0 && requireHelper.used
+
 	if len(assertCallPositions) >= 2 && !hasAssertHelper {
-		pass.Reportf(
-			assertCallPositions[len(assertCallPositions)-1].Pos(),
-			assertDiagnosticMessage, total,
-		)
-		return
+		pass.Reportf(assertCallPositions[len(assertCallPositions)-1].Pos(), assertDiagnosticMessage, total)
 	}
 
 	if len(requireCallPositions) >= 2 && !hasRequireHelper {
-		pass.Reportf(
-			requireCallPositions[len(requireCallPositions)-1].Pos(),
-			requireDiagnosticMessage, total,
-		)
+		pass.Reportf(requireCallPositions[len(requireCallPositions)-1].Pos(), requireDiagnosticMessage, total)
 	}
 }
 
-func isAssertNewCall(expr ast.Expr, tName string, assertImports map[string]struct{}) bool {
-	return isHelperNewCall(expr, tName, assertImports)
+type helperState struct {
+	objs map[types.Object]struct{}
+	used bool
 }
 
-func isRequireNewCall(expr ast.Expr, tName string, requireImports map[string]struct{}) bool {
-	return isHelperNewCall(expr, tName, requireImports)
+func (s *helperState) add(obj types.Object) {
+	if obj == nil {
+		return
+	}
+	if s.objs == nil {
+		s.objs = make(map[types.Object]struct{})
+	}
+	s.objs[obj] = struct{}{}
 }
 
-func isHelperNewCall(expr ast.Expr, tName string, imports map[string]struct{}) bool {
+func (s helperState) has(obj types.Object) bool {
+	if obj == nil {
+		return false
+	}
+	_, ok := s.objs[obj]
+	return ok
+}
+
+func identObject(pass *analysis.Pass, ident *ast.Ident) types.Object {
+	if ident == nil {
+		return nil
+	}
+	if obj := pass.TypesInfo.Defs[ident]; obj != nil {
+		return obj
+	}
+	return pass.TypesInfo.Uses[ident]
+}
+
+func isAssertNewCall(pass *analysis.Pass, expr ast.Expr, tName string) bool {
+	return isHelperNewCall(pass, expr, tName, "github.com/stretchr/testify/assert")
+}
+
+func isRequireNewCall(pass *analysis.Pass, expr ast.Expr, tName string) bool {
+	return isHelperNewCall(pass, expr, tName, "github.com/stretchr/testify/require")
+}
+
+func isHelperNewCall(pass *analysis.Pass, expr ast.Expr, tName string, importPath string) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok || len(call.Args) != 1 {
 		return false
@@ -229,14 +248,15 @@ func isHelperNewCall(expr ast.Expr, tName string, imports map[string]struct{}) b
 	if !ok {
 		return false
 	}
-	if _, ok := imports[pkg.Name]; !ok {
+	pkgObj, ok := pass.TypesInfo.Uses[pkg].(*types.PkgName)
+	if !ok || pkgObj.Imported().Path() != importPath {
 		return false
 	}
 	arg, ok := call.Args[0].(*ast.Ident)
 	return ok && arg.Name == tName
 }
 
-func directCallKind(call *ast.CallExpr, assertImports, requireImports map[string]struct{}) string {
+func callKind(pass *analysis.Pass, call *ast.CallExpr, assertHelper, requireHelper helperState) string {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return ""
@@ -245,17 +265,25 @@ func directCallKind(call *ast.CallExpr, assertImports, requireImports map[string
 	if !ok {
 		return ""
 	}
-	if _, ok := assertImports[pkg.Name]; ok {
-		if sel.Sel.Name == "New" {
-			return ""
-		}
+	obj := pass.TypesInfo.Uses[pkg]
+	switch {
+	case assertHelper.has(obj):
+		return "assert-helper"
+	case requireHelper.has(obj):
+		return "require-helper"
+	}
+
+	pkgObj, ok := obj.(*types.PkgName)
+	if !ok || sel.Sel.Name == "New" {
+		return ""
+	}
+
+	switch pkgObj.Imported().Path() {
+	case "github.com/stretchr/testify/assert":
 		return "assert"
-	}
-	if _, ok := requireImports[pkg.Name]; ok {
-		if sel.Sel.Name == "New" {
-			return ""
-		}
+	case "github.com/stretchr/testify/require":
 		return "require"
+	default:
+		return ""
 	}
-	return ""
 }
