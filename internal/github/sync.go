@@ -12,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"golang.org/x/sync/singleflight"
 )
 
 // SyncStatus holds the current state of the sync engine.
@@ -108,6 +109,11 @@ type WatchedMR struct {
 	PlatformHost string // "github.com" or GHE hostname
 }
 
+// defaultParallelism is the worker pool size used by RunOnce when
+// SetParallelism has not been called. Bounded so we don't burst the
+// per-host GitHub rate limit / abuse-detection thresholds.
+const defaultParallelism = 4
+
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
 	clients         map[string]Client // host -> client
@@ -120,14 +126,17 @@ type Syncer struct {
 	watchInterval   time.Duration
 	watchedMRs      []WatchedMR
 	watchMu         sync.Mutex
+	parallelism     atomic.Int32
 	running         atomic.Bool
 	status          atomic.Value // stores *SyncStatus
 	stopCh          chan struct{}
 	stopOnce        sync.Once
 	wg              sync.WaitGroup
-	displayNames    map[string]string // "host\x00login" -> display name, per sync run
-	onMRSynced      func(owner, name string, mr *db.MergeRequest)
-	onSyncCompleted func(results []RepoSyncResult)
+	displayNames     map[string]string // "host\x00login" -> display name, per sync run
+	displayNamesMu   sync.Mutex
+	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
+	onMRSynced       func(owner, name string, mr *db.MergeRequest)
+	onSyncCompleted  func(results []RepoSyncResult)
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
@@ -157,6 +166,7 @@ func NewSyncer(
 		interval:     interval,
 		stopCh:       make(chan struct{}),
 	}
+	s.parallelism.Store(defaultParallelism)
 	s.status.Store(&SyncStatus{})
 	return s
 }
@@ -187,6 +197,16 @@ func (s *Syncer) SetWatchedMRs(mrs []WatchedMR) {
 
 // SetOnMRSynced registers a callback invoked after each MR
 // is upserted during a sync pass.
+//
+// Concurrency: RunOnce processes repos in parallel (see
+// SetParallelism), so the callback may be invoked from up to
+// `parallelism` goroutines concurrently. Implementations must
+// be safe for concurrent use. The callback also runs on the
+// goroutine that is mid-sync for a repo, so it must not block
+// indefinitely or it will stall sync progress.
+//
+// Call SetOnMRSynced before Start/RunOnce. Mutating the hook
+// while a sync is in flight is not safe.
 func (s *Syncer) SetOnMRSynced(
 	fn func(owner, name string, mr *db.MergeRequest),
 ) {
@@ -195,10 +215,26 @@ func (s *Syncer) SetOnMRSynced(
 
 // SetOnSyncCompleted registers a callback invoked at the end
 // of each RunOnce pass with per-repo sync results.
+//
+// Concurrency: this hook fires once per RunOnce pass on the
+// goroutine that drives RunOnce, so it is not invoked
+// concurrently with itself. Call SetOnSyncCompleted before
+// Start/RunOnce; mutating the hook while a sync is in flight
+// is not safe.
 func (s *Syncer) SetOnSyncCompleted(
 	fn func(results []RepoSyncResult),
 ) {
 	s.onSyncCompleted = fn
+}
+
+// SetParallelism sets the maximum number of repos synced
+// concurrently in RunOnce. Values <= 0 are clamped to 1
+// (sequential).
+func (s *Syncer) SetParallelism(n int) {
+	if n < 1 {
+		n = 1
+	}
+	s.parallelism.Store(int32(n))
 }
 
 // clientFor returns the Client for the given repo's host,
@@ -382,26 +418,49 @@ func (s *Syncer) Status() *SyncStatus {
 	return s.status.Load().(*SyncStatus)
 }
 
-// RunOnce performs a single sync pass across all configured repos.
-// If a sync is already in progress it returns immediately (single-flight).
-func (s *Syncer) RunOnce(ctx context.Context) {
-	if !s.running.CompareAndSwap(false, true) {
-		return
-	}
-	defer s.running.Store(false)
+// runState holds the per-RunOnce mutable state shared by the
+// worker pool. Extracted into a struct so runWorker can be a
+// directly testable method instead of an inline closure.
+type runState struct {
+	completed *atomic.Int32
+	errMu     *sync.Mutex
+	lastErr   *string
+	// canceled is latched to true at the moment any goroutine
+	// observes ctx cancellation while work is still outstanding.
+	// RunOnce uses this flag (rather than a completed-count
+	// heuristic) to decide whether the run was canceled, so a
+	// misbehaving syncRepo that ignores ctx and returns success
+	// cannot mask cancellation.
+	canceled *atomic.Bool
+	total    int
+	results  *[]RepoSyncResult
+}
 
-	s.reposMu.Lock()
-	repos := make([]RepoRef, len(s.repos))
-	copy(repos, s.repos)
-	s.reposMu.Unlock()
-
-	s.status.Store(&SyncStatus{Running: true})
-	s.displayNames = make(map[string]string)
-	slog.Info("sync started", "repos", len(repos))
-
-	var lastErr string
-	results := make([]RepoSyncResult, 0, len(repos))
-	for i, repo := range repos {
+// runWorker drains the work channel until it is closed or ctx
+// is canceled. It is the body of each goroutine spawned by
+// RunOnce. Extracted from the inline closure so cancellation
+// behavior can be unit-tested directly without racing against
+// the dispatch loop.
+func (s *Syncer) runWorker(
+	ctx context.Context,
+	work <-chan RepoRef,
+	state *runState,
+) {
+	for repo := range work {
+		// Defense-in-depth against the dispatch race: the
+		// dispatch loop pre-checks ctx before its select, but
+		// a cancel can still land in the micro-window between
+		// the pre-check and the select, in which case Go's
+		// select may pick the send branch and hand this worker
+		// a repo that should never have been enqueued. Bail
+		// here before logging or starting any work, and latch
+		// the canceled flag so RunOnce reports the run as
+		// canceled regardless of how many repos happened to
+		// finish in parallel.
+		if ctx.Err() != nil {
+			state.canceled.Store(true)
+			return
+		}
 		host := repo.PlatformHost
 		if host == "" {
 			host = "github.com"
@@ -417,35 +476,163 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 				select {
 				case <-time.After(wait):
 				case <-ctx.Done():
+					state.canceled.Store(true)
 					return
 				}
 			}
 		}
-		progress := fmt.Sprintf("%d/%d", i+1, len(repos))
 		repoName := repo.Owner + "/" + repo.Name
-		s.status.Store(&SyncStatus{
-			Running:     true,
-			CurrentRepo: repoName,
-			Progress:    progress,
-		})
-		slog.Info("syncing repo",
-			"repo", repoName,
-			"progress", progress,
-		)
+		slog.Info("syncing repo", "repo", repoName)
 		result := RepoSyncResult{
 			Owner:        repo.Owner,
 			Name:         repo.Name,
 			PlatformHost: host,
 		}
 		if err := s.syncRepo(ctx, repo); err != nil {
-			slog.Error("sync repo failed", "repo", repoName, "err", err)
-			lastErr = err.Error()
-			result.Error = err.Error()
+			// Bail without counting this repo only when the
+			// *run* context itself is canceled and the error
+			// reflects that. Per-request timeouts also come
+			// back as wrapped context.DeadlineExceeded but
+			// must reach the normal error path so they're
+			// captured in lastErr instead of being silently
+			// dropped.
+			if ctx.Err() != nil &&
+				(errors.Is(err, context.Canceled) ||
+					errors.Is(err, context.DeadlineExceeded)) {
+				state.canceled.Store(true)
+				return
+			}
+			errStr := err.Error()
+			slog.Error("sync repo failed",
+				"repo", repoName, "err", err,
+			)
+			state.errMu.Lock()
+			*state.lastErr = errStr
+			state.errMu.Unlock()
+			result.Error = errStr
 		}
-		results = append(results, result)
+		// Latch the canceled flag if ctx was canceled during
+		// syncRepo. A misbehaving Client implementation can
+		// ignore ctx and return nil (or a non-context error)
+		// even after cancellation; without this check the run
+		// would fall through to the success path and fire
+		// onSyncCompleted for what the user asked to cancel.
+		if ctx.Err() != nil {
+			state.canceled.Store(true)
+			return
+		}
+		state.errMu.Lock()
+		*state.results = append(*state.results, result)
+		state.errMu.Unlock()
+		done := state.completed.Add(1)
+		s.status.Store(&SyncStatus{
+			Running:     true,
+			CurrentRepo: repoName,
+			Progress:    fmt.Sprintf("%d/%d", done, state.total),
+		})
+	}
+}
+
+// RunOnce performs a single sync pass across all configured repos.
+// If a sync is already in progress it returns immediately (single-flight).
+//
+// Repos are synced in parallel using a bounded worker pool sized by
+// SetParallelism (default defaultParallelism). The bound keeps the
+// per-host GitHub rate limit and abuse-detection thresholds happy
+// while still capturing most of the wall-clock win on network I/O.
+func (s *Syncer) RunOnce(ctx context.Context) {
+	if !s.running.CompareAndSwap(false, true) {
+		return
+	}
+	defer s.running.Store(false)
+
+	s.reposMu.Lock()
+	repos := make([]RepoRef, len(s.repos))
+	copy(repos, s.repos)
+	s.reposMu.Unlock()
+
+	total := len(repos)
+	s.status.Store(&SyncStatus{
+		Running:  true,
+		Progress: fmt.Sprintf("0/%d", total),
+	})
+	s.displayNamesMu.Lock()
+	s.displayNames = make(map[string]string)
+	s.displayNamesMu.Unlock()
+	slog.Info("sync started", "repos", total)
+
+	workers := min(max(int(s.parallelism.Load()), 1), total)
+
+	work := make(chan RepoRef)
+	var (
+		completed atomic.Int32
+		errMu     sync.Mutex
+		lastErr   string
+		canceled  atomic.Bool
+		wg        sync.WaitGroup
+		results   []RepoSyncResult
+	)
+
+	state := &runState{
+		completed: &completed,
+		errMu:     &errMu,
+		lastErr:   &lastErr,
+		canceled:  &canceled,
+		total:     total,
+		results:   &results,
+	}
+	for range workers {
+		wg.Go(func() {
+			s.runWorker(ctx, work, state)
+		})
 	}
 
-	slog.Info("sync complete", "repos", len(repos))
+dispatch:
+	for _, r := range repos {
+		// Check ctx before entering the select. Go's select picks
+		// pseudo-randomly when both branches are ready, so a naked
+		// `select { case work <- r: case <-ctx.Done(): }` can still
+		// hand a repo to a ready worker after the run has been
+		// canceled. The pre-check biases the loop toward cancel so
+		// the dispatch reliably stops once ctx is done.
+		if ctx.Err() != nil {
+			canceled.Store(true)
+			break dispatch
+		}
+		select {
+		case work <- r:
+		case <-ctx.Done():
+			canceled.Store(true)
+			break dispatch
+		}
+	}
+	close(work)
+	wg.Wait()
+
+	// Use a latched flag (set by the dispatch loop and workers at
+	// the moment they observe ctx cancellation) rather than a
+	// completed-count heuristic. A misbehaving syncRepo that
+	// ignores ctx and returns success would otherwise let the
+	// run fall through to onSyncCompleted even though the user
+	// asked to cancel. A cancel that races in strictly *after*
+	// every worker finished and returned never latches the flag,
+	// so the late-cancel-after-clean-sync case still reports
+	// success.
+	if canceled.Load() {
+		err := ctx.Err()
+		if err == nil {
+			err = context.Canceled
+		}
+		slog.Info("sync canceled", "repos", total, "err", err)
+		s.status.Store(&SyncStatus{
+			Running:   false,
+			LastRunAt: time.Now(),
+			LastError: err.Error(),
+		})
+		return
+	}
+
+	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {
 		s.onSyncCompleted(results)
@@ -586,6 +773,14 @@ func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghP
 	client := s.clientFor(repo)
 	if needsFullFetch {
 		fullPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
+		// Treat (nil, nil) as a transient fetch failure rather
+		// than a panic. A misbehaving Client returning nil
+		// without an error is a contract violation, but the
+		// periodic sync should keep going with the list-derived
+		// data instead of crashing the worker.
+		if err == nil && fullPR == nil {
+			err = fmt.Errorf("client returned nil pull request")
+		}
 		if err != nil {
 			slog.Warn("get full PR for diff stats failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -826,25 +1021,48 @@ func computeLastActivity(
 
 // resolveDisplayName returns the GitHub display name for a login and
 // whether the lookup succeeded. Returns ("", false) on API failure so
-// callers can preserve existing data. Uses an in-memory cache to avoid
-// duplicate API calls within a sync run.
+// callers can preserve existing data. Uses an in-memory cache across
+// a sync run plus singleflight dedup so concurrent workers racing on
+// the same author only trigger one GetUser call.
 func (s *Syncer) resolveDisplayName(
 	ctx context.Context, client Client, host, login string,
 ) (string, bool) {
 	key := host + "\x00" + login
-	if name, ok := s.displayNames[key]; ok {
+	s.displayNamesMu.Lock()
+	name, ok := s.displayNames[key]
+	s.displayNamesMu.Unlock()
+	if ok {
 		return name, true
 	}
-	user, err := client.GetUser(ctx, login)
+
+	v, err, _ := s.displayNameGroup.Do(key, func() (any, error) {
+		// Re-check the cache inside the singleflight slot: another
+		// caller may have populated it while this one was waiting
+		// for its turn to run.
+		s.displayNamesMu.Lock()
+		if cached, ok := s.displayNames[key]; ok {
+			s.displayNamesMu.Unlock()
+			return cached, nil
+		}
+		s.displayNamesMu.Unlock()
+
+		user, err := client.GetUser(ctx, login)
+		if err != nil {
+			return "", err
+		}
+		resolved := sanitizeDisplayName(user.GetName())
+		s.displayNamesMu.Lock()
+		s.displayNames[key] = resolved
+		s.displayNamesMu.Unlock()
+		return resolved, nil
+	})
 	if err != nil {
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
 		)
 		return "", false
 	}
-	name := sanitizeDisplayName(user.GetName())
-	s.displayNames[key] = name
-	return name, true
+	return v.(string), true
 }
 
 // --- Issue sync ---
@@ -1068,6 +1286,12 @@ func (s *Syncer) syncMRWithHost(
 	ghPR, err := client.GetPullRequest(ctx, owner, name, number)
 	if err != nil {
 		return fmt.Errorf("get MR %s/%s#%d: %w", owner, name, number, err)
+	}
+	if ghPR == nil {
+		return fmt.Errorf(
+			"get MR %s/%s#%d: client returned nil pull request",
+			owner, name, number,
+		)
 	}
 
 	normalized := NormalizePR(repoID, ghPR)
