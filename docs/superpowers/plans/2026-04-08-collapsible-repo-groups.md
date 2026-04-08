@@ -10,6 +10,32 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-08-collapsible-repo-groups-design.md`
 
+## Tooling
+
+`bun`, `node`, and `playwright` are not on the default PATH in this nix-based environment. **Every** shell command that invokes `bun`, `node`, `npx`, or the playwright CLI must be wrapped in `nix shell`. Use this prefix for all test / build / lint / typecheck / playwright invocations:
+
+```bash
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c '<command>'
+```
+
+Examples:
+
+```bash
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c 'cd frontend && bun run test'
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c 'cd frontend && bun run check'
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c 'cd frontend && bun run lint'
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c 'cd frontend && bun run build'
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c 'cd frontend && bun run playwright test --config=playwright-e2e.config.ts'
+```
+
+If dependencies have never been installed in this worktree, run first:
+
+```bash
+nix shell nixpkgs#bun nixpkgs#nodejs_24 --command bash -c 'cd frontend && bun install --frozen-lockfile'
+```
+
+Git commands (`git add`, `git commit`, `git status`, `git log`, `git rev-parse`) do NOT need nix wrapping — they are on PATH.
+
 ---
 
 ## File Structure
