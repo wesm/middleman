@@ -954,48 +954,62 @@ func (s *Syncer) indexSyncRepo(
 	ghPRs, err := client.ListOpenPullRequests(
 		ctx, repo.Owner, repo.Name,
 	)
+	prListUnchanged := false
 	if err != nil {
-		return fmt.Errorf("list open PRs: %w", err)
-	}
-
-	stillOpen := make(map[int]bool, len(ghPRs))
-	for _, ghPR := range ghPRs {
-		stillOpen[ghPR.GetNumber()] = true
-	}
-
-	for _, ghPR := range ghPRs {
-		if err := s.indexUpsertMR(
-			ctx, repo, repoID, ghPR,
-		); err != nil {
-			slog.Error("index upsert MR failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", ghPR.GetNumber(),
-				"err", err,
-			)
+		// 304 Not Modified means the open-PR list is byte-identical
+		// to the previous fetch. No PR opened, no PR closed, no
+		// metadata on any open PR changed. Skip per-PR upserts and
+		// closure detection — both ran on the previous sync that
+		// produced the cached etag.
+		if IsNotModified(err) {
+			prListUnchanged = true
+		} else {
+			return fmt.Errorf("list open PRs: %w", err)
 		}
 	}
 
-	// Detect closed PRs and fetch final state (1 API call each,
-	// outside budget -- needed for accurate closed state).
-	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
-		ctx, repoID, stillOpen,
-	)
-	if err != nil {
-		return fmt.Errorf("get previously open MRs: %w", err)
-	}
-	for _, number := range closedNumbers {
-		if err := s.fetchAndUpdateClosed(
-			ctx, repo, repoID, number, cloneFetchOK,
-		); err != nil {
-			slog.Error("update closed MR failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
+	if !prListUnchanged {
+		stillOpen := make(map[int]bool, len(ghPRs))
+		for _, ghPR := range ghPRs {
+			stillOpen[ghPR.GetNumber()] = true
+		}
+
+		for _, ghPR := range ghPRs {
+			if err := s.indexUpsertMR(
+				ctx, repo, repoID, ghPR,
+			); err != nil {
+				slog.Error("index upsert MR failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", ghPR.GetNumber(),
+					"err", err,
+				)
+			}
+		}
+
+		// Detect closed PRs and fetch final state (1 API call each,
+		// outside budget -- needed for accurate closed state).
+		closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
+			ctx, repoID, stillOpen,
+		)
+		if err != nil {
+			return fmt.Errorf("get previously open MRs: %w", err)
+		}
+		for _, number := range closedNumbers {
+			if err := s.fetchAndUpdateClosed(
+				ctx, repo, repoID, number, cloneFetchOK,
+			); err != nil {
+				slog.Error("update closed MR failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", err,
+				)
+			}
 		}
 	}
 
 	// Index issues (list-only, no detail).
+	// Issues have an independent etag, so this still runs even when the
+	// PR list returned 304.
 	if err := s.indexSyncIssues(
 		ctx, repo, repoID,
 	); err != nil {
@@ -1165,8 +1179,12 @@ func (s *Syncer) fetchMRDetail(
 	}
 	calls += 4
 
+	ciHeadSHA := ""
+	if fullPR.GetHead() != nil {
+		ciHeadSHA = fullPR.GetHead().GetSHA()
+	}
 	if err := s.refreshCIStatus(
-		ctx, repo, repoID, fullPR,
+		ctx, repo, repoID, number, ciHeadSHA,
 	); err != nil {
 		// CI = 2 calls (combined status + check runs).
 		calls += 2
@@ -1337,23 +1355,22 @@ func (s *Syncer) refreshTimeline(
 
 // refreshCIStatus fetches combined status and check runs for a PR's head SHA.
 // Called on every sync cycle for open PRs, since check runs change independently
-// of the PR's updated_at field.
+// of the PR's updated_at field. Takes headSHA and number directly so it can be
+// invoked from the 304 code path, where the caller holds DB rows rather than
+// a *gh.PullRequest.
 func (s *Syncer) refreshCIStatus(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
-	ghPR *gh.PullRequest,
+	number int,
+	headSHA string,
 ) error {
-	headSHA := ""
-	if ghPR.GetHead() != nil {
-		headSHA = ghPR.GetHead().GetSHA()
-	}
 	if headSHA == "" {
 		return nil
 	}
 
-	number := ghPR.GetNumber()
-
+	// Fetch both sources. On failure, skip the DB write to preserve
+	// existing data rather than wiping it with empty values.
 	client := s.clientFor(repo)
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
@@ -1489,6 +1506,12 @@ func (s *Syncer) indexSyncIssues(
 		ctx, repo.Owner, repo.Name,
 	)
 	if err != nil {
+		// 304: open issue list unchanged since the previous sync.
+		// No issue opened, closed, or modified. Skip per-issue
+		// upserts and closure detection.
+		if IsNotModified(err) {
+			return nil
+		}
 		return fmt.Errorf("list open issues: %w", err)
 	}
 
@@ -2102,7 +2125,11 @@ func (s *Syncer) syncMRWithHost(
 		return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
 	}
 
-	if err := s.refreshCIStatus(ctx, repo, repoID, ghPR); err != nil {
+	syncMRHeadSHA := ""
+	if ghPR.GetHead() != nil {
+		syncMRHeadSHA = ghPR.GetHead().GetSHA()
+	}
+	if err := s.refreshCIStatus(ctx, repo, repoID, number, syncMRHeadSHA); err != nil {
 		return err
 	}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -34,6 +35,9 @@ func openTestDB(t *testing.T) *db.DB {
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
 	openPRs              []*gh.PullRequest
+	openIssues           []*gh.Issue
+	listOpenPRsErr       error
+	listOpenIssuesErr    error
 	singlePR             *gh.PullRequest
 	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn           func(context.Context, string, string, int) (*gh.Issue, error)
@@ -53,11 +57,17 @@ type mockClient struct {
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
 	m.listOpenPRsCalled = true
+	if m.listOpenPRsErr != nil {
+		return nil, m.listOpenPRsErr
+	}
 	return m.openPRs, nil
 }
 
 func (m *mockClient) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
-	return nil, nil
+	if m.listOpenIssuesErr != nil {
+		return nil, m.listOpenIssuesErr
+	}
+	return m.openIssues, nil
 }
 
 func (m *mockClient) GetIssue(
@@ -2567,4 +2577,209 @@ func TestSyncer_TriggerRunRunsRunOnce(t *testing.T) {
 	s.Stop()
 	assert.True(mock.listOpenPRsCalled,
 		"TriggerRun should invoke ListOpenPullRequests")
+}
+
+// notModifiedErr returns the error shape go-github surfaces when the
+// HTTP transport receives a 304 Not Modified response. The etag
+// transport intercepts list-endpoint requests and adds If-None-Match
+// headers; on a cache hit GitHub responds 304, which go-github wraps
+// as *gh.ErrorResponse. The sync code calls IsNotModified to detect
+// this and treat it as a no-op.
+func notModifiedErr() error {
+	return &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusNotModified},
+	}
+}
+
+// TestSyncerHandles304OnPRList verifies that a 304 response from
+// the open-PR list is treated as "list unchanged, nothing to do"
+// rather than a fatal sync error. Before the fix, IsNotModified
+// was unused at the call site and the wrapped 304 was returned
+// as "list open PRs: ...", failing the repo sync entirely.
+func TestSyncerHandles304OnPRList(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	mc := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d,
+		nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+	)
+
+	var (
+		results   []RepoSyncResult
+		gotResult sync.WaitGroup
+	)
+	gotResult.Add(1)
+	syncer.SetOnSyncCompleted(func(r []RepoSyncResult) {
+		results = r
+		gotResult.Done()
+	})
+
+	syncer.RunOnce(ctx)
+	gotResult.Wait()
+
+	require.Len(results, 1)
+	assert.Empty(results[0].Error,
+		"304 on open-PR list must not surface as a sync error")
+}
+
+// TestSyncerHandles304OnIssueList verifies the same short-circuit
+// for the open-issue list endpoint. syncIssues is called from
+// doSyncRepo with its error treated as non-fatal (logged only),
+// so even before the fix the repo would not be marked failed —
+// but the per-issue upserts and closure detection would still be
+// skipped erroneously due to the early return path. After the
+// fix, the function explicitly returns nil on 304 and the
+// happy-path PR sync still completes cleanly.
+func TestSyncerHandles304OnIssueList(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	mc := &mockClient{
+		openPRs:           []*gh.PullRequest{},
+		listOpenIssuesErr: notModifiedErr(),
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d,
+		nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+	)
+
+	var (
+		results   []RepoSyncResult
+		gotResult sync.WaitGroup
+	)
+	gotResult.Add(1)
+	syncer.SetOnSyncCompleted(func(r []RepoSyncResult) {
+		results = r
+		gotResult.Done()
+	})
+
+	syncer.RunOnce(ctx)
+	gotResult.Wait()
+
+	require.Len(results, 1)
+	assert.Empty(results[0].Error,
+		"304 on open-issue list must not surface as a sync error")
+}
+
+// TestSyncerRefreshesCIOnPRList304 verifies that a 304 from the open-PR
+// list endpoint does not skip CI refresh. Check runs and combined status
+// change independently of any field the PR list endpoint returns, so
+// skipping them on 304 would cause CI state to go stale for the entire
+// ETag TTL even though GitHub gladly serves fresh check data.
+func TestSyncerRefreshesCIOnPRList304(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	// Seed the DB with one open PR whose CI is currently "pending" via
+	// an in-progress check run. This is the state the 304 path will see
+	// on the second sync.
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	inProgress := "in_progress"
+	firstClient := &mockClient{
+		openPRs:   []*gh.PullRequest{buildOpenPR(1, now)},
+		checkRuns: []*gh.CheckRun{{Status: &inProgress}},
+	}
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": firstClient},
+		d, nil, repos, time.Minute, nil,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.Equal("pending", pr.CIStatus,
+		"seed sync should persist the pending CI state")
+
+	// Second sync: PR list returns 304, but the check run has flipped
+	// to a completed success. The sync must still call the CI endpoints
+	// and update the DB even though the PR list itself did not change.
+	completed := "completed"
+	success := "success"
+	refreshClient := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+		checkRuns: []*gh.CheckRun{
+			{Status: &completed, Conclusion: &success},
+		},
+	}
+	refreshSyncer := NewSyncer(
+		map[string]Client{"github.com": refreshClient},
+		d, nil, repos, time.Minute, nil,
+	)
+	refreshSyncer.RunOnce(ctx)
+
+	pr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("success", pr.CIStatus,
+		"304 on PR list must still refresh CI — check runs are independent")
+}
+
+// TestSyncerSyncsIssuesOnPRList304 verifies that a 304 on the open-PR
+// list does not short-circuit issue sync. Issues have an independent
+// ETag and their own open-list endpoint, so a PR-list 304 must not
+// prevent new issues from being picked up.
+func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	issueNumber := 42
+	issueTitle := "broken thing"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/42"
+	issueBody := ""
+	issueID := int64(900042)
+	mc := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+		openIssues: []*gh.Issue{
+			{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				Body:      &issueBody,
+				CreatedAt: makeTimestamp(now),
+				UpdatedAt: makeTimestamp(now),
+			},
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil,
+	)
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue, "issue sync must run even when PR list returns 304")
+	assert.Equal(issueNumber, issue.Number)
+	assert.Equal(issueTitle, issue.Title)
 }

@@ -280,7 +280,9 @@ func TestETagTransport_TTLDrivenMultiPageDetection(t *testing.T) {
 		requestCount++
 		rec := httptest.NewRecorder()
 		if r.Header.Get("If-None-Match") != "" {
-			// 304 — do NOT refresh cachedAt
+			// 304 — the transport refreshes cachedAt, but this test
+			// explicitly overwrites the entry below to force an
+			// eviction on the next unconditional fetch.
 			rec.WriteHeader(304)
 			return rec.Result(), nil
 		}
@@ -363,16 +365,17 @@ func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
 }
 
 // TestETagTransport_304ExtendsCacheLifetime verifies that a steady
-// stream of 304s keeps the cached entry alive indefinitely. Without
-// the cachedAt refresh on 304, the TTL fires from the timestamp of
-// the original 200, forcing an unconditional refetch every TTL
-// window even when nothing about the resource has changed.
+// stream of 304s keeps the cached entry alive by advancing cachedAt
+// on every 304. Monotonic advance is the exact property needed for
+// "stable repo never burns an unconditional refetch": if each 304
+// pushes cachedAt forward, induction guarantees the entry will never
+// cross the TTL boundary. The test deliberately does NOT reset
+// cachedAt between iterations so a transport that stopped refreshing
+// on 304 would leave the timestamp pinned and fail the After() check.
 func TestETagTransport_304ExtendsCacheLifetime(t *testing.T) {
 	url := "https://api.github.com/repos/o/n/pulls"
-	requestCount := 0
 	unconditionalCount := 0
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		requestCount++
 		rec := httptest.NewRecorder()
 		if r.Header.Get("If-None-Match") == "" {
 			unconditionalCount++
@@ -384,34 +387,41 @@ func TestETagTransport_304ExtendsCacheLifetime(t *testing.T) {
 		return rec.Result(), nil
 	})}
 
-	// First request: unconditional, caches the etag.
+	// Prime the cache with one unconditional fetch.
 	req, _ := http.NewRequest("GET", url, nil)
 	_, err := et.RoundTrip(req)
 	require.NoError(t, err)
 	require.Equal(t, 1, unconditionalCount)
 
-	// Simulate a long stable run. Between each round trip, age the
-	// cache entry by just under a TTL — if cachedAt were never
-	// refreshed, the second of these would expire it. The refresh
-	// keeps it alive across an unbounded number of cycles.
-	for i := range 5 {
-		val, ok := et.cache.Load(url)
-		require.True(t, ok, "entry must persist across 304 #%d", i)
-		entry := val.(etagEntry)
-		entry.cachedAt = time.Now().Add(-etagTTL + time.Second)
-		et.cache.Store(url, entry)
+	val, ok := et.cache.Load(url)
+	require.True(t, ok, "initial 200 should populate cache")
+	prev := val.(etagEntry).cachedAt
 
-		req, _ := http.NewRequest("GET", url, nil)
-		resp, err := et.RoundTrip(req)
-		require.NoError(t, err)
-		require.Equal(t, 304, resp.StatusCode)
+	// Five consecutive 304s should each advance cachedAt strictly
+	// forward. Sleeping between iterations ensures time.Now() has
+	// observably moved, so "advance" is a real signal and not just
+	// monotonic-clock noise.
+	for i := range 5 {
+		time.Sleep(2 * time.Millisecond)
+
+		req2, _ := http.NewRequest("GET", url, nil)
+		resp, err := et.RoundTrip(req2)
+		require.NoErrorf(t, err, "round trip #%d", i)
+		require.Equalf(t, 304, resp.StatusCode, "round trip #%d", i)
+
+		val, ok := et.cache.Load(url)
+		require.Truef(t, ok, "cache must persist across 304 #%d", i)
+		got := val.(etagEntry).cachedAt
+		assert.Truef(t, got.After(prev),
+			"304 #%d must advance cachedAt: prev=%v got=%v", i, prev, got)
+		prev = got
 	}
 
-	// Only the very first request should have been unconditional.
-	// Every subsequent request must have sent If-None-Match and got 304.
+	// The six round trips must have triggered exactly one
+	// unconditional fetch. If the cache stopped extending on 304,
+	// entries would churn and this count would climb.
 	assert.Equal(t, 1, unconditionalCount,
-		"304 must extend the cache so no unconditional refetch occurs on a stable repo")
-	assert.Equal(t, 6, requestCount, "all 6 round trips should have hit the base transport")
+		"stable 304 stream must not trigger additional unconditional fetches")
 }
 
 func TestIsNotModified(t *testing.T) {
