@@ -423,11 +423,18 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 		return []string{"Diff data is unavailable for this pull request."}
 	}
 	// For open PRs, also detect stale diff data: if the recorded diff head
-	// does not match the latest platform head, a prior diff-sync attempt
-	// failed after new commits were pushed and the UI would show an old
-	// diff without this warning.
-	if mr.State == "open" && mr.PlatformHeadSHA != "" && mr.DiffHeadSHA != mr.PlatformHeadSHA {
-		return []string{"Diff data is out of date for this pull request."}
+	// or base does not match the latest platform SHAs, a prior diff-sync
+	// attempt failed after new commits landed (on the PR branch or the
+	// base branch) and the UI would show an old diff without this warning.
+	// Mirrors the staleness logic in getDiff so the warning and the
+	// rendered diff stay in sync.
+	if mr.State == "open" {
+		if mr.PlatformHeadSHA != "" && mr.DiffHeadSHA != mr.PlatformHeadSHA {
+			return []string{"Diff data is out of date for this pull request."}
+		}
+		if mr.PlatformBaseSHA != "" && mr.DiffBaseSHA != mr.PlatformBaseSHA {
+			return []string{"Diff data is out of date for this pull request."}
+		}
 	}
 	return nil
 }

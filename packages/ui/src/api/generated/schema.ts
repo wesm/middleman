@@ -255,6 +255,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/pulls/{number}/import-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name pulls by number import metadata */
+        get: operations["get-repos-by-owner-by-name-pulls-by-number-import-metadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}/merge": {
         parameters: {
             query?: never;
@@ -716,6 +733,7 @@ export interface components {
             merge_request: components["schemas"]["MergeRequest"];
             repo_name: string;
             repo_owner: string;
+            warnings?: string[] | null;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestResponse: {
@@ -762,6 +780,22 @@ export interface components {
             repo_name: string;
             repo_owner: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
+        };
+        MrImportMetadataResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MrImportMetadataResponse.json
+             */
+            readonly $schema?: string;
+            head_branch: string;
+            head_repo_clone_url: string;
+            is_draft: boolean;
+            /** Format: int64 */
+            number: number;
+            platform_head_sha: string;
+            state: string;
+            title: string;
         };
         PostCommentInputBody: {
             /**
@@ -1376,6 +1410,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-repos-by-owner-by-name-pulls-by-number-import-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MrImportMetadataResponse"];
                 };
             };
             /** @description Error */
