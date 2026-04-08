@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     Provider,
     PRListView,
@@ -20,6 +20,7 @@
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
     initTheme,
     cleanupTheme,
@@ -72,27 +73,15 @@
     const appEl = document.getElementById("app")!;
     const cleanupContainer = initContainerObserver(appEl);
     const cleanupItemRefs = initItemRefHandler();
-    void (async () => {
-      try {
-        const settings = await getSettings();
-        if (stores) {
-          stores.settings.setConfiguredRepos(settings.repos);
-          stores.activity.hydrateDefaults(settings.activity);
-        }
-      } catch (err) {
-        console.warn(
-          "Failed to load settings, using defaults:",
-          err,
-        );
-      }
-      appReady = true;
-      if (stores) {
-        stores.sync.startPolling();
-        void stores.pulls.loadPulls();
-        void stores.issues.loadIssues();
-      }
-    })();
+    const cancelStartup = runAppStartup({
+      getSettings,
+      getStores: () => stores,
+      onReady: () => {
+        appReady = true;
+      },
+    });
     return () => {
+      cancelStartup();
       cleanupTheme();
       cleanupContainer();
       cleanupItemRefs();
@@ -100,6 +89,11 @@
   });
 
   let lastRepo: string | undefined;
+
+  onDestroy(() => {
+    stores?.events.disconnect();
+  });
+
   $effect(() => {
     const repo = getGlobalRepo();
     if (!appReady || !stores) {

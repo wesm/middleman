@@ -66,6 +66,9 @@
   import {
     createSettingsStore,
   } from "./stores/settings.svelte.js";
+  import {
+    createEventsStore,
+  } from "./stores/events.svelte.js";
 
   interface Props {
     client: MiddlemanClient;
@@ -187,6 +190,20 @@
     }
     const diffStore = createDiffStore(diffOpts);
 
+    const eventsStore = createEventsStore({
+      ...(cfg.basePath != null && {
+        getBasePath: () => cfg.basePath as string,
+      }),
+      onDataChanged: () => {
+        void pullsStore.loadPulls();
+        void issuesStore.loadIssues();
+        void activityStore.loadActivity();
+      },
+      onSyncStatus: () => {
+        void syncStore.refreshSyncStatus();
+      },
+    });
+
     const si: StoreInstances = {
       pulls: pullsStore,
       issues: issuesStore,
@@ -197,6 +214,7 @@
       grouping,
       collapsedRepos,
       settings: settingsStore,
+      events: eventsStore,
     };
 
     if (roborevBase) {
