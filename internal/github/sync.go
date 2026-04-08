@@ -1707,6 +1707,7 @@ func (s *Syncer) indexSyncIssues(
 		stillOpen[issue.GetNumber()] = true
 	}
 
+	var hadItemFailure bool
 	for _, ghIssue := range ghIssues {
 		normalized := NormalizeIssue(repoID, ghIssue)
 		if _, uErr := s.db.UpsertIssue(ctx, normalized); uErr != nil {
@@ -1715,6 +1716,7 @@ func (s *Syncer) indexSyncIssues(
 				"number", ghIssue.GetNumber(),
 				"err", uErr,
 			)
+			hadItemFailure = true
 		}
 	}
 
@@ -1734,9 +1736,13 @@ func (s *Syncer) indexSyncIssues(
 				"number", number,
 				"err", err,
 			)
+			hadItemFailure = true
 		}
 	}
 
+	if hadItemFailure {
+		return fmt.Errorf("one or more issue sync items failed")
+	}
 	return nil
 }
 

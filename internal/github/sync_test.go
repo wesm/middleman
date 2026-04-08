@@ -2793,17 +2793,42 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 	assert.Equal(issueTitle, issue.Title)
 }
 
-// TestSyncerPartialFailureInvalidatesETagOnNextCycle is the
-// regression test for the Task C fix. It reproduces the sequence
-// where a 200 list response succeeded (populating the ETag cache
-// in the real transport) but a downstream step — here, the issue
-// list fetch — failed, leaving the DB inconsistent. Before the
-// fix, the next cycle saw 304 on the PR list and followed the
-// "nothing to do" branch, never retrying the failed step until
-// the TTL expired. After the fix, doSyncRepo records the partial
-// failure in failedRepos, calls InvalidateListETagsForRepo at the
-// top of the next cycle, and the list call issues unconditionally
-// so the retry can happen.
+// partialFailureMock embeds mockClient and simulates ETag-like
+// behavior for issues: after a successful list fetch, subsequent
+// calls return 304 (not-modified) unless InvalidateListETagsForRepo
+// was called. This proves invalidation is load-bearing — without it
+// the retry never fires and the issue stays missing from the DB.
+type partialFailureMock struct {
+	mockClient
+	issuesCached bool
+}
+
+func (m *partialFailureMock) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+	if m.listOpenIssuesErr != nil {
+		return nil, m.listOpenIssuesErr
+	}
+	if m.issuesCached {
+		return nil, notModifiedErr()
+	}
+	m.issuesCached = true
+	return m.openIssues, nil
+}
+
+func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string) {
+	m.invalidateCalls.Add(1)
+	m.issuesCached = false
+}
+
+// TestSyncerPartialFailureInvalidatesETagOnNextCycle verifies that a
+// partial failure within doSyncRepo causes the next sync cycle to
+// bypass ETag caching for that repo. The mock simulates ETag transport
+// behavior: after a successful list fetch, subsequent ListOpenIssues
+// calls return 304 unless InvalidateListETagsForRepo was called.
+// Without the invalidation path, cycle 2 sees 304 and skips issue
+// sync entirely — the issue never lands in DB. With the fix,
+// doSyncRepo records the partial failure in failedRepos and calls
+// InvalidateListETagsForRepo at the top of the next cycle, forcing
+// an unconditional fetch that retries the failed items.
 func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2813,8 +2838,6 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
-	// Build an open issue that should appear in the DB only after
-	// the retry pass succeeds.
 	issueNumber := 7
 	issueTitle := "post-retry issue"
 	issueState := "open"
@@ -2832,16 +2855,13 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 		UpdatedAt: makeTimestamp(now),
 	}
 
-	mc := &mockClient{
-		openPRs:    []*gh.PullRequest{buildOpenPR(1, now)},
-		openIssues: []*gh.Issue{openIssue},
-		comments:   []*gh.IssueComment{},
-		reviews:    []*gh.PullRequestReview{},
-		commits:    []*gh.RepositoryCommit{},
-	}
-	// First cycle: PR list succeeds, issue list fails with a
-	// non-304 error, so doSyncRepo's syncIssues call marks
-	// failure without aborting the whole repo sync.
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.openIssues = []*gh.Issue{openIssue}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	// First cycle: issue list fails with a non-304 error.
 	mc.listOpenIssuesErr = fmt.Errorf("transient issue list failure")
 	mc.getIssueFn = func(_ context.Context, _, _ string, n int) (*gh.Issue, error) {
 		if n == issueNumber {
@@ -2855,10 +2875,7 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 		d, nil, repos, time.Minute, nil,
 	)
 
-	// First cycle: PR sync completes but issue sync errors out.
-	// doSyncRepo logs the error and calls markFailure(). The repo
-	// result has no hard error (issue failure is non-fatal for the
-	// repo as a whole), but failedRepos is marked.
+	// Cycle 1: PR sync completes but issue list errors out.
 	syncer.RunOnce(ctx)
 
 	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
@@ -2867,19 +2884,16 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.True(flagged, "failedRepos must be set after partial failure")
 
-	// Re-arm the mock so the second cycle sees a successful issue
-	// list. Before the fix, the PR list would have returned 304
-	// and the repo would have been marked success without retrying
-	// anything — but issues have their own ETag so they would
-	// actually still fire here. To make this test actually prove
-	// the invalidation call, the assertion below on
-	// invalidateCalls is the load-bearing check: without the fix,
-	// the helper is never invoked because failedRepos never gets
-	// set.
+	// Clear the transient error. The mock now simulates warm ETag
+	// cache: ListOpenIssues returns 304 unless invalidated. Without
+	// the fix, the issue would stay missing from DB permanently.
 	mc.listOpenIssuesErr = nil
+	mc.issuesCached = true // simulate warm cache from a prior 200
 
 	invalidateBefore := mc.invalidateCalls.Load()
 
+	// Cycle 2: invalidation clears the mock cache, allowing a fresh
+	// fetch that delivers the issue data.
 	syncer.RunOnce(ctx)
 
 	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
@@ -2890,7 +2904,6 @@ func TestSyncerPartialFailureInvalidatesETagOnNextCycle(t *testing.T) {
 	require.NotNil(issue2, "second cycle should have persisted the recovered issue")
 	assert.Equal(issueNumber, issue2.Number)
 
-	// Flag should be cleared after a clean pass.
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
 }
