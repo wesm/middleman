@@ -49,8 +49,8 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 
 func filteredGitTestEnv() []string {
 	return append(filteredGitEnv(),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
 	)
 }
 
@@ -221,7 +221,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	cmd := exec.Command("git", "-C", clonePath,
 		"config", "--get-all", "remote.origin.fetch")
 	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -255,8 +255,8 @@ func TestEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_KEY_0", "http.extraHeader")
 	t.Setenv("GIT_CONFIG_VALUE_0", "X-Bad: injected")
 	t.Setenv("GIT_CONFIG_PARAMETERS", "'http.extraHeader=X-Bad: injected'")
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	// Credential/interactive helpers
 	t.Setenv("GIT_ASKPASS", "/bin/false")
 	t.Setenv("GIT_SSH_COMMAND", "/bin/false")

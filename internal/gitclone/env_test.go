@@ -1,6 +1,7 @@
 package gitclone
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,8 +21,8 @@ func TestIsBlockedEnvVar(t *testing.T) {
 		"GIT_CONFIG_KEY_0=http.extraHeader",
 		"GIT_CONFIG_VALUE_0=Authorization: Basic abc",
 		"GIT_CONFIG_PARAMETERS='http.extraHeader=X: y'",
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
 		"GIT_CONFIG_NOSYSTEM=1",
 		// Credential/interactive
 		"GIT_ASKPASS=/bin/false",

@@ -45,7 +45,7 @@ func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
 					PullRequests: []*gh.PullRequest{{Number: new(99)}},
 				},
 			},
-			wantIDs: []int64{101},
+			wantIDs: []int64{101, 102},
 		},
 		{
 			name:    "ignores runs without pull request association",

@@ -22,9 +22,6 @@ func FilterWorkflowRunsAwaitingApproval(
 		if run.GetHeadSHA() != headSHA {
 			continue
 		}
-		if run.GetEvent() != "pull_request" {
-			continue
-		}
 		if !workflowRunTargetsPR(run, number) {
 			continue
 		}
