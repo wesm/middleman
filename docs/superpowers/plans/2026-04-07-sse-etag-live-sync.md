@@ -1177,8 +1177,13 @@ func TestSyncer_StopWaitsForInflightRunOnce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
 
-	// Wait for RunOnce to enter
-	<-entered
+	// Wait for RunOnce to enter, bounded so a regression fails the test
+	// instead of hanging the suite.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for RunOnce")
+	}
 
 	// Stop should block until RunOnce returns
 	stopDone := make(chan struct{})
@@ -1282,7 +1287,11 @@ func TestSyncer_DoubleStartIsNoop(t *testing.T) {
 	defer cancel()
 	s.Start(ctx)
 	s.Start(ctx) // second call is no-op
-	<-entered
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for RunOnce")
+	}
 	cancel()
 	s.Stop()
 	// With hour-long ticker, only one RunOnce should fire
@@ -1342,8 +1351,14 @@ func TestSyncer_TriggerRunAfterStop(t *testing.T) {
 	s := NewSyncer(mock, d, repos, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
-	// Wait for the initial RunOnce to actually enter instead of sleeping.
-	<-entered
+	// Wait for the initial RunOnce to actually enter, with a timeout
+	// so a regression that prevents the goroutine from starting fails
+	// the test instead of hanging the whole suite.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for initial RunOnce")
+	}
 	cancel()
 	s.Stop() // blocks until in-flight RunOnce returns
 	before := callCount.Load()
@@ -1374,7 +1389,11 @@ func TestSyncer_StopShutdownCompleteIdempotent(t *testing.T) {
 	s := NewSyncer(mock, d, repos, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
-	<-entered
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for RunOnce")
+	}
 
 	// Two concurrent Stop calls — both must wait for shutdown
 	stopA := make(chan struct{})
