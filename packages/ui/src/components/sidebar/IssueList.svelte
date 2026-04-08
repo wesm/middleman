@@ -2,7 +2,7 @@
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
 
-  const { issues, sync, grouping, settings } = getStores();
+  const { issues, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
   const { isEmbedded, isSidebarToggleEnabled, toggleSidebar } = getSidebar();
 
@@ -139,16 +139,35 @@
     {:else}
       {#if grouping.getGroupByRepo()}
         {#each [...issues.issuesByRepo().entries()] as [repo, repoIssues] (repo)}
+          {@const collapsed = collapsedRepos.isCollapsed("issues", repo)}
           <div class="repo-group">
-            <h3 class="repo-header">{repo}</h3>
-            {#each repoIssues as issue (issue.ID)}
-              <IssueItem
-                {issue}
-                showRepo={false}
-                selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
-                onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
-              />
-            {/each}
+            <button
+              type="button"
+              class="repo-header"
+              aria-expanded={!collapsed}
+              onclick={() => collapsedRepos.toggle("issues", repo)}
+            >
+              <svg
+                class="repo-header__chevron"
+                class:repo-header__chevron--collapsed={collapsed}
+                width="10" height="10" viewBox="0 0 10 10"
+                fill="none" stroke="currentColor" stroke-width="1.5"
+              >
+                <polyline points="2,3 5,7 8,3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="repo-header__name">{repo}</span>
+              <span class="repo-header__count">{repoIssues.length}</span>
+            </button>
+            {#if !collapsed}
+              {#each repoIssues as issue (issue.ID)}
+                <IssueItem
+                  {issue}
+                  showRepo={false}
+                  selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
+                  onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
+                />
+              {/each}
+            {/if}
           </div>
         {/each}
       {:else}
@@ -332,6 +351,50 @@
     position: sticky;
     top: 0;
     z-index: 1;
+
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .repo-header:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .repo-header[aria-expanded="false"] {
+    border-bottom: none;
+  }
+
+  .repo-header__chevron {
+    color: var(--text-muted);
+    transition: transform 120ms ease;
+    flex-shrink: 0;
+  }
+
+  .repo-header__chevron--collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .repo-header__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .repo-header__count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .sidebar-footer {
