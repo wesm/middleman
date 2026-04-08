@@ -2801,8 +2801,18 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 type partialFailureMock struct {
 	mockClient
 	issuesCached         bool
+	prsCached            bool
 	listIssueCommentsErr error // injected error for ListIssueComments
+	listReviewsErr       error // injected error for ListReviews (MR timeline)
 	getIssueErr          error // injected error for GetIssue (closure path)
+}
+
+func (m *partialFailureMock) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+	if m.prsCached {
+		return nil, notModifiedErr()
+	}
+	m.prsCached = true
+	return m.openPRs, nil
 }
 
 func (m *partialFailureMock) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
@@ -2823,6 +2833,13 @@ func (m *partialFailureMock) ListIssueComments(_ context.Context, _, _ string, _
 	return m.comments, nil
 }
 
+func (m *partialFailureMock) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
+	if m.listReviewsErr != nil {
+		return nil, m.listReviewsErr
+	}
+	return m.reviews, nil
+}
+
 func (m *partialFailureMock) GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error) {
 	if m.getIssueErr != nil {
 		return nil, m.getIssueErr
@@ -2836,6 +2853,7 @@ func (m *partialFailureMock) GetIssue(ctx context.Context, owner, repo string, n
 func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string) {
 	m.invalidateCalls.Add(1)
 	m.issuesCached = false
+	m.prsCached = false
 }
 
 // TestSyncerSyncOpenIssueFailureMarksRepoFailed verifies that when
@@ -3052,6 +3070,86 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(updated)
 	assert.Equal("closed", updated.State, "issue should be closed after successful retry")
+
+	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged, "failedRepos must be cleared after successful retry")
+}
+
+// TestSyncerMRTimelineFailureMarksRepoFailed verifies that when
+// syncOpenMR's timeline refresh fails (here via ListReviews error),
+// the MR path is marked failed, and the next cycle retries timeline
+// via forceRefresh. Also verifies issue path is NOT force-refreshed
+// when only MR path failed (scoped failure tracking).
+func TestSyncerMRTimelineFailureMarksRepoFailed(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.openIssues = []*gh.Issue{}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	// MR timeline refresh fails via ListReviews error.
+	mc.listReviewsErr = fmt.Errorf("transient reviews failure")
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil,
+	)
+
+	// Cycle 1: MR upserted, but refreshTimeline fails at ListReviews →
+	// failMR set.
+	syncer.RunOnce(ctx)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr, "MR should be upserted even though timeline failed")
+
+	// No MR events because timeline refresh failed.
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events, "no events should exist after failed timeline refresh")
+
+	v, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.True(flagged, "failedRepos must be set after MR timeline failure")
+	assert.Equal(failMR, v.(failScope), "only failMR scope should be set")
+
+	// Clear error, add a review, simulate warm caches.
+	mc.listReviewsErr = nil
+	reviewID := int64(500)
+	reviewState := "APPROVED"
+	reviewUser := "reviewer"
+	reviewBody := "lgtm"
+	mc.reviews = []*gh.PullRequestReview{{
+		ID:          &reviewID,
+		State:       &reviewState,
+		Body:        &reviewBody,
+		SubmittedAt: makeTimestamp(now),
+		User:        &gh.User{Login: &reviewUser},
+	}}
+	mc.prsCached = true
+	mc.issuesCached = true
+
+	invalidateBefore := mc.invalidateCalls.Load()
+
+	// Cycle 2: forceMR=true overrides needsTimeline for MR even though
+	// UpdatedAt unchanged → timeline retried → review event lands.
+	syncer.RunOnce(ctx)
+
+	assert.Greater(mc.invalidateCalls.Load(), invalidateBefore,
+		"next cycle should call InvalidateListETagsForRepo")
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.NotEmpty(events, "review event should be persisted after forced MR timeline retry")
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")

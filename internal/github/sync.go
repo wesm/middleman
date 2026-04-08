@@ -151,6 +151,7 @@ type Syncer struct {
 	// failedRepos tracks repos whose last sync had a partial failure
 	// (a per-PR, per-issue, or closure-detection step failed after
 	// the ETag cache was populated by a successful 200 list fetch).
+	// Values are failScope bitmasks indicating which path(s) failed.
 	// The next sync cycle consults this set at the top of doSyncRepo
 	// and forces an unconditional refetch of the list endpoints so
 	// the failed items get re-applied from a fresh 200 response
@@ -200,12 +201,37 @@ func (s *Syncer) mergeWithRunCtx(caller context.Context) (context.Context, conte
 	return merged, cancel
 }
 
+// failScope is a bitmask indicating which sync paths failed.
+type failScope uint8
+
+const (
+	failMR     failScope = 1 << iota // PR/MR sync path failed
+	failIssues                       // issue sync path failed
+)
+
 // markRepoFailed records that the most recent sync of this repo hit
 // a partial failure after the ETag cache may have been populated, so
-// the next cycle must force an unconditional refetch of the list
-// endpoints. Matched by clearRepoFailed on a clean cycle.
-func (s *Syncer) markRepoFailed(repo RepoRef) {
-	s.failedRepos.Store(repoFailKey(repo), struct{}{})
+// the next cycle must force an unconditional refetch of the affected
+// list endpoints. Matched by clearRepoFailed on a clean cycle.
+func (s *Syncer) markRepoFailed(repo RepoRef, scope failScope) {
+	key := repoFailKey(repo)
+	for {
+		prev, ok := s.failedRepos.Load(key)
+		merged := scope
+		if ok {
+			merged |= prev.(failScope)
+		}
+		if ok {
+			if s.failedRepos.CompareAndSwap(key, prev, merged) {
+				return
+			}
+		} else {
+			if _, loaded := s.failedRepos.LoadOrStore(key, merged); !loaded {
+				return
+			}
+		}
+		// Another goroutine raced us; retry.
+	}
 }
 
 // clearRepoFailed clears the partial-failure flag after a clean
@@ -224,14 +250,15 @@ func repoFailKey(repo RepoRef) string {
 	return host + "/" + repo.Owner + "/" + repo.Name
 }
 
-// consumeRepoFailed returns true if the repo was marked failed on
-// the previous cycle. The flag remains set until a subsequent
-// successful sync explicitly clears it; callers use the return value
-// to decide whether to invalidate ETag caches at the top of the
-// cycle.
-func (s *Syncer) consumeRepoFailed(repo RepoRef) bool {
-	_, ok := s.failedRepos.Load(repoFailKey(repo))
-	return ok
+// consumeRepoFailed returns the failScope bitmask for a previously
+// failed repo. Returns 0 if the repo had no failure. The flag remains
+// set until a subsequent successful sync explicitly clears it.
+func (s *Syncer) consumeRepoFailed(repo RepoRef) failScope {
+	v, ok := s.failedRepos.Load(repoFailKey(repo))
+	if !ok {
+		return 0
+	}
+	return v.(failScope)
 }
 
 // publishStatus stores a status snapshot and invokes the
@@ -1085,14 +1112,15 @@ func (s *Syncer) indexSyncRepo(
 	// last time, leaving the DB stale until the TTL expired. Evict
 	// the repo's list ETags so the following calls are
 	// unconditional, forcing a fresh 200 that we can re-apply.
-	forceRefresh := s.consumeRepoFailed(repo)
-	if forceRefresh {
+	priorFail := s.consumeRepoFailed(repo)
+	if priorFail != 0 {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
 	}
-	// Track partial-failure signals across the function so we can
-	// mark/clear failedRepos in one place at the end.
-	hadFailure := false
-	markFailure := func() { hadFailure = true }
+	forceIssues := priorFail&failIssues != 0
+
+	// Track partial-failure signals per path so the next cycle only
+	// forces refresh on the paths that actually failed.
+	var failedScope failScope
 
 	ghPRs, err := client.ListOpenPullRequests(
 		ctx, repo.Owner, repo.Name,
@@ -1107,7 +1135,7 @@ func (s *Syncer) indexSyncRepo(
 		if IsNotModified(err) {
 			prListUnchanged = true
 		} else {
-			s.markRepoFailed(repo)
+			s.markRepoFailed(repo, failMR)
 			return fmt.Errorf("list open PRs: %w", err)
 		}
 	}
@@ -1128,7 +1156,7 @@ func (s *Syncer) indexSyncRepo(
 			slog.Error("list open MRs for 304 CI refresh failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
-			markFailure()
+			failedScope |= failMR
 		} else {
 			for _, mr := range openMRs {
 				if err := s.refreshCIStatus(ctx, repo, repoID, mr.Number, mr.PlatformHeadSHA); err != nil {
@@ -1137,7 +1165,7 @@ func (s *Syncer) indexSyncRepo(
 						"number", mr.Number,
 						"err", err,
 					)
-					markFailure()
+					failedScope |= failMR
 				}
 			}
 		}
@@ -1156,7 +1184,7 @@ func (s *Syncer) indexSyncRepo(
 					"number", ghPR.GetNumber(),
 					"err", err,
 				)
-				markFailure()
+				failedScope |= failMR
 			}
 		}
 
@@ -1166,7 +1194,7 @@ func (s *Syncer) indexSyncRepo(
 			ctx, repoID, stillOpen,
 		)
 		if err != nil {
-			s.markRepoFailed(repo)
+			s.markRepoFailed(repo, failMR)
 			return fmt.Errorf("get previously open MRs: %w", err)
 		}
 		for _, number := range closedNumbers {
@@ -1178,7 +1206,7 @@ func (s *Syncer) indexSyncRepo(
 					"number", number,
 					"err", err,
 				)
-				markFailure()
+				failedScope |= failMR
 			}
 		}
 	}
@@ -1187,20 +1215,19 @@ func (s *Syncer) indexSyncRepo(
 	// Issues have an independent etag, so this still runs even when the
 	// PR list returned 304.
 	if err := s.indexSyncIssues(
-		ctx, repo, repoID, forceRefresh,
+		ctx, repo, repoID, forceIssues,
 	); err != nil {
 		slog.Error("index sync issues failed",
 			"repo", repo.Owner+"/"+repo.Name, "err", err,
 		)
-		markFailure()
+		failedScope |= failIssues
 	}
 
-	if hadFailure {
-		// One or more per-item steps failed. Leave the failedRepos
-		// flag set so the next cycle forces an unconditional
-		// refetch of this repo's list endpoints and retries the
-		// items that didn't land.
-		s.markRepoFailed(repo)
+	if failedScope != 0 {
+		// One or more per-item steps failed. Record which paths
+		// failed so the next cycle forces an unconditional refetch
+		// only for the affected list endpoints.
+		s.markRepoFailed(repo, failedScope)
 	} else {
 		// Clean pass — drop any leftover flag from a prior cycle.
 		s.clearRepoFailed(repo)
