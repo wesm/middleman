@@ -368,19 +368,15 @@ test.describe("diff view", () => {
     await expect(treeFiles.nth(1)).toHaveClass(/tree-file--active/, { timeout: 2_000 });
   });
 
-  test("back button navigates to PR detail view", async ({ page }) => {
+  test("back button navigates to PR detail via fallback path", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
 
-    // Navigate to PR detail first so history.state has fromApp context.
-    await page.goto("/pulls/acme/widgets/1");
-    await page.locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
-
-    // Navigate to diff view.
+    // page.goto() doesn't set history.state.fromApp, so this tests the
+    // fallback navigate() path in goBack(), not history.back().
     await page.goto("/pulls/acme/widgets/1/files");
     await waitForDiffLoaded(page);
 
-    // Click back.
+    // Click back -- should navigate to the PR detail URL.
     await page.locator(".back-btn").click();
     await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
   });
@@ -501,22 +497,33 @@ test.describe("diff view performance", () => {
   });
 
   test("whitespace toggle on large diff completes re-render", async ({ page }) => {
+    // Return fewer files when whitespace=hide so we can distinguish
+    // the post-toggle render from the initial one.
+    const hiddenDiff = { ...largeDiff, files: largeDiff.files.slice(0, 45) };
     await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+      const url = new URL(route.request().url());
+      const fixture = url.searchParams.get("whitespace") === "hide"
+        ? hiddenDiff
+        : largeDiff;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(largeDiff),
+        body: JSON.stringify(fixture),
       });
     });
 
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    // Toggle whitespace -- this triggers a full re-fetch and re-render.
+    // All 50 files present initially.
+    await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });
+
+    // Toggle whitespace -- triggers a re-fetch with ?whitespace=hide
+    // which returns fewer files.
     await page.locator(".toggle-switch").click();
 
-    // All 50 files should still be present after the re-render.
-    await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });
+    // Count should drop to 45, proving the re-fetch and re-render completed.
+    await expect(page.locator(".diff-file .file-header")).toHaveCount(45, { timeout: 15_000 });
   });
 });
 
@@ -588,9 +595,16 @@ test.describe("diff view (git-backed)", () => {
     );
     await expect(cacheFile).toBeVisible();
 
-    // All lines should be additions (no deletions or context).
+    // Only addition lines -- no deletions or context.
+    const addedLines = cacheFile.locator(".diff-line--add");
     const deletedLines = cacheFile.locator(".diff-line--del");
+    await expect(addedLines.first()).toBeVisible();
     await expect(deletedLines).toHaveCount(0);
+    // No context lines in a pure-add file.
+    const contextLines = cacheFile.locator(
+      ".diff-line:not(.diff-line--add):not(.diff-line--del)",
+    );
+    await expect(contextLines).toHaveCount(0);
 
     // File tree badge should be "A".
     const treeBadge = page.locator(".file-tree .tree-file", {
@@ -609,9 +623,15 @@ test.describe("diff view (git-backed)", () => {
     );
     await expect(configFile).toBeVisible();
 
-    // All lines should be deletions.
+    // Only deletion lines -- no additions or context.
+    const deletedLines = configFile.locator(".diff-line--del");
     const addedLines = configFile.locator(".diff-line--add");
+    await expect(deletedLines.first()).toBeVisible();
     await expect(addedLines).toHaveCount(0);
+    const contextLines = configFile.locator(
+      ".diff-line:not(.diff-line--add):not(.diff-line--del)",
+    );
+    await expect(contextLines).toHaveCount(0);
 
     // File tree badge should be "D".
     const treeBadge = page.locator(".file-tree .tree-file", {

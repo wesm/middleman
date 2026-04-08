@@ -37,7 +37,14 @@
 
   $effect(() => {
     if (!collapsed && inViewport) {
+      const prev = renderedFile;
       renderedFile = file;
+      // Clear stale tokens synchronously so any render before the
+      // tokenization effect runs falls through to raw content
+      // instead of showing cached tokens from the old file.
+      if (file !== prev) {
+        tokens = new Map();
+      }
     }
   });
 
