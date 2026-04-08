@@ -167,6 +167,14 @@ func (s *Syncer) SetWatchInterval(d time.Duration) {
 	s.watchInterval = d
 }
 
+// HasDiffSync reports whether the syncer has a clone manager configured
+// and is therefore expected to populate diff SHAs for tracked PRs. The
+// HTTP layer uses this to decide whether a missing diff is a sync issue
+// worth warning about, or simply a deployment that opted out of diffs.
+func (s *Syncer) HasDiffSync() bool {
+	return s.clones != nil
+}
+
 // SetWatchedMRs replaces the fast-sync watch list. Each watched
 // MR is synced on the watch interval via SyncMR, independent of
 // the bulk sync cycle.

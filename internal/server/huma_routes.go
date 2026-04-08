@@ -393,8 +393,36 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 			RepoOwner:     input.Owner,
 			RepoName:      input.Name,
 			WorktreeLinks: wl,
+			Warnings:      s.diffWarnings(mr),
 		},
 	}, nil
+}
+
+// diffWarnings returns warnings inferred from the persisted PR row. The
+// resolveItem and syncPR paths log diff sync failures via slog and (in
+// syncPR's case) surface them in the immediate response, but neither
+// persists the failure. Without inferring from the row state, a client
+// that lands on the PR detail page after resolveItem (which has no
+// warnings field) or after a refresh would see no indication that the
+// diff is unavailable. We therefore emit a sanitized warning whenever a
+// PR that should have diff data is missing it.
+func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
+	if mr == nil {
+		return nil
+	}
+	if !s.syncer.HasDiffSync() {
+		return nil
+	}
+	// Closed-not-merged PRs may legitimately lack diff SHAs (the merged
+	// path never ran for them); only complain about open and merged PRs
+	// where the sync pipeline is expected to have populated the row.
+	if mr.State != "open" && mr.State != "merged" {
+		return nil
+	}
+	if mr.DiffHeadSHA != "" {
+		return nil
+	}
+	return []string{"Diff data is unavailable for this pull request."}
 }
 
 func (s *Server) getMRImportMetadata(
@@ -1139,8 +1167,10 @@ func (s *Server) resolveItem(
 	)
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
-	// the result as success and let the next detail fetch surface the
-	// staleness via warnings.
+	// the result as success here. The resolve response has no warnings
+	// field, so the staleness reaches the client when they navigate to
+	// the PR detail page: getPull infers the warning from the persisted
+	// row state via diffWarnings.
 	var diffErr *ghclient.DiffSyncError
 	if err != nil && !errors.As(err, &diffErr) {
 		var ghErr *gh.ErrorResponse

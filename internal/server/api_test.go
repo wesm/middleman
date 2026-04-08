@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/middleman/internal/apiclient"
 	"github.com/wesm/middleman/internal/apiclient/generated"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
@@ -487,6 +488,96 @@ func TestAPIGetPullNotFound(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode())
 	require.NotNil(t, resp.ApplicationproblemJSONDefault)
+}
+
+// TestAPIGetPullEmitsDiffWarningWhenSHAsMissing covers the case where a
+// previous diff sync failed and left the PR row without diff SHAs. The
+// resolveItem path treats DiffSyncError as success and the resolve
+// response has no warnings field, so the only place a client can learn
+// the diff is unavailable is the next getPull call. This regression
+// test pins that behavior so the warning can't silently disappear.
+func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	// HasDiffSync gates the inferred warning, so the syncer must be
+	// constructed with a non-nil clone manager. The manager itself is
+	// never invoked by getPull.
+	clonesDir := t.TempDir()
+	clones := gitclone.New(clonesDir, nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 1)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Warnings, "warnings field should be set when diff is missing")
+	warnings := *resp.JSON200.Warnings
+	require.Len(warnings, 1)
+	warning := warnings[0]
+	assert.Contains(warning, "Diff data is unavailable")
+
+	// Sanitization invariants: the warning must not leak any internal
+	// detail even when emitted from the read path.
+	assert.NotContains(warning, clonesDir)
+	assert.NotContains(warning, "refs/")
+	assert.NotContains(warning, "rev-parse")
+}
+
+// TestAPIGetPullNoDiffWarningWhenSHAsPresent verifies the warning does
+// not fire when the row already carries valid diff SHAs.
+func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	clones := gitclone.New(t.TempDir(), nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, clones, defaultTestRepos, time.Minute, nil,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+
+	seedPR(t, database, "acme", "widget", 2)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(
+		ctx, repoID, 2,
+		"deadbeef00000000000000000000000000000001",
+		"deadbeef00000000000000000000000000000002",
+		"deadbeef00000000000000000000000000000003",
+	))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 2,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	if resp.JSON200.Warnings != nil {
+		assert.Empty(*resp.JSON200.Warnings)
+	}
 }
 
 func TestAPISetKanbanState(t *testing.T) {
