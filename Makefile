@@ -12,12 +12,13 @@ LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 EXE_SUFFIX := $(if $(filter windows,$(shell go env GOOS)),.exe,)
 BINARY := middleman$(EXE_SUFFIX)
+GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/')
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air" ]; then printf "%s" "$$(go env GOBIN)/air"; \
-	elif [ -x "$$(go env GOPATH | cut -d: -f1)/bin/air" ]; then printf "%s" "$$(go env GOPATH | cut -d: -f1)/bin/air"; \
+	elif [ -x "$(GOPATH_FIRST)/bin/air" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air"; \
 	fi)
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
@@ -46,8 +47,7 @@ install: build-release
 	else \
 		INSTALL_DIR="$${GOBIN:-$$(go env GOBIN)}"; \
 		if [ -z "$$INSTALL_DIR" ]; then \
-			GOPATH_FIRST="$$(go env GOPATH | cut -d: -f1)"; \
-			INSTALL_DIR="$$GOPATH_FIRST/bin"; \
+			INSTALL_DIR="$(GOPATH_FIRST)/bin"; \
 		fi; \
 		mkdir -p "$$INSTALL_DIR"; \
 		echo "Installing to $$INSTALL_DIR/$(BINARY)"; \
