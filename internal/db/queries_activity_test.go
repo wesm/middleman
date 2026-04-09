@@ -126,6 +126,32 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("force push events appear in the activity feed", func(t *testing.T) {
+		assert := Assert.New(t)
+		d := openTestDB(t)
+		ctx := context.Background()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		prID := insertTestMR(t, d, repoID, 1, "Rewrite branch", base)
+
+		err := d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: prID,
+			EventType:      "force_push",
+			Author:         "alice",
+			Summary:        "abc1234 -> def5678",
+			CreatedAt:      base.Add(5 * time.Minute),
+			DedupeKey:      "force-push-abc1234-def5678",
+		}})
+		require.NoError(t, err)
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
+		require.NoError(t, err)
+		require.NotEmpty(t, items)
+		assert.Equal("force_push", items[0].ActivityType)
+		assert.Equal("alice", items[0].Author)
+		assert.Equal("Rewrite branch", items[0].ItemTitle)
+	})
+
 	t.Run("search filter", func(t *testing.T) {
 		assert := Assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{

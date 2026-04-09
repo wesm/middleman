@@ -314,6 +314,61 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert.True(found)
 }
 
+func TestSyncStoresForcePushEvent(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	commitSHA := "abc123def456"
+	commitMsg := "fix: tighten validation"
+	ciState := "success"
+
+	mc := &mockClient{
+		openPRs: []*gh.PullRequest{buildOpenPR(1, now)},
+		commits: []*gh.RepositoryCommit{{
+			SHA: &commitSHA,
+			Commit: &gh.Commit{
+				Message: &commitMsg,
+				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(now.Add(-1 * time.Hour))},
+			},
+		}},
+		forcePushEvents: []ForcePushEvent{{
+			Actor:     "alice",
+			BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			AfterSHA:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Ref:       "feature",
+			CreatedAt: now.Add(-30 * time.Minute),
+		}},
+		reviews:  []*gh.PullRequestReview{},
+		comments: []*gh.IssueComment{},
+		ciStatus: &gh.CombinedStatus{State: &ciState},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+
+	events, err := d.ListMREvents(ctx, pr.ID)
+	require.NoError(err)
+	require.NotEmpty(events)
+
+	var forcePush *db.MREvent
+	for i := range events {
+		if events[i].EventType == "force_push" {
+			forcePush = &events[i]
+			break
+		}
+	}
+	require.NotNil(forcePush)
+	assert.Equal("alice", forcePush.Author)
+	assert.Equal("aaaaaaa -> bbbbbbb", forcePush.Summary)
+	assert.Contains(forcePush.MetadataJSON, `"ref":"feature"`)
+}
+
 func TestSyncSingleFlight(t *testing.T) {
 	ctx := context.Background()
 	d := openTestDB(t)

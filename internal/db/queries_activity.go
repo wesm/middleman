@@ -119,7 +119,7 @@ func (d *DB) ListActivity(
 			JOIN middleman_merge_requests p ON e.merge_request_id = p.id
 			JOIN middleman_repos r ON p.repo_id = r.id
 			WHERE e.event_type IN (
-				'issue_comment', 'review', 'commit')
+				'issue_comment', 'review', 'commit', 'force_push')
 			UNION ALL
 			SELECT 'comment', 'ise', e.id,
 			       r.owner, r.name,

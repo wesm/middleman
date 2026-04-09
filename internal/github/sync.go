@@ -116,22 +116,22 @@ const defaultParallelism = 4
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	clients         map[string]Client // host -> client
-	db              *db.DB
-	clones          *gitclone.Manager
-	rateTrackers    map[string]*RateTracker // host -> tracker
-	repos           []RepoRef
-	reposMu         sync.Mutex
-	interval        time.Duration
-	watchInterval   time.Duration
-	watchedMRs      []WatchedMR
-	watchMu         sync.Mutex
-	parallelism     atomic.Int32
-	running         atomic.Bool
-	status          atomic.Value // stores *SyncStatus
-	stopCh          chan struct{}
-	stopOnce        sync.Once
-	wg              sync.WaitGroup
+	clients          map[string]Client // host -> client
+	db               *db.DB
+	clones           *gitclone.Manager
+	rateTrackers     map[string]*RateTracker // host -> tracker
+	repos            []RepoRef
+	reposMu          sync.Mutex
+	interval         time.Duration
+	watchInterval    time.Duration
+	watchedMRs       []WatchedMR
+	watchMu          sync.Mutex
+	parallelism      atomic.Int32
+	running          atomic.Bool
+	status           atomic.Value // stores *SyncStatus
+	stopCh           chan struct{}
+	stopOnce         sync.Once
+	wg               sync.WaitGroup
 	displayNames     map[string]string // "host\x00login" -> display name, per sync run
 	displayNamesMu   sync.Mutex
 	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
@@ -932,6 +932,11 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
+	forcePushEvents, err := client.ListForcePushEvents(ctx, repo.Owner, repo.Name, number)
+	if err != nil {
+		return fmt.Errorf("list force-push events for MR #%d: %w", number, err)
+	}
+
 	var events []db.MREvent
 	for _, c := range comments {
 		events = append(events, NormalizeCommentEvent(mrID, c))
@@ -941,6 +946,9 @@ func (s *Syncer) refreshTimeline(
 	}
 	for _, c := range commits {
 		events = append(events, NormalizeCommitEvent(mrID, c))
+	}
+	for _, fp := range forcePushEvents {
+		events = append(events, NormalizeForcePushEvent(mrID, fp))
 	}
 
 	if err := s.db.UpsertMREvents(ctx, events); err != nil {
