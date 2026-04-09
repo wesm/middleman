@@ -1072,6 +1072,7 @@ func (s *Syncer) fetchMRDetail(
 		); ok {
 			normalized.AuthorDisplayName = name
 		}
+		calls++ // GetUser
 	}
 
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
@@ -1122,11 +1123,11 @@ func (s *Syncer) fetchMRDetail(
 	if err := s.refreshTimeline(
 		ctx, repo, repoID, mrID, fullPR,
 	); err != nil {
-		// Timeline = 3 calls (comments + reviews + commits).
-		calls += 3
+		// Timeline = 4 calls (comments + reviews + commits + force-push).
+		calls += 4
 		return calls, err
 	}
-	calls += 3
+	calls += 4
 
 	if err := s.refreshCIStatus(
 		ctx, repo, repoID, fullPR,

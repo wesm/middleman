@@ -76,7 +76,7 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 	t.Helper()
 	d := openTestDB(t)
 	mc := &mockClient{}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx) // creates repo row
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(t, err)
@@ -349,7 +349,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	}
 
 	d := openTestDB(t)
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
