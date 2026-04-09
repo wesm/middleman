@@ -21,6 +21,7 @@ export type {
   GroupingStore,
   CollapsedReposStore,
   SettingsStore,
+  EventsStore,
   DaemonStore,
   JobsStore,
   ReviewStore,
@@ -72,6 +73,9 @@ export {
 export {
   createSettingsStore,
 } from "./stores/settings.svelte.js";
+export {
+  createEventsStore,
+} from "./stores/events.svelte.js";
 export {
   createDaemonStore,
 } from "./stores/roborev/daemon.svelte.js";

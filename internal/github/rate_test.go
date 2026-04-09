@@ -238,7 +238,9 @@ func TestRateTrackerWindowRolloverResetsQuota(t *testing.T) {
 	// Trigger rollIfNeeded via RequestsThisHour
 	rt.RequestsThisHour()
 
-	assert.False(rt.Known())
+	// Known stays true — the account rate limit (5000) does not
+	// change between windows. Only remaining/count reset.
+	assert.True(rt.Known())
 	assert.Equal(1, rt.ThrottleFactor())
 	assert.False(rt.IsPaused())
 }

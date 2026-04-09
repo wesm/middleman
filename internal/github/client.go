@@ -46,6 +46,13 @@ type Client interface {
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
 	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
+	// InvalidateListETagsForRepo drops cached conditional-GET
+	// validators for the given repo's list endpoints so the next
+	// list call issues an unconditional fetch. The endpoints
+	// parameter selects which caches to clear ("pulls", "issues").
+	// If empty, both are cleared. Used to recover from a
+	// partial-failure sync.
+	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
 func graphQLEndpointForHost(platformHost string) string {
@@ -53,21 +60,29 @@ func graphQLEndpointForHost(platformHost string) string {
 		return "https://api.github.com/graphql"
 	}
 	return "https://" + platformHost + "/api/graphql"
+
 }
 
 // NewClient creates a GitHub Client authenticated with the given
 // token. platformHost selects the API endpoint: "" or "github.com"
 // uses the public API; any other value creates an Enterprise
-// client. rateTracker may be nil if rate tracking is not needed.
+// client. rateTracker and budget may be nil.
 func NewClient(
 	token string,
 	platformHost string,
 	rateTracker *RateTracker,
+	budget *SyncBudget,
 ) (Client, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
+	et := &etagTransport{base: tc.Transport}
+	if budget != nil {
+		tc.Transport = &budgetTransport{base: et, budget: budget}
+	} else {
+		tc.Transport = et
+	}
 
 	var ghClient *gh.Client
 	if platformHost == "" || platformHost == "github.com" {
@@ -90,6 +105,7 @@ func NewClient(
 		httpClient:      tc,
 		rateTracker:     rateTracker,
 		graphQLEndpoint: graphQLEndpointForHost(platformHost),
+		etag:            et,
 	}, nil
 }
 
@@ -98,6 +114,21 @@ type liveClient struct {
 	httpClient      *http.Client
 	rateTracker     *RateTracker
 	graphQLEndpoint string
+	etag            *etagTransport
+}
+
+// InvalidateListETagsForRepo evicts cached ETag entries for the repo's
+// list endpoints. Pass "pulls" and/or "issues" to scope the
+// invalidation; if no endpoints are given, both are cleared.
+// Safe to call when the transport is nil (tests).
+func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ...string) {
+	if c.etag == nil {
+		return
+	}
+	if len(endpoints) == 0 {
+		endpoints = []string{"pulls", "issues"}
+	}
+	c.etag.invalidateRepo(owner, repo, endpoints...)
 }
 
 const forcePushTimelineQuery = `

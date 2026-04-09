@@ -194,6 +194,10 @@ func (m *mockGH) ListIssuesPage(
 	return nil, false, nil
 }
 
+// InvalidateListETagsForRepo is a no-op for the server test mock,
+// which has no underlying HTTP cache.
+func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
+
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
@@ -219,7 +223,7 @@ func setupTestServerWithRepos(
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, 0)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -878,7 +882,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	clones := gitclone.New(clonesDir, nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -920,7 +924,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -971,7 +975,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1024,7 +1028,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1080,7 +1084,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1135,7 +1139,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1184,7 +1188,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1237,7 +1241,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1336,7 +1340,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
-		database, clones, defaultTestRepos, time.Minute, nil, 0,
+		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1445,7 +1449,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widget",
 		PlatformHost: "github.com",
-	}}, time.Minute, nil, 0)
+	}}, time.Minute, nil, nil)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -1505,7 +1509,7 @@ func TestAPIReadyForReview(t *testing.T) {
 			}, nil
 		},
 	}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil, 0)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil, nil)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -2250,7 +2254,7 @@ func TestAPIRateLimits(t *testing.T) {
 		}},
 		time.Minute,
 		map[string]*ghclient.RateTracker{"github.com": rt},
-		0,
+		nil,
 	)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
@@ -2300,7 +2304,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 		}},
 		time.Minute,
 		map[string]*ghclient.RateTracker{"github.com": rt},
-		0,
+		nil,
 	)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
@@ -2360,7 +2364,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 		}},
 		time.Minute,
 		map[string]*ghclient.RateTracker{"github.com": rt},
-		500,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(500)},
 	)
 
 	// Simulate some budget spend.

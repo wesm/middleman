@@ -9,9 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
-
 	"path/filepath"
+	"syscall"
 
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
@@ -105,6 +104,10 @@ func run(configPath string) error {
 	rateTrackers := make(
 		map[string]*ghclient.RateTracker, len(hostTokens),
 	)
+	budgetPerHour := cfg.BudgetPerHour()
+	budgets := make(
+		map[string]*ghclient.SyncBudget, len(hostTokens),
+	)
 	clients := make(
 		map[string]ghclient.Client, len(hostTokens),
 	)
@@ -115,8 +118,13 @@ func run(configPath string) error {
 		rateTrackers[host] = ghclient.NewRateTracker(
 			database, host,
 		)
+		if budgetPerHour > 0 {
+			budgets[host] = ghclient.NewSyncBudget(
+				budgetPerHour,
+			)
+		}
 		c, err := ghclient.NewClient(
-			token, host, rateTrackers[host],
+			token, host, rateTrackers[host], budgets[host],
 		)
 		if err != nil {
 			return fmt.Errorf(
@@ -142,8 +150,7 @@ func run(configPath string) error {
 
 	syncer := ghclient.NewSyncer(
 		clients, database, cloneMgr, repos,
-		cfg.SyncDuration(), rateTrackers,
-		cfg.BudgetPerHour(),
+		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
 	assets, err := web.Assets()
@@ -155,6 +162,25 @@ func run(configPath string) error {
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{},
 	)
+
+	// Wire status callback and prime the SSE event hub so clients
+	// can show live sync state without polling.
+	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		srv.Hub().Broadcast(server.Event{
+			Type: "sync_status",
+			Data: status,
+		})
+		if !status.Running {
+			srv.Hub().Broadcast(server.Event{
+				Type: "data_changed",
+				Data: struct{}{},
+			})
+		}
+	})
+	srv.Hub().Broadcast(server.Event{
+		Type: "sync_status",
+		Data: syncer.Status(),
+	})
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),

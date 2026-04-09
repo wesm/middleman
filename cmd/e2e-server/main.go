@@ -99,7 +99,7 @@ func run(port int, roborevEndpoint string) error {
 		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name, PlatformHost: "github.com"}
 	}
 
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": fc}, database, diffRepo.Manager, repos, time.Hour, nil, 0)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": fc}, database, diffRepo.Manager, repos, time.Hour, nil, nil)
 
 	assets, err := web.Assets()
 	if err != nil {

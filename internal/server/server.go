@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -58,10 +60,15 @@ type Server struct {
 	options           ServerOptions
 	version           string
 	handler           http.Handler
+	hub               *EventHub
 	activeWorktreeMu  sync.Mutex
 	activeWorktreeKey string
 	activeWorktreeSet bool
 }
+
+// Hub returns the server's SSE event hub. Callers should never
+// retain the returned pointer beyond the server's lifetime.
+func (s *Server) Hub() *EventHub { return s.hub }
 
 // SetVersion sets the version string returned by GET /api/v1/version.
 func (s *Server) SetVersion(v string) { s.version = v }
@@ -138,6 +145,7 @@ func newServer(
 		cfg:      cfg,
 		cfgPath:  cfgPath,
 		options:  options,
+		hub:      NewEventHub(),
 	}
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
@@ -148,6 +156,7 @@ func newServer(
 	mux.HandleFunc("PUT /api/v1/settings", s.handleUpdateSettings)
 	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
 	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.handleDeleteRepo)
+	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 
 	// Roborev proxy
 	if cfg != nil {
@@ -312,6 +321,84 @@ func (s *Server) ListenAndServe(addr string) error {
 		IdleTimeout: 60 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+// handleSSE streams server events to a client. The handler subscribes
+// to the EventHub and forwards each broadcast as an SSE frame. It exits
+// when the client disconnects, when the hub closes, when the subscriber
+// is evicted (slow consumer), or when context is canceled.
+func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	rc := http.NewResponseController(w)
+	// Clear server-wide WriteTimeout for this SSE response
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		return
+	}
+
+	// Subscribe BEFORE the first flush so any broadcast issued between
+	// the headers landing on the wire and the subscriber being registered
+	// is delivered to this client instead of dropped.
+	ch, done := s.hub.Subscribe(r.Context())
+
+	if err := rc.Flush(); err != nil {
+		return
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		// Non-blocking done check
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		select {
+		case <-done:
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(ev.Data)
+			if err != nil {
+				slog.Error("sse: marshal event", "type", ev.Type, "err", err)
+				continue
+			}
+			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				return
+			}
+			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				return
+			}
+			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				return
+			}
+			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+				return
+			}
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func (s *Server) handleVersion(

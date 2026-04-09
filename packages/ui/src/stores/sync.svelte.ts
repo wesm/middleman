@@ -23,6 +23,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
   let currentIntervalMs = 30_000;
+  // Monotonic counter incremented by SSE pushes. Poll results
+  // captured before an SSE update are stale and must be dropped.
+  let sseGeneration = 0;
 
   // --- reads ---
 
@@ -52,26 +55,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
     };
   }
 
-  async function refreshSyncStatus(): Promise<void> {
-    const [syncResult, rateResult] =
-      await Promise.allSettled([
-        apiClient.GET("/sync/status"),
-        apiClient.GET("/rate-limits"),
-      ]);
-
-    if (syncResult.status === "fulfilled") {
-      const { data, error } = syncResult.value;
-      if (!error && data) {
-        status = data;
-      }
-    }
-
-    if (rateResult.status === "fulfilled") {
-      const { data, error } = rateResult.value;
-      if (!error && data) {
-        rateLimits = data.hosts ?? {};
-      }
-    }
+  function applySyncStatus(next: SyncStatus | null): void {
+    status = next;
 
     const isRunning = status?.running ?? false;
 
@@ -86,6 +71,38 @@ export function createSyncStore(opts: SyncStoreOptions) {
     wasRunning = isRunning;
 
     adjustPollingSpeed(isRunning);
+  }
+
+  async function refreshSyncStatus(): Promise<void> {
+    const gen = sseGeneration;
+    const [syncResult, rateResult] =
+      await Promise.allSettled([
+        apiClient.GET("/sync/status"),
+        apiClient.GET("/rate-limits"),
+      ]);
+
+    // If an SSE push arrived while the poll was in flight, the
+    // SSE data is fresher — drop this stale poll result.
+    if (gen !== sseGeneration) return;
+
+    if (syncResult.status === "fulfilled") {
+      const { data, error } = syncResult.value;
+      if (!error && data) {
+        applySyncStatus(data);
+      }
+    }
+
+    if (rateResult.status === "fulfilled") {
+      const { data, error } = rateResult.value;
+      if (!error && data) {
+        rateLimits = data.hosts ?? {};
+      }
+    }
+  }
+
+  function setSyncStatus(next: SyncStatus): void {
+    sseGeneration++;
+    applySyncStatus(next);
   }
 
   async function triggerSync(): Promise<void> {
@@ -157,6 +174,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     onNextSyncComplete,
     subscribeSyncComplete,
     refreshSyncStatus,
+    setSyncStatus,
     triggerSync,
     startPolling,
     stopPolling,

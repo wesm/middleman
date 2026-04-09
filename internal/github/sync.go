@@ -117,24 +117,27 @@ const defaultParallelism = 4
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	clients            map[string]Client // host -> client
-	db                 *db.DB
-	clones             *gitclone.Manager
-	rateTrackers       map[string]*RateTracker // host -> tracker
-	budgets            map[string]*SyncBudget  // host -> budget
-	budgetPerHour      int
-	repos              []RepoRef
-	reposMu            sync.Mutex
-	interval           time.Duration
-	watchInterval      time.Duration
-	watchedMRs         []WatchedMR
-	watchMu            sync.Mutex
-	parallelism        atomic.Int32
-	running            atomic.Bool
-	status             atomic.Value // stores *SyncStatus
-	stopCh             chan struct{}
-	stopOnce           sync.Once
-	wg                 sync.WaitGroup
+	clients       map[string]Client // host -> client
+	db            *db.DB
+	clones        *gitclone.Manager
+	rateTrackers  map[string]*RateTracker // host -> tracker
+	budgets       map[string]*SyncBudget  // host -> budget
+	repos         []RepoRef
+	reposMu       sync.Mutex
+	interval      time.Duration
+	watchInterval time.Duration
+	watchedMRs    []WatchedMR
+	watchMu       sync.Mutex
+	parallelism   atomic.Int32
+	running       atomic.Bool
+	status        atomic.Value // stores *SyncStatus
+	stopCh        chan struct{}
+	stopOnce      sync.Once
+	wg            sync.WaitGroup
+	// lifecycleMu serializes TriggerRun registration with Stop so
+	// no wg.Add can happen after Stop begins wg.Wait.
+	lifecycleMu        sync.Mutex
+	stopped            bool                 // guarded by lifecycleMu
 	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
 	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
 	displayNames       map[string]string    // "host\x00login" -> display name, per sync run
@@ -142,13 +145,145 @@ type Syncer struct {
 	displayNameGroup   singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced         func(owner, name string, mr *db.MergeRequest)
 	onSyncCompleted    func(results []RepoSyncResult)
+	onStatusChange     func(status *SyncStatus)
+	// statusMu serializes publishStatus so worker goroutines
+	// can't interleave updates and deliver out-of-order snapshots
+	// to SSE subscribers.
+	statusMu sync.Mutex
+
+	// failedRepos tracks repos whose last sync had a partial failure
+	// (a per-PR, per-issue, or closure-detection step failed after
+	// the ETag cache was populated by a successful 200 list fetch).
+	// Values are failScope bitmasks indicating which path(s) failed.
+	// The next sync cycle consults this set at the top of doSyncRepo
+	// and forces an unconditional refetch of the list endpoints so
+	// the failed items get re-applied from a fresh 200 response
+	// instead of being skipped by a silent 304. Keyed by
+	// "host/owner/name". Cleared on the next successful sync.
+	failedRepos sync.Map
+
+	// runCtx is the syncer's lifetime context. It is canceled in
+	// Stop so in-flight RunOnce / TriggerRun goroutines observe
+	// cancellation and unblock any long-running GitHub calls. Both
+	// Start and TriggerRun derive their goroutine context from
+	// runCtx (merged with any caller context), so Stop can unblock
+	// the work it spawned regardless of whether the caller's ctx
+	// is still live. runCtxMu guards lazy init and the Stop
+	// handoff.
+	runCtx    context.Context
+	runCancel context.CancelFunc
+	runCtxMu  sync.Mutex
+}
+
+// ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
+// multiple times; the first caller wins and later calls are no-ops.
+func (s *Syncer) ensureRunCtx() context.Context {
+	s.runCtxMu.Lock()
+	defer s.runCtxMu.Unlock()
+	if s.runCtx == nil {
+		s.runCtx, s.runCancel = context.WithCancel(context.Background())
+	}
+	return s.runCtx
+}
+
+// mergeWithRunCtx returns a context that is canceled when either the
+// caller's ctx or the syncer's lifetime ctx is canceled. The returned
+// cancel function must be called to release resources. Used by
+// TriggerRun so ad-hoc runs respect both the caller's deadline and
+// Stop's global cancellation signal.
+func (s *Syncer) mergeWithRunCtx(caller context.Context) (context.Context, context.CancelFunc) {
+	runCtx := s.ensureRunCtx()
+	merged, cancel := context.WithCancel(caller)
+	go func() {
+		select {
+		case <-runCtx.Done():
+			cancel()
+		case <-merged.Done():
+		}
+	}()
+	return merged, cancel
+}
+
+// failScope is a bitmask indicating which sync paths failed.
+type failScope uint8
+
+const (
+	failMR     failScope = 1 << iota // PR/MR sync path failed
+	failIssues                       // issue sync path failed
+)
+
+// markRepoFailed records that the most recent sync of this repo hit
+// a partial failure after the ETag cache may have been populated, so
+// the next cycle must force an unconditional refetch of the affected
+// list endpoints. Matched by clearRepoFailed on a clean cycle.
+func (s *Syncer) markRepoFailed(repo RepoRef, scope failScope) {
+	key := repoFailKey(repo)
+	for {
+		prev, ok := s.failedRepos.Load(key)
+		merged := scope
+		if ok {
+			merged |= prev.(failScope)
+		}
+		if ok {
+			if s.failedRepos.CompareAndSwap(key, prev, merged) {
+				return
+			}
+		} else {
+			if _, loaded := s.failedRepos.LoadOrStore(key, merged); !loaded {
+				return
+			}
+		}
+		// Another goroutine raced us; retry.
+	}
+}
+
+// clearRepoFailed clears the partial-failure flag after a clean
+// doSyncRepo pass.
+func (s *Syncer) clearRepoFailed(repo RepoRef) {
+	s.failedRepos.Delete(repoFailKey(repo))
+}
+
+// repoFailKey returns the sync.Map key for a repo. Includes the host
+// so multi-host setups don't cross-invalidate.
+func repoFailKey(repo RepoRef) string {
+	host := repo.PlatformHost
+	if host == "" {
+		host = "github.com"
+	}
+	return host + "/" + repo.Owner + "/" + repo.Name
+}
+
+// consumeRepoFailed returns the failScope bitmask for a previously
+// failed repo. Returns 0 if the repo had no failure. The flag remains
+// set until a subsequent successful sync explicitly clears it.
+func (s *Syncer) consumeRepoFailed(repo RepoRef) failScope {
+	v, ok := s.failedRepos.Load(repoFailKey(repo))
+	if !ok {
+		return 0
+	}
+	return v.(failScope)
+}
+
+// publishStatus stores a status snapshot and invokes the
+// onStatusChange callback if one is registered. Used in place of
+// s.status.Store so SSE subscribers see every state transition.
+func (s *Syncer) publishStatus(status *SyncStatus) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.Store(status)
+	if s.onStatusChange != nil {
+		s.onStatusChange(status)
+	}
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
 // given interval. clients maps host -> Client; rateTrackers maps
 // host -> RateTracker. Both may contain nil values. clones may
-// be nil. budgetPerHour controls how many API calls the detail
-// drain may spend per host per hour (0 disables detail drain).
+// be nil. budgets maps host -> SyncBudget; nil or empty disables
+// detail drain and backfill. Budgets are created by the caller
+// (typically main.go) and wired into each Client's HTTP transport
+// at construction time so every sync-context RoundTrip is
+// automatically counted.
 func NewSyncer(
 	clients map[string]Client,
 	database *db.DB,
@@ -156,7 +291,7 @@ func NewSyncer(
 	repos []RepoRef,
 	interval time.Duration,
 	rateTrackers map[string]*RateTracker,
-	budgetPerHour int,
+	budgets map[string]*SyncBudget,
 ) *Syncer {
 	if clients == nil {
 		clients = make(map[string]Client)
@@ -164,24 +299,8 @@ func NewSyncer(
 	if rateTrackers == nil {
 		rateTrackers = make(map[string]*RateTracker)
 	}
-
-	// Collect unique hosts from repos and clients.
-	hostSet := make(map[string]struct{})
-	for _, r := range repos {
-		h := r.PlatformHost
-		if h == "" {
-			h = "github.com"
-		}
-		hostSet[h] = struct{}{}
-	}
-	for h := range clients {
-		hostSet[h] = struct{}{}
-	}
-	budgets := make(map[string]*SyncBudget, len(hostSet))
-	if budgetPerHour > 0 {
-		for h := range hostSet {
-			budgets[h] = NewSyncBudget(budgetPerHour)
-		}
+	if budgets == nil {
+		budgets = make(map[string]*SyncBudget)
 	}
 
 	s := &Syncer{
@@ -190,7 +309,6 @@ func NewSyncer(
 		clones:             clones,
 		rateTrackers:       rateTrackers,
 		budgets:            budgets,
-		budgetPerHour:      budgetPerHour,
 		repos:              repos,
 		interval:           interval,
 		nextSyncAfter:      make(map[string]time.Time),
@@ -276,6 +394,38 @@ func (s *Syncer) SetParallelism(n int) {
 	s.parallelism.Store(int32(n))
 }
 
+// SetOnStatusChange registers a callback invoked whenever the
+// sync status transitions (start, per-repo progress, rate-limit
+// wait, completion). Used by the server to broadcast live sync
+// state over SSE.
+func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
+	s.onStatusChange = fn
+}
+
+// TriggerRun kicks off a non-blocking RunOnce on the Syncer's
+// wait group so callers can request an ad-hoc sync without
+// blocking the caller. The run participates in the Syncer's
+// lifecycle: Stop cancels the merged context so any in-flight
+// GitHub call unblocks, then waits for the goroutine to exit.
+// The caller's ctx is honored too, so per-request deadlines still
+// apply.
+func (s *Syncer) TriggerRun(ctx context.Context) {
+	s.lifecycleMu.Lock()
+	if s.stopped {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	merged, cancel := s.mergeWithRunCtx(ctx)
+	s.wg.Add(1)
+	s.lifecycleMu.Unlock()
+
+	go func() {
+		defer s.wg.Done()
+		defer cancel()
+		s.RunOnce(merged)
+	}()
+}
+
 // clientFor returns the Client for the given repo's host,
 // falling back to "github.com" if no match is found.
 func (s *Syncer) clientFor(repo RepoRef) Client {
@@ -352,41 +502,61 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // Start runs an immediate sync then launches a background ticker.
 // It returns as soon as the goroutine is started; call Stop to shut it down.
 // A second goroutine runs watched-MR fast-syncs on a shorter interval.
+//
+// The caller's ctx and the syncer's internal lifetime ctx (canceled
+// by Stop) are both honored: either one unblocks any in-flight work.
 func (s *Syncer) Start(ctx context.Context) {
-	s.wg.Go(func() {
-		s.RunOnce(ctx)
-		ticker := time.NewTicker(s.interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				s.RunOnce(ctx)
-			case <-s.stopCh:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	})
+	s.lifecycleMu.Lock()
+	if s.stopped {
+		s.lifecycleMu.Unlock()
+		return
+	}
+
+	startMerged, startCancel := s.mergeWithRunCtx(ctx)
+	s.wg.Add(1)
 
 	watchInt := s.watchInterval
 	if watchInt <= 0 {
 		watchInt = 30 * time.Second
 	}
-	s.wg.Go(func() {
+	watchMerged, watchCancel := s.mergeWithRunCtx(ctx)
+	s.wg.Add(1)
+	s.lifecycleMu.Unlock()
+
+	go func() {
+		defer s.wg.Done()
+		defer startCancel()
+		s.RunOnce(startMerged)
+		ticker := time.NewTicker(s.interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.RunOnce(startMerged)
+			case <-s.stopCh:
+				return
+			case <-startMerged.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer s.wg.Done()
+		defer watchCancel()
 		ticker := time.NewTicker(watchInt)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				s.syncWatchedMRs(ctx)
+				s.syncWatchedMRs(watchMerged)
 			case <-s.stopCh:
 				return
-			case <-ctx.Done():
+			case <-watchMerged.Done():
 				return
 			}
 		}
-	})
+	}()
 }
 
 // syncWatchedMRs syncs each MR on the watch list via SyncMR.
@@ -446,6 +616,8 @@ func (s *Syncer) advanceNextSync(
 }
 
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
+	ctx = WithSyncBudget(ctx)
+
 	s.watchMu.Lock()
 	mrs := make([]WatchedMR, len(s.watchedMRs))
 	copy(mrs, s.watchedMRs)
@@ -528,10 +700,45 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	)
 }
 
-// Stop signals the background goroutine to exit. Safe to call multiple times.
+// stopGracePeriod bounds how long Stop will wait for in-flight work
+// to exit after the syncer's lifetime context is canceled. If a
+// misbehaving dependency ignores ctx, Stop gives up and logs a
+// warning rather than deadlocking the caller.
+const stopGracePeriod = 30 * time.Second
+
+// Stop signals the background goroutine to exit. Safe to call
+// multiple times. Cancels the syncer's lifetime context first so
+// blocked RunOnce and TriggerRun goroutines can observe the
+// cancellation and unwind their GitHub calls, then waits for the
+// wait group up to stopGracePeriod. The bounded wait prevents Stop
+// from hanging the process in pathological cases where a client
+// ignores ctx.
 func (s *Syncer) Stop() {
-	s.stopOnce.Do(func() { close(s.stopCh) })
-	s.wg.Wait()
+	s.stopOnce.Do(func() {
+		s.lifecycleMu.Lock()
+		s.stopped = true
+		s.lifecycleMu.Unlock()
+
+		close(s.stopCh)
+		s.runCtxMu.Lock()
+		cancel := s.runCancel
+		s.runCtxMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	})
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(stopGracePeriod):
+		slog.Warn("syncer stop timed out; returning while work is still in flight",
+			"grace", stopGracePeriod)
+	}
 }
 
 // Status returns a snapshot of the current sync state.
@@ -611,7 +818,7 @@ func (s *Syncer) runWorker(
 		}
 		if rt := s.rateTrackers[host]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
-				s.status.Store(&SyncStatus{
+				s.publishStatus(&SyncStatus{
 					Running: true,
 					Progress: fmt.Sprintf(
 						"rate limited, waiting %s", wait,
@@ -662,18 +869,32 @@ func (s *Syncer) runWorker(
 			return
 		}
 		done := state.completed.Add(1)
-		for {
-			cur := state.maxShown.Load()
-			if done <= cur {
-				break
-			}
-			if state.maxShown.CompareAndSwap(cur, done) {
-				s.status.Store(&SyncStatus{
-					Running:  true,
-					Progress: fmt.Sprintf("%d/%d", done, state.total),
-				})
-				break
-			}
+		s.publishMonotonicProgress(state, done)
+	}
+}
+
+// publishMonotonicProgress publishes a progress update only if done
+// is the highest value seen so far. Skips the final "total/total"
+// because detail drain and backfill still run after index completes.
+// Both worker completions and throttled-repo skips use this to
+// guarantee SSE progress never regresses.
+func (s *Syncer) publishMonotonicProgress(
+	state *runState, done int32,
+) {
+	if int(done) >= state.total {
+		return
+	}
+	for {
+		cur := state.maxShown.Load()
+		if done <= cur {
+			return
+		}
+		if state.maxShown.CompareAndSwap(cur, done) {
+			s.publishStatus(&SyncStatus{
+				Running:  true,
+				Progress: fmt.Sprintf("%d/%d", done, state.total),
+			})
+			return
 		}
 	}
 }
@@ -691,13 +912,18 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 	}
 	defer s.running.Store(false)
 
+	// Mark context so the budget transport counts HTTP calls
+	// made during background sync. User-initiated server
+	// handler paths do not carry this key and are not counted.
+	ctx = WithSyncBudget(ctx)
+
 	s.reposMu.Lock()
 	repos := make([]RepoRef, len(s.repos))
 	copy(repos, s.repos)
 	s.reposMu.Unlock()
 
 	total := len(repos)
-	s.status.Store(&SyncStatus{
+	s.publishStatus(&SyncStatus{
 		Running:  true,
 		Progress: fmt.Sprintf("0/%d", total),
 	})
@@ -766,11 +992,8 @@ dispatch:
 		}
 		if !eligibleHosts[host] {
 			results[i].Error = "skipped: rate limit throttled"
-			completed.Add(1)
-			s.status.Store(&SyncStatus{
-				Running:  true,
-				Progress: fmt.Sprintf("%d/%d", completed.Load(), total),
-			})
+			done := completed.Add(1)
+			s.publishMonotonicProgress(state, done)
 			continue
 		}
 		// Check ctx before entering the select. Go's select picks
@@ -829,7 +1052,7 @@ dispatch:
 			err = context.Canceled
 		}
 		slog.Info("sync canceled", "repos", total, "err", err)
-		s.status.Store(&SyncStatus{
+		s.publishStatus(&SyncStatus{
 			Running:   false,
 			LastRunAt: time.Now(),
 			LastError: err.Error(),
@@ -843,7 +1066,7 @@ dispatch:
 		s.onSyncCompleted(results)
 	}
 
-	s.status.Store(&SyncStatus{
+	s.publishStatus(&SyncStatus{
 		Running:   false,
 		LastRunAt: time.Now(),
 		LastError: lastErr,
@@ -915,57 +1138,114 @@ func (s *Syncer) indexSyncRepo(
 	cloneFetchOK bool,
 ) error {
 	client := s.clientFor(repo)
+
+	// If the previous sync of this repo partially failed after the
+	// ETag cache was populated by a 200 list response, a naive next
+	// cycle would see 304 and skip the per-item upserts that failed
+	// last time, leaving the DB stale until the TTL expired. Evict
+	// the repo's list ETags so the following calls are
+	// unconditional, forcing a fresh 200 that we can re-apply.
+	priorFail := s.consumeRepoFailed(repo)
+	forceMR := priorFail&failMR != 0
+	forceIssues := priorFail&failIssues != 0
+	if priorFail != 0 {
+		var endpoints []string
+		if forceMR {
+			endpoints = append(endpoints, "pulls")
+		}
+		if forceIssues {
+			endpoints = append(endpoints, "issues")
+		}
+		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, endpoints...)
+	}
+
+	// Track partial-failure signals per path so the next cycle only
+	// forces refresh on the paths that actually failed.
+	var failedScope failScope
+
 	ghPRs, err := client.ListOpenPullRequests(
 		ctx, repo.Owner, repo.Name,
 	)
+	prListUnchanged := false
 	if err != nil {
-		return fmt.Errorf("list open PRs: %w", err)
-	}
-
-	stillOpen := make(map[int]bool, len(ghPRs))
-	for _, ghPR := range ghPRs {
-		stillOpen[ghPR.GetNumber()] = true
-	}
-
-	for _, ghPR := range ghPRs {
-		if err := s.indexUpsertMR(
-			ctx, repo, repoID, ghPR,
-		); err != nil {
-			slog.Error("index upsert MR failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", ghPR.GetNumber(),
-				"err", err,
-			)
+		// 304 Not Modified means the open-PR list is byte-identical
+		// to the previous fetch. No PR opened, no PR closed, no
+		// metadata on any open PR changed. Skip per-PR upserts and
+		// closure detection — both ran on the previous sync that
+		// produced the cached etag.
+		if IsNotModified(err) {
+			prListUnchanged = true
+		} else {
+			s.markRepoFailed(repo, failMR)
+			return fmt.Errorf("list open PRs: %w", err)
 		}
 	}
 
-	// Detect closed PRs and fetch final state (1 API call each,
-	// outside budget -- needed for accurate closed state).
-	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
-		ctx, repoID, stillOpen,
-	)
-	if err != nil {
-		return fmt.Errorf("get previously open MRs: %w", err)
-	}
-	for _, number := range closedNumbers {
-		if err := s.fetchAndUpdateClosed(
-			ctx, repo, repoID, number, cloneFetchOK,
-		); err != nil {
-			slog.Error("update closed MR failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
+	if prListUnchanged {
+		// 304 — nothing to do. The detail drain handles CI
+		// updates for PRs with pending checks via priority scoring.
+	} else {
+		stillOpen := make(map[int]bool, len(ghPRs))
+		for _, ghPR := range ghPRs {
+			stillOpen[ghPR.GetNumber()] = true
+		}
+
+		for _, ghPR := range ghPRs {
+			if err := s.indexUpsertMR(
+				ctx, repo, repoID, ghPR,
+			); err != nil {
+				slog.Error("index upsert MR failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", ghPR.GetNumber(),
+					"err", err,
+				)
+				failedScope |= failMR
+			}
+		}
+
+		// Detect closed PRs and fetch final state (1 API call each,
+		// outside budget -- needed for accurate closed state).
+		closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
+			ctx, repoID, stillOpen,
+		)
+		if err != nil {
+			s.markRepoFailed(repo, failMR)
+			return fmt.Errorf("get previously open MRs: %w", err)
+		}
+		for _, number := range closedNumbers {
+			if err := s.fetchAndUpdateClosed(
+				ctx, repo, repoID, number, cloneFetchOK,
+			); err != nil {
+				slog.Error("update closed MR failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", err,
+				)
+				failedScope |= failMR
+			}
 		}
 	}
 
 	// Index issues (list-only, no detail).
+	// Issues have an independent etag, so this still runs even when the
+	// PR list returned 304.
 	if err := s.indexSyncIssues(
-		ctx, repo, repoID,
+		ctx, repo, repoID, forceIssues,
 	); err != nil {
 		slog.Error("index sync issues failed",
 			"repo", repo.Owner+"/"+repo.Name, "err", err,
 		)
+		failedScope |= failIssues
+	}
+
+	if failedScope != 0 {
+		// One or more per-item steps failed. Record which paths
+		// failed so the next cycle forces an unconditional refetch
+		// only for the affected list endpoints.
+		s.markRepoFailed(repo, failedScope)
+	} else {
+		// Clean pass — drop any leftover flag from a prior cycle.
+		s.clearRepoFailed(repo)
 	}
 
 	return nil
@@ -1129,8 +1409,12 @@ func (s *Syncer) fetchMRDetail(
 	}
 	calls += 4
 
+	ciHeadSHA := ""
+	if fullPR.GetHead() != nil {
+		ciHeadSHA = fullPR.GetHead().GetSHA()
+	}
 	if err := s.refreshCIStatus(
-		ctx, repo, repoID, fullPR,
+		ctx, repo, repoID, number, ciHeadSHA,
 	); err != nil {
 		// CI = 2 calls (combined status + check runs).
 		calls += 2
@@ -1301,23 +1585,22 @@ func (s *Syncer) refreshTimeline(
 
 // refreshCIStatus fetches combined status and check runs for a PR's head SHA.
 // Called on every sync cycle for open PRs, since check runs change independently
-// of the PR's updated_at field.
+// of the PR's updated_at field. Takes headSHA and number directly so it can be
+// invoked from the 304 code path, where the caller holds DB rows rather than
+// a *gh.PullRequest.
 func (s *Syncer) refreshCIStatus(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
-	ghPR *gh.PullRequest,
+	number int,
+	headSHA string,
 ) error {
-	headSHA := ""
-	if ghPR.GetHead() != nil {
-		headSHA = ghPR.GetHead().GetSHA()
-	}
 	if headSHA == "" {
 		return nil
 	}
 
-	number := ghPR.GetNumber()
-
+	// Fetch both sources. On failure, skip the DB write to preserve
+	// existing data rather than wiping it with empty values.
 	client := s.clientFor(repo)
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
@@ -1443,16 +1726,24 @@ func (s *Syncer) resolveDisplayName(
 
 // --- Issue sync ---
 
-// indexSyncIssues performs list-only upsert for issues. No
-// detail fetch (GetIssue, timeline) happens here.
+// indexSyncIssues syncs issues from list endpoint data and
+// refreshes timeline when data changed or forceRefresh is set.
+// Issues have no separate detail phase, so timeline refresh
+// happens inline here via syncOpenIssue.
 func (s *Syncer) indexSyncIssues(
-	ctx context.Context, repo RepoRef, repoID int64,
+	ctx context.Context, repo RepoRef, repoID int64, forceRefresh bool,
 ) error {
 	client := s.clientFor(repo)
 	ghIssues, err := client.ListOpenIssues(
 		ctx, repo.Owner, repo.Name,
 	)
 	if err != nil {
+		// 304: open issue list unchanged since the previous sync.
+		// No issue opened, closed, or modified. Skip per-issue
+		// upserts and closure detection.
+		if IsNotModified(err) {
+			return nil
+		}
 		return fmt.Errorf("list open issues: %w", err)
 	}
 
@@ -1461,14 +1752,15 @@ func (s *Syncer) indexSyncIssues(
 		stillOpen[issue.GetNumber()] = true
 	}
 
+	var hadItemFailure bool
 	for _, ghIssue := range ghIssues {
-		normalized := NormalizeIssue(repoID, ghIssue)
-		if _, uErr := s.db.UpsertIssue(ctx, normalized); uErr != nil {
-			slog.Error("index upsert issue failed",
+		if err := s.syncOpenIssue(ctx, repo, repoID, ghIssue, forceRefresh); err != nil {
+			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghIssue.GetNumber(),
-				"err", uErr,
+				"err", err,
 			)
+			hadItemFailure = true
 		}
 	}
 
@@ -1488,10 +1780,49 @@ func (s *Syncer) indexSyncIssues(
 				"number", number,
 				"err", err,
 			)
+			hadItemFailure = true
 		}
 	}
 
+	if hadItemFailure {
+		return fmt.Errorf("one or more issue sync items failed")
+	}
 	return nil
+}
+
+func (s *Syncer) syncOpenIssue(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghIssue *gh.Issue,
+	forceRefresh bool,
+) error {
+	normalized := NormalizeIssue(repoID, ghIssue)
+
+	existing, err := s.db.GetIssue(
+		ctx, repo.Owner, repo.Name, ghIssue.GetNumber(),
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing issue #%d: %w", ghIssue.GetNumber(), err,
+		)
+	}
+
+	needsTimeline := forceRefresh || existing == nil ||
+		!existing.UpdatedAt.Equal(normalized.UpdatedAt)
+
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf(
+			"upsert issue #%d: %w", ghIssue.GetNumber(), err,
+		)
+	}
+
+	if !needsTimeline {
+		return nil
+	}
+
+	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
 }
 
 func (s *Syncer) refreshIssueTimeline(
@@ -1568,7 +1899,7 @@ func (s *Syncer) drainDetailQueue(
 	ctx context.Context,
 	eligibleHosts map[string]bool,
 ) {
-	if s.budgetPerHour <= 0 {
+	if len(s.budgets) == 0 {
 		return
 	}
 
@@ -1607,8 +1938,12 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 
+		// Soft admission gate: check if the budget has nominal
+		// capacity for this item. The transport layer handles
+		// actual per-RoundTrip accounting; this prevents starting
+		// work we almost certainly can't afford.
 		worstCase := qi.WorstCaseCost()
-		if !budget.TrySpend(worstCase) {
+		if !budget.CanSpend(worstCase) {
 			exhausted[host] = true
 			continue
 		}
@@ -1626,7 +1961,6 @@ func (s *Syncer) drainDetailQueue(
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 				"err", err,
 			)
-			budget.Refund(worstCase)
 			continue
 		}
 
@@ -1650,19 +1984,14 @@ func (s *Syncer) drainDetailQueue(
 			}
 		}
 
-		var actualCalls int
 		if qi.Type == QueueItemPR {
-			actualCalls, err = s.fetchMRDetail(
+			_, err = s.fetchMRDetail(
 				ctx, repo, repoID, qi.Number, cloneFetchOK,
 			)
 		} else {
-			actualCalls, err = s.fetchIssueDetail(
+			_, err = s.fetchIssueDetail(
 				ctx, repo, repoID, qi.Number,
 			)
-		}
-
-		if actualCalls < worstCase {
-			budget.Refund(worstCase - actualCalls)
 		}
 
 		if err != nil {
@@ -1859,7 +2188,6 @@ func (s *Syncer) backfillRepo(
 				ctx, repo.Owner, repo.Name,
 				"closed", prPage,
 			)
-			budget.Spend(1)
 			if err != nil {
 				slog.Warn("backfill PRs failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -1911,7 +2239,6 @@ func (s *Syncer) backfillRepo(
 				ctx, repo.Owner, repo.Name,
 				"closed", issuePage,
 			)
-			budget.Spend(1)
 			if err != nil {
 				slog.Warn("backfill issues failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -2066,7 +2393,11 @@ func (s *Syncer) syncMRWithHost(
 		return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
 	}
 
-	if err := s.refreshCIStatus(ctx, repo, repoID, ghPR); err != nil {
+	syncMRHeadSHA := ""
+	if ghPR.GetHead() != nil {
+		syncMRHeadSHA = ghPR.GetHead().GetSHA()
+	}
+	if err := s.refreshCIStatus(ctx, repo, repoID, number, syncMRHeadSHA); err != nil {
 		return err
 	}
 

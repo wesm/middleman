@@ -14,25 +14,25 @@ import (
 var _ Client = (*liveClient)(nil)
 
 func TestNewClientReturnsNonNil(t *testing.T) {
-	c, err := NewClient("fake-token", "", nil)
+	c, err := NewClient("fake-token", "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEnterprise(t *testing.T) {
-	c, err := NewClient("test-token", "github.mycompany.com", nil)
+	c, err := NewClient("test-token", "github.mycompany.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientGitHubDotCom(t *testing.T) {
-	c, err := NewClient("test-token", "github.com", nil)
+	c, err := NewClient("test-token", "github.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEmptyHost(t *testing.T) {
-	c, err := NewClient("test-token", "", nil)
+	c, err := NewClient("test-token", "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
@@ -140,4 +140,20 @@ func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
 			require.ErrorContains(err, tt.want)
 		})
 	}
+}
+
+// TestNewClientWiresETagTransport verifies that NewClient installs the
+// etagTransport at the top of the underlying http.Client's transport
+// chain. The transport's behavior is exercised exhaustively in
+// etag_transport_test.go; this test guards against the constructor
+// silently dropping or reordering the wrap so the wired-up chain
+// stays in sync with the transport's contract.
+func TestNewClientWiresETagTransport(t *testing.T) {
+	c, err := NewClient("fake-token", "", nil, nil)
+	require.NoError(t, err)
+	lc, ok := c.(*liveClient)
+	require.Truef(t, ok, "expected *liveClient, got %T", c)
+	transport := lc.gh.Client().Transport
+	_, ok = transport.(*etagTransport)
+	require.Truef(t, ok, "expected *etagTransport at top of transport chain, got %T", transport)
 }
