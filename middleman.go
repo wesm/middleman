@@ -239,7 +239,11 @@ func New(opts Options) (*Instance, error) {
 		)
 	}
 
-	// Build per-host clients and rate trackers.
+	// Build per-host budgets, clients, and rate trackers.
+	budgetPerHour := cfg.BudgetPerHour()
+	budgets := make(
+		map[string]*ghclient.SyncBudget, len(hosts),
+	)
 	clients := make(map[string]ghclient.Client, len(hosts))
 	rateTrackers := make(
 		map[string]*ghclient.RateTracker, len(hosts),
@@ -247,8 +251,13 @@ func New(opts Options) (*Instance, error) {
 	for _, host := range hosts {
 		rt := ghclient.NewRateTracker(database, host)
 		rateTrackers[host] = rt
+		if budgetPerHour > 0 {
+			budgets[host] = ghclient.NewSyncBudget(
+				budgetPerHour,
+			)
+		}
 		gh, cErr := ghclient.NewClient(
-			hostTokens[host], host, rt, nil,
+			hostTokens[host], host, rt, budgets[host],
 		)
 		if cErr != nil {
 			database.Close()
@@ -283,7 +292,7 @@ func New(opts Options) (*Instance, error) {
 
 	syncer := ghclient.NewSyncer(
 		clients, database, cloneMgr, refs,
-		cfg.SyncDuration(), rateTrackers, nil,
+		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
 	if opts.WatchInterval > 0 {
