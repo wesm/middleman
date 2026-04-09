@@ -74,16 +74,12 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			t.cache.Delete(url)
 		}
 	case http.StatusNotModified:
-		// Each 304 is GitHub confirming the etag is still valid.
-		// Refresh cachedAt so the TTL means "max time since the
-		// last server confirmation," not "max time since first
-		// cached." Without this, a stable repo burns one
-		// unconditional fetch per TTL window for nothing.
-		if val, ok := t.cache.Load(url); ok {
-			entry := val.(etagEntry)
-			entry.cachedAt = time.Now()
-			t.cache.Store(url, entry)
-		}
+		// Deliberately do NOT refresh cachedAt here. The TTL must
+		// expire periodically so we issue an unconditional fetch
+		// that can detect list growth beyond page 1 (a single-page
+		// list that grows to two pages returns 304 for page 1 since
+		// the first page content is unchanged). One unconditional
+		// fetch per TTL window is a cheap safety net.
 	}
 
 	return resp, nil

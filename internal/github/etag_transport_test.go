@@ -46,12 +46,11 @@ func TestETagTransport_StoresETagOn200(t *testing.T) {
 	assert.Equal(t, 304, resp2.StatusCode)
 }
 
-// TestETagTransport_304RefreshesCachedAt verifies that each 304
-// response refreshes the cached entry's cachedAt timestamp. Each
-// 304 is the server confirming the etag is still valid, so the
-// TTL clock should reset — otherwise a stable repo burns one
-// unconditional fetch per TTL window for nothing.
-func TestETagTransport_304RefreshesCachedAt(t *testing.T) {
+// TestETagTransport_304PreservesCachedAt verifies that a 304 does
+// NOT refresh cachedAt. The TTL must expire periodically so the
+// transport issues an unconditional fetch that detects list growth
+// beyond page 1.
+func TestETagTransport_304PreservesCachedAt(t *testing.T) {
 	url := "https://api.github.com/repos/o/n/pulls"
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
@@ -59,10 +58,6 @@ func TestETagTransport_304RefreshesCachedAt(t *testing.T) {
 		return rec.Result(), nil
 	})}
 
-	// Seed the cache with an artificially old cachedAt — old enough
-	// that a non-refreshing implementation would still treat it as
-	// "fresh" for this single round trip, but young enough to be
-	// distinguishable from a freshly-set time.Now().
 	oldCachedAt := time.Now().Add(-10 * time.Minute)
 	et.cache.Store(url, etagEntry{etag: `"e1"`, cachedAt: oldCachedAt})
 
@@ -74,8 +69,8 @@ func TestETagTransport_304RefreshesCachedAt(t *testing.T) {
 	require.True(t, ok)
 	got := val.(etagEntry)
 	assert.Equal(t, `"e1"`, got.etag, "etag must be preserved across 304")
-	assert.WithinDuration(t, time.Now(), got.cachedAt, time.Second,
-		"cachedAt must be refreshed to ~now after 304")
+	assert.Equal(t, oldCachedAt, got.cachedAt,
+		"cachedAt must NOT be refreshed on 304")
 }
 
 func TestETagTransport_DifferentURLsIndependent(t *testing.T) {
@@ -280,9 +275,8 @@ func TestETagTransport_TTLDrivenMultiPageDetection(t *testing.T) {
 		requestCount++
 		rec := httptest.NewRecorder()
 		if r.Header.Get("If-None-Match") != "" {
-			// 304 — the transport refreshes cachedAt, but this test
-			// explicitly overwrites the entry below to force an
-			// eviction on the next unconditional fetch.
+			// 304 — cachedAt unchanged, so TTL continues counting
+			// down from the original 200.
 			rec.WriteHeader(304)
 			return rec.Result(), nil
 		}
@@ -364,15 +358,11 @@ func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
 	}
 }
 
-// TestETagTransport_304ExtendsCacheLifetime verifies that a steady
-// stream of 304s keeps the cached entry alive by advancing cachedAt
-// on every 304. Monotonic advance is the exact property needed for
-// "stable repo never burns an unconditional refetch": if each 304
-// pushes cachedAt forward, induction guarantees the entry will never
-// cross the TTL boundary. The test deliberately does NOT reset
-// cachedAt between iterations so a transport that stopped refreshing
-// on 304 would leave the timestamp pinned and fail the After() check.
-func TestETagTransport_304ExtendsCacheLifetime(t *testing.T) {
+// TestETagTransport_304DoesNotExtendCacheLifetime verifies that
+// 304s do NOT advance cachedAt, so the TTL eventually expires and
+// forces an unconditional fetch. This is the safety net for
+// detecting list growth beyond page 1.
+func TestETagTransport_304DoesNotExtendCacheLifetime(t *testing.T) {
 	url := "https://api.github.com/repos/o/n/pulls"
 	unconditionalCount := 0
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -395,15 +385,10 @@ func TestETagTransport_304ExtendsCacheLifetime(t *testing.T) {
 
 	val, ok := et.cache.Load(url)
 	require.True(t, ok, "initial 200 should populate cache")
-	prev := val.(etagEntry).cachedAt
+	original := val.(etagEntry).cachedAt
 
-	// Five consecutive 304s should each advance cachedAt strictly
-	// forward. Sleeping between iterations ensures time.Now() has
-	// observably moved, so "advance" is a real signal and not just
-	// monotonic-clock noise.
+	// Five consecutive 304s should NOT change cachedAt.
 	for i := range 5 {
-		time.Sleep(2 * time.Millisecond)
-
 		req2, _ := http.NewRequest("GET", url, nil)
 		resp, err := et.RoundTrip(req2)
 		require.NoErrorf(t, err, "round trip #%d", i)
@@ -412,16 +397,12 @@ func TestETagTransport_304ExtendsCacheLifetime(t *testing.T) {
 		val, ok := et.cache.Load(url)
 		require.Truef(t, ok, "cache must persist across 304 #%d", i)
 		got := val.(etagEntry).cachedAt
-		assert.Truef(t, got.After(prev),
-			"304 #%d must advance cachedAt: prev=%v got=%v", i, prev, got)
-		prev = got
+		assert.Equalf(t, original, got,
+			"304 #%d must NOT change cachedAt", i)
 	}
 
-	// The six round trips must have triggered exactly one
-	// unconditional fetch. If the cache stopped extending on 304,
-	// entries would churn and this count would climb.
 	assert.Equal(t, 1, unconditionalCount,
-		"stable 304 stream must not trigger additional unconditional fetches")
+		"304s within TTL must not trigger additional unconditional fetches")
 }
 
 // TestETagTransport_GHEPathCaches verifies the matcher accepts the
