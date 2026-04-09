@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -244,7 +245,9 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	rec := httptest.NewRecorder()
 	// First call (initial clear) succeeds; second (pre-write deadline) fails
 	w := &deadlineControlWriter{ResponseWriter: rec, failAfter: 1}
-	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := httptest.NewRequest("GET", "/api/v1/events", nil).WithContext(ctx)
 
 	done := make(chan struct{})
 	go func() {
@@ -257,4 +260,15 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "handler did not exit on mid-stream deadline failure")
 	}
+
+	// Cancel context so Subscribe's cleanup goroutine unsubscribes
+	cancel()
+	require.Eventually(t, func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 0
+	}, 2*time.Second, 10*time.Millisecond, "subscriber should be cleaned up after context cancel")
+
+	// Deadline failed before event write — no SSE frame in body
+	assert.NotContains(t, rec.Body.String(), "event:", "no event frame should be written after deadline failure")
 }
