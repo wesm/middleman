@@ -1151,8 +1151,12 @@ func (s *Syncer) fetchMRDetail(
 		pending = ciHasPending(freshMR.CIChecksJSON)
 	}
 
+	detailHost := repo.PlatformHost
+	if detailHost == "" {
+		detailHost = "github.com"
+	}
 	if err := s.db.UpdateMRDetailFetched(
-		ctx, repo.Owner, repo.Name, number, pending,
+		ctx, detailHost, repo.Owner, repo.Name, number, pending,
 	); err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for MR #%d: %w", number, err,
@@ -1215,8 +1219,12 @@ func (s *Syncer) fetchIssueDetail(
 	}
 	calls++ // comments
 
+	issueHost := repo.PlatformHost
+	if issueHost == "" {
+		issueHost = "github.com"
+	}
 	if err := s.db.UpdateIssueDetailFetched(
-		ctx, repo.Owner, repo.Name, number,
+		ctx, issueHost, repo.Owner, repo.Name, number,
 	); err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for issue #%d: %w", number, err,
@@ -2066,7 +2074,7 @@ func (s *Syncer) syncMRWithHost(
 	fresh, freshErr := s.db.GetMergeRequest(ctx, owner, name, number)
 	if freshErr == nil && fresh != nil {
 		pending := ciHasPending(fresh.CIChecksJSON)
-		_ = s.db.UpdateMRDetailFetched(ctx, owner, name, number, pending)
+		_ = s.db.UpdateMRDetailFetched(ctx, host, owner, name, number, pending)
 	}
 
 	if s.onMRSynced != nil {
@@ -2169,7 +2177,7 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 		return err
 	}
 
-	_ = s.db.UpdateIssueDetailFetched(ctx, owner, name, number)
+	_ = s.db.UpdateIssueDetailFetched(ctx, host, owner, name, number)
 	return nil
 }
 

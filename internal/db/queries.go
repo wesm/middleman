@@ -1002,7 +1002,8 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 // UpdateMRDetailFetched marks a merge request as having had its
 // detail fetched and records whether CI had pending checks.
 func (d *DB) UpdateMRDetailFetched(
-	ctx context.Context, repoOwner, repoName string,
+	ctx context.Context,
+	platformHost, repoOwner, repoName string,
 	number int, ciHadPending bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
@@ -1011,9 +1012,9 @@ func (d *DB) UpdateMRDetailFetched(
 		    ci_had_pending = ?
 		WHERE repo_id = (
 		    SELECT id FROM middleman_repos
-		    WHERE owner = ? AND name = ?
+		    WHERE platform_host = ? AND owner = ? AND name = ?
 		) AND number = ?`,
-		ciHadPending, repoOwner, repoName, number,
+		ciHadPending, platformHost, repoOwner, repoName, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update mr detail fetched: %w", err)
@@ -1024,16 +1025,17 @@ func (d *DB) UpdateMRDetailFetched(
 // UpdateIssueDetailFetched marks an issue as having had its
 // detail fetched.
 func (d *DB) UpdateIssueDetailFetched(
-	ctx context.Context, repoOwner, repoName string, number int,
+	ctx context.Context,
+	platformHost, repoOwner, repoName string, number int,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_issues
 		SET detail_fetched_at = datetime('now')
 		WHERE repo_id = (
 		    SELECT id FROM middleman_repos
-		    WHERE owner = ? AND name = ?
+		    WHERE platform_host = ? AND owner = ? AND name = ?
 		) AND number = ?`,
-		repoOwner, repoName, number,
+		platformHost, repoOwner, repoName, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update issue detail fetched: %w", err)
