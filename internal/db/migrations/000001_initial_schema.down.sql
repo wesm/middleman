@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS middleman_mr_worktree_links;
+DROP TABLE IF EXISTS middleman_starred_items;
+DROP TABLE IF EXISTS middleman_issue_events;
+DROP TABLE IF EXISTS middleman_issues;
+DROP TABLE IF EXISTS middleman_kanban_state;
+DROP TABLE IF EXISTS middleman_mr_events;
+DROP TABLE IF EXISTS middleman_merge_requests;
+DROP TABLE IF EXISTS middleman_rate_limits;
+DROP TABLE IF EXISTS middleman_repos;

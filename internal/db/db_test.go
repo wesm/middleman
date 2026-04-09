@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,67 +55,118 @@ func TestOpenIdempotent(t *testing.T) {
 	d2.Close()
 }
 
-func TestSchemaVersionStamped(t *testing.T) {
+func TestOpenCreatesSchemaMigrationsTable(t *testing.T) {
+	require := require.New(t)
 	d := openTestDB(t)
-	var version int
+
+	version := latestMigrationVersionForTest(t)
+	var actualVersion int
+	var dirty bool
 	err := d.ReadDB().QueryRow(
-		"SELECT version FROM middleman_schema_version LIMIT 1",
-	).Scan(&version)
-	require.NoError(t, err)
-	require.Equal(t, SchemaVersion, version)
+		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
+	).Scan(&actualVersion, &dirty)
+	require.NoError(err)
+	require.Equal(version, actualVersion)
+	require.False(dirty)
 }
 
-func TestSchemaVersionMatchReopens(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
-
-	d1, err := Open(path)
-	require.NoError(t, err)
-	d1.Close()
-
-	d2, err := Open(path)
-	require.NoError(t, err)
-	d2.Close()
-}
-
-func TestSchemaVersionTooNew(t *testing.T) {
+func TestOpenMigratesLegacyDatabase(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
+	path := filepath.Join(dir, "legacy.db")
 
-	// Create a DB with a version table stamped higher than the binary.
 	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(initialMigrationSQLForTest(t))
 	require.NoError(err)
 	_, err = raw.Exec(
 		`CREATE TABLE middleman_schema_version (version INTEGER NOT NULL)`,
 	)
 	require.NoError(err)
 	_, err = raw.Exec(
-		`INSERT INTO middleman_schema_version (version) VALUES (9999)`,
+		`INSERT INTO middleman_schema_version (version) VALUES (3)`,
 	)
 	require.NoError(err)
-	raw.Close()
+	require.NoError(raw.Close())
 
-	_, err = Open(path)
-	require.Error(err)
-	require.Contains(err.Error(), "newer than this binary")
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	version := latestMigrationVersionForTest(t)
+	var actualVersion int
+	var dirty bool
+	err = d.ReadDB().QueryRow(
+		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
+	).Scan(&actualVersion, &dirty)
+	require.NoError(err)
+	require.Equal(version, actualVersion)
+	require.False(dirty)
+	require.False(tableExistsForTest(t, d.ReadDB(), "middleman_schema_version"))
 }
 
-func TestSchemaVersionRejectsLegacyUnversionedDB(t *testing.T) {
+func TestOpenReturnsRecreateGuidanceForDirtyMigrations(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, "legacy.db")
+	path := filepath.Join(dir, "test.db")
 
-	// Create a DB with middleman tables but no version table.
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	_, err = raw.Exec(
-		`CREATE TABLE middleman_repos (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE schema_migrations (version uint64, dirty bool)`,
 	)
 	require.NoError(err)
-	raw.Close()
+	_, err = raw.Exec(
+		`INSERT INTO schema_migrations (version, dirty) VALUES (1, TRUE)`,
+	)
+	require.NoError(err)
+	require.NoError(raw.Close())
 
 	_, err = Open(path)
 	require.Error(err)
-	require.Contains(err.Error(), "no schema version")
+	require.Contains(err.Error(), recreateDatabaseInstruction)
+}
+
+func TestOpenRejectsIncompleteLegacyDatabase(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken-legacy.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE middleman_repos (id INTEGER PRIMARY KEY)`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	_, err = Open(path)
+	require.Error(err)
+	require.Contains(err.Error(), recreateDatabaseInstruction)
+}
+
+func initialMigrationSQLForTest(t *testing.T) string {
+	t.Helper()
+	contents, err := fs.ReadFile(
+		migrationFiles,
+		"migrations/000001_initial_schema.up.sql",
+	)
+	require.NoError(t, err)
+	return string(contents)
+}
+
+func latestMigrationVersionForTest(t *testing.T) int {
+	t.Helper()
+	version, err := latestMigrationVersion()
+	require.NoError(t, err)
+	return version
+}
+
+func tableExistsForTest(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		name,
+	).Scan(&count)
+	require.NoError(t, err)
+	return count > 0
 }
