@@ -585,6 +585,54 @@ func TestPREvents(t *testing.T) {
 	assert.Len(got2, 2)
 }
 
+func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	firstMRID := insertTestMR(t, d, repoID, 1, "pr one", base)
+	secondMRID := insertTestMR(t, d, repoID, 2, "pr two", base.Add(time.Minute))
+
+	sharedDedupeKey := "force-push-before-sha-after-sha"
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: firstMRID,
+			EventType:      "force_push",
+			Author:         "alice",
+			CreatedAt:      base,
+			DedupeKey:      sharedDedupeKey,
+		},
+		{
+			MergeRequestID: secondMRID,
+			EventType:      "force_push",
+			Author:         "bob",
+			CreatedAt:      base.Add(time.Minute),
+			DedupeKey:      sharedDedupeKey,
+		},
+	}))
+
+	firstEvents, err := d.ListMREvents(ctx, firstMRID)
+	require.NoError(err)
+	require.Len(firstEvents, 1)
+	assert.Equal(sharedDedupeKey, firstEvents[0].DedupeKey)
+
+	secondEvents, err := d.ListMREvents(ctx, secondMRID)
+	require.NoError(err)
+	require.Len(secondEvents, 1)
+	assert.Equal(sharedDedupeKey, secondEvents[0].DedupeKey)
+
+	var total int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_mr_events WHERE dedupe_key = ?`,
+		sharedDedupeKey,
+	).Scan(&total)
+	require.NoError(err)
+	assert.Equal(2, total)
+}
+
 func TestGetPRIDByRepoAndNumber(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
