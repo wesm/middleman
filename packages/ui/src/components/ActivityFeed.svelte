@@ -754,6 +754,7 @@
   .evt-label.evt-comment { color: var(--accent-amber); }
   .evt-label.evt-review { color: var(--accent-green); }
   .evt-label.evt-commit { color: var(--accent-teal); }
+  .evt-label.evt-force-push { color: var(--accent-red); }
 
   .col-repo {
     color: var(--text-muted);

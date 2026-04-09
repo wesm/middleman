@@ -363,6 +363,7 @@
   .event-type.evt-comment { color: var(--accent-amber); }
   .event-type.evt-review { color: var(--accent-green); }
   .event-type.evt-commit { color: var(--accent-teal); }
+  .event-type.evt-force-push { color: var(--accent-red); }
 
   .event-author {
     font-size: 11px;

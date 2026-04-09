@@ -25,7 +25,7 @@
     review: "var(--accent-purple)",
     review_comment: "var(--accent-purple)",
     commit: "var(--accent-green)",
-    force_push: "var(--accent-orange)",
+    force_push: "var(--accent-red)",
   };
 
   function shouldRenderMarkdown(eventType: string): boolean {

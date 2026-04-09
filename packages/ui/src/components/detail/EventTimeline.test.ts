@@ -34,7 +34,9 @@ describe("EventTimeline", () => {
       },
     });
 
-    expect(screen.getByText("Force-pushed")).toBeTruthy();
+    const label = screen.getByText("Force-pushed");
+    expect(label).toBeTruthy();
+    expect(label.getAttribute("style")).toContain("var(--accent-red)");
     expect(screen.getByText("alice")).toBeTruthy();
     expect(screen.getByText("aaaaaaa -> bbbbbbb")).toBeTruthy();
   });
