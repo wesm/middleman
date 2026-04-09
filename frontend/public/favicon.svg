@@ -5,6 +5,6 @@
   <circle cx="39" cy="13" r="4.5" fill="#F59E0B" />
   <circle cx="39" cy="39" r="4.5" fill="#34D399" />
   <path d="M16 16 23 23M36 16 29 23M36 36 29 29" stroke="#94A3B8" stroke-width="3.5" stroke-linecap="round" />
-  <!-- Chevron Arrow: Vertical stem + sharp chevron head -->
-  <path d="M26 26v10l-6 6h12l-6-6z" fill="#E5E7EB" />
+  <!-- Restored j-shaped arrow as a single filled path -->
+  <path d="M28.4 26V32.8C28.4 35.8 27 38.1 24.4 39.8L22 41.3H14.9L17.3 38.3C17.8 37.8 17.3 37 16.6 37L12.2 40.4C11.5 40.9 11.5 41.9 12.2 42.4L16.6 45.8C17.3 46.3 17.8 45.5 17.3 45L14.9 42H20.7C22.3 42 23.6 41.5 24.9 40.6C27.7 38.8 29.2 35.9 29.2 32.3V26H24.4V32.7C24.4 34.5 23.8 35.9 22.4 36.9L20 38.4H15.5L17.5 41.1L15.5 43.8H20.4C22.9 43.8 24.8 43.1 26.6 41.9C29.9 39.8 31.6 36.5 31.6 32.3V26Z" fill="#E5E7EB" />
 </svg>
