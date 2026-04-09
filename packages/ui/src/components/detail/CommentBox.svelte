@@ -1,5 +1,10 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
+  import {
+    clearCommentDraft,
+    getCommentDraft,
+    setCommentDraft,
+  } from "./comment-drafts.js";
 
   const { detail } = getStores();
 
@@ -11,11 +16,25 @@
 
   const { owner, name, number }: Props = $props();
 
+  let currentDraftKey = $state("");
   let body = $state("");
   let posting = $state(false);
   let localError = $state<string | null>(null);
 
+  $effect(() => {
+    const nextDraftKey = `pull:${owner}/${name}/${number}`;
+    if (nextDraftKey === currentDraftKey) return;
+    currentDraftKey = nextDraftKey;
+    body = getCommentDraft("pull", owner, name, number);
+    localError = null;
+  });
+
   const isEmpty = $derived(body.trim() === "");
+
+  function handleInput(e: Event): void {
+    body = (e.currentTarget as HTMLTextAreaElement).value;
+    setCommentDraft("pull", owner, name, number, body);
+  }
 
   async function handleSubmit(): Promise<void> {
     if (isEmpty || posting) return;
@@ -27,6 +46,7 @@
     if (storeError !== null) {
       localError = storeError;
     } else {
+      clearCommentDraft("pull", owner, name, number);
       body = "";
     }
   }
@@ -42,7 +62,8 @@
   <textarea
     class="comment-textarea"
     placeholder="Write a comment... (Cmd+Enter to submit)"
-    bind:value={body}
+    value={body}
+    oninput={handleInput}
     onkeydown={handleKeydown}
     disabled={posting}
     rows={4}
