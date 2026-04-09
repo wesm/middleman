@@ -1196,13 +1196,9 @@ func (s *Syncer) indexSyncRepo(
 						"err", err,
 					)
 					failedScope |= failMR
-					// Refund the 2 calls we reserved — the actual
-					// API calls may have partially succeeded, but
-					// erring on the side of refunding keeps the
-					// budget from over-counting on transient errors.
-					if budget != nil {
-						budget.Refund(2)
-					}
+					// No refund: both API calls (ListCheckRunsForRef +
+					// GetCombinedStatus) already executed before the
+					// error — only the DB write failed.
 				}
 			}
 		}
