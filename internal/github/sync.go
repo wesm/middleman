@@ -934,7 +934,12 @@ func (s *Syncer) refreshTimeline(
 
 	forcePushEvents, err := client.ListForcePushEvents(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		return fmt.Errorf("list force-push events for MR #%d: %w", number, err)
+		slog.Warn("force-push fetch failed during timeline refresh",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		forcePushEvents = nil
 	}
 
 	var events []db.MREvent
