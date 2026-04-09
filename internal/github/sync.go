@@ -1155,6 +1155,16 @@ func (s *Syncer) indexSyncRepo(
 		// Iterate the DB's current open PRs and refresh CI so pending or
 		// failed checks still surface within a sync cycle instead of
 		// lagging until some list-visible field changes.
+		//
+		// Each refreshCIStatus costs 2 API calls (check runs + combined
+		// status), so gate on the per-host budget to avoid consuming
+		// unbounded calls in the index phase.
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		budget := s.budgets[host]
+
 		openMRs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 			RepoOwner: repo.Owner,
 			RepoName:  repo.Name,
@@ -1167,6 +1177,13 @@ func (s *Syncer) indexSyncRepo(
 			failedScope |= failMR
 		} else {
 			for _, mr := range openMRs {
+				if budget != nil && !budget.TrySpend(2) {
+					slog.Debug("304 CI refresh skipped: budget exhausted",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", mr.Number,
+					)
+					break
+				}
 				if err := s.refreshCIStatus(ctx, repo, repoID, mr.Number, mr.PlatformHeadSHA); err != nil {
 					slog.Error("refresh CI status on 304 failed",
 						"repo", repo.Owner+"/"+repo.Name,
@@ -1174,6 +1191,13 @@ func (s *Syncer) indexSyncRepo(
 						"err", err,
 					)
 					failedScope |= failMR
+					// Refund the 2 calls we reserved — the actual
+					// API calls may have partially succeeded, but
+					// erring on the side of refunding keeps the
+					// budget from over-counting on transient errors.
+					if budget != nil {
+						budget.Refund(2)
+					}
 				}
 			}
 		}

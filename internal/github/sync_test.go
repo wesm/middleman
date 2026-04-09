@@ -2736,6 +2736,64 @@ func TestSyncerRefreshesCIOnPRList304(t *testing.T) {
 		"304 on PR list must still refresh CI — check runs are independent")
 }
 
+// TestSyncerCIRefreshOn304RespectsBudget verifies that CI refresh in
+// the 304 path stops when the per-host budget is exhausted.
+func TestSyncerCIRefreshOn304RespectsBudget(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	ciState := "success"
+
+	// Seed 3 open PRs via detail drain so they have CI data.
+	firstClient := &mockClient{
+		openPRs: []*gh.PullRequest{
+			buildOpenPR(1, now),
+			buildOpenPR(2, now),
+			buildOpenPR(3, now),
+		},
+		ciStatus:  &gh.CombinedStatus{State: &ciState},
+		checkRuns: []*gh.CheckRun{},
+	}
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": firstClient},
+		d, nil, repos, time.Minute, nil, 10000,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	// Second sync with 304 on PR list and budget=4 (enough for 2 PRs
+	// at 2 calls each, but not all 3).
+	pending := "pending"
+	refreshClient := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+		ciStatus:       &gh.CombinedStatus{State: &ciState},
+		checkRuns:      []*gh.CheckRun{{Status: &pending}},
+	}
+	refreshSyncer := NewSyncer(
+		map[string]Client{"github.com": refreshClient},
+		d, nil, repos, time.Minute, nil, 4,
+	)
+	refreshSyncer.RunOnce(ctx)
+
+	// With budget=4 and 2 calls per PR, only 2 of 3 PRs should get
+	// CI refreshed. Count how many have "pending" (refreshed) vs
+	// "success" (stale from seed).
+	refreshed := 0
+	for _, n := range []int{1, 2, 3} {
+		pr, err := d.GetMergeRequest(ctx, "owner", "repo", n)
+		require.NoError(err)
+		require.NotNil(pr)
+		if pr.CIStatus == "pending" {
+			refreshed++
+		}
+	}
+	assert.Equal(2, refreshed,
+		"budget=4 should allow exactly 2 of 3 CI refreshes (2 calls each)")
+}
+
 // TestSyncerSyncsIssuesOnPRList304 verifies that a 304 on the open-PR
 // list does not short-circuit issue sync. Issues have an independent
 // ETag and their own open-list endpoint, so a PR-list 304 must not
