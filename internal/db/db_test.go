@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -105,6 +106,14 @@ func TestOpenMigratesLegacyDatabase(t *testing.T) {
 	require.False(tableExistsForTest(t, d.ReadDB(), "middleman_schema_version"))
 }
 
+func TestOpenRejectsLegacySchemaVersionOneDatabase(t *testing.T) {
+	testRejectsUnsupportedLegacySchemaVersion(t, 1, legacySchemaV1SQLForTest(t))
+}
+
+func TestOpenRejectsLegacySchemaVersionTwoDatabase(t *testing.T) {
+	testRejectsUnsupportedLegacySchemaVersion(t, 2, legacySchemaV2SQLForTest(t))
+}
+
 func TestOpenReturnsRecreateGuidanceForDirtyMigrations(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
@@ -143,6 +152,33 @@ func TestOpenRejectsIncompleteLegacyDatabase(t *testing.T) {
 	require.Contains(err.Error(), recreateDatabaseInstruction)
 }
 
+func testRejectsUnsupportedLegacySchemaVersion(t *testing.T, version int, schema string) {
+	t.Helper()
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(schema)
+	require.NoError(err)
+	_, err = raw.Exec(
+		`CREATE TABLE middleman_schema_version (version INTEGER NOT NULL)`,
+	)
+	require.NoError(err)
+	_, err = raw.Exec(
+		`INSERT INTO middleman_schema_version (version) VALUES (?)`,
+		version,
+	)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	_, err = Open(path)
+	require.Error(err)
+	require.Contains(err.Error(), recreateDatabaseInstruction)
+	require.Contains(err.Error(), "cannot be migrated automatically")
+}
+
 func initialMigrationSQLForTest(t *testing.T) string {
 	t.Helper()
 	contents, err := fs.ReadFile(
@@ -151,6 +187,23 @@ func initialMigrationSQLForTest(t *testing.T) string {
 	)
 	require.NoError(t, err)
 	return string(contents)
+}
+
+func legacySchemaV1SQLForTest(t *testing.T) string {
+	t.Helper()
+	contents, err := os.ReadFile(filepath.Join("testdata", "legacy_schema_v1.sql"))
+	require.NoError(t, err)
+	return string(contents)
+}
+
+func legacySchemaV2SQLForTest(t *testing.T) string {
+	t.Helper()
+	return strings.Replace(
+		legacySchemaV1SQLForTest(t),
+		"UNIQUE(dedupe_key)",
+		"UNIQUE(merge_request_id, dedupe_key)",
+		1,
+	)
 }
 
 func latestMigrationVersionForTest(t *testing.T) int {

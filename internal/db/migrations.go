@@ -18,6 +18,7 @@ import (
 
 const (
 	legacyBaselineVersion       = 1
+	latestLegacySchemaVersion   = 3
 	migrationTableName          = "schema_migrations"
 	recreateDatabaseInstruction = "delete the database file and let middleman recreate it"
 )
@@ -32,6 +33,27 @@ var legacyBaselineTables = []string{
 	"middleman_starred_items",
 	"middleman_mr_worktree_links",
 	"middleman_rate_limits",
+}
+
+var legacyBaselineColumns = map[string][]string{
+	"middleman_repos": {
+		"backfill_pr_page",
+		"backfill_pr_complete",
+		"backfill_pr_completed_at",
+		"backfill_issue_page",
+		"backfill_issue_complete",
+		"backfill_issue_completed_at",
+	},
+	"middleman_merge_requests": {
+		"detail_fetched_at",
+		"ci_had_pending",
+	},
+	"middleman_issues": {
+		"detail_fetched_at",
+	},
+	"middleman_rate_limits": {
+		"rate_limit",
+	},
 }
 
 //go:embed migrations/*.sql
@@ -72,14 +94,39 @@ func runMigrations(rw *sql.DB) error {
 		return wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
 	}
 
-	if version == migratedb.NilVersion && hasMiddlemanTables(rw) {
-		if !hasLegacyBaselineSchema(rw) {
-			return wrapMigrationError(
-				fmt.Errorf("legacy database schema does not match the expected baseline"),
-			)
+	if version == migratedb.NilVersion {
+		legacyVersion, hasLegacyVersion, err := readLegacySchemaVersion(rw)
+		if err != nil {
+			return wrapMigrationError(fmt.Errorf("read legacy schema version: %w", err))
 		}
-		if err := databaseDriver.SetVersion(legacyBaselineVersion, false); err != nil {
-			return wrapMigrationError(fmt.Errorf("seed legacy migration version: %w", err))
+
+		switch {
+		case hasLegacyVersion:
+			if legacyVersion > latestLegacySchemaVersion {
+				return fmt.Errorf(
+					"middleman schema version %d is newer than this binary "+
+						"(expects %d); upgrade middleman",
+					legacyVersion, latestLegacySchemaVersion,
+				)
+			}
+			if legacyVersion != latestLegacySchemaVersion {
+				return wrapMigrationError(
+					fmt.Errorf("legacy database schema version %d cannot be migrated automatically", legacyVersion),
+				)
+			}
+			if !hasLegacyBaselineSchema(rw) {
+				return wrapMigrationError(
+					fmt.Errorf("legacy database schema does not match schema version %d", legacyVersion),
+				)
+			}
+			if err := databaseDriver.SetVersion(legacyBaselineVersion, false); err != nil {
+				return wrapMigrationError(fmt.Errorf("seed legacy migration version: %w", err))
+			}
+
+		case hasMiddlemanTables(rw):
+			return wrapMigrationError(
+				fmt.Errorf("legacy database is missing schema version metadata"),
+			)
 		}
 	}
 
@@ -155,6 +202,13 @@ func hasLegacyBaselineSchema(db *sql.DB) bool {
 			return false
 		}
 	}
+	for table, columns := range legacyBaselineColumns {
+		for _, column := range columns {
+			if !hasColumn(db, table, column) {
+				return false
+			}
+		}
+	}
 	return true
 }
 
@@ -165,6 +219,32 @@ func hasTable(db *sql.DB, name string) bool {
 		name,
 	).Scan(&count)
 	return err == nil && count > 0
+}
+
+func hasColumn(db *sql.DB, table, column string) bool {
+	var count int
+	err := db.QueryRow(
+		fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = ?`, table),
+		column,
+	).Scan(&count)
+	return err == nil && count > 0
+}
+
+func readLegacySchemaVersion(db *sql.DB) (int, bool, error) {
+	var version int
+	err := db.QueryRow(
+		`SELECT version FROM middleman_schema_version LIMIT 1`,
+	).Scan(&version)
+	if err == nil {
+		return version, true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if hasTable(db, "middleman_schema_version") {
+		return 0, false, err
+	}
+	return 0, false, nil
 }
 
 func wrapMigrationError(err error) error {
