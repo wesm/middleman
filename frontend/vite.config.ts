@@ -1,10 +1,18 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath, URL } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 
 export default defineConfig({
   base: "/",
   plugins: [svelte(), svelteTesting()],
+  resolve: {
+    alias: {
+      "@testing-library/svelte": fileURLToPath(
+        new URL("./node_modules/@testing-library/svelte/src/index.js", import.meta.url),
+      ),
+    },
+  },
   test: {
     environment: "jsdom",
     include: [

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "../../../../../frontend/node_modules/@testing-library/svelte";
+import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import EventTimeline from "./EventTimeline.svelte";
 import type { PREvent } from "../../api/types.js";
