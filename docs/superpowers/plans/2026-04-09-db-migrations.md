@@ -4,7 +4,7 @@
 
 **Goal:** Replace custom schema version bootstrapping with embedded `golang-migrate` SQLite migrations and update agent instructions to treat numbered migrations as the database schema source of truth.
 
-**Architecture:** `internal/db/db.go` will continue to open SQLite connections and enable WAL, but it will hand schema setup to embedded `golang-migrate` migrations loaded from `internal/db/migrations/` via `source/iofs`. Legacy local databases with `middleman_*` tables and no migration metadata will be seeded to baseline version `1`; on migration failure, startup returns a direct delete-and-recreate instruction.
+**Architecture:** `internal/db/db.go` will continue to open SQLite connections and enable WAL, but it will hand schema setup to embedded `golang-migrate` migrations loaded from `internal/db/migrations/` via `source/iofs`. Migrations `000001` through `000003` will mirror the real historical schema versions previously tracked by `middleman_schema_version`, and `000004` will remove that legacy version table after old databases are seeded into `schema_migrations`.
 
 **Tech Stack:** Go, `github.com/golang-migrate/migrate/v4`, `modernc.org/sqlite`, embedded `io/fs`, `testify`
 

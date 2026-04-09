@@ -28,8 +28,14 @@ Initial structure:
 
 - `000001_initial_schema.up.sql`
 - `000001_initial_schema.down.sql`
+- `000002_update_mr_events_dedupe.up.sql`
+- `000002_update_mr_events_dedupe.down.sql`
+- `000003_add_backfill_and_detail_columns.up.sql`
+- `000003_add_backfill_and_detail_columns.down.sql`
+- `000004_drop_legacy_schema_version.up.sql`
+- `000004_drop_legacy_schema_version.down.sql`
 
-`000001_initial_schema.up.sql` will contain the full current schema from `internal/db/schema.sql`.
+`000001` through `000003` mirror the real pre-migration schema history that previously lived behind `middleman_schema_version` values `1`, `2`, and `3`. `000004` is the first migration introduced by the new migration system and removes the obsolete legacy version table.
 
 Subsequent schema changes will be expressed only as new numbered migrations. The migration directory becomes the schema source of truth.
 
@@ -43,7 +49,7 @@ Proposed startup sequence:
 2. Enable `PRAGMA journal_mode=WAL` on the write handle.
 3. Detect whether `schema_migrations` exists.
 4. If `schema_migrations` exists, run `m.Up()` and allow `migrate.ErrNoChange`.
-5. If `schema_migrations` does not exist but existing `middleman_*` tables do exist, treat the database as a legacy baseline and seed `schema_migrations` to version `1`.
+5. If `schema_migrations` does not exist but `middleman_schema_version` exists, seed `schema_migrations` from that legacy schema version.
 6. Run forward migrations to the latest version.
 7. If migration fails or the database is dirty, return an error instructing the user to delete the database file and let middleman recreate it.
 
