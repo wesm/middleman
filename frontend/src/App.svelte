@@ -6,7 +6,6 @@
     IssueListView,
     ActivityFeedView,
     KanbanBoardView,
-    DiffViewWrapper,
     ReviewsView,
     FocusListView,
   } from "@middleman/ui";
@@ -499,12 +498,6 @@
         {@const route = getRoute()}
         {#if route.page === "pulls" && route.view === "board"}
           <KanbanBoardView />
-        {:else if route.page === "pulls" && route.view === "diff"}
-          <DiffViewWrapper
-            owner={route.owner}
-            name={route.name}
-            number={route.number}
-          />
         {:else}
           {@const selectedPR =
             getSelectedPRFromRoute() ??

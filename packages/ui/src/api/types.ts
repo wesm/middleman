@@ -62,6 +62,11 @@ export interface DiffResult {
   files: DiffFile[];
 }
 
+export interface FilesResult {
+  stale: boolean;
+  files: DiffFile[];
+}
+
 export interface DiffFile {
   path: string;
   old_path: string;

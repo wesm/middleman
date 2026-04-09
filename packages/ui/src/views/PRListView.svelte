@@ -71,7 +71,6 @@
             owner={selectedPR.owner}
             name={selectedPR.name}
             number={selectedPR.number}
-            inline
           />
         {/key}
       {:else}

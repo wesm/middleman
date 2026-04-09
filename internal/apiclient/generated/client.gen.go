@@ -114,6 +114,14 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// FilesResponse defines model for FilesResponse.
+type FilesResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string     `json:"$schema,omitempty"`
+	Files  *[]DiffFile `json:"files"`
+	Stale  bool        `json:"stale"`
+}
+
 // GithubStateInputBody defines model for GithubStateInputBody.
 type GithubStateInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -659,6 +667,9 @@ type ClientInterface interface {
 	// GetReposByOwnerByNamePullsByNumberDiff request
 	GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetReposByOwnerByNamePullsByNumberFiles request
+	GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SetPrGithubStateWithBody request with any body
 	SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -930,6 +941,18 @@ func (c *Client) PostPrComment(ctx context.Context, owner string, name string, n
 
 func (c *Client) GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetReposByOwnerByNamePullsByNumberDiffRequest(c.Server, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberFilesRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2156,6 +2179,54 @@ func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner strin
 	return req, nil
 }
 
+// NewGetReposByOwnerByNamePullsByNumberFilesRequest generates requests for GetReposByOwnerByNamePullsByNumberFiles
+func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/files", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetPrGithubStateRequest calls the generic SetPrGithubState builder with application/json body
 func NewSetPrGithubStateRequest(server string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2716,6 +2787,9 @@ type ClientWithResponsesInterface interface {
 	// GetReposByOwnerByNamePullsByNumberDiffWithResponse request
 	GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error)
 
+	// GetReposByOwnerByNamePullsByNumberFilesWithResponse request
+	GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error)
+
 	// SetPrGithubStateWithBodyWithResponse request with any body
 	SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
@@ -3125,6 +3199,29 @@ func (r GetReposByOwnerByNamePullsByNumberDiffResponse) StatusCode() int {
 	return 0
 }
 
+type GetReposByOwnerByNamePullsByNumberFilesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilesResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNamePullsByNumberFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNamePullsByNumberFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type SetPrGithubStateResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -3525,6 +3622,15 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberDiffWithResponse
 		return nil, err
 	}
 	return ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp)
+}
+
+// GetReposByOwnerByNamePullsByNumberFilesWithResponse request returning *GetReposByOwnerByNamePullsByNumberFilesResponse
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberFiles(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNamePullsByNumberFilesResponse(rsp)
 }
 
 // SetPrGithubStateWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateResponse
@@ -4168,6 +4274,39 @@ func ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp *http.Response) (*G
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNamePullsByNumberFilesResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberFilesWithResponse call
+func ParseGetReposByOwnerByNamePullsByNumberFilesResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNamePullsByNumberFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

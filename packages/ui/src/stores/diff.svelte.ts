@@ -1,4 +1,4 @@
-import type { DiffResult } from "../api/types.js";
+import type { DiffResult, FilesResult } from "../api/types.js";
 
 export interface DiffStoreOptions {
   getBasePath?: () => string;
@@ -72,6 +72,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let storeError = $state<string | null>(null);
   let abortController: AbortController | null = null;
 
+  let fileList = $state<FilesResult | null>(null);
+  let fileListLoading = $state(false);
+  let fileListAbortController: AbortController | null = null;
+
   let tabWidth = $state(loadTabWidth());
   let hideWhitespace = $state(
     safeGetItem("diff-hide-whitespace") === "true",
@@ -97,6 +101,19 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
   function getDiffError(): string | null {
     return storeError;
+  }
+  function getFileList(): FilesResult | null {
+    // Prefer diff.files once available — it respects hideWhitespace
+    // and is authoritative. The lightweight /files response is a fast
+    // preview used only until the full diff arrives.
+    if (diff) return { stale: diff.stale, files: diff.files ?? [] };
+    if (fileList) return { stale: fileList.stale, files: fileList.files ?? [] };
+    return null;
+  }
+  function isFileListLoading(): boolean {
+    // Show loading until we have *some* file data. When /files fails
+    // but /diff is still in flight, keep showing loading state.
+    return !diff && (fileListLoading || loading);
   }
   function getTabWidth(): number {
     return tabWidth;
@@ -137,10 +154,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scrolling = true;
   }
 
-  function consumeScrollTarget(): string | null {
-    const target = scrollTarget;
+  function getScrollTarget(): string | null {
+    return scrollTarget;
+  }
+
+  function consumeScrollTarget(): void {
     scrollTarget = null;
-    return target;
   }
 
   function setTabWidth(w: number): void {
@@ -152,11 +171,45 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     hideWhitespace = v;
     safeSetItem("diff-hide-whitespace", String(v));
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(
-        currentOwner,
-        currentName,
-        currentNumber,
-      );
+      void reloadDiffOnly();
+    }
+  }
+
+  async function reloadDiffOnly(): Promise<void> {
+    abortController?.abort();
+    // Abort any in-flight /files request so a late response from a
+    // prior loadDiff() cannot repopulate fileList after we clear it.
+    fileListAbortController?.abort();
+    fileListAbortController = null;
+    fileListLoading = false;
+    const ac = new AbortController();
+    abortController = ac;
+    fileList = null;
+
+    loading = true;
+    storeError = null;
+    try {
+      const basePath = getBasePath();
+      const url =
+        `${basePath}api/v1/repos/` +
+        `${encodeURIComponent(currentOwner)}/` +
+        `${encodeURIComponent(currentName)}/` +
+        `pulls/${currentNumber}/diff` +
+        `${hideWhitespace ? "?whitespace=hide" : ""}`;
+      const data = await fetchJSON(url, ac.signal);
+      if (abortController !== ac) return;
+      diff = data as DiffResult;
+      setActiveIfNeeded((data as DiffResult).files);
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      if (abortController !== ac) return;
+      storeError =
+        err instanceof Error ? err.message : String(err);
+      diff = null;
+    } finally {
+      if (!ac.signal.aborted && abortController === ac) {
+        loading = false;
+      }
     }
   }
 
@@ -182,6 +235,33 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     saveCollapsedFiles(collapsedFiles);
   }
 
+  function fetchJSON(
+    url: string,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    return fetch(url, { signal }).then(async (r) => {
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(
+          (body as Record<string, string>).detail ??
+            (body as Record<string, string>).title ??
+            `HTTP ${r.status}`,
+        );
+      }
+      return r.json();
+    });
+  }
+
+  function setActiveIfNeeded(
+    files: { path: string }[] | undefined,
+  ): void {
+    if (
+      !files?.some((f) => f.path === activeFile)
+    ) {
+      activeFile = files?.[0]?.path ?? null;
+    }
+  }
+
   async function loadDiff(
     owner: string,
     name: string,
@@ -192,62 +272,91 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = number;
 
     abortController?.abort();
-    const ac = new AbortController();
-    abortController = ac;
+    fileListAbortController?.abort();
+    const diffAc = new AbortController();
+    const filesAc = new AbortController();
+    abortController = diffAc;
+    fileListAbortController = filesAc;
 
+    diff = null;
+    fileList = null;
     loading = true;
+    fileListLoading = true;
     storeError = null;
-    try {
-      const basePath = getBasePath();
-      const url =
-        `${basePath}api/v1/repos/` +
-        `${encodeURIComponent(owner)}/` +
-        `${encodeURIComponent(name)}/` +
-        `pulls/${number}/diff` +
-        `${hideWhitespace ? "?whitespace=hide" : ""}`;
-      const response = await fetch(url, {
-        signal: ac.signal,
-      });
-      if (!response.ok) {
-        const body = await response
-          .json()
-          .catch(() => ({}));
-        throw new Error(
-          (body as Record<string, string>).detail ??
-            (body as Record<string, string>).title ??
-            `HTTP ${response.status}`,
+
+    const basePath = getBasePath();
+    const prefix =
+      `${basePath}api/v1/repos/` +
+      `${encodeURIComponent(owner)}/` +
+      `${encodeURIComponent(name)}/` +
+      `pulls/${number}`;
+
+    const filesPromise = (async () => {
+      try {
+        const data = await fetchJSON(
+          `${prefix}/files`,
+          filesAc.signal,
         );
+        if (fileListAbortController !== filesAc) return;
+        fileList = data as FilesResult;
+        setActiveIfNeeded((data as FilesResult).files);
+      } catch (err) {
+        if (filesAc.signal.aborted) return;
+        if (fileListAbortController !== filesAc) return;
+        fileList = null;
+      } finally {
+        if (
+          !filesAc.signal.aborted &&
+          fileListAbortController === filesAc
+        ) {
+          fileListLoading = false;
+        }
       }
-      const data = await response.json();
-      if (abortController !== ac) return;
-      diff = data as DiffResult;
-      const files = (data as DiffResult).files;
-      if (
-        !files?.some(
-          (f: { path: string }) => f.path === activeFile,
-        )
-      ) {
-        activeFile = files?.[0]?.path ?? null;
+    })();
+
+    const diffPromise = (async () => {
+      try {
+        const url =
+          `${prefix}/diff` +
+          `${hideWhitespace ? "?whitespace=hide" : ""}`;
+        const data = await fetchJSON(url, diffAc.signal);
+        if (abortController !== diffAc) return;
+        diff = data as DiffResult;
+        setActiveIfNeeded((data as DiffResult).files);
+      } catch (err) {
+        if (diffAc.signal.aborted) return;
+        if (abortController !== diffAc) return;
+        storeError =
+          err instanceof Error ? err.message : String(err);
+        diff = null;
+        fileList = null;
+        // Invalidate and abort /files so a late response cannot repopulate.
+        fileListAbortController = null;
+        filesAc.abort();
+        fileListLoading = false;
+      } finally {
+        if (
+          !diffAc.signal.aborted &&
+          abortController === diffAc
+        ) {
+          loading = false;
+        }
       }
-    } catch (err) {
-      if (ac.signal.aborted) return;
-      if (abortController !== ac) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
-      diff = null;
-    } finally {
-      if (!ac.signal.aborted && abortController === ac) {
-        loading = false;
-      }
-    }
+    })();
+
+    await Promise.allSettled([filesPromise, diffPromise]);
   }
 
   function clearDiff(): void {
     abortController?.abort();
     abortController = null;
+    fileListAbortController?.abort();
+    fileListAbortController = null;
     diff = null;
+    fileList = null;
     storeError = null;
     loading = false;
+    fileListLoading = false;
     activeFile = null;
     scrollTarget = null;
     scrolling = false;
@@ -260,6 +369,8 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     getDiff,
     isDiffLoading,
     getDiffError,
+    getFileList,
+    isFileListLoading,
     getTabWidth,
     getHideWhitespace,
     getActiveFile,
@@ -267,6 +378,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     isScrolling,
     clearScrolling,
     requestScrollToFile,
+    getScrollTarget,
     consumeScrollTarget,
     setTabWidth,
     setHideWhitespace,
