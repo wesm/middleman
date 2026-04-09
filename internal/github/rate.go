@@ -9,30 +9,71 @@ import (
 	"github.com/wesm/middleman/internal/db"
 )
 
+const RateReserveBuffer = 200
+
+type throttleStep struct {
+	floor  float64
+	factor int
+}
+
+var throttleSteps = []throttleStep{
+	{0.50, 1},
+	{0.25, 2},
+	{0.10, 4},
+	{0.00, 8},
+}
+
 // RateTracker records per-host API request counts and rate limit
 // state, persisting to SQLite for cross-restart visibility.
 type RateTracker struct {
-	mu           sync.Mutex
-	db           *db.DB
-	platformHost string
-	count        int
-	hourStart    time.Time
-	remaining    int
-	resetAt      *time.Time
+	mu            sync.Mutex
+	db            *db.DB
+	platformHost  string
+	count         int
+	hourStart     time.Time
+	remaining     int
+	limit         int
+	resetAt       *time.Time
+	lastRolledAt  time.Time // prevents repeated rolls
+	onWindowReset func()
 }
 
 // NewRateTracker creates a tracker for the given platform host.
-// remaining is initialized to -1 (unknown) until the first API
-// response updates it.
+// It hydrates from DB if a row exists for the current hour.
 func NewRateTracker(
 	database *db.DB, platformHost string,
 ) *RateTracker {
-	return &RateTracker{
+	rt := &RateTracker{
 		db:           database,
 		platformHost: platformHost,
 		remaining:    -1,
+		limit:        -1,
 		hourStart:    truncateHour(time.Now().UTC()),
 	}
+	rt.hydrate()
+	return rt
+}
+
+func (rt *RateTracker) hydrate() {
+	row, err := rt.db.GetRateLimit(rt.platformHost)
+	if err != nil || row == nil {
+		return
+	}
+	if row.RateResetAt != nil {
+		if !time.Now().Before(*row.RateResetAt) {
+			return // GitHub window expired
+		}
+	} else {
+		now := truncateHour(time.Now().UTC())
+		if row.HourStart.Before(now) {
+			return // clock-hour expired, no GitHub data
+		}
+	}
+	rt.count = row.RequestsHour
+	rt.hourStart = row.HourStart
+	rt.remaining = row.RateRemaining
+	rt.limit = row.RateLimit
+	rt.resetAt = row.RateResetAt
 }
 
 // RecordRequest increments the hourly request counter and
@@ -45,14 +86,42 @@ func (rt *RateTracker) RecordRequest() {
 	rt.persist()
 }
 
-// UpdateFromRate updates remaining/reset from a go-github Rate.
-func (rt *RateTracker) UpdateFromRate(rate gh.Rate) {
+// SetOnWindowReset registers a callback invoked when a GitHub
+// rate limit window reset is detected. The callback runs with
+// the tracker's mutex released.
+func (rt *RateTracker) SetOnWindowReset(fn func()) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	rt.remaining = rate.Remaining
+	rt.onWindowReset = fn
+}
+
+// UpdateFromRate updates remaining/limit/reset from a
+// go-github Rate. If the reset time moved forward, GitHub
+// started a new rate window — the request counter resets
+// to stay aligned with GitHub's window.
+func (rt *RateTracker) UpdateFromRate(rate gh.Rate) {
+	rt.mu.Lock()
 	resetTime := rate.Reset.UTC()
+	// Detect GitHub window reset: remaining only increases when
+	// GitHub starts a new rate limit window. Ignore the jump
+	// from -1 (unknown) to a real value — that's first contact,
+	// not a reset.
+	var windowReset bool
+	if rt.remaining >= 0 && rate.Remaining > rt.remaining {
+		rt.count = 1 // the current request is the first in the new window
+		rt.hourStart = time.Now().UTC()
+		windowReset = true
+	}
+	fn := rt.onWindowReset
+	rt.remaining = rate.Remaining
+	rt.limit = rate.Limit
 	rt.resetAt = &resetTime
 	rt.persist()
+	rt.mu.Unlock()
+
+	if windowReset && fn != nil {
+		fn()
+	}
 }
 
 // ShouldBackoff returns true and the wait duration if the rate
@@ -74,11 +143,54 @@ func (rt *RateTracker) ShouldBackoff() (bool, time.Duration) {
 	return true, wait
 }
 
+// ThrottleFactor returns a multiplier (1, 2, 4, or 8) based on
+// how much remaining quota is left relative to the limit.
+func (rt *RateTracker) ThrottleFactor() int {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.isQuotaStale() {
+		return 1
+	}
+	pct := float64(rt.remaining) / float64(rt.limit)
+	for _, s := range throttleSteps {
+		if pct > s.floor {
+			return s.factor
+		}
+	}
+	return throttleSteps[len(throttleSteps)-1].factor
+}
+
+// IsPaused returns true when remaining quota is at or below
+// the reserve buffer and quota info is fresh.
+func (rt *RateTracker) IsPaused() bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.isQuotaStale() {
+		return false
+	}
+	return rt.remaining <= RateReserveBuffer
+}
+
 // Remaining returns the last known remaining request count.
 func (rt *RateTracker) Remaining() int {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	return rt.remaining
+}
+
+// RateLimit returns the last known rate limit.
+func (rt *RateTracker) RateLimit() int {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.limit
+}
+
+// Known returns true if we have received at least one rate
+// limit response with a positive limit value.
+func (rt *RateTracker) Known() bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.limit > 0
 }
 
 // RequestsThisHour returns the number of requests recorded in
@@ -90,13 +202,60 @@ func (rt *RateTracker) RequestsThisHour() int {
 	return rt.count
 }
 
-// rollIfNeeded resets the counter if the hour boundary has passed.
-// Must be called with mu held.
+// ResetAt returns a copy of the reset time, or nil if unknown.
+func (rt *RateTracker) ResetAt() *time.Time {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.resetAt == nil {
+		return nil
+	}
+	t := *rt.resetAt
+	return &t
+}
+
+// HourStart returns the start of the current tracking hour.
+func (rt *RateTracker) HourStart() time.Time {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.hourStart
+}
+
+// isQuotaStale returns true when quota data is unknown or
+// expired. Must be called with mu held.
+func (rt *RateTracker) isQuotaStale() bool {
+	if rt.remaining <= 0 && rt.limit <= 0 {
+		return true
+	}
+	if rt.limit <= 0 {
+		return true
+	}
+	if rt.resetAt != nil && !time.Now().Before(*rt.resetAt) {
+		return true
+	}
+	return false
+}
+
+// rollIfNeeded resets the counter and quota state when the
+// rate window has expired. When GitHub's resetAt is known, it
+// defines the window; otherwise falls back to clock-hour
+// boundaries. Must be called with mu held.
 func (rt *RateTracker) rollIfNeeded() {
+	if rt.resetAt != nil {
+		if !time.Now().Before(*rt.resetAt) && !rt.lastRolledAt.Equal(*rt.resetAt) {
+			rt.count = 0
+			rt.hourStart = time.Now().UTC()
+			rt.remaining = -1
+			rt.limit = -1
+			rt.lastRolledAt = *rt.resetAt
+		}
+		return
+	}
 	now := truncateHour(time.Now().UTC())
 	if now.After(rt.hourStart) {
 		rt.count = 0
 		rt.hourStart = now
+		rt.remaining = -1
+		rt.limit = -1
 	}
 }
 
@@ -107,6 +266,7 @@ func (rt *RateTracker) persist() {
 		rt.count,
 		rt.hourStart,
 		rt.remaining,
+		rt.limit,
 		rt.resetAt,
 	)
 	if err != nil {

@@ -119,3 +119,238 @@ func TestRateTrackerConcurrentAccess(t *testing.T) {
 	wg.Wait()
 	Assert.GreaterOrEqual(t, rt.RequestsThisHour(), 1)
 }
+
+func TestRateTrackerThrottleFactor(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	// Unknown state (limit=-1): no throttling
+	assert.Equal(1, rt.ThrottleFactor())
+	assert.False(rt.IsPaused())
+
+	// >50% remaining: factor 1
+	futureReset := time.Now().Add(30 * time.Minute)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 3000,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	assert.Equal(1, rt.ThrottleFactor())
+	assert.False(rt.IsPaused())
+	assert.True(rt.Known())
+	assert.Equal(5000, rt.RateLimit())
+
+	// 25-50% remaining: factor 2
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 2000,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	assert.Equal(2, rt.ThrottleFactor())
+
+	// 10-25% remaining: factor 4
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 1000,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	assert.Equal(4, rt.ThrottleFactor())
+
+	// <10% remaining: factor 8
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 400,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	assert.Equal(8, rt.ThrottleFactor())
+
+	// At reserve buffer (200): paused
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 200,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	assert.True(rt.IsPaused())
+	assert.Equal(8, rt.ThrottleFactor())
+}
+
+func TestRateTrackerStaleQuota(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	pastReset := time.Now().Add(-1 * time.Minute)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 100,
+		Reset:     gh.Timestamp{Time: pastReset},
+	})
+
+	assert.Equal(1, rt.ThrottleFactor())
+	assert.False(rt.IsPaused())
+}
+
+func TestRateTrackerHydrateFromDB(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	rt1 := NewRateTracker(d, "github.com")
+	futureReset := time.Now().Add(30 * time.Minute)
+	rt1.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 2000,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	for range 10 {
+		rt1.RecordRequest()
+	}
+
+	rt2 := NewRateTracker(d, "github.com")
+
+	assert.Equal(10, rt2.RequestsThisHour())
+	assert.Equal(2000, rt2.Remaining())
+	assert.Equal(5000, rt2.RateLimit())
+	assert.True(rt2.Known())
+	require.Equal(2, rt2.ThrottleFactor())
+}
+
+func TestRateTrackerWindowRolloverResetsQuota(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	futureReset := time.Now().Add(30 * time.Minute)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 100,
+		Reset:     gh.Timestamp{Time: futureReset},
+	})
+	assert.True(rt.Known())
+
+	// Simulate window expiry by setting resetAt to the past
+	rt.mu.Lock()
+	pastReset := time.Now().Add(-1 * time.Minute)
+	rt.resetAt = &pastReset
+	rt.mu.Unlock()
+
+	// Trigger rollIfNeeded via RequestsThisHour
+	rt.RequestsThisHour()
+
+	assert.False(rt.Known())
+	assert.Equal(1, rt.ThrottleFactor())
+	assert.False(rt.IsPaused())
+}
+
+func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	reset1 := time.Now().Add(30 * time.Minute)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4000,
+		Reset:     gh.Timestamp{Time: reset1},
+	})
+	for range 50 {
+		rt.RecordRequest()
+	}
+	assert.Equal(50, rt.RequestsThisHour())
+
+	// GitHub window resets: remaining jumps up
+	reset2 := reset1.Add(1 * time.Hour)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4999,
+		Reset:     gh.Timestamp{Time: reset2},
+	})
+
+	// Counter should have reset to 1 when remaining increased
+	// (the current request that triggered the window reset counts).
+	assert.Equal(1, rt.RequestsThisHour())
+	assert.Equal(4999, rt.Remaining())
+}
+
+func TestRateTrackerResetAtJitterDoesNotResetCounter(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	reset1 := time.Now().Add(30 * time.Minute)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4000,
+		Reset:     gh.Timestamp{Time: reset1},
+	})
+	for range 50 {
+		rt.RecordRequest()
+	}
+	assert.Equal(50, rt.RequestsThisHour())
+
+	// resetAt jitters forward by 1s but remaining goes DOWN
+	// (normal within-window behavior). Counter must NOT reset.
+	reset2 := reset1.Add(1 * time.Second)
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 3990,
+		Reset:     gh.Timestamp{Time: reset2},
+	})
+
+	assert.Equal(50, rt.RequestsThisHour())
+}
+
+// TestRateTrackerProductionFlow simulates the exact production
+// pattern: every API call does RecordRequest + UpdateFromRate
+// (via trackRate), then the counter is read via RequestsThisHour
+// (via the /rate-limits endpoint). Verifies the counter survives
+// repeated reads and window expiry.
+func TestRateTrackerProductionFlow(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com")
+
+	futureReset := time.Now().Add(30 * time.Minute)
+
+	// Simulate 5 API calls (the trackRate pattern)
+	for i := range 5 {
+		rt.RecordRequest()
+		rt.UpdateFromRate(gh.Rate{
+			Limit:     5000,
+			Remaining: 4999 - i,
+			Reset:     gh.Timestamp{Time: futureReset},
+		})
+	}
+
+	// Counter should be 5, and survive repeated reads
+	assert.Equal(5, rt.RequestsThisHour())
+	assert.Equal(5, rt.RequestsThisHour())
+	assert.Equal(5, rt.RequestsThisHour())
+
+	// Simulate window expiry: resetAt moves to past
+	rt.mu.Lock()
+	pastReset := time.Now().Add(-1 * time.Minute)
+	rt.resetAt = &pastReset
+	rt.mu.Unlock()
+
+	// First read after expiry: rollIfNeeded fires, count resets
+	assert.Equal(0, rt.RequestsThisHour())
+	// Second read: roll must NOT fire again (lastRolledAt prevents re-roll)
+	assert.Equal(0, rt.RequestsThisHour())
+
+	// Now simulate new API calls in the new window
+	newReset := time.Now().Add(55 * time.Minute)
+	for i := range 3 {
+		rt.RecordRequest()
+		rt.UpdateFromRate(gh.Rate{
+			Limit:     5000,
+			Remaining: 4999 - i,
+			Reset:     gh.Timestamp{Time: newReset},
+		})
+	}
+
+	// Counter should be 3
+	assert.Equal(3, rt.RequestsThisHour())
+	assert.Equal(3, rt.RequestsThisHour())
+}

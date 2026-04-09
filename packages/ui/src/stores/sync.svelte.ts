@@ -1,4 +1,7 @@
-import type { SyncStatus } from "../api/types.js";
+import type {
+  RateLimitHostStatus,
+  SyncStatus,
+} from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
 export interface SyncStoreOptions {
@@ -11,6 +14,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
   // --- state ---
 
   let status = $state<SyncStatus | null>(null);
+  let rateLimits = $state<
+    Record<string, RateLimitHostStatus>
+  >({});
   let pollingHandle: ReturnType<typeof setInterval> | null =
     null;
   let wasRunning = false;
@@ -22,6 +28,13 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function getSyncState(): SyncStatus | null {
     return status;
+  }
+
+  function getRateLimits(): Record<
+    string,
+    RateLimitHostStatus
+  > {
+    return rateLimits;
   }
 
   // --- writes ---
@@ -40,19 +53,24 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   async function refreshSyncStatus(): Promise<void> {
-    try {
-      const { data, error } =
-        await apiClient.GET("/sync/status");
-      if (error) {
-        throw new Error(
-          error.detail ??
-            error.title ??
-            "failed to load sync status",
-        );
+    const [syncResult, rateResult] =
+      await Promise.allSettled([
+        apiClient.GET("/sync/status"),
+        apiClient.GET("/rate-limits"),
+      ]);
+
+    if (syncResult.status === "fulfilled") {
+      const { data, error } = syncResult.value;
+      if (!error && data) {
+        status = data;
       }
-      status = data ?? null;
-    } catch {
-      return;
+    }
+
+    if (rateResult.status === "fulfilled") {
+      const { data, error } = rateResult.value;
+      if (!error && data) {
+        rateLimits = data.hosts ?? {};
+      }
     }
 
     const isRunning = status?.running ?? false;
@@ -135,6 +153,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   return {
     getSyncState,
+    getRateLimits,
     onNextSyncComplete,
     subscribeSyncComplete,
     refreshSyncStatus,

@@ -182,3 +182,17 @@ func (c *FixtureClient) EditIssue(
 ) (*gh.Issue, error) {
 	return nil, errFixtureReadOnly
 }
+
+// ListPullRequestsPage returns nil (read-only stub).
+func (c *FixtureClient) ListPullRequestsPage(
+	_ context.Context, _, _, _ string, _ int,
+) ([]*gh.PullRequest, bool, error) {
+	return nil, false, nil
+}
+
+// ListIssuesPage returns nil (read-only stub).
+func (c *FixtureClient) ListIssuesPage(
+	_ context.Context, _, _, _ string, _ int,
+) ([]*gh.Issue, bool, error) {
+	return nil, false, nil
+}

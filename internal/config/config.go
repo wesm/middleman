@@ -17,13 +17,14 @@ import (
 )
 
 const (
-	defaultGitHubTokenEnv = "MIDDLEMAN_GITHUB_TOKEN"
-	defaultSyncInterval   = "5m"
-	defaultHost           = "127.0.0.1"
-	defaultPort           = 8090
-	defaultViewMode       = "threaded"
-	defaultTimeRange      = "7d"
-	defaultBasePath       = "/"
+	defaultGitHubTokenEnv    = "MIDDLEMAN_GITHUB_TOKEN"
+	defaultSyncInterval      = "5m"
+	defaultHost              = "127.0.0.1"
+	defaultPort              = 8090
+	defaultViewMode          = "threaded"
+	defaultTimeRange         = "7d"
+	defaultBasePath          = "/"
+	defaultSyncBudgetPerHour = 500
 )
 
 type Repo struct {
@@ -158,15 +159,16 @@ type Roborev struct {
 }
 
 type Config struct {
-	SyncInterval   string   `toml:"sync_interval"`
-	GitHubTokenEnv string   `toml:"github_token_env"`
-	Host           string   `toml:"host"`
-	Port           int      `toml:"port"`
-	BasePath       string   `toml:"base_path"`
-	DataDir        string   `toml:"data_dir"`
-	Repos          []Repo   `toml:"repos"`
-	Activity       Activity `toml:"activity"`
-	Roborev        Roborev  `toml:"roborev"`
+	SyncInterval      string   `toml:"sync_interval"`
+	GitHubTokenEnv    string   `toml:"github_token_env"`
+	Host              string   `toml:"host"`
+	Port              int      `toml:"port"`
+	BasePath          string   `toml:"base_path"`
+	DataDir           string   `toml:"data_dir"`
+	SyncBudgetPerHour int      `toml:"sync_budget_per_hour"`
+	Repos             []Repo   `toml:"repos"`
+	Activity          Activity `toml:"activity"`
+	Roborev           Roborev  `toml:"roborev"`
 }
 
 func DefaultConfigPath() string {
@@ -315,6 +317,10 @@ func Load(path string) (*Config, error) {
 		cfg.Activity.TimeRange = defaultTimeRange
 	}
 
+	if cfg.SyncBudgetPerHour == 0 {
+		cfg.SyncBudgetPerHour = defaultSyncBudgetPerHour
+	}
+
 	if cfg.BasePath == "" {
 		cfg.BasePath = defaultBasePath
 	} else {
@@ -383,6 +389,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: invalid port %d", c.Port)
 	}
 
+	if c.SyncBudgetPerHour != 0 && c.SyncBudgetPerHour < 50 {
+		return fmt.Errorf(
+			"config: sync_budget_per_hour must be >= 50 or omitted, got %d",
+			c.SyncBudgetPerHour,
+		)
+	}
+
 	if !validBasePathRe.MatchString(c.BasePath) {
 		return fmt.Errorf("config: invalid base_path %q: must be / or /path/ using only alphanumerics, hyphens, underscores, dots, and tildes", c.BasePath)
 	}
@@ -447,6 +460,10 @@ func ghAuthToken() string {
 	return strings.TrimSpace(string(out))
 }
 
+func (c *Config) BudgetPerHour() int {
+	return c.SyncBudgetPerHour
+}
+
 func (c *Config) ListenAddr() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
@@ -466,15 +483,16 @@ func (c *Config) RoborevEndpoint() string {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval   string   `toml:"sync_interval"`
-	GitHubTokenEnv string   `toml:"github_token_env"`
-	Host           string   `toml:"host"`
-	Port           int      `toml:"port"`
-	BasePath       string   `toml:"base_path,omitempty"`
-	DataDir        string   `toml:"data_dir,omitempty"`
-	Repos          []Repo   `toml:"repos"`
-	Activity       Activity `toml:"activity"`
-	Roborev        Roborev  `toml:"roborev,omitempty"`
+	SyncInterval      string   `toml:"sync_interval"`
+	GitHubTokenEnv    string   `toml:"github_token_env"`
+	Host              string   `toml:"host"`
+	Port              int      `toml:"port"`
+	SyncBudgetPerHour int      `toml:"sync_budget_per_hour,omitempty"`
+	BasePath          string   `toml:"base_path,omitempty"`
+	DataDir           string   `toml:"data_dir,omitempty"`
+	Repos             []Repo   `toml:"repos"`
+	Activity          Activity `toml:"activity"`
+	Roborev           Roborev  `toml:"roborev,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -487,6 +505,9 @@ func (c *Config) Save(path string) error {
 		Repos:          c.Repos,
 		Activity:       c.Activity,
 		Roborev:        c.Roborev,
+	}
+	if c.SyncBudgetPerHour != defaultSyncBudgetPerHour {
+		f.SyncBudgetPerHour = c.SyncBudgetPerHour
 	}
 	if c.BasePath != defaultBasePath {
 		f.BasePath = c.BasePath

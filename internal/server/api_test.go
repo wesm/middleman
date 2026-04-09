@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -181,6 +182,18 @@ func (m *mockGH) EditIssue(
 	return &gh.Issue{State: &state}, nil
 }
 
+func (m *mockGH) ListPullRequestsPage(
+	_ context.Context, _, _, _ string, _ int,
+) ([]*gh.PullRequest, bool, error) {
+	return nil, false, nil
+}
+
+func (m *mockGH) ListIssuesPage(
+	_ context.Context, _, _, _ string, _ int,
+) ([]*gh.Issue, bool, error) {
+	return nil, false, nil
+}
+
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
@@ -206,7 +219,7 @@ func setupTestServerWithRepos(
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, 0)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -505,31 +518,13 @@ func TestAPIGetPull(t *testing.T) {
 	require.Equal("widget", resp.JSON200.RepoName)
 }
 
-func TestAPIGetPullIncludesWorkflowApproval(t *testing.T) {
+func TestAPIGetPullIsDBOnly(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
-			sha := "abc123"
-			state := "open"
-			return &gh.PullRequest{
-				Number: &number,
-				State:  &state,
-				Head:   &gh.PullRequestBranch{SHA: &sha},
-			}, nil
-		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, owner, repo, headSHA string) ([]*gh.WorkflowRun, error) {
-			require.Equal("acme", owner)
-			require.Equal("widget", repo)
-			require.Equal("abc123", headSHA)
-			return []*gh.WorkflowRun{
-				{
-					ID:           new(int64(55)),
-					HeadSHA:      new("abc123"),
-					Event:        new("pull_request"),
-					PullRequests: []*gh.PullRequest{{Number: new(1)}},
-				},
-			}, nil
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			require.Fail("GET pull detail should not call GitHub API")
+			return nil, nil
 		},
 	}
 
@@ -543,10 +538,15 @@ func TestAPIGetPullIncludesWorkflowApproval(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.MergeRequest)
+	// Seeded PR has no DetailFetchedAt, so detail_loaded should be false.
+	assert.False(resp.JSON200.DetailLoaded)
+	assert.Nil(resp.JSON200.DetailFetchedAt)
+	// GET path uses DB state (useLivePR=false). Seeded PR has no
+	// PlatformHeadSHA, so workflow check returns Checked=true (no
+	// workflows possible without a head SHA).
 	require.NotNil(resp.JSON200.WorkflowApproval)
 	assert.True(resp.JSON200.WorkflowApproval.Checked)
-	assert.True(resp.JSON200.WorkflowApproval.Required)
-	assert.EqualValues(1, resp.JSON200.WorkflowApproval.Count)
 }
 
 func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
@@ -596,10 +596,12 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
+	// Sync response uses DB state for PR (saves a GetPullRequest call)
+	// but still fetches workflow runs via ListWorkflowRunsForHeadSHA.
 	require.NotNil(resp.JSON200.WorkflowApproval)
 	assert.True(resp.JSON200.WorkflowApproval.Checked)
 	assert.True(resp.JSON200.WorkflowApproval.Required)
-	assert.EqualValues(1, resp.JSON200.WorkflowApproval.Count)
+	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
 }
 
 func TestAPIApproveWorkflows(t *testing.T) {
@@ -832,7 +834,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	clones := gitclone.New(clonesDir, nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -874,7 +876,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -925,7 +927,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -978,7 +980,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1034,7 +1036,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1089,7 +1091,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1138,7 +1140,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1191,7 +1193,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1290,7 +1292,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
-		database, clones, defaultTestRepos, time.Minute, nil,
+		database, clones, defaultTestRepos, time.Minute, nil, 0,
 	)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
@@ -1399,7 +1401,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widget",
 		PlatformHost: "github.com",
-	}}, time.Minute, nil)
+	}}, time.Minute, nil, 0)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -1459,7 +1461,7 @@ func TestAPIReadyForReview(t *testing.T) {
 			}, nil
 		},
 	}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil, 0)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -2168,4 +2170,211 @@ func TestSetActiveWorktreeKey(t *testing.T) {
 	key, set = srv.ActiveWorktreeKey()
 	assert.Empty(key)
 	assert.True(set, "should still be 'set' even when cleared")
+}
+
+func TestAPIRateLimits(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	rt := ghclient.NewRateTracker(database, "github.com")
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": rt},
+		0,
+	)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	gh, ok := body.Hosts["github.com"]
+	assert.True(ok)
+	assert.Equal(0, gh.RequestsHour)
+	assert.Equal(-1, gh.RateRemaining)
+	assert.False(gh.Known)
+	assert.Equal(1, gh.SyncThrottleFactor)
+	assert.False(gh.SyncPaused)
+	assert.Equal(200, gh.ReserveBuffer)
+	// Budget fields default to zero when budgetPerHour=0.
+	assert.Equal(0, gh.BudgetLimit)
+	assert.Equal(0, gh.BudgetSpent)
+	assert.Equal(0, gh.BudgetRemaining)
+}
+
+func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	rt := ghclient.NewRateTracker(database, "github.com")
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": rt},
+		0,
+	)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Before any requests: requests_hour should be 0.
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var before rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&before)
+	require.NoError(err)
+
+	gh0, ok := before.Hosts["github.com"]
+	assert.True(ok)
+	assert.Equal(0, gh0.RequestsHour)
+
+	// Simulate 5 API calls via RecordRequest.
+	for range 5 {
+		rt.RecordRequest()
+	}
+
+	// After recording: requests_hour should be 5.
+	resp2, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(err)
+	defer resp2.Body.Close()
+	assert.Equal(200, resp2.StatusCode)
+
+	var after rateLimitsResponse
+	err = json.NewDecoder(resp2.Body).Decode(&after)
+	require.NoError(err)
+
+	gh5, ok := after.Hosts["github.com"]
+	assert.True(ok)
+	assert.Equal(5, gh5.RequestsHour)
+}
+
+func TestAPIRateLimitsWithBudget(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	rt := ghclient.NewRateTracker(database, "github.com")
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": rt},
+		500,
+	)
+
+	// Simulate some budget spend.
+	budgets := syncer.Budgets()
+	budgets["github.com"].Spend(42)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	gh, ok := body.Hosts["github.com"]
+	assert.True(ok)
+	assert.Equal(500, gh.BudgetLimit)
+	assert.Equal(42, gh.BudgetSpent)
+	assert.Equal(458, gh.BudgetRemaining)
+}
+
+func TestAPIGetPullDetailLoaded(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	// Before detail fetch: detail_loaded=false.
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.False(resp.JSON200.DetailLoaded)
+	assert.Nil(resp.JSON200.DetailFetchedAt)
+
+	// Insert a second PR with DetailFetchedAt set.
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      2000,
+		Number:          2,
+		URL:             "https://github.com/acme/widget/pull/2",
+		Title:           "PR with detail",
+		Author:          "testuser",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &now,
+	})
+	require.NoError(err)
+
+	resp2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 2,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp2.StatusCode())
+	require.NotNil(resp2.JSON200)
+	assert.True(resp2.JSON200.DetailLoaded)
+	require.NotNil(resp2.JSON200.DetailFetchedAt)
+	assert.Equal(now.Format(time.RFC3339), *resp2.JSON200.DetailFetchedAt)
 }

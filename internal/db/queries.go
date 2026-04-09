@@ -70,7 +70,12 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		`SELECT id, platform, platform_host, owner, name,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge, created_at
+		        allow_rebase_merge,
+		        backfill_pr_page, backfill_pr_complete,
+		        backfill_pr_completed_at,
+		        backfill_issue_page, backfill_issue_complete,
+		        backfill_issue_completed_at,
+		        created_at
 		 FROM middleman_repos ORDER BY owner, name`,
 	)
 	if err != nil {
@@ -86,6 +91,10 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 			&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 			&r.LastSyncError,
 			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+			&r.BackfillPRPage, &r.BackfillPRComplete,
+			&r.BackfillPRCompletedAt,
+			&r.BackfillIssuePage, &r.BackfillIssueComplete,
+			&r.BackfillIssueCompletedAt,
 			&r.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
@@ -128,7 +137,12 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		`SELECT id, platform, platform_host, owner, name,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge, created_at
+		        allow_rebase_merge,
+		        backfill_pr_page, backfill_pr_complete,
+		        backfill_pr_completed_at,
+		        backfill_issue_page, backfill_issue_complete,
+		        backfill_issue_completed_at,
+		        created_at
 		 FROM middleman_repos WHERE owner = ? AND name = ?
 		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
 	).Scan(
@@ -136,6 +150,10 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.BackfillPRPage, &r.BackfillPRComplete,
+		&r.BackfillPRCompletedAt,
+		&r.BackfillIssuePage, &r.BackfillIssueComplete,
+		&r.BackfillIssueCompletedAt,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -143,6 +161,40 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get repo by owner/name: %w", err)
+	}
+	return &r, nil
+}
+
+// GetRepoByID returns the repo with the given ID, or nil if not found.
+func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
+	var r Repo
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT id, platform, platform_host, owner, name,
+		        last_sync_started_at, last_sync_completed_at,
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge,
+		        backfill_pr_page, backfill_pr_complete,
+		        backfill_pr_completed_at,
+		        backfill_issue_page, backfill_issue_complete,
+		        backfill_issue_completed_at,
+		        created_at
+		 FROM middleman_repos WHERE id = ?`, id,
+	).Scan(
+		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
+		&r.LastSyncError,
+		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.BackfillPRPage, &r.BackfillPRComplete,
+		&r.BackfillPRCompletedAt,
+		&r.BackfillIssuePage, &r.BackfillIssueComplete,
+		&r.BackfillIssueCompletedAt,
+		&r.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get repo by id: %w", err)
 	}
 	return &r, nil
 }
@@ -172,9 +224,11 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		     platform_head_sha, platform_base_sha,
 		     head_repo_clone_url,
 		     additions, deletions, comment_count,
-		     review_decision, ci_status, ci_checks_json, created_at, updated_at,
+		     review_decision, ci_status, ci_checks_json,
+		     detail_fetched_at, ci_had_pending,
+		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    url                  = excluded.url,
@@ -195,6 +249,8 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    review_decision      = excluded.review_decision,
 		    ci_status            = excluded.ci_status,
 		    ci_checks_json       = excluded.ci_checks_json,
+		    detail_fetched_at    = COALESCE(middleman_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
+		    ci_had_pending       = middleman_merge_requests.ci_had_pending,
 		    updated_at           = excluded.updated_at,
 		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
@@ -206,7 +262,9 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA,
 		mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.CommentCount, mr.ReviewDecision,
-		mr.CIStatus, mr.CIChecksJSON, mr.CreatedAt, mr.UpdatedAt,
+		mr.CIStatus, mr.CIChecksJSON,
+		mr.DetailFetchedAt, mr.CIHadPending,
+		mr.CreatedAt, mr.UpdatedAt,
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState,
 	)
 	if err != nil {
@@ -237,6 +295,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
+		       p.detail_fetched_at, p.ci_had_pending,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -256,7 +315,9 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
 		&mr.CIStatus, &mr.CIChecksJSON,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState, &mr.KanbanStatus, &mr.Starred,
+		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
+		&mr.DetailFetchedAt, &mr.CIHadPending,
+		&mr.KanbanStatus, &mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -320,6 +381,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
+		       p.detail_fetched_at, p.ci_had_pending,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -349,7 +411,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
 			&mr.CIStatus, &mr.CIChecksJSON,
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState, &mr.KanbanStatus, &mr.Starred,
+			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
+			&mr.DetailFetchedAt, &mr.CIHadPending,
+			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan merge request: %w", err)
 		}
@@ -685,24 +749,26 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
 		    (repo_id, platform_id, number, url, title, author, state,
-		     body, comment_count, labels_json,
+		     body, comment_count, labels_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
-		    platform_id      = excluded.platform_id,
-		    url              = excluded.url,
-		    title            = excluded.title,
-		    author           = excluded.author,
-		    state            = excluded.state,
-		    body             = excluded.body,
-		    comment_count    = excluded.comment_count,
-		    labels_json      = excluded.labels_json,
-		    updated_at       = excluded.updated_at,
-		    last_activity_at = excluded.last_activity_at,
-		    closed_at        = excluded.closed_at`,
+		    platform_id       = excluded.platform_id,
+		    url               = excluded.url,
+		    title             = excluded.title,
+		    author            = excluded.author,
+		    state             = excluded.state,
+		    body              = excluded.body,
+		    comment_count     = excluded.comment_count,
+		    labels_json       = excluded.labels_json,
+		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
+		    updated_at        = excluded.updated_at,
+		    last_activity_at  = excluded.last_activity_at,
+		    closed_at         = excluded.closed_at`,
 		issue.RepoID, issue.PlatformID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
 		issue.Body, issue.CommentCount, issue.LabelsJSON,
+		issue.DetailFetchedAt,
 		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,
 	)
 	if err != nil {
@@ -727,6 +793,7 @@ func (d *DB) GetIssue(
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_issues i
@@ -739,6 +806,7 @@ func (d *DB) GetIssue(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 		&issue.ClosedAt, &issue.Starred,
 	)
@@ -793,6 +861,7 @@ func (d *DB) ListIssues(
 	query := fmt.Sprintf(`
 		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_issues i
@@ -815,6 +884,7 @@ func (d *DB) ListIssues(
 			&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
 			&issue.URL, &issue.Title, &issue.Author, &issue.State,
 			&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+			&issue.DetailFetchedAt,
 			&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 			&issue.ClosedAt, &issue.Starred,
 		); err != nil {
@@ -925,6 +995,76 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 		}
 	}
 	return closed, rows.Err()
+}
+
+// --- Detail Fetch Tracking ---
+
+// UpdateMRDetailFetched marks a merge request as having had its
+// detail fetched and records whether CI had pending checks.
+func (d *DB) UpdateMRDetailFetched(
+	ctx context.Context, repoOwner, repoName string,
+	number int, ciHadPending bool,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET detail_fetched_at = datetime('now'),
+		    ci_had_pending = ?
+		WHERE repo_id = (
+		    SELECT id FROM middleman_repos
+		    WHERE owner = ? AND name = ?
+		) AND number = ?`,
+		ciHadPending, repoOwner, repoName, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr detail fetched: %w", err)
+	}
+	return nil
+}
+
+// UpdateIssueDetailFetched marks an issue as having had its
+// detail fetched.
+func (d *DB) UpdateIssueDetailFetched(
+	ctx context.Context, repoOwner, repoName string, number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET detail_fetched_at = datetime('now')
+		WHERE repo_id = (
+		    SELECT id FROM middleman_repos
+		    WHERE owner = ? AND name = ?
+		) AND number = ?`,
+		repoOwner, repoName, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue detail fetched: %w", err)
+	}
+	return nil
+}
+
+// UpdateBackfillCursor updates the backfill pagination state for a repo.
+func (d *DB) UpdateBackfillCursor(
+	ctx context.Context, repoID int64,
+	prPage int, prComplete bool, prCompletedAt *time.Time,
+	issuePage int, issueComplete bool,
+	issueCompletedAt *time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_repos
+		SET backfill_pr_page = ?,
+		    backfill_pr_complete = ?,
+		    backfill_pr_completed_at = ?,
+		    backfill_issue_page = ?,
+		    backfill_issue_complete = ?,
+		    backfill_issue_completed_at = ?
+		WHERE id = ?`,
+		prPage, prComplete, prCompletedAt,
+		issuePage, issueComplete, issueCompletedAt,
+		repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update backfill cursor: %w", err)
+	}
+	return nil
 }
 
 // --- Issue Events ---
@@ -1045,21 +1185,23 @@ func (d *DB) UpsertRateLimit(
 	requestsHour int,
 	hourStart time.Time,
 	rateRemaining int,
+	rateLimit int,
 	rateResetAt *time.Time,
 ) error {
 	_, err := d.rw.Exec(`
 		INSERT INTO middleman_rate_limits
 		    (platform_host, requests_hour, hour_start,
-		     rate_remaining, rate_reset_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, datetime('now'))
+		     rate_remaining, rate_limit, rate_reset_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(platform_host) DO UPDATE SET
 		    requests_hour  = excluded.requests_hour,
 		    hour_start     = excluded.hour_start,
 		    rate_remaining = excluded.rate_remaining,
+		    rate_limit     = excluded.rate_limit,
 		    rate_reset_at  = excluded.rate_reset_at,
 		    updated_at     = datetime('now')`,
 		platformHost, requestsHour, hourStart,
-		rateRemaining, rateResetAt,
+		rateRemaining, rateLimit, rateResetAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert rate limit: %w", err)
@@ -1075,13 +1217,13 @@ func (d *DB) GetRateLimit(
 	var r RateLimit
 	err := d.ro.QueryRow(`
 		SELECT id, platform_host, requests_hour, hour_start,
-		       rate_remaining, rate_reset_at, updated_at
+		       rate_remaining, rate_limit, rate_reset_at, updated_at
 		FROM middleman_rate_limits
 		WHERE platform_host = ?`,
 		platformHost,
 	).Scan(
 		&r.ID, &r.PlatformHost, &r.RequestsHour, &r.HourStart,
-		&r.RateRemaining, &r.RateResetAt, &r.UpdatedAt,
+		&r.RateRemaining, &r.RateLimit, &r.RateResetAt, &r.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

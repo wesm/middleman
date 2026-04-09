@@ -19,7 +19,7 @@ import (
 //
 // When real migrations are implemented, the stale/legacy cases will
 // run forward migrations instead of refusing.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 //go:embed schema.sql
 var schemaSQL string

@@ -155,6 +155,10 @@
     const issuesOpts: IssuesStoreOptions = {
       client: cl,
       getPage: gp,
+      sync: {
+        refreshSyncStatus:
+          syncStore.refreshSyncStatus,
+      },
     };
     if (hs.getGlobalRepo) {
       issuesOpts.getGlobalRepo = hs.getGlobalRepo;

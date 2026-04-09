@@ -10,6 +10,9 @@ export interface IssuesStoreOptions {
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
   getPage?: () => string;
+  sync?: {
+    refreshSyncStatus?: () => Promise<void>;
+  };
 }
 
 function apiErrorMessage(
@@ -28,6 +31,7 @@ export function createIssuesStore(
   const getGroupByRepo =
     opts.getGroupByRepo ?? (() => false);
   const getPage = opts.getPage ?? (() => "");
+  const syncDep = opts.sync;
 
   async function refreshIssuesIfActive(): Promise<void> {
     if (getPage() === "issues") {
@@ -55,6 +59,7 @@ export function createIssuesStore(
   let detailLoading = $state(false);
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
+  let issueDetailLoaded = $state(false);
   let detailPollHandle: ReturnType<
     typeof setInterval
   > | null = null;
@@ -109,6 +114,22 @@ export function createIssuesStore(
   }
   function getIssueDetailError(): string | null {
     return detailError;
+  }
+
+  function getIssueDetailLoaded(): boolean {
+    return issueDetailLoaded;
+  }
+
+  function isIssueStaleRefreshing(): boolean {
+    if (!issueDetail || !detailSyncing) return false;
+    const fetchedAt = issueDetail.detail_fetched_at;
+    if (!fetchedAt) return false;
+    const fetchedMs = new Date(fetchedAt).getTime();
+    const updatedMs = new Date(
+      issueDetail.issue.UpdatedAt,
+    ).getTime();
+    const hourAgo = Date.now() - 3_600_000;
+    return fetchedMs < hourAgo && updatedMs > fetchedMs;
   }
 
   // --- list writes ---
@@ -212,6 +233,7 @@ export function createIssuesStore(
             events: data.events ?? [],
           } as IssueDetail)
         : null;
+      issueDetailLoaded = data?.detail_loaded ?? false;
     } catch (err) {
       if (gen !== issueSyncGeneration) return;
       detailError =
@@ -251,6 +273,8 @@ export function createIssuesStore(
           ...data,
           events: data.events ?? [],
         } as IssueDetail;
+        issueDetailLoaded =
+          data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
       // Sync failure is non-fatal.
@@ -258,8 +282,12 @@ export function createIssuesStore(
       if (gen === issueSyncGeneration)
         detailSyncing = false;
     }
-    if (gen === issueSyncGeneration)
+    // Always refresh rate limits -- the API calls happened
+    // regardless of whether user navigated away.
+    void syncDep?.refreshSyncStatus?.();
+    if (gen === issueSyncGeneration) {
       await refreshIssuesIfActive();
+    }
   }
 
   async function refreshIssueDetail(
@@ -279,6 +307,7 @@ export function createIssuesStore(
           ...data,
           events: data.events ?? [],
         } as IssueDetail;
+        issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
       /* silent */
@@ -309,6 +338,7 @@ export function createIssuesStore(
     detailLoading = false;
     detailSyncing = false;
     detailError = null;
+    issueDetailLoaded = false;
   }
 
   async function submitIssueComment(
@@ -510,6 +540,8 @@ export function createIssuesStore(
     isIssueDetailLoading,
     isIssueDetailSyncing,
     getIssueDetailError,
+    getIssueDetailLoaded,
+    isIssueStaleRefreshing,
     loadIssueDetail,
     startIssueDetailPolling,
     stopIssueDetailPolling,

@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -116,33 +117,38 @@ const defaultParallelism = 4
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	clients          map[string]Client // host -> client
-	db               *db.DB
-	clones           *gitclone.Manager
-	rateTrackers     map[string]*RateTracker // host -> tracker
-	repos            []RepoRef
-	reposMu          sync.Mutex
-	interval         time.Duration
-	watchInterval    time.Duration
-	watchedMRs       []WatchedMR
-	watchMu          sync.Mutex
-	parallelism      atomic.Int32
-	running          atomic.Bool
-	status           atomic.Value // stores *SyncStatus
-	stopCh           chan struct{}
-	stopOnce         sync.Once
-	wg               sync.WaitGroup
-	displayNames     map[string]string // "host\x00login" -> display name, per sync run
-	displayNamesMu   sync.Mutex
-	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
-	onMRSynced       func(owner, name string, mr *db.MergeRequest)
-	onSyncCompleted  func(results []RepoSyncResult)
+	clients            map[string]Client // host -> client
+	db                 *db.DB
+	clones             *gitclone.Manager
+	rateTrackers       map[string]*RateTracker // host -> tracker
+	budgets            map[string]*SyncBudget  // host -> budget
+	budgetPerHour      int
+	repos              []RepoRef
+	reposMu            sync.Mutex
+	interval           time.Duration
+	watchInterval      time.Duration
+	watchedMRs         []WatchedMR
+	watchMu            sync.Mutex
+	parallelism        atomic.Int32
+	running            atomic.Bool
+	status             atomic.Value // stores *SyncStatus
+	stopCh             chan struct{}
+	stopOnce           sync.Once
+	wg                 sync.WaitGroup
+	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
+	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
+	displayNames       map[string]string    // "host\x00login" -> display name, per sync run
+	displayNamesMu     sync.Mutex
+	displayNameGroup   singleflight.Group // dedups concurrent GetUser calls
+	onMRSynced         func(owner, name string, mr *db.MergeRequest)
+	onSyncCompleted    func(results []RepoSyncResult)
 }
 
 // NewSyncer creates a Syncer that polls the given repos on the
 // given interval. clients maps host -> Client; rateTrackers maps
 // host -> RateTracker. Both may contain nil values. clones may
-// be nil.
+// be nil. budgetPerHour controls how many API calls the detail
+// drain may spend per host per hour (0 disables detail drain).
 func NewSyncer(
 	clients map[string]Client,
 	database *db.DB,
@@ -150,6 +156,7 @@ func NewSyncer(
 	repos []RepoRef,
 	interval time.Duration,
 	rateTrackers map[string]*RateTracker,
+	budgetPerHour int,
 ) *Syncer {
 	if clients == nil {
 		clients = make(map[string]Client)
@@ -157,17 +164,49 @@ func NewSyncer(
 	if rateTrackers == nil {
 		rateTrackers = make(map[string]*RateTracker)
 	}
+
+	// Collect unique hosts from repos and clients.
+	hostSet := make(map[string]struct{})
+	for _, r := range repos {
+		h := r.PlatformHost
+		if h == "" {
+			h = "github.com"
+		}
+		hostSet[h] = struct{}{}
+	}
+	for h := range clients {
+		hostSet[h] = struct{}{}
+	}
+	budgets := make(map[string]*SyncBudget, len(hostSet))
+	if budgetPerHour > 0 {
+		for h := range hostSet {
+			budgets[h] = NewSyncBudget(budgetPerHour)
+		}
+	}
+
 	s := &Syncer{
-		clients:      clients,
-		db:           database,
-		clones:       clones,
-		rateTrackers: rateTrackers,
-		repos:        repos,
-		interval:     interval,
-		stopCh:       make(chan struct{}),
+		clients:            clients,
+		db:                 database,
+		clones:             clones,
+		rateTrackers:       rateTrackers,
+		budgets:            budgets,
+		budgetPerHour:      budgetPerHour,
+		repos:              repos,
+		interval:           interval,
+		nextSyncAfter:      make(map[string]time.Time),
+		nextWatchSyncAfter: make(map[string]time.Time),
+		stopCh:             make(chan struct{}),
 	}
 	s.parallelism.Store(defaultParallelism)
 	s.status.Store(&SyncStatus{})
+
+	// Wire budget reset to rate tracker window resets.
+	for h, rt := range rateTrackers {
+		if b, ok := budgets[h]; ok && rt != nil {
+			rt.SetOnWindowReset(b.Reset)
+		}
+	}
+
 	return s
 }
 
@@ -353,6 +392,59 @@ func (s *Syncer) Start(ctx context.Context) {
 // syncWatchedMRs syncs each MR on the watch list via SyncMR.
 // Fires onMRSynced (inside SyncMR) but not onSyncCompleted.
 // Checks per-host rate limits before issuing API calls.
+// hostEligibility computes which hosts are eligible for sync
+// based on rate tracker state and the next-sync-after gate.
+// hosts may contain duplicates; they are deduplicated internally.
+func (s *Syncer) hostEligibility(
+	hosts []string,
+	nextAfter map[string]time.Time,
+) map[string]bool {
+	now := time.Now()
+	eligible := make(map[string]bool, len(hosts))
+	for _, host := range hosts {
+		if _, checked := eligible[host]; checked {
+			continue
+		}
+		rt := s.rateTrackers[host]
+		if rt == nil {
+			eligible[host] = true
+			continue
+		}
+		if rt.IsPaused() {
+			eligible[host] = false
+			continue
+		}
+		if after, ok := nextAfter[host]; ok && now.Before(after) {
+			eligible[host] = false
+			continue
+		}
+		eligible[host] = true
+	}
+	return eligible
+}
+
+// advanceNextSync updates the next-sync-after gate for hosts
+// that were eligible, using each host's current throttle factor.
+func (s *Syncer) advanceNextSync(
+	eligible map[string]bool,
+	nextAfter map[string]time.Time,
+	interval time.Duration,
+) {
+	now := time.Now()
+	for host, ok := range eligible {
+		if !ok {
+			continue
+		}
+		rt := s.rateTrackers[host]
+		if rt == nil {
+			continue
+		}
+		nextAfter[host] = now.Add(
+			interval * time.Duration(rt.ThrottleFactor()),
+		)
+	}
+}
+
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	s.watchMu.Lock()
 	mrs := make([]WatchedMR, len(s.watchedMRs))
@@ -362,6 +454,22 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	if len(mrs) == 0 {
 		return
 	}
+
+	watchInt := s.watchInterval
+	if watchInt <= 0 {
+		watchInt = 30 * time.Second
+	}
+	watchHosts := make([]string, len(mrs))
+	for i, mr := range mrs {
+		host := mr.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		watchHosts[i] = host
+	}
+	eligibleHosts := s.hostEligibility(
+		watchHosts, s.nextWatchSyncAfter,
+	)
 
 	// Check backoff once per host to avoid redundant checks.
 	blockedHosts := make(map[string]bool)
@@ -387,6 +495,15 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		if host == "" {
 			host = "github.com"
 		}
+		if !eligibleHosts[host] {
+			slog.Debug("skipping fast-sync for throttled host",
+				"host", host,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"number", mr.Number,
+			)
+			continue
+		}
 		if blockedHosts[host] {
 			slog.Debug("skipping fast-sync for rate-limited host",
 				"host", host,
@@ -405,6 +522,10 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 		}
 	}
+
+	s.advanceNextSync(
+		eligibleHosts, s.nextWatchSyncAfter, watchInt,
+	)
 }
 
 // Stop signals the background goroutine to exit. Safe to call multiple times.
@@ -418,11 +539,22 @@ func (s *Syncer) Status() *SyncStatus {
 	return s.status.Load().(*SyncStatus)
 }
 
+// RateTrackers returns the per-host rate trackers map.
+func (s *Syncer) RateTrackers() map[string]*RateTracker {
+	return s.rateTrackers
+}
+
+// Budgets returns the per-host sync budgets map.
+func (s *Syncer) Budgets() map[string]*SyncBudget {
+	return s.budgets
+}
+
 // runState holds the per-RunOnce mutable state shared by the
 // worker pool. Extracted into a struct so runWorker can be a
 // directly testable method instead of an inline closure.
 type runState struct {
 	completed *atomic.Int32
+	maxShown  *atomic.Int32
 	errMu     *sync.Mutex
 	lastErr   *string
 	// canceled is latched to true at the moment any goroutine
@@ -530,11 +662,19 @@ func (s *Syncer) runWorker(
 			return
 		}
 		done := state.completed.Add(1)
-		s.status.Store(&SyncStatus{
-			Running:     true,
-			CurrentRepo: repoName,
-			Progress:    fmt.Sprintf("%d/%d", done, state.total),
-		})
+		for {
+			cur := state.maxShown.Load()
+			if done <= cur {
+				break
+			}
+			if state.maxShown.CompareAndSwap(cur, done) {
+				s.status.Store(&SyncStatus{
+					Running:  true,
+					Progress: fmt.Sprintf("%d/%d", done, state.total),
+				})
+				break
+			}
+		}
 	}
 }
 
@@ -582,8 +722,21 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 		}
 	}
 
+	repoHosts := make([]string, len(repos))
+	for i, r := range repos {
+		host := r.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		repoHosts[i] = host
+	}
+	eligibleHosts := s.hostEligibility(
+		repoHosts, s.nextSyncAfter,
+	)
+
 	var (
 		completed atomic.Int32
+		maxShown  atomic.Int32
 		errMu     sync.Mutex
 		lastErr   string
 		canceled  atomic.Bool
@@ -592,6 +745,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 	state := &runState{
 		completed: &completed,
+		maxShown:  &maxShown,
 		errMu:     &errMu,
 		lastErr:   &lastErr,
 		canceled:  &canceled,
@@ -606,6 +760,19 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 
 dispatch:
 	for i, r := range repos {
+		host := r.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if !eligibleHosts[host] {
+			results[i].Error = "skipped: rate limit throttled"
+			completed.Add(1)
+			s.status.Store(&SyncStatus{
+				Running:  true,
+				Progress: fmt.Sprintf("%d/%d", completed.Load(), total),
+			})
+			continue
+		}
 		// Check ctx before entering the select. Go's select picks
 		// pseudo-randomly when both branches are ready, so a naked
 		// `select { case work <- r: case <-ctx.Done(): }` can still
@@ -626,6 +793,26 @@ dispatch:
 	}
 	close(work)
 	wg.Wait()
+
+	s.advanceNextSync(
+		eligibleHosts, s.nextSyncAfter, s.interval,
+	)
+
+	// Detail drain: fetch full details for highest-priority items
+	// within the per-host budget. Runs after index scan completes.
+	if !canceled.Load() && ctx.Err() == nil {
+		s.drainDetailQueue(ctx, eligibleHosts)
+	}
+
+	// Backfill discovery: fetch closed items if budget allows.
+	if !canceled.Load() && ctx.Err() == nil {
+		for host, ok := range eligibleHosts {
+			if !ok {
+				continue
+			}
+			s.runBackfillDiscovery(ctx, host, repos)
+		}
+	}
 
 	// Use a latched flag (set by the dispatch loop and workers at
 	// the moment they observe ctx cancellation) rather than a
@@ -706,7 +893,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	syncErr := s.doSyncRepo(ctx, repo, repoID, cloneFetchOK)
+	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
 
 	syncErrStr := ""
 	if syncErr != nil {
@@ -719,10 +906,18 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	return syncErr
 }
 
-// doSyncRepo performs the actual GitHub API calls and DB writes for one repo.
-func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, cloneFetchOK bool) error {
+// indexSyncRepo performs the cheap index scan: list endpoints only,
+// upserting basic data without detail fetches. This runs every cycle.
+func (s *Syncer) indexSyncRepo(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	cloneFetchOK bool,
+) error {
 	client := s.clientFor(repo)
-	ghPRs, err := client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
+	ghPRs, err := client.ListOpenPullRequests(
+		ctx, repo.Owner, repo.Name,
+	)
 	if err != nil {
 		return fmt.Errorf("list open PRs: %w", err)
 	}
@@ -733,8 +928,10 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 	}
 
 	for _, ghPR := range ghPRs {
-		if err := s.syncOpenMR(ctx, repo, repoID, ghPR, cloneFetchOK); err != nil {
-			slog.Error("sync MR failed",
+		if err := s.indexUpsertMR(
+			ctx, repo, repoID, ghPR,
+		); err != nil {
+			slog.Error("index upsert MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghPR.GetNumber(),
 				"err", err,
@@ -742,13 +939,18 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 		}
 	}
 
-	// Handle MRs that were open in the DB but are no longer in the open list.
-	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(ctx, repoID, stillOpen)
+	// Detect closed PRs and fetch final state (1 API call each,
+	// outside budget -- needed for accurate closed state).
+	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
+		ctx, repoID, stillOpen,
+	)
 	if err != nil {
 		return fmt.Errorf("get previously open MRs: %w", err)
 	}
 	for _, number := range closedNumbers {
-		if err := s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK); err != nil {
+		if err := s.fetchAndUpdateClosed(
+			ctx, repo, repoID, number, cloneFetchOK,
+		); err != nil {
 			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -757,9 +959,11 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 		}
 	}
 
-	// Sync issues (non-fatal — issue failure should not block PR sync)
-	if err := s.syncIssues(ctx, repo, repoID); err != nil {
-		slog.Error("sync issues failed",
+	// Index issues (list-only, no detail).
+	if err := s.indexSyncIssues(
+		ctx, repo, repoID,
+	); err != nil {
+		slog.Error("index sync issues failed",
 			"repo", repo.Owner+"/"+repo.Name, "err", err,
 		)
 	}
@@ -767,84 +971,123 @@ func (s *Syncer) doSyncRepo(ctx context.Context, repo RepoRef, repoID int64, clo
 	return nil
 }
 
-// syncOpenMR upserts a single open MR and, if the data has changed,
-// refreshes its timeline events and derived fields.
-func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghPR *gh.PullRequest, cloneFetchOK bool) error {
+// indexUpsertMR upserts a PR from list endpoint data only. No
+// GetPullRequest, no timeline, no CI. Preserves fields that the
+// list endpoint does not return (additions, deletions,
+// mergeable_state) from the existing DB row.
+func (s *Syncer) indexUpsertMR(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghPR *gh.PullRequest,
+) error {
 	normalized := NormalizePR(repoID, ghPR)
 
-	// Check whether we already have this MR and whether it has changed.
-	existing, err := s.db.GetMergeRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
+	existing, err := s.db.GetMergeRequest(
+		ctx, repo.Owner, repo.Name, ghPR.GetNumber(),
+	)
 	if err != nil {
-		return fmt.Errorf("get existing MR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf(
+			"get existing MR #%d: %w", ghPR.GetNumber(), err,
+		)
 	}
 
-	needsTimeline := existing == nil || !existing.UpdatedAt.Equal(normalized.UpdatedAt)
-
-	// Also fetch full PR details if we have stale zero diff stats or unknown mergeable state.
-	needsFullFetch := needsTimeline ||
-		(existing != nil && existing.Additions == 0 && existing.Deletions == 0) ||
-		(existing != nil && existing.MergeableState == "") ||
-		(existing != nil && existing.MergeableState == "unknown")
-
-	// The list endpoint doesn't return diff stats. Fetch the individual
-	// PR when data is new/changed or diff stats are missing.
-	client := s.clientFor(repo)
-	if needsFullFetch {
-		fullPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, ghPR.GetNumber())
-		// Treat (nil, nil) as a transient fetch failure rather
-		// than a panic. A misbehaving Client returning nil
-		// without an error is a contract violation, but the
-		// periodic sync should keep going with the list-derived
-		// data instead of crashing the worker.
-		if err == nil && fullPR == nil {
-			err = fmt.Errorf("client returned nil pull request")
-		}
-		if err != nil {
-			slog.Warn("get full PR for diff stats failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", ghPR.GetNumber(),
-				"err", err,
-			)
-			// Preserve fields the list endpoint doesn't return
-			// so a transient fetch failure doesn't wipe cached data.
-			if existing != nil {
-				normalized.Additions = existing.Additions
-				normalized.Deletions = existing.Deletions
-				normalized.MergeableState = existing.MergeableState
-			}
-		} else {
-			ghPR = fullPR
-			normalized = NormalizePR(repoID, ghPR)
-		}
-	} else if existing != nil {
-		// Preserve fields the list endpoint doesn't return
+	// Preserve fields the list endpoint doesn't return.
+	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		normalized.MergeableState = existing.MergeableState
 	}
 
-	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
+	if normalized.Author != "" &&
+		normalized.AuthorDisplayName == "" {
 		host := repo.PlatformHost
 		if host == "" {
 			host = "github.com"
 		}
-		if name, ok := s.resolveDisplayName(ctx, client, host, normalized.Author); ok {
+		client := s.clientFor(repo)
+		if name, ok := s.resolveDisplayName(
+			ctx, client, host, normalized.Author,
+		); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
-			normalized.AuthorDisplayName = existing.AuthorDisplayName
+			normalized.AuthorDisplayName =
+				existing.AuthorDisplayName
 		}
 	}
 
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
-		return fmt.Errorf("upsert MR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf(
+			"upsert MR #%d: %w", ghPR.GetNumber(), err,
+		)
 	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		return fmt.Errorf("ensure kanban state for MR #%d: %w", ghPR.GetNumber(), err)
+		return fmt.Errorf(
+			"ensure kanban state for MR #%d: %w",
+			ghPR.GetNumber(), err,
+		)
 	}
 
-	// Compute diff SHAs if clone is available and fetch succeeded.
+	return nil
+}
+
+// fetchMRDetail performs a full detail fetch for a single MR:
+// GetPullRequest, refreshTimeline, refreshCIStatus. Returns the
+// number of API calls made.
+func (s *Syncer) fetchMRDetail(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	cloneFetchOK bool,
+) (int, error) {
+	calls := 0
+	client := s.clientFor(repo)
+
+	fullPR, err := client.GetPullRequest(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	calls++
+	if err == nil && fullPR == nil {
+		err = fmt.Errorf("client returned nil pull request")
+	}
+	if err != nil {
+		return calls, fmt.Errorf(
+			"get full PR #%d: %w", number, err,
+		)
+	}
+
+	normalized := NormalizePR(repoID, fullPR)
+
+	if normalized.Author != "" &&
+		normalized.AuthorDisplayName == "" {
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if name, ok := s.resolveDisplayName(
+			ctx, client, host, normalized.Author,
+		); ok {
+			normalized.AuthorDisplayName = name
+		}
+	}
+
+	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
+	if err != nil {
+		return calls, fmt.Errorf(
+			"upsert MR #%d: %w", number, err,
+		)
+	}
+
+	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		return calls, fmt.Errorf(
+			"ensure kanban state for MR #%d: %w", number, err,
+		)
+	}
+
+	// Diff SHAs if clone available.
 	repoHost := repo.PlatformHost
 	if repoHost == "" {
 		repoHost = "github.com"
@@ -853,56 +1096,130 @@ func (s *Syncer) syncOpenMR(ctx context.Context, repo RepoRef, repoID int64, ghP
 		headSHA := normalized.PlatformHeadSHA
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, repoHost, repo.Owner, repo.Name, baseSHA, headSHA)
-			if err != nil {
+			mb, mbErr := s.clones.MergeBase(
+				ctx, repoHost, repo.Owner,
+				repo.Name, baseSHA, headSHA,
+			)
+			if mbErr != nil {
 				slog.Warn("merge-base computation failed",
 					"repo", repo.Owner+"/"+repo.Name,
-					"number", ghPR.GetNumber(),
-					"err", err,
+					"number", number, "err", mbErr,
 				)
 			} else {
-				if err := s.db.UpdateDiffSHAs(ctx, repoID, ghPR.GetNumber(), headSHA, baseSHA, mb); err != nil {
+				if dbErr := s.db.UpdateDiffSHAs(
+					ctx, repoID, number,
+					headSHA, baseSHA, mb,
+				); dbErr != nil {
 					slog.Warn("update diff SHAs failed",
 						"repo", repo.Owner+"/"+repo.Name,
-						"number", ghPR.GetNumber(),
-						"err", err,
+						"number", number, "err", dbErr,
 					)
 				}
 			}
 		}
 	}
 
-	if needsTimeline {
-		if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
-			return err
-		}
+	if err := s.refreshTimeline(
+		ctx, repo, repoID, mrID, fullPR,
+	); err != nil {
+		// Timeline = 3 calls (comments + reviews + commits).
+		calls += 3
+		return calls, err
+	}
+	calls += 3
+
+	if err := s.refreshCIStatus(
+		ctx, repo, repoID, fullPR,
+	); err != nil {
+		// CI = 2 calls (combined status + check runs).
+		calls += 2
+		return calls, err
+	}
+	calls += 2
+
+	// Determine whether CI had pending checks for scoring by
+	// reading the DB row that refreshCIStatus just wrote.
+	ciHadPending := false
+	freshMR, freshErr := s.db.GetMergeRequest(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	if freshErr == nil && freshMR != nil {
+		ciHadPending = freshMR.CIStatus == "pending"
 	}
 
-	// Always refresh CI status — check runs change independently of the
-	// MR's updated_at field, so pending/in-progress checks would be missed
-	// if we only fetched them when the MR itself changed.
-	if err := s.refreshCIStatus(ctx, repo, repoID, ghPR); err != nil {
-		return err
-	}
-
-	// Fire the hook after all derived fields (ReviewDecision, CIStatus)
-	// are persisted so the callback receives up-to-date state.
-	if s.onMRSynced != nil {
-		fresh, err := s.db.GetMergeRequest(
-			ctx, repo.Owner, repo.Name, ghPR.GetNumber(),
+	if err := s.db.UpdateMRDetailFetched(
+		ctx, repo.Owner, repo.Name, number, ciHadPending,
+	); err != nil {
+		return calls, fmt.Errorf(
+			"mark detail fetched for MR #%d: %w", number, err,
 		)
-		if err != nil {
+	}
+
+	// Fire onMRSynced hook.
+	if s.onMRSynced != nil {
+		fresh, fErr := s.db.GetMergeRequest(
+			ctx, repo.Owner, repo.Name, number,
+		)
+		if fErr != nil {
 			slog.Warn("get MR for onMRSynced hook failed",
 				"repo", repo.Owner+"/"+repo.Name,
-				"number", ghPR.GetNumber(),
-				"err", err,
+				"number", number, "err", fErr,
 			)
 		} else {
 			s.onMRSynced(repo.Owner, repo.Name, fresh)
 		}
 	}
 
-	return nil
+	return calls, nil
+}
+
+// fetchIssueDetail performs a full detail fetch for a single
+// issue: GetIssue + refreshIssueTimeline. Returns the number
+// of API calls made.
+func (s *Syncer) fetchIssueDetail(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+) (int, error) {
+	calls := 0
+	client := s.clientFor(repo)
+
+	ghIssue, err := client.GetIssue(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	calls++
+	if err != nil {
+		return calls, fmt.Errorf(
+			"get issue #%d: %w", number, err,
+		)
+	}
+
+	normalized := NormalizeIssue(repoID, ghIssue)
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return calls, fmt.Errorf(
+			"upsert issue #%d: %w", number, err,
+		)
+	}
+
+	if err := s.refreshIssueTimeline(
+		ctx, repo, issueID, ghIssue,
+	); err != nil {
+		calls++ // comments
+		return calls, err
+	}
+	calls++ // comments
+
+	if err := s.db.UpdateIssueDetailFetched(
+		ctx, repo.Owner, repo.Name, number,
+	); err != nil {
+		return calls, fmt.Errorf(
+			"mark detail fetched for issue #%d: %w", number, err,
+		)
+	}
+
+	return calls, nil
 }
 
 // refreshTimeline fetches comments, reviews, and commits for a PR and
@@ -989,12 +1306,10 @@ func (s *Syncer) refreshCIStatus(
 
 	number := ghPR.GetNumber()
 
-	// Fetch both sources. On failure, skip the DB write to preserve
-	// existing data rather than wiping it with empty values.
 	client := s.clientFor(repo)
-	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
+	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		slog.Warn("get combined status failed",
+		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 			"err", err,
@@ -1002,9 +1317,9 @@ func (s *Syncer) refreshCIStatus(
 		return nil
 	}
 
-	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
+	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		slog.Warn("list check runs failed",
+		slog.Warn("get combined status failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 			"err", err,
@@ -1016,6 +1331,24 @@ func (s *Syncer) refreshCIStatus(
 	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
 
 	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
+}
+
+// ciHasPending parses the CI checks JSON and returns true if any
+// check has a status other than "completed".
+func ciHasPending(ciChecksJSON string) bool {
+	if ciChecksJSON == "" {
+		return false
+	}
+	var checks []db.CICheck
+	if err := json.Unmarshal([]byte(ciChecksJSON), &checks); err != nil {
+		return false
+	}
+	for _, c := range checks {
+		if c.Status != "completed" {
+			return true
+		}
+	}
+	return false
 }
 
 // computeLastActivity returns the most recent timestamp across the PR and its events.
@@ -1098,7 +1431,9 @@ func (s *Syncer) resolveDisplayName(
 
 // --- Issue sync ---
 
-func (s *Syncer) syncIssues(
+// indexSyncIssues performs list-only upsert for issues. No
+// detail fetch (GetIssue, timeline) happens here.
+func (s *Syncer) indexSyncIssues(
 	ctx context.Context, repo RepoRef, repoID int64,
 ) error {
 	client := s.clientFor(repo)
@@ -1115,15 +1450,17 @@ func (s *Syncer) syncIssues(
 	}
 
 	for _, ghIssue := range ghIssues {
-		if err := s.syncOpenIssue(ctx, repo, repoID, ghIssue); err != nil {
-			slog.Error("sync issue failed",
+		normalized := NormalizeIssue(repoID, ghIssue)
+		if _, uErr := s.db.UpsertIssue(ctx, normalized); uErr != nil {
+			slog.Error("index upsert issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghIssue.GetNumber(),
-				"err", err,
+				"err", uErr,
 			)
 		}
 	}
 
+	// Detect closed issues and fetch final state.
 	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
 		ctx, repoID, stillOpen,
 	)
@@ -1131,7 +1468,9 @@ func (s *Syncer) syncIssues(
 		return fmt.Errorf("get previously open issues: %w", err)
 	}
 	for _, number := range closedNumbers {
-		if err := s.fetchAndUpdateClosedIssue(ctx, repo, repoID, number); err != nil {
+		if err := s.fetchAndUpdateClosedIssue(
+			ctx, repo, repoID, number,
+		); err != nil {
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -1141,40 +1480,6 @@ func (s *Syncer) syncIssues(
 	}
 
 	return nil
-}
-
-func (s *Syncer) syncOpenIssue(
-	ctx context.Context,
-	repo RepoRef,
-	repoID int64,
-	ghIssue *gh.Issue,
-) error {
-	normalized := NormalizeIssue(repoID, ghIssue)
-
-	existing, err := s.db.GetIssue(
-		ctx, repo.Owner, repo.Name, ghIssue.GetNumber(),
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"get existing issue #%d: %w", ghIssue.GetNumber(), err,
-		)
-	}
-
-	needsTimeline := existing == nil ||
-		!existing.UpdatedAt.Equal(normalized.UpdatedAt)
-
-	issueID, err := s.db.UpsertIssue(ctx, normalized)
-	if err != nil {
-		return fmt.Errorf(
-			"upsert issue #%d: %w", ghIssue.GetNumber(), err,
-		)
-	}
-
-	if !needsTimeline {
-		return nil
-	}
-
-	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
 }
 
 func (s *Syncer) refreshIssueTimeline(
@@ -1241,6 +1546,377 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	return s.db.UpdateIssueState(
 		ctx, repoID, number, ghIssue.GetState(), closedAt,
 	)
+}
+
+// --- Detail Drain ---
+
+// drainDetailQueue builds a priority queue of items needing detail
+// fetches and processes them within the per-host budget.
+func (s *Syncer) drainDetailQueue(
+	ctx context.Context,
+	eligibleHosts map[string]bool,
+) {
+	if s.budgetPerHour <= 0 {
+		return
+	}
+
+	items := s.buildDetailQueueItems(ctx)
+	if len(items) == 0 {
+		return
+	}
+
+	queue := BuildQueue(items, time.Now())
+	if len(queue) == 0 {
+		return
+	}
+
+	// Track which hosts are exhausted so we skip quickly.
+	exhausted := make(map[string]bool)
+
+	for i := range queue {
+		if ctx.Err() != nil {
+			return
+		}
+		qi := &queue[i]
+		host := qi.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+
+		if !eligibleHosts[host] {
+			continue
+		}
+		if exhausted[host] {
+			continue
+		}
+
+		budget := s.budgets[host]
+		if budget == nil {
+			continue
+		}
+
+		worstCase := qi.WorstCaseCost()
+		if !budget.TrySpend(worstCase) {
+			exhausted[host] = true
+			continue
+		}
+
+		repo := RepoRef{
+			Owner:        qi.RepoOwner,
+			Name:         qi.RepoName,
+			PlatformHost: qi.PlatformHost,
+		}
+		repoID, err := s.db.UpsertRepo(
+			ctx, host, qi.RepoOwner, qi.RepoName,
+		)
+		if err != nil {
+			slog.Warn("detail drain: upsert repo failed",
+				"repo", qi.RepoOwner+"/"+qi.RepoName,
+				"err", err,
+			)
+			budget.Refund(worstCase)
+			continue
+		}
+
+		// Compute diff SHAs if clone available.
+		cloneFetchOK := false
+		if s.clones != nil {
+			remoteURL := fmt.Sprintf(
+				"https://%s/%s/%s.git",
+				host, qi.RepoOwner, qi.RepoName,
+			)
+			if cloneErr := s.clones.EnsureClone(
+				ctx, host, qi.RepoOwner, qi.RepoName,
+				remoteURL,
+			); cloneErr != nil {
+				slog.Warn("detail drain: bare clone failed",
+					"repo", qi.RepoOwner+"/"+qi.RepoName,
+					"err", cloneErr,
+				)
+			} else {
+				cloneFetchOK = true
+			}
+		}
+
+		var actualCalls int
+		if qi.Type == QueueItemPR {
+			actualCalls, err = s.fetchMRDetail(
+				ctx, repo, repoID, qi.Number, cloneFetchOK,
+			)
+		} else {
+			actualCalls, err = s.fetchIssueDetail(
+				ctx, repo, repoID, qi.Number,
+			)
+		}
+
+		if actualCalls < worstCase {
+			budget.Refund(worstCase - actualCalls)
+		}
+
+		if err != nil {
+			slog.Warn("detail drain: fetch failed",
+				"repo", qi.RepoOwner+"/"+qi.RepoName,
+				"number", qi.Number,
+				"type", qi.Type,
+				"err", err,
+			)
+		}
+	}
+}
+
+// buildDetailQueueItems queries the DB for open PRs and issues
+// that may need a detail fetch, combining with starred/watched
+// state to build queue items for scoring.
+func (s *Syncer) buildDetailQueueItems(
+	ctx context.Context,
+) []QueueItem {
+	// Gather watched MR numbers for matching.
+	s.watchMu.Lock()
+	watched := make(map[string]bool, len(s.watchedMRs))
+	for _, w := range s.watchedMRs {
+		key := fmt.Sprintf(
+			"%s/%s#%d", w.Owner, w.Name, w.Number,
+		)
+		watched[key] = true
+	}
+	s.watchMu.Unlock()
+
+	var items []QueueItem
+
+	// Open PRs.
+	prs, err := s.db.ListMergeRequests(
+		ctx, db.ListMergeRequestsOpts{State: "open"},
+	)
+	if err != nil {
+		slog.Warn("detail drain: list open PRs failed",
+			"err", err,
+		)
+		return nil
+	}
+	for _, pr := range prs {
+		repo, rErr := s.db.GetRepoByID(ctx, pr.RepoID)
+		if rErr != nil || repo == nil {
+			continue
+		}
+		watchKey := fmt.Sprintf(
+			"%s/%s#%d", repo.Owner, repo.Name, pr.Number,
+		)
+		items = append(items, QueueItem{
+			Type:            QueueItemPR,
+			RepoOwner:       repo.Owner,
+			RepoName:        repo.Name,
+			Number:          pr.Number,
+			PlatformHost:    repo.PlatformHost,
+			UpdatedAt:       pr.UpdatedAt,
+			DetailFetchedAt: pr.DetailFetchedAt,
+			CIHadPending:    pr.CIHadPending,
+			Starred:         pr.Starred,
+			Watched:         watched[watchKey],
+			IsOpen:          true,
+		})
+	}
+
+	// Open issues.
+	issues, err := s.db.ListIssues(
+		ctx, db.ListIssuesOpts{State: "open"},
+	)
+	if err != nil {
+		slog.Warn("detail drain: list open issues failed",
+			"err", err,
+		)
+		return items
+	}
+	for _, issue := range issues {
+		repo, rErr := s.db.GetRepoByID(ctx, issue.RepoID)
+		if rErr != nil || repo == nil {
+			continue
+		}
+		items = append(items, QueueItem{
+			Type:            QueueItemIssue,
+			RepoOwner:       repo.Owner,
+			RepoName:        repo.Name,
+			Number:          issue.Number,
+			PlatformHost:    repo.PlatformHost,
+			UpdatedAt:       issue.UpdatedAt,
+			DetailFetchedAt: issue.DetailFetchedAt,
+			Starred:         issue.Starred,
+			IsOpen:          true,
+		})
+	}
+
+	return items
+}
+
+// --- Backfill Discovery ---
+
+// backfillMaxPagesPerRepo limits how many closed-item pages
+// we fetch per repo per cycle to stay gentle on the API.
+const backfillMaxPagesPerRepo = 2
+
+// runBackfillDiscovery fetches closed PRs/issues for repos on
+// the given host, advancing backfill cursors stored in the DB.
+// Only runs when >50% of the host's budget remains.
+func (s *Syncer) runBackfillDiscovery(
+	ctx context.Context,
+	host string,
+	repos []RepoRef,
+) {
+	budget := s.budgets[host]
+	if budget == nil {
+		return
+	}
+	if budget.Remaining() < budget.Limit()/2 {
+		return
+	}
+
+	for _, repo := range repos {
+		if ctx.Err() != nil {
+			return
+		}
+		rHost := repo.PlatformHost
+		if rHost == "" {
+			rHost = "github.com"
+		}
+		if rHost != host {
+			continue
+		}
+
+		repoRow, err := s.db.GetRepoByOwnerName(
+			ctx, repo.Owner, repo.Name,
+		)
+		if err != nil || repoRow == nil {
+			continue
+		}
+
+		s.backfillRepo(ctx, repo, repoRow, budget)
+	}
+}
+
+func (s *Syncer) backfillRepo(
+	ctx context.Context,
+	repo RepoRef,
+	repoRow *db.Repo,
+	budget *SyncBudget,
+) {
+	client := s.clientFor(repo)
+	repoID := repoRow.ID
+	now := time.Now()
+
+	// PR backfill.
+	prPage := repoRow.BackfillPRPage
+	prComplete := repoRow.BackfillPRComplete
+	prCompletedAt := repoRow.BackfillPRCompletedAt
+
+	if prComplete && prCompletedAt != nil &&
+		now.Sub(*prCompletedAt) < 24*time.Hour {
+		// Skip -- completed recently.
+	} else {
+		if prComplete {
+			// Reset for re-scan.
+			prPage = 0
+			prComplete = false
+			prCompletedAt = nil
+		}
+		for range backfillMaxPagesPerRepo {
+			if ctx.Err() != nil || !budget.CanSpend(1) {
+				break
+			}
+			prPage++
+			prs, hasMore, err := client.ListPullRequestsPage(
+				ctx, repo.Owner, repo.Name,
+				"closed", prPage,
+			)
+			budget.Spend(1)
+			if err != nil {
+				slog.Warn("backfill PRs failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"page", prPage, "err", err,
+				)
+				break
+			}
+			for _, ghPR := range prs {
+				normalized := NormalizePR(repoID, ghPR)
+				if _, uErr := s.db.UpsertMergeRequest(
+					ctx, normalized,
+				); uErr != nil {
+					slog.Warn("backfill upsert PR failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghPR.GetNumber(),
+						"err", uErr,
+					)
+				}
+			}
+			if !hasMore {
+				prComplete = true
+				t := now
+				prCompletedAt = &t
+				break
+			}
+		}
+	}
+
+	// Issue backfill.
+	issuePage := repoRow.BackfillIssuePage
+	issueComplete := repoRow.BackfillIssueComplete
+	issueCompletedAt := repoRow.BackfillIssueCompletedAt
+
+	if issueComplete && issueCompletedAt != nil &&
+		now.Sub(*issueCompletedAt) < 24*time.Hour {
+		// Skip.
+	} else {
+		if issueComplete {
+			issuePage = 0
+			issueComplete = false
+			issueCompletedAt = nil
+		}
+		for range backfillMaxPagesPerRepo {
+			if ctx.Err() != nil || !budget.CanSpend(1) {
+				break
+			}
+			issuePage++
+			issues, hasMore, err := client.ListIssuesPage(
+				ctx, repo.Owner, repo.Name,
+				"closed", issuePage,
+			)
+			budget.Spend(1)
+			if err != nil {
+				slog.Warn("backfill issues failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"page", issuePage, "err", err,
+				)
+				break
+			}
+			for _, ghIssue := range issues {
+				normalized := NormalizeIssue(repoID, ghIssue)
+				if _, uErr := s.db.UpsertIssue(
+					ctx, normalized,
+				); uErr != nil {
+					slog.Warn("backfill upsert issue failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghIssue.GetNumber(),
+						"err", uErr,
+					)
+				}
+			}
+			if !hasMore {
+				issueComplete = true
+				t := now
+				issueCompletedAt = &t
+				break
+			}
+		}
+	}
+
+	// Persist cursor state.
+	if err := s.db.UpdateBackfillCursor(
+		ctx, repoID,
+		prPage, prComplete, prCompletedAt,
+		issuePage, issueComplete, issueCompletedAt,
+	); err != nil {
+		slog.Warn("update backfill cursor failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+	}
 }
 
 // IsTrackedRepo checks whether the given repo is in the configured list.
@@ -1329,13 +2005,13 @@ func (s *Syncer) syncMRWithHost(
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
 		existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
-		// Resolve directly instead of using s.resolveDisplayName to
-		// avoid racing with the shared displayNames map in RunOnce.
-		user, userErr := client.GetUser(ctx, normalized.Author)
-		if userErr == nil {
-			normalized.AuthorDisplayName = sanitizeDisplayName(user.GetName())
-		} else if existing != nil {
+		if existing != nil && existing.AuthorDisplayName != "" {
 			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		} else {
+			user, userErr := client.GetUser(ctx, normalized.Author)
+			if userErr == nil {
+				normalized.AuthorDisplayName = sanitizeDisplayName(user.GetName())
+			}
 		}
 	}
 
@@ -1359,6 +2035,13 @@ func (s *Syncer) syncMRWithHost(
 
 	if err := s.refreshCIStatus(ctx, repo, repoID, ghPR); err != nil {
 		return err
+	}
+
+	// Update ci_had_pending after refreshing CI status.
+	fresh, freshErr := s.db.GetMergeRequest(ctx, owner, name, number)
+	if freshErr == nil && fresh != nil {
+		pending := ciHasPending(fresh.CIChecksJSON)
+		_ = s.db.UpdateMRDetailFetched(ctx, owner, name, number, pending)
 	}
 
 	if s.onMRSynced != nil {

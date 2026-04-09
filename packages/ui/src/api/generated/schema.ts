@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get rate limits */
+        get: operations["get-rate-limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos": {
         parameters: {
             query?: never;
@@ -565,6 +582,8 @@ export interface components {
             CommentCount: number;
             /** Format: date-time */
             CreatedAt: string;
+            /** Format: date-time */
+            DetailFetchedAt: string | null;
             /** Format: int64 */
             ID: number;
             LabelsJSON: string;
@@ -590,6 +609,8 @@ export interface components {
              * @example /api/v1/schemas/IssueDetailResponse.json
              */
             readonly $schema?: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
             events: components["schemas"]["IssueEvent"][] | null;
             issue: components["schemas"]["Issue"];
             repo_name: string;
@@ -643,6 +664,8 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
             repo_name: string;
             repo_owner: string;
         };
@@ -707,6 +730,7 @@ export interface components {
             BaseBranch: string;
             Body: string;
             CIChecksJSON: string;
+            CIHadPending: boolean;
             CIStatus: string;
             /** Format: date-time */
             ClosedAt: string | null;
@@ -716,6 +740,8 @@ export interface components {
             CreatedAt: string;
             /** Format: int64 */
             Deletions: number;
+            /** Format: date-time */
+            DetailFetchedAt: string | null;
             HeadBranch: string;
             HeadRepoCloneURL: string;
             /** Format: int64 */
@@ -748,6 +774,8 @@ export interface components {
              * @example /api/v1/schemas/MergeRequestDetailResponse.json
              */
             readonly $schema?: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
             events: components["schemas"]["MREvent"][] | null;
             merge_request: components["schemas"]["MergeRequest"];
             repo_name: string;
@@ -764,6 +792,7 @@ export interface components {
             BaseBranch: string;
             Body: string;
             CIChecksJSON: string;
+            CIHadPending: boolean;
             CIStatus: string;
             /** Format: date-time */
             ClosedAt: string | null;
@@ -797,6 +826,8 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
             repo_name: string;
             repo_owner: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
@@ -835,6 +866,39 @@ export interface components {
             readonly $schema?: string;
             body: string;
         };
+        RateLimitHostStatus: {
+            /** Format: int64 */
+            budget_limit: number;
+            /** Format: int64 */
+            budget_remaining: number;
+            /** Format: int64 */
+            budget_spent: number;
+            hour_start: string;
+            known: boolean;
+            /** Format: int64 */
+            rate_limit: number;
+            /** Format: int64 */
+            rate_remaining: number;
+            rate_reset_at: string;
+            /** Format: int64 */
+            requests_hour: number;
+            /** Format: int64 */
+            reserve_buffer: number;
+            sync_paused: boolean;
+            /** Format: int64 */
+            sync_throttle_factor: number;
+        };
+        RateLimitsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RateLimitsResponse.json
+             */
+            readonly $schema?: string;
+            hosts: {
+                [key: string]: components["schemas"]["RateLimitHostStatus"];
+            };
+        };
         Repo: {
             /**
              * Format: uri
@@ -845,6 +909,16 @@ export interface components {
             AllowMergeCommit: boolean;
             AllowRebaseMerge: boolean;
             AllowSquashMerge: boolean;
+            BackfillIssueComplete: boolean;
+            /** Format: date-time */
+            BackfillIssueCompletedAt: string | null;
+            /** Format: int64 */
+            BackfillIssuePage: number;
+            BackfillPRComplete: boolean;
+            /** Format: date-time */
+            BackfillPRCompletedAt: string | null;
+            /** Format: int64 */
+            BackfillPRPage: number;
             /** Format: date-time */
             CreatedAt: string;
             /** Format: int64 */
@@ -1023,6 +1097,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MergeRequestResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitsResponse"];
                 };
             };
             /** @description Error */

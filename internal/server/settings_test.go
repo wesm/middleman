@@ -46,7 +46,7 @@ name = "widget"
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil,
+		map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, 0,
 	)
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
@@ -213,7 +213,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 		},
 	}
 	mock := &mockGH{}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, 0)
 	srv := New(database, syncer, nil, "/", cfg, ServerOptions{})
 
 	// GET /settings should work (read-only).
