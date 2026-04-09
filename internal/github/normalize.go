@@ -137,6 +137,30 @@ func NormalizeCommitEvent(mrID int64, c *gh.RepositoryCommit) db.MREvent {
 	return event
 }
 
+type forcePushMetadata struct {
+	BeforeSHA string `json:"before_sha"`
+	AfterSHA  string `json:"after_sha"`
+	Ref       string `json:"ref"`
+}
+
+func NormalizeForcePushEvent(mrID int64, fp ForcePushEvent) db.MREvent {
+	metadata, _ := json.Marshal(forcePushMetadata{
+		BeforeSHA: fp.BeforeSHA,
+		AfterSHA:  fp.AfterSHA,
+		Ref:       fp.Ref,
+	})
+
+	return db.MREvent{
+		MergeRequestID: mrID,
+		EventType:      "force_push",
+		Author:         fp.Actor,
+		Summary:        shortSHA(fp.BeforeSHA) + " -> " + shortSHA(fp.AfterSHA),
+		MetadataJSON:   string(metadata),
+		CreatedAt:      fp.CreatedAt,
+		DedupeKey:      fmt.Sprintf("force-push-%s-%s", fp.BeforeSHA, fp.AfterSHA),
+	}
+}
+
 // DeriveOverallCIStatus computes an aggregate CI status from check runs
 // and the legacy combined status API. The combined status API only reports
 // on commit statuses (the older mechanism); repos using only GitHub Actions
@@ -290,6 +314,13 @@ func NormalizeCIChecks(
 	return string(b)
 }
 
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
+}
+
 func appName(r *gh.CheckRun) string {
 	if r.GetApp() != nil {
 		return r.GetApp().GetName()
@@ -352,14 +383,14 @@ func normalizeLabels(labels []*gh.Label) string {
 func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent {
 	event := normalizeIssueCommentBase(c)
 	return db.IssueEvent{
-		IssueID:   issueID,
+		IssueID:    issueID,
 		PlatformID: event.PlatformID,
-		EventType: event.EventType,
-		Author:    event.Author,
-		Summary:   event.Summary,
-		Body:      event.Body,
-		CreatedAt: event.CreatedAt,
-		DedupeKey: fmt.Sprintf("issue-comment-%d", c.GetID()),
+		EventType:  event.EventType,
+		Author:     event.Author,
+		Summary:    event.Summary,
+		Body:       event.Body,
+		CreatedAt:  event.CreatedAt,
+		DedupeKey:  fmt.Sprintf("issue-comment-%d", c.GetID()),
 	}
 }
 

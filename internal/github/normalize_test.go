@@ -101,6 +101,28 @@ func TestNormalizeCommentEvent(t *testing.T) {
 	assert.True(event.CreatedAt.Equal(now))
 }
 
+func TestNormalizeForcePushEvent(t *testing.T) {
+	require := require.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	event := NormalizeForcePushEvent(17, ForcePushEvent{
+		Actor:     "alice",
+		BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		AfterSHA:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Ref:       "feature",
+		CreatedAt: createdAt,
+	})
+
+	require.Equal(int64(17), event.MergeRequestID)
+	require.Equal("force_push", event.EventType)
+	require.Equal("alice", event.Author)
+	require.Equal("aaaaaaa -> bbbbbbb", event.Summary)
+	require.Equal("force-push-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", event.DedupeKey)
+	require.Equal(createdAt, event.CreatedAt)
+	require.Contains(event.MetadataJSON, `"before_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)
+	require.Contains(event.MetadataJSON, `"after_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`)
+	require.Contains(event.MetadataJSON, `"ref":"feature"`)
+}
+
 func TestNormalizeIssueCommentEvent(t *testing.T) {
 	assert := Assert.New(t)
 	now := time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)
