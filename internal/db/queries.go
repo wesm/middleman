@@ -697,6 +697,17 @@ type DiffSHAs struct {
 	State           string
 }
 
+// Stale reports whether the recorded diff SHAs have drifted from the
+// platform SHAs. For merged PRs only head drift matters (the base
+// never advances after merge). For open/closed PRs both sides can
+// advance and invalidate the diff.
+func (s *DiffSHAs) Stale() bool {
+	if s.State == "merged" {
+		return s.DiffHeadSHA != s.PlatformHeadSHA
+	}
+	return s.DiffHeadSHA != s.PlatformHeadSHA || s.DiffBaseSHA != s.PlatformBaseSHA
+}
+
 // GetDiffSHAs returns the diff-related SHAs for a merge request.
 func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
 	var s DiffSHAs

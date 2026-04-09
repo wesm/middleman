@@ -80,6 +80,108 @@ func TestDiff(t *testing.T) {
 	assert.Equal("added", result.Files[1].Status)
 }
 
+func TestDiffFiles(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create a test repo with two commits on different branches.
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+
+	run(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+	run(t, dir, "git", "clone", remote, work)
+	run(t, work, "git", "config", "user.email", "test@test.com")
+	run(t, work, "git", "config", "user.name", "Test")
+
+	// Initial commit on main.
+	require.NoError(os.WriteFile(filepath.Join(work, "hello.go"),
+		[]byte("package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"), 0o644))
+	run(t, work, "git", "add", ".")
+	run(t, work, "git", "commit", "-m", "initial")
+	run(t, work, "git", "push", "origin", "main")
+
+	// Create a feature branch with changes.
+	run(t, work, "git", "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "hello.go"),
+		[]byte("package main\n\nfunc main() {\n\tfmt.Println(\"hello world\")\n}\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "new.go"),
+		[]byte("package main\n"), 0o644))
+	run(t, work, "git", "add", ".")
+	run(t, work, "git", "commit", "-m", "feature changes")
+	run(t, work, "git", "push", "origin", "feature")
+
+	mainSHA := getSHA(t, work, "origin/main")
+	featureSHA := getSHA(t, work, "origin/feature")
+
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+	require.NoError(mgr.EnsureClone(
+		context.Background(), "github.com", "test", "repo", remote))
+
+	mb, err := mgr.MergeBase(
+		context.Background(), "github.com", "test", "repo",
+		mainSHA, featureSHA)
+	require.NoError(err)
+
+	files, err := mgr.DiffFiles(
+		context.Background(), "github.com", "test", "repo",
+		mb, featureSHA)
+	require.NoError(err)
+	require.Len(files, 2)
+
+	// File metadata present.
+	assert.Equal("hello.go", files[0].Path)
+	assert.Equal("modified", files[0].Status)
+	assert.Equal("new.go", files[1].Path)
+	assert.Equal("added", files[1].Status)
+
+	// No patch content.
+	assert.Empty(files[0].Hunks)
+	assert.Empty(files[1].Hunks)
+	assert.Zero(files[0].Additions)
+	assert.Zero(files[0].Deletions)
+}
+
+func TestDiffFilesEmpty(t *testing.T) {
+	assert := assert.New(t)
+
+	// Diffing a commit against itself yields no files.
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+
+	run(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+	run(t, dir, "git", "clone", remote, work)
+	run(t, work, "git", "config", "user.email", "test@test.com")
+	run(t, work, "git", "config", "user.name", "Test")
+	require.NoError(t, os.WriteFile(filepath.Join(work, "hello.go"),
+		[]byte("package main\n"), 0o644))
+	run(t, work, "git", "add", ".")
+	run(t, work, "git", "commit", "-m", "initial")
+	run(t, work, "git", "push", "origin", "main")
+
+	sha := getSHA(t, work, "origin/main")
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+	require.NoError(t, mgr.EnsureClone(
+		context.Background(), "github.com", "test", "repo", remote))
+
+	// DiffFiles returns non-nil empty slice.
+	files, err := mgr.DiffFiles(
+		context.Background(), "github.com", "test", "repo", sha, sha)
+	require.NoError(t, err)
+	assert.NotNil(files)
+	assert.Empty(files)
+
+	// Diff returns non-nil empty slice.
+	result, err := mgr.Diff(
+		context.Background(), "github.com", "test", "repo", sha, sha, false)
+	require.NoError(t, err)
+	assert.NotNil(result.Files)
+	assert.Empty(result.Files)
+}
+
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", dir, "rev-parse", ref)

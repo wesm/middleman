@@ -1,11 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getStores, getNavigate, getClient } from "../../context.js";
+  import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  const navigate = getNavigate();
-  const client = getClient();
-  import FileTree from "./FileTree.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
 
@@ -13,29 +10,15 @@
     owner: string;
     name: string;
     number: number;
-    inline?: boolean;
   }
 
-  const { owner, name, number, inline = false }: Props = $props();
+  const { owner, name, number }: Props = $props();
 
-  let prTitle = $state<string | null>(null);
   let diffArea: HTMLDivElement | undefined = $state();
   let scrollRaf = 0;
 
-  // Load diff data on mount. Fetch PR title only in standalone mode.
   onMount(() => {
     void diffStore.loadDiff(owner, name, number);
-    if (!inline) {
-      void client
-        .GET("/repos/{owner}/{name}/pulls/{number}", {
-          params: { path: { owner, name, number } },
-        })
-        .then(({ data }) => {
-          if (data) {
-            prTitle = data.merge_request.Title;
-          }
-        });
-    }
 
     return () => {
       cancelAnimationFrame(scrollRaf);
@@ -47,22 +30,6 @@
   const loading = $derived(diffStore.isDiffLoading());
   const error = $derived(diffStore.getDiffError());
   const tabWidth = $derived(diffStore.getTabWidth());
-  const hideWhitespace = $derived(diffStore.getHideWhitespace());
-
-  const totalAdditions = $derived(
-    diff?.files.reduce((sum, f) => sum + f.additions, 0) ?? 0,
-  );
-  const totalDeletions = $derived(
-    diff?.files.reduce((sum, f) => sum + f.deletions, 0) ?? 0,
-  );
-
-  function goBack(): void {
-    if (history.state?.fromApp) {
-      history.back();
-    } else {
-      navigate(`/pulls/${owner}/${name}/${number}`);
-    }
-  }
 
   function scrollToFile(path: string): void {
     if (!diffArea) return;
@@ -76,10 +43,13 @@
   }
 
   // Watch for scroll requests from the sidebar file tree (via the store).
+  // Only consume the target once diffArea is mounted and diff data is available,
+  // so the request is not lost if the user clicks a file before diff renders.
   $effect(() => {
-    const target = diffStore.consumeScrollTarget();
-    if (target) {
-      queueMicrotask(() => scrollToFile(target));
+    const target = diffStore.getScrollTarget();
+    if (target && diffArea && diff) {
+      diffStore.consumeScrollTarget();
+      scrollToFile(target);
     }
   });
 
@@ -133,28 +103,6 @@
 </script>
 
 <div class="diff-view">
-  {#if !inline}
-    <!-- Top bar (standalone mode only) -->
-    <div class="diff-topbar">
-      <button class="back-btn" onclick={goBack}>
-        <span class="back-arrow">&#8592;</span>
-        Back
-      </button>
-      <div class="topbar-info">
-        {#if prTitle}
-          <span class="topbar-title">{prTitle}</span>
-        {/if}
-        {#if diff}
-          <span class="topbar-stats">
-            {diff.files.length} {diff.files.length === 1 ? "file" : "files"}
-            <span class="topbar-stat topbar-stat--add">+{totalAdditions}</span>
-            <span class="topbar-stat topbar-stat--del">-{totalDeletions}</span>
-          </span>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
   {#if diff?.stale}
     <div class="stale-banner">
       Diff may be outdated -- showing changes as of an earlier version of this PR.
@@ -175,15 +123,6 @@
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>
     {:else if diff}
-      {#if !inline}
-        <FileTree
-          files={diff.files}
-          activeFile={diffStore.getActiveFile()}
-          whitespaceOnlyCount={diff.whitespace_only_count}
-          {hideWhitespace}
-          onselect={diffStore.requestScrollToFile}
-        />
-      {/if}
       <div class="diff-main">
         <DiffToolbar />
         <div
@@ -213,76 +152,6 @@
     flex: 1;
     overflow: hidden;
     background: var(--diff-bg);
-  }
-
-  .diff-topbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 16px;
-    background: var(--diff-header-bg);
-    border-bottom: 1px solid var(--diff-border);
-    flex-shrink: 0;
-  }
-
-  .back-btn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-  }
-
-  .back-btn:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .back-arrow {
-    font-size: 14px;
-  }
-
-  .topbar-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .topbar-title {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--diff-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .topbar-stats {
-    font-size: 12px;
-    color: var(--text-secondary);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .topbar-stat {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .topbar-stat--add {
-    color: var(--diff-add-text);
-  }
-
-  .topbar-stat--del {
-    color: var(--diff-del-text);
   }
 
   .stale-banner {

@@ -155,7 +155,26 @@ const staleDiff = { ...smallDiff, stale: true };
 
 // --- Helpers ---
 
+function filesFromDiff(fixture: typeof smallDiff): { stale: boolean; files: typeof smallDiff.files } {
+  return {
+    stale: fixture.stale,
+    files: fixture.files.map((f) => ({
+      ...f,
+      additions: 0,
+      deletions: 0,
+      hunks: [],
+    })),
+  };
+}
+
 async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void> {
+  await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(filesFromDiff(fixture)),
+    });
+  });
   await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
     await route.fulfill({
       status: 200,
@@ -166,6 +185,13 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
 }
 
 async function mockDiffApiError(page: Page, status: number, detail: string): Promise<void> {
+  await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await route.fulfill({
+      status,
+      contentType: "application/json",
+      body: JSON.stringify({ detail }),
+    });
+  });
   await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
     await route.fulfill({
       status,
@@ -184,6 +210,11 @@ async function waitForDiffLoaded(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function waitForSidebarFilesLoaded(page: Page): Promise<void> {
+  await page.locator(".diff-file-row").first()
+    .waitFor({ state: "visible", timeout: 10_000 });
+}
+
 // --- Functional tests ---
 
 test.describe("diff view", () => {
@@ -193,93 +224,98 @@ test.describe("diff view", () => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
       localStorage.removeItem("diff-collapsed-files");
-      localStorage.removeItem("diff-sidebar-width");
     });
   });
 
-  test("renders diff with file tree, toolbar, and file diffs", async ({ page }) => {
+  test("renders diff with sidebar file list, toolbar, and file diffs", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
 
-    // File tree is visible with the correct number of files.
-    const fileTree = page.locator(".file-tree");
-    await expect(fileTree).toBeVisible();
-    const treeFiles = fileTree.locator(".tree-file");
-    await expect(treeFiles).toHaveCount(4);
+    // Sidebar inline file list shows all 4 files under the selected PR.
+    await expect(page.locator(".diff-file-row")).toHaveCount(4);
 
     // Toolbar is visible.
     await expect(page.locator(".diff-toolbar")).toBeVisible();
 
-    // All 4 diff file sections are rendered.
+    // All 4 diff file sections are rendered in the detail area.
     await expect(page.locator(".diff-file")).toHaveCount(4);
   });
 
-  test("top bar shows PR title, file count, and stats", async ({ page }) => {
+  test("sidebar file list shows status indicators", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
 
-    // PR title from seeded data.
-    await expect(page.locator(".topbar-title"))
-      .toHaveText("Add widget caching layer", { timeout: 5_000 });
-
-    // File count and stats.
-    const stats = page.locator(".topbar-stats");
-    await expect(stats).toContainText("4 files");
-    await expect(stats).toContainText("+13");
-    await expect(stats).toContainText("-14");
+    // Files are grouped by directory in insertion order, each in its own group:
+    //   internal/server/handler.go (M)
+    //   frontend/src/lib/utils/format.ts (A)
+    //   internal/legacy/old_handler.go (D)
+    //   assets/logo.png (M, binary)
+    const statuses = page.locator(".diff-file-row .diff-file-status");
+    await expect(statuses.nth(0)).toHaveText("M");
+    await expect(statuses.nth(1)).toHaveText("A");
+    await expect(statuses.nth(2)).toHaveText("D");
+    await expect(statuses.nth(3)).toHaveText("M");
   });
 
-  test("file tree shows status badges", async ({ page }) => {
+  test("sidebar shows directory headers for grouped files", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
 
-    const badges = page.locator(".file-tree .file-badge");
-    // M (modified handler.go), A (added format.ts), D (deleted old_handler.go), M (binary logo.png)
-    await expect(badges.nth(0)).toHaveText("M");
-    await expect(badges.nth(1)).toHaveText("A");
-    await expect(badges.nth(2)).toHaveText("D");
-    await expect(badges.nth(3)).toHaveText("M");
+    // Each file lives in a different directory, so all 4 should render headers.
+    const dirHeaders = page.locator(".diff-dir-header");
+    await expect(dirHeaders).toHaveCount(4);
+    await expect(dirHeaders.nth(0)).toHaveText("internal/server/");
+    await expect(dirHeaders.nth(1)).toHaveText("frontend/src/lib/utils/");
+    await expect(dirHeaders.nth(2)).toHaveText("internal/legacy/");
+    await expect(dirHeaders.nth(3)).toHaveText("assets/");
   });
 
-  test("clicking a file in the tree highlights it as active", async ({ page }) => {
+  test("clicking a sidebar file row highlights it as active", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
 
-    const secondFile = page.locator(".file-tree .tree-file").nth(1);
-    await secondFile.click();
+    const secondRow = page.locator(".diff-file-row").nth(1);
+    await secondRow.click();
 
-    await expect(secondFile).toHaveClass(/tree-file--active/);
+    await expect(secondRow).toHaveClass(/diff-file-row--active/);
   });
 
-  test("file tree filter narrows the file list", async ({ page }) => {
+  test("deleted file name has strikethrough in sidebar", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
 
-    const filterInput = page.locator(".file-tree .filter-input");
-    await filterInput.fill("handler");
-
-    // Only handler.go and old_handler.go should match.
-    await expect(page.locator(".file-tree .tree-file")).toHaveCount(2);
+    // Third row is the deleted file (old_handler.go).
+    const deletedName = page.locator(".diff-file-row").nth(2)
+      .locator(".diff-file-name");
+    await expect(deletedName).toHaveClass(/diff-file-name--deleted/);
   });
 
-  test("file tree sidebar can be collapsed and expanded", async ({ page }) => {
+  test("detail tabs switch between conversation and files views", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    // Collapse the sidebar.
-    await page.locator(".collapse-btn").click();
-    await expect(page.locator(".file-tree")).not.toBeAttached();
-    await expect(page.locator(".sidebar-collapsed")).toBeVisible();
+    // On the /files route the "Files changed" tab is active.
+    const filesTab = page.locator(".detail-tab", {
+      hasText: "Files changed",
+    });
+    await expect(filesTab).toHaveClass(/detail-tab--active/);
 
-    // Expand it back.
-    await page.locator(".expand-btn").click();
-    await expect(page.locator(".file-tree")).toBeVisible();
+    // Clicking "Conversation" navigates back to the PR detail.
+    await page.locator(".detail-tab", {
+      hasText: "Conversation",
+    }).click();
+    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
   });
 
   test("clicking a file header collapses and expands its content", async ({ page }) => {
@@ -320,6 +356,13 @@ test.describe("diff view", () => {
 
   test("hide whitespace toggle triggers re-fetch", async ({ page }) => {
     let fetchCount = 0;
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(smallDiff)),
+      });
+    });
     await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
       fetchCount++;
       const url = new URL(route.request().url());
@@ -340,45 +383,32 @@ test.describe("diff view", () => {
     // Toggle hide whitespace on.
     await page.locator(".toggle-switch").click();
 
-    // Wait for the re-fetch to complete and the footer to appear.
-    await expect(page.locator(".tree-footer"))
-      .toContainText("1 whitespace-only file hidden", { timeout: 5_000 });
-    expect(fetchCount).toBeGreaterThan(initialCount);
+    // Wait for the re-fetch to land and assert it actually happened.
+    await expect.poll(() => fetchCount).toBeGreaterThan(initialCount);
   });
 
   test("j/k keyboard navigation moves between files", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
 
-    // First file should be active by default.
-    const treeFiles = page.locator(".file-tree .tree-file");
-    await expect(treeFiles.nth(0)).toHaveClass(/tree-file--active/);
+    const rows = page.locator(".diff-file-row");
+
+    // First file is active after initial load.
+    await expect(rows.nth(0)).toHaveClass(/diff-file-row--active/);
 
     // Press j to move to next file.
     await page.keyboard.press("j");
-    await expect(treeFiles.nth(1)).toHaveClass(/tree-file--active/, { timeout: 2_000 });
+    await expect(rows.nth(1)).toHaveClass(/diff-file-row--active/, { timeout: 2_000 });
 
     // Press j again.
     await page.keyboard.press("j");
-    await expect(treeFiles.nth(2)).toHaveClass(/tree-file--active/, { timeout: 2_000 });
+    await expect(rows.nth(2)).toHaveClass(/diff-file-row--active/, { timeout: 2_000 });
 
     // Press k to move back.
     await page.keyboard.press("k");
-    await expect(treeFiles.nth(1)).toHaveClass(/tree-file--active/, { timeout: 2_000 });
-  });
-
-  test("back button navigates to PR detail via fallback path", async ({ page }) => {
-    await mockDiffApi(page, smallDiff);
-
-    // page.goto() doesn't set history.state.fromApp, so this tests the
-    // fallback navigate() path in goBack(), not history.back().
-    await page.goto("/pulls/acme/widgets/1/files");
-    await waitForDiffLoaded(page);
-
-    // Click back -- should navigate to the PR detail URL.
-    await page.locator(".back-btn").click();
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
+    await expect(rows.nth(1)).toHaveClass(/diff-file-row--active/, { timeout: 2_000 });
   });
 
   test("stale diff banner is shown when diff is stale", async ({ page }) => {
@@ -429,7 +459,7 @@ test.describe("diff view", () => {
     await expect(binaryFile.locator(".binary-notice")).toHaveText("Binary file changed");
   });
 
-  test("deleted file path has strikethrough styling", async ({ page }) => {
+  test("deleted file path has strikethrough styling in diff header", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
@@ -462,7 +492,6 @@ test.describe("diff view performance", () => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
       localStorage.removeItem("diff-collapsed-files");
-      localStorage.removeItem("diff-sidebar-width");
     });
   });
 
@@ -474,8 +503,8 @@ test.describe("diff view performance", () => {
     // All 50 file headers should be in the DOM.
     await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });
 
-    // File tree should list all 50 files.
-    await expect(page.locator(".file-tree .tree-file")).toHaveCount(50);
+    // Sidebar inline file list should list all 50 files.
+    await expect(page.locator(".diff-file-row")).toHaveCount(50);
   });
 
   test("collapsing a file removes its content from the DOM", async ({ page }) => {
@@ -500,6 +529,13 @@ test.describe("diff view performance", () => {
     // Return fewer files when whitespace=hide so we can distinguish
     // the post-toggle render from the initial one.
     const hiddenDiff = { ...largeDiff, files: largeDiff.files.slice(0, 45) };
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(largeDiff)),
+      });
+    });
     await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
       const url = new URL(route.request().url());
       const fixture = url.searchParams.get("whitespace") === "hide"
@@ -541,7 +577,6 @@ test.describe("diff view (git-backed)", () => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
       localStorage.removeItem("diff-collapsed-files");
-      localStorage.removeItem("diff-sidebar-width");
     });
   });
 
@@ -549,10 +584,12 @@ test.describe("diff view (git-backed)", () => {
     await page.goto("/pulls/acme/widgets/1/files");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".diff-file-row").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
 
     // Should have 4 changed files from the test repo.
     await expect(page.locator(".diff-file")).toHaveCount(4);
-    await expect(page.locator(".file-tree .tree-file")).toHaveCount(4);
+    await expect(page.locator(".diff-file-row")).toHaveCount(4);
   });
 
   test("modified file has multiple hunks with correct content", async ({ page }) => {
@@ -585,9 +622,11 @@ test.describe("diff view (git-backed)", () => {
       .toContainText("slog");
   });
 
-  test("added file shows A badge and only addition lines", async ({ page }) => {
+  test("added file shows A status in sidebar and only addition lines", async ({ page }) => {
     await page.goto("/pulls/acme/widgets/1/files");
     await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".diff-file-row").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const cacheFile = page.locator(
@@ -606,16 +645,18 @@ test.describe("diff view (git-backed)", () => {
     );
     await expect(contextLines).toHaveCount(0);
 
-    // File tree badge should be "A".
-    const treeBadge = page.locator(".file-tree .tree-file", {
+    // Sidebar status should be "A".
+    const cacheRow = page.locator(".diff-file-row", {
       hasText: "cache.go",
-    }).locator(".file-badge");
-    await expect(treeBadge).toHaveText("A");
+    });
+    await expect(cacheRow.locator(".diff-file-status")).toHaveText("A");
   });
 
-  test("deleted file shows D badge and only deletion lines", async ({ page }) => {
+  test("deleted file shows D status in sidebar and only deletion lines", async ({ page }) => {
     await page.goto("/pulls/acme/widgets/1/files");
     await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".diff-file-row").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const configFile = page.locator(
@@ -633,11 +674,11 @@ test.describe("diff view (git-backed)", () => {
     );
     await expect(contextLines).toHaveCount(0);
 
-    // File tree badge should be "D".
-    const treeBadge = page.locator(".file-tree .tree-file", {
+    // Sidebar status should be "D".
+    const configRow = page.locator(".diff-file-row", {
       hasText: "config.yaml",
-    }).locator(".file-badge");
-    await expect(treeBadge).toHaveText("D");
+    });
+    await expect(configRow.locator(".diff-file-status")).toHaveText("D");
   });
 
   test("diff is not marked as stale", async ({ page }) => {
@@ -656,22 +697,6 @@ test.describe("diff view (git-backed)", () => {
     await expect(page.locator(".stale-banner")).not.toBeAttached();
   });
 
-  test("top bar shows real file count and addition/deletion stats", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
-    await page.locator(".diff-file").first()
-      .waitFor({ state: "visible", timeout: 10_000 });
-
-    const stats = page.locator(".topbar-stats");
-    await expect(stats).toContainText("4 files");
-
-    // Additions and deletions should be non-zero (from real git diff).
-    const statsText = await stats.textContent();
-    const addMatch = statsText?.match(/\+(\d+)/);
-    const delMatch = statsText?.match(/-(\d+)/);
-    expect(Number(addMatch?.[1])).toBeGreaterThan(0);
-    expect(Number(delMatch?.[1])).toBeGreaterThan(0);
-  });
-
   test("hide whitespace toggle filters whitespace-only files", async ({ page }) => {
     await page.goto("/pulls/acme/widgets/1/files");
     await page.locator(".diff-file").first()
@@ -684,12 +709,7 @@ test.describe("diff view (git-backed)", () => {
     await page.locator(".toggle-switch").click();
 
     // README.md is whitespace-only and should be hidden.
-    // Wait for the re-fetch to complete.
     await expect(page.locator(".diff-file")).toHaveCount(3, { timeout: 10_000 });
-
-    // Footer should indicate hidden file count.
-    await expect(page.locator(".tree-footer"))
-      .toContainText("1 whitespace-only file hidden", { timeout: 5_000 });
   });
 
   test("collapsed region appears between hunks in modified file", async ({ page }) => {

@@ -100,9 +100,6 @@ export {
   default as KanbanBoardView,
 } from "./views/KanbanBoardView.svelte";
 export {
-  default as DiffViewWrapper,
-} from "./views/DiffViewWrapper.svelte";
-export {
   default as ReviewsView,
 } from "./views/ReviewsView.svelte";
 export {

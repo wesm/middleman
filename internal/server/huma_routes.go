@@ -292,6 +292,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/sync/status", s.syncStatus)
 	huma.Get(api, "/rate-limits", s.getRateLimits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
 }
 
 func NewOpenAPI() *huma.OpenAPI {
@@ -448,19 +449,14 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	if mr.DiffHeadSHA == "" {
 		return []string{"Diff data is unavailable for this pull request."}
 	}
-	// Mirror getDiff's staleness check exactly so the warning and the
-	// rendered diff agree on freshness:
-	//   merged → head drift only (the diff is base..PR-head, base never
-	//            advances after merge)
-	//   open / closed → head or base drift (either side can advance and
-	//                   invalidate the recorded diff)
-	if mr.State == "merged" {
-		if mr.DiffHeadSHA != mr.PlatformHeadSHA {
-			return []string{"Diff data is out of date for this pull request."}
-		}
-		return nil
+	shas := db.DiffSHAs{
+		PlatformHeadSHA: mr.PlatformHeadSHA,
+		PlatformBaseSHA: mr.PlatformBaseSHA,
+		DiffHeadSHA:     mr.DiffHeadSHA,
+		DiffBaseSHA:     mr.DiffBaseSHA,
+		State:           mr.State,
 	}
-	if mr.DiffHeadSHA != mr.PlatformHeadSHA || mr.DiffBaseSHA != mr.PlatformBaseSHA {
+	if shas.Stale() {
 		return []string{"Diff data is out of date for this pull request."}
 	}
 	return nil
@@ -1447,20 +1443,59 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
 		}
-		return nil, huma.Error502BadGateway("failed to compute diff: " + err.Error())
+		slog.Error("failed to compute diff", "owner", input.Owner, "name", input.Name, "number", input.Number, "err", err)
+		return nil, huma.Error502BadGateway("failed to compute diff")
 	}
 
-	// Compute staleness.
-	switch shas.State {
-	case "merged":
-		result.Stale = shas.DiffHeadSHA != shas.PlatformHeadSHA
-	default: // open, closed
-		result.Stale = shas.DiffHeadSHA != shas.PlatformHeadSHA || shas.DiffBaseSHA != shas.PlatformBaseSHA
-	}
+	result.Stale = shas.Stale()
 
 	return &getDiffOutput{Body: diffResponse{
 		Stale:               result.Stale,
 		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
 		Files:               result.Files,
+	}}, nil
+}
+
+// --- Files (lightweight) ---
+
+type getFilesInput struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+}
+
+type getFilesOutput struct {
+	Body filesResponse
+}
+
+func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
+	if s.clones == nil {
+		return nil, huma.Error503ServiceUnavailable("files view not available: clone manager not configured")
+	}
+
+	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to look up PR")
+	}
+	if shas == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
+		return nil, huma.Error404NotFound("file list not available for this pull request")
+	}
+
+	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	files, err := s.clones.DiffFiles(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, huma.Error404NotFound("file list not available: referenced commit not found")
+		}
+		slog.Error("failed to list files", "owner", input.Owner, "name", input.Name, "number", input.Number, "err", err)
+		return nil, huma.Error502BadGateway("failed to list files")
+	}
+
+	return &getFilesOutput{Body: filesResponse{
+		Stale: shas.Stale(),
+		Files: files,
 	}}, nil
 }

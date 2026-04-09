@@ -5,6 +5,33 @@ import (
 	"fmt"
 )
 
+// DiffFiles returns file metadata (path, status, renames) without patch
+// content. It runs only git diff --raw, which is much faster than a full
+// diff for large PRs.
+func (m *Manager) DiffFiles(
+	ctx context.Context,
+	host, owner, name, mergeBase, headSHA string,
+) ([]DiffFile, error) {
+	clonePath := m.ClonePath(host, owner, name)
+	rawOut, err := m.git(ctx, host, clonePath,
+		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder", mergeBase, headSHA,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("git diff --raw: %w", err)
+	}
+	files := ParseRawZ(rawOut)
+	if files == nil {
+		files = []DiffFile{}
+	}
+	// Ensure Hunks is never nil so JSON serializes as [] not null.
+	for i := range files {
+		if files[i].Hunks == nil {
+			files[i].Hunks = []Hunk{}
+		}
+	}
+	return files, nil
+}
+
 // Diff runs a two-dot git diff between mergeBase and headSHA and returns
 // structured diff data. If hideWhitespace is true, passes -w to git diff.
 func (m *Manager) Diff(
@@ -51,6 +78,9 @@ func (m *Manager) Diff(
 	}
 
 	files = ParsePatch(patchOut, files)
+	if files == nil {
+		files = []DiffFile{}
+	}
 
 	// Step 4: Mark whitespace-only files (only in default mode).
 	if !hideWhitespace {

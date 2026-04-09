@@ -75,6 +75,11 @@ type diffResponse struct {
 	Files               []gitclone.DiffFile `json:"files"`
 }
 
+type filesResponse struct {
+	Stale bool                `json:"stale"`
+	Files []gitclone.DiffFile `json:"files"`
+}
+
 type mrImportMetadataResponse struct {
 	Number           int    `json:"number"`
 	HeadBranch       string `json:"head_branch"`

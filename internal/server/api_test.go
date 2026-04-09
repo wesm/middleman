@@ -2197,6 +2197,21 @@ func TestMRListEmptyLinksWhenNone(t *testing.T) {
 	require.Contains(body, `"worktree_links":[]`)
 }
 
+func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
+	require := require.New(t)
+
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberFilesWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusServiceUnavailable, resp.StatusCode())
+}
+
+
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)

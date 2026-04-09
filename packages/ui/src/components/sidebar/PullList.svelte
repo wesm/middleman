@@ -123,14 +123,35 @@
     const sel = pulls.getSelectedPR();
     return sel !== null && sel.owner === owner && sel.name === name && sel.number === number;
   }
+
+  const selectedVisiblePR = $derived.by(() => {
+    const sel = pulls.getSelectedPR();
+    if (sel === null) return null;
+    return pulls.getPulls().find(
+      (p) => (p.repo_owner ?? "") === sel.owner
+        && (p.repo_name ?? "") === sel.name
+        && p.Number === sel.number,
+    ) ?? null;
+  });
+
+  const isDiffFocus = $derived(
+    _getDetailTab() === "files" && selectedVisiblePR !== null,
+  );
+
+  const isSelectedActiveWorktree = $derived.by(() => {
+    const key = activeWorktreeKey;
+    const pr = selectedVisiblePR;
+    if (!key || !pr || !pr.worktree_links) return false;
+    return pr.worktree_links.some((l) => l.worktree_key === key);
+  });
 </script>
 
 {#snippet diffFilesInline()}
   <div class="diff-files">
-    {#if diff.isDiffLoading() && !diff.getDiff()}
+    {#if diff.isFileListLoading() && !diff.getFileList()}
       <div class="diff-files-state diff-files-state--loading">Loading files</div>
-    {:else if diff.getDiff()}
-      {@const grouped = groupByDir(diff.getDiff()!.files)}
+    {:else if diff.getFileList()}
+      {@const grouped = groupByDir(diff.getFileList()!.files)}
       {#each grouped as group, gi (gi)}
         {#if group.dir}
           <div class="diff-dir-header">{group.dir}/</div>
@@ -228,7 +249,11 @@
   {#if pulls.getFilterState() !== "open"}
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
-  <div class="list-body">
+  <div
+    class="list-body"
+    class:list-body--diff-focus={isDiffFocus}
+    class:list-body--diff-focus-worktree={isDiffFocus && isSelectedActiveWorktree}
+  >
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
         {#if !isEmbedded()}<button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button>{/if}</p>
@@ -248,7 +273,11 @@
     {:else}
       {#if groupingMode === "byRepo"}
         {#each [...pulls.pullsByRepo().entries()] as [repo, prs] (repo)}
-          {@const collapsed = collapsedRepos.isCollapsed("pulls", repo)}
+          {@const userCollapsed = collapsedRepos.isCollapsed("pulls", repo)}
+          {@const hasSelectedPR = isDiffFocus && prs.some(
+            (p) => isSelected(p.repo_owner ?? "", p.repo_name ?? "", p.Number),
+          )}
+          {@const collapsed = userCollapsed && !hasSelectedPR}
           <div class="repo-group">
             <button
               type="button"
@@ -428,6 +457,31 @@
   .list-body {
     flex: 1;
     overflow-y: auto;
+  }
+
+  /* Diff focus: combine typographic mute on siblings + a continuous
+     accent rail that extends from the selected card through the inline
+     file list, binding them as one visual unit. */
+  .list-body--diff-focus :global(.pull-item:not(.selected) .title) {
+    color: var(--text-muted);
+    font-weight: 400;
+    transition: color 0.15s ease;
+  }
+
+  .list-body--diff-focus :global(.pull-item:not(.selected) .state-dot) {
+    opacity: 0.45;
+  }
+
+  .list-body--diff-focus :global(.pull-item:not(.selected):hover .title) {
+    color: var(--text-secondary);
+  }
+
+  .list-body--diff-focus .diff-files {
+    border-left: 3px solid var(--accent-blue);
+  }
+
+  .list-body--diff-focus-worktree .diff-files {
+    border-left-color: var(--accent-teal, var(--accent-green));
   }
 
   .state-message {
