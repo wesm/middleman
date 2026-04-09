@@ -30,29 +30,29 @@ func setupCommitTestRepo(t *testing.T) (string, string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "alice@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Alice")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
 
 	// Initial commit on main = merge base.
 	require.NoError(t, os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "base commit")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base commit")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	mergeBase := gitSHA(t, work, "HEAD")
 
 	// PR branch with 5 commits.
-	commitTestRun(t,work, "git", "checkout", "-b", "pr")
+	commitTestRun(t, work, "git", "checkout", "-b", "pr")
 	for i := 1; i <= 5; i++ {
 		fname := filepath.Join(work, "file"+string(rune('0'+i))+".txt")
 		require.NoError(t, os.WriteFile(fname, []byte("content\n"), 0o644))
-		commitTestRun(t,work, "git", "add", ".")
-		commitTestRun(t,work, "git", "commit", "-m", "commit "+string(rune('0'+i)))
+		commitTestRun(t, work, "git", "add", ".")
+		commitTestRun(t, work, "git", "commit", "-m", "commit "+string(rune('0'+i)))
 	}
-	commitTestRun(t,work, "git", "push", "origin", "pr")
+	commitTestRun(t, work, "git", "push", "origin", "pr")
 	headSHA := gitSHA(t, work, "HEAD")
 
 	return bare, mergeBase, headSHA
@@ -62,7 +62,7 @@ func gitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := exec.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(filteredGitEnv(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
@@ -108,44 +108,44 @@ func TestListCommits_FirstParent(t *testing.T) {
 
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "test@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Test")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "test@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Test")
 
 	// Base commit.
 	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "base")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	mergeBase := gitSHA(t, work, "HEAD")
 
 	// PR branch: one commit, then merge a side branch, then one more commit.
-	commitTestRun(t,work, "git", "checkout", "-b", "pr")
+	commitTestRun(t, work, "git", "checkout", "-b", "pr")
 	require.NoError(os.WriteFile(filepath.Join(work, "pr1.txt"), []byte("pr1\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "pr commit 1")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "pr commit 1")
 
 	// Side branch with 2 commits.
-	commitTestRun(t,work, "git", "checkout", "-b", "side")
+	commitTestRun(t, work, "git", "checkout", "-b", "side")
 	require.NoError(os.WriteFile(filepath.Join(work, "side1.txt"), []byte("s1\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "side commit 1")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "side commit 1")
 	require.NoError(os.WriteFile(filepath.Join(work, "side2.txt"), []byte("s2\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "side commit 2")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "side commit 2")
 
 	// Merge side into pr.
-	commitTestRun(t,work, "git", "checkout", "pr")
-	commitTestRun(t,work, "git", "merge", "--no-ff", "side", "-m", "merge side branch")
+	commitTestRun(t, work, "git", "checkout", "pr")
+	commitTestRun(t, work, "git", "merge", "--no-ff", "side", "-m", "merge side branch")
 
 	// One more commit after merge.
 	require.NoError(os.WriteFile(filepath.Join(work, "pr2.txt"), []byte("pr2\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "pr commit 2")
-	commitTestRun(t,work, "git", "push", "origin", "pr")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "pr commit 2")
+	commitTestRun(t, work, "git", "push", "origin", "pr")
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
@@ -184,16 +184,16 @@ func TestParentOf(t *testing.T) {
 func TestParentOf_RootCommit(t *testing.T) {
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "test@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Test")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "test@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(filepath.Join(work, "init.txt"), []byte("init\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "initial")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "initial")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	rootSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
@@ -211,125 +211,137 @@ func TestParentOf_ErrorPropagation(t *testing.T) {
 }
 
 func TestListCommits_SingleCommit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "test@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Test")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "test@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Test")
 
-	require.NoError(t, os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "base")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	mergeBase := gitSHA(t, work, "HEAD")
 
-	commitTestRun(t,work, "git", "checkout", "-b", "pr")
-	require.NoError(t, os.WriteFile(filepath.Join(work, "one.txt"), []byte("one\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "only commit")
-	commitTestRun(t,work, "git", "push", "origin", "pr")
+	commitTestRun(t, work, "git", "checkout", "-b", "pr")
+	require.NoError(os.WriteFile(filepath.Join(work, "one.txt"), []byte("one\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "only commit")
+	commitTestRun(t, work, "git", "push", "origin", "pr")
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
 	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", mergeBase, headSHA)
-	require.NoError(t, err)
-	assert.Len(t, commits, 1)
-	assert.Equal(t, "only commit", commits[0].Message)
+	require.NoError(err)
+	assert.Len(commits, 1)
+	assert.Equal("only commit", commits[0].Message)
 }
 
 func TestListCommits_EmptyTreeMergeBase(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	// When mergeBase is the empty tree sentinel, ListCommits should return
 	// all commits up to headSHA (not use range syntax which would fail).
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "test@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Test")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "test@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Test")
 
-	require.NoError(t, os.WriteFile(filepath.Join(work, "a.txt"), []byte("a\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "first")
+	require.NoError(os.WriteFile(filepath.Join(work, "a.txt"), []byte("a\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "first")
 
-	require.NoError(t, os.WriteFile(filepath.Join(work, "b.txt"), []byte("b\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "second")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	require.NoError(os.WriteFile(filepath.Join(work, "b.txt"), []byte("b\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "second")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
 	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", emptyTreeSHA, headSHA)
-	require.NoError(t, err)
-	assert.Len(t, commits, 2)
-	assert.Equal(t, "second", commits[0].Message)
-	assert.Equal(t, "first", commits[1].Message)
+	require.NoError(err)
+	assert.Len(commits, 2)
+	assert.Equal("second", commits[0].Message)
+	assert.Equal("first", commits[1].Message)
 }
 
 func TestParentOf_MergeCommit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	// ParentOf on a merge commit should return the first parent.
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "test@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Test")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "test@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Test")
 
-	require.NoError(t, os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "base")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base")
 	firstParentSHA := gitSHA(t, work, "HEAD")
 
 	// Side branch.
-	commitTestRun(t,work, "git", "checkout", "-b", "side")
-	require.NoError(t, os.WriteFile(filepath.Join(work, "side.txt"), []byte("side\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "side work")
+	commitTestRun(t, work, "git", "checkout", "-b", "side")
+	require.NoError(os.WriteFile(filepath.Join(work, "side.txt"), []byte("side\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "side work")
 
 	// Merge side into main.
-	commitTestRun(t,work, "git", "checkout", "main")
-	commitTestRun(t,work, "git", "merge", "--no-ff", "side", "-m", "merge side")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	commitTestRun(t, work, "git", "checkout", "main")
+	commitTestRun(t, work, "git", "merge", "--no-ff", "side", "-m", "merge side")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	mergeSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
 	parent, err := mgr.ParentOf(context.Background(), "", "", "remote", mergeSHA)
-	require.NoError(t, err)
-	assert.Equal(t, firstParentSHA, parent)
+	require.NoError(err)
+	assert.Equal(firstParentSHA, parent)
 }
 
 func TestListCommits_NulInMessage(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "remote.git")
-	commitTestRun(t,dir, "git", "init", "--bare", "--initial-branch=main", bare)
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", bare)
 
 	work := filepath.Join(dir, "work")
-	commitTestRun(t,dir, "git", "clone", bare, work)
-	commitTestRun(t,work, "git", "config", "user.email", "test@test.com")
-	commitTestRun(t,work, "git", "config", "user.name", "Test")
+	commitTestRun(t, dir, "git", "clone", bare, work)
+	commitTestRun(t, work, "git", "config", "user.email", "test@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Test")
 
-	require.NoError(t, os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", "base")
-	commitTestRun(t,work, "git", "push", "origin", "main")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base")
+	commitTestRun(t, work, "git", "push", "origin", "main")
 	mergeBase := gitSHA(t, work, "HEAD")
 
-	commitTestRun(t,work, "git", "checkout", "-b", "pr")
-	require.NoError(t, os.WriteFile(filepath.Join(work, "nul.txt"), []byte("nul\n"), 0o644))
-	commitTestRun(t,work, "git", "add", ".")
-	commitTestRun(t,work, "git", "commit", "-m", `message with \x00 in it`)
-	commitTestRun(t,work, "git", "push", "origin", "pr")
+	commitTestRun(t, work, "git", "checkout", "-b", "pr")
+	require.NoError(os.WriteFile(filepath.Join(work, "nul.txt"), []byte("nul\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", `message with \x00 in it`)
+	commitTestRun(t, work, "git", "push", "origin", "pr")
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
 	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", mergeBase, headSHA)
-	require.NoError(t, err)
-	require.Len(t, commits, 1)
-	assert.Contains(t, commits[0].Message, `\x00`)
+	require.NoError(err)
+	require.Len(commits, 1)
+	assert.Contains(commits[0].Message, `\x00`)
 }

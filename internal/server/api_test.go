@@ -2216,7 +2216,6 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	require.Equal(http.StatusServiceUnavailable, resp.StatusCode())
 }
 
-
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)
@@ -2443,11 +2442,26 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	assert.Equal(now.Format(time.RFC3339), *resp2.JSON200.DetailFetchedAt)
 }
 
+// filteredTestEnv returns os.Environ() with GIT_DIR, GIT_WORK_TREE, and
+// GIT_INDEX_FILE removed so tests that shell out to git are not
+// contaminated by the parent process (e.g. pre-commit hooks).
+func filteredTestEnv() []string {
+	var env []string
+	for _, e := range os.Environ() {
+		key, _, _ := strings.Cut(e, "=")
+		if strings.HasPrefix(key, "GIT_") {
+			continue
+		}
+		env = append(env, e)
+	}
+	return env
+}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(filteredTestEnv(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v failed: %s", args, out)
 }
@@ -2456,7 +2470,7 @@ func testGitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := exec.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(filteredTestEnv(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
@@ -2628,13 +2642,15 @@ func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
 }
 
 func TestAPIGetDiff_RootCommit(t *testing.T) {
+	require := require.New(t)
+
 	dir := t.TempDir()
 	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() { database.Close() })
 
 	bareDir := filepath.Join(dir, "clones")
-	require.NoError(t, os.MkdirAll(bareDir, 0o755))
+	require.NoError(os.MkdirAll(bareDir, 0o755))
 	bare := filepath.Join(bareDir, "github.com", "acme", "rootrepo.git")
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
@@ -2642,12 +2658,12 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	runGit(t, tmpWork, "config", "user.email", "test@test.com")
 	runGit(t, tmpWork, "config", "user.name", "Test")
 
-	require.NoError(t, os.WriteFile(filepath.Join(tmpWork, "root.txt"), []byte("root\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(tmpWork, "root.txt"), []byte("root\n"), 0o644))
 	runGit(t, tmpWork, "add", ".")
 	runGit(t, tmpWork, "commit", "-m", "root commit")
 	rootSHA := testGitSHA(t, tmpWork, "HEAD")
 
-	require.NoError(t, os.WriteFile(filepath.Join(tmpWork, "second.txt"), []byte("second\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(tmpWork, "second.txt"), []byte("second\n"), 0o644))
 	runGit(t, tmpWork, "add", ".")
 	runGit(t, tmpWork, "commit", "-m", "second commit")
 	runGit(t, tmpWork, "push", "origin", "main")
@@ -2662,15 +2678,15 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	seedPR(t, database, "acme", "rootrepo", 1)
 	ctx := context.Background()
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "rootrepo")
-	require.NoError(t, err)
-	require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
 
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
 		context.Background(), "acme", "rootrepo", 1,
 		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{Commit: &rootSHA},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
 }
