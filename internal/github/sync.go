@@ -131,11 +131,14 @@ type Syncer struct {
 	watchMu            sync.Mutex
 	parallelism        atomic.Int32
 	running            atomic.Bool
-	stopped            atomic.Bool
 	status             atomic.Value // stores *SyncStatus
 	stopCh             chan struct{}
 	stopOnce           sync.Once
 	wg                 sync.WaitGroup
+	// lifecycleMu serializes TriggerRun registration with Stop so
+	// no wg.Add can happen after Stop begins wg.Wait.
+	lifecycleMu sync.Mutex
+	stopped     bool // guarded by lifecycleMu
 	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
 	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
 	displayNames       map[string]string    // "host\x00login" -> display name, per sync run
@@ -422,14 +425,20 @@ func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
 // The caller's ctx is honored too, so per-request deadlines still
 // apply.
 func (s *Syncer) TriggerRun(ctx context.Context) {
-	if s.stopped.Load() {
+	s.lifecycleMu.Lock()
+	if s.stopped {
+		s.lifecycleMu.Unlock()
 		return
 	}
 	merged, cancel := s.mergeWithRunCtx(ctx)
-	s.wg.Go(func() {
+	s.wg.Add(1)
+	s.lifecycleMu.Unlock()
+
+	go func() {
+		defer s.wg.Done()
 		defer cancel()
 		s.RunOnce(merged)
-	})
+	}()
 }
 
 // clientFor returns the Client for the given repo's host,
@@ -706,7 +715,10 @@ const stopGracePeriod = 30 * time.Second
 // ignores ctx.
 func (s *Syncer) Stop() {
 	s.stopOnce.Do(func() {
-		s.stopped.Store(true)
+		s.lifecycleMu.Lock()
+		s.stopped = true
+		s.lifecycleMu.Unlock()
+
 		close(s.stopCh)
 		s.runCtxMu.Lock()
 		cancel := s.runCancel
