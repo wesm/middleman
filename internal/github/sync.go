@@ -521,8 +521,25 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // The caller's ctx and the syncer's internal lifetime ctx (canceled
 // by Stop) are both honored: either one unblocks any in-flight work.
 func (s *Syncer) Start(ctx context.Context) {
+	s.lifecycleMu.Lock()
+	if s.stopped {
+		s.lifecycleMu.Unlock()
+		return
+	}
+
 	startMerged, startCancel := s.mergeWithRunCtx(ctx)
-	s.wg.Go(func() {
+	s.wg.Add(1)
+
+	watchInt := s.watchInterval
+	if watchInt <= 0 {
+		watchInt = 30 * time.Second
+	}
+	watchMerged, watchCancel := s.mergeWithRunCtx(ctx)
+	s.wg.Add(1)
+	s.lifecycleMu.Unlock()
+
+	go func() {
+		defer s.wg.Done()
 		defer startCancel()
 		s.RunOnce(startMerged)
 		ticker := time.NewTicker(s.interval)
@@ -537,14 +554,10 @@ func (s *Syncer) Start(ctx context.Context) {
 				return
 			}
 		}
-	})
+	}()
 
-	watchInt := s.watchInterval
-	if watchInt <= 0 {
-		watchInt = 30 * time.Second
-	}
-	watchMerged, watchCancel := s.mergeWithRunCtx(ctx)
-	s.wg.Go(func() {
+	go func() {
+		defer s.wg.Done()
 		defer watchCancel()
 		ticker := time.NewTicker(watchInt)
 		defer ticker.Stop()
@@ -558,7 +571,7 @@ func (s *Syncer) Start(ctx context.Context) {
 				return
 			}
 		}
-	})
+	}()
 }
 
 // syncWatchedMRs syncs each MR on the watch list via SyncMR.
