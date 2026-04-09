@@ -3111,7 +3111,8 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	// Cycle 1: PR list fails → failMR set, issues unaffected.
 	syncer.RunOnce(ctx)
 
-	mr, _ := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
 	assert.Nil(mr, "MR should not be upserted when PR list failed")
 
 	v, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
@@ -3137,12 +3138,84 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	assert.True(mc.issuesCached,
 		"issue cache should stay warm when only MR path failed")
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(mr, "MR should be upserted after successful retry")
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
+}
+
+// TestSyncerMRDetailFailureRetries verifies that when fetchMRDetail
+// fails during timeline refresh (via ListReviews error), the MR's
+// detail_fetched_at stays nil so the detail queue picks it up again
+// on the next cycle.
+func TestSyncerMRDetailFailureRetries(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+	ciState := "success"
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.openIssues = []*gh.Issue{}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
+	// Timeline refresh fails at ListReviews during detail fetch.
+	mc.listReviewsErr = fmt.Errorf("transient reviews failure")
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, 10000,
+	)
+
+	// Cycle 1: index upserts MR, detail drain calls fetchMRDetail →
+	// refreshTimeline fails at ListReviews → detail_fetched_at stays nil.
+	syncer.RunOnce(ctx)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr, "MR should be upserted by index phase")
+	assert.Nil(mr.DetailFetchedAt,
+		"detail_fetched_at should be nil after failed detail fetch")
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events, "no events should exist after failed timeline refresh")
+
+	// Clear error, add a review for cycle 2.
+	mc.listReviewsErr = nil
+	reviewID := int64(500)
+	reviewState := "APPROVED"
+	reviewUser := "reviewer"
+	reviewBody := "lgtm"
+	mc.reviews = []*gh.PullRequestReview{{
+		ID:          &reviewID,
+		State:       &reviewState,
+		Body:        &reviewBody,
+		SubmittedAt: makeTimestamp(now),
+		User:        &gh.User{Login: &reviewUser},
+	}}
+
+	// Cycle 2: detail drain picks up MR again (detail_fetched_at nil)
+	// → fetchMRDetail succeeds → timeline events land.
+	syncer.RunOnce(ctx)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.NotNil(mr.DetailFetchedAt,
+		"detail_fetched_at should be set after successful detail fetch")
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.NotEmpty(events, "review event should be persisted after detail retry")
 }
 
 // blockingCtxMockClient blocks in ListOpenPullRequests until either
