@@ -73,7 +73,7 @@
     }
 
     if (!worst.known) {
-      return { text: "", level: "normal" };
+      return { text: "GitHub: --", level: "normal" };
     }
 
     const globalUsed = worst.rate_limit - worst.rate_remaining;

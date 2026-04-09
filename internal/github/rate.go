@@ -224,10 +224,7 @@ func (rt *RateTracker) HourStart() time.Time {
 // isQuotaStale returns true when quota data is unknown or
 // expired. Must be called with mu held.
 func (rt *RateTracker) isQuotaStale() bool {
-	if rt.remaining <= 0 && rt.limit <= 0 {
-		return true
-	}
-	if rt.limit <= 0 {
+	if rt.remaining < 0 || rt.limit <= 0 {
 		return true
 	}
 	if rt.resetAt != nil && !time.Now().Before(*rt.resetAt) {
@@ -247,7 +244,8 @@ func (rt *RateTracker) rollIfNeeded() {
 			rt.count = 0
 			rt.hourStart = time.Now().UTC()
 			rt.remaining = -1
-			rt.limit = -1
+			// Keep rt.limit — the account rate cap (e.g. 5000)
+			// does not change between windows.
 			rt.resetAt = nil
 			rt.persist()
 		}
@@ -258,7 +256,7 @@ func (rt *RateTracker) rollIfNeeded() {
 		rt.count = 0
 		rt.hourStart = now
 		rt.remaining = -1
-		rt.limit = -1
+		// Keep rt.limit — same reasoning as above.
 	}
 }
 
