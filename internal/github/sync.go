@@ -869,26 +869,32 @@ func (s *Syncer) runWorker(
 			return
 		}
 		done := state.completed.Add(1)
-		// Only publish intermediate progress. Skip the final
-		// "total/total" — the detail drain and backfill phases
-		// still run after all index syncs finish, so showing
-		// "5/5" while still running is misleading.
-		if int(done) < state.total {
-			for {
-				cur := state.maxShown.Load()
-				if done <= cur {
-					break
-				}
-				if state.maxShown.CompareAndSwap(cur, done) {
-					s.publishStatus(&SyncStatus{
-						Running: true,
-						Progress: fmt.Sprintf(
-							"%d/%d", done, state.total,
-						),
-					})
-					break
-				}
-			}
+		s.publishMonotonicProgress(state, done)
+	}
+}
+
+// publishMonotonicProgress publishes a progress update only if done
+// is the highest value seen so far. Skips the final "total/total"
+// because detail drain and backfill still run after index completes.
+// Both worker completions and throttled-repo skips use this to
+// guarantee SSE progress never regresses.
+func (s *Syncer) publishMonotonicProgress(
+	state *runState, done int32,
+) {
+	if int(done) >= state.total {
+		return
+	}
+	for {
+		cur := state.maxShown.Load()
+		if done <= cur {
+			return
+		}
+		if state.maxShown.CompareAndSwap(cur, done) {
+			s.publishStatus(&SyncStatus{
+				Running:  true,
+				Progress: fmt.Sprintf("%d/%d", done, state.total),
+			})
+			return
 		}
 	}
 }
@@ -986,13 +992,8 @@ dispatch:
 		}
 		if !eligibleHosts[host] {
 			results[i].Error = "skipped: rate limit throttled"
-			done := int(completed.Add(1))
-			if done < total {
-				s.publishStatus(&SyncStatus{
-					Running:  true,
-					Progress: fmt.Sprintf("%d/%d", done, total),
-				})
-			}
+			done := completed.Add(1)
+			s.publishMonotonicProgress(state, done)
 			continue
 		}
 		// Check ctx before entering the select. Go's select picks
