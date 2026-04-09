@@ -291,6 +291,7 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.triggerSync)
 	huma.Get(api, "/sync/status", s.syncStatus)
 	huma.Get(api, "/rate-limits", s.getRateLimits)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/commits", s.getCommits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
 }
@@ -1407,6 +1408,49 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 	return repoID, nil
 }
 
+// --- Commits ---
+
+type getCommitsOutput struct {
+	Body commitsResponse
+}
+
+func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
+	if s.clones == nil {
+		return nil, huma.Error503ServiceUnavailable("commits not available: clone manager not configured")
+	}
+
+	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to look up PR")
+	}
+	if shas == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
+		return nil, huma.Error404NotFound("commits not available for this pull request")
+	}
+
+	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, huma.Error404NotFound("commits not available: referenced commit not found")
+		}
+		return nil, huma.Error502BadGateway("failed to list commits: " + err.Error())
+	}
+
+	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
+	for i, c := range commits {
+		resp.Commits[i] = commitResponse{
+			SHA:        c.SHA,
+			Message:    c.Message,
+			AuthorName: c.AuthorName,
+			AuthoredAt: c.AuthoredAt,
+		}
+	}
+	return &getCommitsOutput{Body: resp}, nil
+}
+
 // --- Diff ---
 
 type getDiffInput struct {
@@ -1414,6 +1458,9 @@ type getDiffInput struct {
 	Name       string `path:"name"`
 	Number     int    `path:"number"`
 	Whitespace string `query:"whitespace"`
+	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
+	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
 type getDiffOutput struct {
@@ -1436,9 +1483,53 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		return nil, huma.Error404NotFound("diff not available for this pull request")
 	}
 
-	hideWhitespace := input.Whitespace == "hide"
 	host := s.syncer.HostForRepo(input.Owner, input.Name)
-	result, err := s.clones.Diff(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA, hideWhitespace)
+	hideWhitespace := input.Whitespace == "hide"
+
+	// Determine diff range based on scope query params.
+	diffFrom := shas.MergeBaseSHA
+	diffTo := shas.DiffHeadSHA
+
+	hasCommit := input.Commit != ""
+	hasFrom := input.From != ""
+	hasTo := input.To != ""
+
+	switch {
+	case !hasCommit && !hasFrom && !hasTo:
+		// Default: full PR diff. diffFrom/diffTo already set.
+
+	case hasCommit && !hasFrom && !hasTo:
+		if _, err := s.validateSHAs(ctx, host, input, shas, input.Commit); err != nil {
+			return nil, err
+		}
+		parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.Commit)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
+		}
+		diffFrom = parent
+		diffTo = input.Commit
+
+	case !hasCommit && hasFrom && hasTo:
+		indexMap, err := s.validateSHAs(ctx, host, input, shas, input.From, input.To)
+		if err != nil {
+			return nil, err
+		}
+		// In newest-first order, "from" (older) must have a higher index than "to" (newer).
+		if indexMap[input.From] <= indexMap[input.To] {
+			return nil, huma.Error400BadRequest("invalid range: 'from' must be older than 'to'")
+		}
+		parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.From)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
+		}
+		diffFrom = parent
+		diffTo = input.To
+
+	default:
+		return nil, huma.Error400BadRequest("invalid scope: use 'commit' alone or 'from'+'to' together")
+	}
+
+	result, err := s.clones.Diff(ctx, host, input.Owner, input.Name, diffFrom, diffTo, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
@@ -1498,4 +1589,29 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 		Stale: shas.Stale(),
 		Files: files,
 	}}, nil
+}
+
+// validateSHAs checks that all provided SHAs are in the PR's first-parent commit list.
+// Returns a SHA -> index map (newest-first order) so callers can check range ordering.
+func (s *Server) validateSHAs(
+	ctx context.Context,
+	host string,
+	input *getDiffInput,
+	shas *db.DiffSHAs,
+	userSHAs ...string,
+) (map[string]int, error) {
+	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to list commits for validation: " + err.Error())
+	}
+	indexMap := make(map[string]int, len(commits))
+	for i, c := range commits {
+		indexMap[c.SHA] = i
+	}
+	for _, sha := range userSHAs {
+		if _, ok := indexMap[sha]; !ok {
+			return nil, huma.Error400BadRequest("sha not in pull request: " + sha)
+		}
+	}
+	return indexMap, nil
 }

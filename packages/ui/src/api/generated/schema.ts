@@ -256,6 +256,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/pulls/{number}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name pulls by number commits */
+        get: operations["get-repos-by-owner-by-name-pulls-by-number-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}/diff": {
         parameters: {
             query?: never;
@@ -488,6 +505,29 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        CommitResponse: {
+            /** @description Commit author display name */
+            author_name: string;
+            /**
+             * Format: date-time
+             * @description Commit author date (RFC3339)
+             */
+            authored_at: string;
+            /** @description First line of commit message */
+            message: string;
+            /** @description Full commit SHA */
+            sha: string;
+        };
+        CommitsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CommitsResponse.json
+             */
+            readonly $schema?: string;
+            /** @description Commits in newest-first order */
+            commits: components["schemas"]["CommitResponse"][] | null;
         };
         DiffFile: {
             /** Format: int64 */
@@ -1540,10 +1580,49 @@ export interface operations {
             };
         };
     };
+    "get-repos-by-owner-by-name-pulls-by-number-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "get-repos-by-owner-by-name-pulls-by-number-diff": {
         parameters: {
             query?: {
                 whitespace?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
             };
             header?: never;
             path: {

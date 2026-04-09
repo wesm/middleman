@@ -3,6 +3,7 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
+  import DiffSidebar from "./DiffSidebar.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
 
@@ -79,9 +80,10 @@
   function handleKeydown(e: KeyboardEvent): void {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    if (!diff || diff.files.length === 0) return;
+    if ((e.target as HTMLElement).isContentEditable) return;
 
     if (e.key === "j" || e.key === "k") {
+      if (!diff || diff.files.length === 0) return;
       e.preventDefault();
       const paths = diff.files.map((f) => f.path);
       const currentIdx = diffStore.getActiveFile() ? paths.indexOf(diffStore.getActiveFile()!) : -1;
@@ -93,6 +95,16 @@
       }
       const nextPath = paths[nextIdx] ?? null;
       if (nextPath) diffStore.requestScrollToFile(nextPath);
+    }
+
+    if (e.key === "[" || e.key === "]") {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      if (e.key === "[") {
+        diffStore.stepPrev();
+      } else {
+        diffStore.stepNext();
+      }
     }
   }
 
@@ -123,6 +135,13 @@
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>
     {:else if diff}
+      <DiffSidebar
+        files={diff.files}
+        activeFile={diffStore.getActiveFile()}
+        whitespaceOnlyCount={diff.whitespace_only_count}
+        hideWhitespace={diffStore.getHideWhitespace()}
+        onselect={diffStore.requestScrollToFile}
+      />
       <div class="diff-main">
         <DiffToolbar />
         <div

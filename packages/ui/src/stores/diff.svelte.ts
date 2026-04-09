@@ -1,4 +1,9 @@
-import type { DiffResult, FilesResult } from "../api/types.js";
+import type { DiffResult, FilesResult, CommitInfo } from "../api/types.js";
+
+export type DiffScope =
+  | { kind: "head" }
+  | { kind: "commit"; sha: string }
+  | { kind: "range"; fromSha: string; toSha: string };
 
 export interface DiffStoreOptions {
   getBasePath?: () => string;
@@ -86,6 +91,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let activeFile = $state<string | null>(null);
   let scrollTarget = $state<string | null>(null);
   let scrolling = $state(false);
+  let commits = $state<CommitInfo[] | null>(null);
+  let commitsLoading = $state(false);
+  let commitsError = $state<string | null>(null);
+  let scope = $state<DiffScope>({ kind: "head" });
 
   let currentOwner = "";
   let currentName = "";
@@ -190,12 +199,20 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     storeError = null;
     try {
       const basePath = getBasePath();
+      const reloadParams = new URLSearchParams();
+      if (hideWhitespace) reloadParams.set("whitespace", "hide");
+      if (scope.kind === "commit") reloadParams.set("commit", scope.sha);
+      if (scope.kind === "range") {
+        reloadParams.set("from", scope.fromSha);
+        reloadParams.set("to", scope.toSha);
+      }
+      const reloadQs = reloadParams.toString();
       const url =
         `${basePath}api/v1/repos/` +
         `${encodeURIComponent(currentOwner)}/` +
         `${encodeURIComponent(currentName)}/` +
         `pulls/${currentNumber}/diff` +
-        `${hideWhitespace ? "?whitespace=hide" : ""}`;
+        (reloadQs ? `?${reloadQs}` : "");
       const data = await fetchJSON(url, ac.signal);
       if (abortController !== ac) return;
       diff = data as DiffResult;
@@ -267,9 +284,19 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     name: string,
     number: number,
   ): Promise<void> {
+    const prChanged =
+      owner !== currentOwner ||
+      name !== currentName ||
+      number !== currentNumber;
     currentOwner = owner;
     currentName = name;
     currentNumber = number;
+    if (prChanged) {
+      scope = { kind: "head" };
+      commits = null;
+      commitsLoading = false;
+      commitsError = null;
+    }
 
     abortController?.abort();
     fileListAbortController?.abort();
@@ -316,9 +343,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     const diffPromise = (async () => {
       try {
-        const url =
-          `${prefix}/diff` +
-          `${hideWhitespace ? "?whitespace=hide" : ""}`;
+        const params = new URLSearchParams();
+        if (hideWhitespace) params.set("whitespace", "hide");
+        if (scope.kind === "commit") params.set("commit", scope.sha);
+        if (scope.kind === "range") {
+          params.set("from", scope.fromSha);
+          params.set("to", scope.toSha);
+        }
+        const qs = params.toString();
+        const url = `${prefix}/diff${qs ? `?${qs}` : ""}`;
         const data = await fetchJSON(url, diffAc.signal);
         if (abortController !== diffAc) return;
         diff = data as DiffResult;
@@ -360,9 +393,130 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     activeFile = null;
     scrollTarget = null;
     scrolling = false;
+    commits = null;
+    commitsLoading = false;
+    commitsError = null;
+    scope = { kind: "head" };
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
+  }
+
+  async function loadCommits(): Promise<void> {
+    if (commits || commitsLoading) return;
+    if (!currentOwner || !currentName || !currentNumber) return;
+
+    commitsLoading = true;
+    commitsError = null;
+    const owner = currentOwner;
+    const name = currentName;
+    const number = currentNumber;
+    try {
+      const basePath = getBasePath();
+      const url =
+        `${basePath}api/v1/repos/` +
+        `${encodeURIComponent(owner)}/` +
+        `${encodeURIComponent(name)}/` +
+        `pulls/${number}/commits`;
+      const response = await fetch(url);
+      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(
+          (body as Record<string, string>).detail ??
+            (body as Record<string, string>).title ??
+            `HTTP ${response.status}`,
+        );
+      }
+      const data = (await response.json()) as { commits: CommitInfo[] };
+      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      commits = data.commits;
+    } catch (err) {
+      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      commitsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (currentOwner === owner && currentName === name && currentNumber === number) {
+        commitsLoading = false;
+      }
+    }
+  }
+
+  function getScope(): DiffScope {
+    return scope;
+  }
+
+  function getCommits(): CommitInfo[] | null {
+    return commits;
+  }
+
+  function isCommitsLoading(): boolean {
+    return commitsLoading;
+  }
+
+  function getCommitsError(): string | null {
+    return commitsError;
+  }
+
+  function selectCommit(sha: string): void {
+    scope = { kind: "commit", sha };
+    if (currentOwner && currentName && currentNumber) {
+      void loadDiff(currentOwner, currentName, currentNumber);
+    }
+  }
+
+  function selectRange(fromSha: string, toSha: string): void {
+    if (!commits) return;
+    const fromIdx = commits.findIndex((c) => c.sha === fromSha);
+    const toIdx = commits.findIndex((c) => c.sha === toSha);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [older, newer] = fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
+    scope = { kind: "range", fromSha: older, toSha: newer };
+    if (currentOwner && currentName && currentNumber) {
+      void loadDiff(currentOwner, currentName, currentNumber);
+    }
+  }
+
+  function resetToHead(): void {
+    scope = { kind: "head" };
+    if (currentOwner && currentName && currentNumber) {
+      void loadDiff(currentOwner, currentName, currentNumber);
+    }
+  }
+
+  function stepPrev(): void {
+    if (!commits) {
+      void loadCommits();
+      return;
+    }
+    if (commits.length === 0) return;
+    if (scope.kind === "head") {
+      selectCommit(commits[0].sha);
+    } else if (scope.kind === "commit") {
+      const idx = commits.findIndex((c) => c.sha === scope.sha);
+      if (idx < commits.length - 1) selectCommit(commits[idx + 1].sha);
+    } else {
+      selectCommit(scope.fromSha);
+    }
+  }
+
+  function stepNext(): void {
+    if (!commits) {
+      void loadCommits();
+      return;
+    }
+    if (commits.length === 0) return;
+    if (scope.kind === "head") {
+      return;
+    } else if (scope.kind === "commit") {
+      const idx = commits.findIndex((c) => c.sha === scope.sha);
+      if (idx > 0) {
+        selectCommit(commits[idx - 1].sha);
+      } else {
+        resetToHead();
+      }
+    } else {
+      selectCommit(scope.toSha);
+    }
   }
 
   return {
@@ -386,6 +540,16 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     toggleFileCollapsed,
     loadDiff,
     clearDiff,
+    getScope,
+    getCommits,
+    isCommitsLoading,
+    getCommitsError,
+    loadCommits,
+    selectCommit,
+    selectRange,
+    resetToHead,
+    stepPrev,
+    stepNext,
   };
 }
 
