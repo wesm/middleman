@@ -104,6 +104,10 @@ func run(configPath string) error {
 	rateTrackers := make(
 		map[string]*ghclient.RateTracker, len(hostTokens),
 	)
+	budgetPerHour := cfg.BudgetPerHour()
+	budgets := make(
+		map[string]*ghclient.SyncBudget, len(hostTokens),
+	)
 	clients := make(
 		map[string]ghclient.Client, len(hostTokens),
 	)
@@ -114,8 +118,13 @@ func run(configPath string) error {
 		rateTrackers[host] = ghclient.NewRateTracker(
 			database, host,
 		)
+		if budgetPerHour > 0 {
+			budgets[host] = ghclient.NewSyncBudget(
+				budgetPerHour,
+			)
+		}
 		c, err := ghclient.NewClient(
-			token, host, rateTrackers[host],
+			token, host, rateTrackers[host], budgets[host],
 		)
 		if err != nil {
 			return fmt.Errorf(
@@ -141,8 +150,7 @@ func run(configPath string) error {
 
 	syncer := ghclient.NewSyncer(
 		clients, database, cloneMgr, repos,
-		cfg.SyncDuration(), rateTrackers,
-		cfg.BudgetPerHour(),
+		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
 	assets, err := web.Assets()

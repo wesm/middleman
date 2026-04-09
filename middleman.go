@@ -248,7 +248,7 @@ func New(opts Options) (*Instance, error) {
 		rt := ghclient.NewRateTracker(database, host)
 		rateTrackers[host] = rt
 		gh, cErr := ghclient.NewClient(
-			hostTokens[host], host, rt,
+			hostTokens[host], host, rt, nil,
 		)
 		if cErr != nil {
 			database.Close()
@@ -283,8 +283,7 @@ func New(opts Options) (*Instance, error) {
 
 	syncer := ghclient.NewSyncer(
 		clients, database, cloneMgr, refs,
-		cfg.SyncDuration(), rateTrackers,
-		cfg.BudgetPerHour(),
+		cfg.SyncDuration(), rateTrackers, nil,
 	)
 
 	if opts.WatchInterval > 0 {

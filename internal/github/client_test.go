@@ -14,25 +14,25 @@ import (
 var _ Client = (*liveClient)(nil)
 
 func TestNewClientReturnsNonNil(t *testing.T) {
-	c, err := NewClient("fake-token", "", nil)
+	c, err := NewClient("fake-token", "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEnterprise(t *testing.T) {
-	c, err := NewClient("test-token", "github.mycompany.com", nil)
+	c, err := NewClient("test-token", "github.mycompany.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientGitHubDotCom(t *testing.T) {
-	c, err := NewClient("test-token", "github.com", nil)
+	c, err := NewClient("test-token", "github.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEmptyHost(t *testing.T) {
-	c, err := NewClient("test-token", "", nil)
+	c, err := NewClient("test-token", "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
@@ -149,7 +149,7 @@ func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
 // silently dropping or reordering the wrap so the wired-up chain
 // stays in sync with the transport's contract.
 func TestNewClientWiresETagTransport(t *testing.T) {
-	c, err := NewClient("fake-token", "", nil)
+	c, err := NewClient("fake-token", "", nil, nil)
 	require.NoError(t, err)
 	lc, ok := c.(*liveClient)
 	require.Truef(t, ok, "expected *liveClient, got %T", c)

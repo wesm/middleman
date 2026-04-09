@@ -32,8 +32,16 @@ func openTestDB(t *testing.T) *db.DB {
 	return d
 }
 
+// testBudget builds a per-host budget map for use in NewSyncer calls.
+func testBudget(limit int) map[string]*SyncBudget {
+	return map[string]*SyncBudget{
+		"github.com": NewSyncBudget(limit),
+	}
+}
+
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
+	budget               *SyncBudget // optional: simulates transport counting
 	openPRs              []*gh.PullRequest
 	openIssues           []*gh.Issue
 	listOpenPRsErr       error
@@ -57,11 +65,18 @@ type mockClient struct {
 	invalidateCalls      atomic.Int32
 }
 
+func (m *mockClient) trackCall() {
+	if m.budget != nil {
+		m.budget.Spend(1)
+	}
+}
+
 func (m *mockClient) InvalidateListETagsForRepo(_, _ string, _ ...string) {
 	m.invalidateCalls.Add(1)
 }
 
 func (m *mockClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
+	m.trackCall()
 	m.listOpenPRsCalled = true
 	if m.listOpenPRsFn != nil {
 		return m.listOpenPRsFn(ctx, owner, repo)
@@ -73,6 +88,7 @@ func (m *mockClient) ListOpenPullRequests(ctx context.Context, owner, repo strin
 }
 
 func (m *mockClient) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+	m.trackCall()
 	if m.listOpenIssuesErr != nil {
 		return nil, m.listOpenIssuesErr
 	}
@@ -82,6 +98,7 @@ func (m *mockClient) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue
 func (m *mockClient) GetIssue(
 	ctx context.Context, owner, repo string, number int,
 ) (*gh.Issue, error) {
+	m.trackCall()
 	if m.getIssueFn != nil {
 		return m.getIssueFn(ctx, owner, repo, number)
 	}
@@ -89,6 +106,7 @@ func (m *mockClient) GetIssue(
 }
 
 func (m *mockClient) GetUser(_ context.Context, login string) (*gh.User, error) {
+	m.trackCall()
 	m.getUserCalls.Add(1)
 	name := "Display " + login
 	return &gh.User{Login: &login, Name: &name}, nil
@@ -97,6 +115,7 @@ func (m *mockClient) GetUser(_ context.Context, login string) (*gh.User, error) 
 func (m *mockClient) GetPullRequest(
 	ctx context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
+	m.trackCall()
 	if m.getPullRequestFn != nil {
 		return m.getPullRequestFn(ctx, owner, repo, number)
 	}
@@ -113,39 +132,47 @@ func (m *mockClient) GetPullRequest(
 }
 
 func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+	m.trackCall()
 	return m.comments, nil
 }
 
 func (m *mockClient) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
+	m.trackCall()
 	return m.reviews, nil
 }
 
 func (m *mockClient) ListCommits(_ context.Context, _, _ string, _ int) ([]*gh.RepositoryCommit, error) {
+	m.trackCall()
 	return m.commits, nil
 }
 
 func (m *mockClient) ListForcePushEvents(_ context.Context, _, _ string, _ int) ([]ForcePushEvent, error) {
+	m.trackCall()
 	return m.forcePushEvents, m.forcePushEventsErr
 }
 
 func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.CombinedStatus, error) {
+	m.trackCall()
 	m.getCombinedCalls.Add(1)
 	return m.ciStatus, nil
 }
 
 func (m *mockClient) ListCheckRunsForRef(_ context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
+	m.trackCall()
 	return m.checkRuns, nil
 }
 
 func (m *mockClient) ListWorkflowRunsForHeadSHA(
 	_ context.Context, _, _, _ string,
 ) ([]*gh.WorkflowRun, error) {
+	m.trackCall()
 	return m.workflowRuns, nil
 }
 
 func (m *mockClient) ApproveWorkflowRun(
 	ctx context.Context, owner, repo string, runID int64,
 ) error {
+	m.trackCall()
 	if m.approveWorkflowRunFn != nil {
 		return m.approveWorkflowRunFn(ctx, owner, repo, runID)
 	}
@@ -155,18 +182,21 @@ func (m *mockClient) ApproveWorkflowRun(
 func (m *mockClient) CreateIssueComment(
 	_ context.Context, _, _ string, _ int, _ string,
 ) (*gh.IssueComment, error) {
+	m.trackCall()
 	return nil, nil
 }
 
 func (m *mockClient) GetRepository(
 	_ context.Context, _, _ string,
 ) (*gh.Repository, error) {
+	m.trackCall()
 	return &gh.Repository{}, nil
 }
 
 func (m *mockClient) CreateReview(
 	_ context.Context, _, _ string, _ int, _ string, _ string,
 ) (*gh.PullRequestReview, error) {
+	m.trackCall()
 	id := int64(1)
 	state := "APPROVED"
 	return &gh.PullRequestReview{ID: &id, State: &state}, nil
@@ -175,6 +205,7 @@ func (m *mockClient) CreateReview(
 func (m *mockClient) MarkPullRequestReadyForReview(
 	_ context.Context, _, _ string, number int,
 ) (*gh.PullRequest, error) {
+	m.trackCall()
 	draft := false
 	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
 }
@@ -182,6 +213,7 @@ func (m *mockClient) MarkPullRequestReadyForReview(
 func (m *mockClient) MergePullRequest(
 	_ context.Context, _, _ string, _ int, _, _, _ string,
 ) (*gh.PullRequestMergeResult, error) {
+	m.trackCall()
 	merged := true
 	sha := "abc123"
 	msg := "merged"
@@ -193,24 +225,28 @@ func (m *mockClient) MergePullRequest(
 func (m *mockClient) EditPullRequest(
 	_ context.Context, _, _ string, _ int, state string,
 ) (*gh.PullRequest, error) {
+	m.trackCall()
 	return &gh.PullRequest{State: &state}, nil
 }
 
 func (m *mockClient) EditIssue(
 	_ context.Context, _, _ string, _ int, state string,
 ) (*gh.Issue, error) {
+	m.trackCall()
 	return &gh.Issue{State: &state}, nil
 }
 
 func (m *mockClient) ListPullRequestsPage(
 	_ context.Context, _, _, _ string, _ int,
 ) ([]*gh.PullRequest, bool, error) {
+	m.trackCall()
 	return nil, false, nil
 }
 
 func (m *mockClient) ListIssuesPage(
 	_ context.Context, _, _, _ string, _ int,
 ) ([]*gh.Issue, bool, error) {
+	m.trackCall()
 	return nil, false, nil
 }
 
@@ -247,7 +283,7 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 }
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
-	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil, nil)
 	syncer.Stop()
 	syncer.Stop() // must not panic
 }
@@ -323,7 +359,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
 	// PR should be in the DB.
@@ -383,7 +419,7 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -442,7 +478,7 @@ func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 		ciStatus:           &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -481,7 +517,7 @@ func TestSyncSingleFlight(t *testing.T) {
 	// Wrap in a counter client to detect calls.
 	_ = mc
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 
 	// Simulate a concurrent run already in progress.
 	syncer.running.Store(true)
@@ -519,7 +555,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
@@ -589,7 +625,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 		return p, nil
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 
 	// First sync: index scan upserts list data, detail drain fetches
 	// full PR (returns "unknown" MergeableState).
@@ -626,7 +662,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx)
 
 	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -664,7 +700,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 
 	before := time.Now()
 	syncer.RunOnce(ctx)
@@ -712,7 +748,7 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mock}, database, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Hour, nil, 0,
+		time.Hour, nil, nil,
 	)
 
 	syncer.Start(t.Context())
@@ -791,7 +827,7 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil, repos,
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 	syncer.SetParallelism(parallelism)
 
@@ -845,7 +881,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*RateTracker{"github.com": rt}, 0,
+		map[string]*RateTracker{"github.com": rt}, nil,
 	)
 
 	var completedCalled atomic.Bool
@@ -891,7 +927,7 @@ func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
 	mc := &mockClient{}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{}, time.Minute, nil, 0,
+		[]RepoRef{}, time.Minute, nil, nil,
 	)
 
 	var completedCalled atomic.Bool
@@ -958,7 +994,7 @@ func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	var completedCalled atomic.Bool
@@ -1025,7 +1061,7 @@ func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	var completedCalled atomic.Bool
@@ -1092,7 +1128,7 @@ func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}}, d, nil,
-		repos, time.Minute, nil, 0,
+		repos, time.Minute, nil, nil,
 	)
 	syncer.SetParallelism(4)
 
@@ -1130,7 +1166,7 @@ func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	err := syncer.SyncMR(context.Background(), "owner", "repo", 1)
@@ -1160,7 +1196,7 @@ func TestRunOnceSyncOpenMRSurvivesNilFullPR(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	// Must complete without panic.
@@ -1217,7 +1253,7 @@ func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": tc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	// Pre-load three repos so the worker would naturally drain
@@ -1315,7 +1351,7 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 			{Owner: "o", Name: "r1", PlatformHost: "github.com"},
 			{Owner: "o", Name: "r2", PlatformHost: "github.com"},
 		},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 	syncer.SetParallelism(2)
 
@@ -1358,7 +1394,7 @@ func TestIsTrackedRepo(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "corp", Name: "lib", PlatformHost: "github.com"},
-	}, time.Minute, nil, 0)
+	}, time.Minute, nil, nil)
 
 	assert.True(syncer.IsTrackedRepo("acme", "widget"))
 	assert.True(syncer.IsTrackedRepo("corp", "lib"))
@@ -1399,7 +1435,7 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}, time.Minute, nil, 0)
+	}, time.Minute, nil, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -1460,7 +1496,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}, time.Minute, nil, 0)
+	}, time.Minute, nil, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -1481,7 +1517,7 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	mc := &mockClient{}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}, time.Minute, nil, 0)
+	}, time.Minute, nil, nil)
 
 	_, err := syncer.SyncItemByNumber(ctx, "other", "repo", 1)
 	require.Error(err)
@@ -1515,7 +1551,7 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 		{Owner: "corp", Name: "internal", PlatformHost: "ghe.corp.com"},
 	}
 
-	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil, 0)
+	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil, nil)
 	syncer.RunOnce(ctx)
 
 	assert.True(ghMock.listOpenPRsCalled,
@@ -1541,7 +1577,7 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, 500,
+		time.Minute, nil, testBudget(500),
 	)
 
 	type hookCall struct {
@@ -1603,7 +1639,7 @@ func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil, 500,
+		time.Minute, nil, testBudget(500),
 	)
 
 	var gotJSON string
@@ -1638,7 +1674,7 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 			{Owner: "acme", Name: "lib", PlatformHost: "github.com"},
 		},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	var gotResults []RepoSyncResult
@@ -1673,7 +1709,7 @@ func TestNilHooksNoOp(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	// No hooks set -- should not panic.
@@ -1703,7 +1739,7 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil, 0, // bulk sync at 1h -- won't fire during test
+		time.Hour, nil, nil, // bulk sync at 1h -- won't fire during test
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1752,7 +1788,7 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil, 0,
+		time.Hour, nil, nil,
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1800,7 +1836,7 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil, 0,
+		time.Hour, nil, nil,
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1882,7 +1918,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 			PlatformHost: "github.com",
 		}},
 		time.Hour,
-		map[string]*RateTracker{"github.com": rt}, 0,
+		map[string]*RateTracker{"github.com": rt}, nil,
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1929,7 +1965,7 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 			Owner: "corp", Name: "internal",
 			PlatformHost: "ghes.corp.com",
 		}},
-		time.Hour, nil, 0,
+		time.Hour, nil, nil,
 	)
 
 	var hookedOwner, hookedName string
@@ -1985,7 +2021,7 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil, 0,
+		time.Hour, nil, nil,
 	)
 
 	callCount := 0
@@ -2050,7 +2086,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 		{Owner: "corp", Name: "internal", PlatformHost: "ghe.corp.com"},
 	}
 
-	syncer := NewSyncer(clients, d, nil, repos, time.Minute, trackers, 0)
+	syncer := NewSyncer(clients, d, nil, repos, time.Minute, trackers, nil)
 
 	var gotResults []RepoSyncResult
 	syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
@@ -2121,7 +2157,7 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": c}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	var syncCompletedCalls atomic.Int32
@@ -2153,6 +2189,7 @@ type detailTrackingClient struct {
 func (c *detailTrackingClient) GetPullRequest(
 	ctx context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
+	c.trackCall()
 	c.getPRCalls.Add(1)
 	return c.mockClient.GetPullRequest(ctx, owner, repo, number)
 }
@@ -2177,7 +2214,7 @@ func TestRunOnceIndexOnly(t *testing.T) {
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 
 	syncer.RunOnce(ctx)
@@ -2238,7 +2275,7 @@ func TestRunOnceDetailDrain(t *testing.T) {
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil, 500,
+		time.Minute, nil, testBudget(500),
 	)
 
 	syncer.RunOnce(ctx)
@@ -2277,21 +2314,27 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 		prs = append(prs, buildOpenPR(i, now))
 	}
 
+	// Index overhead: GetRepo(1) + ListPRs(1) + ListIssues(1) +
+	// GetUser(1, deduplicated by singleflight) = 4 calls. One PR
+	// detail = 8 calls. Budget of 15 covers index + 1 detail (12)
+	// with 3 remaining, which is below the 8 needed for a 2nd.
+	budget := testBudget(15)
 	mc := &detailTrackingClient{}
+	mc.budget = budget["github.com"]
 	mc.openPRs = prs
 	mc.comments = []*gh.IssueComment{}
 	mc.reviews = []*gh.PullRequestReview{}
 	mc.commits = []*gh.RepositoryCommit{}
 	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
 
-	// Budget only enough for ~1 PR detail fetch (7 calls worst case).
+	// Budget covers index overhead + 1 PR detail fetch, not 2.
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil, PRDetailWorstCase,
+		time.Minute, nil, budget,
 	)
 
 	syncer.RunOnce(ctx)
@@ -2320,9 +2363,9 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 		"budget should limit detail fetches to 1 PR")
 
 	// Budget should be spent.
-	budget := syncer.Budgets()["github.com"]
-	require.NotNil(budget)
-	assert.Positive(budget.Spent(),
+	hostBudget := syncer.Budgets()["github.com"]
+	require.NotNil(hostBudget)
+	assert.Positive(hostBudget.Spent(),
 		"budget should have been spent")
 }
 
@@ -2411,7 +2454,7 @@ func TestSyncMRSkipsGetUserWhenDisplayNameCached(t *testing.T) {
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
-		0,
+		nil,
 	)
 
 	// First sync: GetUser should be called to resolve display name
@@ -2448,7 +2491,7 @@ func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
-		0,
+		nil,
 	)
 
 	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
@@ -2485,7 +2528,7 @@ func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
-		0,
+		nil,
 	)
 
 	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
@@ -2515,7 +2558,7 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := NewSyncer(
 		map[string]Client{"github.com": mock},
-		d, nil, repos, time.Hour, nil, 0,
+		d, nil, repos, time.Hour, nil, nil,
 	)
 
 	var mu sync.Mutex
@@ -2550,7 +2593,7 @@ func TestSyncer_TriggerRunRunsRunOnce(t *testing.T) {
 	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := NewSyncer(
 		map[string]Client{"github.com": mock},
-		d, nil, repos, time.Hour, nil, 0,
+		d, nil, repos, time.Hour, nil, nil,
 	)
 
 	done := make(chan struct{}, 1)
@@ -2610,7 +2653,7 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
-		0,
+		nil,
 	)
 
 	var (
@@ -2657,7 +2700,7 @@ func TestSyncerHandles304OnIssueList(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
-		0,
+		nil,
 	)
 
 	var (
@@ -2702,7 +2745,7 @@ func TestSyncerRefreshesCIOnPRList304(t *testing.T) {
 	// Budget must be >0 so detail drain runs and populates CI.
 	seedSyncer := NewSyncer(
 		map[string]Client{"github.com": firstClient},
-		d, nil, repos, time.Minute, nil, 10000,
+		d, nil, repos, time.Minute, nil, testBudget(10000),
 	)
 	seedSyncer.RunOnce(ctx)
 
@@ -2725,7 +2768,7 @@ func TestSyncerRefreshesCIOnPRList304(t *testing.T) {
 	}
 	refreshSyncer := NewSyncer(
 		map[string]Client{"github.com": refreshClient},
-		d, nil, repos, time.Minute, nil, 0,
+		d, nil, repos, time.Minute, nil, nil,
 	)
 	refreshSyncer.RunOnce(ctx)
 
@@ -2760,27 +2803,29 @@ func TestSyncerCIRefreshOn304RespectsBudget(t *testing.T) {
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 	seedSyncer := NewSyncer(
 		map[string]Client{"github.com": firstClient},
-		d, nil, repos, time.Minute, nil, 10000,
+		d, nil, repos, time.Minute, nil, testBudget(10000),
 	)
 	seedSyncer.RunOnce(ctx)
 
-	// Second sync with 304 on PR list and budget=4 (enough for 2 PRs
-	// at 2 calls each, but not all 3).
+	// Second sync with 304 on PR list. Budget covers index overhead
+	// (GetRepo=1, ListPRs=1 [304], ListIssues=1 = 3 calls) plus
+	// 2 CI refreshes (2 calls each = 4), but not a 3rd (would need 11).
+	refreshBudget := testBudget(7)
 	pending := "pending"
 	refreshClient := &mockClient{
+		budget:         refreshBudget["github.com"],
 		listOpenPRsErr: notModifiedErr(),
 		ciStatus:       &gh.CombinedStatus{State: &ciState},
 		checkRuns:      []*gh.CheckRun{{Status: &pending}},
 	}
 	refreshSyncer := NewSyncer(
 		map[string]Client{"github.com": refreshClient},
-		d, nil, repos, time.Minute, nil, 4,
+		d, nil, repos, time.Minute, nil, refreshBudget,
 	)
 	refreshSyncer.RunOnce(ctx)
 
-	// With budget=4 and 2 calls per PR, only 2 of 3 PRs should get
-	// CI refreshed. Count how many have "pending" (refreshed) vs
-	// "success" (stale from seed).
+	// Index overhead = 3 calls. Budget = 7. Remaining = 4, enough
+	// for 2 CI refreshes (2 calls each) but not 3.
 	refreshed := 0
 	for _, n := range []int{1, 2, 3} {
 		pr, err := d.GetMergeRequest(ctx, "owner", "repo", n)
@@ -2831,7 +2876,7 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 		map[string]Client{"github.com": mc},
 		d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, 0,
+		time.Minute, nil, nil,
 	)
 	syncer.RunOnce(ctx)
 
@@ -2974,7 +3019,7 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil, 0,
+		d, nil, repos, time.Minute, nil, nil,
 	)
 
 	// Cycle 1: issue list succeeds, issue is upserted to DB, but
@@ -3063,7 +3108,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 
 	seedSyncer := NewSyncer(
 		map[string]Client{"github.com": seedMC},
-		d, nil, repos, time.Minute, nil, 0,
+		d, nil, repos, time.Minute, nil, nil,
 	)
 	seedSyncer.RunOnce(ctx)
 
@@ -3084,7 +3129,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil, 0,
+		d, nil, repos, time.Minute, nil, nil,
 	)
 
 	// Cycle 1: list succeeds (empty), closure detection finds #7,
@@ -3163,7 +3208,7 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil, 0,
+		d, nil, repos, time.Minute, nil, nil,
 	)
 
 	// Cycle 1: PR list fails → failMR set, issues unaffected.
@@ -3230,7 +3275,7 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil, 10000,
+		d, nil, repos, time.Minute, nil, testBudget(10000),
 	)
 
 	// Cycle 1: index upserts MR, detail drain calls fetchMRDetail →
@@ -3326,7 +3371,7 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 		map[string]Client{"github.com": mock},
 		d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Hour, nil, 0,
+		time.Hour, nil, nil,
 	)
 
 	// The handler wraps the request ctx in context.WithoutCancel,

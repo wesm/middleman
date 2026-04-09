@@ -122,7 +122,6 @@ type Syncer struct {
 	clones        *gitclone.Manager
 	rateTrackers  map[string]*RateTracker // host -> tracker
 	budgets       map[string]*SyncBudget  // host -> budget
-	budgetPerHour int
 	repos         []RepoRef
 	reposMu       sync.Mutex
 	interval      time.Duration
@@ -280,8 +279,11 @@ func (s *Syncer) publishStatus(status *SyncStatus) {
 // NewSyncer creates a Syncer that polls the given repos on the
 // given interval. clients maps host -> Client; rateTrackers maps
 // host -> RateTracker. Both may contain nil values. clones may
-// be nil. budgetPerHour controls how many API calls the detail
-// drain may spend per host per hour (0 disables detail drain).
+// be nil. budgets maps host -> SyncBudget; nil or empty disables
+// detail drain and backfill. Budgets are created by the caller
+// (typically main.go) and wired into each Client's HTTP transport
+// at construction time so every sync-context RoundTrip is
+// automatically counted.
 func NewSyncer(
 	clients map[string]Client,
 	database *db.DB,
@@ -289,7 +291,7 @@ func NewSyncer(
 	repos []RepoRef,
 	interval time.Duration,
 	rateTrackers map[string]*RateTracker,
-	budgetPerHour int,
+	budgets map[string]*SyncBudget,
 ) *Syncer {
 	if clients == nil {
 		clients = make(map[string]Client)
@@ -297,24 +299,8 @@ func NewSyncer(
 	if rateTrackers == nil {
 		rateTrackers = make(map[string]*RateTracker)
 	}
-
-	// Collect unique hosts from repos and clients.
-	hostSet := make(map[string]struct{})
-	for _, r := range repos {
-		h := r.PlatformHost
-		if h == "" {
-			h = "github.com"
-		}
-		hostSet[h] = struct{}{}
-	}
-	for h := range clients {
-		hostSet[h] = struct{}{}
-	}
-	budgets := make(map[string]*SyncBudget, len(hostSet))
-	if budgetPerHour > 0 {
-		for h := range hostSet {
-			budgets[h] = NewSyncBudget(budgetPerHour)
-		}
+	if budgets == nil {
+		budgets = make(map[string]*SyncBudget)
 	}
 
 	s := &Syncer{
@@ -323,7 +309,6 @@ func NewSyncer(
 		clones:             clones,
 		rateTrackers:       rateTrackers,
 		budgets:            budgets,
-		budgetPerHour:      budgetPerHour,
 		repos:              repos,
 		interval:           interval,
 		nextSyncAfter:      make(map[string]time.Time),
@@ -631,6 +616,8 @@ func (s *Syncer) advanceNextSync(
 }
 
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
+	ctx = WithSyncBudget(ctx)
+
 	s.watchMu.Lock()
 	mrs := make([]WatchedMR, len(s.watchedMRs))
 	copy(mrs, s.watchedMRs)
@@ -918,6 +905,11 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 		return
 	}
 	defer s.running.Store(false)
+
+	// Mark context so the budget transport counts HTTP calls
+	// made during background sync. User-initiated server
+	// handler paths do not carry this key and are not counted.
+	ctx = WithSyncBudget(ctx)
 
 	s.reposMu.Lock()
 	repos := make([]RepoRef, len(s.repos))
@@ -1217,7 +1209,7 @@ func (s *Syncer) indexSyncRepo(
 			failedScope |= failMR
 		} else {
 			for _, mr := range openMRs {
-				if budget != nil && !budget.TrySpend(2) {
+				if budget != nil && !budget.CanSpend(2) {
 					slog.Debug("304 CI refresh skipped: budget exhausted",
 						"repo", repo.Owner+"/"+repo.Name,
 						"number", mr.Number,
@@ -1231,9 +1223,6 @@ func (s *Syncer) indexSyncRepo(
 						"err", err,
 					)
 					failedScope |= failMR
-					// No refund: both API calls (ListCheckRunsForRef +
-					// GetCombinedStatus) already executed before the
-					// error — only the DB write failed.
 				}
 			}
 		}
@@ -1952,7 +1941,7 @@ func (s *Syncer) drainDetailQueue(
 	ctx context.Context,
 	eligibleHosts map[string]bool,
 ) {
-	if s.budgetPerHour <= 0 {
+	if len(s.budgets) == 0 {
 		return
 	}
 
@@ -1991,8 +1980,12 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 
+		// Soft admission gate: check if the budget has nominal
+		// capacity for this item. The transport layer handles
+		// actual per-RoundTrip accounting; this prevents starting
+		// work we almost certainly can't afford.
 		worstCase := qi.WorstCaseCost()
-		if !budget.TrySpend(worstCase) {
+		if !budget.CanSpend(worstCase) {
 			exhausted[host] = true
 			continue
 		}
@@ -2010,7 +2003,6 @@ func (s *Syncer) drainDetailQueue(
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 				"err", err,
 			)
-			budget.Refund(worstCase)
 			continue
 		}
 
@@ -2034,19 +2026,14 @@ func (s *Syncer) drainDetailQueue(
 			}
 		}
 
-		var actualCalls int
 		if qi.Type == QueueItemPR {
-			actualCalls, err = s.fetchMRDetail(
+			_, err = s.fetchMRDetail(
 				ctx, repo, repoID, qi.Number, cloneFetchOK,
 			)
 		} else {
-			actualCalls, err = s.fetchIssueDetail(
+			_, err = s.fetchIssueDetail(
 				ctx, repo, repoID, qi.Number,
 			)
-		}
-
-		if actualCalls < worstCase {
-			budget.Refund(worstCase - actualCalls)
 		}
 
 		if err != nil {
@@ -2243,7 +2230,6 @@ func (s *Syncer) backfillRepo(
 				ctx, repo.Owner, repo.Name,
 				"closed", prPage,
 			)
-			budget.Spend(1)
 			if err != nil {
 				slog.Warn("backfill PRs failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -2295,7 +2281,6 @@ func (s *Syncer) backfillRepo(
 				ctx, repo.Owner, repo.Name,
 				"closed", issuePage,
 			)
-			budget.Spend(1)
 			if err != nil {
 				slog.Warn("backfill issues failed",
 					"repo", repo.Owner+"/"+repo.Name,

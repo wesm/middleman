@@ -66,18 +66,23 @@ func graphQLEndpointForHost(platformHost string) string {
 // NewClient creates a GitHub Client authenticated with the given
 // token. platformHost selects the API endpoint: "" or "github.com"
 // uses the public API; any other value creates an Enterprise
-// client. rateTracker may be nil if rate tracking is not needed.
+// client. rateTracker and budget may be nil.
 func NewClient(
 	token string,
 	platformHost string,
 	rateTracker *RateTracker,
+	budget *SyncBudget,
 ) (Client, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
 	et := &etagTransport{base: tc.Transport}
-	tc.Transport = et
+	if budget != nil {
+		tc.Transport = &budgetTransport{base: et, budget: budget}
+	} else {
+		tc.Transport = et
+	}
 
 	var ghClient *gh.Client
 	if platformHost == "" || platformHost == "github.com" {
