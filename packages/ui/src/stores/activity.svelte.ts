@@ -9,6 +9,13 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
 export type ItemFilter = "all" | "prs" | "issues";
 
+const DEFAULT_EVENT_TYPES = [
+  "comment",
+  "review",
+  "commit",
+  "force_push",
+] as const;
+
 const RANGE_MS: Record<TimeRange, number> = {
   "24h": 24 * 60 * 60 * 1000,
   "7d": 7 * 24 * 60 * 60 * 1000,
@@ -57,7 +64,7 @@ export function createActivityStore(
   let hideClosedMerged = $state(false);
   let hideBots = $state(false);
   let enabledEvents = $state<Set<string>>(
-    new Set(["comment", "review", "commit"]),
+    new Set(DEFAULT_EVENT_TYPES),
   );
   let itemFilter = $state<ItemFilter>("all");
   let initialized = false;
@@ -313,11 +320,7 @@ export function createActivityStore(
   function deriveFiltersFromTypes(): void {
     if (filterTypes.length === 0) {
       itemFilter = "all";
-      enabledEvents = new Set([
-        "comment",
-        "review",
-        "commit",
-      ]);
+      enabledEvents = new Set(DEFAULT_EVENT_TYPES);
       return;
     }
     const hasPR = filterTypes.includes("new_pr");
@@ -326,7 +329,7 @@ export function createActivityStore(
     else if (hasIssue && !hasPR) itemFilter = "issues";
     else itemFilter = "all";
     enabledEvents = new Set(
-      (["comment", "review", "commit"] as const).filter(
+      DEFAULT_EVENT_TYPES.filter(
         (t) => filterTypes.includes(t),
       ),
     );
