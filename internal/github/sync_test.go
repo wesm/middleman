@@ -2721,6 +2721,83 @@ func TestSyncerHandles304OnIssueList(t *testing.T) {
 		"304 on open-issue list must not surface as a sync error")
 }
 
+// TestSyncerPRList304MakesNoAPICalls verifies that a 304 on the open-PR
+// list endpoint triggers zero additional API calls for that repo's PRs.
+// CI freshness for unchanged PRs is handled by the detail drain's
+// priority scoring (ci_had_pending items get expedited refetches).
+func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	// Seed one open PR with pending CI via a full sync.
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	inProgress := "in_progress"
+	seedClient := &mockClient{
+		openPRs:   []*gh.PullRequest{buildOpenPR(1, now)},
+		checkRuns: []*gh.CheckRun{{Status: &inProgress}},
+	}
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+	seedSyncer := NewSyncer(
+		map[string]Client{"github.com": seedClient},
+		d, nil, repos, time.Minute, nil, 10000,
+	)
+	seedSyncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.Equal("pending", pr.CIStatus)
+
+	// Second sync: PR list returns 304. The mock has CI data that
+	// would change the status if called, but the 304 path must not
+	// call any CI endpoints.
+	completed := "completed"
+	success := "success"
+	spy := &callCountingClient{
+		mockClient: mockClient{
+			listOpenPRsErr: notModifiedErr(),
+			checkRuns: []*gh.CheckRun{
+				{Status: &completed, Conclusion: &success},
+			},
+		},
+	}
+	// budgetPerHour=0 disables detail drain so only index phase runs.
+	refreshSyncer := NewSyncer(
+		map[string]Client{"github.com": spy},
+		d, nil, repos, time.Minute, nil, 0,
+	)
+	refreshSyncer.RunOnce(ctx)
+
+	require.Equal(0, spy.ciCalls,
+		"304 on PR list must not trigger any CI API calls")
+
+	// CI state should be unchanged — still pending from seed.
+	pr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.Equal("pending", pr.CIStatus,
+		"CI should remain stale until detail drain refreshes it")
+}
+
+// callCountingClient wraps mockClient and counts CI-related API calls.
+type callCountingClient struct {
+	mockClient
+	ciCalls int
+}
+
+func (c *callCountingClient) ListCheckRunsForRef(
+	ctx context.Context, owner, repo, ref string,
+) ([]*gh.CheckRun, error) {
+	c.ciCalls++
+	return c.mockClient.ListCheckRunsForRef(ctx, owner, repo, ref)
+}
+
+func (c *callCountingClient) GetCombinedStatus(
+	ctx context.Context, owner, repo, ref string,
+) (*gh.CombinedStatus, error) {
+	c.ciCalls++
+	return c.mockClient.GetCombinedStatus(ctx, owner, repo, ref)
+}
+
 // TestSyncerSyncsIssuesOnPRList304 verifies that a 304 on the open-PR
 // list does not short-circuit issue sync. Issues have an independent
 // ETag and their own open-list endpoint, so a PR-list 304 must not
