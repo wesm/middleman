@@ -113,6 +113,9 @@ func TestSSE_ExitsCleanlyOnHubClose(t *testing.T) {
 }
 
 func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	s := newTestServer(t)
 	// Prime hub so first subscribe gets a sync_status — we read it
 	// as proof the handler has subscribed before we broadcast test events.
@@ -122,7 +125,7 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL + "/api/v1/events")
-	require.NoError(t, err)
+	require.NoError(err)
 	defer resp.Body.Close()
 
 	// Single reader goroutine parses SSE frames and sends event types
@@ -147,9 +150,9 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	// Read initial cached sync_status to confirm subscription is live
 	select {
 	case ev := <-events:
-		assert.Equal(t, "sync_status", ev)
+		assert.Equal("sync_status", ev)
 	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out waiting for initial sync_status")
+		require.FailNow("timed out waiting for initial sync_status")
 	}
 
 	// Now safe to broadcast — handler is subscribed
@@ -158,9 +161,9 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 
 	select {
 	case ev := <-events:
-		assert.Equal(t, "data_changed", ev, "valid event should arrive after marshal failure")
+		assert.Equal("data_changed", ev, "valid event should arrive after marshal failure")
 	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out waiting for data_changed after marshal failure")
+		require.FailNow("timed out waiting for data_changed after marshal failure")
 	}
 
 	// Close body to unblock reader goroutine, then drain channel.

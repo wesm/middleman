@@ -148,6 +148,8 @@ func TestEventHub_CacheUpdatedOnLatestSyncStatus(t *testing.T) {
 }
 
 func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
+	assert := assert.New(t)
+
 	hub := NewEventHub()
 	defer hub.Close()
 
@@ -157,12 +159,12 @@ func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
 	hub.Broadcast(Event{Type: "data_changed", Data: "live"})
 
 	ev1 := <-ch
-	assert.Equal(t, "sync_status", ev1.Type)
-	assert.Equal(t, "cached", ev1.Data)
+	assert.Equal("sync_status", ev1.Type)
+	assert.Equal("cached", ev1.Data)
 
 	ev2 := <-ch
-	assert.Equal(t, "data_changed", ev2.Type)
-	assert.Equal(t, "live", ev2.Data)
+	assert.Equal("data_changed", ev2.Type)
+	assert.Equal("live", ev2.Data)
 }
 
 func TestEventHub_CloseUnsubscribesAll(t *testing.T) {

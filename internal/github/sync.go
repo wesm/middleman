@@ -117,28 +117,28 @@ const defaultParallelism = 4
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	clients            map[string]Client // host -> client
-	db                 *db.DB
-	clones             *gitclone.Manager
-	rateTrackers       map[string]*RateTracker // host -> tracker
-	budgets            map[string]*SyncBudget  // host -> budget
-	budgetPerHour      int
-	repos              []RepoRef
-	reposMu            sync.Mutex
-	interval           time.Duration
-	watchInterval      time.Duration
-	watchedMRs         []WatchedMR
-	watchMu            sync.Mutex
-	parallelism        atomic.Int32
-	running            atomic.Bool
-	status             atomic.Value // stores *SyncStatus
-	stopCh             chan struct{}
-	stopOnce           sync.Once
-	wg                 sync.WaitGroup
+	clients       map[string]Client // host -> client
+	db            *db.DB
+	clones        *gitclone.Manager
+	rateTrackers  map[string]*RateTracker // host -> tracker
+	budgets       map[string]*SyncBudget  // host -> budget
+	budgetPerHour int
+	repos         []RepoRef
+	reposMu       sync.Mutex
+	interval      time.Duration
+	watchInterval time.Duration
+	watchedMRs    []WatchedMR
+	watchMu       sync.Mutex
+	parallelism   atomic.Int32
+	running       atomic.Bool
+	status        atomic.Value // stores *SyncStatus
+	stopCh        chan struct{}
+	stopOnce      sync.Once
+	wg            sync.WaitGroup
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
-	lifecycleMu sync.Mutex
-	stopped     bool // guarded by lifecycleMu
+	lifecycleMu        sync.Mutex
+	stopped            bool                 // guarded by lifecycleMu
 	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
 	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
 	displayNames       map[string]string    // "host\x00login" -> display name, per sync run
@@ -882,17 +882,25 @@ func (s *Syncer) runWorker(
 			return
 		}
 		done := state.completed.Add(1)
-		for {
-			cur := state.maxShown.Load()
-			if done <= cur {
-				break
-			}
-			if state.maxShown.CompareAndSwap(cur, done) {
-				s.publishStatus(&SyncStatus{
-					Running:  true,
-					Progress: fmt.Sprintf("%d/%d", done, state.total),
-				})
-				break
+		// Only publish intermediate progress. Skip the final
+		// "total/total" — the detail drain and backfill phases
+		// still run after all index syncs finish, so showing
+		// "5/5" while still running is misleading.
+		if int(done) < state.total {
+			for {
+				cur := state.maxShown.Load()
+				if done <= cur {
+					break
+				}
+				if state.maxShown.CompareAndSwap(cur, done) {
+					s.publishStatus(&SyncStatus{
+						Running: true,
+						Progress: fmt.Sprintf(
+							"%d/%d", done, state.total,
+						),
+					})
+					break
+				}
 			}
 		}
 	}
@@ -986,11 +994,13 @@ dispatch:
 		}
 		if !eligibleHosts[host] {
 			results[i].Error = "skipped: rate limit throttled"
-			completed.Add(1)
-			s.status.Store(&SyncStatus{
-				Running:  true,
-				Progress: fmt.Sprintf("%d/%d", completed.Load(), total),
-			})
+			done := int(completed.Add(1))
+			if done < total {
+				s.publishStatus(&SyncStatus{
+					Running:  true,
+					Progress: fmt.Sprintf("%d/%d", done, total),
+				})
+			}
 			continue
 		}
 		// Check ctx before entering the select. Go's select picks

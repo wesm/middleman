@@ -20,8 +20,11 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestETagTransport_StoresETagOn200(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		assert.Empty(t, r.Header.Get("If-None-Match"))
+		assert.Empty(r.Header.Get("If-None-Match"))
 		rec := httptest.NewRecorder()
 		rec.Header().Set("ETag", `"abc123"`)
 		rec.WriteHeader(200)
@@ -30,20 +33,20 @@ func TestETagTransport_StoresETagOn200(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", "https://api.github.com/repos/owner/name/pulls", nil)
 	resp, err := et.RoundTrip(req)
-	require.NoError(t, err)
-	assert.Equal(t, 200, resp.StatusCode)
+	require.NoError(err)
+	assert.Equal(200, resp.StatusCode)
 
 	// Second request should include If-None-Match
 	req2, _ := http.NewRequest("GET", "https://api.github.com/repos/owner/name/pulls", nil)
 	et.base = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		assert.Equal(t, `"abc123"`, r.Header.Get("If-None-Match"))
+		assert.Equal(`"abc123"`, r.Header.Get("If-None-Match"))
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(304)
 		return rec.Result(), nil
 	})
 	resp2, err := et.RoundTrip(req2)
-	require.NoError(t, err)
-	assert.Equal(t, 304, resp2.StatusCode)
+	require.NoError(err)
+	assert.Equal(304, resp2.StatusCode)
 }
 
 // TestETagTransport_304PreservesCachedAt verifies that a 304 does
@@ -51,6 +54,9 @@ func TestETagTransport_StoresETagOn200(t *testing.T) {
 // transport issues an unconditional fetch that detects list growth
 // beyond page 1.
 func TestETagTransport_304PreservesCachedAt(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	url := "https://api.github.com/repos/o/n/pulls"
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
@@ -63,13 +69,13 @@ func TestETagTransport_304PreservesCachedAt(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", url, nil)
 	_, err := et.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	val, ok := et.cache.Load(url)
-	require.True(t, ok)
+	require.True(ok)
 	got := val.(etagEntry)
-	assert.Equal(t, `"e1"`, got.etag, "etag must be preserved across 304")
-	assert.Equal(t, oldCachedAt, got.cachedAt,
+	assert.Equal(`"e1"`, got.etag, "etag must be preserved across 304")
+	assert.Equal(oldCachedAt, got.cachedAt,
 		"cachedAt must NOT be refreshed on 304")
 }
 
@@ -111,6 +117,8 @@ func TestETagTransport_PageGt1BypassesETag(t *testing.T) {
 }
 
 func TestETagTransport_EmptyETagEvictsCachedEntry(t *testing.T) {
+	require := require.New(t)
+
 	url := "https://api.github.com/repos/o/n/pulls"
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
@@ -122,9 +130,9 @@ func TestETagTransport_EmptyETagEvictsCachedEntry(t *testing.T) {
 	// First request caches an ETag.
 	req, _ := http.NewRequest("GET", url, nil)
 	_, err := et.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 	_, ok := et.cache.Load(url)
-	require.True(t, ok, "first response should cache")
+	require.True(ok, "first response should cache")
 
 	// Second request returns 200 with NO ETag header. Must evict so
 	// the next request does not send a stale If-None-Match.
@@ -135,7 +143,7 @@ func TestETagTransport_EmptyETagEvictsCachedEntry(t *testing.T) {
 	})
 	req2, _ := http.NewRequest("GET", url, nil)
 	_, err = et.RoundTrip(req2)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	_, ok = et.cache.Load(url)
 	assert.False(t, ok, "200 without ETag must evict cached entry")
@@ -226,6 +234,8 @@ func TestETagTransport_AllowlistedPathPositiveControl(t *testing.T) {
 }
 
 func TestETagTransport_SingleMultiSingleTransition(t *testing.T) {
+	assert := assert.New(t)
+
 	url := "https://api.github.com/repos/o/n/pulls"
 	phase := 0
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -250,22 +260,22 @@ func TestETagTransport_SingleMultiSingleTransition(t *testing.T) {
 	req, _ := http.NewRequest("GET", url, nil)
 	_, _ = et.RoundTrip(req)
 	_, ok := et.cache.Load(url)
-	assert.True(t, ok, "phase 0: single-page should cache")
+	assert.True(ok, "phase 0: single-page should cache")
 
 	// Phase 1: multi-page, should evict
 	phase = 1
 	req, _ = http.NewRequest("GET", url, nil)
 	_, _ = et.RoundTrip(req)
 	_, ok = et.cache.Load(url)
-	assert.False(t, ok, "phase 1: multi-page should evict")
+	assert.False(ok, "phase 1: multi-page should evict")
 
 	// Phase 2: back to single-page, should re-cache
 	phase = 2
 	req, _ = http.NewRequest("GET", url, nil)
 	_, _ = et.RoundTrip(req)
 	val, ok := et.cache.Load(url)
-	assert.True(t, ok, "phase 2: single-page again should cache")
-	assert.Equal(t, `"v3"`, val.(etagEntry).etag)
+	assert.True(ok, "phase 2: single-page again should cache")
+	assert.Equal(`"v3"`, val.(etagEntry).etag)
 }
 
 func TestETagTransport_TTLDrivenMultiPageDetection(t *testing.T) {
@@ -363,6 +373,9 @@ func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
 // forces an unconditional fetch. This is the safety net for
 // detecting list growth beyond page 1.
 func TestETagTransport_304DoesNotExtendCacheLifetime(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	url := "https://api.github.com/repos/o/n/pulls"
 	unconditionalCount := 0
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -380,28 +393,28 @@ func TestETagTransport_304DoesNotExtendCacheLifetime(t *testing.T) {
 	// Prime the cache with one unconditional fetch.
 	req, _ := http.NewRequest("GET", url, nil)
 	_, err := et.RoundTrip(req)
-	require.NoError(t, err)
-	require.Equal(t, 1, unconditionalCount)
+	require.NoError(err)
+	require.Equal(1, unconditionalCount)
 
 	val, ok := et.cache.Load(url)
-	require.True(t, ok, "initial 200 should populate cache")
+	require.True(ok, "initial 200 should populate cache")
 	original := val.(etagEntry).cachedAt
 
 	// Five consecutive 304s should NOT change cachedAt.
 	for i := range 5 {
 		req2, _ := http.NewRequest("GET", url, nil)
 		resp, err := et.RoundTrip(req2)
-		require.NoErrorf(t, err, "round trip #%d", i)
-		require.Equalf(t, 304, resp.StatusCode, "round trip #%d", i)
+		require.NoErrorf(err, "round trip #%d", i)
+		require.Equalf(304, resp.StatusCode, "round trip #%d", i)
 
 		val, ok := et.cache.Load(url)
-		require.Truef(t, ok, "cache must persist across 304 #%d", i)
+		require.Truef(ok, "cache must persist across 304 #%d", i)
 		got := val.(etagEntry).cachedAt
-		assert.Equalf(t, original, got,
+		assert.Equalf(original, got,
 			"304 #%d must NOT change cachedAt", i)
 	}
 
-	assert.Equal(t, 1, unconditionalCount,
+	assert.Equal(1, unconditionalCount,
 		"304s within TTL must not trigger additional unconditional fetches")
 }
 
@@ -523,16 +536,18 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 }
 
 func TestIsNotModified(t *testing.T) {
+	assert := assert.New(t)
+
 	resp304 := &http.Response{StatusCode: 304}
 	err304 := &gh.ErrorResponse{Response: resp304}
-	assert.True(t, IsNotModified(err304))
+	assert.True(IsNotModified(err304))
 
 	resp403 := &http.Response{StatusCode: 403}
 	err403 := &gh.ErrorResponse{Response: resp403}
-	assert.False(t, IsNotModified(err403))
+	assert.False(IsNotModified(err403))
 
-	assert.False(t, IsNotModified(errors.New("random error")))
+	assert.False(IsNotModified(errors.New("random error")))
 
 	errNilResp := &gh.ErrorResponse{Response: nil}
-	assert.False(t, IsNotModified(errNilResp), "nil Response should not panic")
+	assert.False(IsNotModified(errNilResp), "nil Response should not panic")
 }
