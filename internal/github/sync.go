@@ -131,6 +131,7 @@ type Syncer struct {
 	watchMu            sync.Mutex
 	parallelism        atomic.Int32
 	running            atomic.Bool
+	stopped            atomic.Bool
 	status             atomic.Value // stores *SyncStatus
 	stopCh             chan struct{}
 	stopOnce           sync.Once
@@ -421,6 +422,9 @@ func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
 // The caller's ctx is honored too, so per-request deadlines still
 // apply.
 func (s *Syncer) TriggerRun(ctx context.Context) {
+	if s.stopped.Load() {
+		return
+	}
 	merged, cancel := s.mergeWithRunCtx(ctx)
 	s.wg.Go(func() {
 		defer cancel()
@@ -702,6 +706,7 @@ const stopGracePeriod = 30 * time.Second
 // ignores ctx.
 func (s *Syncer) Stop() {
 	s.stopOnce.Do(func() {
+		s.stopped.Store(true)
 		close(s.stopCh)
 		s.runCtxMu.Lock()
 		cancel := s.runCancel
