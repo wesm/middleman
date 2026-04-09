@@ -84,3 +84,60 @@ func TestListForcePushEvents(t *testing.T) {
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
+
+func TestListForcePushEventsReturnsGraphQLErrors(t *testing.T) {
+	require := require.New(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"permission denied"}],"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+	}))
+	defer srv.Close()
+
+	c := &liveClient{
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL,
+	}
+
+	events, err := c.ListForcePushEvents(context.Background(), "owner", "repo", 42)
+	require.Nil(events)
+	require.ErrorContains(err, "permission denied")
+}
+
+func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "null repository",
+			body: `{"data":{"repository":null}}`,
+			want: "missing repository",
+		},
+		{
+			name: "null pull request",
+			body: `{"data":{"repository":{"pullRequest":null}}}`,
+			want: "missing pull request",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			c := &liveClient{
+				httpClient:      srv.Client(),
+				graphQLEndpoint: srv.URL,
+			}
+
+			events, err := c.ListForcePushEvents(context.Background(), "owner", "repo", 42)
+			require.Nil(events)
+			require.ErrorContains(err, tt.want)
+		})
+	}
+}

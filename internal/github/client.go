@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
@@ -295,9 +296,12 @@ func (c *liveClient) ListForcePushEvents(
 		Variables map[string]any `json:"variables"`
 	}
 	type graphQLResponse struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 		Data struct {
-			Repository struct {
-				PullRequest struct {
+			Repository *struct {
+				PullRequest *struct {
 					TimelineItems struct {
 						Nodes []struct {
 							Actor *struct {
@@ -377,6 +381,35 @@ func (c *liveClient) ListForcePushEvents(
 			)
 		}
 		_ = resp.Body.Close()
+
+		if len(decoded.Errors) > 0 {
+			messages := make([]string, 0, len(decoded.Errors))
+			for _, graphQLError := range decoded.Errors {
+				if graphQLError.Message != "" {
+					messages = append(messages, graphQLError.Message)
+				}
+			}
+			if len(messages) == 0 {
+				messages = append(messages, "unknown GraphQL error")
+			}
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: graphql errors: %s",
+				owner, repo, number, strings.Join(messages, "; "),
+			)
+		}
+
+		if decoded.Data.Repository == nil {
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: missing repository in graphql response",
+				owner, repo, number,
+			)
+		}
+		if decoded.Data.Repository.PullRequest == nil {
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: missing pull request in graphql response",
+				owner, repo, number,
+			)
+		}
 
 		for _, node := range decoded.Data.Repository.PullRequest.TimelineItems.Nodes {
 			event := ForcePushEvent{CreatedAt: node.CreatedAt}
