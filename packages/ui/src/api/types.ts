@@ -2,16 +2,18 @@ import type { components, operations } from "./generated/schema.js";
 
 export type Repo = components["schemas"]["Repo"];
 export type PullRequest =
-  components["schemas"]["MergeRequest"] &
-  Partial<Pick<components["schemas"]["MergeRequestResponse"], "repo_owner" | "repo_name" | "worktree_links">>;
+  components["schemas"]["MergeRequestResponse"];
 export type Issue =
-  components["schemas"]["Issue"] &
-  Partial<Pick<components["schemas"]["IssueResponse"], "repo_owner" | "repo_name">>;
+  components["schemas"]["IssueResponse"];
 export type IssueEvent = components["schemas"]["IssueEvent"];
 export type IssueDetail = components["schemas"]["IssueDetailResponse"];
 export type PREvent = components["schemas"]["MREvent"];
 export type PullDetail = components["schemas"]["MergeRequestDetailResponse"];
 export type SyncStatus = components["schemas"]["SyncStatus"];
+export type RateLimitHostStatus =
+  components["schemas"]["RateLimitHostStatus"];
+export type RateLimitsResponse =
+  components["schemas"]["RateLimitsResponse"];
 export type ActivityItem = components["schemas"]["ActivityItemResponse"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
 export type ActivityParams = NonNullable<operations["get-activity"]["parameters"]["query"]>;

@@ -129,10 +129,10 @@ func TestPurgeOtherHosts(t *testing.T) {
 
 	// Insert rate limits for both hosts.
 	require.NoError(d.UpsertRateLimit(
-		"github.com", 10, base, 4990, nil,
+		"github.com", 10, base, 4990, -1, nil,
 	))
 	require.NoError(d.UpsertRateLimit(
-		"ghes.company.com", 5, base, 4995, nil,
+		"ghes.company.com", 5, base, 4995, -1, nil,
 	))
 
 	// Purge all hosts except github.com.
@@ -711,7 +711,7 @@ func TestRateLimitCRUD(t *testing.T) {
 	resetAt := hourStart.Add(30 * time.Minute)
 
 	// Insert
-	require.NoError(d.UpsertRateLimit(host, 5, hourStart, 4995, &resetAt))
+	require.NoError(d.UpsertRateLimit(host, 5, hourStart, 4995, -1, &resetAt))
 
 	got, err := d.GetRateLimit(host)
 	require.NoError(err)
@@ -725,7 +725,7 @@ func TestRateLimitCRUD(t *testing.T) {
 
 	// Update via upsert
 	laterStart := hourStart.Add(time.Hour)
-	require.NoError(d.UpsertRateLimit(host, 10, laterStart, 4990, nil))
+	require.NoError(d.UpsertRateLimit(host, 10, laterStart, 4990, -1, nil))
 
 	got2, err := d.GetRateLimit(host)
 	require.NoError(err)

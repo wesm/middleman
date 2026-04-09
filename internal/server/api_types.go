@@ -14,9 +14,11 @@ type worktreeLinkResponse struct {
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
 type mergeRequestResponse struct {
 	db.MergeRequest
-	RepoOwner     string                 `json:"repo_owner"`
-	RepoName      string                 `json:"repo_name"`
-	WorktreeLinks []worktreeLinkResponse `json:"worktree_links"`
+	RepoOwner       string                 `json:"repo_owner"`
+	RepoName        string                 `json:"repo_name"`
+	WorktreeLinks   []worktreeLinkResponse `json:"worktree_links"`
+	DetailLoaded    bool                   `json:"detail_loaded"`
+	DetailFetchedAt string                 `json:"detail_fetched_at,omitempty"`
 }
 
 type workflowApprovalResponse struct {
@@ -33,6 +35,8 @@ type mergeRequestDetailResponse struct {
 	WorktreeLinks    []worktreeLinkResponse   `json:"worktree_links"`
 	WorkflowApproval workflowApprovalResponse `json:"workflow_approval"`
 	Warnings         []string                 `json:"warnings,omitempty"`
+	DetailLoaded     bool                     `json:"detail_loaded"`
+	DetailFetchedAt  string                   `json:"detail_fetched_at,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{
@@ -44,15 +48,19 @@ var validKanbanStates = map[string]bool{
 
 type issueResponse struct {
 	db.Issue
-	RepoOwner string `json:"repo_owner"`
-	RepoName  string `json:"repo_name"`
+	RepoOwner       string `json:"repo_owner"`
+	RepoName        string `json:"repo_name"`
+	DetailLoaded    bool   `json:"detail_loaded"`
+	DetailFetchedAt string `json:"detail_fetched_at,omitempty"`
 }
 
 type issueDetailResponse struct {
-	Issue     *db.Issue       `json:"issue"`
-	Events    []db.IssueEvent `json:"events"`
-	RepoOwner string          `json:"repo_owner"`
-	RepoName  string          `json:"repo_name"`
+	Issue           *db.Issue       `json:"issue"`
+	Events          []db.IssueEvent `json:"events"`
+	RepoOwner       string          `json:"repo_owner"`
+	RepoName        string          `json:"repo_name"`
+	DetailLoaded    bool            `json:"detail_loaded"`
+	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
 }
 
 type resolveItemResponse struct {
@@ -75,6 +83,25 @@ type mrImportMetadataResponse struct {
 	State            string `json:"state"`
 	IsDraft          bool   `json:"is_draft"`
 	Title            string `json:"title"`
+}
+
+type rateLimitHostStatus struct {
+	RequestsHour       int    `json:"requests_hour"`
+	RateRemaining      int    `json:"rate_remaining"`
+	RateLimit          int    `json:"rate_limit"`
+	RateResetAt        string `json:"rate_reset_at"`
+	HourStart          string `json:"hour_start"`
+	SyncThrottleFactor int    `json:"sync_throttle_factor"`
+	SyncPaused         bool   `json:"sync_paused"`
+	ReserveBuffer      int    `json:"reserve_buffer"`
+	Known              bool   `json:"known"`
+	BudgetLimit        int    `json:"budget_limit"`
+	BudgetSpent        int    `json:"budget_spent"`
+	BudgetRemaining    int    `json:"budget_remaining"`
+}
+
+type rateLimitsResponse struct {
+	Hosts map[string]rateLimitHostStatus `json:"hosts"`
 }
 
 const activitySafetyCap = 5000

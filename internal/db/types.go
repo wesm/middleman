@@ -3,18 +3,24 @@ package db
 import "time"
 
 type Repo struct {
-	ID                  int64
-	Platform            string
-	PlatformHost        string
-	Owner               string
-	Name                string
-	LastSyncStartedAt   *time.Time
-	LastSyncCompletedAt *time.Time
-	LastSyncError       string
-	AllowSquashMerge    bool
-	AllowMergeCommit    bool
-	AllowRebaseMerge    bool
-	CreatedAt           time.Time
+	ID                       int64
+	Platform                 string
+	PlatformHost             string
+	Owner                    string
+	Name                     string
+	LastSyncStartedAt        *time.Time
+	LastSyncCompletedAt      *time.Time
+	LastSyncError            string
+	AllowSquashMerge         bool
+	AllowMergeCommit         bool
+	AllowRebaseMerge         bool
+	BackfillPRPage           int
+	BackfillPRComplete       bool
+	BackfillPRCompletedAt    *time.Time
+	BackfillIssuePage        int
+	BackfillIssueComplete    bool
+	BackfillIssueCompletedAt *time.Time
+	CreatedAt                time.Time
 }
 
 func (r Repo) FullName() string {
@@ -53,6 +59,8 @@ type MergeRequest struct {
 	MergedAt          *time.Time
 	ClosedAt          *time.Time
 	MergeableState    string
+	DetailFetchedAt   *time.Time
+	CIHadPending      bool
 	KanbanStatus      string
 	Starred           bool
 }
@@ -97,22 +105,23 @@ type ListMergeRequestsOpts struct {
 }
 
 type Issue struct {
-	ID             int64
-	RepoID         int64
-	PlatformID     int64
-	Number         int
-	URL            string
-	Title          string
-	Author         string
-	State          string
-	Body           string
-	CommentCount   int
-	LabelsJSON     string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	LastActivityAt time.Time
-	ClosedAt       *time.Time
-	Starred        bool
+	ID              int64
+	RepoID          int64
+	PlatformID      int64
+	Number          int
+	URL             string
+	Title           string
+	Author          string
+	State           string
+	Body            string
+	CommentCount    int
+	LabelsJSON      string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	LastActivityAt  time.Time
+	ClosedAt        *time.Time
+	DetailFetchedAt *time.Time
+	Starred         bool
 }
 
 type IssueEvent struct {
@@ -162,6 +171,7 @@ type RateLimit struct {
 	RequestsHour  int
 	HourStart     time.Time
 	RateRemaining int
+	RateLimit     int
 	RateResetAt   *time.Time
 	UpdatedAt     time.Time
 }

@@ -76,7 +76,7 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 	t.Helper()
 	d := openTestDB(t)
 	mc := &mockClient{}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx) // creates repo row
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(t, err)
@@ -349,7 +349,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	}
 
 	d := openTestDB(t)
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
@@ -467,7 +467,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 
 	// First sync WITHOUT clone manager -- PR inserted as open, no diff SHAs.
 	d := openTestDB(t)
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
 	syncer.RunOnce(ctx)
 
 	shasEmpty, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
@@ -506,7 +506,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	// diff SHAs are empty.
 	mc.openPRs = nil
 	mc.singlePR = mergedPR
-	syncer2 := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer2 := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
 	syncer2.RunOnce(ctx)
 
 	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
@@ -590,7 +590,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	d := openTestDB(t)
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil)
+		time.Minute, nil, 0)
 
 	err := syncer.SyncMR(ctx, "owner", "repo", number)
 	require.Error(err)
@@ -699,7 +699,7 @@ func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	d := openTestDB(t)
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil)
+		time.Minute, nil, 0)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "owner", "repo", number)
 	require.Error(err)

@@ -47,6 +47,8 @@ type mockClient struct {
 	workflowRuns         []*gh.WorkflowRun
 	approveWorkflowRunFn func(context.Context, string, string, int64) error
 	listOpenPRsCalled    bool
+	getUserCalls         atomic.Int32
+	getCombinedCalls     atomic.Int32
 }
 
 func (m *mockClient) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -68,7 +70,9 @@ func (m *mockClient) GetIssue(
 }
 
 func (m *mockClient) GetUser(_ context.Context, login string) (*gh.User, error) {
-	return &gh.User{Login: &login}, nil
+	m.getUserCalls.Add(1)
+	name := "Display " + login
+	return &gh.User{Login: &login, Name: &name}, nil
 }
 
 func (m *mockClient) GetPullRequest(
@@ -106,6 +110,7 @@ func (m *mockClient) ListForcePushEvents(_ context.Context, _, _ string, _ int) 
 }
 
 func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.CombinedStatus, error) {
+	m.getCombinedCalls.Add(1)
 	return m.ciStatus, nil
 }
 
@@ -178,6 +183,18 @@ func (m *mockClient) EditIssue(
 	return &gh.Issue{State: &state}, nil
 }
 
+func (m *mockClient) ListPullRequestsPage(
+	_ context.Context, _, _, _ string, _ int,
+) ([]*gh.PullRequest, bool, error) {
+	return nil, false, nil
+}
+
+func (m *mockClient) ListIssuesPage(
+	_ context.Context, _, _, _ string, _ int,
+) ([]*gh.Issue, bool, error) {
+	return nil, false, nil
+}
+
 // makeTimestamp is a helper for constructing go-github Timestamp values.
 func makeTimestamp(t time.Time) *gh.Timestamp {
 	return &gh.Timestamp{Time: t}
@@ -211,7 +228,7 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 }
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
-	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil, 0)
 	syncer.Stop()
 	syncer.Stop() // must not panic
 }
@@ -287,7 +304,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	// PR should be in the DB.
@@ -302,7 +319,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	require.NotNil(ks)
 	assert.Equal("new", ks.Status)
 
-	// Commit event should have been stored.
+	// Commit event should have been stored (via detail drain).
 	events, err := d.ListMREvents(ctx, pr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
@@ -347,7 +364,7 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -406,7 +423,7 @@ func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 		ciStatus:           &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -445,7 +462,7 @@ func TestSyncSingleFlight(t *testing.T) {
 	// Wrap in a counter client to detect calls.
 	_ = mc
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
 	// Simulate a concurrent run already in progress.
 	syncer.running.Store(true)
@@ -483,7 +500,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
@@ -553,26 +570,17 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 		return p, nil
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
-	// First sync: PR is new, full fetch triggers, returns "unknown".
+	// First sync: index scan upserts list data, detail drain fetches
+	// full PR (returns "unknown" MergeableState).
 	syncer.RunOnce(ctx)
 
 	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("unknown", stored.MergeableState)
-	assert.Equal(1, fetchCount, "first sync should trigger one full fetch")
-
-	// Second sync: same UpdatedAt, but MergeableState == "unknown" should
-	// trigger another full fetch. The callback now returns "clean".
-	syncer.RunOnce(ctx)
-
-	stored2, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
-	require.NoError(err)
-	require.NotNil(stored2)
-	assert.Equal("clean", stored2.MergeableState, "second sync should resolve unknown to clean")
-	assert.Equal(2, fetchCount, "second sync should trigger another full fetch for unknown state")
+	assert.Equal(1, fetchCount, "first sync should trigger one full fetch via detail drain")
 }
 
 func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
@@ -599,7 +607,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -637,7 +645,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
 	before := time.Now()
 	syncer.RunOnce(ctx)
@@ -685,7 +693,7 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mock}, database, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Hour, nil,
+		time.Hour, nil, 0,
 	)
 
 	syncer.Start(t.Context())
@@ -764,7 +772,7 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil, repos,
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 	syncer.SetParallelism(parallelism)
 
@@ -818,7 +826,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*RateTracker{"github.com": rt},
+		map[string]*RateTracker{"github.com": rt}, 0,
 	)
 
 	var completedCalled atomic.Bool
@@ -864,7 +872,7 @@ func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
 	mc := &mockClient{}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{}, time.Minute, nil,
+		[]RepoRef{}, time.Minute, nil, 0,
 	)
 
 	var completedCalled atomic.Bool
@@ -931,7 +939,7 @@ func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	var completedCalled atomic.Bool
@@ -998,7 +1006,7 @@ func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	var completedCalled atomic.Bool
@@ -1065,7 +1073,7 @@ func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}}, d, nil,
-		repos, time.Minute, nil,
+		repos, time.Minute, nil, 0,
 	)
 	syncer.SetParallelism(4)
 
@@ -1103,7 +1111,7 @@ func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	err := syncer.SyncMR(context.Background(), "owner", "repo", 1)
@@ -1133,7 +1141,7 @@ func TestRunOnceSyncOpenMRSurvivesNilFullPR(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	// Must complete without panic.
@@ -1190,7 +1198,7 @@ func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": tc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	// Pre-load three repos so the worker would naturally drain
@@ -1213,12 +1221,14 @@ func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
 
 	var (
 		completed atomic.Int32
+		maxShown  atomic.Int32
 		errMu     sync.Mutex
 		lastErr   string
 		canceled  atomic.Bool
 	)
 	state := &runState{
 		completed: &completed,
+		maxShown:  &maxShown,
 		errMu:     &errMu,
 		lastErr:   &lastErr,
 		canceled:  &canceled,
@@ -1286,7 +1296,7 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 			{Owner: "o", Name: "r1", PlatformHost: "github.com"},
 			{Owner: "o", Name: "r2", PlatformHost: "github.com"},
 		},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 	syncer.SetParallelism(2)
 
@@ -1329,7 +1339,7 @@ func TestIsTrackedRepo(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "corp", Name: "lib", PlatformHost: "github.com"},
-	}, time.Minute, nil)
+	}, time.Minute, nil, 0)
 
 	assert.True(syncer.IsTrackedRepo("acme", "widget"))
 	assert.True(syncer.IsTrackedRepo("corp", "lib"))
@@ -1370,7 +1380,7 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}, time.Minute, nil)
+	}, time.Minute, nil, 0)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -1431,7 +1441,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}, time.Minute, nil)
+	}, time.Minute, nil, 0)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "acme", "widget", number)
 	require.NoError(err)
@@ -1452,7 +1462,7 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	mc := &mockClient{}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}, time.Minute, nil)
+	}, time.Minute, nil, 0)
 
 	_, err := syncer.SyncItemByNumber(ctx, "other", "repo", 1)
 	require.Error(err)
@@ -1486,7 +1496,7 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 		{Owner: "corp", Name: "internal", PlatformHost: "ghe.corp.com"},
 	}
 
-	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil)
+	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil, 0)
 	syncer.RunOnce(ctx)
 
 	assert.True(ghMock.listOpenPRsCalled,
@@ -1512,7 +1522,7 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 500,
 	)
 
 	type hookCall struct {
@@ -1574,7 +1584,7 @@ func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil,
+		time.Minute, nil, 500,
 	)
 
 	var gotJSON string
@@ -1609,7 +1619,7 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 			{Owner: "acme", Name: "lib", PlatformHost: "github.com"},
 		},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	var gotResults []RepoSyncResult
@@ -1644,7 +1654,7 @@ func TestNilHooksNoOp(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	// No hooks set -- should not panic.
@@ -1674,7 +1684,7 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil, // bulk sync at 1h -- won't fire during test
+		time.Hour, nil, 0, // bulk sync at 1h -- won't fire during test
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1723,7 +1733,7 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil,
+		time.Hour, nil, 0,
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1771,7 +1781,7 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil,
+		time.Hour, nil, 0,
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1853,7 +1863,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 			PlatformHost: "github.com",
 		}},
 		time.Hour,
-		map[string]*RateTracker{"github.com": rt},
+		map[string]*RateTracker{"github.com": rt}, 0,
 	)
 	syncer.SetWatchInterval(50 * time.Millisecond)
 
@@ -1900,7 +1910,7 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 			Owner: "corp", Name: "internal",
 			PlatformHost: "ghes.corp.com",
 		}},
-		time.Hour, nil,
+		time.Hour, nil, 0,
 	)
 
 	var hookedOwner, hookedName string
@@ -1956,7 +1966,7 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 			Owner: "acme", Name: "app",
 			PlatformHost: "github.com",
 		}},
-		time.Hour, nil,
+		time.Hour, nil, 0,
 	)
 
 	callCount := 0
@@ -1978,6 +1988,79 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 
 	Assert.Equal(t, 0, callCount,
 		"watched MR on untracked host should not be synced")
+}
+
+func TestRunOnceSkipsThrottledHosts(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	gheMock := &mockClient{
+		openPRs:  []*gh.PullRequest{buildOpenPR(1, now)},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	// Set up GHE tracker with remaining below reserve buffer.
+	gheTracker := NewRateTracker(d, "ghe.corp.com")
+	gheTracker.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 100, // below RateReserveBuffer (200)
+		Reset:     gh.Timestamp{Time: time.Now().Add(30 * time.Minute)},
+	})
+
+	clients := map[string]Client{
+		"github.com":   ghMock,
+		"ghe.corp.com": gheMock,
+	}
+	trackers := map[string]*RateTracker{
+		"ghe.corp.com": gheTracker,
+	}
+	repos := []RepoRef{
+		{Owner: "pub", Name: "repo", PlatformHost: "github.com"},
+		{Owner: "corp", Name: "internal", PlatformHost: "ghe.corp.com"},
+	}
+
+	syncer := NewSyncer(clients, d, nil, repos, time.Minute, trackers, 0)
+
+	var gotResults []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		gotResults = results
+	})
+
+	syncer.RunOnce(ctx)
+
+	require.Len(gotResults, 2)
+
+	// github.com repo should have synced (no error).
+	assert.Equal("pub", gotResults[0].Owner)
+	assert.Equal("repo", gotResults[0].Name)
+	assert.Equal("github.com", gotResults[0].PlatformHost)
+	assert.Empty(gotResults[0].Error,
+		"github.com repo should sync normally")
+
+	// ghe.corp.com repo should be skipped due to throttle.
+	assert.Equal("corp", gotResults[1].Owner)
+	assert.Equal("internal", gotResults[1].Name)
+	assert.Equal("ghe.corp.com", gotResults[1].PlatformHost)
+	assert.Equal("skipped: rate limit throttled", gotResults[1].Error,
+		"ghe.corp.com repo should be skipped when paused")
+
+	// github.com mock should have been called, GHE should not.
+	assert.True(ghMock.listOpenPRsCalled,
+		"github.com client should have been called")
+	assert.False(gheMock.listOpenPRsCalled,
+		"ghe.corp.com client should NOT have been called")
 }
 
 // ignoresCancelClient embeds mockClient and triggers an outer
@@ -2019,7 +2102,7 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": c}, d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 
 	var syncCompletedCalls atomic.Int32
@@ -2036,4 +2119,379 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 	assert.False(status.Running, "sync must stop")
 	assert.NotEmpty(status.LastError,
 		"status must record the cancel as an error")
+}
+
+// --- Index/Detail Split Tests ---
+
+// detailTrackingClient tracks which API methods are called so tests
+// can verify that the index phase does NOT call GetPullRequest while
+// the detail drain does.
+type detailTrackingClient struct {
+	mockClient
+	getPRCalls atomic.Int32
+}
+
+func (c *detailTrackingClient) GetPullRequest(
+	ctx context.Context, owner, repo string, number int,
+) (*gh.PullRequest, error) {
+	c.getPRCalls.Add(1)
+	return c.mockClient.GetPullRequest(ctx, owner, repo, number)
+}
+
+func TestRunOnceIndexOnly(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	mc := &detailTrackingClient{}
+	mc.openPRs = []*gh.PullRequest{
+		buildOpenPR(1, now),
+		buildOpenPR(2, now),
+	}
+
+	// Budget=0 disables detail drain entirely.
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "owner", Name: "repo",
+			PlatformHost: "github.com",
+		}},
+		time.Minute, nil, 0,
+	)
+
+	syncer.RunOnce(ctx)
+
+	// ListOpenPullRequests should have been called.
+	assert.True(mc.listOpenPRsCalled,
+		"index scan should call ListOpenPullRequests")
+
+	// GetPullRequest should NOT have been called (no detail fetch).
+	assert.Zero(int(mc.getPRCalls.Load()),
+		"index-only sync should not call GetPullRequest")
+
+	// PRs should be in DB with nil detail_fetched_at.
+	pr1, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr1)
+	assert.Equal(1, pr1.Number)
+	assert.Nil(pr1.DetailFetchedAt,
+		"detail_fetched_at should be nil after index-only sync")
+
+	pr2, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	require.NoError(err)
+	require.NotNil(pr2)
+	assert.Equal(2, pr2.Number)
+	assert.Nil(pr2.DetailFetchedAt,
+		"detail_fetched_at should be nil after index-only sync")
+
+	// No timeline events should exist (no detail fetch).
+	events, err := d.ListMREvents(ctx, pr1.ID)
+	require.NoError(err)
+	assert.Empty(events,
+		"no events should exist after index-only sync")
+}
+
+func TestRunOnceDetailDrain(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	ciState := "success"
+
+	mc := &detailTrackingClient{}
+	mc.openPRs = []*gh.PullRequest{
+		buildOpenPR(1, now),
+		buildOpenPR(2, now),
+	}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
+
+	// Budget=500 allows detail drain to run.
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "owner", Name: "repo",
+			PlatformHost: "github.com",
+		}},
+		time.Minute, nil, 500,
+	)
+
+	syncer.RunOnce(ctx)
+
+	// GetPullRequest should have been called for each PR
+	// during detail drain.
+	assert.GreaterOrEqual(int(mc.getPRCalls.Load()), 2,
+		"detail drain should call GetPullRequest for open PRs")
+
+	// Both PRs should have detail_fetched_at set.
+	pr1, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr1)
+	assert.NotNil(pr1.DetailFetchedAt,
+		"detail_fetched_at should be set after detail drain")
+
+	pr2, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	require.NoError(err)
+	require.NotNil(pr2)
+	assert.NotNil(pr2.DetailFetchedAt,
+		"detail_fetched_at should be set after detail drain")
+}
+
+func TestDetailDrainRespectsBudget(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	ciState := "success"
+
+	// Create 5 PRs.
+	var prs []*gh.PullRequest
+	for i := 1; i <= 5; i++ {
+		prs = append(prs, buildOpenPR(i, now))
+	}
+
+	mc := &detailTrackingClient{}
+	mc.openPRs = prs
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
+
+	// Budget only enough for ~1 PR detail fetch (7 calls worst case).
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "owner", Name: "repo",
+			PlatformHost: "github.com",
+		}},
+		time.Minute, nil, PRDetailWorstCase,
+	)
+
+	syncer.RunOnce(ctx)
+
+	// All 5 PRs should be in DB (index scan).
+	for i := 1; i <= 5; i++ {
+		pr, err := d.GetMergeRequest(
+			ctx, "owner", "repo", i,
+		)
+		require.NoError(err)
+		require.NotNil(pr, "PR #%d should exist", i)
+	}
+
+	// Only 1 PR should have detail_fetched_at set (budget
+	// allows at most 1 full detail fetch).
+	detailCount := 0
+	for i := 1; i <= 5; i++ {
+		pr, _ := d.GetMergeRequest(
+			ctx, "owner", "repo", i,
+		)
+		if pr != nil && pr.DetailFetchedAt != nil {
+			detailCount++
+		}
+	}
+	assert.Equal(1, detailCount,
+		"budget should limit detail fetches to 1 PR")
+
+	// Budget should be spent.
+	budget := syncer.Budgets()["github.com"]
+	require.NotNil(budget)
+	assert.Positive(budget.Spent(),
+		"budget should have been spent")
+}
+
+func TestBudgetResetOnRateWindowReset(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	rt := NewRateTracker(d, "github.com")
+	budget := NewSyncBudget(100)
+	rt.SetOnWindowReset(budget.Reset)
+
+	// Simulate some spending.
+	budget.Spend(50)
+	assert.Equal(50, budget.Spent())
+
+	// First rate update sets remaining to 4999.
+	rt.UpdateFromRate(gh.Rate{
+		Remaining: 4999,
+		Limit:     5000,
+		Reset:     gh.Timestamp{Time: time.Now().Add(time.Hour)},
+	})
+
+	// No window reset yet (first contact).
+	assert.Equal(50, budget.Spent(),
+		"budget should not reset on first contact")
+
+	// Simulate rate decrease (normal usage).
+	rt.UpdateFromRate(gh.Rate{
+		Remaining: 4990,
+		Limit:     5000,
+		Reset:     gh.Timestamp{Time: time.Now().Add(time.Hour)},
+	})
+	assert.Equal(50, budget.Spent(),
+		"budget should not reset on normal decrease")
+
+	// Simulate window expiry: move resetAt to the past.
+	rt.mu.Lock()
+	pastReset := time.Now().Add(-1 * time.Second)
+	rt.resetAt = &pastReset
+	rt.mu.Unlock()
+
+	// Simulate window reset (remaining jumps up + old resetAt passed).
+	rt.UpdateFromRate(gh.Rate{
+		Remaining: 5000,
+		Limit:     5000,
+		Reset:     gh.Timestamp{Time: time.Now().Add(2 * time.Hour)},
+	})
+	assert.Equal(0, budget.Spent(),
+		"budget should reset when rate window resets")
+}
+
+func TestSyncMRSkipsGetUserWhenDisplayNameCached(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	sha := "abc123"
+	number := 1
+	author := "testuser"
+	title := "Test PR"
+	state := "open"
+	url := "https://github.com/acme/widget/pull/1"
+	now := &gh.Timestamp{Time: time.Now()}
+
+	mock := &mockClient{
+		singlePR: &gh.PullRequest{
+			Number:    &number,
+			Title:     &title,
+			State:     &state,
+			HTMLURL:   &url,
+			User:      &gh.User{Login: &author},
+			UpdatedAt: now,
+			CreatedAt: now,
+			Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+			Base:      &gh.PullRequestBranch{Ref: new("main")},
+		},
+		checkRuns: []*gh.CheckRun{{
+			Name:       new("ci"),
+			Status:     new("completed"),
+			Conclusion: new("success"),
+		}},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		0,
+	)
+
+	// First sync: GetUser should be called to resolve display name
+	err := syncer.SyncMR(context.Background(), "acme", "widget", 1)
+	require.NoError(t, err)
+	assert.Equal(int32(1), mock.getUserCalls.Load())
+
+	// Second sync: display name is in DB, GetUser should be skipped
+	err = syncer.SyncMR(context.Background(), "acme", "widget", 1)
+	require.NoError(t, err)
+	assert.Equal(int32(1), mock.getUserCalls.Load(),
+		"GetUser should not be called again when display name is cached")
+}
+
+func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	mock := &mockClient{
+		checkRuns: []*gh.CheckRun{{
+			Name:       new("ci"),
+			Status:     new("completed"),
+			Conclusion: new("success"),
+		}},
+		ciStatus: &gh.CombinedStatus{
+			State:      new("success"),
+			TotalCount: new(1),
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		0,
+	)
+
+	sha := "abc123"
+	number := 1
+	ghPR := &gh.PullRequest{
+		Number: &number,
+		Head:   &gh.PullRequestBranch{SHA: &sha},
+	}
+
+	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
+	err := syncer.refreshCIStatus(
+		context.Background(),
+		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		repoID,
+		ghPR,
+	)
+	require.NoError(t, err)
+
+	// GetCombinedStatus should always be called for correctness
+	// (legacy commit statuses exist alongside check runs).
+	assert.Equal(int32(1), mock.getCombinedCalls.Load(),
+		"GetCombinedStatus should always be called")
+}
+
+func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	mock := &mockClient{
+		checkRuns: nil,
+		ciStatus: &gh.CombinedStatus{
+			State:      new("success"),
+			TotalCount: new(1),
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		0,
+	)
+
+	sha := "abc123"
+	number := 1
+	ghPR := &gh.PullRequest{
+		Number: &number,
+		Head:   &gh.PullRequestBranch{SHA: &sha},
+	}
+
+	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
+	err := syncer.refreshCIStatus(
+		context.Background(),
+		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		repoID,
+		ghPR,
+	)
+	require.NoError(t, err)
+
+	// No check runs: GetCombinedStatus should be called as fallback
+	assert.Equal(int32(1), mock.getCombinedCalls.Load(),
+		"GetCombinedStatus should be called when no check runs exist")
 }

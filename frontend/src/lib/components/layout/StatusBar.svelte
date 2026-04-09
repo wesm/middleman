@@ -27,8 +27,8 @@
     const st = sync.getSyncState();
     if (st === null) return "";
     if (st.running) {
-      if (st.current_repo && st.progress) {
-        return `syncing ${st.current_repo} (${st.progress})`;
+      if (st.progress) {
+        return `syncing (${st.progress})`;
       }
       return "syncing…";
     }
@@ -46,6 +46,73 @@
     for (const issue of issues.getIssues()) repos.add(`${issue.repo_owner}/${issue.repo_name}`);
     return repos.size;
   }
+
+  function rateLimitText(): {
+    text: string;
+    level: "normal" | "warning" | "critical";
+  } {
+    void tick; // reactive dependency
+    const hosts = sync.getRateLimits();
+    const entries = Object.values(hosts);
+    if (entries.length === 0) {
+      return { text: "", level: "normal" };
+    }
+
+    // Prefer known hosts; fall back to all if none are known yet.
+    const knownEntries = entries.filter(h => h.known);
+    const pool = knownEntries.length > 0 ? knownEntries : entries;
+
+    // Pick worst-status host from the pool
+    let worst = pool[0]!;
+    for (const h of pool) {
+      if (h.sync_paused && !worst.sync_paused) {
+        worst = h;
+      } else if (h.sync_throttle_factor > worst.sync_throttle_factor) {
+        worst = h;
+      }
+    }
+
+    if (!worst.known) {
+      return { text: "GitHub: --", level: "normal" };
+    }
+
+    const globalUsed = worst.rate_limit - worst.rate_remaining;
+    const budgetLimit = worst.budget_limit ?? 0;
+    let text = `GitHub: ${globalUsed}/${worst.rate_limit} global, ${worst.requests_hour}`;
+    if (budgetLimit > 0) {
+      text += `/${budgetLimit}`;
+    }
+    text += " middleman";
+
+    // Reset time
+    if (worst.rate_reset_at) {
+      const resetMs = new Date(worst.rate_reset_at).getTime() - Date.now();
+      if (resetMs > 0) {
+        const resetMin = Math.ceil(resetMs / 60_000);
+        text += ` · resets ${resetMin}m`;
+      }
+    }
+
+    // Throttle status
+    if (worst.sync_paused) {
+      text += " · sync paused";
+    } else if (worst.sync_throttle_factor > 1) {
+      text += ` · sync ${worst.sync_throttle_factor}x slower`;
+    }
+
+    // Color level
+    const pct = worst.rate_remaining / worst.rate_limit;
+    let level: "normal" | "warning" | "critical" = "normal";
+    if (worst.sync_paused || pct < 0.1) {
+      level = "critical";
+    } else if (pct < 0.5) {
+      level = "warning";
+    }
+
+    return { text, level };
+  }
+
+  let rateInfo = $derived(rateLimitText());
 </script>
 
 <footer class="status-bar">
@@ -57,6 +124,16 @@
     <span class="status-item">{repoCount()} repos</span>
   </div>
   <div class="status-right">
+    {#if rateInfo.text}
+      <span
+        class="status-item"
+        class:status-item--warning={rateInfo.level === "warning"}
+        class:status-item--critical={rateInfo.level === "critical"}
+      >
+        {rateInfo.text}
+      </span>
+      <span class="status-sep">·</span>
+    {/if}
     {#if sync.getSyncState()?.last_error}
       <span class="status-item status-item--error" title={sync.getSyncState()?.last_error}>sync error</span>
       <span class="status-sep">·</span>
@@ -96,6 +173,12 @@
     color: var(--border-default);
   }
   .status-item--error {
+    color: var(--accent-red);
+  }
+  .status-item--warning {
+    color: var(--accent-amber);
+  }
+  .status-item--critical {
     color: var(--accent-red);
   }
   .status-item--active {

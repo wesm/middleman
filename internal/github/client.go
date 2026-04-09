@@ -44,6 +44,8 @@ type Client interface {
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, state string) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
+	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
+	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
 }
 
 func graphQLEndpointForHost(platformHost string) string {
@@ -648,4 +650,63 @@ func (c *liveClient) EditIssue(
 		)
 	}
 	return issue, nil
+}
+
+func (c *liveClient) ListPullRequestsPage(
+	ctx context.Context, owner, repo, state string, page int,
+) ([]*gh.PullRequest, bool, error) {
+	opts := &gh.PullRequestListOptions{
+		State:     state,
+		Sort:      "updated",
+		Direction: "desc",
+		ListOptions: gh.ListOptions{
+			Page:    page,
+			PerPage: 100,
+		},
+	}
+	prs, resp, err := c.gh.PullRequests.List(
+		ctx, owner, repo, opts,
+	)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"list %s PRs page %d for %s/%s: %w",
+			state, page, owner, repo, err,
+		)
+	}
+	hasMore := resp != nil && resp.NextPage > 0
+	return prs, hasMore, nil
+}
+
+func (c *liveClient) ListIssuesPage(
+	ctx context.Context, owner, repo, state string, page int,
+) ([]*gh.Issue, bool, error) {
+	opts := &gh.IssueListByRepoOptions{
+		State:     state,
+		Sort:      "updated",
+		Direction: "desc",
+		ListOptions: gh.ListOptions{
+			Page:    page,
+			PerPage: 100,
+		},
+	}
+	issues, resp, err := c.gh.Issues.ListByRepo(
+		ctx, owner, repo, opts,
+	)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"list %s issues page %d for %s/%s: %w",
+			state, page, owner, repo, err,
+		)
+	}
+	// Filter out PRs (GitHub Issues API returns them).
+	var filtered []*gh.Issue
+	for _, issue := range issues {
+		if issue.PullRequestLinks == nil {
+			filtered = append(filtered, issue)
+		}
+	}
+	hasMore := resp != nil && resp.NextPage > 0
+	return filtered, hasMore, nil
 }

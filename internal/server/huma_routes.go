@@ -194,6 +194,10 @@ type syncStatusOutput struct {
 	Body *ghclient.SyncStatus
 }
 
+type rateLimitsOutput struct {
+	Body rateLimitsResponse
+}
+
 type listActivityInput struct {
 	Repo   string   `query:"repo"`
 	Types  []string `query:"types"`
@@ -286,6 +290,7 @@ func (s *Server) registerAPI(api huma.API) {
 		DefaultStatus: http.StatusAccepted,
 	}, s.triggerSync)
 	huma.Get(api, "/sync/status", s.syncStatus)
+	huma.Get(api, "/rate-limits", s.getRateLimits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 }
 
@@ -352,12 +357,17 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		if wl == nil {
 			wl = []worktreeLinkResponse{}
 		}
-		out = append(out, mergeRequestResponse{
+		resp := mergeRequestResponse{
 			MergeRequest:  mr,
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
 			WorktreeLinks: wl,
-		})
+			DetailLoaded:  mr.DetailFetchedAt != nil,
+		}
+		if mr.DetailFetchedAt != nil {
+			resp.DetailFetchedAt = mr.DetailFetchedAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, resp)
 	}
 
 	return &listPullsOutput{Body: out}, nil
@@ -372,7 +382,7 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, true)
+	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, workflowDBOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +394,7 @@ func (s *Server) buildPullDetailResponse(
 	ctx context.Context,
 	owner, name string,
 	mr *db.MergeRequest,
-	useLivePR bool,
+	wfMode workflowMode,
 ) (mergeRequestDetailResponse, error) {
 	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
@@ -401,15 +411,20 @@ func (s *Server) buildPullDetailResponse(
 		)
 	}
 
-	return mergeRequestDetailResponse{
+	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
 		Events:           events,
 		RepoOwner:        owner,
 		RepoName:         name,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
-		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, useLivePR),
+		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, wfMode),
 		Warnings:         s.diffWarnings(mr),
-	}, nil
+		DetailLoaded:     mr.DetailFetchedAt != nil,
+	}
+	if mr.DetailFetchedAt != nil {
+		resp.DetailFetchedAt = mr.DetailFetchedAt.UTC().Format(time.RFC3339)
+	}
+	return resp, nil
 }
 
 // diffWarnings returns warnings inferred from the persisted PR row. The
@@ -451,26 +466,47 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	return nil
 }
 
+// workflowMode controls which live GitHub calls workflowApprovalState makes.
+type workflowMode int
+
+const (
+	// workflowDBOnly makes no live calls. Used by GET detail.
+	workflowDBOnly workflowMode = iota
+	// workflowCheckRuns reads PR state from DB but fetches
+	// workflow runs live. Used by POST sync (PR just synced,
+	// no need to re-fetch it).
+	workflowCheckRuns
+	// workflowFull fetches the PR live and then workflow runs.
+	// Used by the approve-workflows action.
+	workflowFull
+)
+
 func (s *Server) workflowApprovalState(
 	ctx context.Context,
 	owner, name string,
 	mr *db.MergeRequest,
-	useLivePR bool,
+	mode workflowMode,
 ) workflowApprovalResponse {
+	if mode == workflowDBOnly {
+		return workflowApprovalResponse{}
+	}
+
 	client, err := s.syncer.ClientForRepo(owner, name)
 	if err != nil {
 		return workflowApprovalResponse{}
 	}
 
-	currentState := mr.State
-	headSHA := mr.PlatformHeadSHA
-	if useLivePR {
-		pr, err := client.GetPullRequest(ctx, owner, name, mr.Number)
-		if err != nil || pr == nil {
+	var currentState, headSHA string
+	if mode == workflowFull {
+		pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
+		if prErr != nil || pr == nil {
 			return workflowApprovalResponse{}
 		}
 		currentState = pr.GetState()
 		headSHA = pr.GetHead().GetSHA()
+	} else {
+		currentState = mr.State
+		headSHA = mr.PlatformHeadSHA
 	}
 
 	if currentState != "open" || headSHA == "" {
@@ -603,11 +639,16 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		if !ok {
 			continue
 		}
-		out = append(out, issueResponse{
-			Issue:     issue,
-			RepoOwner: rp.Owner,
-			RepoName:  rp.Name,
-		})
+		resp := issueResponse{
+			Issue:        issue,
+			RepoOwner:    rp.Owner,
+			RepoName:     rp.Name,
+			DetailLoaded: issue.DetailFetchedAt != nil,
+		}
+		if issue.DetailFetchedAt != nil {
+			resp.DetailFetchedAt = issue.DetailFetchedAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, resp)
 	}
 
 	return &listIssuesOutput{Body: out}, nil
@@ -630,14 +671,17 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 		events = []db.IssueEvent{}
 	}
 
-	return &getIssueOutput{
-		Body: issueDetailResponse{
-			Issue:     issue,
-			Events:    events,
-			RepoOwner: input.Owner,
-			RepoName:  input.Name,
-		},
-	}, nil
+	issueResp := issueDetailResponse{
+		Issue:        issue,
+		Events:       events,
+		RepoOwner:    input.Owner,
+		RepoName:     input.Name,
+		DetailLoaded: issue.DetailFetchedAt != nil,
+	}
+	if issue.DetailFetchedAt != nil {
+		issueResp.DetailFetchedAt = issue.DetailFetchedAt.UTC().Format(time.RFC3339)
+	}
+	return &getIssueOutput{Body: issueResp}, nil
 }
 
 func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {
@@ -1070,6 +1114,40 @@ func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, 
 	return &syncStatusOutput{Body: s.syncer.Status()}, nil
 }
 
+func (s *Server) getRateLimits(
+	_ context.Context, _ *struct{},
+) (*rateLimitsOutput, error) {
+	trackers := s.syncer.RateTrackers()
+	budgets := s.syncer.Budgets()
+	hosts := make(map[string]rateLimitHostStatus, len(trackers))
+	for host, rt := range trackers {
+		resetStr := ""
+		if resetAt := rt.ResetAt(); resetAt != nil {
+			resetStr = resetAt.UTC().Format(time.RFC3339)
+		}
+		status := rateLimitHostStatus{
+			RequestsHour:       rt.RequestsThisHour(),
+			RateRemaining:      rt.Remaining(),
+			RateLimit:          rt.RateLimit(),
+			RateResetAt:        resetStr,
+			HourStart:          rt.HourStart().UTC().Format(time.RFC3339),
+			SyncThrottleFactor: rt.ThrottleFactor(),
+			SyncPaused:         rt.IsPaused(),
+			ReserveBuffer:      ghclient.RateReserveBuffer,
+			Known:              rt.Known(),
+		}
+		if b := budgets[host]; b != nil {
+			status.BudgetLimit = b.Limit()
+			status.BudgetSpent = b.Spent()
+			status.BudgetRemaining = b.Remaining()
+		}
+		hosts[host] = status
+	}
+	return &rateLimitsOutput{
+		Body: rateLimitsResponse{Hosts: hosts},
+	}, nil
+}
+
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
 	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
 	// via DiffSyncError. The PR row, timeline, and CI status are all current
@@ -1093,7 +1171,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error404NotFound("pull request not found after sync")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, false)
+	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, workflowCheckRuns)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,12 +1216,17 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 		events = []db.IssueEvent{}
 	}
 
-	return &syncIssueOutput{Body: issueDetailResponse{
-		Issue:     issue,
-		Events:    events,
-		RepoOwner: input.Owner,
-		RepoName:  input.Name,
-	}}, nil
+	syncIssueResp := issueDetailResponse{
+		Issue:        issue,
+		Events:       events,
+		RepoOwner:    input.Owner,
+		RepoName:     input.Name,
+		DetailLoaded: issue.DetailFetchedAt != nil,
+	}
+	if issue.DetailFetchedAt != nil {
+		syncIssueResp.DetailFetchedAt = issue.DetailFetchedAt.UTC().Format(time.RFC3339)
+	}
+	return &syncIssueOutput{Body: syncIssueResp}, nil
 }
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {

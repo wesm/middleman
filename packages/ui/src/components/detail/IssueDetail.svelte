@@ -111,6 +111,12 @@
     {@const issue = detail.issue}
     {@const labels = parseLabels(issue.LabelsJSON)}
     <div class="issue-detail">
+      {#if issues.isIssueStaleRefreshing()}
+        <div class="refresh-banner">
+          <span class="sync-dot"></span>
+          Refreshing...
+        </div>
+      {/if}
       <!-- Header -->
       <div class="detail-header">
         <h2 class="detail-title">{issue.Title}</h2>
@@ -237,7 +243,18 @@
       <!-- Activity -->
       <div class="section">
         <h3 class="section-title">Activity</h3>
-        <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
+        {#if issues.getIssueDetailLoaded()}
+          <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
+        {:else if issues.isIssueDetailSyncing()}
+          <div class="loading-placeholder">
+            <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
+            </svg>
+            Loading comments...
+          </div>
+        {:else}
+          <div class="loading-placeholder">Detail not yet loaded</div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -510,6 +527,41 @@
   .action-error {
     font-size: 11px;
     color: var(--accent-red, #d73a49);
+  }
+
+  .refresh-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: var(--bg-inset);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .sync-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  .loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 0;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 
 </style>

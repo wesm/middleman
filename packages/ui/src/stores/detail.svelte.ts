@@ -25,6 +25,7 @@ export interface DetailStoreOptions {
     subscribeSyncComplete: (
       cb: () => void,
     ) => () => void;
+    refreshSyncStatus?: () => Promise<void>;
   };
 }
 
@@ -49,6 +50,7 @@ export function createDetailStore(
   let loading = $state(false);
   let syncing = $state(false);
   let storeError = $state<string | null>(null);
+  let detailLoaded = $state(false);
   let syncGeneration = 0;
 
   // Per-PR monotonic counters for kanban updates.
@@ -77,6 +79,22 @@ export function createDetailStore(
 
   function getDetailError(): string | null {
     return storeError;
+  }
+
+  function getDetailLoaded(): boolean {
+    return detailLoaded;
+  }
+
+  function isStaleRefreshing(): boolean {
+    if (!detail || !syncing) return false;
+    const fetchedAt = detail.detail_fetched_at;
+    if (!fetchedAt) return false;
+    const fetchedMs = new Date(fetchedAt).getTime();
+    const updatedMs = new Date(
+      detail.merge_request.UpdatedAt,
+    ).getTime();
+    const hourAgo = Date.now() - 3_600_000;
+    return fetchedMs < hourAgo && updatedMs > fetchedMs;
   }
 
   // --- internal helpers ---
@@ -125,6 +143,7 @@ export function createDetailStore(
           ...data,
           events: data.events ?? [],
         } as PullDetail;
+        detailLoaded = data.detail_loaded ?? detailLoaded;
       }
     } catch {
       // Silent refresh
@@ -156,14 +175,20 @@ export function createDetailStore(
           ...data,
           events: data.events ?? [],
         } as PullDetail;
+        detailLoaded =
+          data.detail_loaded ?? detailLoaded;
       }
     } catch {
       // Sync failure is non-fatal.
     } finally {
       if (gen === syncGeneration) syncing = false;
     }
-    if (gen === syncGeneration)
+    // Always refresh rate limits -- the API calls happened
+    // regardless of whether user navigated away.
+    void syncDep?.refreshSyncStatus?.();
+    if (gen === syncGeneration) {
       await refreshPullsIfActive();
+    }
   }
 
   // --- writes ---
@@ -174,6 +199,7 @@ export function createDetailStore(
     loading = false;
     syncing = false;
     storeError = null;
+    detailLoaded = false;
   }
 
   async function loadDetail(
@@ -206,6 +232,7 @@ export function createDetailStore(
             events: data.events ?? [],
           } as PullDetail)
         : null;
+      detailLoaded = data?.detail_loaded ?? false;
     } catch (err) {
       if (gen !== syncGeneration) return;
       storeError =
@@ -482,6 +509,8 @@ export function createDetailStore(
     isDetailLoading,
     isDetailSyncing,
     getDetailError,
+    getDetailLoaded,
+    isStaleRefreshing,
     clearDetail,
     loadDetail,
     refreshDetailOnly,

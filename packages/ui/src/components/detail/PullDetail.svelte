@@ -200,6 +200,12 @@
   {#if detail !== null}
     {@const pr = detail.merge_request}
     <div class="pull-detail">
+      {#if detailStore.isStaleRefreshing()}
+        <div class="refresh-banner">
+          <span class="sync-dot"></span>
+          Refreshing...
+        </div>
+      {/if}
       <!-- Header -->
       <div class="detail-header">
         <h2 class="detail-title">{pr.Title}</h2>
@@ -285,11 +291,39 @@
       </div>
 
       <!-- Expanded CI checks -->
-      {#if ciExpanded && checks.length > 0}
-        <div class="ci-checks">
-          {#if failedChecks.length > 0}
-            <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
-            {#each failedChecks as check}
+      {#if ciExpanded}
+        {#if !detailStore.getDetailLoaded()}
+          {#if detailStore.isDetailSyncing()}
+            <div class="loading-placeholder">
+              <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
+              </svg>
+              Loading checks...
+            </div>
+          {:else}
+            <div class="loading-placeholder">Detail not yet loaded</div>
+          {/if}
+        {:else if checks.length > 0}
+          <div class="ci-checks">
+            {#if failedChecks.length > 0}
+              <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
+              {#each failedChecks as check}
+                <a
+                  class="ci-check"
+                  href={check.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                  <span class="ci-name">{check.name}</span>
+                  {#if check.app}
+                    <span class="ci-app">{check.app}</span>
+                  {/if}
+                  <span class="ci-arrow">→</span>
+                </a>
+              {/each}
+            {/if}
+            {#each checks.filter(c => c.conclusion !== "failure") as check}
               <a
                 class="ci-check"
                 href={check.url}
@@ -304,23 +338,8 @@
                 <span class="ci-arrow">→</span>
               </a>
             {/each}
-          {/if}
-          {#each checks.filter(c => c.conclusion !== "failure") as check}
-            <a
-              class="ci-check"
-              href={check.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-              <span class="ci-name">{check.name}</span>
-              {#if check.app}
-                <span class="ci-app">{check.app}</span>
-              {/if}
-              <span class="ci-arrow">→</span>
-            </a>
-          {/each}
-        </div>
+          </div>
+        {/if}
       {/if}
 
       <!-- Kanban state -->
@@ -530,7 +549,18 @@
       <!-- Activity -->
       <div class="section">
         <h3 class="section-title">Activity</h3>
-        <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
+        {#if detailStore.getDetailLoaded()}
+          <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
+        {:else if detailStore.isDetailSyncing()}
+          <div class="loading-placeholder">
+            <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
+            </svg>
+            Loading discussion...
+          </div>
+        {:else}
+          <div class="loading-placeholder">Detail not yet loaded</div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -1027,6 +1057,41 @@
 
   .files-changed-btn:hover .files-changed-arrow {
     color: var(--accent-blue);
+  }
+
+  .refresh-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: var(--bg-inset);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .sync-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  .loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 0;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 
 </style>

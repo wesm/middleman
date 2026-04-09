@@ -768,6 +768,62 @@ endpoint = "http://custom:9999"
 	assert.Equal("http://custom:9999", cfg2.RoborevEndpoint())
 }
 
+func TestSyncBudgetPerHour(t *testing.T) {
+	t.Run("default is 500 when not set", func(t *testing.T) {
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		Assert.Equal(t, 500, cfg.BudgetPerHour())
+	})
+
+	t.Run("rejects value below 50", func(t *testing.T) {
+		path := writeConfig(t, `
+sync_budget_per_hour = 49
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		Assert.Contains(t, err.Error(), "sync_budget_per_hour must be >= 50 or omitted")
+	})
+
+	t.Run("configured value preserved", func(t *testing.T) {
+		path := writeConfig(t, `
+sync_budget_per_hour = 1000
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		Assert.Equal(t, 1000, cfg.BudgetPerHour())
+	})
+
+	t.Run("round-trips through Save", func(t *testing.T) {
+		require := require.New(t)
+		path := writeConfig(t, `
+sync_budget_per_hour = 750
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(err)
+
+		savePath := filepath.Join(t.TempDir(), "saved.toml")
+		require.NoError(cfg.Save(savePath))
+
+		cfg2, err := Load(savePath)
+		require.NoError(err)
+		Assert.Equal(t, 750, cfg2.BudgetPerHour())
+	})
+}
+
 func TestRoborevEndpointDefault(t *testing.T) {
 	cfg := &Config{}
 	Assert.Equal(

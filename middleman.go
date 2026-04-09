@@ -284,6 +284,7 @@ func New(opts Options) (*Instance, error) {
 	syncer := ghclient.NewSyncer(
 		clients, database, cloneMgr, refs,
 		cfg.SyncDuration(), rateTrackers,
+		cfg.BudgetPerHour(),
 	)
 
 	if opts.WatchInterval > 0 {

@@ -140,32 +140,35 @@ type Hunk struct {
 
 // Issue defines model for Issue.
 type Issue struct {
-	Author         string     `json:"Author"`
-	Body           string     `json:"Body"`
-	ClosedAt       *time.Time `json:"ClosedAt"`
-	CommentCount   int64      `json:"CommentCount"`
-	CreatedAt      time.Time  `json:"CreatedAt"`
-	ID             int64      `json:"ID"`
-	LabelsJSON     string     `json:"LabelsJSON"`
-	LastActivityAt time.Time  `json:"LastActivityAt"`
-	Number         int64      `json:"Number"`
-	PlatformID     int64      `json:"PlatformID"`
-	RepoID         int64      `json:"RepoID"`
-	Starred        bool       `json:"Starred"`
-	State          string     `json:"State"`
-	Title          string     `json:"Title"`
-	URL            string     `json:"URL"`
-	UpdatedAt      time.Time  `json:"UpdatedAt"`
+	Author          string     `json:"Author"`
+	Body            string     `json:"Body"`
+	ClosedAt        *time.Time `json:"ClosedAt"`
+	CommentCount    int64      `json:"CommentCount"`
+	CreatedAt       time.Time  `json:"CreatedAt"`
+	DetailFetchedAt *time.Time `json:"DetailFetchedAt"`
+	ID              int64      `json:"ID"`
+	LabelsJSON      string     `json:"LabelsJSON"`
+	LastActivityAt  time.Time  `json:"LastActivityAt"`
+	Number          int64      `json:"Number"`
+	PlatformID      int64      `json:"PlatformID"`
+	RepoID          int64      `json:"RepoID"`
+	Starred         bool       `json:"Starred"`
+	State           string     `json:"State"`
+	Title           string     `json:"Title"`
+	URL             string     `json:"URL"`
+	UpdatedAt       time.Time  `json:"UpdatedAt"`
 }
 
 // IssueDetailResponse defines model for IssueDetailResponse.
 type IssueDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string       `json:"$schema,omitempty"`
-	Events    *[]IssueEvent `json:"events"`
-	Issue     Issue         `json:"issue"`
-	RepoName  string        `json:"repo_name"`
-	RepoOwner string        `json:"repo_owner"`
+	Schema          *string       `json:"$schema,omitempty"`
+	DetailFetchedAt *string       `json:"detail_fetched_at,omitempty"`
+	DetailLoaded    bool          `json:"detail_loaded"`
+	Events          *[]IssueEvent `json:"events"`
+	Issue           Issue         `json:"issue"`
+	RepoName        string        `json:"repo_name"`
+	RepoOwner       string        `json:"repo_owner"`
 }
 
 // IssueEvent defines model for IssueEvent.
@@ -186,24 +189,26 @@ type IssueEvent struct {
 
 // IssueResponse defines model for IssueResponse.
 type IssueResponse struct {
-	Author         string     `json:"Author"`
-	Body           string     `json:"Body"`
-	ClosedAt       *time.Time `json:"ClosedAt"`
-	CommentCount   int64      `json:"CommentCount"`
-	CreatedAt      time.Time  `json:"CreatedAt"`
-	ID             int64      `json:"ID"`
-	LabelsJSON     string     `json:"LabelsJSON"`
-	LastActivityAt time.Time  `json:"LastActivityAt"`
-	Number         int64      `json:"Number"`
-	PlatformID     int64      `json:"PlatformID"`
-	RepoID         int64      `json:"RepoID"`
-	Starred        bool       `json:"Starred"`
-	State          string     `json:"State"`
-	Title          string     `json:"Title"`
-	URL            string     `json:"URL"`
-	UpdatedAt      time.Time  `json:"UpdatedAt"`
-	RepoName       string     `json:"repo_name"`
-	RepoOwner      string     `json:"repo_owner"`
+	Author          string     `json:"Author"`
+	Body            string     `json:"Body"`
+	ClosedAt        *time.Time `json:"ClosedAt"`
+	CommentCount    int64      `json:"CommentCount"`
+	CreatedAt       time.Time  `json:"CreatedAt"`
+	ID              int64      `json:"ID"`
+	LabelsJSON      string     `json:"LabelsJSON"`
+	LastActivityAt  time.Time  `json:"LastActivityAt"`
+	Number          int64      `json:"Number"`
+	PlatformID      int64      `json:"PlatformID"`
+	RepoID          int64      `json:"RepoID"`
+	Starred         bool       `json:"Starred"`
+	State           string     `json:"State"`
+	Title           string     `json:"Title"`
+	URL             string     `json:"URL"`
+	UpdatedAt       time.Time  `json:"UpdatedAt"`
+	DetailFetchedAt *string    `json:"detail_fetched_at,omitempty"`
+	DetailLoaded    bool       `json:"detail_loaded"`
+	RepoName        string     `json:"repo_name"`
+	RepoOwner       string     `json:"repo_owner"`
 }
 
 // Line defines model for Line.
@@ -257,11 +262,13 @@ type MergeRequest struct {
 	BaseBranch        string     `json:"BaseBranch"`
 	Body              string     `json:"Body"`
 	CIChecksJSON      string     `json:"CIChecksJSON"`
+	CIHadPending      bool       `json:"CIHadPending"`
 	CIStatus          string     `json:"CIStatus"`
 	ClosedAt          *time.Time `json:"ClosedAt"`
 	CommentCount      int64      `json:"CommentCount"`
 	CreatedAt         time.Time  `json:"CreatedAt"`
 	Deletions         int64      `json:"Deletions"`
+	DetailFetchedAt   *time.Time `json:"DetailFetchedAt"`
 	HeadBranch        string     `json:"HeadBranch"`
 	HeadRepoCloneURL  string     `json:"HeadRepoCloneURL"`
 	ID                int64      `json:"ID"`
@@ -285,6 +292,8 @@ type MergeRequest struct {
 type MergeRequestDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema           *string                  `json:"$schema,omitempty"`
+	DetailFetchedAt  *string                  `json:"detail_fetched_at,omitempty"`
+	DetailLoaded     bool                     `json:"detail_loaded"`
 	Events           *[]MREvent               `json:"events"`
 	MergeRequest     MergeRequest             `json:"merge_request"`
 	RepoName         string                   `json:"repo_name"`
@@ -302,6 +311,7 @@ type MergeRequestResponse struct {
 	BaseBranch        string                  `json:"BaseBranch"`
 	Body              string                  `json:"Body"`
 	CIChecksJSON      string                  `json:"CIChecksJSON"`
+	CIHadPending      bool                    `json:"CIHadPending"`
 	CIStatus          string                  `json:"CIStatus"`
 	ClosedAt          *time.Time              `json:"ClosedAt"`
 	CommentCount      int64                   `json:"CommentCount"`
@@ -324,6 +334,8 @@ type MergeRequestResponse struct {
 	Title             string                  `json:"Title"`
 	URL               string                  `json:"URL"`
 	UpdatedAt         time.Time               `json:"UpdatedAt"`
+	DetailFetchedAt   *string                 `json:"detail_fetched_at,omitempty"`
+	DetailLoaded      bool                    `json:"detail_loaded"`
 	RepoName          string                  `json:"repo_name"`
 	RepoOwner         string                  `json:"repo_owner"`
 	WorktreeLinks     *[]WorktreeLinkResponse `json:"worktree_links"`
@@ -356,22 +368,51 @@ type PostIssueCommentInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// RateLimitHostStatus defines model for RateLimitHostStatus.
+type RateLimitHostStatus struct {
+	BudgetLimit        int64  `json:"budget_limit"`
+	BudgetRemaining    int64  `json:"budget_remaining"`
+	BudgetSpent        int64  `json:"budget_spent"`
+	HourStart          string `json:"hour_start"`
+	Known              bool   `json:"known"`
+	RateLimit          int64  `json:"rate_limit"`
+	RateRemaining      int64  `json:"rate_remaining"`
+	RateResetAt        string `json:"rate_reset_at"`
+	RequestsHour       int64  `json:"requests_hour"`
+	ReserveBuffer      int64  `json:"reserve_buffer"`
+	SyncPaused         bool   `json:"sync_paused"`
+	SyncThrottleFactor int64  `json:"sync_throttle_factor"`
+}
+
+// RateLimitsResponse defines model for RateLimitsResponse.
+type RateLimitsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string                        `json:"$schema,omitempty"`
+	Hosts  map[string]RateLimitHostStatus `json:"hosts"`
+}
+
 // Repo defines model for Repo.
 type Repo struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string    `json:"$schema,omitempty"`
-	AllowMergeCommit    bool       `json:"AllowMergeCommit"`
-	AllowRebaseMerge    bool       `json:"AllowRebaseMerge"`
-	AllowSquashMerge    bool       `json:"AllowSquashMerge"`
-	CreatedAt           time.Time  `json:"CreatedAt"`
-	ID                  int64      `json:"ID"`
-	LastSyncCompletedAt *time.Time `json:"LastSyncCompletedAt"`
-	LastSyncError       string     `json:"LastSyncError"`
-	LastSyncStartedAt   *time.Time `json:"LastSyncStartedAt"`
-	Name                string     `json:"Name"`
-	Owner               string     `json:"Owner"`
-	Platform            string     `json:"Platform"`
-	PlatformHost        string     `json:"PlatformHost"`
+	Schema                   *string    `json:"$schema,omitempty"`
+	AllowMergeCommit         bool       `json:"AllowMergeCommit"`
+	AllowRebaseMerge         bool       `json:"AllowRebaseMerge"`
+	AllowSquashMerge         bool       `json:"AllowSquashMerge"`
+	BackfillIssueComplete    bool       `json:"BackfillIssueComplete"`
+	BackfillIssueCompletedAt *time.Time `json:"BackfillIssueCompletedAt"`
+	BackfillIssuePage        int64      `json:"BackfillIssuePage"`
+	BackfillPRComplete       bool       `json:"BackfillPRComplete"`
+	BackfillPRCompletedAt    *time.Time `json:"BackfillPRCompletedAt"`
+	BackfillPRPage           int64      `json:"BackfillPRPage"`
+	CreatedAt                time.Time  `json:"CreatedAt"`
+	ID                       int64      `json:"ID"`
+	LastSyncCompletedAt      *time.Time `json:"LastSyncCompletedAt"`
+	LastSyncError            string     `json:"LastSyncError"`
+	LastSyncStartedAt        *time.Time `json:"LastSyncStartedAt"`
+	Name                     string     `json:"Name"`
+	Owner                    string     `json:"Owner"`
+	Platform                 string     `json:"Platform"`
+	PlatformHost             string     `json:"PlatformHost"`
 }
 
 // ResolveItemResponse defines model for ResolveItemResponse.
@@ -571,6 +612,9 @@ type ClientInterface interface {
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetRateLimits request
+	GetRateLimits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -682,6 +726,18 @@ func (c *Client) ListIssues(ctx context.Context, params *ListIssuesParams, reqEd
 
 func (c *Client) ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListPullsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRateLimits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRateLimitsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1441,6 +1497,33 @@ func NewListPullsRequest(server string, params *ListPullsParams) (*http.Request,
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRateLimitsRequest generates requests for GetRateLimits
+func NewGetRateLimitsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/rate-limits")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -2586,6 +2669,9 @@ type ClientWithResponsesInterface interface {
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
 
+	// GetRateLimitsWithResponse request
+	GetRateLimitsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRateLimitsResponse, error)
+
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
 
@@ -2734,6 +2820,29 @@ func (r ListPullsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListPullsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRateLimitsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RateLimitsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRateLimitsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRateLimitsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3269,6 +3378,15 @@ func (c *ClientWithResponses) ListPullsWithResponse(ctx context.Context, params 
 	return ParseListPullsResponse(rsp)
 }
 
+// GetRateLimitsWithResponse request returning *GetRateLimitsResponse
+func (c *ClientWithResponses) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRateLimitsResponse, error) {
+	rsp, err := c.GetRateLimits(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRateLimitsResponse(rsp)
+}
+
 // ListReposWithResponse request returning *ListReposResponse
 func (c *ClientWithResponses) ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error) {
 	rsp, err := c.ListRepos(ctx, reqEditors...)
@@ -3621,6 +3739,39 @@ func ParseListPullsResponse(rsp *http.Response) (*ListPullsResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest []MergeRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRateLimitsResponse parses an HTTP response from a GetRateLimitsWithResponse call
+func ParseGetRateLimitsResponse(rsp *http.Response) (*GetRateLimitsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRateLimitsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RateLimitsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -143,6 +143,7 @@ func run(configPath string) error {
 	syncer := ghclient.NewSyncer(
 		clients, database, cloneMgr, repos,
 		cfg.SyncDuration(), rateTrackers,
+		cfg.BudgetPerHour(),
 	)
 
 	assets, err := web.Assets()
