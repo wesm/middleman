@@ -1,5 +1,17 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
+  import {
+    beginCommentSubmit,
+    clearCommentSubmitError,
+    clearCommentDraft,
+    finishCommentSubmit,
+    getCommentDraft,
+    getCommentDraftKey,
+    getCommentSubmitError,
+    isCommentSubmitPending,
+    setCommentSubmitError,
+    setCommentDraft,
+  } from "./comment-drafts.svelte.js";
 
   const { issues } = getStores();
 
@@ -11,23 +23,74 @@
 
   const { owner, name, number }: Props = $props();
 
-  let body = $state("");
-  let posting = $state(false);
-  let localError = $state<string | null>(null);
+  const currentDraftKey = $derived(
+    getCommentDraftKey("issue", owner, name, number),
+  );
+  const body = $derived(getCommentDraft("issue", owner, name, number));
 
   const isEmpty = $derived(body.trim() === "");
+  const visibleError = $derived(
+    getCommentSubmitError("issue", owner, name, number),
+  );
+  const isPostingCurrent = $derived(
+    isCommentSubmitPending("issue", owner, name, number),
+  );
+
+  function handleInput(e: Event): void {
+    setCommentDraft(
+      "issue",
+      owner,
+      name,
+      number,
+      (e.currentTarget as HTMLTextAreaElement).value,
+    );
+  }
 
   async function handleSubmit(): Promise<void> {
-    if (isEmpty || posting) return;
-    posting = true;
-    localError = null;
-    await issues.submitIssueComment(owner, name, number, body.trim());
-    posting = false;
-    const storeError = issues.getIssueDetailError();
-    if (storeError !== null) {
-      localError = storeError;
-    } else {
-      body = "";
+    if (isEmpty || isPostingCurrent) return;
+    const submittedOwner = owner;
+    const submittedName = name;
+    const submittedNumber = number;
+    const submittedBody = body.trim();
+    beginCommentSubmit("issue", submittedOwner, submittedName, submittedNumber);
+    clearCommentSubmitError("issue", submittedOwner, submittedName, submittedNumber);
+    try {
+      await issues.submitIssueComment(
+        submittedOwner,
+        submittedName,
+        submittedNumber,
+        submittedBody,
+      );
+      const storeError = issues.getIssueDetailError();
+      if (storeError !== null) {
+        setCommentSubmitError(
+          "issue",
+          submittedOwner,
+          submittedName,
+          submittedNumber,
+          storeError,
+        );
+      } else {
+        clearCommentDraft(
+          "issue",
+          submittedOwner,
+          submittedName,
+          submittedNumber,
+        );
+        clearCommentSubmitError(
+          "issue",
+          submittedOwner,
+          submittedName,
+          submittedNumber,
+        );
+      }
+    } finally {
+      finishCommentSubmit(
+        "issue",
+        submittedOwner,
+        submittedName,
+        submittedNumber,
+      );
     }
   }
 
@@ -42,21 +105,22 @@
   <textarea
     class="comment-textarea"
     placeholder="Write a comment... (Cmd+Enter to submit)"
-    bind:value={body}
+    value={body}
+    oninput={handleInput}
     onkeydown={handleKeydown}
-    disabled={posting}
+    disabled={isPostingCurrent}
     rows={4}
   ></textarea>
-  {#if localError !== null}
-    <p class="error-msg">{localError}</p>
+  {#if visibleError !== null}
+    <p class="error-msg">{visibleError}</p>
   {/if}
   <div class="comment-actions">
     <button
       class="submit-btn"
       onclick={() => void handleSubmit()}
-      disabled={isEmpty || posting}
+      disabled={isEmpty || isPostingCurrent}
     >
-      {posting ? "Posting\u2026" : "Comment"}
+      {isPostingCurrent ? "Posting\u2026" : "Comment"}
     </button>
   </div>
 </div>
