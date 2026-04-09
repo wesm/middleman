@@ -39,6 +39,7 @@ type mockClient struct {
 	comments             []*gh.IssueComment
 	reviews              []*gh.PullRequestReview
 	commits              []*gh.RepositoryCommit
+	forcePushEvents      []ForcePushEvent
 	ciStatus             *gh.CombinedStatus
 	checkRuns            []*gh.CheckRun
 	workflowRuns         []*gh.WorkflowRun
@@ -96,6 +97,10 @@ func (m *mockClient) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.P
 
 func (m *mockClient) ListCommits(_ context.Context, _, _ string, _ int) ([]*gh.RepositoryCommit, error) {
 	return m.commits, nil
+}
+
+func (m *mockClient) ListForcePushEvents(_ context.Context, _, _ string, _ int) ([]ForcePushEvent, error) {
+	return m.forcePushEvents, nil
 }
 
 func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.CombinedStatus, error) {

@@ -78,6 +78,12 @@ func (m *mockGH) ListCommits(
 	return nil, nil
 }
 
+func (m *mockGH) ListForcePushEvents(
+	_ context.Context, _, _ string, _ int,
+) ([]ghclient.ForcePushEvent, error) {
+	return nil, nil
+}
+
 func (m *mockGH) GetCombinedStatus(
 	_ context.Context, _, _, _ string,
 ) (*gh.CombinedStatus, error) {

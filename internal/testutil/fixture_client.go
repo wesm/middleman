@@ -106,6 +106,13 @@ func (c *FixtureClient) ListCommits(
 	return nil, nil
 }
 
+// ListForcePushEvents returns nil (read-only stub).
+func (c *FixtureClient) ListForcePushEvents(
+	_ context.Context, _, _ string, _ int,
+) ([]ghclient.ForcePushEvent, error) {
+	return nil, nil
+}
+
 // GetCombinedStatus returns nil (read-only stub).
 func (c *FixtureClient) GetCombinedStatus(
 	_ context.Context, _, _, _ string,

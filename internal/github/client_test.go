@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -40,6 +41,11 @@ func TestGraphQLEndpointForHost(t *testing.T) {
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost(""))
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost("github.com"))
 	require.Equal(t, "https://github.example.com/api/graphql", graphQLEndpointForHost("github.example.com"))
+}
+
+func TestClientInterfaceIncludesListForcePushEvents(t *testing.T) {
+	_, ok := reflect.TypeFor[Client]().MethodByName("ListForcePushEvents")
+	require.True(t, ok)
 }
 
 func TestListForcePushEvents(t *testing.T) {
