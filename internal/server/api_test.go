@@ -307,6 +307,45 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	return prID
 }
 
+func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	pr := &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      int64(number) * 1000,
+		Number:          number,
+		URL:             "https://github.com/" + owner + "/" + name + "/pull/" + string(rune('0'+number)),
+		Title:           "Test PR #" + string(rune('0'+number)),
+		Author:          "testuser",
+		State:           "open",
+		IsDraft:         false,
+		Body:            "test body",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: headSHA,
+		Additions:       5,
+		Deletions:       2,
+		CommentCount:    0,
+		ReviewDecision:  "",
+		CIStatus:        "",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	}
+
+	prID, err := database.UpsertMergeRequest(ctx, pr)
+	require.NoError(t, err)
+
+	require.NoError(t, database.EnsureKanbanState(ctx, prID))
+
+	return prID
+}
+
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	require := require.New(t)
 
@@ -526,10 +565,14 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 			require.Fail("GET pull detail should not call GitHub API")
 			return nil, nil
 		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, _ string) ([]*gh.WorkflowRun, error) {
+			require.Fail("GET pull detail should not call ListWorkflowRunsForHeadSHA")
+			return nil, nil
+		},
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "deadbeef")
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
@@ -542,11 +585,12 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 	// Seeded PR has no DetailFetchedAt, so detail_loaded should be false.
 	assert.False(resp.JSON200.DetailLoaded)
 	assert.Nil(resp.JSON200.DetailFetchedAt)
-	// GET path uses DB state (useLivePR=false). Seeded PR has no
-	// PlatformHeadSHA, so workflow check returns Checked=true (no
-	// workflows possible without a head SHA).
+	// GET path uses DB state (useLivePR=false) and must not make
+	// any live GitHub calls, including ListWorkflowRunsForHeadSHA.
+	// WorkflowApproval is empty (zero value) since the DB-only path
+	// returns early without checking workflows.
 	require.NotNil(resp.JSON200.WorkflowApproval)
-	assert.True(resp.JSON200.WorkflowApproval.Checked)
+	assert.False(resp.JSON200.WorkflowApproval.Checked)
 }
 
 func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
@@ -596,12 +640,11 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
-	// Sync response uses DB state for PR (saves a GetPullRequest call)
-	// but still fetches workflow runs via ListWorkflowRunsForHeadSHA.
+	// Sync response builds the detail response with useLivePR=false,
+	// so workflow approval is empty (no live GitHub calls on GET/read
+	// paths). The sync itself (SyncMR) handles updating the DB.
 	require.NotNil(resp.JSON200.WorkflowApproval)
-	assert.True(resp.JSON200.WorkflowApproval.Checked)
-	assert.True(resp.JSON200.WorkflowApproval.Required)
-	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
+	assert.False(resp.JSON200.WorkflowApproval.Checked)
 }
 
 func TestAPIApproveWorkflows(t *testing.T) {

@@ -2265,14 +2265,14 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 	mc.commits = []*gh.RepositoryCommit{}
 	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
 
-	// Budget only enough for ~1 PR detail fetch (6 calls worst case).
+	// Budget only enough for ~1 PR detail fetch (7 calls worst case).
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{{
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil, 6,
+		time.Minute, nil, 7,
 	)
 
 	syncer.RunOnce(ctx)

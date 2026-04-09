@@ -2140,7 +2140,12 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 		return fmt.Errorf("upsert issue #%d: %w", number, err)
 	}
 
-	return s.refreshIssueTimeline(ctx, repo, issueID, ghIssue)
+	if err := s.refreshIssueTimeline(ctx, repo, issueID, ghIssue); err != nil {
+		return err
+	}
+
+	_ = s.db.UpdateIssueDetailFetched(ctx, owner, name, number)
+	return nil
 }
 
 // SyncItemByNumber fetches an item by number from GitHub, determines

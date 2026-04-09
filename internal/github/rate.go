@@ -242,11 +242,13 @@ func (rt *RateTracker) isQuotaStale() bool {
 func (rt *RateTracker) rollIfNeeded() {
 	if rt.resetAt != nil {
 		if !time.Now().Before(*rt.resetAt) && !rt.lastRolledAt.Equal(*rt.resetAt) {
+			rt.lastRolledAt = *rt.resetAt
 			rt.count = 0
 			rt.hourStart = time.Now().UTC()
 			rt.remaining = -1
 			rt.limit = -1
-			rt.lastRolledAt = *rt.resetAt
+			rt.resetAt = nil
+			rt.persist()
 		}
 		return
 	}

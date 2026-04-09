@@ -477,18 +477,17 @@ func (s *Server) workflowApprovalState(
 		return workflowApprovalResponse{}
 	}
 
-	var currentState, headSHA string
-	if useLivePR {
-		pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
-		if prErr != nil || pr == nil {
-			return workflowApprovalResponse{}
-		}
-		currentState = pr.GetState()
-		headSHA = pr.GetHead().GetSHA()
-	} else {
-		currentState = mr.State
-		headSHA = mr.PlatformHeadSHA
+	if !useLivePR {
+		// DB-only path: no live GitHub calls.
+		return workflowApprovalResponse{}
 	}
+
+	pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
+	if prErr != nil || pr == nil {
+		return workflowApprovalResponse{}
+	}
+	currentState := pr.GetState()
+	headSHA := pr.GetHead().GetSHA()
 
 	if currentState != "open" || headSHA == "" {
 		return workflowApprovalResponse{Checked: true}

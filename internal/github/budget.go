@@ -4,8 +4,8 @@ import "sync"
 
 // PRDetailWorstCase is the maximum API calls a PR detail
 // fetch can make (detail + comments + reviews + commits +
-// combined status + check runs).
-const PRDetailWorstCase = 6
+// force-push events + combined status + check runs).
+const PRDetailWorstCase = 7
 
 // IssueDetailWorstCase is the maximum API calls an issue
 // detail fetch can make (detail + comments).
