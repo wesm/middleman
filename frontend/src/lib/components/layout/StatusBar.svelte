@@ -78,11 +78,11 @@
 
     const globalUsed = worst.rate_limit - worst.rate_remaining;
     const budgetLimit = worst.budget_limit ?? 0;
-    let text = `GitHub: ${globalUsed}/${worst.rate_limit} global, ${worst.requests_hour}`;
+    const budgetSpent = worst.budget_spent ?? 0;
+    let text = `GitHub: ${globalUsed}/${worst.rate_limit} global`;
     if (budgetLimit > 0) {
-      text += `/${budgetLimit}`;
+      text += `, ${budgetSpent}/${budgetLimit} budget`;
     }
-    text += " middleman";
 
     // Reset time
     if (worst.rate_reset_at) {
