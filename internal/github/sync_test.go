@@ -2339,7 +2339,13 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert.Equal(50, budget.Spent(),
 		"budget should not reset on normal decrease")
 
-	// Simulate window reset (remaining jumps up).
+	// Simulate window expiry: move resetAt to the past.
+	rt.mu.Lock()
+	pastReset := time.Now().Add(-1 * time.Second)
+	rt.resetAt = &pastReset
+	rt.mu.Unlock()
+
+	// Simulate window reset (remaining jumps up + old resetAt passed).
 	rt.UpdateFromRate(gh.Rate{
 		Remaining: 5000,
 		Limit:     5000,

@@ -102,12 +102,13 @@ func (rt *RateTracker) SetOnWindowReset(fn func()) {
 func (rt *RateTracker) UpdateFromRate(rate gh.Rate) {
 	rt.mu.Lock()
 	resetTime := rate.Reset.UTC()
-	// Detect GitHub window reset: remaining only increases when
-	// GitHub starts a new rate limit window. Ignore the jump
-	// from -1 (unknown) to a real value — that's first contact,
-	// not a reset.
+	// Detect GitHub window reset: remaining increases AND the
+	// previous resetAt has passed (proving the old window ended).
+	// Both conditions are required to avoid false resets from
+	// out-of-order responses within the same window.
 	var windowReset bool
-	if rt.remaining >= 0 && rate.Remaining > rt.remaining {
+	if rt.remaining >= 0 && rate.Remaining > rt.remaining &&
+		rt.resetAt != nil && !time.Now().Before(*rt.resetAt) {
 		rt.count = 1 // the current request is the first in the new window
 		rt.hourStart = time.Now().UTC()
 		windowReset = true

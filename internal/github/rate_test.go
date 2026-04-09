@@ -248,6 +248,7 @@ func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
 	d := openTestDB(t)
 	rt := NewRateTracker(d, "github.com")
 
+	// Use a future resetAt so requests accumulate normally.
 	reset1 := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(gh.Rate{
 		Limit:     5000,
@@ -259,16 +260,25 @@ func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
 	}
 	assert.Equal(50, rt.RequestsThisHour())
 
-	// GitHub window resets: remaining jumps up
-	reset2 := reset1.Add(1 * time.Hour)
+	// Simulate window expiry: move resetAt to the past.
+	rt.mu.Lock()
+	pastReset := time.Now().Add(-1 * time.Second)
+	rt.resetAt = &pastReset
+	// Keep remaining at a known value so UpdateFromRate can
+	// detect the jump. In production, remaining would still
+	// hold its last value until rollIfNeeded fires.
+	rt.remaining = 100
+	rt.mu.Unlock()
+
+	// GitHub window resets: remaining jumps up AND old resetAt
+	// has passed — both conditions met.
+	reset2 := time.Now().Add(1 * time.Hour)
 	rt.UpdateFromRate(gh.Rate{
 		Limit:     5000,
 		Remaining: 4999,
 		Reset:     gh.Timestamp{Time: reset2},
 	})
 
-	// Counter should have reset to 1 when remaining increased
-	// (the current request that triggered the window reset counts).
 	assert.Equal(1, rt.RequestsThisHour())
 	assert.Equal(4999, rt.Remaining())
 }
