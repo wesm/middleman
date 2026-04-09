@@ -1670,6 +1670,19 @@ func (s *Syncer) drainDetailQueue(
 func (s *Syncer) buildDetailQueueItems(
 	ctx context.Context,
 ) []QueueItem {
+	// Build set of tracked repos to filter out stale DB rows
+	// from removed repos.
+	s.reposMu.Lock()
+	trackedRepos := make(map[string]bool, len(s.repos))
+	for _, r := range s.repos {
+		host := r.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		trackedRepos[host+"\x00"+r.Owner+"/"+r.Name] = true
+	}
+	s.reposMu.Unlock()
+
 	// Gather watched MR numbers for matching.
 	s.watchMu.Lock()
 	watched := make(map[string]bool, len(s.watchedMRs))
@@ -1696,6 +1709,10 @@ func (s *Syncer) buildDetailQueueItems(
 	for _, pr := range prs {
 		repo, rErr := s.db.GetRepoByID(ctx, pr.RepoID)
 		if rErr != nil || repo == nil {
+			continue
+		}
+		repoKey := repo.PlatformHost + "\x00" + repo.Owner + "/" + repo.Name
+		if !trackedRepos[repoKey] {
 			continue
 		}
 		watchKey := fmt.Sprintf(
@@ -1729,6 +1746,10 @@ func (s *Syncer) buildDetailQueueItems(
 	for _, issue := range issues {
 		repo, rErr := s.db.GetRepoByID(ctx, issue.RepoID)
 		if rErr != nil || repo == nil {
+			continue
+		}
+		repoKey := repo.PlatformHost + "\x00" + repo.Owner + "/" + repo.Name
+		if !trackedRepos[repoKey] {
 			continue
 		}
 		items = append(items, QueueItem{
