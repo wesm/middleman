@@ -2451,19 +2451,13 @@ func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
 		0,
 	)
 
-	sha := "abc123"
-	number := 1
-	ghPR := &gh.PullRequest{
-		Number: &number,
-		Head:   &gh.PullRequestBranch{SHA: &sha},
-	}
-
 	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
 	err := syncer.refreshCIStatus(
 		context.Background(),
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		repoID,
-		ghPR,
+		1,
+		"abc123",
 	)
 	require.NoError(t, err)
 
@@ -2494,19 +2488,13 @@ func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
 		0,
 	)
 
-	sha := "abc123"
-	number := 1
-	ghPR := &gh.PullRequest{
-		Number: &number,
-		Head:   &gh.PullRequestBranch{SHA: &sha},
-	}
-
 	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
 	err := syncer.refreshCIStatus(
 		context.Background(),
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		repoID,
-		ghPR,
+		1,
+		"abc123",
 	)
 	require.NoError(t, err)
 
@@ -2622,6 +2610,7 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
+		0,
 	)
 
 	var (
@@ -2668,6 +2657,7 @@ func TestSyncerHandles304OnIssueList(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute,
 		nil,
+		0,
 	)
 
 	var (
@@ -2709,9 +2699,10 @@ func TestSyncerRefreshesCIOnPRList304(t *testing.T) {
 		checkRuns: []*gh.CheckRun{{Status: &inProgress}},
 	}
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+	// Budget must be >0 so detail drain runs and populates CI.
 	seedSyncer := NewSyncer(
 		map[string]Client{"github.com": firstClient},
-		d, nil, repos, time.Minute, nil,
+		d, nil, repos, time.Minute, nil, 10000,
 	)
 	seedSyncer.RunOnce(ctx)
 
@@ -2734,7 +2725,7 @@ func TestSyncerRefreshesCIOnPRList304(t *testing.T) {
 	}
 	refreshSyncer := NewSyncer(
 		map[string]Client{"github.com": refreshClient},
-		d, nil, repos, time.Minute, nil,
+		d, nil, repos, time.Minute, nil, 0,
 	)
 	refreshSyncer.RunOnce(ctx)
 
@@ -2782,7 +2773,7 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 		map[string]Client{"github.com": mc},
 		d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil,
+		time.Minute, nil, 0,
 	)
 	syncer.RunOnce(ctx)
 
@@ -2802,12 +2793,16 @@ type partialFailureMock struct {
 	mockClient
 	issuesCached         bool
 	prsCached            bool
+	listOpenPRsErr       error // injected error for ListOpenPullRequests
 	listIssueCommentsErr error // injected error for ListIssueComments
 	listReviewsErr       error // injected error for ListReviews (MR timeline)
 	getIssueErr          error // injected error for GetIssue (closure path)
 }
 
 func (m *partialFailureMock) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+	if m.listOpenPRsErr != nil {
+		return nil, m.listOpenPRsErr
+	}
 	if m.prsCached {
 		return nil, notModifiedErr()
 	}
@@ -2921,7 +2916,7 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil,
+		d, nil, repos, time.Minute, nil, 0,
 	)
 
 	// Cycle 1: issue list succeeds, issue is upserted to DB, but
@@ -3010,7 +3005,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 
 	seedSyncer := NewSyncer(
 		map[string]Client{"github.com": seedMC},
-		d, nil, repos, time.Minute, nil,
+		d, nil, repos, time.Minute, nil, 0,
 	)
 	seedSyncer.RunOnce(ctx)
 
@@ -3031,7 +3026,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil,
+		d, nil, repos, time.Minute, nil, 0,
 	)
 
 	// Cycle 1: list succeeds (empty), closure detection finds #7,
@@ -3086,12 +3081,11 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
 }
 
-// TestSyncerMRTimelineFailureMarksRepoFailed verifies that when
-// syncOpenMR's timeline refresh fails (here via ListReviews error),
-// the MR path is marked failed, and the next cycle retries timeline
-// via forceRefresh. Also verifies issue path is NOT force-refreshed
-// when only MR path failed (scoped failure tracking).
-func TestSyncerMRTimelineFailureMarksRepoFailed(t *testing.T) {
+// TestSyncerMRListFailureMarksRepoFailed verifies that when the
+// PR list fails, the MR path is marked failed, and the next cycle
+// invalidates the ETag and retries. Also verifies issue path is NOT
+// force-refreshed when only MR path failed (scoped failure tracking).
+func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	ctx := context.Background()
@@ -3106,51 +3100,32 @@ func TestSyncerMRTimelineFailureMarksRepoFailed(t *testing.T) {
 	mc.comments = []*gh.IssueComment{}
 	mc.reviews = []*gh.PullRequestReview{}
 	mc.commits = []*gh.RepositoryCommit{}
-	// MR timeline refresh fails via ListReviews error.
-	mc.listReviewsErr = fmt.Errorf("transient reviews failure")
+	// PR list fails on first call.
+	mc.listOpenPRsErr = fmt.Errorf("transient PR list failure")
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc},
-		d, nil, repos, time.Minute, nil,
+		d, nil, repos, time.Minute, nil, 0,
 	)
 
-	// Cycle 1: MR upserted, but refreshTimeline fails at ListReviews →
-	// failMR set.
+	// Cycle 1: PR list fails → failMR set, issues unaffected.
 	syncer.RunOnce(ctx)
 
-	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
-	require.NoError(err)
-	require.NotNil(mr, "MR should be upserted even though timeline failed")
-
-	// No MR events because timeline refresh failed.
-	events, err := d.ListMREvents(ctx, mr.ID)
-	require.NoError(err)
-	assert.Empty(events, "no events should exist after failed timeline refresh")
+	mr, _ := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	assert.Nil(mr, "MR should not be upserted when PR list failed")
 
 	v, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
-	assert.True(flagged, "failedRepos must be set after MR timeline failure")
+	assert.True(flagged, "failedRepos must be set after PR list failure")
 	assert.Equal(failMR, v.(failScope), "only failMR scope should be set")
 
-	// Clear error, add a review, simulate warm caches.
-	mc.listReviewsErr = nil
-	reviewID := int64(500)
-	reviewState := "APPROVED"
-	reviewUser := "reviewer"
-	reviewBody := "lgtm"
-	mc.reviews = []*gh.PullRequestReview{{
-		ID:          &reviewID,
-		State:       &reviewState,
-		Body:        &reviewBody,
-		SubmittedAt: makeTimestamp(now),
-		User:        &gh.User{Login: &reviewUser},
-	}}
-	mc.prsCached = true
+	// Clear error, simulate warm caches.
+	mc.listOpenPRsErr = nil
+	mc.prsCached = false // allow next list to succeed
 	mc.issuesCached = true
 
 	invalidateBefore := mc.invalidateCalls.Load()
 
-	// Cycle 2: forceMR=true overrides needsTimeline for MR even though
-	// UpdatedAt unchanged → timeline retried → review event lands.
+	// Cycle 2: ETag invalidated for pulls only → fresh PR list → MR upserted.
 	// Issue cache should remain warm (only pulls invalidated).
 	syncer.RunOnce(ctx)
 
@@ -3162,11 +3137,9 @@ func TestSyncerMRTimelineFailureMarksRepoFailed(t *testing.T) {
 	assert.True(mc.issuesCached,
 		"issue cache should stay warm when only MR path failed")
 
-	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
 	require.NoError(err)
-	events, err = d.ListMREvents(ctx, mr.ID)
-	require.NoError(err)
-	assert.NotEmpty(events, "review event should be persisted after forced MR timeline retry")
+	require.NotNil(mr, "MR should be upserted after successful retry")
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
@@ -3222,7 +3195,7 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 		map[string]Client{"github.com": mock},
 		d, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Hour, nil,
+		time.Hour, nil, 0,
 	)
 
 	// The handler wraps the request ctx in context.WithoutCancel,
