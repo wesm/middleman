@@ -7,7 +7,7 @@ import IssueCommentBox from "../../../../packages/ui/src/components/detail/Issue
 import {
   getCommentDraft,
   setCommentDraft,
-} from "../../../../packages/ui/src/components/detail/comment-drafts.js";
+} from "../../../../packages/ui/src/components/detail/comment-drafts.svelte.js";
 import CommentBoxContextHarness from "./CommentBoxContextHarness.svelte";
 
 function deferred(): {
@@ -19,6 +19,10 @@ function deferred(): {
     resolve = r;
   });
   return { promise, resolve };
+}
+
+function deferredByNumber(numbers: number[]): Map<number, ReturnType<typeof deferred>> {
+  return new Map(numbers.map((number) => [number, deferred()]));
 }
 
 function renderPullCommentBox(owner = "octo", name = "repo", number = 1) {
@@ -190,5 +194,121 @@ describe("comment draft persistence", () => {
       ) as HTMLTextAreaElement).value,
     ).toBe("new issue draft");
     expect(getCommentDraft("issue", "octo", "repo", 2)).toBe("new issue draft");
+  });
+
+  it("keeps the original pull request disabled when returning to it before its submit resolves", async () => {
+    const submits = deferredByNumber([1, 2]);
+    const submitComment = async (_owner: string, _name: string, number: number) => {
+      await submits.get(number)?.promise;
+    };
+    const { rerender } = render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment,
+      },
+    });
+
+    await fireEvent.input(screen.getByPlaceholderText(
+      "Write a comment... (Cmd+Enter to submit)",
+    ), { target: { value: "old pull draft" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    setCommentDraft("pull", "octo", "repo", 2, "new pull draft");
+    await rerender({ kind: "pull", owner: "octo", name: "repo", number: 2, submitComment });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await rerender({ kind: "pull", owner: "octo", name: "repo", number: 1, submitComment });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    submits.get(2)?.resolve();
+    await waitFor(() => {
+      expect(getCommentDraft("pull", "octo", "repo", 2)).toBe("");
+    });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+
+    submits.get(1)?.resolve();
+    await waitFor(() => {
+      expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("");
+    });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(false);
+  });
+
+  it("keeps the original issue disabled when returning to it before its submit resolves", async () => {
+    const submits = deferredByNumber([1, 2]);
+    const submitComment = async (_owner: string, _name: string, number: number) => {
+      await submits.get(number)?.promise;
+    };
+    const { rerender } = render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment,
+      },
+    });
+
+    await fireEvent.input(screen.getByPlaceholderText(
+      "Write a comment... (Cmd+Enter to submit)",
+    ), { target: { value: "old issue draft" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    setCommentDraft("issue", "octo", "repo", 2, "new issue draft");
+    await rerender({ kind: "issue", owner: "octo", name: "repo", number: 2, submitComment });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await rerender({ kind: "issue", owner: "octo", name: "repo", number: 1, submitComment });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    submits.get(2)?.resolve();
+    await waitFor(() => {
+      expect(getCommentDraft("issue", "octo", "repo", 2)).toBe("");
+    });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+
+    submits.get(1)?.resolve();
+    await waitFor(() => {
+      expect(getCommentDraft("issue", "octo", "repo", 1)).toBe("");
+    });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(false);
   });
 });

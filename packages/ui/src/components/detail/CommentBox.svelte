@@ -3,8 +3,9 @@
   import {
     clearCommentDraft,
     getCommentDraft,
+    getCommentDraftKey,
     setCommentDraft,
-  } from "./comment-drafts.js";
+  } from "./comment-drafts.svelte.js";
 
   const { detail } = getStores();
 
@@ -16,28 +17,50 @@
 
   const { owner, name, number }: Props = $props();
 
-  let currentDraftKey = $state("");
-  let body = $state("");
-  let postingDraftKey = $state<string | null>(null);
+  const currentDraftKey = $derived(
+    getCommentDraftKey("pull", owner, name, number),
+  );
+  const body = $derived(getCommentDraft("pull", owner, name, number));
+  let pendingDraftCounts = $state<Record<string, number>>({});
+  let errorDraftKey = $state<string | null>(null);
   let localError = $state<string | null>(null);
-  let submitGeneration = 0;
-
-  $effect(() => {
-    const nextDraftKey = `pull:${owner}/${name}/${number}`;
-    if (nextDraftKey === currentDraftKey) return;
-    currentDraftKey = nextDraftKey;
-    body = getCommentDraft("pull", owner, name, number);
-    localError = null;
-  });
 
   const isEmpty = $derived(body.trim() === "");
+  const visibleError = $derived(
+    errorDraftKey === currentDraftKey ? localError : null,
+  );
   const isPostingCurrent = $derived(
-    postingDraftKey === currentDraftKey,
+    (pendingDraftCounts[currentDraftKey] ?? 0) > 0,
   );
 
+  function addPendingDraft(key: string): void {
+    pendingDraftCounts = {
+      ...pendingDraftCounts,
+      [key]: (pendingDraftCounts[key] ?? 0) + 1,
+    };
+  }
+
+  function removePendingDraft(key: string): void {
+    const nextCount = (pendingDraftCounts[key] ?? 0) - 1;
+    if (nextCount <= 0) {
+      const { [key]: _removed, ...rest } = pendingDraftCounts;
+      pendingDraftCounts = rest;
+      return;
+    }
+    pendingDraftCounts = {
+      ...pendingDraftCounts,
+      [key]: nextCount,
+    };
+  }
+
   function handleInput(e: Event): void {
-    body = (e.currentTarget as HTMLTextAreaElement).value;
-    setCommentDraft("pull", owner, name, number, body);
+    setCommentDraft(
+      "pull",
+      owner,
+      name,
+      number,
+      (e.currentTarget as HTMLTextAreaElement).value,
+    );
   }
 
   async function handleSubmit(): Promise<void> {
@@ -47,42 +70,31 @@
     const submittedNumber = number;
     const submittedDraftKey = currentDraftKey;
     const submittedBody = body.trim();
-    const submittedGeneration = ++submitGeneration;
-    postingDraftKey = submittedDraftKey;
+    addPendingDraft(submittedDraftKey);
+    errorDraftKey = submittedDraftKey;
     localError = null;
-    await detail.submitComment(
-      submittedOwner,
-      submittedName,
-      submittedNumber,
-      submittedBody,
-    );
-    const storeError = detail.getDetailError();
-    if (storeError !== null) {
-      if (
-        currentDraftKey === submittedDraftKey &&
-        submitGeneration === submittedGeneration
-      ) {
-        localError = storeError;
-      }
-    } else {
-      clearCommentDraft(
-        "pull",
+    try {
+      await detail.submitComment(
         submittedOwner,
         submittedName,
         submittedNumber,
+        submittedBody,
       );
-      if (
-        currentDraftKey === submittedDraftKey &&
-        submitGeneration === submittedGeneration
-      ) {
-        body = "";
+      const storeError = detail.getDetailError();
+      if (storeError !== null) {
+        if (currentDraftKey === submittedDraftKey) {
+          localError = storeError;
+        }
+      } else {
+        clearCommentDraft(
+          "pull",
+          submittedOwner,
+          submittedName,
+          submittedNumber,
+        );
       }
-    }
-    if (
-      postingDraftKey === submittedDraftKey &&
-      submitGeneration === submittedGeneration
-    ) {
-      postingDraftKey = null;
+    } finally {
+      removePendingDraft(submittedDraftKey);
     }
   }
 
@@ -103,8 +115,8 @@
     disabled={isPostingCurrent}
     rows={4}
   ></textarea>
-  {#if localError !== null}
-    <p class="error-msg">{localError}</p>
+  {#if visibleError !== null}
+    <p class="error-msg">{visibleError}</p>
   {/if}
   <div class="comment-actions">
     <button

@@ -1,8 +1,8 @@
 type CommentDraftTarget = "issue" | "pull";
 
-const drafts = new Map<string, string>();
+let drafts = $state<Record<string, string>>({});
 
-function draftKey(
+export function getCommentDraftKey(
   target: CommentDraftTarget,
   owner: string,
   name: string,
@@ -17,7 +17,7 @@ export function getCommentDraft(
   name: string,
   number: number,
 ): string {
-  return drafts.get(draftKey(target, owner, name, number)) ?? "";
+  return drafts[getCommentDraftKey(target, owner, name, number)] ?? "";
 }
 
 export function setCommentDraft(
@@ -27,12 +27,16 @@ export function setCommentDraft(
   number: number,
   body: string,
 ): void {
-  const key = draftKey(target, owner, name, number);
+  const key = getCommentDraftKey(target, owner, name, number);
   if (body === "") {
-    drafts.delete(key);
+    const { [key]: _removed, ...rest } = drafts;
+    drafts = rest;
     return;
   }
-  drafts.set(key, body);
+  drafts = {
+    ...drafts,
+    [key]: body,
+  };
 }
 
 export function clearCommentDraft(
@@ -41,5 +45,7 @@ export function clearCommentDraft(
   name: string,
   number: number,
 ): void {
-  drafts.delete(draftKey(target, owner, name, number));
+  const key = getCommentDraftKey(target, owner, name, number);
+  const { [key]: _removed, ...rest } = drafts;
+  drafts = rest;
 }
