@@ -5,7 +5,11 @@ import { STORES_KEY } from "../../../../packages/ui/src/context.js";
 import CommentBox from "../../../../packages/ui/src/components/detail/CommentBox.svelte";
 import IssueCommentBox from "../../../../packages/ui/src/components/detail/IssueCommentBox.svelte";
 import {
+  clearCommentSubmitError,
+  finishCommentSubmit,
   getCommentDraft,
+  getCommentSubmitError,
+  isCommentSubmitPending,
   setCommentDraft,
 } from "../../../../packages/ui/src/components/detail/comment-drafts.svelte.js";
 import CommentBoxContextHarness from "./CommentBoxContextHarness.svelte";
@@ -59,6 +63,14 @@ describe("comment draft persistence", () => {
     setCommentDraft("pull", "octo", "repo", 2, "");
     setCommentDraft("issue", "octo", "repo", 1, "");
     setCommentDraft("issue", "octo", "repo", 2, "");
+    clearCommentSubmitError("pull", "octo", "repo", 1);
+    clearCommentSubmitError("pull", "octo", "repo", 2);
+    clearCommentSubmitError("issue", "octo", "repo", 1);
+    clearCommentSubmitError("issue", "octo", "repo", 2);
+    finishCommentSubmit("pull", "octo", "repo", 1);
+    finishCommentSubmit("pull", "octo", "repo", 2);
+    finishCommentSubmit("issue", "octo", "repo", 1);
+    finishCommentSubmit("issue", "octo", "repo", 2);
     cleanup();
   });
 
@@ -129,6 +141,7 @@ describe("comment draft persistence", () => {
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).disabled,
     ).toBe(false);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 2)).toBe(false);
     expect(
       (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
     ).toBe(false);
@@ -178,6 +191,7 @@ describe("comment draft persistence", () => {
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).disabled,
     ).toBe(false);
+    expect(isCommentSubmitPending("issue", "octo", "repo", 2)).toBe(false);
     expect(
       (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
     ).toBe(false);
@@ -227,6 +241,7 @@ describe("comment draft persistence", () => {
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).disabled,
     ).toBe(true);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -252,6 +267,7 @@ describe("comment draft persistence", () => {
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).disabled,
     ).toBe(false);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(false);
   });
 
   it("keeps the original issue disabled when returning to it before its submit resolves", async () => {
@@ -285,6 +301,7 @@ describe("comment draft persistence", () => {
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).disabled,
     ).toBe(true);
+    expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -310,5 +327,164 @@ describe("comment draft persistence", () => {
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).disabled,
     ).toBe(false);
+    expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(false);
+  });
+
+  it("keeps a pull request pending submit disabled across remounts", async () => {
+    const submit = deferred();
+    const firstRender = render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => submit.promise,
+      },
+    });
+
+    await fireEvent.input(screen.getByPlaceholderText(
+      "Write a comment... (Cmd+Enter to submit)",
+    ), { target: { value: "draft review note" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(true);
+
+    firstRender.unmount();
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => submit.promise,
+      },
+    });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+
+    submit.resolve();
+    await waitFor(() => {
+      expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(false);
+    });
+  });
+
+  it("keeps an issue pending submit disabled across remounts", async () => {
+    const submit = deferred();
+    const firstRender = render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => submit.promise,
+      },
+    });
+
+    await fireEvent.input(screen.getByPlaceholderText(
+      "Write a comment... (Cmd+Enter to submit)",
+    ), { target: { value: "draft issue note" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(true);
+
+    firstRender.unmount();
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => submit.promise,
+      },
+    });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+
+    submit.resolve();
+    await waitFor(() => {
+      expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(false);
+    });
+  });
+
+  it("keeps a pull request submit error visible across remounts", async () => {
+    const submit = deferred();
+    const firstRender = render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => submit.promise,
+        getError: () => "pull submit failed",
+      },
+    });
+
+    await fireEvent.input(screen.getByPlaceholderText(
+      "Write a comment... (Cmd+Enter to submit)",
+    ), { target: { value: "draft review note" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    submit.resolve();
+    await waitFor(() => {
+      expect(getCommentSubmitError("pull", "octo", "repo", 1)).toBe("pull submit failed");
+    });
+
+    firstRender.unmount();
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => Promise.resolve(),
+        getError: () => "pull submit failed",
+      },
+    });
+
+    expect(screen.getByText("pull submit failed")).toBeTruthy();
+  });
+
+  it("keeps an issue submit error visible across remounts", async () => {
+    const submit = deferred();
+    const firstRender = render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => submit.promise,
+        getError: () => "issue submit failed",
+      },
+    });
+
+    await fireEvent.input(screen.getByPlaceholderText(
+      "Write a comment... (Cmd+Enter to submit)",
+    ), { target: { value: "draft issue note" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    submit.resolve();
+    await waitFor(() => {
+      expect(getCommentSubmitError("issue", "octo", "repo", 1)).toBe("issue submit failed");
+    });
+
+    firstRender.unmount();
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        submitComment: async () => Promise.resolve(),
+        getError: () => "issue submit failed",
+      },
+    });
+
+    expect(screen.getByText("issue submit failed")).toBeTruthy();
   });
 });

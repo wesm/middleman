@@ -1,9 +1,15 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
   import {
+    beginCommentSubmit,
+    clearCommentSubmitError,
     clearCommentDraft,
+    finishCommentSubmit,
     getCommentDraft,
     getCommentDraftKey,
+    getCommentSubmitError,
+    isCommentSubmitPending,
+    setCommentSubmitError,
     setCommentDraft,
   } from "./comment-drafts.svelte.js";
 
@@ -21,37 +27,14 @@
     getCommentDraftKey("issue", owner, name, number),
   );
   const body = $derived(getCommentDraft("issue", owner, name, number));
-  let pendingDraftCounts = $state<Record<string, number>>({});
-  let errorDraftKey = $state<string | null>(null);
-  let localError = $state<string | null>(null);
 
   const isEmpty = $derived(body.trim() === "");
   const visibleError = $derived(
-    errorDraftKey === currentDraftKey ? localError : null,
+    getCommentSubmitError("issue", owner, name, number),
   );
   const isPostingCurrent = $derived(
-    (pendingDraftCounts[currentDraftKey] ?? 0) > 0,
+    isCommentSubmitPending("issue", owner, name, number),
   );
-
-  function addPendingDraft(key: string): void {
-    pendingDraftCounts = {
-      ...pendingDraftCounts,
-      [key]: (pendingDraftCounts[key] ?? 0) + 1,
-    };
-  }
-
-  function removePendingDraft(key: string): void {
-    const nextCount = (pendingDraftCounts[key] ?? 0) - 1;
-    if (nextCount <= 0) {
-      const { [key]: _removed, ...rest } = pendingDraftCounts;
-      pendingDraftCounts = rest;
-      return;
-    }
-    pendingDraftCounts = {
-      ...pendingDraftCounts,
-      [key]: nextCount,
-    };
-  }
 
   function handleInput(e: Event): void {
     setCommentDraft(
@@ -68,11 +51,9 @@
     const submittedOwner = owner;
     const submittedName = name;
     const submittedNumber = number;
-    const submittedDraftKey = currentDraftKey;
     const submittedBody = body.trim();
-    addPendingDraft(submittedDraftKey);
-    errorDraftKey = submittedDraftKey;
-    localError = null;
+    beginCommentSubmit("issue", submittedOwner, submittedName, submittedNumber);
+    clearCommentSubmitError("issue", submittedOwner, submittedName, submittedNumber);
     try {
       await issues.submitIssueComment(
         submittedOwner,
@@ -82,9 +63,13 @@
       );
       const storeError = issues.getIssueDetailError();
       if (storeError !== null) {
-        if (currentDraftKey === submittedDraftKey) {
-          localError = storeError;
-        }
+        setCommentSubmitError(
+          "issue",
+          submittedOwner,
+          submittedName,
+          submittedNumber,
+          storeError,
+        );
       } else {
         clearCommentDraft(
           "issue",
@@ -92,9 +77,20 @@
           submittedName,
           submittedNumber,
         );
+        clearCommentSubmitError(
+          "issue",
+          submittedOwner,
+          submittedName,
+          submittedNumber,
+        );
       }
     } finally {
-      removePendingDraft(submittedDraftKey);
+      finishCommentSubmit(
+        "issue",
+        submittedOwner,
+        submittedName,
+        submittedNumber,
+      );
     }
   }
 
