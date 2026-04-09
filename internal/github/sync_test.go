@@ -2740,7 +2740,7 @@ func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 	seedSyncer := NewSyncer(
 		map[string]Client{"github.com": seedClient},
-		d, nil, repos, time.Minute, nil, 10000,
+		d, nil, repos, time.Minute, nil, testBudget(10000),
 	)
 	seedSyncer.RunOnce(ctx)
 
@@ -2764,7 +2764,7 @@ func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
 	// budgetPerHour=0 disables detail drain so only index phase runs.
 	refreshSyncer := NewSyncer(
 		map[string]Client{"github.com": spy},
-		d, nil, repos, time.Minute, nil, 0,
+		d, nil, repos, time.Minute, nil, nil,
 	)
 	refreshSyncer.RunOnce(ctx)
 
