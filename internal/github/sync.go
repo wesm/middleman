@@ -1139,17 +1139,20 @@ func (s *Syncer) fetchMRDetail(
 	calls += 2
 
 	// Determine whether CI had pending checks for scoring by
-	// reading the DB row that refreshCIStatus just wrote.
-	ciHadPending := false
+	// reading the DB row that refreshCIStatus just wrote. Use
+	// ciHasPending (checks individual statuses) rather than the
+	// aggregate CIStatus, which becomes "failure" when any check
+	// fails even if others are still running.
+	pending := false
 	freshMR, freshErr := s.db.GetMergeRequest(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if freshErr == nil && freshMR != nil {
-		ciHadPending = freshMR.CIStatus == "pending"
+		pending = ciHasPending(freshMR.CIChecksJSON)
 	}
 
 	if err := s.db.UpdateMRDetailFetched(
-		ctx, repo.Owner, repo.Name, number, ciHadPending,
+		ctx, repo.Owner, repo.Name, number, pending,
 	); err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for MR #%d: %w", number, err,
