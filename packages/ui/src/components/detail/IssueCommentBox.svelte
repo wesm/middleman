@@ -18,8 +18,9 @@
 
   let currentDraftKey = $state("");
   let body = $state("");
-  let posting = $state(false);
+  let postingDraftKey = $state<string | null>(null);
   let localError = $state<string | null>(null);
+  let submitGeneration = 0;
 
   $effect(() => {
     const nextDraftKey = `issue:${owner}/${name}/${number}`;
@@ -30,6 +31,9 @@
   });
 
   const isEmpty = $derived(body.trim() === "");
+  const isPostingCurrent = $derived(
+    postingDraftKey === currentDraftKey,
+  );
 
   function handleInput(e: Event): void {
     body = (e.currentTarget as HTMLTextAreaElement).value;
@@ -37,13 +41,14 @@
   }
 
   async function handleSubmit(): Promise<void> {
-    if (isEmpty || posting) return;
+    if (isEmpty || isPostingCurrent) return;
     const submittedOwner = owner;
     const submittedName = name;
     const submittedNumber = number;
     const submittedDraftKey = currentDraftKey;
     const submittedBody = body.trim();
-    posting = true;
+    const submittedGeneration = ++submitGeneration;
+    postingDraftKey = submittedDraftKey;
     localError = null;
     await issues.submitIssueComment(
       submittedOwner,
@@ -51,10 +56,12 @@
       submittedNumber,
       submittedBody,
     );
-    posting = false;
     const storeError = issues.getIssueDetailError();
     if (storeError !== null) {
-      if (currentDraftKey === submittedDraftKey) {
+      if (
+        currentDraftKey === submittedDraftKey &&
+        submitGeneration === submittedGeneration
+      ) {
         localError = storeError;
       }
     } else {
@@ -64,9 +71,18 @@
         submittedName,
         submittedNumber,
       );
-      if (currentDraftKey === submittedDraftKey) {
+      if (
+        currentDraftKey === submittedDraftKey &&
+        submitGeneration === submittedGeneration
+      ) {
         body = "";
       }
+    }
+    if (
+      postingDraftKey === submittedDraftKey &&
+      submitGeneration === submittedGeneration
+    ) {
+      postingDraftKey = null;
     }
   }
 
@@ -84,7 +100,7 @@
     value={body}
     oninput={handleInput}
     onkeydown={handleKeydown}
-    disabled={posting}
+    disabled={isPostingCurrent}
     rows={4}
   ></textarea>
   {#if localError !== null}
@@ -94,9 +110,9 @@
     <button
       class="submit-btn"
       onclick={() => void handleSubmit()}
-      disabled={isEmpty || posting}
+      disabled={isEmpty || isPostingCurrent}
     >
-      {posting ? "Posting\u2026" : "Comment"}
+      {isPostingCurrent ? "Posting\u2026" : "Comment"}
     </button>
   </div>
 </div>

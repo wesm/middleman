@@ -120,6 +120,15 @@ describe("comment draft persistence", () => {
       submitComment: async () => submit.promise,
     });
 
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+
     submit.resolve();
 
     await waitFor(() => {
@@ -159,6 +168,15 @@ describe("comment draft persistence", () => {
       number: 2,
       submitComment: async () => submit.promise,
     });
+
+    expect(
+      (screen.getByPlaceholderText(
+        "Write a comment... (Cmd+Enter to submit)",
+      ) as HTMLTextAreaElement).disabled,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
 
     submit.resolve();
 
