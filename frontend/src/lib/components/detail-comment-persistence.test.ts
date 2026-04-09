@@ -1,10 +1,13 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { STORES_KEY } from "../../../../packages/ui/src/context.js";
 import CommentBox from "../../../../packages/ui/src/components/detail/CommentBox.svelte";
 import IssueCommentBox from "../../../../packages/ui/src/components/detail/IssueCommentBox.svelte";
-import { setCommentDraft } from "../../../../packages/ui/src/components/detail/comment-drafts.js";
+import {
+  getCommentDraft,
+  setCommentDraft,
+} from "../../../../packages/ui/src/components/detail/comment-drafts.js";
 import CommentBoxContextHarness from "./CommentBoxContextHarness.svelte";
 
 function deferred(): {
@@ -118,14 +121,17 @@ describe("comment draft persistence", () => {
     });
 
     submit.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+
+    await waitFor(() => {
+      expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("");
+    });
 
     expect(
       (screen.getByPlaceholderText(
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).value,
     ).toBe("new pull draft");
+    expect(getCommentDraft("pull", "octo", "repo", 2)).toBe("new pull draft");
   });
 
   it("does not clear the newly selected issue draft when an earlier submit resolves", async () => {
@@ -155,13 +161,16 @@ describe("comment draft persistence", () => {
     });
 
     submit.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+
+    await waitFor(() => {
+      expect(getCommentDraft("issue", "octo", "repo", 1)).toBe("");
+    });
 
     expect(
       (screen.getByPlaceholderText(
         "Write a comment... (Cmd+Enter to submit)",
       ) as HTMLTextAreaElement).value,
     ).toBe("new issue draft");
+    expect(getCommentDraft("issue", "octo", "repo", 2)).toBe("new issue draft");
   });
 });

@@ -38,16 +38,35 @@
 
   async function handleSubmit(): Promise<void> {
     if (isEmpty || posting) return;
+    const submittedOwner = owner;
+    const submittedName = name;
+    const submittedNumber = number;
+    const submittedDraftKey = currentDraftKey;
+    const submittedBody = body.trim();
     posting = true;
     localError = null;
-    await detail.submitComment(owner, name, number, body.trim());
+    await detail.submitComment(
+      submittedOwner,
+      submittedName,
+      submittedNumber,
+      submittedBody,
+    );
     posting = false;
     const storeError = detail.getDetailError();
     if (storeError !== null) {
-      localError = storeError;
+      if (currentDraftKey === submittedDraftKey) {
+        localError = storeError;
+      }
     } else {
-      clearCommentDraft("pull", owner, name, number);
-      body = "";
+      clearCommentDraft(
+        "pull",
+        submittedOwner,
+        submittedName,
+        submittedNumber,
+      );
+      if (currentDraftKey === submittedDraftKey) {
+        body = "";
+      }
     }
   }
 
