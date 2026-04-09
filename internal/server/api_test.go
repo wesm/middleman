@@ -640,11 +640,12 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
-	// Sync response builds the detail response with useLivePR=false,
-	// so workflow approval is empty (no live GitHub calls on GET/read
-	// paths). The sync itself (SyncMR) handles updating the DB.
+	// Sync response uses workflowCheckRuns mode: reads PR state
+	// from DB (just synced) and fetches workflow runs live.
 	require.NotNil(resp.JSON200.WorkflowApproval)
-	assert.False(resp.JSON200.WorkflowApproval.Checked)
+	assert.True(resp.JSON200.WorkflowApproval.Checked)
+	assert.True(resp.JSON200.WorkflowApproval.Required)
+	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
 }
 
 func TestAPIApproveWorkflows(t *testing.T) {

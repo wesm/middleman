@@ -2272,7 +2272,7 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 			Owner: "owner", Name: "repo",
 			PlatformHost: "github.com",
 		}},
-		time.Minute, nil, 7,
+		time.Minute, nil, PRDetailWorstCase,
 	)
 
 	syncer.RunOnce(ctx)

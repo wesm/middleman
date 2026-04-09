@@ -382,7 +382,7 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, false)
+	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, workflowDBOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +394,7 @@ func (s *Server) buildPullDetailResponse(
 	ctx context.Context,
 	owner, name string,
 	mr *db.MergeRequest,
-	useLivePR bool,
+	wfMode workflowMode,
 ) (mergeRequestDetailResponse, error) {
 	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
@@ -417,7 +417,7 @@ func (s *Server) buildPullDetailResponse(
 		RepoOwner:        owner,
 		RepoName:         name,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
-		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, useLivePR),
+		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, wfMode),
 		Warnings:         s.diffWarnings(mr),
 		DetailLoaded:     mr.DetailFetchedAt != nil,
 	}
@@ -466,28 +466,48 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	return nil
 }
 
+// workflowMode controls which live GitHub calls workflowApprovalState makes.
+type workflowMode int
+
+const (
+	// workflowDBOnly makes no live calls. Used by GET detail.
+	workflowDBOnly workflowMode = iota
+	// workflowCheckRuns reads PR state from DB but fetches
+	// workflow runs live. Used by POST sync (PR just synced,
+	// no need to re-fetch it).
+	workflowCheckRuns
+	// workflowFull fetches the PR live and then workflow runs.
+	// Used by the approve-workflows action.
+	workflowFull
+)
+
 func (s *Server) workflowApprovalState(
 	ctx context.Context,
 	owner, name string,
 	mr *db.MergeRequest,
-	useLivePR bool,
+	mode workflowMode,
 ) workflowApprovalResponse {
+	if mode == workflowDBOnly {
+		return workflowApprovalResponse{}
+	}
+
 	client, err := s.syncer.ClientForRepo(owner, name)
 	if err != nil {
 		return workflowApprovalResponse{}
 	}
 
-	if !useLivePR {
-		// DB-only path: no live GitHub calls.
-		return workflowApprovalResponse{}
+	var currentState, headSHA string
+	if mode == workflowFull {
+		pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
+		if prErr != nil || pr == nil {
+			return workflowApprovalResponse{}
+		}
+		currentState = pr.GetState()
+		headSHA = pr.GetHead().GetSHA()
+	} else {
+		currentState = mr.State
+		headSHA = mr.PlatformHeadSHA
 	}
-
-	pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
-	if prErr != nil || pr == nil {
-		return workflowApprovalResponse{}
-	}
-	currentState := pr.GetState()
-	headSHA := pr.GetHead().GetSHA()
 
 	if currentState != "open" || headSHA == "" {
 		return workflowApprovalResponse{Checked: true}
@@ -1151,7 +1171,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error404NotFound("pull request not found after sync")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, false)
+	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, workflowCheckRuns)
 	if err != nil {
 		return nil, err
 	}

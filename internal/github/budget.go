@@ -3,9 +3,9 @@ package github
 import "sync"
 
 // PRDetailWorstCase is the maximum API calls a PR detail
-// fetch can make (detail + comments + reviews + commits +
-// force-push events + combined status + check runs).
-const PRDetailWorstCase = 7
+// fetch can make (detail + GetUser + comments + reviews +
+// commits + force-push events + combined status + check runs).
+const PRDetailWorstCase = 8
 
 // IssueDetailWorstCase is the maximum API calls an issue
 // detail fetch can make (detail + comments).
