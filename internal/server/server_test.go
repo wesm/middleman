@@ -2,11 +2,13 @@ package server
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -187,4 +189,72 @@ func TestSSE_SlowConsumerDisconnect(t *testing.T) {
 	body := make([]byte, 1)
 	_, err = resp.Body.Read(body)
 	_ = err // may be EOF or connection reset; we just want to ensure no hang
+}
+
+// deadlineControlWriter wraps a ResponseWriter with a controllable
+// SetWriteDeadline for testing SSE error paths. failAfter controls how
+// many successful calls are allowed before returning an error.
+type deadlineControlWriter struct {
+	http.ResponseWriter
+	mu        sync.Mutex
+	failAfter int // calls succeed up to this count; 0 = fail immediately
+	calls     int
+}
+
+func (w *deadlineControlWriter) SetWriteDeadline(_ time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.calls++
+	if w.calls > w.failAfter {
+		return errors.New("deadline not supported")
+	}
+	return nil
+}
+
+// Unwrap lets ResponseController find Flush on the inner writer.
+func (w *deadlineControlWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func TestSSE_TerminatesOnInitialDeadlineFailure(t *testing.T) {
+	s := newTestServer(t)
+
+	rec := httptest.NewRecorder()
+	w := &deadlineControlWriter{ResponseWriter: rec, failAfter: 0}
+	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.handleSSE(w, r)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "handler did not exit on initial deadline failure")
+	}
+}
+
+func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
+	s := newTestServer(t)
+	// Cached sync_status delivered on subscribe triggers mid-stream write
+	s.hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+
+	rec := httptest.NewRecorder()
+	// First call (initial clear) succeeds; second (pre-write deadline) fails
+	w := &deadlineControlWriter{ResponseWriter: rec, failAfter: 1}
+	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.handleSSE(w, r)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "handler did not exit on mid-stream deadline failure")
+	}
 }
