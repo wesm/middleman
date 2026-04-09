@@ -4,6 +4,10 @@
   import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import {
+    collapseActivityCommitRuns,
+    isCollapsedActivityRow,
+  } from "./activityRows.js";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -21,18 +25,25 @@
   let filterBtnRef = $state<HTMLButtonElement>();
   let filterDropRef = $state<HTMLDivElement>();
 
-  const EVENT_TYPES = ["comment", "review", "commit"] as const;
+  const EVENT_TYPES = [
+    "comment",
+    "review",
+    "commit",
+    "force_push",
+  ] as const;
 
   const EVENT_LABELS: Record<string, string> = {
     comment: "Comments",
     review: "Reviews",
     commit: "Commits",
+    force_push: "Force pushes",
   };
 
   const EVENT_COLORS: Record<string, string> = {
     comment: "var(--accent-amber)",
     review: "var(--accent-green)",
     commit: "var(--accent-teal)",
+    force_push: "var(--accent-red)",
   };
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
@@ -141,6 +152,7 @@
       case "comment": return "Comment";
       case "review": return "Review";
       case "commit": return "Commit";
+      case "force_push": return "Force-pushed";
       default: return item.activity_type;
     }
   }
@@ -161,80 +173,6 @@
     return null;
   }
 
-  interface CollapsedCommits {
-    kind: "collapsed";
-    id: string;
-    author: string;
-    count: number;
-    repo_owner: string;
-    repo_name: string;
-    item_type: string;
-    item_number: number;
-    item_title: string;
-    item_url: string;
-    item_state: string;
-    earliest: string;
-    latest: string;
-    representative: ActivityItem;
-  }
-
-  type DisplayRow = ActivityItem | CollapsedCommits;
-
-  function isCollapsed(row: DisplayRow): row is CollapsedCommits {
-    return "kind" in row && row.kind === "collapsed";
-  }
-
-  function collapseCommitRuns(items: ActivityItem[]): DisplayRow[] {
-    const result: DisplayRow[] = [];
-    let i = 0;
-    while (i < items.length) {
-      const item = items[i]!;
-      if (item.activity_type !== "commit") {
-        result.push(item);
-        i++;
-        continue;
-      }
-      // Collect consecutive commits by same author on same item.
-      let j = i + 1;
-      while (j < items.length) {
-        const next = items[j]!;
-        if (next.activity_type !== "commit"
-            || next.author !== item.author
-            || next.repo_owner !== item.repo_owner
-            || next.repo_name !== item.repo_name
-            || next.item_number !== item.item_number) break;
-        j++;
-      }
-      const count = j - i;
-      if (count < 3) {
-        // Not worth collapsing fewer than 3.
-        for (let k = i; k < j; k++) result.push(items[k]!);
-      } else {
-        // Items are newest-first, so earliest is last in the run.
-        const latest = items[i]!;
-        const earliest = items[j - 1]!;
-        result.push({
-          kind: "collapsed",
-          id: `collapsed-${latest.id}-${count}`,
-          author: item.author,
-          count,
-          repo_owner: item.repo_owner,
-          repo_name: item.repo_name,
-          item_type: item.item_type,
-          item_number: item.item_number,
-          item_title: item.item_title,
-          item_url: item.item_url,
-          item_state: item.item_state,
-          earliest: earliest.created_at,
-          latest: latest.created_at,
-          representative: latest,
-        });
-      }
-      i = j;
-    }
-    return result;
-  }
-
   const displayItems = $derived.by(() => {
     let result = activity.getActivityItems();
     const filter = activity.getItemFilter();
@@ -253,7 +191,7 @@
     return result;
   });
 
-  const flatRows = $derived(collapseCommitRuns(displayItems));
+  const flatRows = $derived(collapseActivityCommitRuns(displayItems));
 
   function resetFilters(): void {
     activity.setEnabledEvents(new Set(EVENT_TYPES));
@@ -267,6 +205,7 @@
       case "comment": return "evt-comment";
       case "review": return "evt-review";
       case "commit": return "evt-commit";
+      case "force_push": return "evt-force-push";
       default: return "";
     }
   }
@@ -442,18 +381,18 @@
         </thead>
         <tbody>
           {#each flatRows as row (row.id)}
-            {#if isCollapsed(row)}
+            {#if isCollapsedActivityRow(row)}
               <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
                 <td class="col-kind">
-                  <span class="badge {row.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.item_type === "pr" ? "PR" : "Issue"}</span>
+                  <span class="badge {row.representative.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.representative.item_type === "pr" ? "PR" : "Issue"}</span>
                 </td>
                 <td class="col-event">
                   <span class="evt-label evt-commit">{row.count} commits</span>
                 </td>
-                <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                <td class="col-repo">{row.representative.repo_owner}/{row.representative.repo_name}</td>
                 <td class="col-item">
-                  <span class="item-number">#{row.item_number}</span>
-                  <span class="item-title">{row.item_title}</span>
+                  <span class="item-number">#{row.representative.item_number}</span>
+                  <span class="item-title">{row.representative.item_title}</span>
                 </td>
                 <td class="col-author">{row.author}</td>
                 <td class="col-when">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</td>
@@ -461,7 +400,7 @@
                   <button
                     class="link-btn"
                     title="Open on GitHub"
-                    onclick={(e) => handleLinkClick(e, row.item_url)}
+                    onclick={(e) => handleLinkClick(e, row.representative.item_url)}
                   >&#x2197;</button>
                 </td>
               </tr>
@@ -815,6 +754,7 @@
   .evt-label.evt-comment { color: var(--accent-amber); }
   .evt-label.evt-review { color: var(--accent-green); }
   .evt-label.evt-commit { color: var(--accent-teal); }
+  .evt-label.evt-force-push { color: var(--accent-red); }
 
   .col-repo {
     color: var(--text-muted);

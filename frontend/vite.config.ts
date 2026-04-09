@@ -1,10 +1,22 @@
+import { createRequire } from "node:module";
 import { defineConfig } from "vitest/config";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 
+const require = createRequire(import.meta.url);
+const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
+
 export default defineConfig({
   base: "/",
   plugins: [svelte(), svelteTesting()],
+  resolve: {
+    alias: [
+      {
+        find: /^@testing-library\/svelte$/,
+        replacement: testingLibrarySvelteEntry,
+      },
+    ],
+  },
   test: {
     environment: "jsdom",
     include: [

@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
+  import {
+    collapseActivityCommitRuns,
+    isCollapsedActivityRow,
+  } from "./activityRows.js";
 
   const { grouping } = getStores();
   import { repoColor } from "../utils/repo-color.js";
@@ -12,59 +16,6 @@
 
   let { items, onSelectItem }: Props = $props();
 
-  interface CollapsedCommits {
-    kind: "collapsed";
-    id: string;
-    author: string;
-    count: number;
-    earliest: string;
-    latest: string;
-    representative: ActivityItem;
-  }
-
-  type EventRow = ActivityItem | CollapsedCommits;
-
-  function isCollapsed(row: EventRow): row is CollapsedCommits {
-    return "kind" in row && row.kind === "collapsed";
-  }
-
-  function collapseCommitRuns(events: ActivityItem[]): EventRow[] {
-    const result: EventRow[] = [];
-    let i = 0;
-    while (i < events.length) {
-      const ev = events[i]!;
-      if (ev.activity_type !== "commit") {
-        result.push(ev);
-        i++;
-        continue;
-      }
-      let j = i + 1;
-      while (j < events.length) {
-        const next = events[j]!;
-        if (next.activity_type !== "commit" || next.author !== ev.author) break;
-        j++;
-      }
-      const count = j - i;
-      if (count < 3) {
-        for (let k = i; k < j; k++) result.push(events[k]!);
-      } else {
-        const latest = events[i]!;
-        const earliest = events[j - 1]!;
-        result.push({
-          kind: "collapsed",
-          id: `collapsed-${latest.id}-${count}`,
-          author: ev.author,
-          count,
-          earliest: earliest.created_at,
-          latest: latest.created_at,
-          representative: latest,
-        });
-      }
-      i = j;
-    }
-    return result;
-  }
-
   interface ItemGroup {
     itemType: string;
     itemNumber: number;
@@ -75,7 +26,9 @@
     repoName: string;
     latestTime: string;
     events: ActivityItem[];
-    displayEvents: EventRow[];
+    displayEvents: ReturnType<
+      typeof collapseActivityCommitRuns
+    >;
   }
 
   interface RepoGroup {
@@ -122,7 +75,7 @@
         repoName: first.repo_name,
         latestTime: first.created_at,
         events,
-        displayEvents: collapseCommitRuns(events),
+        displayEvents: collapseActivityCommitRuns(events),
       });
     }
 
@@ -176,6 +129,7 @@
       case "comment": return "Comment";
       case "review": return "Review";
       case "commit": return "Commit";
+      case "force_push": return "Force-pushed";
       default: return type;
     }
   }
@@ -185,6 +139,7 @@
       case "comment": return "evt-comment";
       case "review": return "evt-review";
       case "commit": return "evt-commit";
+      case "force_push": return "evt-force-push";
       default: return "";
     }
   }
@@ -248,7 +203,7 @@
         {#each itemGroup.displayEvents as row (row.id)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          {#if isCollapsed(row)}
+          {#if isCollapsedActivityRow(row)}
             <div class="event-row collapsed-event" onclick={() => handleEventClick(row.representative)}>
               <span class="event-type evt-commit">{row.count} commits</span>
               <span class="event-author">{row.author}</span>
@@ -408,6 +363,7 @@
   .event-type.evt-comment { color: var(--accent-amber); }
   .event-type.evt-review { color: var(--accent-green); }
   .event-type.evt-commit { color: var(--accent-teal); }
+  .event-type.evt-force-push { color: var(--accent-red); }
 
   .event-author {
     font-size: 11px;

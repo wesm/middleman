@@ -45,6 +45,7 @@
         "shiki": "^4.0.2",
       },
       "devDependencies": {
+        "@testing-library/svelte": "5.2.8",
         "@tsconfig/svelte": "^5.0.0",
         "@types/dompurify": "3.2.0",
         "openapi-fetch": "^0.17.0",

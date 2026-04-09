@@ -40,6 +40,7 @@
     "svelte": "^5.0.0"
   },
   "devDependencies": {
+    "@testing-library/svelte": "5.2.8",
     "svelte": "^5.55.0",
     "openapi-fetch": "^0.17.0",
     "@tsconfig/svelte": "^5.0.0",

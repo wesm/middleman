@@ -360,7 +360,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 
 // --- Events ---
 
-// UpsertMREvents bulk-inserts events, ignoring duplicates by dedupe_key.
+// UpsertMREvents bulk-inserts events, ignoring duplicates per merge request.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -371,7 +371,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			    (merge_request_id, platform_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(dedupe_key) DO NOTHING`)
+			ON CONFLICT(merge_request_id, dedupe_key) DO NOTHING`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert mr events: %w", err)
 		}

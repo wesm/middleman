@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -39,6 +40,8 @@ type mockClient struct {
 	comments             []*gh.IssueComment
 	reviews              []*gh.PullRequestReview
 	commits              []*gh.RepositoryCommit
+	forcePushEvents      []ForcePushEvent
+	forcePushEventsErr   error
 	ciStatus             *gh.CombinedStatus
 	checkRuns            []*gh.CheckRun
 	workflowRuns         []*gh.WorkflowRun
@@ -96,6 +99,10 @@ func (m *mockClient) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.P
 
 func (m *mockClient) ListCommits(_ context.Context, _, _ string, _ int) ([]*gh.RepositoryCommit, error) {
 	return m.commits, nil
+}
+
+func (m *mockClient) ListForcePushEvents(_ context.Context, _, _ string, _ int) ([]ForcePushEvent, error) {
+	return m.forcePushEvents, m.forcePushEventsErr
 }
 
 func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.CombinedStatus, error) {
@@ -307,6 +314,124 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		}
 	}
 	assert.True(found)
+}
+
+func TestSyncStoresForcePushEvent(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	commitSHA := "abc123def456"
+	commitMsg := "fix: tighten validation"
+	ciState := "success"
+
+	mc := &mockClient{
+		openPRs: []*gh.PullRequest{buildOpenPR(1, now)},
+		commits: []*gh.RepositoryCommit{{
+			SHA: &commitSHA,
+			Commit: &gh.Commit{
+				Message: &commitMsg,
+				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(now.Add(-1 * time.Hour))},
+			},
+		}},
+		forcePushEvents: []ForcePushEvent{{
+			Actor:     "alice",
+			BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			AfterSHA:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Ref:       "feature",
+			CreatedAt: now.Add(-30 * time.Minute),
+		}},
+		reviews:  []*gh.PullRequestReview{},
+		comments: []*gh.IssueComment{},
+		ciStatus: &gh.CombinedStatus{State: &ciState},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+
+	events, err := d.ListMREvents(ctx, pr.ID)
+	require.NoError(err)
+	require.NotEmpty(events)
+
+	var forcePush *db.MREvent
+	for i := range events {
+		if events[i].EventType == "force_push" {
+			forcePush = &events[i]
+			break
+		}
+	}
+	require.NotNil(forcePush)
+	assert.Equal("alice", forcePush.Author)
+	assert.Equal("aaaaaaa -> bbbbbbb", forcePush.Summary)
+	assert.Contains(forcePush.MetadataJSON, `"ref":"feature"`)
+}
+
+func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	commitSHA := "abc123def456"
+	commitMsg := "fix: tighten validation"
+	ciState := "success"
+	commentBody := "Looks good to me"
+	commentID := int64(41)
+	commentURL := "https://github.com/owner/repo/pull/1#issuecomment-41"
+	forcePushErr := errors.New("graphql unavailable")
+
+	mc := &mockClient{
+		openPRs: []*gh.PullRequest{buildOpenPR(1, now)},
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			HTMLURL:   &commentURL,
+			CreatedAt: makeTimestamp(now.Add(-45 * time.Minute)),
+			User:      &gh.User{Login: new("alice")},
+		}},
+		commits: []*gh.RepositoryCommit{{
+			SHA: &commitSHA,
+			Commit: &gh.Commit{
+				Message: &commitMsg,
+				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(now.Add(-1 * time.Hour))},
+			},
+		}},
+		forcePushEventsErr: forcePushErr,
+		reviews:            []*gh.PullRequestReview{},
+		ciStatus:           &gh.CombinedStatus{State: &ciState},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+
+	events, err := d.ListMREvents(ctx, pr.ID)
+	require.NoError(err)
+	require.Len(events, 2)
+
+	var sawCommit bool
+	var sawComment bool
+	for _, event := range events {
+		if event.EventType == "commit" {
+			sawCommit = true
+		}
+		if event.EventType == "issue_comment" {
+			sawComment = true
+		}
+		assert.NotEqual("force_push", event.EventType)
+	}
+	assert.True(sawCommit)
+	assert.True(sawComment)
+	assert.Equal(1, pr.CommentCount)
+	assert.Equal(now, pr.LastActivityAt)
 }
 
 func TestSyncSingleFlight(t *testing.T) {

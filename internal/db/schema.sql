@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS middleman_mr_events (
     metadata_json    TEXT NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL,
     dedupe_key       TEXT NOT NULL,
-    UNIQUE(dedupe_key)
+    UNIQUE(merge_request_id, dedupe_key)
 );
 
 CREATE TABLE IF NOT EXISTS middleman_kanban_state (

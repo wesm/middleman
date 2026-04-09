@@ -1,12 +1,26 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	"golang.org/x/oauth2"
 )
+
+type ForcePushEvent struct {
+	Actor     string
+	BeforeSHA string
+	AfterSHA  string
+	Ref       string
+	CreatedAt time.Time
+}
 
 // Client is the interface for interacting with the GitHub API.
 type Client interface {
@@ -18,6 +32,7 @@ type Client interface {
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
+	ListForcePushEvents(ctx context.Context, owner, repo string, number int) ([]ForcePushEvent, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (*gh.CombinedStatus, error)
 	ListCheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*gh.CheckRun, error)
 	ListWorkflowRunsForHeadSHA(ctx context.Context, owner, repo, headSHA string) ([]*gh.WorkflowRun, error)
@@ -29,6 +44,13 @@ type Client interface {
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, state string) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
+}
+
+func graphQLEndpointForHost(platformHost string) string {
+	if platformHost == "" || platformHost == "github.com" {
+		return "https://api.github.com/graphql"
+	}
+	return "https://" + platformHost + "/api/graphql"
 }
 
 // NewClient creates a GitHub Client authenticated with the given
@@ -62,15 +84,42 @@ func NewClient(
 		}
 	}
 	return &liveClient{
-		gh:          ghClient,
-		rateTracker: rateTracker,
+		gh:              ghClient,
+		httpClient:      tc,
+		rateTracker:     rateTracker,
+		graphQLEndpoint: graphQLEndpointForHost(platformHost),
 	}, nil
 }
 
 type liveClient struct {
-	gh          *gh.Client
-	rateTracker *RateTracker
+	gh              *gh.Client
+	httpClient      *http.Client
+	rateTracker     *RateTracker
+	graphQLEndpoint string
 }
+
+const forcePushTimelineQuery = `
+query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT], first: 100, after: $cursor) {
+        nodes {
+          ... on HeadRefForcePushedEvent {
+            actor { login }
+            beforeCommit { oid }
+            afterCommit { oid }
+            createdAt
+            ref { name }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}`
 
 // trackRate records the request and updates rate limit state
 // from the response. Safe to call with nil response or nil
@@ -81,6 +130,25 @@ func (c *liveClient) trackRate(resp *gh.Response) {
 	}
 	c.rateTracker.RecordRequest()
 	c.rateTracker.UpdateFromRate(resp.Rate)
+}
+
+func (c *liveClient) trackRateHeaders(resp *http.Response) {
+	if resp == nil || c.rateTracker == nil {
+		return
+	}
+	c.rateTracker.RecordRequest()
+	remaining, err := strconv.Atoi(resp.Header.Get("X-RateLimit-Remaining"))
+	if err != nil {
+		return
+	}
+	resetUnix, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64)
+	if err != nil {
+		return
+	}
+	c.rateTracker.UpdateFromRate(gh.Rate{
+		Remaining: remaining,
+		Reset:     gh.Timestamp{Time: time.Unix(resetUnix, 0).UTC()},
+	})
 }
 
 func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -218,6 +286,156 @@ func (c *liveClient) ListCommits(
 		return nil, err
 	}
 	return all, nil
+}
+
+func (c *liveClient) ListForcePushEvents(
+	ctx context.Context, owner, repo string, number int,
+) ([]ForcePushEvent, error) {
+	type graphQLRequest struct {
+		Query     string         `json:"query"`
+		Variables map[string]any `json:"variables"`
+	}
+	type graphQLResponse struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+		Data struct {
+			Repository *struct {
+				PullRequest *struct {
+					TimelineItems struct {
+						Nodes []struct {
+							Actor *struct {
+								Login string `json:"login"`
+							} `json:"actor"`
+							BeforeCommit *struct {
+								OID string `json:"oid"`
+							} `json:"beforeCommit"`
+							AfterCommit *struct {
+								OID string `json:"oid"`
+							} `json:"afterCommit"`
+							CreatedAt time.Time `json:"createdAt"`
+							Ref       *struct {
+								Name string `json:"name"`
+							} `json:"ref"`
+						} `json:"nodes"`
+						PageInfo struct {
+							HasNextPage bool    `json:"hasNextPage"`
+							EndCursor   *string `json:"endCursor"`
+						} `json:"pageInfo"`
+					} `json:"timelineItems"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+
+	var events []ForcePushEvent
+	var cursor *string
+	for {
+		payload, err := json.Marshal(graphQLRequest{
+			Query: forcePushTimelineQuery,
+			Variables: map[string]any{
+				"owner":  owner,
+				"repo":   repo,
+				"number": number,
+				"cursor": cursor,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal force-push query: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			c.graphQLEndpoint,
+			bytes.NewReader(payload),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create force-push request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: %w",
+				owner, repo, number, err,
+			)
+		}
+		c.trackRateHeaders(resp)
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: graphql status %s",
+				owner, repo, number, resp.Status,
+			)
+		}
+
+		var decoded graphQLResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf(
+				"decode force-push events for %s/%s#%d: %w",
+				owner, repo, number, err,
+			)
+		}
+		_ = resp.Body.Close()
+
+		if len(decoded.Errors) > 0 {
+			messages := make([]string, 0, len(decoded.Errors))
+			for _, graphQLError := range decoded.Errors {
+				if graphQLError.Message != "" {
+					messages = append(messages, graphQLError.Message)
+				}
+			}
+			if len(messages) == 0 {
+				messages = append(messages, "unknown GraphQL error")
+			}
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: graphql errors: %s",
+				owner, repo, number, strings.Join(messages, "; "),
+			)
+		}
+
+		if decoded.Data.Repository == nil {
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: missing repository in graphql response",
+				owner, repo, number,
+			)
+		}
+		if decoded.Data.Repository.PullRequest == nil {
+			return nil, fmt.Errorf(
+				"list force-push events for %s/%s#%d: missing pull request in graphql response",
+				owner, repo, number,
+			)
+		}
+
+		for _, node := range decoded.Data.Repository.PullRequest.TimelineItems.Nodes {
+			event := ForcePushEvent{CreatedAt: node.CreatedAt}
+			if node.Actor != nil {
+				event.Actor = node.Actor.Login
+			}
+			if node.BeforeCommit != nil {
+				event.BeforeSHA = node.BeforeCommit.OID
+			}
+			if node.AfterCommit != nil {
+				event.AfterSHA = node.AfterCommit.OID
+			}
+			if node.Ref != nil {
+				event.Ref = node.Ref.Name
+			}
+			events = append(events, event)
+		}
+
+		pageInfo := decoded.Data.Repository.PullRequest.TimelineItems.PageInfo
+		if !pageInfo.HasNextPage {
+			break
+		}
+		cursor = pageInfo.EndCursor
+	}
+
+	return events, nil
 }
 
 func (c *liveClient) GetCombinedStatus(
