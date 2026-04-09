@@ -269,6 +269,6 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 		return len(s.hub.subscribers) == 0
 	}, 2*time.Second, 10*time.Millisecond, "subscriber should be cleaned up after context cancel")
 
-	// Deadline failed before event write — no SSE frame in body
-	assert.NotContains(t, rec.Body.String(), "event:", "no event frame should be written after deadline failure")
+	// Deadline failed before event write — body must be empty
+	assert.Empty(t, rec.Body.String(), "no output should be written after deadline failure")
 }
