@@ -1181,51 +1181,8 @@ func (s *Syncer) indexSyncRepo(
 	}
 
 	if prListUnchanged {
-		// 304 means the open-PR *list* (numbers, head SHAs, metadata the
-		// list endpoint returns) is unchanged, but check runs and combined
-		// status change independently of anything the PR list reflects.
-		// Iterate the DB's current open PRs and refresh CI so pending or
-		// failed checks still surface within a sync cycle instead of
-		// lagging until some list-visible field changes.
-		//
-		// Each refreshCIStatus costs 2 API calls (check runs + combined
-		// status), so gate on the per-host budget to avoid consuming
-		// unbounded calls in the index phase.
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		budget := s.budgets[host]
-
-		openMRs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
-			RepoOwner: repo.Owner,
-			RepoName:  repo.Name,
-			State:     "open",
-		})
-		if err != nil {
-			slog.Error("list open MRs for 304 CI refresh failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
-			)
-			failedScope |= failMR
-		} else {
-			for _, mr := range openMRs {
-				if budget != nil && !budget.CanSpend(2) {
-					slog.Debug("304 CI refresh skipped: budget exhausted",
-						"repo", repo.Owner+"/"+repo.Name,
-						"number", mr.Number,
-					)
-					break
-				}
-				if err := s.refreshCIStatus(ctx, repo, repoID, mr.Number, mr.PlatformHeadSHA); err != nil {
-					slog.Error("refresh CI status on 304 failed",
-						"repo", repo.Owner+"/"+repo.Name,
-						"number", mr.Number,
-						"err", err,
-					)
-					failedScope |= failMR
-				}
-			}
-		}
+		// 304 — nothing to do. The detail drain handles CI
+		// updates for PRs with pending checks via priority scoring.
 	} else {
 		stillOpen := make(map[int]bool, len(ghPRs))
 		for _, ghPR := range ghPRs {
