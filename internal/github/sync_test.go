@@ -364,7 +364,7 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -423,7 +423,7 @@ func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 		ciStatus:           &gh.CombinedStatus{State: &ciState},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -462,7 +462,7 @@ func TestSyncSingleFlight(t *testing.T) {
 	// Wrap in a counter client to detect calls.
 	_ = mc
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
 	// Simulate a concurrent run already in progress.
 	syncer.running.Store(true)
@@ -500,7 +500,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
 	// First sync: full fetch occurs, MergeableState is stored.
 	syncer.RunOnce(ctx)
@@ -607,7 +607,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 	syncer.RunOnce(ctx)
 
 	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
@@ -645,7 +645,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 0)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, 500)
 
 	before := time.Now()
 	syncer.RunOnce(ctx)
