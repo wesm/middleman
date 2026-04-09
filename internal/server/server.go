@@ -334,7 +334,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	rc := http.NewResponseController(w)
 	// Clear server-wide WriteTimeout for this SSE response
-	_ = rc.SetWriteDeadline(time.Time{})
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		return
+	}
 
 	// Subscribe BEFORE the first flush so any broadcast issued between
 	// the headers landing on the wire and the subscriber being registered
@@ -368,23 +370,31 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 				slog.Error("sse: marshal event", "type", ev.Type, "err", err)
 				continue
 			}
-			_ = rc.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				return
+			}
 			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data); err != nil {
 				return
 			}
 			if err := rc.Flush(); err != nil {
 				return
 			}
-			_ = rc.SetWriteDeadline(time.Time{})
+			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+				return
+			}
 		case <-ticker.C:
-			_ = rc.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				return
+			}
 			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
 				return
 			}
 			if err := rc.Flush(); err != nil {
 				return
 			}
-			_ = rc.SetWriteDeadline(time.Time{})
+			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
