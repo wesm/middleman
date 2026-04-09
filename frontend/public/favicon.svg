@@ -5,6 +5,6 @@
   <circle cx="39" cy="13" r="4.5" fill="#F59E0B" />
   <circle cx="39" cy="39" r="4.5" fill="#34D399" />
   <path d="M16 16 23 23M36 16 29 23M36 36 29 29" stroke="#94A3B8" stroke-width="3.5" stroke-linecap="round" />
-  <!-- Chevron-style arrowhead as a single shape -->
-  <path d="M26 26v10l-6 6 6-6 6 6-6-6" stroke="#E5E7EB" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- Chevron Arrow: Vertical stem + chevron head -->
+  <path d="M26 26v10l-6 6M26 36l6 6" stroke="#E5E7EB" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
