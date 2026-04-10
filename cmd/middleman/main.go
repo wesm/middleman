@@ -153,6 +153,17 @@ func run(configPath string) error {
 		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
+	fetchers := make(
+		map[string]*ghclient.GraphQLFetcher, len(hostTokens),
+	)
+	for host, token := range hostTokens {
+		gqlRT := ghclient.NewRateTracker(database, host, "graphql")
+		fetchers[host] = ghclient.NewGraphQLFetcher(
+			token, host, gqlRT, budgets[host],
+		)
+	}
+	syncer.SetFetchers(fetchers)
+
 	assets, err := web.Assets()
 	if err != nil {
 		return fmt.Errorf("load frontend assets: %w", err)

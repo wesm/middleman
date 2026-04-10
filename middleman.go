@@ -249,7 +249,7 @@ func New(opts Options) (*Instance, error) {
 		map[string]*ghclient.RateTracker, len(hosts),
 	)
 	for _, host := range hosts {
-		rt := ghclient.NewRateTracker(database, host)
+		rt := ghclient.NewRateTracker(database, host, "rest")
 		rateTrackers[host] = rt
 		if budgetPerHour > 0 {
 			budgets[host] = ghclient.NewSyncBudget(
