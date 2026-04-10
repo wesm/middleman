@@ -337,11 +337,11 @@ func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
 
 	assert.Equal("ci/build", checks[0].Name)
 	assert.Equal("in_progress", checks[0].Status)
-	assert.Equal("", checks[0].Conclusion)
+	assert.Empty(checks[0].Conclusion)
 
 	assert.Equal("ci/required", checks[1].Name)
 	assert.Equal("in_progress", checks[1].Status)
-	assert.Equal("", checks[1].Conclusion)
+	assert.Empty(checks[1].Conclusion)
 }
 
 func TestDeriveReviewDecision_Empty(t *testing.T) {

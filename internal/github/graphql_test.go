@@ -178,7 +178,7 @@ func TestAdaptCheckRunURLSanitization(t *testing.T) {
 		Conclusion: "SUCCESS",
 		DetailsURL: "javascript:alert(1)",
 	})
-	assert.Equal("", unsafe.GetHTMLURL())
+	assert.Empty(unsafe.GetHTMLURL())
 }
 
 func TestGraphqlRateTransport(t *testing.T) {
