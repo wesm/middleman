@@ -45,7 +45,7 @@ func TestFetchAllPagesMultiPage(t *testing.T) {
 					HasNextPage: false,
 				}, nil
 			default:
-				t.Fatal("too many calls")
+				require.Fail(t, "too many calls")
 				return nil, pageInfo{}, nil
 			}
 		},
@@ -65,7 +65,7 @@ func TestFetchAllPagesError(t *testing.T) {
 			return nil, pageInfo{}, fmt.Errorf("graphql: rate limited")
 		},
 	)
-	assert.Error(err)
+	require.Error(t, err)
 	assert.Contains(err.Error(), "rate limited")
 }
 
