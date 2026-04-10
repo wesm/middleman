@@ -4044,3 +4044,33 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 	assert.False(ok2)
 	assert.Equal(1, callCount, "GetUser should not be called again for cached failure")
 }
+
+func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	callCount := 0
+	mc := &mockClient{
+		getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+			callCount++
+			return &gh.User{Login: &login}, nil // no display name
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, nil, nil, nil,
+		time.Minute, nil, nil,
+	)
+	syncer.displayNames = make(map[string]displayNameResult)
+
+	// First call: hits API, succeeds with empty name.
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	assert.Equal("", name1)
+	assert.True(ok1, "successful lookup of empty name should return ok=true")
+	assert.Equal(1, callCount)
+
+	// Second call: cache hit must still return ok=true, not flip to false.
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	assert.Equal("", name2)
+	assert.True(ok2, "cached empty name must remain ok=true")
+	assert.Equal(1, callCount, "GetUser should not be called again for cached success")
+}
