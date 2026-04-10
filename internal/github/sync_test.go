@@ -869,7 +869,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 	// Put the rate tracker into a long backoff window so every
 	// worker blocks on the select inside RunOnce rather than
 	// calling the client.
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 	resetAt := time.Now().Add(time.Hour)
 	rt.UpdateFromRate(gh.Rate{
 		Remaining: 0,
@@ -1903,7 +1903,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 	// Exhaust the rate limit with a future reset.
 	futureReset := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(gh.Rate{
@@ -2067,7 +2067,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	}
 
 	// Set up GHE tracker with remaining below reserve buffer.
-	gheTracker := NewRateTracker(d, "ghe.corp.com")
+	gheTracker := NewRateTracker(d, "ghe.corp.com", "rest")
 	gheTracker.UpdateFromRate(gh.Rate{
 		Limit:     5000,
 		Remaining: 100, // below RateReserveBuffer (200)
@@ -2373,7 +2373,7 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 	budget := NewSyncBudget(100)
 	rt.SetOnWindowReset(budget.Reset)
 

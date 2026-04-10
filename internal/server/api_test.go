@@ -2243,7 +2243,7 @@ func TestAPIRateLimits(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	rt := ghclient.NewRateTracker(database, "github.com")
+	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -2293,7 +2293,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { database.Close() })
 
-	rt := ghclient.NewRateTracker(database, "github.com")
+	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -2353,7 +2353,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	rt := ghclient.NewRateTracker(database, "github.com")
+	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},

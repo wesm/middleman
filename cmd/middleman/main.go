@@ -116,7 +116,7 @@ func run(configPath string) error {
 	)
 	for host, token := range hostTokens {
 		rateTrackers[host] = ghclient.NewRateTracker(
-			database, host,
+			database, host, "rest",
 		)
 		if budgetPerHour > 0 {
 			budgets[host] = ghclient.NewSyncBudget(
