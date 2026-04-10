@@ -15,7 +15,7 @@ INSERT INTO middleman_rate_limits_new
     (id, platform_host, api_type, requests_hour, hour_start,
      rate_remaining, rate_limit, rate_reset_at, updated_at)
 SELECT id, platform_host, 'rest', requests_hour, hour_start,
-       rate_remaining, -1, rate_reset_at, updated_at
+       rate_remaining, rate_limit, rate_reset_at, updated_at
 FROM middleman_rate_limits;
 
 DROP TABLE middleman_rate_limits;

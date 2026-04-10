@@ -1511,6 +1511,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 	var ciJSON []byte
 	if bulk.CIComplete {
 		ciChecks = normalizeBulkCI(bulk)
+		if ciChecks == nil {
+			ciChecks = []db.CICheck{}
+		}
 		ciJSON, _ = json.Marshal(ciChecks)
 		ciStatus := deriveCIStatusFromChecks(ciChecks)
 		if err := s.db.UpdateMRCIStatus(
