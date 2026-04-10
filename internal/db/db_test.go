@@ -398,3 +398,11 @@ func seedLegacyIssueForTest(
 	)
 	require.NoError(t, err)
 }
+
+func TestStackTablesExist(t *testing.T) {
+	d := openTestDB(t)
+	tables := []string{"middleman_stacks", "middleman_stack_members"}
+	for _, tbl := range tables {
+		require.True(t, tableExistsForTest(t, d.ReadDB(), tbl), "table %s should exist", tbl)
+	}
+}

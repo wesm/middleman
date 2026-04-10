@@ -726,7 +726,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 
 // ListMergeRequests returns merge requests matching the given options.
 // Results are ordered by last_activity_at DESC.
-func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
+func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequestRow, error) {
 	state := opts.State
 	if state == "" {
 		state = "open"
@@ -779,12 +779,18 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.merged_at, p.closed_at, p.mergeable_state,
 		       p.detail_fetched_at, p.ci_had_pending,
 		       COALESCE(k.status, '') AS kanban_status,
-		       (s.number IS NOT NULL) AS starred
+		       (s.number IS NOT NULL) AS starred,
+		       st.id, st.name, sm.position,
+		       CASE WHEN sm.stack_id IS NOT NULL
+		            THEN (SELECT COUNT(*) FROM middleman_stack_members WHERE stack_id = sm.stack_id)
+		            ELSE NULL END
 		FROM middleman_merge_requests p
 		JOIN middleman_repos r ON r.id = p.repo_id
 		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
+		LEFT JOIN middleman_stack_members sm ON sm.merge_request_id = p.id
+		LEFT JOIN middleman_stacks st ON st.id = sm.stack_id
 		%s
 		ORDER BY p.last_activity_at DESC`, where)
 
@@ -797,7 +803,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	var mrs []MergeRequest
 	var mrIDs []int64
 	for rows.Next() {
-		var mr MergeRequest
+		var mr MergeRequestRow
 		if err := rows.Scan(
 			&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
 			&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
@@ -811,6 +817,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
 			&mr.DetailFetchedAt, &mr.CIHadPending,
 			&mr.KanbanStatus, &mr.Starred,
+			&mr.StackID, &mr.StackName, &mr.StackPosition, &mr.StackSize,
 		); err != nil {
 			return nil, fmt.Errorf("scan merge request: %w", err)
 		}
