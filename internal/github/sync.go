@@ -1633,7 +1633,7 @@ func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
 		status := "completed"
 		conclusion := s.GetState()
 		switch conclusion {
-		case "pending":
+		case "pending", "expected":
 			status = "in_progress"
 			conclusion = ""
 		case "failure", "error":

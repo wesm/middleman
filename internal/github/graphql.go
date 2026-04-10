@@ -268,11 +268,12 @@ func splitCheckContexts(contexts []gqlCheckContext) ([]*gh.CheckRun, []*gh.RepoS
 }
 
 func adaptCheckRun(gql *gqlCheckRunFields) *gh.CheckRun {
+	url := sanitizeURL(gql.DetailsURL)
 	return &gh.CheckRun{
 		Name:       new(gql.Name),
 		Status:     new(toLower(gql.Status)),
 		Conclusion: new(toLower(gql.Conclusion)),
-		HTMLURL:    new(gql.DetailsURL),
+		HTMLURL:    new(url),
 		DetailsURL: new(gql.DetailsURL),
 		App:        &gh.App{Name: new(gql.CheckSuite.App.Name)},
 	}
