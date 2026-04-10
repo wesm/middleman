@@ -161,6 +161,26 @@ func TestAdaptCheckContext(t *testing.T) {
 	assert.Equal("success", statuses[0].GetState())
 }
 
+func TestAdaptCheckRunURLSanitization(t *testing.T) {
+	assert := Assert.New(t)
+
+	safe := adaptCheckRun(&gqlCheckRunFields{
+		Name:       "ci",
+		Status:     "COMPLETED",
+		Conclusion: "SUCCESS",
+		DetailsURL: "https://ci.example.com/run/1",
+	})
+	assert.Equal("https://ci.example.com/run/1", safe.GetHTMLURL())
+
+	unsafe := adaptCheckRun(&gqlCheckRunFields{
+		Name:       "ci",
+		Status:     "COMPLETED",
+		Conclusion: "SUCCESS",
+		DetailsURL: "javascript:alert(1)",
+	})
+	assert.Equal("", unsafe.GetHTMLURL())
+}
+
 func TestGraphqlRateTransport(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
