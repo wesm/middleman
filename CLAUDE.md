@@ -36,8 +36,8 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 |------|---------|
 | `cmd/middleman/main.go` | CLI entry point, server startup, signal handling |
 | `internal/config/config.go` | TOML config, validation, defaults |
-| `internal/db/schema.sql` | Table definitions and indexes |
-| `internal/db/db.go` | Database open, WAL, schema init |
+| `internal/db/migrations/` | Numbered SQL migrations for schema changes |
+| `internal/db/db.go` | Database open, WAL, migration init |
 | `internal/db/queries.go` | All CRUD operations |
 | `internal/db/types.go` | DB model types |
 | `internal/github/client.go` | GitHub API interface and live implementation |
@@ -97,7 +97,10 @@ make vet        # go vet
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output
-- Schema changes require bumping `SchemaVersion` in `db.go`. There is no migration system yet — the binary refuses to open a database with a mismatched version. Users delete and recreate the database after schema changes.
+- Database schema changes must be added as numbered SQL migrations in `internal/db/migrations/`
+- `internal/db/migrations/` is the source of truth for schema evolution
+- Add both `.up.sql` and `.down.sql` files for schema changes
+- Validate schema changes through `db.Open()` and application-level tests rather than testing `golang-migrate` internals
 
 ## Git Workflow
 

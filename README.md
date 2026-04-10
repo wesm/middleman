@@ -186,16 +186,16 @@ middleman binary
 
 ## Database
 
-Middleman uses SQLite with a schema defined in `internal/db/schema.sql`. The schema is applied via `CREATE TABLE IF NOT EXISTS` on startup.
+Middleman uses SQLite with embedded SQL migrations in `internal/db/migrations/`, applied on startup via `github.com/golang-migrate/migrate/v4`.
 
-**There is no migration system yet.** The database tracks its schema version in a `middleman_schema_version` table, and the binary embeds a matching `SchemaVersion` constant. On startup:
+On startup:
 
-- **Fresh database** (version 0): schema is applied and the version is stamped.
-- **Matching version**: proceeds normally.
-- **Stale database** (version < binary): refuses to start. Delete the database file and let middleman recreate it.
-- **Newer database** (version > binary): refuses to start. Upgrade middleman.
+- **Fresh database**: all embedded migrations are applied.
+- **Legacy database without `schema_migrations`**: middleman assumes the pre-migration schema is baseline version 1 and migrates forward.
+- **Dirty or failed migration state**: startup fails and instructs you to delete the database file and let middleman recreate it.
+- **Newer database** (migration version > binary): startup fails and instructs you to upgrade middleman.
 
-When real migrations are implemented, the stale case will run forward migrations instead of refusing. Until then, after a schema change, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (kanban columns, stars, and worktree links) is lost.
+If a migration cannot be applied cleanly, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (kanban columns, stars, and worktree links) is lost.
 
 ## Development
 

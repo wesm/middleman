@@ -10,12 +10,6 @@ CREATE TABLE IF NOT EXISTS middleman_repos (
     allow_squash_merge    INTEGER NOT NULL DEFAULT 1,
     allow_merge_commit    INTEGER NOT NULL DEFAULT 1,
     allow_rebase_merge    INTEGER NOT NULL DEFAULT 1,
-    backfill_pr_page            INTEGER NOT NULL DEFAULT 0,
-    backfill_pr_complete        INTEGER NOT NULL DEFAULT 0,
-    backfill_pr_completed_at    DATETIME,
-    backfill_issue_page         INTEGER NOT NULL DEFAULT 0,
-    backfill_issue_complete     INTEGER NOT NULL DEFAULT 0,
-    backfill_issue_completed_at DATETIME,
     created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
     UNIQUE(platform, platform_host, owner, name)
 );
@@ -47,8 +41,6 @@ CREATE TABLE IF NOT EXISTS middleman_merge_requests (
     merge_base_sha   TEXT NOT NULL DEFAULT '',
     head_repo_clone_url TEXT NOT NULL DEFAULT '',
     mergeable_state  TEXT NOT NULL DEFAULT '',
-    detail_fetched_at  DATETIME,
-    ci_had_pending     INTEGER NOT NULL DEFAULT 0,
     created_at       DATETIME NOT NULL,
     updated_at       DATETIME NOT NULL,
     last_activity_at DATETIME NOT NULL,
@@ -69,7 +61,7 @@ CREATE TABLE IF NOT EXISTS middleman_mr_events (
     metadata_json    TEXT NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL,
     dedupe_key       TEXT NOT NULL,
-    UNIQUE(merge_request_id, dedupe_key)
+    UNIQUE(dedupe_key)
 );
 
 CREATE TABLE IF NOT EXISTS middleman_kanban_state (
@@ -99,7 +91,6 @@ CREATE TABLE IF NOT EXISTS middleman_issues (
     body             TEXT NOT NULL DEFAULT '',
     comment_count    INTEGER NOT NULL DEFAULT 0,
     labels_json      TEXT NOT NULL DEFAULT '',
-    detail_fetched_at DATETIME,
     created_at       DATETIME NOT NULL,
     updated_at       DATETIME NOT NULL,
     last_activity_at DATETIME NOT NULL,
@@ -152,7 +143,6 @@ CREATE TABLE IF NOT EXISTS middleman_rate_limits (
     requests_hour  INTEGER NOT NULL DEFAULT 0,
     hour_start     DATETIME NOT NULL,
     rate_remaining INTEGER NOT NULL DEFAULT -1,
-    rate_limit     INTEGER NOT NULL DEFAULT -1,
     rate_reset_at  DATETIME,
     updated_at     DATETIME NOT NULL DEFAULT (datetime('now'))
 );
