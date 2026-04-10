@@ -658,6 +658,84 @@ func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
 	require.True(updatedAt.Equal(now.Add(time.Minute)))
 }
 
+func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 17, "rename labels", now)
+	issueID := insertTestIssue(t, d, repoID, 23, "rename labels", now)
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  200,
+		Name:        "old-name",
+		Description: "old platform label",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, mrID, []Label{{
+		Name:        "new-name",
+		Description: "stale name-only label",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		Name:        "new-name",
+		Description: "stale name-only label",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  200,
+		Name:        "new-name",
+		Description: "renamed label",
+		Color:       "333333",
+		IsDefault:   true,
+		UpdatedAt:   now.Add(time.Minute),
+	}}))
+
+	var count int
+	err := d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		repoID,
+	).Scan(&count)
+	require.NoError(err)
+	require.Equal(1, count)
+
+	var labelID int64
+	var platformID int64
+	var name, description, color string
+	var isDefault bool
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT id, platform_id, name, description, color, is_default
+		FROM middleman_labels
+		WHERE repo_id = ?`, repoID,
+	).Scan(&labelID, &platformID, &name, &description, &color, &isDefault)
+	require.NoError(err)
+	require.Equal(int64(200), platformID)
+	require.Equal("new-name", name)
+	require.Equal("renamed label", description)
+	require.Equal("333333", color)
+	require.True(isDefault)
+
+	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 17)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Len(mr.Labels, 1)
+	require.Equal(labelID, mr.Labels[0].ID)
+	require.Equal("new-name", mr.Labels[0].Name)
+
+	issue, err := d.GetIssue(ctx, "acme", "widget", 23)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Len(issue.Labels, 1)
+	require.Equal(labelID, issue.Labels[0].ID)
+	require.Equal("new-name", issue.Labels[0].Name)
+}
+
 func TestUpsertLabels_RejectsAmbiguousNameAndPlatformIDMatch(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

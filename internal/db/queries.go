@@ -32,6 +32,56 @@ func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name s
 	return id, true, nil
 }
 
+func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.NullInt64, error) {
+	var platformID sql.NullInt64
+	err := tx.QueryRowContext(ctx,
+		`SELECT platform_id FROM middleman_labels WHERE id = ?`,
+		labelID,
+	).Scan(&platformID)
+	if err != nil {
+		return sql.NullInt64{}, err
+	}
+	return platformID, nil
+}
+
+func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_issue_labels (issue_id, label_id)
+		SELECT issue_id, ? FROM middleman_issue_labels WHERE label_id = ?
+		ON CONFLICT(issue_id, label_id) DO NOTHING`,
+		toLabelID, fromLabelID,
+	); err != nil {
+		return fmt.Errorf("move issue label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_issue_labels WHERE label_id = ?`,
+		fromLabelID,
+	); err != nil {
+		return fmt.Errorf("delete old issue label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
+		SELECT merge_request_id, ? FROM middleman_merge_request_labels WHERE label_id = ?
+		ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
+		toLabelID, fromLabelID,
+	); err != nil {
+		return fmt.Errorf("move merge request label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_merge_request_labels WHERE label_id = ?`,
+		fromLabelID,
+	); err != nil {
+		return fmt.Errorf("delete old merge request label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_labels WHERE id = ?`,
+		fromLabelID,
+	); err != nil {
+		return fmt.Errorf("delete old label row: %w", err)
+	}
+	return nil
+}
+
 func lookupLabelIDByPlatformIDTx(ctx context.Context, tx *sql.Tx, repoID, platformID int64) (int64, bool, error) {
 	if platformID == 0 {
 		return 0, false, nil
@@ -60,6 +110,16 @@ func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Lab
 		return 0, false, fmt.Errorf("lookup label %s by name: %w", label.Name, err)
 	}
 	if foundByPlatform && foundByName && platformID != nameID {
+		namePlatformID, err := labelPlatformIDTx(ctx, tx, nameID)
+		if err != nil {
+			return 0, false, fmt.Errorf("lookup label %s platform id: %w", label.Name, err)
+		}
+		if !namePlatformID.Valid {
+			if err := mergeLabelRowAssociationsTx(ctx, tx, nameID, platformID); err != nil {
+				return 0, false, fmt.Errorf("merge stale label %s into platform row: %w", label.Name, err)
+			}
+			return platformID, true, nil
+		}
 		return 0, false, fmt.Errorf("label %s in repo %d matches different rows by name and platform id", label.Name, repoID)
 	}
 	if foundByPlatform {
