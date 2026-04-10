@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -2087,6 +2088,9 @@ func computeLastActivity(
 // callers can preserve existing data. Uses an in-memory cache across
 // a sync run plus singleflight dedup so concurrent workers racing on
 // the same author only trigger one GetUser call.
+//
+// Bot logins (ending with "[bot]") are returned as-is since bot accounts
+// have no display name on the GitHub API.
 func (s *Syncer) resolveDisplayName(
 	ctx context.Context, client Client, host, login string,
 ) (string, bool) {
@@ -2095,7 +2099,13 @@ func (s *Syncer) resolveDisplayName(
 	name, ok := s.displayNames[key]
 	s.displayNamesMu.Unlock()
 	if ok {
-		return name, true
+		return name, name != ""
+	}
+	if strings.HasSuffix(login, "[bot]") {
+		s.displayNamesMu.Lock()
+		s.displayNames[key] = login
+		s.displayNamesMu.Unlock()
+		return login, true
 	}
 
 	v, err, _ := s.displayNameGroup.Do(key, func() (any, error) {
@@ -2123,6 +2133,7 @@ func (s *Syncer) resolveDisplayName(
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
 		)
+		s.displayNames[key] = ""
 		return "", false
 	}
 	return v.(string), true
