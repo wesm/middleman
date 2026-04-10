@@ -4005,7 +4005,7 @@ func TestResolveDisplayName(t *testing.T) {
 				map[string]Client{"github.com": mc}, nil, nil, nil,
 				time.Minute, nil, nil,
 			)
-			syncer.displayNames = make(map[string]string)
+			syncer.displayNames = make(map[string]displayNameResult)
 
 			name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", tt.login)
 			assert.Equal(tt.wantName, name)
@@ -4030,7 +4030,7 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 		map[string]Client{"github.com": mc}, nil, nil, nil,
 		time.Minute, nil, nil,
 	)
-	syncer.displayNames = make(map[string]string)
+	syncer.displayNames = make(map[string]displayNameResult)
 
 	// First call: hits API, returns failure.
 	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
