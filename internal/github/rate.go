@@ -55,7 +55,7 @@ func NewRateTracker(
 }
 
 func (rt *RateTracker) hydrate() {
-	row, err := rt.db.GetRateLimit(rt.platformHost)
+	row, err := rt.db.GetRateLimit(rt.platformHost, "rest")
 	if err != nil || row == nil {
 		return
 	}
@@ -264,6 +264,7 @@ func (rt *RateTracker) rollIfNeeded() {
 func (rt *RateTracker) persist() {
 	err := rt.db.UpsertRateLimit(
 		rt.platformHost,
+		"rest",
 		rt.count,
 		rt.hourStart,
 		rt.remaining,

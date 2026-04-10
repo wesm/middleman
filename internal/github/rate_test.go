@@ -27,7 +27,7 @@ func TestRateTrackerCounting(t *testing.T) {
 	assert.Equal(3, rt.RequestsThisHour())
 
 	// Verify persisted to DB
-	rl, err := d.GetRateLimit("github.com")
+	rl, err := d.GetRateLimit("github.com", "rest")
 	require.NoError(err)
 	require.NotNil(rl)
 	assert.Equal(3, rl.RequestsHour)
