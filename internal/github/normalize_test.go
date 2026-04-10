@@ -7,10 +7,21 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/db"
 )
 
 func ghTimestamp(t time.Time) *gh.Timestamp {
 	return &gh.Timestamp{Time: t}
+}
+
+func githubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
+	return &gh.Label{
+		ID:          &id,
+		Name:        &name,
+		Description: &description,
+		Color:       &color,
+		Default:     &isDefault,
+	}
 }
 
 func TestNormalizePR_OpenPR(t *testing.T) {
@@ -77,6 +88,105 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 	assert.Equal("merged", pr.State)
 	require.NotNil(t, pr.MergedAt)
 	assert.True(pr.MergedAt.Equal(mergedAt))
+}
+
+func TestNormalizePR_Labels(t *testing.T) {
+	require := require.New(t)
+	updatedAt := time.Date(2024, 6, 7, 10, 11, 12, 0, time.UTC)
+	ghPR := &gh.PullRequest{
+		ID:        new(int64(3003)),
+		Number:    new(11),
+		UpdatedAt: ghTimestamp(updatedAt),
+		Labels: []*gh.Label{
+			githubLabel(5001, "needs-review", "Needs another reviewer", "fbca04", true),
+		},
+	}
+
+	pr := NormalizePR(9, ghPR)
+
+	require.Equal([]db.Label{{
+		PlatformID:  5001,
+		Name:        "needs-review",
+		Description: "Needs another reviewer",
+		Color:       "fbca04",
+		IsDefault:   true,
+		UpdatedAt:   updatedAt,
+	}}, pr.Labels)
+}
+
+func TestNormalizeIssue_Labels(t *testing.T) {
+	require := require.New(t)
+	updatedAt := time.Date(2024, 6, 8, 9, 10, 11, 0, time.UTC)
+	ghIssue := &gh.Issue{
+		ID:        new(int64(4004)),
+		Number:    new(12),
+		UpdatedAt: ghTimestamp(updatedAt),
+		Labels: []*gh.Label{
+			githubLabel(6001, "bug", "Something is broken", "d73a4a", false),
+		},
+	}
+
+	issue := NormalizeIssue(10, ghIssue)
+
+	require.Equal([]db.Label{{
+		PlatformID:  6001,
+		Name:        "bug",
+		Description: "Something is broken",
+		Color:       "d73a4a",
+		IsDefault:   false,
+		UpdatedAt:   updatedAt,
+	}}, issue.Labels)
+}
+
+func TestNormalizePR_LabelsSkipsMalformedLabels(t *testing.T) {
+	require := require.New(t)
+	updatedAt := time.Date(2024, 6, 9, 10, 11, 12, 0, time.UTC)
+	blankName := "   "
+	ghPR := &gh.PullRequest{
+		ID:        new(int64(3004)),
+		Number:    new(13),
+		UpdatedAt: ghTimestamp(updatedAt),
+		Labels: []*gh.Label{
+			nil,
+			{Name: &blankName},
+			githubLabel(5002, "ready", "Ready to merge", "0e8a16", false),
+		},
+	}
+
+	pr := NormalizePR(9, ghPR)
+
+	require.Equal([]db.Label{{
+		PlatformID:  5002,
+		Name:        "ready",
+		Description: "Ready to merge",
+		Color:       "0e8a16",
+		IsDefault:   false,
+		UpdatedAt:   updatedAt,
+	}}, pr.Labels)
+}
+
+func TestNormalizeIssue_LabelsFallbackToCreatedAt(t *testing.T) {
+	require := require.New(t)
+	createdAt := time.Date(2024, 6, 10, 9, 10, 11, 0, time.UTC)
+	ghIssue := &gh.Issue{
+		ID:        new(int64(4005)),
+		Number:    new(14),
+		CreatedAt: ghTimestamp(createdAt),
+		Labels: []*gh.Label{
+			githubLabel(6002, "triage", "Needs triage", "ededed", false),
+		},
+	}
+
+	issue := NormalizeIssue(10, ghIssue)
+
+	require.Equal([]db.Label{{
+		PlatformID:  6002,
+		Name:        "triage",
+		Description: "Needs triage",
+		Color:       "ededed",
+		IsDefault:   false,
+		UpdatedAt:   createdAt,
+	}}, issue.Labels)
 }
 
 func TestNormalizeCommentEvent(t *testing.T) {
