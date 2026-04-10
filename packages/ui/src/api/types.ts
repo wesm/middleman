@@ -94,3 +94,10 @@ export interface DiffLine {
   new_num?: number;
   no_newline?: boolean;
 }
+
+export interface CommitInfo {
+  sha: string;
+  message: string;
+  author_name: string;
+  authored_at: string;
+}

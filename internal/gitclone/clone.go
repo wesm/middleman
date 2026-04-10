@@ -233,6 +233,13 @@ func isBlockedEnvVar(e string) bool {
 	if strings.HasPrefix(e, "GIT_CONFIG") {
 		return true
 	}
+	// Author/committer overrides — set by pre-commit hooks and
+	// other parent git processes. Must be stripped so test commits
+	// (and any future commit operations) use local git config.
+	if strings.HasPrefix(e, "GIT_AUTHOR_") ||
+		strings.HasPrefix(e, "GIT_COMMITTER_") {
+		return true
+	}
 	// Credential/interactive helpers — all operations are
 	// non-interactive with GIT_TERMINAL_PROMPT=0.
 	if strings.HasPrefix(e, "GIT_ASKPASS=") ||

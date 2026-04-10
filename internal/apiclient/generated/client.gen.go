@@ -57,6 +57,30 @@ type ApprovePRInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// CommitResponse defines model for CommitResponse.
+type CommitResponse struct {
+	// AuthorName Commit author display name
+	AuthorName string `json:"author_name"`
+
+	// AuthoredAt Commit author date (RFC3339)
+	AuthoredAt time.Time `json:"authored_at"`
+
+	// Message First line of commit message
+	Message string `json:"message"`
+
+	// Sha Full commit SHA
+	Sha string `json:"sha"`
+}
+
+// CommitsResponse defines model for CommitsResponse.
+type CommitsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Commits Commits in newest-first order
+	Commits *[]CommitResponse `json:"commits"`
+}
+
 // DiffFile defines model for DiffFile.
 type DiffFile struct {
 	Additions        int64   `json:"additions"`
@@ -509,6 +533,15 @@ type ListPullsParams struct {
 // GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
 type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
@@ -663,6 +696,9 @@ type ClientInterface interface {
 	PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetReposByOwnerByNamePullsByNumberCommits request
+	GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberDiff request
 	GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -929,6 +965,18 @@ func (c *Client) PostPrCommentWithBody(ctx context.Context, owner string, name s
 
 func (c *Client) PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostPrCommentRequest(c.Server, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberCommitsRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2109,6 +2157,54 @@ func NewPostPrCommentRequestWithBody(server string, owner string, name string, n
 	return req, nil
 }
 
+// NewGetReposByOwnerByNamePullsByNumberCommitsRequest generates requests for GetReposByOwnerByNamePullsByNumberCommits
+func NewGetReposByOwnerByNamePullsByNumberCommitsRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/commits", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetReposByOwnerByNamePullsByNumberDiffRequest generates requests for GetReposByOwnerByNamePullsByNumberDiff
 func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams) (*http.Request, error) {
 	var err error
@@ -2155,6 +2251,54 @@ func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner strin
 		if params.Whitespace != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -2784,6 +2928,9 @@ type ClientWithResponsesInterface interface {
 
 	PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
 
+	// GetReposByOwnerByNamePullsByNumberCommitsWithResponse request
+	GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error)
+
 	// GetReposByOwnerByNamePullsByNumberDiffWithResponse request
 	GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error)
 
@@ -3170,6 +3317,29 @@ func (r PostPrCommentResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostPrCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetReposByOwnerByNamePullsByNumberCommitsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CommitsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNamePullsByNumberCommitsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNamePullsByNumberCommitsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3613,6 +3783,15 @@ func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, own
 		return nil, err
 	}
 	return ParsePostPrCommentResponse(rsp)
+}
+
+// GetReposByOwnerByNamePullsByNumberCommitsWithResponse request returning *GetReposByOwnerByNamePullsByNumberCommitsResponse
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberCommits(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNamePullsByNumberCommitsResponse(rsp)
 }
 
 // GetReposByOwnerByNamePullsByNumberDiffWithResponse request returning *GetReposByOwnerByNamePullsByNumberDiffResponse
@@ -4245,6 +4424,39 @@ func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, err
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNamePullsByNumberCommitsResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberCommitsWithResponse call
+func ParseGetReposByOwnerByNamePullsByNumberCommitsResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNamePullsByNumberCommitsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommitsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

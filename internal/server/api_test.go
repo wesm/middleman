@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -2215,7 +2216,6 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	require.Equal(http.StatusServiceUnavailable, resp.StatusCode())
 }
 
-
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)
@@ -2440,4 +2440,253 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	assert.True(resp2.JSON200.DetailLoaded)
 	require.NotNil(resp2.JSON200.DetailFetchedAt)
 	assert.Equal(now.Format(time.RFC3339), *resp2.JSON200.DetailFetchedAt)
+}
+
+// filteredTestEnv returns os.Environ() with GIT_DIR, GIT_WORK_TREE, and
+// GIT_INDEX_FILE removed so tests that shell out to git are not
+// contaminated by the parent process (e.g. pre-commit hooks).
+func filteredTestEnv() []string {
+	var env []string
+	for _, e := range os.Environ() {
+		key, _, _ := strings.Cut(e, "=")
+		if strings.HasPrefix(key, "GIT_") {
+			continue
+		}
+		env = append(env, e)
+	}
+	return env
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(filteredTestEnv(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
+}
+
+func testGitSHA(t *testing.T, dir, ref string) string {
+	t.Helper()
+	cmd := exec.Command("git", "rev-parse", ref)
+	cmd.Dir = dir
+	cmd.Env = append(filteredTestEnv(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
+}
+
+func setupTestServerWithClones(t *testing.T) (
+	client *apiclient.Client,
+	database *db.DB,
+	mergeBase string,
+	headSHA string,
+	commitSHAs []string,
+) {
+	t.Helper()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	bareDir := filepath.Join(dir, "clones")
+	require.NoError(t, os.MkdirAll(bareDir, 0o755))
+	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+
+	tmpWork := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, tmpWork)
+	runGit(t, tmpWork, "config", "user.email", "test@test.com")
+	runGit(t, tmpWork, "config", "user.name", "Test")
+
+	require.NoError(t, os.WriteFile(filepath.Join(tmpWork, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "base commit")
+	runGit(t, tmpWork, "push", "origin", "main")
+	mergeBase = testGitSHA(t, tmpWork, "HEAD")
+
+	runGit(t, tmpWork, "checkout", "-b", "pr")
+	for i := 1; i <= 5; i++ {
+		fname := fmt.Sprintf("file%d.txt", i)
+		require.NoError(t, os.WriteFile(filepath.Join(tmpWork, fname), fmt.Appendf(nil, "content %d\n", i), 0o644))
+		runGit(t, tmpWork, "add", ".")
+		runGit(t, tmpWork, "commit", "-m", fmt.Sprintf("commit %d", i))
+	}
+	runGit(t, tmpWork, "push", "origin", "pr")
+	headSHA = testGitSHA(t, tmpWork, "HEAD")
+
+	// Collect SHAs newest-first.
+	commitSHAs = make([]string, 5)
+	sha := headSHA
+	for i := range 5 {
+		commitSHAs[i] = sha
+		sha = testGitSHA(t, tmpWork, sha+"^1")
+	}
+
+	clones := gitclone.New(bareDir, nil)
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+
+	seedPR(t, database, "acme", "widget", 1)
+	ctx := context.Background()
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
+
+	client = setupTestClient(t, srv)
+	return client, database, mergeBase, headSHA, commitSHAs
+}
+
+func TestAPIGetCommits(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberCommitsWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.Len(*resp.JSON200.Commits, 5)
+	assert.Equal(commitSHAs[0], (*resp.JSON200.Commits)[0].Sha)
+	assert.Equal("commit 5", (*resp.JSON200.Commits)[0].Message)
+}
+
+func TestAPIGetCommits_NotFound(t *testing.T) {
+	client, _, _, _, _ := setupTestServerWithClones(t)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberCommitsWithResponse(
+		context.Background(), "acme", "widget", 999,
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode())
+}
+
+func TestAPIGetDiff_SingleCommit(t *testing.T) {
+	require := require.New(t)
+
+	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "widget", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{Commit: &commitSHAs[2]},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200.Files, 1)
+}
+
+func TestAPIGetDiff_Range(t *testing.T) {
+	require := require.New(t)
+
+	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
+	from := commitSHAs[4] // commit 1 (oldest)
+	to := commitSHAs[2]   // commit 3
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "widget", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{From: &from, To: &to},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200.Files, 3)
+}
+
+func TestAPIGetDiff_InvalidScope(t *testing.T) {
+	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
+	from := commitSHAs[0]
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "widget", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{Commit: &commitSHAs[0], From: &from},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIGetDiff_UnknownSHA(t *testing.T) {
+	client, _, _, _, _ := setupTestServerWithClones(t)
+	bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "widget", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{Commit: &bogus},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIGetDiff_ReversedRange(t *testing.T) {
+	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
+	from := commitSHAs[0] // newest
+	to := commitSHAs[4]   // oldest
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "widget", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{From: &from, To: &to},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIGetDiff_FromWithoutTo(t *testing.T) {
+	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
+	from := commitSHAs[0]
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "widget", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{From: &from},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIGetDiff_RootCommit(t *testing.T) {
+	require := require.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	bareDir := filepath.Join(dir, "clones")
+	require.NoError(os.MkdirAll(bareDir, 0o755))
+	bare := filepath.Join(bareDir, "github.com", "acme", "rootrepo.git")
+	tmpWork := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, tmpWork)
+	runGit(t, tmpWork, "config", "user.email", "test@test.com")
+	runGit(t, tmpWork, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(filepath.Join(tmpWork, "root.txt"), []byte("root\n"), 0o644))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "root commit")
+	rootSHA := testGitSHA(t, tmpWork, "HEAD")
+
+	require.NoError(os.WriteFile(filepath.Join(tmpWork, "second.txt"), []byte("second\n"), 0o644))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "second commit")
+	runGit(t, tmpWork, "push", "origin", "main")
+	headSHA := testGitSHA(t, tmpWork, "HEAD")
+
+	clones := gitclone.New(bareDir, nil)
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "rootrepo", PlatformHost: "github.com"}}
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+
+	seedPR(t, database, "acme", "rootrepo", 1)
+	ctx := context.Background()
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "rootrepo")
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberDiffWithResponse(
+		context.Background(), "acme", "rootrepo", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberDiffParams{Commit: &rootSHA},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
 }

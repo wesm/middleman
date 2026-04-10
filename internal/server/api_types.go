@@ -1,6 +1,8 @@
 package server
 
 import (
+	"time"
+
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 )
@@ -109,6 +111,16 @@ type rateLimitsResponse struct {
 	Hosts map[string]rateLimitHostStatus `json:"hosts"`
 }
 
+type commitResponse struct {
+	SHA        string    `json:"sha"         doc:"Full commit SHA"`
+	Message    string    `json:"message"     doc:"First line of commit message"`
+	AuthorName string    `json:"author_name" doc:"Commit author display name"`
+	AuthoredAt time.Time `json:"authored_at" doc:"Commit author date (RFC3339)"`
+}
+
+type commitsResponse struct {
+	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
+}
 const activitySafetyCap = 5000
 
 type activityResponse struct {
