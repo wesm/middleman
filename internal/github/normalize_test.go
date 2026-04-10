@@ -519,3 +519,62 @@ func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
 	result := DeriveReviewDecision(reviews)
 	Assert.Equal(t, "approved", result)
 }
+
+func TestNormalizePR_BotUserDisplayName(t *testing.T) {
+	assert := Assert.New(t)
+	ghPR := &gh.PullRequest{
+		ID:     new(int64(3003)),
+		Number: new(7),
+		State:  new("open"),
+		User: &gh.User{
+			Login: new("renovate[bot]"),
+			Type:  new("Bot"),
+		},
+	}
+
+	pr := NormalizePR(1, ghPR)
+
+	assert.Equal("renovate[bot]", pr.Author)
+	assert.Equal("renovate[bot]", pr.AuthorDisplayName,
+		"bot users should get login as display name")
+}
+
+func TestNameOrEmpty(t *testing.T) {
+	tests := []struct {
+		name string
+		user *gh.User
+		want string
+	}{
+		{
+			name: "nil user",
+			user: nil,
+			want: "",
+		},
+		{
+			name: "regular user with name",
+			user: &gh.User{Login: new("alice"), Name: new("Alice Smith")},
+			want: "Alice Smith",
+		},
+		{
+			name: "regular user without name",
+			user: &gh.User{Login: new("alice")},
+			want: "",
+		},
+		{
+			name: "bot user returns login",
+			user: &gh.User{Login: new("dependabot[bot]"), Type: new("Bot")},
+			want: "dependabot[bot]",
+		},
+		{
+			name: "bot user with name still returns login",
+			user: &gh.User{Login: new("mybot[bot]"), Type: new("Bot"), Name: new("My Bot")},
+			want: "mybot[bot]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			Assert.Equal(t, tt.want, nameOrEmpty(tt.user))
+		})
+	}
+}
