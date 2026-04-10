@@ -673,6 +673,57 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 	return &mr, nil
 }
 
+// GetMergeRequestByRepoIDAndNumber returns a merge request by repo ID and number.
+func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*MergeRequest, error) {
+	var mr MergeRequest
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
+		       p.author, p.author_display_name, p.state, p.is_draft,
+		       p.body, p.head_branch, p.base_branch,
+		       p.platform_head_sha, p.platform_base_sha,
+		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
+		       p.head_repo_clone_url,
+		       p.additions, p.deletions, p.comment_count, p.review_decision,
+		       p.ci_status, p.ci_checks_json,
+		       p.created_at, p.updated_at, p.last_activity_at,
+		       p.merged_at, p.closed_at, p.mergeable_state,
+		       p.detail_fetched_at, p.ci_had_pending,
+		       COALESCE(k.status, '') AS kanban_status,
+		       (s.number IS NOT NULL) AS starred
+		FROM middleman_merge_requests p
+		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
+		LEFT JOIN middleman_starred_items s
+		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
+		WHERE p.repo_id = ? AND p.number = ?`,
+		repoID, number,
+	).Scan(
+		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
+		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
+		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
+		&mr.HeadRepoCloneURL,
+		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
+		&mr.CIStatus, &mr.CIChecksJSON,
+		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
+		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
+		&mr.DetailFetchedAt, &mr.CIHadPending,
+		&mr.KanbanStatus, &mr.Starred,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get merge request by repo id: %w", err)
+	}
+	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load merge request labels: %w", err)
+	}
+	mr.Labels = labelsByMR[mr.ID]
+	return &mr, nil
+}
+
 // ListMergeRequests returns merge requests matching the given options.
 // Results are ordered by last_activity_at DESC.
 func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
@@ -1183,6 +1234,42 @@ func (d *DB) GetIssue(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
+	}
+	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load issue labels: %w", err)
+	}
+	issue.Labels = labelsByIssue[issue.ID]
+	return &issue, nil
+}
+
+// GetIssueByRepoIDAndNumber returns an issue by repo ID and number.
+func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*Issue, error) {
+	var issue Issue
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.detail_fetched_at,
+		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
+		       (s.number IS NOT NULL) AS starred
+		FROM middleman_issues i
+		LEFT JOIN middleman_starred_items s
+		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		WHERE i.repo_id = ? AND i.number = ?`,
+		repoID, number,
+	).Scan(
+		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
+		&issue.URL, &issue.Title, &issue.Author, &issue.State,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.DetailFetchedAt,
+		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
+		&issue.ClosedAt, &issue.Starred,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get issue by repo id: %w", err)
 	}
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {

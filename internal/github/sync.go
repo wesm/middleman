@@ -1926,7 +1926,7 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		return err
 	}
 
-	issue, err := s.db.GetIssue(ctx, repo.Owner, repo.Name, number)
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d for labels: %w", number, err)
 	}
@@ -2662,7 +2662,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		return fmt.Errorf("update closed MR #%d: %w", number, err)
 	}
 
-	mr, err := s.db.GetMergeRequest(ctx, repo.Owner, repo.Name, number)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
 		return fmt.Errorf("get closed MR #%d for labels: %w", number, err)
 	}

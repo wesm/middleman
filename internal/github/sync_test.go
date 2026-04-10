@@ -3071,6 +3071,73 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 	require.Equal(int64(902), storedAfter.Labels[0].PlatformID)
 }
 
+func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
+	require.NoError(err)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	otherPR := buildOpenPR(7, now)
+	otherPR.State = new("closed")
+	otherPR.ClosedAt = makeTimestamp(now)
+	otherPR.Labels = []*gh.Label{buildGitHubLabel(990, "other-host", "Other host label", "333333", false)}
+	otherMRID, err := d.UpsertMergeRequest(ctx, NormalizePR(otherRepoID, otherPR))
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, otherRepoID, otherMRID, []db.Label{{
+		PlatformID:  990,
+		Name:        "other-host",
+		Description: "Other host label",
+		Color:       "333333",
+		UpdatedAt:   now,
+	}}))
+
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.ClosedAt = makeTimestamp(now)
+	pr.Labels = []*gh.Label{buildGitHubLabel(901, "bug", "Old bug", "d73a4a", true)}
+	targetMRID, err := d.UpsertMergeRequest(ctx, NormalizePR(repoID, pr))
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, targetMRID, []db.Label{{
+		PlatformID:  901,
+		Name:        "bug",
+		Description: "Old bug",
+		Color:       "d73a4a",
+		IsDefault:   true,
+		UpdatedAt:   now,
+	}}))
+
+	pr.Labels = []*gh.Label{buildGitHubLabel(902, "release", "Ready to release", "5319e7", false)}
+	pr.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosed(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 7, false))
+
+	var labelName string
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_merge_request_labels ml
+		JOIN middleman_labels l ON l.id = ml.label_id
+		WHERE ml.merge_request_id = ?`, targetMRID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("release", labelName)
+
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_merge_request_labels ml
+		JOIN middleman_labels l ON l.id = ml.label_id
+		WHERE ml.merge_request_id = ?`, otherMRID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("other-host", labelName)
+}
+
 func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()
@@ -3106,6 +3173,69 @@ func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 	require.Len(stored.Labels, 1)
 	require.Equal("docs", stored.Labels[0].Name)
 	require.Equal(int64(1002), stored.Labels[0].PlatformID)
+}
+
+func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
+	require.NoError(err)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	issueNumber := 9
+
+	otherState := "open"
+	otherTitle := "other closed issue"
+	otherURL := "https://ghe.corp.com/owner/repo/issues/9"
+	otherBody := ""
+	otherID := int64(800009)
+	otherIssue := &gh.Issue{ID: &otherID, Number: &issueNumber, Title: &otherTitle, State: &otherState, HTMLURL: &otherURL, Body: &otherBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1901, "other-host", "Other host label", "333333", false)}}
+	otherIssueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(otherRepoID, otherIssue))
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, otherRepoID, otherIssueRowID, []db.Label{{PlatformID: 1901, Name: "other-host", Description: "Other host label", Color: "333333", UpdatedAt: now}}))
+
+	issueTitle := "closed issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/9"
+	issueBody := ""
+	issueID := int64(900009)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1001, "bug", "Old bug", "d73a4a", true)}}
+	issueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(repoID, issue))
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueRowID, []db.Label{{PlatformID: 1001, Name: "bug", Description: "Old bug", Color: "d73a4a", IsDefault: true, UpdatedAt: now}}))
+
+	closedState := "closed"
+	issue.State = &closedState
+	issue.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	issue.Labels = []*gh.Label{buildGitHubLabel(1002, "docs", "Documentation", "0075ca", false)}
+	closedAt := makeTimestamp(now.Add(2 * time.Minute))
+	issue.ClosedAt = closedAt
+	mc := &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosedIssue(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, issueNumber))
+
+	var labelName string
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_issue_labels il
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE il.issue_id = ?`, issueRowID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("docs", labelName)
+
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_issue_labels il
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE il.issue_id = ?`, otherIssueRowID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("other-host", labelName)
 }
 
 func TestBackfillRepoPersistsPRLabels(t *testing.T) {
