@@ -3301,6 +3301,112 @@ func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 	require.Equal("backfill-issue", stored.Labels[0].Name)
 }
 
+func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 9, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  100,
+		Name:        "bug",
+		Description: "name row",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  200,
+		Name:        "renamed",
+		Description: "platform row",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	pr := buildOpenPR(31, now)
+	pr.State = new("closed")
+	pr.Labels = []*gh.Label{buildGitHubLabel(200, "bug", "ambiguous", "333333", false)}
+
+	mc := &mockClient{listPullRequestsPageFn: func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
+		return []*gh.PullRequest{pr}, false, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoAfter)
+	require.Equal(0, repoAfter.BackfillPRPage)
+	require.False(repoAfter.BackfillPRComplete)
+	require.Nil(repoAfter.BackfillPRCompletedAt)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 31)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Empty(stored.Labels)
+}
+
+func TestBackfillRepoDoesNotAdvanceIssueCursorWhenLabelPersistenceFails(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  100,
+		Name:        "bug",
+		Description: "name row",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  200,
+		Name:        "renamed",
+		Description: "platform row",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	issueNumber := 32
+	issueTitle := "ambiguous backfill issue"
+	issueState := "closed"
+	issueURL := "https://github.com/owner/repo/issues/32"
+	issueBody := ""
+	issueID := int64(900032)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(200, "bug", "ambiguous", "333333", false)}}
+
+	mc := &mockClient{listIssuesPageFn: func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
+		return []*gh.Issue{issue}, false, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoAfter)
+	require.Equal(0, repoAfter.BackfillIssuePage)
+	require.False(repoAfter.BackfillIssueComplete)
+	require.Nil(repoAfter.BackfillIssueCompletedAt)
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Empty(stored.Labels)
+}
+
 // partialFailureMock embeds mockClient and simulates ETag-like
 // behavior for issues: after a successful list fetch, subsequent
 // calls return 304 (not-modified) unless InvalidateListETagsForRepo

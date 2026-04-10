@@ -2233,6 +2233,7 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			prPage++
+			pageFailed := false
 			prs, hasMore, err := client.ListPullRequestsPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", prPage,
@@ -2254,13 +2255,21 @@ func (s *Syncer) backfillRepo(
 						"number", ghPR.GetNumber(),
 						"err", uErr,
 					)
+					pageFailed = true
+					break
 				} else if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 					slog.Warn("backfill replace PR labels failed",
 						"repo", repo.Owner+"/"+repo.Name,
 						"number", ghPR.GetNumber(),
 						"err", err,
 					)
+					pageFailed = true
+					break
 				}
+			}
+			if pageFailed {
+				prPage--
+				break
 			}
 			if !hasMore {
 				prComplete = true
@@ -2290,6 +2299,7 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			issuePage++
+			pageFailed := false
 			issues, hasMore, err := client.ListIssuesPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", issuePage,
@@ -2311,13 +2321,21 @@ func (s *Syncer) backfillRepo(
 						"number", ghIssue.GetNumber(),
 						"err", uErr,
 					)
+					pageFailed = true
+					break
 				} else if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
 					slog.Warn("backfill replace issue labels failed",
 						"repo", repo.Owner+"/"+repo.Name,
 						"number", ghIssue.GetNumber(),
 						"err", err,
 					)
+					pageFailed = true
+					break
 				}
+			}
+			if pageFailed {
+				issuePage--
+				break
 			}
 			if !hasMore {
 				issueComplete = true
