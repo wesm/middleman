@@ -109,3 +109,6 @@ export {
 export {
   default as FocusListView,
 } from "./views/FocusListView.svelte";
+export {
+  default as StacksView,
+} from "./views/StacksView.svelte";

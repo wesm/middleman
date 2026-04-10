@@ -6,7 +6,8 @@ export type Route =
   | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
-  | { page: "reviews"; jobId?: number };
+  | { page: "reviews"; jobId?: number }
+  | { page: "stacks" };
 
 import {
   isEmbedded,
@@ -123,6 +124,7 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "reviews" };
   }
+  if (path === "/stacks") return { page: "stacks" };
   return { page: "activity" };
 }
 
@@ -141,7 +143,7 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" {
+  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "stacks" {
   return route.page;
 }
 
@@ -188,6 +190,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "issue";
   } else if (r.page === "reviews") {
     navType = "reviews";
+  } else if (r.page === "stacks") {
+    navType = "stacks";
   } else {
     navType = r.page as "activity";
   }

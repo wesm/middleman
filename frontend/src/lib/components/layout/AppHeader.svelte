@@ -55,13 +55,14 @@
     {#if isNarrow()}
       <select
         class="nav-select"
-        value={getPage() === "pulls" && getView() === "board" ? "board" : getPage()}
+        value={getPage() === "pulls" && getView() === "board" ? "board" : getPage() === "stacks" ? "stacks" : getPage()}
         onchange={(e) => {
           const v = (e.target as HTMLSelectElement).value;
           if (v === "activity") navigate("/");
           else if (v === "pulls") navigate("/pulls");
           else if (v === "issues") navigate("/issues");
           else if (v === "board") navigate("/pulls/board");
+          else if (v === "stacks") navigate("/stacks");
           else if (v === "reviews") navigate("/reviews");
           else if (v === "settings") navigate("/settings");
         }}
@@ -70,6 +71,7 @@
         <option value="pulls">PRs</option>
         <option value="issues">Issues</option>
         <option value="board">Board</option>
+        <option value="stacks">Stacks</option>
         <option value="reviews">Reviews</option>
         {#if !isEmbedded() && getPage() === "settings"}
           <option value="settings">Settings</option>
@@ -85,6 +87,9 @@
         </button>
         <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigate("/issues")}>
           Issues
+        </button>
+        <button class="view-tab" class:active={getPage() === "stacks"} onclick={() => navigate("/stacks")}>
+          Stacks
         </button>
         <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
           Board

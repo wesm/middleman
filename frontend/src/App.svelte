@@ -8,6 +8,7 @@
     KanbanBoardView,
     ReviewsView,
     FocusListView,
+    StacksView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -114,6 +115,7 @@
     );
     void stores.issues.loadIssues();
     void stores.activity.loadActivity();
+    void stores.stacks.loadStacks();
   });
 
   $effect(() => {
@@ -349,6 +351,10 @@
         e.preventDefault();
         navigate("/pulls/board");
         break;
+      case "3":
+        e.preventDefault();
+        navigate("/stacks");
+        break;
     }
   }
 
@@ -517,6 +523,8 @@
         {:else}
           <ReviewsView />
         {/if}
+      {:else if getPage() === "stacks"}
+        <StacksView />
       {/if}
     </main>
 

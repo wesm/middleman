@@ -6,6 +6,8 @@
   import PullDetail
     from "../components/detail/PullDetail.svelte";
   import DiffView from "../components/diff/DiffView.svelte";
+  import StackSidebar
+    from "../components/detail/StackSidebar.svelte";
 
   const { pulls, detail, sync } = getStores();
   const navigate = getNavigate();
@@ -89,6 +91,13 @@
       </div>
     {/if}
   </section>
+  {#if selectedPR !== null}
+    <StackSidebar
+      owner={selectedPR.owner}
+      name={selectedPR.name}
+      number={selectedPR.number}
+    />
+  {/if}
 </div>
 
 <style>

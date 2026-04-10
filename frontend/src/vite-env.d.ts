@@ -68,7 +68,7 @@ interface ActionHookDef {
 }
 
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "board" | "reviews";
+  type: "pull" | "issue" | "activity" | "board" | "reviews" | "stacks";
   owner?: string;
   name?: string;
   number?: number;
