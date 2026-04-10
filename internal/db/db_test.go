@@ -143,18 +143,24 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 
 	var platformID sql.NullInt64
 	var name string
+	var description string
 	var color string
+	var isDefault bool
+	var updatedAt string
 	err = d.ReadDB().QueryRow(
-		`SELECT l.platform_id, l.name, l.color
+		`SELECT l.platform_id, l.name, l.description, l.color, l.is_default, l.updated_at
 		 FROM middleman_labels l
 		 JOIN middleman_issue_labels il ON il.label_id = l.id
 		 WHERE il.issue_id = ?`,
 		1,
-	).Scan(&platformID, &name, &color)
+	).Scan(&platformID, &name, &description, &color, &isDefault, &updatedAt)
 	require.NoError(err)
 	require.False(platformID.Valid)
 	require.Equal("bug", name)
+	require.Empty(description)
 	require.Equal("d73a4a", color)
+	require.False(isDefault)
+	require.NotEmpty(updatedAt)
 }
 
 func TestOpenIgnoresMalformedLegacyIssueLabelsJSON(t *testing.T) {

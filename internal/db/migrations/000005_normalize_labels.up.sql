@@ -3,7 +3,10 @@ CREATE TABLE IF NOT EXISTS middleman_labels (
     repo_id     INTEGER NOT NULL REFERENCES middleman_repos(id) ON DELETE CASCADE,
     platform_id INTEGER,
     name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     color       TEXT NOT NULL DEFAULT '',
+    is_default  INTEGER NOT NULL DEFAULT 0,
+    updated_at  DATETIME NOT NULL,
     UNIQUE(repo_id, name),
     UNIQUE(repo_id, platform_id)
 );
@@ -35,7 +38,8 @@ WITH parsed_issue_labels AS (
         i.id AS issue_id,
         i.repo_id,
         json_extract(label.value, '$.name') AS name,
-        COALESCE(json_extract(label.value, '$.color'), '') AS color
+        COALESCE(json_extract(label.value, '$.color'), '') AS color,
+        COALESCE(i.updated_at, i.created_at, datetime('now')) AS updated_at
     FROM middleman_issues AS i
     JOIN json_each(
         CASE
@@ -45,11 +49,15 @@ WITH parsed_issue_labels AS (
     ) AS label
     WHERE TRIM(COALESCE(json_extract(label.value, '$.name'), '')) <> ''
 )
-INSERT OR IGNORE INTO middleman_labels (repo_id, name, color)
+INSERT OR IGNORE INTO middleman_labels (repo_id, platform_id, name, description, color, is_default, updated_at)
 SELECT
     repo_id,
+    NULL,
     name,
-    MIN(color) AS color
+    '',
+    MIN(color) AS color,
+    0,
+    MAX(updated_at) AS updated_at
 FROM parsed_issue_labels
 GROUP BY repo_id, name;
 
