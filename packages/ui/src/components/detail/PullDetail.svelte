@@ -10,6 +10,7 @@
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
+  import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -189,6 +190,7 @@
         a.id !== "navigate-worktree",
     ),
   );
+  const labels = $derived(detailStore.getDetail()?.merge_request?.labels ?? []);
 </script>
 
 {#if detailStore.isDetailLoading()}
@@ -289,6 +291,10 @@
           <span class="chip chip--teal">Worktree</span>
         {/if}
       </div>
+
+      {#if labels.length > 0}
+        <GitHubLabels {labels} mode="full" />
+      {/if}
 
       <!-- Expanded CI checks -->
       {#if ciExpanded}

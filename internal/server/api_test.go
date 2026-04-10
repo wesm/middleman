@@ -312,6 +312,16 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 	return prID
 }
 
+func seedPRWithLabels(t *testing.T, database *db.DB, owner, name string, number int, labels []db.Label) int64 {
+	t.Helper()
+	ctx := context.Background()
+	prID := seedPR(t, database, owner, name, number)
+	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	require.NoError(t, err)
+	require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repo.ID, prID, labels))
+	return prID
+}
+
 func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {
 	t.Helper()
 	ctx := context.Background()
@@ -544,6 +554,32 @@ func TestAPIListPulls(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
 }
 
+func TestAPIListPullsIncludesLabels(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	description := "Needs a fix"
+	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
+		Name:        "bug",
+		Description: description,
+		Color:       "d73a4a",
+		IsDefault:   true,
+	}})
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListPullsWithResponse(context.Background(), nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.NotNil((*resp.JSON200)[0].Labels)
+	require.Equal([]generated.Label{{
+		Name:        "bug",
+		Description: &description,
+		Color:       "d73a4a",
+		IsDefault:   true,
+	}}, *(*resp.JSON200)[0].Labels)
+}
+
 func TestAPIGetPull(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -560,6 +596,30 @@ func TestAPIGetPull(t *testing.T) {
 	require.EqualValues(1, resp.JSON200.MergeRequest.Number)
 	require.Equal("acme", resp.JSON200.RepoOwner)
 	require.Equal("widget", resp.JSON200.RepoName)
+}
+
+func TestAPIGetPullIncludesLabels(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
+		Name:      "enhancement",
+		Color:     "a2eeef",
+		IsDefault: false,
+	}})
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.MergeRequest.Labels)
+	require.Equal([]generated.Label{{
+		Name:      "enhancement",
+		Color:     "a2eeef",
+		IsDefault: false,
+	}}, *resp.JSON200.MergeRequest.Labels)
 }
 
 func TestAPIGetPullIsDBOnly(t *testing.T) {
@@ -1636,7 +1696,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 }
 
 // seedIssue inserts a repo and an issue into the DB.
-func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) {
+func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) int64 {
 	t.Helper()
 	ctx := context.Background()
 	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
@@ -1652,8 +1712,19 @@ func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, st
 	if state == "closed" {
 		issue.ClosedAt = &now
 	}
-	_, err = database.UpsertIssue(ctx, issue)
+	issueID, err := database.UpsertIssue(ctx, issue)
 	require.NoError(t, err)
+	return issueID
+}
+
+func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, number int, state string, labels []db.Label) int64 {
+	t.Helper()
+	ctx := context.Background()
+	issueID := seedIssue(t, database, owner, name, number, state)
+	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	require.NoError(t, err)
+	require.NoError(t, database.ReplaceIssueLabels(ctx, repo.ID, issueID, labels))
+	return issueID
 }
 
 func TestAPIClosePR(t *testing.T) {
@@ -1839,6 +1910,56 @@ func TestAPIListIssuesStateFilter(t *testing.T) {
 	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
 	require.NoError(err)
 	require.Len(*resp.JSON200, 2)
+}
+
+func TestAPIListIssuesIncludesLabels(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssueWithLabels(t, database, "acme", "widget", 5, "open", []db.Label{{
+		Name:      "triage",
+		Color:     "fbca04",
+		IsDefault: false,
+	}})
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListIssuesWithResponse(context.Background(), nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.NotNil((*resp.JSON200)[0].Labels)
+	require.Equal([]generated.Label{{
+		Name:      "triage",
+		Color:     "fbca04",
+		IsDefault: false,
+	}}, *(*resp.JSON200)[0].Labels)
+}
+
+func TestAPIGetIssueIncludesLabels(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	description := "Customer reported"
+	seedIssueWithLabels(t, database, "acme", "widget", 5, "open", []db.Label{{
+		Name:        "bug",
+		Description: description,
+		Color:       "d73a4a",
+		IsDefault:   true,
+	}})
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		context.Background(), "acme", "widget", 5,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Issue.Labels)
+	require.Equal([]generated.Label{{
+		Name:        "bug",
+		Description: &description,
+		Color:       "d73a4a",
+		IsDefault:   true,
+	}}, *resp.JSON200.Issue.Labels)
 }
 
 func make422Error() error {

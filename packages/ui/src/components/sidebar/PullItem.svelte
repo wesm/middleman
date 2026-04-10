@@ -4,6 +4,7 @@
   import { getStores, getHostState } from "../../context.js";
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
+  import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { pulls } = getStores();
   const hostState = getHostState();
@@ -91,6 +92,7 @@
     !hasWorktree &&
     pr.State === "open",
   );
+  const labels = $derived(pr.labels ?? []);
 
   function handleImportClick(e: MouseEvent): void {
     e.stopPropagation();
@@ -114,6 +116,9 @@
     <span class="state-dot" style="background: {stateColors[prState]}"></span>
     {pr.Title}
   </p>
+  {#if labels.length > 0}
+    <GitHubLabels {labels} mode="compact" />
+  {/if}
   {#if showRepo}
     <div class="repo-row">
       <span
