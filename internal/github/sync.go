@@ -2123,7 +2123,7 @@ func (s *Syncer) resolveDisplayName(
 		if err != nil {
 			return "", err
 		}
-		resolved := sanitizeDisplayName(user.GetName())
+		resolved := nameOrEmpty(user)
 		s.displayNamesMu.Lock()
 		s.displayNames[key] = resolved
 		s.displayNamesMu.Unlock()
