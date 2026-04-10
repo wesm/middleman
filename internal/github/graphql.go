@@ -16,11 +16,11 @@ import (
 // topLevelPageSize is the number of PRs fetched per GraphQL
 // query page. Kept conservative to stay under GitHub's 500k
 // node limit even with nested connections.
-const topLevelPageSize = 25
+const topLevelPageSize = 10
 
 // retryPageSize is used when the initial query fails (e.g.,
-// complexity/node limit error). Half the default, minimum 5.
-const retryPageSize = 12
+// complexity/node limit error). Half the default.
+const retryPageSize = 5
 
 // --- GraphQL query types (private) ---
 
