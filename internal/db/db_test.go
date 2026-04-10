@@ -25,7 +25,15 @@ func openTestDB(t *testing.T) *DB {
 
 func TestOpenAndSchema(t *testing.T) {
 	d := openTestDB(t)
-	tables := []string{"middleman_repos", "middleman_merge_requests", "middleman_mr_events", "middleman_kanban_state"}
+	tables := []string{
+		"middleman_repos",
+		"middleman_merge_requests",
+		"middleman_mr_events",
+		"middleman_kanban_state",
+		"middleman_labels",
+		"middleman_merge_request_labels",
+		"middleman_issue_labels",
+	}
 	for _, tbl := range tables {
 		var name string
 		err := d.ReadDB().QueryRow(
@@ -116,6 +124,86 @@ func TestOpenMigratesLegacyDatabase(t *testing.T) {
 			require.False(tableExistsForTest(t, d.ReadDB(), "middleman_schema_version"))
 		})
 	}
+}
+
+func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
+	require := require.New(t)
+	path, raw := openSchemaVersion4DBForTest(t)
+	defer func() { require.NoError(raw.Close()) }()
+	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"d73a4a"}]`)
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	var issueLabelCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_issue_labels WHERE issue_id = ?`, 1).Scan(&issueLabelCount)
+	require.NoError(err)
+	require.Equal(1, issueLabelCount)
+
+	var platformID sql.NullInt64
+	var name string
+	var color string
+	err = d.ReadDB().QueryRow(
+		`SELECT l.platform_id, l.name, l.color
+		 FROM middleman_labels l
+		 JOIN middleman_issue_labels il ON il.label_id = l.id
+		 WHERE il.issue_id = ?`,
+		1,
+	).Scan(&platformID, &name, &color)
+	require.NoError(err)
+	require.False(platformID.Valid)
+	require.Equal("bug", name)
+	require.Equal("d73a4a", color)
+}
+
+func TestOpenIgnoresMalformedLegacyIssueLabelsJSON(t *testing.T) {
+	require := require.New(t)
+	path, raw := openSchemaVersion4DBForTest(t)
+	defer func() { require.NoError(raw.Close()) }()
+
+	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"d73a4a"}`)
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	var labelCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_labels`).Scan(&labelCount)
+	require.NoError(err)
+	require.Equal(0, labelCount)
+
+	var issueLabelCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_issue_labels`).Scan(&issueLabelCount)
+	require.NoError(err)
+	require.Equal(0, issueLabelCount)
+}
+
+func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) {
+	require := require.New(t)
+	path, raw := openSchemaVersion4DBForTest(t)
+	defer func() { require.NoError(raw.Close()) }()
+
+	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"ff0000"}]`)
+	seedLegacyIssueForTest(t, raw, 2, 1, 102, 8, `[{"name":"bug","color":"00ff00"}]`)
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	var labelCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ? AND name = ?`, 1, "bug").Scan(&labelCount)
+	require.NoError(err)
+	require.Equal(1, labelCount)
+
+	var color string
+	err = d.ReadDB().QueryRow(
+		`SELECT color FROM middleman_labels WHERE repo_id = ? AND name = ?`,
+		1,
+		"bug",
+	).Scan(&color)
+	require.NoError(err)
+	require.Equal("00ff00", color)
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
@@ -223,6 +311,8 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000002_update_mr_events_dedupe.up.sql"
 	case 3:
 		return "000003_add_backfill_and_detail_columns.up.sql"
+	case 4:
+		return "000004_drop_legacy_schema_version.up.sql"
 	default:
 		return ""
 	}
@@ -244,4 +334,61 @@ func tableExistsForTest(t *testing.T, db *sql.DB, name string) bool {
 	).Scan(&count)
 	require.NoError(t, err)
 	return count > 0
+}
+
+func openSchemaVersion4DBForTest(t *testing.T) (string, *sql.DB) {
+	t.Helper()
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 4))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (4, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(
+		`INSERT INTO middleman_repos (
+			id, platform, platform_host, owner, name,
+			created_at, backfill_pr_page, backfill_pr_complete,
+			backfill_issue_page, backfill_issue_complete
+		) VALUES (?, 'github', 'github.com', 'octo', 'repo', datetime('now'), 0, 0, 0, 0)`,
+		1,
+	)
+	require.NoError(err)
+
+	return path, raw
+}
+
+func seedLegacyIssueForTest(
+	t *testing.T,
+	raw *sql.DB,
+	id int,
+	repoID int,
+	platformID int,
+	number int,
+	labelsJSON string,
+) {
+	t.Helper()
+	_, err := raw.Exec(
+		`INSERT INTO middleman_issues (
+			id, repo_id, platform_id, number, url, title, author, state,
+			body, comment_count, labels_json, created_at, updated_at, last_activity_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))`,
+		id,
+		repoID,
+		platformID,
+		number,
+		"https://github.com/octo/repo/issues/test",
+		"Backfill labels",
+		"octocat",
+		"open",
+		"",
+		0,
+		labelsJSON,
+	)
+	require.NoError(t, err)
 }
