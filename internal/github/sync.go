@@ -1524,32 +1524,33 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
-	// Compute derived fields: ReviewDecision, CommentCount,
-	// LastActivityAt — same as refreshTimeline does for REST.
-	reviewDecision := DeriveReviewDecision(bulk.Reviews)
-	lastActivity := computeLastActivity(
-		bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits,
-	)
-	if err := s.db.UpdateMRDerivedFields(
-		ctx, repoID, number, db.MRDerivedFields{
-			ReviewDecision: reviewDecision,
-			CommentCount:   len(bulk.Comments),
-			LastActivityAt: lastActivity,
-		},
-	); err != nil {
-		slog.Warn("update derived fields failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", number, "err", err,
-		)
-	}
-
-	// Mark detail as fetched only when ALL connections are
-	// complete. Incomplete PRs leave DetailFetchedAt stale so
-	// the detail drain picks them up for a full REST fetch.
+	// Mark detail as fetched and update derived fields only when
+	// ALL connections are complete. Incomplete PRs leave
+	// DetailFetchedAt stale so the detail drain picks them up for
+	// a full REST fetch. Derived fields from truncated data would
+	// overwrite correct values with partial counts.
 	allComplete := bulk.CommentsComplete &&
 		bulk.ReviewsComplete &&
 		bulk.CommitsComplete &&
 		bulk.CIComplete
+	if allComplete {
+		reviewDecision := DeriveReviewDecision(bulk.Reviews)
+		lastActivity := computeLastActivity(
+			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits,
+		)
+		if err := s.db.UpdateMRDerivedFields(
+			ctx, repoID, number, db.MRDerivedFields{
+				ReviewDecision: reviewDecision,
+				CommentCount:   len(bulk.Comments),
+				LastActivityAt: lastActivity,
+			},
+		); err != nil {
+			slog.Warn("update derived fields failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
 	if allComplete {
 		pending := ciHasPending(string(ciJSON))
 		if err := s.db.UpdateMRDetailFetched(
@@ -1622,7 +1623,7 @@ func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
 			Name:       cr.GetName(),
 			Status:     cr.GetStatus(),
 			Conclusion: cr.GetConclusion(),
-			URL:        cr.GetDetailsURL(),
+			URL:        cr.GetHTMLURL(),
 			App:        cr.GetApp().GetName(),
 		})
 	}
@@ -1642,7 +1643,7 @@ func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
 			Name:       s.GetContext(),
 			Status:     status,
 			Conclusion: conclusion,
-			URL:        s.GetTargetURL(),
+			URL:        sanitizeURL(s.GetTargetURL()),
 			App:        s.GetContext(),
 		})
 	}

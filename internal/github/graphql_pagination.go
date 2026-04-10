@@ -1,6 +1,9 @@
 package github
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // pageInfo holds GraphQL pagination state from a connection's
 // pageInfo field.
@@ -27,6 +30,17 @@ func fetchAllPages[T any](
 		all = append(all, nodes...)
 		if !pi.HasNextPage {
 			break
+		}
+		if pi.EndCursor == "" {
+			return all, fmt.Errorf(
+				"graphql pagination: hasNextPage true but endCursor empty",
+			)
+		}
+		if cursor != nil && pi.EndCursor == *cursor {
+			return all, fmt.Errorf(
+				"graphql pagination: endCursor unchanged (%q)",
+				pi.EndCursor,
+			)
 		}
 		c := pi.EndCursor
 		cursor = &c

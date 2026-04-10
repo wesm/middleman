@@ -295,6 +295,20 @@ func New(opts Options) (*Instance, error) {
 		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
+	// Wire GraphQL fetchers for bulk PR sync.
+	fetchers := make(
+		map[string]*ghclient.GraphQLFetcher, len(hosts),
+	)
+	for _, host := range hosts {
+		gqlRT := ghclient.NewRateTracker(
+			database, host, "graphql",
+		)
+		fetchers[host] = ghclient.NewGraphQLFetcher(
+			hostTokens[host], host, gqlRT, budgets[host],
+		)
+	}
+	syncer.SetFetchers(fetchers)
+
 	if opts.WatchInterval > 0 {
 		syncer.SetWatchInterval(opts.WatchInterval)
 	}

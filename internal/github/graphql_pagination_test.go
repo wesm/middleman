@@ -79,5 +79,63 @@ func TestFetchAllPagesContextCanceled(t *testing.T) {
 			return nil, pageInfo{}, ctx.Err()
 		},
 	)
-	Assert.Error(t, err)
+	require.Error(t, err)
+}
+
+func TestFetchAllPagesEmptyCursor(t *testing.T) {
+	assert := Assert.New(t)
+
+	items, err := fetchAllPages(
+		context.Background(),
+		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
+			return []int{1}, pageInfo{
+				HasNextPage: true,
+				EndCursor:   "",
+			}, nil
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(err.Error(), "endCursor empty")
+	assert.Equal([]int{1}, items)
+}
+
+func TestFetchAllPagesRepeatedCursor(t *testing.T) {
+	assert := Assert.New(t)
+	calls := 0
+
+	items, err := fetchAllPages(
+		context.Background(),
+		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
+			calls++
+			return []int{calls}, pageInfo{
+				HasNextPage: true,
+				EndCursor:   "stuck",
+			}, nil
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(err.Error(), "endCursor unchanged")
+	assert.Equal([]int{1, 2}, items)
+}
+
+func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
+	assert := Assert.New(t)
+	calls := 0
+
+	items, err := fetchAllPages(
+		context.Background(),
+		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
+			calls++
+			if calls == 1 {
+				return []int{1, 2}, pageInfo{
+					HasNextPage: true,
+					EndCursor:   "c1",
+				}, nil
+			}
+			return nil, pageInfo{}, fmt.Errorf("page 2 failed")
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(err.Error(), "page 2 failed")
+	assert.Equal([]int{1, 2}, items)
 }

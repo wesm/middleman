@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
@@ -177,8 +178,12 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 		pr.ClosedAt = &t
 	}
 	if gql.HeadRepository != nil {
+		cloneURL := gql.HeadRepository.URL
+		if !strings.HasSuffix(cloneURL, ".git") {
+			cloneURL += ".git"
+		}
 		pr.Head.Repo = &gh.Repository{
-			CloneURL: new(gql.HeadRepository.URL),
+			CloneURL: new(cloneURL),
 		}
 	}
 
@@ -267,6 +272,7 @@ func adaptCheckRun(gql *gqlCheckRunFields) *gh.CheckRun {
 		Name:       new(gql.Name),
 		Status:     new(toLower(gql.Status)),
 		Conclusion: new(toLower(gql.Conclusion)),
+		HTMLURL:    new(gql.DetailsURL),
 		DetailsURL: new(gql.DetailsURL),
 		App:        &gh.App{Name: new(gql.CheckSuite.App.Name)},
 	}

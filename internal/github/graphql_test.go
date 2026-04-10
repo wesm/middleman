@@ -1,9 +1,13 @@
 package github
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +39,7 @@ func TestAdaptPR(t *testing.T) {
 	}
 	gql.Author.Login = "alice"
 	gql.MergedAt = &merged
-	gql.HeadRepository = &struct{ URL string }{URL: "https://github.com/o/r.git"}
+	gql.HeadRepository = &struct{ URL string }{URL: "https://github.com/o/r"}
 
 	pr := adaptPR(&gql)
 
@@ -155,4 +159,154 @@ func TestAdaptCheckContext(t *testing.T) {
 	require.Len(t, statuses, 1)
 	assert.Equal("ci/lint", statuses[0].GetContext())
 	assert.Equal("success", statuses[0].GetState())
+}
+
+func TestGraphqlRateTransport(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com", "graphql")
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", time.Now().Add(30*time.Minute).Unix()))
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"data":{}}`))
+	})
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	transport := &graphqlRateTransport{
+		base:        http.DefaultTransport,
+		rateTracker: rt,
+	}
+	client := &http.Client{Transport: transport}
+
+	req, err := http.NewRequest("POST", srv.URL, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	assert.Equal(1, rt.RequestsThisHour())
+	assert.Equal(4999, rt.Remaining())
+	assert.Equal(5000, rt.RateLimit())
+}
+
+func TestConvertGQLPRCompleteness(t *testing.T) {
+	assert := Assert.New(t)
+
+	gql := gqlPR{
+		Number:    1,
+		Title:     "test",
+		State:     "OPEN",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	gql.Author.Login = "user"
+	bulk := convertGQLPR(&gql)
+	assert.True(bulk.CommentsComplete)
+	assert.True(bulk.ReviewsComplete)
+	assert.True(bulk.CommitsComplete)
+	assert.True(bulk.CIComplete)
+
+	// Comments incomplete
+	gql.Comments.PageInfo.HasNextPage = true
+	bulk = convertGQLPR(&gql)
+	assert.False(bulk.CommentsComplete)
+	assert.True(bulk.ReviewsComplete)
+}
+
+func TestNormalizeBulkCI(t *testing.T) {
+	assert := Assert.New(t)
+
+	nameTest := "test"
+	statusCompleted := "completed"
+	conclusionSuccess := "success"
+	detailsURL := "https://example.com"
+	appName := "Actions"
+	contextLint := "ci/lint"
+	stateSuccess := "success"
+	targetURL := "https://example.com/2"
+
+	bulk := &BulkPR{
+		CheckRuns: []*gh.CheckRun{
+			{
+				Name:       &nameTest,
+				Status:     &statusCompleted,
+				Conclusion: &conclusionSuccess,
+				DetailsURL: &detailsURL,
+				App:        &gh.App{Name: &appName},
+			},
+		},
+		Statuses: []*gh.RepoStatus{
+			{
+				Context:   &contextLint,
+				State:     &stateSuccess,
+				TargetURL: &targetURL,
+			},
+		},
+	}
+
+	checks := normalizeBulkCI(bulk)
+	require.Len(t, checks, 2)
+	assert.Equal("test", checks[0].Name)
+	assert.Equal("completed", checks[0].Status)
+	assert.Equal("ci/lint", checks[1].Name)
+	assert.Equal("completed", checks[1].Status)
+}
+
+func TestAdaptPRNilFields(t *testing.T) {
+	assert := Assert.New(t)
+
+	gql := gqlPR{
+		Number:    1,
+		Title:     "test",
+		State:     "OPEN",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	// HeadRepository is nil
+	pr := adaptPR(&gql)
+	assert.Nil(pr.GetHead().GetRepo())
+	assert.Nil(pr.MergedAt)
+	assert.False(pr.GetMerged())
+}
+
+func TestStateConversion(t *testing.T) {
+	assert := Assert.New(t)
+	assert.Equal("open", stateToREST("OPEN"))
+	assert.Equal("closed", stateToREST("CLOSED"))
+	assert.Equal("closed", stateToREST("MERGED"))
+}
+
+func TestMergeableConversion(t *testing.T) {
+	assert := Assert.New(t)
+	assert.Equal("clean", mergeableToREST("MERGEABLE"))
+	assert.Equal("dirty", mergeableToREST("CONFLICTING"))
+	assert.Equal("unknown", mergeableToREST("UNKNOWN"))
+}
+
+func TestNormalizeBulkCIPendingStatus(t *testing.T) {
+	assert := Assert.New(t)
+
+	contextDeploy := "ci/deploy"
+	statePending := "pending"
+	pendingURL := "https://example.com"
+
+	bulk := &BulkPR{
+		Statuses: []*gh.RepoStatus{
+			{
+				Context:   &contextDeploy,
+				State:     &statePending,
+				TargetURL: &pendingURL,
+			},
+		},
+	}
+
+	checks := normalizeBulkCI(bulk)
+	require.Len(t, checks, 1)
+	assert.Equal("ci/deploy", checks[0].Name)
+	assert.Equal("in_progress", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
 }
