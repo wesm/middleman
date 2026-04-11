@@ -140,8 +140,9 @@ type gqlIssue struct {
 		Nodes []gqlLabel
 	} `graphql:"labels(first: 100)"`
 	Comments struct {
-		Nodes    []gqlComment
-		PageInfo pageInfo
+		TotalCount int
+		Nodes      []gqlComment
+		PageInfo   pageInfo
 	} `graphql:"comments(first: 100)"`
 }
 
@@ -241,13 +242,14 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 func adaptIssue(gql *gqlIssue) *gh.Issue {
 	state := stateToREST(gql.State)
 	issue := &gh.Issue{
-		ID:      new(gql.DatabaseId),
-		Number:  new(gql.Number),
-		Title:   new(gql.Title),
-		State:   new(state),
-		Body:    new(gql.Body),
-		HTMLURL: new(gql.URL),
-		User:    &gh.User{Login: new(gql.Author.Login)},
+		ID:       new(gql.DatabaseId),
+		Number:   new(gql.Number),
+		Title:    new(gql.Title),
+		State:    new(state),
+		Body:     new(gql.Body),
+		HTMLURL:  new(gql.URL),
+		Comments: new(gql.Comments.TotalCount),
+		User:     &gh.User{Login: new(gql.Author.Login)},
 	}
 
 	created := gh.Timestamp{Time: gql.CreatedAt}
