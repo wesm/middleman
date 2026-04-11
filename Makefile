@@ -63,7 +63,7 @@ frontend:
 
 # Run Vite dev server with dependencies installed (use alongside `make dev`)
 frontend-dev:
-	cd frontend && bun install && bun run dev
+	cd frontend && bun install && bun run dev -- $(ARGS)
 
 # Run Vite dev server with Bun (use alongside `make dev`)
 frontend-dev-bun:
