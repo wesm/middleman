@@ -1,7 +1,6 @@
-FROM golang:1.26-bookworm
+FROM golang:1.26-alpine
 
-# shasum needed by scripts/dev-backend-build.sh
-RUN apt-get update && apt-get install -y --no-install-recommends perl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache bash curl perl-utils socat
 
 # Bun for frontend tooling (pinned to match frontend/package.json)
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local BUN_VERSION=1.3.11 bash
