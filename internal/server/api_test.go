@@ -1642,6 +1642,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		Name:         "widget",
 		PlatformHost: "github.com",
 	}}, time.Minute, nil, nil)
+	t.Cleanup(func() { syncer.Stop() })
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
