@@ -354,23 +354,6 @@
     });
   }
 
-  function setGlobalEditorFocusState(isFocused: boolean): void {
-    if (typeof document === "undefined") return;
-    if (isFocused) {
-      document.body.dataset.commentEditorFocus = "true";
-      return;
-    }
-    delete document.body.dataset.commentEditorFocus;
-  }
-
-  function handleEditorFocusState(): void {
-    setGlobalEditorFocusState(true);
-  }
-
-  function handleEditorBlurState(): void {
-    setGlobalEditorFocusState(false);
-  }
-
   function createAutocompleteExtension(trigger: "@" | "#", pluginKey: PluginKey) {
     return Extension.create({
       name: trigger === "@" ? "commentUserAutocomplete" : "commentReferenceAutocomplete",
@@ -457,7 +440,6 @@
         handleDOMEvents: {
           mousedown: () => {
             pointerFocusPending = true;
-            setGlobalEditorFocusState(true);
             return false;
           },
           focus: () => {
@@ -490,16 +472,11 @@
 
     current.view.dom.addEventListener("compositionstart", handleCompositionStart);
     current.view.dom.addEventListener("compositionend", handleCompositionEnd);
-    current.view.dom.addEventListener("focus", handleEditorFocusState);
-    current.view.dom.addEventListener("blur", handleEditorBlurState);
 
     return () => {
       suggestionAbortController?.abort();
       current.view.dom.removeEventListener("compositionstart", handleCompositionStart);
       current.view.dom.removeEventListener("compositionend", handleCompositionEnd);
-      current.view.dom.removeEventListener("focus", handleEditorFocusState);
-      current.view.dom.removeEventListener("blur", handleEditorBlurState);
-      setGlobalEditorFocusState(false);
       current.destroy();
       editor = null;
     };

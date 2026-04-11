@@ -17,7 +17,9 @@ var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
 // seeded PRs and issues from the list methods and stubs out everything else.
 type FixtureClient struct {
 	OpenPRs    map[string][]*gh.PullRequest
+	PRs        map[string][]*gh.PullRequest
 	OpenIssues map[string][]*gh.Issue
+	Issues     map[string][]*gh.Issue
 	Comments   map[string][]*gh.IssueComment
 	mu         sync.Mutex
 	nextID     int64
@@ -27,7 +29,9 @@ type FixtureClient struct {
 func NewFixtureClient() ghclient.Client {
 	return &FixtureClient{
 		OpenPRs:    make(map[string][]*gh.PullRequest),
+		PRs:        make(map[string][]*gh.PullRequest),
 		OpenIssues: make(map[string][]*gh.Issue),
+		Issues:     make(map[string][]*gh.Issue),
 		Comments:   make(map[string][]*gh.IssueComment),
 		nextID:     10_000,
 	}
@@ -71,11 +75,11 @@ func (c *FixtureClient) GetRepository(_ context.Context, _, _ string) (*gh.Repos
 }
 
 // GetPullRequest looks up the PR by owner/repo and number from
-// the seeded open PR set. Returns nil, nil if not found.
+// the seeded fixture set. Returns nil, nil if not found.
 func (c *FixtureClient) GetPullRequest(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
-	for _, pr := range c.OpenPRs[repoKey(owner, repo)] {
+	for _, pr := range c.PRs[repoKey(owner, repo)] {
 		if pr.GetNumber() == number {
 			return pr, nil
 		}
@@ -93,11 +97,11 @@ func (c *FixtureClient) findPullRequest(owner, repo string, number int) *gh.Pull
 }
 
 // GetIssue looks up the issue by owner/repo and number from
-// the seeded open issue set. Returns nil, nil if not found.
+// the seeded fixture set. Returns nil, nil if not found.
 func (c *FixtureClient) GetIssue(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.Issue, error) {
-	for _, iss := range c.OpenIssues[repoKey(owner, repo)] {
+	for _, iss := range c.Issues[repoKey(owner, repo)] {
 		if iss.GetNumber() == number {
 			return iss, nil
 		}

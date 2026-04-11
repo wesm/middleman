@@ -579,10 +579,38 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	}
 
+	allPRs := map[string][]*gh.PullRequest{
+		"acme/widgets": {
+			buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)),
+			buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)),
+			buildGHPR("acme", "widgets", 1003, 3, "Upgrade dependency versions", "carol", "merged", false, "", now.Add(-10*24*time.Hour), w3Merged),
+			buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", now.Add(-30*24*time.Hour), w4Merged),
+			buildGHPR("acme", "widgets", 1005, 5, "Experimental new API", "bob", "closed", false, "", now.Add(-15*24*time.Hour), w5Closed),
+			buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)),
+			buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)),
+		},
+		"acme/tools": {
+			buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)),
+			buildGHPR("acme", "tools", 2002, 2, "Initial project setup", "alice", "merged", false, "", now.Add(-62*24*time.Hour), t2Merged),
+		},
+	}
+
 	openIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
 			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
 			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
+		},
+		"acme/tools": {
+			buildGHIssue("acme", "tools", 4005, 5, "Support config file loading", "dave", "open", ti5Created, now.Add(-16*time.Hour)),
+		},
+	}
+
+	allIssues := map[string][]*gh.Issue{
+		"acme/widgets": {
+			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
+			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			buildGHIssue("acme", "widgets", 3012, 12, "Crash on empty input", "carol", "closed", now.Add(-7*24*time.Hour), wi12Closed),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
 		"acme/tools": {
@@ -598,7 +626,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		FixtureClient: func() *FixtureClient {
 			return &FixtureClient{
 				OpenPRs:    openPRs,
+				PRs:        allPRs,
 				OpenIssues: openIssues,
+				Issues:     allIssues,
 				Comments:   make(map[string][]*gh.IssueComment),
 				nextID:     10_000,
 			}

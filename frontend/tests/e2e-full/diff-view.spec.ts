@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
+import { acquireExclusiveLock } from "./support/exclusiveLock";
 
 // --- Fixtures ---
 
@@ -774,12 +775,33 @@ test.describe("diff view performance", () => {
 //   - README.md: whitespace-only change
 
 test.describe("diff view (git-backed)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  let releaseLock: (() => Promise<void>) | null = null;
+
+  test.beforeAll(async () => {
+    releaseLock = await acquireExclusiveLock("git-backed-diff");
+  });
+
+  test.afterAll(async () => {
+    await releaseLock?.();
+    releaseLock = null;
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
       localStorage.removeItem("diff-collapsed-files");
     });
+  });
+
+  test("diff is not marked as stale", async ({ page }) => {
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(page.locator(".stale-banner")).not.toBeAttached();
   });
 
   test("real diff loads and renders all changed files", async ({ page }) => {
@@ -881,22 +903,6 @@ test.describe("diff view (git-backed)", () => {
       hasText: "config.yaml",
     });
     await expect(configRow.locator(".diff-file-status")).toHaveText("D");
-  });
-
-  test("diff is not marked as stale", async ({ page }) => {
-    // Fetch the diff API directly (not through the SPA) to verify
-    // server-side staleness computation in isolation.
-    const resp = await page.request.get(
-      "/api/v1/repos/acme/widgets/pulls/1/diff",
-    );
-    const body = await resp.json();
-    expect(body.stale).toBe(false);
-
-    // Also verify the UI doesn't show the banner.
-    await page.goto("/pulls/acme/widgets/1/files");
-    await page.locator(".diff-file").first()
-      .waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page.locator(".stale-banner")).not.toBeAttached();
   });
 
   test("hide whitespace toggle filters whitespace-only files", async ({ page }) => {

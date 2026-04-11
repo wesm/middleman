@@ -151,4 +151,14 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 
 	// Verify tools issue
 	assert.Equal(5, toolsIssues[0].GetNumber())
+
+	pr, err := fc.GetPullRequest(context.Background(), "acme", "widgets", 5)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("closed", pr.GetState())
+
+	issue, err := fc.GetIssue(context.Background(), "acme", "widgets", 12)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("closed", issue.GetState())
 }

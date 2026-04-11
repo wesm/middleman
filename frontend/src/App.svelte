@@ -279,15 +279,7 @@
             ".ProseMirror-focused, [contenteditable='true']:focus",
           )
         : null;
-    const commentEditorVisible =
-      typeof document !== "undefined"
-        ? document.querySelector(".comment-editor-input") !== null
-        : false;
-    const commentEditorFocused =
-      typeof document !== "undefined"
-        ? document.body.dataset.commentEditorFocus === "true"
-        : false;
-    if (commentEditorFocused || focusedEditor) {
+    if (focusedEditor) {
       return;
     }
 
@@ -295,19 +287,6 @@
       shouldIgnoreGlobalShortcutTarget(e.target) ||
       shouldIgnoreGlobalShortcutTarget(document.activeElement) ||
       shouldIgnoreGlobalShortcutTarget(selectionAnchor)
-    ) {
-      return;
-    }
-
-    if (
-      commentEditorVisible &&
-      (
-        e.key === "1" ||
-        e.key === "2" ||
-        e.key === "j" ||
-        e.key === "k" ||
-        (e.key === "[" && (e.metaKey || e.ctrlKey))
-      )
     ) {
       return;
     }
