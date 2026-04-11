@@ -1962,6 +1962,79 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 	}}, *resp.JSON200.Issue.Labels)
 }
 
+func TestAPISyncIssuesViaGraphQL(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	mock := &mockGH{}
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	// Seed via DB directly — simulating what GraphQL sync produces.
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     60000,
+		Number:         60,
+		URL:            "https://github.com/acme/widget/issues/60",
+		Title:          "GraphQL synced issue",
+		Author:         "testuser",
+		State:          "open",
+		Body:           "Synced via GraphQL",
+		CommentCount:   2,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+
+	// Add a label
+	require.NoError(t, database.ReplaceIssueLabels(ctx, repoID, issueID, []db.Label{
+		{PlatformID: 1, Name: "bug", Color: "d73a4a", UpdatedAt: now},
+	}))
+
+	// Add a comment event
+	require.NoError(t, database.UpsertIssueEvents(ctx, []db.IssueEvent{
+		{
+			IssueID:   issueID,
+			EventType: "issue_comment",
+			Author:    "commenter",
+			Body:      "I can reproduce",
+			CreatedAt: now,
+			DedupeKey: "issue-comment-601",
+		},
+	}))
+
+	// Verify via ListIssues API
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.Len(t, *resp.JSON200, 1)
+
+	apiIssue := (*resp.JSON200)[0]
+	assert.Equal(int64(60), apiIssue.Number)
+	assert.Equal("GraphQL synced issue", apiIssue.Title)
+	assert.Equal("testuser", apiIssue.Author)
+	assert.Equal("open", apiIssue.State)
+	require.NotNil(t, apiIssue.Labels)
+	require.Len(t, *apiIssue.Labels, 1)
+	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
+
+	// Verify via GetIssue API
+	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", 60,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 200, detailResp.StatusCode())
+	require.NotNil(t, detailResp.JSON200)
+	assert.Equal("Synced via GraphQL", detailResp.JSON200.Issue.Body)
+	assert.Equal(int64(2), detailResp.JSON200.Issue.CommentCount)
+}
+
 func make422Error() error {
 	return &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},
