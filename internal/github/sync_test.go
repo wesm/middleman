@@ -4320,3 +4320,82 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 	assert.Equal("closed", issue.State)
 	assert.NotNil(issue.ClosedAt)
 }
+
+func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	fetchedAt := now.Add(-time.Hour)
+
+	// Pre-seed issue with existing derived fields
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      40000,
+		Number:          40,
+		URL:             "https://github.com/owner/repo/issues/40",
+		Title:           "Existing issue",
+		Author:          "frank",
+		State:           "open",
+		CommentCount:    5,
+		DetailFetchedAt: &fetchedAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(t, err)
+
+	commentTime := gh.Timestamp{Time: now}
+	mock := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	// GraphQL returns the same issue with no comments (incomplete)
+	issueID := int64(40000)
+	issueNumber := 40
+	issueTitle := "Existing issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/40"
+	issueLogin := "frank"
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueLogin},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				CommentsComplete: false,
+			},
+		},
+	}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// DetailFetchedAt should be preserved through the upsert path.
+	// CommentCount is updated by the REST fallback (0 comments returned
+	// by the mock), which is the expected behavior: REST gives ground truth.
+	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.NotNil(issue.DetailFetchedAt)
+	// REST fallback was called with empty mock — count reflects REST result.
+	assert.Equal(0, issue.CommentCount)
+}
