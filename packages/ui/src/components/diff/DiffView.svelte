@@ -3,6 +3,7 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
+  import CommitListSection from "./CommitListSection.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
 
@@ -134,6 +135,7 @@
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>
     {:else if diff}
+      <CommitListSection />
       <div class="diff-main">
         <DiffToolbar />
         <div
