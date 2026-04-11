@@ -296,22 +296,6 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 	}
 }
 
-func buildOpenIssue(number int, updatedAt time.Time) *gh.Issue {
-	state := "open"
-	title := "test issue"
-	url := "https://github.com/owner/repo/issues/" + fmt.Sprintf("%d", number)
-	id := int64(number) * 1000
-	return &gh.Issue{
-		ID:        &id,
-		Number:    &number,
-		Title:     &title,
-		HTMLURL:   &url,
-		State:     &state,
-		UpdatedAt: makeTimestamp(updatedAt),
-		CreatedAt: makeTimestamp(updatedAt),
-	}
-}
-
 func buildGitHubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
 	return &gh.Label{
 		ID:          &id,
