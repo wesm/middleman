@@ -565,6 +565,38 @@ describe("comment draft persistence", () => {
     });
   });
 
+  it("does not accept an autocomplete suggestion while IME composition is active", async () => {
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        autocompleteResponse: {
+          users: ["alice", "albert"],
+          references: [],
+        },
+      },
+    });
+
+    setCommentDraft("pull", "octo", "repo", 1, "@al");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("@al");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /@alice/i })).toBeTruthy();
+    });
+
+    await fireEvent.keyDown(getCommentEditor(), {
+      key: "Enter",
+      isComposing: true,
+    });
+
+    await waitFor(() => {
+      expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("@al");
+    });
+  });
+
   it("submits from the editor with Cmd+Enter", async () => {
     const submitComment = async () => Promise.resolve();
     const submitSpy = vi.fn(submitComment);

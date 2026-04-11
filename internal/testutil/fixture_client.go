@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
@@ -17,6 +18,9 @@ var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
 type FixtureClient struct {
 	OpenPRs    map[string][]*gh.PullRequest
 	OpenIssues map[string][]*gh.Issue
+	Comments   map[string][]*gh.IssueComment
+	mu         sync.Mutex
+	nextID     int64
 }
 
 // NewFixtureClient returns a FixtureClient with empty fixture maps.
@@ -24,11 +28,17 @@ func NewFixtureClient() ghclient.Client {
 	return &FixtureClient{
 		OpenPRs:    make(map[string][]*gh.PullRequest),
 		OpenIssues: make(map[string][]*gh.Issue),
+		Comments:   make(map[string][]*gh.IssueComment),
+		nextID:     10_000,
 	}
 }
 
 func repoKey(owner, repo string) string {
 	return fmt.Sprintf("%s/%s", owner, repo)
+}
+
+func issueKey(owner, repo string, number int) string {
+	return fmt.Sprintf("%s/%s#%d", owner, repo, number)
 }
 
 // ListOpenPullRequests returns the seeded open PRs for the given repo.
@@ -106,9 +116,17 @@ func (c *FixtureClient) findIssue(owner, repo string, number int) *gh.Issue {
 
 // ListIssueComments returns nil (read-only stub).
 func (c *FixtureClient) ListIssueComments(
-	_ context.Context, _, _ string, _ int,
+	_ context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	return nil, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	comments := c.Comments[issueKey(owner, repo, number)]
+	if len(comments) == 0 {
+		return nil, nil
+	}
+	out := make([]*gh.IssueComment, len(comments))
+	copy(out, comments)
+	return out, nil
 }
 
 // ListReviews returns nil (read-only stub).
@@ -160,11 +178,26 @@ func (c *FixtureClient) ApproveWorkflowRun(
 	return errFixtureReadOnly
 }
 
-// CreateIssueComment returns an error (mutations not supported).
 func (c *FixtureClient) CreateIssueComment(
-	_ context.Context, _, _ string, _ int, _ string,
+	_ context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
-	return nil, errFixtureReadOnly
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	login := "fixture-bot"
+	now := time.Now().UTC()
+	id := c.nextID
+	c.nextID++
+
+	comment := &gh.IssueComment{
+		ID:        &id,
+		Body:      &body,
+		CreatedAt: &gh.Timestamp{Time: now},
+		User:      &gh.User{Login: &login},
+	}
+	key := issueKey(owner, repo, number)
+	c.Comments[key] = append(c.Comments[key], comment)
+	return comment, nil
 }
 
 // CreateReview returns an error (mutations not supported).
