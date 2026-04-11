@@ -57,6 +57,9 @@ type gqlPR struct {
 	HeadRepository *struct {
 		URL string
 	}
+	Labels struct {
+		Nodes []gqlLabel
+	} `graphql:"labels(first: 100)"`
 	Comments struct {
 		Nodes    []gqlComment
 		PageInfo pageInfo
@@ -111,6 +114,13 @@ type gqlCommit struct {
 		Date time.Time
 		User *struct{ Login string }
 	}
+}
+
+type gqlLabel struct {
+	Name        string
+	Color       string
+	Description string
+	IsDefault   bool
 }
 
 type gqlCheckContext struct {
@@ -177,6 +187,15 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 		t := gh.Timestamp{Time: *gql.ClosedAt}
 		pr.ClosedAt = &t
 	}
+	for _, l := range gql.Labels.Nodes {
+		pr.Labels = append(pr.Labels, &gh.Label{
+			Name:        new(l.Name),
+			Color:       new(l.Color),
+			Description: new(l.Description),
+			Default:     new(l.IsDefault),
+		})
+	}
+
 	if gql.HeadRepository != nil {
 		cloneURL := gql.HeadRepository.URL
 		if !strings.HasSuffix(cloneURL, ".git") {

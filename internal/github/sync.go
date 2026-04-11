@@ -1478,6 +1478,14 @@ func (s *Syncer) syncOpenMRFromBulk(
 		)
 	}
 
+	if err := s.replaceMergeRequestLabels(
+		ctx, repoID, mrID, normalized.Labels,
+	); err != nil {
+		return fmt.Errorf(
+			"persist labels for MR #%d: %w", number, err,
+		)
+	}
+
 	// Diff SHAs.
 	repoHost := repo.PlatformHost
 	if repoHost == "" {
