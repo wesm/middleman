@@ -341,6 +341,23 @@ func TestAdaptIssue(t *testing.T) {
 	assert.Equal(closed, issue.ClosedAt.Time)
 }
 
+func TestAdaptIssueNilFields(t *testing.T) {
+	assert := Assert.New(t)
+
+	gql := gqlIssue{
+		Number:    1,
+		Title:     "minimal",
+		State:     "OPEN",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	// Author empty, no labels, no ClosedAt
+	issue := adaptIssue(&gql)
+	assert.Empty(issue.GetUser().GetLogin())
+	assert.Nil(issue.ClosedAt)
+	assert.Empty(issue.Labels)
+}
+
 func TestConvertGQLIssue(t *testing.T) {
 	assert := Assert.New(t)
 
