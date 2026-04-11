@@ -76,6 +76,7 @@
 
 <style>
   .commit-section {
+    background: var(--bg-inset);
     border-bottom: 1px solid var(--diff-border);
   }
 
