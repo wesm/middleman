@@ -275,6 +275,12 @@ func assertRFC3339UTC(t *testing.T, got string, want time.Time) {
 	Assert.True(t, strings.HasSuffix(got, "Z"), "expected UTC RFC3339 with trailing Z: %s", got)
 }
 
+func assertTimePtrUTC(t *testing.T, got *time.Time) {
+	t.Helper()
+	require.NotNil(t, got)
+	Assert.Equal(t, time.UTC, got.Location())
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -538,6 +544,34 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 	require.Contains(string(resp.Body), "Service unavailable")
+}
+
+func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
+	require := require.New(t)
+	oldLocal := time.Local
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() { time.Local = oldLocal })
+
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal("merged", pr.State)
+	assertTimePtrUTC(t, pr.MergedAt)
+	assertTimePtrUTC(t, pr.ClosedAt)
 }
 
 func TestAPIClientConstruction(t *testing.T) {
@@ -1744,6 +1778,10 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 
 func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
+	oldLocal := time.Local
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() { time.Local = oldLocal })
+
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -1758,7 +1796,7 @@ func TestAPIClosePR(t *testing.T) {
 	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("closed", pr.State)
-	require.NotNil(pr.ClosedAt)
+	assertTimePtrUTC(t, pr.ClosedAt)
 }
 
 func TestAPIReopenPR(t *testing.T) {
@@ -1822,6 +1860,10 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 
 func TestAPICloseIssue(t *testing.T) {
 	require := require.New(t)
+	oldLocal := time.Local
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() { time.Local = oldLocal })
+
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
@@ -1836,7 +1878,7 @@ func TestAPICloseIssue(t *testing.T) {
 	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal("closed", issue.State)
-	require.NotNil(issue.ClosedAt)
+	assertTimePtrUTC(t, issue.ClosedAt)
 }
 
 func TestAPIReopenIssue(t *testing.T) {

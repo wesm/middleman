@@ -896,7 +896,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if repoObj != nil {
-		now := time.Now()
+		now := time.Now().UTC()
 		_ = s.db.UpdateMRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
 	}
 
@@ -986,7 +986,7 @@ func (s *Server) setPRGitHubState(
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
-		now := time.Now()
+		now := time.Now().UTC()
 		closedAt = &now
 	}
 	if err := s.db.UpdateMRState(
@@ -1070,7 +1070,7 @@ func (s *Server) setIssueGitHubState(
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
-		now := time.Now()
+		now := time.Now().UTC()
 		closedAt = &now
 	}
 	if err := s.db.UpdateIssueState(
