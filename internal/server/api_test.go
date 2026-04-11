@@ -2917,25 +2917,48 @@ func TestAPIListStacks(t *testing.T) {
 
 func TestAPIListStacks_RepoFilter(t *testing.T) {
 	assert := Assert.New(t)
-	srv, database := setupTestServer(t)
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+	}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
 
+	// Stack in widget.
 	seedStackedPR(t, database, "acme", "widget", 10, "feat/a", "main", "open", "", "")
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/b", "feat/a", "open", "", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	// Valid filter.
+	// Stack in tools.
+	seedStackedPR(t, database, "acme", "tools", 20, "feat/c", "main", "open", "", "")
+	seedStackedPR(t, database, "acme", "tools", 21, "feat/d", "feat/c", "open", "", "")
+	runStackDetection(t, database, "acme", "tools")
+
+	// Unfiltered returns both.
+	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	require.NoError(t, err)
+	var allStks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(respAll.Body, &allStks))
+	assert.Len(allStks, 2)
+
+	// Filtered returns only widget.
 	repo := "acme/widget"
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &repo})
 	require.NoError(t, err)
 	assert.Equal(http.StatusOK, resp.StatusCode())
+	var filtered []generated.StackResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &filtered))
+	assert.Len(filtered, 1)
+	assert.Equal("acme", filtered[0].RepoOwner)
+	assert.Equal("widget", filtered[0].RepoName)
 
-	// Malformed filter returns 400.
+	// Malformed filter returns 400 with error message.
 	bad := "noslash"
 	resp2, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &bad})
 	require.NoError(t, err)
 	assert.Equal(http.StatusBadRequest, resp2.StatusCode())
+	assert.Contains(string(resp2.Body), "invalid repo filter")
 }
 
 func TestAPIGetStackForPR(t *testing.T) {
@@ -2967,10 +2990,15 @@ func TestAPIGetStackForPR(t *testing.T) {
 }
 
 func TestAPIListStacks_Empty(t *testing.T) {
+	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ListStacksWithResponse(context.Background(), &generated.ListStacksParams{})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	var stks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &stks))
+	assert.Empty(stks)
 }
