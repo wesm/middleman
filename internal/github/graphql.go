@@ -573,6 +573,57 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	return result, nil
 }
 
+func (g *GraphQLFetcher) FetchRepoIssues(
+	ctx context.Context, owner, name string,
+) (*RepoBulkResult, error) {
+	result, err := g.fetchRepoIssuesWithPageSize(
+		ctx, owner, name, topLevelPageSize,
+	)
+	if err != nil {
+		slog.Warn("GraphQL issue query failed, retrying with smaller page",
+			"owner", owner, "name", name,
+			"err", err, "retryPageSize", retryPageSize,
+		)
+		result, err = g.fetchRepoIssuesWithPageSize(
+			ctx, owner, name, retryPageSize,
+		)
+	}
+	return result, err
+}
+
+func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
+	ctx context.Context, owner, name string, pageSize int,
+) (*RepoBulkResult, error) {
+	gqlIssues, err := fetchAllPages(ctx, func(
+		ctx context.Context, cursor *string,
+	) ([]gqlIssue, pageInfo, error) {
+		var q gqlIssueQuery
+		vars := map[string]any{
+			"owner":    githubv4.String(owner),
+			"name":     githubv4.String(name),
+			"pageSize": githubv4.Int(pageSize),
+			"cursor":   cursorVar(cursor),
+		}
+		if err := g.client.Query(ctx, &q, vars); err != nil {
+			return nil, pageInfo{}, err
+		}
+		return q.Repository.Issues.Nodes,
+			q.Repository.Issues.PageInfo, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := &RepoBulkResult{
+		Issues: make([]BulkIssue, 0, len(gqlIssues)),
+	}
+	for i := range gqlIssues {
+		bulk := convertGQLIssue(&gqlIssues[i])
+		result.Issues = append(result.Issues, bulk)
+	}
+	return result, nil
+}
+
 func cursorVar(cursor *string) *githubv4.String {
 	if cursor == nil {
 		return nil
