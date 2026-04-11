@@ -179,7 +179,6 @@ type Issue struct {
 	CreatedAt       time.Time  `json:"CreatedAt"`
 	DetailFetchedAt *time.Time `json:"DetailFetchedAt"`
 	ID              int64      `json:"ID"`
-	LabelsJSON      string     `json:"LabelsJSON"`
 	LastActivityAt  time.Time  `json:"LastActivityAt"`
 	Number          int64      `json:"Number"`
 	PlatformID      int64      `json:"PlatformID"`
@@ -189,6 +188,7 @@ type Issue struct {
 	Title           string     `json:"Title"`
 	URL             string     `json:"URL"`
 	UpdatedAt       time.Time  `json:"UpdatedAt"`
+	Labels          *[]Label   `json:"labels,omitempty"`
 }
 
 // IssueDetailResponse defines model for IssueDetailResponse.
@@ -227,7 +227,6 @@ type IssueResponse struct {
 	CommentCount    int64      `json:"CommentCount"`
 	CreatedAt       time.Time  `json:"CreatedAt"`
 	ID              int64      `json:"ID"`
-	LabelsJSON      string     `json:"LabelsJSON"`
 	LastActivityAt  time.Time  `json:"LastActivityAt"`
 	Number          int64      `json:"Number"`
 	PlatformID      int64      `json:"PlatformID"`
@@ -239,8 +238,17 @@ type IssueResponse struct {
 	UpdatedAt       time.Time  `json:"UpdatedAt"`
 	DetailFetchedAt *string    `json:"detail_fetched_at,omitempty"`
 	DetailLoaded    bool       `json:"detail_loaded"`
+	Labels          *[]Label   `json:"labels,omitempty"`
 	RepoName        string     `json:"repo_name"`
 	RepoOwner       string     `json:"repo_owner"`
+}
+
+// Label defines model for Label.
+type Label struct {
+	Color       string  `json:"color"`
+	Description *string `json:"description,omitempty"`
+	IsDefault   bool    `json:"is_default"`
+	Name        string  `json:"name"`
 }
 
 // Line defines model for Line.
@@ -318,6 +326,7 @@ type MergeRequest struct {
 	Title             string     `json:"Title"`
 	URL               string     `json:"URL"`
 	UpdatedAt         time.Time  `json:"UpdatedAt"`
+	Labels            *[]Label   `json:"labels,omitempty"`
 }
 
 // MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
@@ -368,6 +377,7 @@ type MergeRequestResponse struct {
 	UpdatedAt         time.Time               `json:"UpdatedAt"`
 	DetailFetchedAt   *string                 `json:"detail_fetched_at,omitempty"`
 	DetailLoaded      bool                    `json:"detail_loaded"`
+	Labels            *[]Label                `json:"labels,omitempty"`
 	RepoName          string                  `json:"repo_name"`
 	RepoOwner         string                  `json:"repo_owner"`
 	WorktreeLinks     *[]WorktreeLinkResponse `json:"worktree_links"`

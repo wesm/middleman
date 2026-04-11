@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { IssueLabel } from "../../api/types.js";
   import { getStores, getClient, getActions, getUIConfig } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
+  import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { issues, activity } = getStores();
   const client = getClient();
@@ -39,20 +39,6 @@
         copyTimeout = null;
       }, 1500);
     });
-  }
-
-  function parseLabels(json: string): IssueLabel[] {
-    if (!json) return [];
-    try {
-      return JSON.parse(json) as IssueLabel[];
-    } catch {
-      return [];
-    }
-  }
-
-  function labelColor(color: string): string {
-    if (!color) return "#666";
-    return color.startsWith("#") ? color : `#${color}`;
   }
 
   function handleStarClick(): void {
@@ -109,7 +95,7 @@
   {@const detail = issues.getIssueDetail()}
   {#if detail !== null}
     {@const issue = detail.issue}
-    {@const labels = parseLabels(issue.LabelsJSON)}
+    {@const labels = issue.labels ?? []}
     <div class="issue-detail">
       {#if issues.isIssueStaleRefreshing()}
         <div class="refresh-banner">
@@ -172,14 +158,7 @@
 
       <!-- Labels -->
       {#if labels.length > 0}
-        <div class="labels-row">
-          {#each labels as label}
-            <span
-              class="label-pill"
-              style="background: {labelColor(label.color)}; color: #fff;"
-            >{label.name}</span>
-          {/each}
-        </div>
+        <GitHubLabels {labels} mode="full" />
       {/if}
 
       <!-- Issue body -->
@@ -389,20 +368,6 @@
   .chip--closed {
     background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
     color: var(--accent-purple);
-  }
-
-  .labels-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .label-pill {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-    white-space: nowrap;
   }
 
   .section {

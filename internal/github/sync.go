@@ -120,8 +120,9 @@ type Syncer struct {
 	clients       map[string]Client // host -> client
 	db            *db.DB
 	clones        *gitclone.Manager
-	rateTrackers  map[string]*RateTracker // host -> tracker
-	budgets       map[string]*SyncBudget  // host -> budget
+	rateTrackers  map[string]*RateTracker    // host -> tracker
+	budgets       map[string]*SyncBudget     // host -> budget
+	fetchers      map[string]*GraphQLFetcher // host -> GraphQL fetcher
 	repos         []RepoRef
 	reposMu       sync.Mutex
 	interval      time.Duration
@@ -251,6 +252,28 @@ func repoFailKey(repo RepoRef) string {
 		host = "github.com"
 	}
 	return host + "/" + repo.Owner + "/" + repo.Name
+}
+
+func (s *Syncer) replaceMergeRequestLabels(
+	ctx context.Context,
+	repoID, mrID int64,
+	labels []db.Label,
+) error {
+	if err := s.db.ReplaceMergeRequestLabels(ctx, repoID, mrID, labels); err != nil {
+		return fmt.Errorf("replace merge request labels: %w", err)
+	}
+	return nil
+}
+
+func (s *Syncer) replaceIssueLabels(
+	ctx context.Context,
+	repoID, issueID int64,
+	labels []db.Label,
+) error {
+	if err := s.db.ReplaceIssueLabels(ctx, repoID, issueID, labels); err != nil {
+		return fmt.Errorf("replace issue labels: %w", err)
+	}
+	return nil
 }
 
 // consumeRepoFailed returns the failScope bitmask for a previously
@@ -400,6 +423,24 @@ func (s *Syncer) SetParallelism(n int) {
 // state over SSE.
 func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
 	s.onStatusChange = fn
+}
+
+// SetFetchers registers GraphQL fetchers keyed by platform host.
+func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
+	s.fetchers = fetchers
+}
+
+// fetcherFor returns the GraphQL fetcher for a repo's host,
+// or nil if none is configured.
+func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
+	if s.fetchers == nil {
+		return nil
+	}
+	host := repo.PlatformHost
+	if host == "" {
+		host = "github.com"
+	}
+	return s.fetchers[host]
 }
 
 // TriggerRun kicks off a non-blocking RunOnce on the Syncer's
@@ -1185,43 +1226,71 @@ func (s *Syncer) indexSyncRepo(
 		// 304 — nothing to do. The detail drain handles CI
 		// updates for PRs with pending checks via priority scoring.
 	} else {
-		stillOpen := make(map[int]bool, len(ghPRs))
-		for _, ghPR := range ghPRs {
-			stillOpen[ghPR.GetNumber()] = true
-		}
-
-		for _, ghPR := range ghPRs {
-			if err := s.indexUpsertMR(
-				ctx, repo, repoID, ghPR,
-			); err != nil {
-				slog.Error("index upsert MR failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"number", ghPR.GetNumber(),
-					"err", err,
+		// GraphQL path: if fetcher available and not rate-limited,
+		// do a bulk fetch that replaces both index upsert and
+		// detail drain for complete PRs.
+		graphQLDone := false
+		if fetcher := s.fetcherFor(repo); fetcher != nil {
+			if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+				result, gqlErr := fetcher.FetchRepoPRs(
+					ctx, repo.Owner, repo.Name,
 				)
-				failedScope |= failMR
+				if gqlErr != nil {
+					slog.Warn("GraphQL fetch failed, falling back to REST index",
+						"repo", repo.Owner+"/"+repo.Name,
+						"err", gqlErr,
+					)
+				} else {
+					if err := s.doSyncRepoGraphQL(
+						ctx, repo, repoID, result, cloneFetchOK,
+					); err != nil {
+						failedScope |= failMR
+					}
+					graphQLDone = true
+				}
 			}
 		}
 
-		// Detect closed PRs and fetch final state (1 API call each,
-		// outside budget -- needed for accurate closed state).
-		closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
-			ctx, repoID, stillOpen,
-		)
-		if err != nil {
-			s.markRepoFailed(repo, failMR)
-			return fmt.Errorf("get previously open MRs: %w", err)
-		}
-		for _, number := range closedNumbers {
-			if err := s.fetchAndUpdateClosed(
-				ctx, repo, repoID, number, cloneFetchOK,
-			); err != nil {
-				slog.Error("update closed MR failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"number", number,
-					"err", err,
-				)
-				failedScope |= failMR
+		if !graphQLDone {
+			// REST index fallback (original path).
+			stillOpen := make(map[int]bool, len(ghPRs))
+			for _, ghPR := range ghPRs {
+				stillOpen[ghPR.GetNumber()] = true
+			}
+
+			for _, ghPR := range ghPRs {
+				if err := s.indexUpsertMR(
+					ctx, repo, repoID, ghPR,
+				); err != nil {
+					slog.Error("index upsert MR failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghPR.GetNumber(),
+						"err", err,
+					)
+					failedScope |= failMR
+				}
+			}
+
+			// Detect closed PRs and fetch final state (1 API call each,
+			// outside budget -- needed for accurate closed state).
+			closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
+				ctx, repoID, stillOpen,
+			)
+			if err != nil {
+				s.markRepoFailed(repo, failMR)
+				return fmt.Errorf("get previously open MRs: %w", err)
+			}
+			for _, number := range closedNumbers {
+				if err := s.fetchAndUpdateClosed(
+					ctx, repo, repoID, number, cloneFetchOK,
+				); err != nil {
+					slog.Error("update closed MR failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", number,
+						"err", err,
+					)
+					failedScope |= failMR
+				}
 			}
 		}
 	}
@@ -1302,6 +1371,9 @@ func (s *Syncer) indexUpsertMR(
 			"upsert MR #%d: %w", ghPR.GetNumber(), err,
 		)
 	}
+	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for MR #%d: %w", ghPR.GetNumber(), err)
+	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
 		return fmt.Errorf(
@@ -1311,6 +1383,332 @@ func (s *Syncer) indexUpsertMR(
 	}
 
 	return nil
+}
+
+// doSyncRepoGraphQL processes bulk GraphQL results for a repo.
+func (s *Syncer) doSyncRepoGraphQL(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	result *RepoBulkResult,
+	cloneFetchOK bool,
+) error {
+	var failedScope failScope
+	stillOpen := make(map[int]bool, len(result.PullRequests))
+
+	for i := range result.PullRequests {
+		bulk := &result.PullRequests[i]
+		number := bulk.PR.GetNumber()
+		stillOpen[number] = true
+
+		if err := s.syncOpenMRFromBulk(
+			ctx, repo, repoID, bulk, cloneFetchOK,
+		); err != nil {
+			slog.Error("GraphQL sync MR failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			failedScope |= failMR
+		}
+	}
+
+	// Detect closed PRs — same as REST path.
+	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
+		ctx, repoID, stillOpen,
+	)
+	if err != nil {
+		return fmt.Errorf("get previously open MRs: %w", err)
+	}
+	for _, number := range closedNumbers {
+		if err := s.fetchAndUpdateClosed(
+			ctx, repo, repoID, number, cloneFetchOK,
+		); err != nil {
+			slog.Error("update closed MR failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			failedScope |= failMR
+		}
+	}
+
+	if failedScope != 0 {
+		return fmt.Errorf("GraphQL sync had partial failures")
+	}
+	return nil
+}
+
+// syncOpenMRFromBulk processes a single PR from GraphQL bulk
+// results. It performs the same operations as fetchMRDetail but
+// using pre-fetched data instead of per-PR REST calls.
+func (s *Syncer) syncOpenMRFromBulk(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	bulk *BulkPR,
+	cloneFetchOK bool,
+) error {
+	number := bulk.PR.GetNumber()
+	normalized := NormalizePR(repoID, bulk.PR)
+
+	// Preserve derived fields that NormalizePR doesn't populate.
+	// Without this, upsert overwrites them with zero values; if
+	// nested connections are truncated the later allComplete guard
+	// skips restoring them and correct data is lost.
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
+		ctx, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing MR #%d: %w", number, err,
+		)
+	}
+	if existing != nil {
+		normalized.CommentCount = existing.CommentCount
+		normalized.ReviewDecision = existing.ReviewDecision
+		normalized.CIStatus = existing.CIStatus
+		normalized.CIChecksJSON = existing.CIChecksJSON
+		normalized.CIHadPending = existing.CIHadPending
+		normalized.DetailFetchedAt = existing.DetailFetchedAt
+		if normalized.AuthorDisplayName == "" {
+			normalized.AuthorDisplayName =
+				existing.AuthorDisplayName
+		}
+	}
+
+	// Resolve display name if missing.
+	if normalized.Author != "" &&
+		normalized.AuthorDisplayName == "" {
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		client := s.clientFor(repo)
+		if name, ok := s.resolveDisplayName(
+			ctx, client, host, normalized.Author,
+		); ok {
+			normalized.AuthorDisplayName = name
+		}
+	}
+
+	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf("upsert MR #%d: %w", number, err)
+	}
+
+	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
+		return fmt.Errorf(
+			"ensure kanban state for MR #%d: %w", number, err,
+		)
+	}
+
+	if err := s.replaceMergeRequestLabels(
+		ctx, repoID, mrID, normalized.Labels,
+	); err != nil {
+		return fmt.Errorf(
+			"persist labels for MR #%d: %w", number, err,
+		)
+	}
+
+	// Diff SHAs.
+	repoHost := repo.PlatformHost
+	if repoHost == "" {
+		repoHost = "github.com"
+	}
+	if s.clones != nil && cloneFetchOK {
+		headSHA := normalized.PlatformHeadSHA
+		baseSHA := normalized.PlatformBaseSHA
+		if headSHA != "" && baseSHA != "" {
+			mb, mbErr := s.clones.MergeBase(
+				ctx, repoHost, repo.Owner,
+				repo.Name, baseSHA, headSHA,
+			)
+			if mbErr != nil {
+				slog.Warn("merge-base computation failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number, "err", mbErr,
+				)
+			} else {
+				if dbErr := s.db.UpdateDiffSHAs(
+					ctx, repoID, number,
+					headSHA, baseSHA, mb,
+				); dbErr != nil {
+					slog.Warn("update diff SHAs failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", number, "err", dbErr,
+					)
+				}
+			}
+		}
+	}
+
+	// Timeline events — comments, reviews, commits.
+	// Events use ON CONFLICT DO NOTHING, so partial data is safe.
+	var events []db.MREvent
+	for _, c := range bulk.Comments {
+		events = append(events, NormalizeCommentEvent(mrID, c))
+	}
+	for _, r := range bulk.Reviews {
+		events = append(events, NormalizeReviewEvent(mrID, r))
+	}
+	for _, c := range bulk.Commits {
+		events = append(events, NormalizeCommitEvent(mrID, c))
+	}
+	if len(events) > 0 {
+		if err := s.db.UpsertMREvents(ctx, events); err != nil {
+			return fmt.Errorf(
+				"upsert events for MR #%d: %w", number, err,
+			)
+		}
+	}
+
+	// CI status — only write if complete (don't write
+	// truncated CI data that could hide failures).
+	var ciChecks []db.CICheck
+	var ciJSON []byte
+	if bulk.CIComplete {
+		ciChecks = normalizeBulkCI(bulk)
+		if ciChecks == nil {
+			ciChecks = []db.CICheck{}
+		}
+		ciJSON, _ = json.Marshal(ciChecks)
+		ciStatus := deriveCIStatusFromChecks(ciChecks)
+		if err := s.db.UpdateMRCIStatus(
+			ctx, repoID, number,
+			ciStatus, string(ciJSON),
+		); err != nil {
+			slog.Warn("update CI status failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
+
+	// Mark detail as fetched and update derived fields only when
+	// ALL connections are complete. Incomplete PRs leave
+	// DetailFetchedAt stale so the detail drain picks them up for
+	// a full REST fetch. Derived fields from truncated data would
+	// overwrite correct values with partial counts.
+	allComplete := bulk.CommentsComplete &&
+		bulk.ReviewsComplete &&
+		bulk.CommitsComplete &&
+		bulk.CIComplete
+	if allComplete {
+		reviewDecision := DeriveReviewDecision(bulk.Reviews)
+		lastActivity := computeLastActivity(
+			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits,
+		)
+		if err := s.db.UpdateMRDerivedFields(
+			ctx, repoID, number, db.MRDerivedFields{
+				ReviewDecision: reviewDecision,
+				CommentCount:   len(bulk.Comments),
+				LastActivityAt: lastActivity,
+			},
+		); err != nil {
+			slog.Warn("update derived fields failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
+	if allComplete {
+		pending := ciHasPending(string(ciJSON))
+		if err := s.db.UpdateMRDetailFetched(
+			ctx, repoHost, repo.Owner, repo.Name,
+			number, pending,
+		); err != nil {
+			slog.Warn("mark GraphQL detail fetched failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
+
+	// Fire onMRSynced hook.
+	if s.onMRSynced != nil {
+		fresh, fErr := s.db.GetMergeRequest(
+			ctx, repo.Owner, repo.Name, number,
+		)
+		if fErr != nil {
+			slog.Warn("get MR for onMRSynced hook failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", fErr,
+			)
+		} else {
+			s.onMRSynced(repo.Owner, repo.Name, fresh)
+		}
+	}
+
+	return nil
+}
+
+// deriveCIStatusFromChecks computes the overall CI status from
+// a []db.CICheck. Mirrors DeriveOverallCIStatus but works on the
+// normalized CICheck format produced by normalizeBulkCI.
+func deriveCIStatusFromChecks(checks []db.CICheck) string {
+	if len(checks) == 0 {
+		return ""
+	}
+	hasPending := false
+	hasFailed := false
+	for _, c := range checks {
+		if c.Status != "completed" {
+			hasPending = true
+			continue
+		}
+		switch c.Conclusion {
+		case "success", "neutral", "skipped":
+			// OK
+		default:
+			if c.Conclusion != "" {
+				hasFailed = true
+			}
+		}
+	}
+	if hasFailed {
+		return "failure"
+	}
+	if hasPending {
+		return "pending"
+	}
+	return "success"
+}
+
+// normalizeBulkCI converts GraphQL check runs and statuses to
+// the db.CICheck slice format used by the rest of the codebase.
+func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
+	var checks []db.CICheck
+	for _, cr := range bulk.CheckRuns {
+		checks = append(checks, db.CICheck{
+			Name:       cr.GetName(),
+			Status:     cr.GetStatus(),
+			Conclusion: cr.GetConclusion(),
+			URL:        cr.GetHTMLURL(),
+			App:        cr.GetApp().GetName(),
+		})
+	}
+	for _, s := range bulk.Statuses {
+		// Mirror NormalizeCIChecks: pending → in_progress with
+		// empty conclusion; failure/error → failure.
+		status := "completed"
+		conclusion := s.GetState()
+		switch conclusion {
+		case "pending", "expected":
+			status = "in_progress"
+			conclusion = ""
+		case "failure", "error":
+			conclusion = "failure"
+		}
+		checks = append(checks, db.CICheck{
+			Name:       s.GetContext(),
+			Status:     status,
+			Conclusion: conclusion,
+			URL:        sanitizeURL(s.GetTargetURL()),
+			App:        s.GetContext(),
+		})
+	}
+	return checks
 }
 
 // fetchMRDetail performs a full detail fetch for a single MR:
@@ -1360,6 +1758,9 @@ func (s *Syncer) fetchMRDetail(
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
 		)
+	}
+	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+		return calls, fmt.Errorf("persist labels for MR #%d: %w", number, err)
 	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
@@ -1493,6 +1894,9 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf(
 			"upsert issue #%d: %w", number, err,
 		)
+	}
+	if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+		return calls, fmt.Errorf("persist labels for issue #%d: %w", number, err)
 	}
 
 	if err := s.refreshIssueTimeline(
@@ -1817,6 +2221,9 @@ func (s *Syncer) syncOpenIssue(
 			"upsert issue #%d: %w", ghIssue.GetNumber(), err,
 		)
 	}
+	if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for issue #%d: %w", ghIssue.GetNumber(), err)
+	}
 
 	if !needsTimeline {
 		return nil
@@ -1886,9 +2293,24 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		closedAt = &t
 	}
 
-	return s.db.UpdateIssueState(
+	if err := s.db.UpdateIssueState(
 		ctx, repoID, number, ghIssue.GetState(), closedAt,
-	)
+	); err != nil {
+		return err
+	}
+
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get closed issue #%d for labels: %w", number, err)
+	}
+	if issue != nil {
+		normalized := NormalizeIssue(repoID, ghIssue)
+		if err := s.replaceIssueLabels(ctx, repoID, issue.ID, normalized.Labels); err != nil {
+			return fmt.Errorf("persist labels for closed issue #%d: %w", number, err)
+		}
+	}
+
+	return nil
 }
 
 // --- Detail Drain ---
@@ -2184,6 +2606,7 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			prPage++
+			pageFailed := false
 			prs, hasMore, err := client.ListPullRequestsPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", prPage,
@@ -2197,7 +2620,7 @@ func (s *Syncer) backfillRepo(
 			}
 			for _, ghPR := range prs {
 				normalized := NormalizePR(repoID, ghPR)
-				if _, uErr := s.db.UpsertMergeRequest(
+				if mrID, uErr := s.db.UpsertMergeRequest(
 					ctx, normalized,
 				); uErr != nil {
 					slog.Warn("backfill upsert PR failed",
@@ -2205,7 +2628,21 @@ func (s *Syncer) backfillRepo(
 						"number", ghPR.GetNumber(),
 						"err", uErr,
 					)
+					pageFailed = true
+					break
+				} else if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+					slog.Warn("backfill replace PR labels failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghPR.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
 				}
+			}
+			if pageFailed {
+				prPage--
+				break
 			}
 			if !hasMore {
 				prComplete = true
@@ -2235,6 +2672,7 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			issuePage++
+			pageFailed := false
 			issues, hasMore, err := client.ListIssuesPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", issuePage,
@@ -2248,7 +2686,7 @@ func (s *Syncer) backfillRepo(
 			}
 			for _, ghIssue := range issues {
 				normalized := NormalizeIssue(repoID, ghIssue)
-				if _, uErr := s.db.UpsertIssue(
+				if issueID, uErr := s.db.UpsertIssue(
 					ctx, normalized,
 				); uErr != nil {
 					slog.Warn("backfill upsert issue failed",
@@ -2256,7 +2694,21 @@ func (s *Syncer) backfillRepo(
 						"number", ghIssue.GetNumber(),
 						"err", uErr,
 					)
+					pageFailed = true
+					break
+				} else if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+					slog.Warn("backfill replace issue labels failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghIssue.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
 				}
+			}
+			if pageFailed {
+				issuePage--
+				break
 			}
 			if !hasMore {
 				issueComplete = true
@@ -2378,6 +2830,9 @@ func (s *Syncer) syncMRWithHost(
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
+	}
+	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for MR #%d: %w", number, err)
 	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
@@ -2503,6 +2958,9 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 	if err != nil {
 		return fmt.Errorf("upsert issue #%d: %w", number, err)
 	}
+	if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for issue #%d: %w", number, err)
+	}
 
 	if err := s.refreshIssueTimeline(ctx, repo, issueID, ghIssue); err != nil {
 		return err
@@ -2593,6 +3051,17 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		ghPR.GetHead().GetSHA(), ghPR.GetBase().GetSHA(),
 	); err != nil {
 		return fmt.Errorf("update closed MR #%d: %w", number, err)
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get closed MR #%d for labels: %w", number, err)
+	}
+	if mr != nil {
+		normalized := NormalizePR(repoID, ghPR)
+		if err := s.replaceMergeRequestLabels(ctx, repoID, mr.ID, normalized.Labels); err != nil {
+			return fmt.Errorf("persist labels for closed MR #%d: %w", number, err)
+		}
 	}
 
 	// Compute diff SHAs so the diff endpoint works.

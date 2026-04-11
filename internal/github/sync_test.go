@@ -41,28 +41,30 @@ func testBudget(limit int) map[string]*SyncBudget {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	budget               *SyncBudget // optional: simulates transport counting
-	openPRs              []*gh.PullRequest
-	openIssues           []*gh.Issue
-	listOpenPRsErr       error
-	listOpenIssuesErr    error
-	singlePR             *gh.PullRequest
-	getPullRequestFn     func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn           func(context.Context, string, string, int) (*gh.Issue, error)
-	listOpenPRsFn        func(context.Context, string, string) ([]*gh.PullRequest, error)
-	comments             []*gh.IssueComment
-	reviews              []*gh.PullRequestReview
-	commits              []*gh.RepositoryCommit
-	forcePushEvents      []ForcePushEvent
-	forcePushEventsErr   error
-	ciStatus             *gh.CombinedStatus
-	checkRuns            []*gh.CheckRun
-	workflowRuns         []*gh.WorkflowRun
-	approveWorkflowRunFn func(context.Context, string, string, int64) error
-	listOpenPRsCalled    bool
-	getUserCalls         atomic.Int32
-	getCombinedCalls     atomic.Int32
-	invalidateCalls      atomic.Int32
+	budget                 *SyncBudget // optional: simulates transport counting
+	openPRs                []*gh.PullRequest
+	openIssues             []*gh.Issue
+	listOpenPRsErr         error
+	listOpenIssuesErr      error
+	singlePR               *gh.PullRequest
+	getPullRequestFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn             func(context.Context, string, string, int) (*gh.Issue, error)
+	listOpenPRsFn          func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listPullRequestsPageFn func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	listIssuesPageFn       func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
+	comments               []*gh.IssueComment
+	reviews                []*gh.PullRequestReview
+	commits                []*gh.RepositoryCommit
+	forcePushEvents        []ForcePushEvent
+	forcePushEventsErr     error
+	ciStatus               *gh.CombinedStatus
+	checkRuns              []*gh.CheckRun
+	workflowRuns           []*gh.WorkflowRun
+	approveWorkflowRunFn   func(context.Context, string, string, int64) error
+	listOpenPRsCalled      bool
+	getUserCalls           atomic.Int32
+	getCombinedCalls       atomic.Int32
+	invalidateCalls        atomic.Int32
 }
 
 func (m *mockClient) trackCall() {
@@ -237,16 +239,22 @@ func (m *mockClient) EditIssue(
 }
 
 func (m *mockClient) ListPullRequestsPage(
-	_ context.Context, _, _, _ string, _ int,
+	ctx context.Context, owner, repo, state string, page int,
 ) ([]*gh.PullRequest, bool, error) {
 	m.trackCall()
+	if m.listPullRequestsPageFn != nil {
+		return m.listPullRequestsPageFn(ctx, owner, repo, state, page)
+	}
 	return nil, false, nil
 }
 
 func (m *mockClient) ListIssuesPage(
-	_ context.Context, _, _, _ string, _ int,
+	ctx context.Context, owner, repo, state string, page int,
 ) ([]*gh.Issue, bool, error) {
 	m.trackCall()
+	if m.listIssuesPageFn != nil {
+		return m.listIssuesPageFn(ctx, owner, repo, state, page)
+	}
 	return nil, false, nil
 }
 
@@ -279,6 +287,16 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 		Base: &gh.PullRequestBranch{
 			Ref: &baseRef,
 		},
+	}
+}
+
+func buildGitHubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
+	return &gh.Label{
+		ID:          &id,
+		Name:        &name,
+		Description: &description,
+		Color:       &color,
+		Default:     &isDefault,
 	}
 }
 
@@ -441,6 +459,124 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert.Equal("alice", forcePush.Author)
 	assert.Equal("aaaaaaa -> bbbbbbb", forcePush.Summary)
 	assert.Contains(forcePush.MetadataJSON, `"ref":"feature"`)
+}
+
+func TestSyncStoresPRLabels(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(1, now)
+	pr.Labels = []*gh.Label{
+		buildGitHubLabel(501, "needs-review", "Needs another reviewer", "fbca04", true),
+	}
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{pr},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer.RunOnce(ctx)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Len(stored.Labels, 1)
+	require.Equal("needs-review", stored.Labels[0].Name)
+	require.Equal("Needs another reviewer", stored.Labels[0].Description)
+	require.Equal("fbca04", stored.Labels[0].Color)
+	require.True(stored.Labels[0].IsDefault)
+	require.Equal(int64(501), stored.Labels[0].PlatformID)
+	require.True(stored.Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestSyncMRReplacesLabelsOnResync(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(1, now)
+	pr.Labels = []*gh.Label{
+		buildGitHubLabel(701, "bug", "Bug fix", "d73a4a", true),
+	}
+
+	mc := &mockClient{singlePR: pr, comments: []*gh.IssueComment{}, reviews: []*gh.PullRequestReview{}, commits: []*gh.RepositoryCommit{}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+
+	require.NoError(syncer.SyncMR(ctx, "owner", "repo", 1))
+
+	pr.Labels = []*gh.Label{
+		buildGitHubLabel(702, "feature", "New feature", "0e8a16", false),
+	}
+	pr.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+
+	require.NoError(syncer.SyncMR(ctx, "owner", "repo", 1))
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Len(stored.Labels, 1)
+	require.Equal("feature", stored.Labels[0].Name)
+	require.Equal("New feature", stored.Labels[0].Description)
+	require.Equal("0e8a16", stored.Labels[0].Color)
+	require.False(stored.Labels[0].IsDefault)
+	require.Equal(int64(702), stored.Labels[0].PlatformID)
+}
+
+func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
+	issueNumber := 42
+	issueTitle := "broken thing"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/42"
+	issueBody := ""
+	issueID := int64(900042)
+	issue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+		Labels: []*gh.Label{
+			buildGitHubLabel(801, "bug", "Something is broken", "d73a4a", true),
+		},
+	}
+
+	mc := &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+		return issue, nil
+	}, comments: []*gh.IssueComment{}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.SyncIssue(ctx, "owner", "repo", issueNumber))
+
+	issue.Labels = []*gh.Label{
+		buildGitHubLabel(802, "docs", "Documentation", "0075ca", false),
+	}
+	issue.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+
+	require.NoError(syncer.SyncIssue(ctx, "owner", "repo", issueNumber))
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Len(stored.Labels, 1)
+	require.Equal("docs", stored.Labels[0].Name)
+	require.Equal("Documentation", stored.Labels[0].Description)
+	require.Equal("0075ca", stored.Labels[0].Color)
+	require.False(stored.Labels[0].IsDefault)
+	require.Equal(int64(802), stored.Labels[0].PlatformID)
 }
 
 func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
@@ -869,7 +1005,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 	// Put the rate tracker into a long backoff window so every
 	// worker blocks on the select inside RunOnce rather than
 	// calling the client.
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 	resetAt := time.Now().Add(time.Hour)
 	rt.UpdateFromRate(gh.Rate{
 		Remaining: 0,
@@ -1903,7 +2039,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 	// Exhaust the rate limit with a future reset.
 	futureReset := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(gh.Rate{
@@ -2067,7 +2203,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	}
 
 	// Set up GHE tracker with remaining below reserve buffer.
-	gheTracker := NewRateTracker(d, "ghe.corp.com")
+	gheTracker := NewRateTracker(d, "ghe.corp.com", "rest")
 	gheTracker.UpdateFromRate(gh.Rate{
 		Limit:     5000,
 		Remaining: 100, // below RateReserveBuffer (200)
@@ -2373,7 +2509,7 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 	budget := NewSyncBudget(100)
 	rt.SetOnWindowReset(budget.Reset)
 
@@ -2844,6 +2980,431 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 	require.NotNil(issue, "issue sync must run even when PR list returns 304")
 	assert.Equal(issueNumber, issue.Number)
 	assert.Equal(issueTitle, issue.Title)
+}
+
+func TestSyncStoresIssueLabels(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
+	issueNumber := 42
+	issueTitle := "broken thing"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/42"
+	issueBody := ""
+	issueID := int64(900042)
+	mc := &mockClient{
+		openIssues: []*gh.Issue{{
+			ID:        &issueID,
+			Number:    &issueNumber,
+			Title:     &issueTitle,
+			State:     &issueState,
+			HTMLURL:   &issueURL,
+			Body:      &issueBody,
+			CreatedAt: makeTimestamp(now),
+			UpdatedAt: makeTimestamp(now),
+			Labels: []*gh.Label{
+				buildGitHubLabel(801, "bug", "Something is broken", "d73a4a", true),
+			},
+		}},
+		comments: []*gh.IssueComment{},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Len(issue.Labels, 1)
+	require.Equal("bug", issue.Labels[0].Name)
+	require.Equal("Something is broken", issue.Labels[0].Description)
+	require.Equal("d73a4a", issue.Labels[0].Color)
+	require.True(issue.Labels[0].IsDefault)
+	require.Equal(int64(801), issue.Labels[0].PlatformID)
+	require.True(issue.Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	closedAt := makeTimestamp(now)
+	pr.ClosedAt = closedAt
+	pr.Labels = []*gh.Label{buildGitHubLabel(901, "bug", "Old bug", "d73a4a", true)}
+	_, err = d.UpsertMergeRequest(ctx, NormalizePR(repoID, pr))
+	require.NoError(err)
+	storedBefore, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, storedBefore.ID, []db.Label{{
+		PlatformID:  901,
+		Name:        "bug",
+		Description: "Old bug",
+		Color:       "d73a4a",
+		IsDefault:   true,
+		UpdatedAt:   now,
+	}}))
+
+	pr.Labels = []*gh.Label{buildGitHubLabel(902, "release", "Ready to release", "5319e7", false)}
+	pr.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosed(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 7, false))
+
+	storedAfter, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
+	require.NoError(err)
+	require.Len(storedAfter.Labels, 1)
+	require.Equal("release", storedAfter.Labels[0].Name)
+	require.Equal(int64(902), storedAfter.Labels[0].PlatformID)
+}
+
+func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
+	require.NoError(err)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	otherPR := buildOpenPR(7, now)
+	otherPR.State = new("closed")
+	otherPR.ClosedAt = makeTimestamp(now)
+	otherPR.Labels = []*gh.Label{buildGitHubLabel(990, "other-host", "Other host label", "333333", false)}
+	otherMRID, err := d.UpsertMergeRequest(ctx, NormalizePR(otherRepoID, otherPR))
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, otherRepoID, otherMRID, []db.Label{{
+		PlatformID:  990,
+		Name:        "other-host",
+		Description: "Other host label",
+		Color:       "333333",
+		UpdatedAt:   now,
+	}}))
+
+	pr := buildOpenPR(7, now)
+	pr.State = new("closed")
+	pr.ClosedAt = makeTimestamp(now)
+	pr.Labels = []*gh.Label{buildGitHubLabel(901, "bug", "Old bug", "d73a4a", true)}
+	targetMRID, err := d.UpsertMergeRequest(ctx, NormalizePR(repoID, pr))
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, targetMRID, []db.Label{{
+		PlatformID:  901,
+		Name:        "bug",
+		Description: "Old bug",
+		Color:       "d73a4a",
+		IsDefault:   true,
+		UpdatedAt:   now,
+	}}))
+
+	pr.Labels = []*gh.Label{buildGitHubLabel(902, "release", "Ready to release", "5319e7", false)}
+	pr.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosed(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, 7, false))
+
+	var labelName string
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_merge_request_labels ml
+		JOIN middleman_labels l ON l.id = ml.label_id
+		WHERE ml.merge_request_id = ?`, targetMRID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("release", labelName)
+
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_merge_request_labels ml
+		JOIN middleman_labels l ON l.id = ml.label_id
+		WHERE ml.merge_request_id = ?`, otherMRID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("other-host", labelName)
+}
+
+func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	issueNumber := 9
+	issueTitle := "closed issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/9"
+	issueBody := ""
+	issueID := int64(900009)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1001, "bug", "Old bug", "d73a4a", true)}}
+	issueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(repoID, issue))
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueRowID, []db.Label{{PlatformID: 1001, Name: "bug", Description: "Old bug", Color: "d73a4a", IsDefault: true, UpdatedAt: now}}))
+
+	closedState := "closed"
+	issue.State = &closedState
+	issue.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	issue.Labels = []*gh.Label{buildGitHubLabel(1002, "docs", "Documentation", "0075ca", false)}
+	closedAt := makeTimestamp(now.Add(2 * time.Minute))
+	issue.ClosedAt = closedAt
+	mc := &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosedIssue(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, issueNumber))
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.Len(stored.Labels, 1)
+	require.Equal("docs", stored.Labels[0].Name)
+	require.Equal(int64(1002), stored.Labels[0].PlatformID)
+}
+
+func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
+	require.NoError(err)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	issueNumber := 9
+
+	otherState := "open"
+	otherTitle := "other closed issue"
+	otherURL := "https://ghe.corp.com/owner/repo/issues/9"
+	otherBody := ""
+	otherID := int64(800009)
+	otherIssue := &gh.Issue{ID: &otherID, Number: &issueNumber, Title: &otherTitle, State: &otherState, HTMLURL: &otherURL, Body: &otherBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1901, "other-host", "Other host label", "333333", false)}}
+	otherIssueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(otherRepoID, otherIssue))
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, otherRepoID, otherIssueRowID, []db.Label{{PlatformID: 1901, Name: "other-host", Description: "Other host label", Color: "333333", UpdatedAt: now}}))
+
+	issueTitle := "closed issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/9"
+	issueBody := ""
+	issueID := int64(900009)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1001, "bug", "Old bug", "d73a4a", true)}}
+	issueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(repoID, issue))
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueRowID, []db.Label{{PlatformID: 1001, Name: "bug", Description: "Old bug", Color: "d73a4a", IsDefault: true, UpdatedAt: now}}))
+
+	closedState := "closed"
+	issue.State = &closedState
+	issue.UpdatedAt = makeTimestamp(now.Add(time.Minute))
+	issue.Labels = []*gh.Label{buildGitHubLabel(1002, "docs", "Documentation", "0075ca", false)}
+	closedAt := makeTimestamp(now.Add(2 * time.Minute))
+	issue.ClosedAt = closedAt
+	mc := &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.fetchAndUpdateClosedIssue(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, issueNumber))
+
+	var labelName string
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_issue_labels il
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE il.issue_id = ?`, issueRowID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("docs", labelName)
+
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT l.name
+		FROM middleman_issue_labels il
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE il.issue_id = ?`, otherIssueRowID,
+	).Scan(&labelName)
+	require.NoError(err)
+	require.Equal("other-host", labelName)
+}
+
+func TestBackfillRepoPersistsPRLabels(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 7, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(21, now)
+	pr.State = new("closed")
+	pr.Labels = []*gh.Label{buildGitHubLabel(1101, "backfill-pr", "Backfilled PR label", "5319e7", false)}
+
+	mc := &mockClient{listPullRequestsPageFn: func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
+		return []*gh.PullRequest{pr}, false, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 21)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Equal(repoID, stored.RepoID)
+	require.Len(stored.Labels, 1)
+	require.Equal("backfill-pr", stored.Labels[0].Name)
+}
+
+func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 8, 12, 0, 0, 0, time.UTC)
+	issueNumber := 22
+	issueTitle := "backfilled issue"
+	issueState := "closed"
+	issueURL := "https://github.com/owner/repo/issues/22"
+	issueBody := ""
+	issueID := int64(900022)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1201, "backfill-issue", "Backfilled issue label", "0052cc", false)}}
+
+	mc := &mockClient{listIssuesPageFn: func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
+		return []*gh.Issue{issue}, false, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Len(stored.Labels, 1)
+	require.Equal("backfill-issue", stored.Labels[0].Name)
+}
+
+func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 9, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  100,
+		Name:        "bug",
+		Description: "name row",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  200,
+		Name:        "renamed",
+		Description: "platform row",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	pr := buildOpenPR(31, now)
+	pr.State = new("closed")
+	pr.Labels = []*gh.Label{buildGitHubLabel(200, "bug", "ambiguous", "333333", false)}
+
+	mc := &mockClient{listPullRequestsPageFn: func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
+		return []*gh.PullRequest{pr}, false, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoAfter)
+	require.Equal(0, repoAfter.BackfillPRPage)
+	require.False(repoAfter.BackfillPRComplete)
+	require.Nil(repoAfter.BackfillPRCompletedAt)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 31)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Empty(stored.Labels)
+}
+
+func TestBackfillRepoDoesNotAdvanceIssueCursorWhenLabelPersistenceFails(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 10, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  100,
+		Name:        "bug",
+		Description: "name row",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []db.Label{{
+		PlatformID:  200,
+		Name:        "renamed",
+		Description: "platform row",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	issueNumber := 32
+	issueTitle := "ambiguous backfill issue"
+	issueState := "closed"
+	issueURL := "https://github.com/owner/repo/issues/32"
+	issueBody := ""
+	issueID := int64(900032)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(200, "bug", "ambiguous", "333333", false)}}
+
+	mc := &mockClient{listIssuesPageFn: func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
+		return []*gh.Issue{issue}, false, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoAfter)
+	require.Equal(0, repoAfter.BackfillIssuePage)
+	require.False(repoAfter.BackfillIssueComplete)
+	require.Nil(repoAfter.BackfillIssueCompletedAt)
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Empty(stored.Labels)
 }
 
 // partialFailureMock embeds mockClient and simulates ETag-like

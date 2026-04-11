@@ -2,6 +2,17 @@ package db
 
 import "time"
 
+type Label struct {
+	ID          int64     `json:"-"`
+	RepoID      int64     `json:"-"`
+	PlatformID  int64     `json:"-"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Color       string    `json:"color"`
+	IsDefault   bool      `json:"is_default"`
+	UpdatedAt   time.Time `json:"-"`
+}
+
 type Repo struct {
 	ID                       int64
 	Platform                 string
@@ -63,6 +74,7 @@ type MergeRequest struct {
 	CIHadPending      bool
 	KanbanStatus      string
 	Starred           bool
+	Labels            []Label `json:"labels,omitempty"`
 }
 
 // CICheck represents a single CI check run.
@@ -115,13 +127,14 @@ type Issue struct {
 	State           string
 	Body            string
 	CommentCount    int
-	LabelsJSON      string
+	LabelsJSON      string `json:"-"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	LastActivityAt  time.Time
 	ClosedAt        *time.Time
 	DetailFetchedAt *time.Time
 	Starred         bool
+	Labels          []Label `json:"labels,omitempty"`
 }
 
 type IssueEvent struct {
@@ -168,6 +181,7 @@ type WorktreeLink struct {
 type RateLimit struct {
 	ID            int64
 	PlatformHost  string
+	APIType       string
 	RequestsHour  int
 	HourStart     time.Time
 	RateRemaining int

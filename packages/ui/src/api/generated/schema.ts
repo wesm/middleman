@@ -653,7 +653,6 @@ export interface components {
             DetailFetchedAt: string | null;
             /** Format: int64 */
             ID: number;
-            LabelsJSON: string;
             /** Format: date-time */
             LastActivityAt: string;
             /** Format: int64 */
@@ -668,6 +667,7 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            labels?: components["schemas"]["Label"][] | null;
         };
         IssueDetailResponse: {
             /**
@@ -716,7 +716,6 @@ export interface components {
             CreatedAt: string;
             /** Format: int64 */
             ID: number;
-            LabelsJSON: string;
             /** Format: date-time */
             LastActivityAt: string;
             /** Format: int64 */
@@ -733,8 +732,15 @@ export interface components {
             UpdatedAt: string;
             detail_fetched_at?: string;
             detail_loaded: boolean;
+            labels?: components["schemas"]["Label"][] | null;
             repo_name: string;
             repo_owner: string;
+        };
+        Label: {
+            color: string;
+            description?: string;
+            is_default: boolean;
+            name: string;
         };
         Line: {
             content: string;
@@ -833,6 +839,7 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            labels?: components["schemas"]["Label"][] | null;
         };
         MergeRequestDetailResponse: {
             /**
@@ -895,6 +902,7 @@ export interface components {
             UpdatedAt: string;
             detail_fetched_at?: string;
             detail_loaded: boolean;
+            labels?: components["schemas"]["Label"][] | null;
             repo_name: string;
             repo_owner: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;

@@ -116,7 +116,7 @@ func run(configPath string) error {
 	)
 	for host, token := range hostTokens {
 		rateTrackers[host] = ghclient.NewRateTracker(
-			database, host,
+			database, host, "rest",
 		)
 		if budgetPerHour > 0 {
 			budgets[host] = ghclient.NewSyncBudget(
@@ -152,6 +152,17 @@ func run(configPath string) error {
 		clients, database, cloneMgr, repos,
 		cfg.SyncDuration(), rateTrackers, budgets,
 	)
+
+	fetchers := make(
+		map[string]*ghclient.GraphQLFetcher, len(hostTokens),
+	)
+	for host, token := range hostTokens {
+		gqlRT := ghclient.NewRateTracker(database, host, "graphql")
+		fetchers[host] = ghclient.NewGraphQLFetcher(
+			token, host, gqlRT, budgets[host],
+		)
+	}
+	syncer.SetFetchers(fetchers)
 
 	assets, err := web.Assets()
 	if err != nil {

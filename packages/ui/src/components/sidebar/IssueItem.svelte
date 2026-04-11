@@ -1,8 +1,9 @@
 <script lang="ts">
-  import type { Issue, IssueLabel } from "../../api/types.js";
+  import type { Issue } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
+  import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { issues } = getStores();
 
@@ -37,23 +38,7 @@
     );
   }
 
-  function parseLabels(json: string): IssueLabel[] {
-    if (!json) return [];
-    try {
-      return JSON.parse(json) as IssueLabel[];
-    } catch {
-      return [];
-    }
-  }
-
-  function labelColor(color: string): string {
-    if (!color) return "#666";
-    return color.startsWith("#") ? color : `#${color}`;
-  }
-
-  const labels = $derived(parseLabels(issue.LabelsJSON));
-  const visibleLabels = $derived(labels.slice(0, 2));
-  const extraCount = $derived(Math.max(0, labels.length - 2));
+  const labels = $derived(issue.labels ?? []);
   const ago = $derived(timeAgo(issue.LastActivityAt));
   const stateLabel = $derived(
     issue.State === "open" ? "Open" : "Closed",
@@ -62,18 +47,8 @@
 
 <button class="issue-item" class:selected bind:this={el} onclick={onclick}>
   <p class="title">{issue.Title}</p>
-  {#if visibleLabels.length > 0}
-    <div class="labels-row">
-      {#each visibleLabels as label}
-        <span
-          class="label-pill"
-          style="background: {labelColor(label.color)}; color: #fff;"
-        >{label.name}</span>
-      {/each}
-      {#if extraCount > 0}
-        <span class="label-more">+{extraCount}</span>
-      {/if}
-    </div>
+  {#if labels.length > 0}
+    <GitHubLabels labels={labels} mode="compact" />
   {/if}
   {#if showRepo}
     <div class="repo-row">
@@ -142,32 +117,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 4px;
-  }
-
-  .labels-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-bottom: 4px;
-    overflow: hidden;
-  }
-
-  .label-pill {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 10px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 120px;
-    line-height: 1.5;
-  }
-
-  .label-more {
-    font-size: 10px;
-    color: var(--text-muted);
-    flex-shrink: 0;
   }
 
   .meta-row {

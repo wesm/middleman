@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
@@ -76,6 +77,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.MergeRequest {
 		mr.PlatformBaseSHA = ghPR.GetBase().GetSHA()
 	}
 	mr.MergeableState = ghPR.GetMergeableState()
+	mr.Labels = normalizeLabels(ghPR.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
 
 	return mr
 }
@@ -291,7 +293,7 @@ func NormalizeCIChecks(
 			// Map commit status state to check run status/conclusion.
 			status := "completed"
 			conclusion := s.GetState()
-			if conclusion == "pending" {
+			if conclusion == "pending" || conclusion == "expected" {
 				status = "in_progress"
 				conclusion = ""
 			}
@@ -330,12 +332,6 @@ func appName(r *gh.CheckRun) string {
 
 // --- Issues ---
 
-// Label represents a GitHub issue label for JSON serialization.
-type Label struct {
-	Name  string `json:"name"`
-	Color string `json:"color"`
-}
-
 // NormalizeIssue converts a GitHub Issue to a db.Issue.
 func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
 	issue := &db.Issue{
@@ -360,23 +356,43 @@ func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
 		t := ghIssue.ClosedAt.Time
 		issue.ClosedAt = &t
 	}
-	issue.LabelsJSON = normalizeLabels(ghIssue.Labels)
+	issue.Labels = normalizeLabels(ghIssue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return issue
 }
 
-func normalizeLabels(labels []*gh.Label) string {
-	if len(labels) == 0 {
-		return ""
+func itemLabelUpdatedAt(updatedAt, createdAt time.Time) time.Time {
+	if !updatedAt.IsZero() {
+		return updatedAt
 	}
-	out := make([]Label, 0, len(labels))
+	return createdAt
+}
+
+func normalizeLabels(labels []*gh.Label, updatedAt time.Time) []db.Label {
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make([]db.Label, 0, len(labels))
 	for _, l := range labels {
-		out = append(out, Label{
-			Name:  l.GetName(),
-			Color: l.GetColor(),
+		if l == nil {
+			continue
+		}
+		name := strings.TrimSpace(l.GetName())
+		if name == "" {
+			continue
+		}
+		out = append(out, db.Label{
+			PlatformID:  l.GetID(),
+			Name:        name,
+			Description: l.GetDescription(),
+			Color:       l.GetColor(),
+			IsDefault:   l.GetDefault(),
+			UpdatedAt:   updatedAt,
 		})
 	}
-	b, _ := json.Marshal(out)
-	return string(b)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // NormalizeIssueCommentEvent converts a GitHub IssueComment to a db.IssueEvent.
