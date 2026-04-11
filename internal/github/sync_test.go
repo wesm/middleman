@@ -62,10 +62,11 @@ type mockClient struct {
 	checkRuns              []*gh.CheckRun
 	workflowRuns           []*gh.WorkflowRun
 	approveWorkflowRunFn   func(context.Context, string, string, int64) error
-	listOpenPRsCalled      bool
-	getUserCalls           atomic.Int32
-	getCombinedCalls       atomic.Int32
-	invalidateCalls        atomic.Int32
+	listOpenPRsCalled          bool
+	getUserCalls               atomic.Int32
+	getCombinedCalls           atomic.Int32
+	invalidateCalls            atomic.Int32
+	listIssueCommentsCalled    atomic.Int32
 }
 
 func (m *mockClient) trackCall() {
@@ -139,6 +140,7 @@ func (m *mockClient) GetPullRequest(
 
 func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
 	m.trackCall()
+	m.listIssueCommentsCalled.Add(1)
 	return m.comments, nil
 }
 
@@ -291,6 +293,22 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 		Base: &gh.PullRequestBranch{
 			Ref: &baseRef,
 		},
+	}
+}
+
+func buildOpenIssue(number int, updatedAt time.Time) *gh.Issue {
+	state := "open"
+	title := "test issue"
+	url := "https://github.com/owner/repo/issues/" + fmt.Sprintf("%d", number)
+	id := int64(number) * 1000
+	return &gh.Issue{
+		ID:        &id,
+		Number:    &number,
+		Title:     &title,
+		HTMLURL:   &url,
+		State:     &state,
+		UpdatedAt: makeTimestamp(updatedAt),
+		CreatedAt: makeTimestamp(updatedAt),
 	}
 }
 
@@ -3843,6 +3861,87 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.NotEmpty(events, "review event should be persisted after detail retry")
+}
+
+func TestSyncRepoGraphQLIssues(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	mock := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	issueID := int64(10000)
+	issueNumber := 10
+	issueTitle := "Bug report"
+	issueState := "open"
+	issueBody := "Something broke"
+	issueURL := "https://github.com/owner/repo/issues/10"
+	issueAuthor := "alice"
+	commentID := int64(501)
+	commentBody := "I see this too"
+	commentLogin := "bob"
+	commentTime := gh.Timestamp{Time: now}
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					Body:      &issueBody,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueAuthor},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				Comments: []*gh.IssueComment{
+					{
+						ID:        &commentID,
+						Body:      &commentBody,
+						User:      &gh.User{Login: &commentLogin},
+						CreatedAt: &commentTime,
+						UpdatedAt: &commentTime,
+					},
+				},
+				CommentsComplete: true,
+			},
+		},
+	}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// Verify issue in DB.
+	issue, err := d.GetIssue(ctx, "owner", "repo", 10)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("Bug report", issue.Title)
+	assert.Equal("alice", issue.Author)
+	assert.Equal("open", issue.State)
+	assert.Equal(1, issue.CommentCount)
+
+	// Verify comment event.
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Len(events, 1)
+	assert.Equal("I see this too", events[0].Body)
+
+	// Comments were complete — ListIssueComments should NOT be called.
+	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
 }
 
 // blockingCtxMockClient blocks in ListOpenPullRequests until either

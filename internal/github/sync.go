@@ -1448,6 +1448,143 @@ func (s *Syncer) doSyncRepoGraphQL(
 	return nil
 }
 
+// doSyncRepoGraphQLIssues processes bulk GraphQL results for issues.
+func (s *Syncer) doSyncRepoGraphQLIssues(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	result *RepoBulkResult,
+) error {
+	var failedScope failScope
+	stillOpen := make(map[int]bool, len(result.Issues))
+
+	for i := range result.Issues {
+		bulk := &result.Issues[i]
+		number := bulk.Issue.GetNumber()
+		stillOpen[number] = true
+
+		if err := s.syncOpenIssueFromBulk(
+			ctx, repo, repoID, bulk,
+		); err != nil {
+			slog.Error("GraphQL sync issue failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			failedScope |= failIssues
+		}
+	}
+
+	// Detect closed issues — same as REST path.
+	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
+		ctx, repoID, stillOpen,
+	)
+	if err != nil {
+		return fmt.Errorf("get previously open issues: %w", err)
+	}
+	for _, number := range closedNumbers {
+		if err := s.fetchAndUpdateClosedIssue(
+			ctx, repo, repoID, number,
+		); err != nil {
+			slog.Error("update closed issue failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			failedScope |= failIssues
+		}
+	}
+
+	if failedScope != 0 {
+		return fmt.Errorf("GraphQL issue sync had partial failures")
+	}
+	return nil
+}
+
+// syncOpenIssueFromBulk processes a single issue from GraphQL bulk
+// results. Uses pre-fetched data instead of per-issue REST calls.
+func (s *Syncer) syncOpenIssueFromBulk(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	bulk *BulkIssue,
+) error {
+	number := bulk.Issue.GetNumber()
+	normalized := NormalizeIssue(repoID, bulk.Issue)
+
+	// Preserve derived fields that NormalizeIssue doesn't populate
+	// from bulk data. Without this, upsert overwrites them with
+	// zero values.
+	existing, err := s.db.GetIssueByRepoIDAndNumber(
+		ctx, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing issue #%d: %w", number, err,
+		)
+	}
+	if existing != nil {
+		normalized.CommentCount = existing.CommentCount
+		normalized.DetailFetchedAt = existing.DetailFetchedAt
+	}
+
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf("upsert issue #%d: %w", number, err)
+	}
+
+	if err := s.replaceIssueLabels(
+		ctx, repoID, issueID, normalized.Labels,
+	); err != nil {
+		return fmt.Errorf(
+			"persist labels for issue #%d: %w", number, err,
+		)
+	}
+
+	if bulk.CommentsComplete {
+		// Events from bulk data — skip REST ListIssueComments.
+		var events []db.IssueEvent
+		for _, c := range bulk.Comments {
+			events = append(events, NormalizeIssueCommentEvent(issueID, c))
+		}
+		if len(events) > 0 {
+			if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+				return fmt.Errorf(
+					"upsert issue events for #%d: %w", number, err,
+				)
+			}
+		}
+		// Update comment count and last activity from bulk data.
+		lastActivity := normalized.UpdatedAt
+		for _, c := range bulk.Comments {
+			if c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity) {
+				lastActivity = c.UpdatedAt.Time
+			}
+		}
+		_, err = s.db.WriteDB().ExecContext(ctx,
+			`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
+			 WHERE id = ?`,
+			len(bulk.Comments), lastActivity, issueID,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"update issue #%d derived fields: %w", number, err,
+			)
+		}
+	} else {
+		// Comments truncated — fall back to REST.
+		if err := s.refreshIssueTimeline(
+			ctx, repo, issueID, bulk.Issue,
+		); err != nil {
+			return fmt.Errorf(
+				"refresh timeline for issue #%d: %w", number, err,
+			)
+		}
+	}
+
+	return nil
+}
+
 // syncOpenMRFromBulk processes a single PR from GraphQL bulk
 // results. It performs the same operations as fetchMRDetail but
 // using pre-fetched data instead of per-PR REST calls.
