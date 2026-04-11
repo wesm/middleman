@@ -2333,26 +2333,6 @@ func (s *Syncer) resolveDisplayName(
 
 // --- Issue sync ---
 
-// indexSyncIssues syncs issues from list endpoint data and
-// refreshes timeline when data changed or forceRefresh is set.
-// Issues have no separate detail phase, so timeline refresh
-// happens inline here via syncOpenIssue.
-func (s *Syncer) indexSyncIssues(
-	ctx context.Context, repo RepoRef, repoID int64, forceRefresh bool,
-) error {
-	client := s.clientFor(repo)
-	ghIssues, err := client.ListOpenIssues(
-		ctx, repo.Owner, repo.Name,
-	)
-	if err != nil {
-		if IsNotModified(err) {
-			return nil
-		}
-		return fmt.Errorf("list open issues: %w", err)
-	}
-	return s.syncIssuesFromList(ctx, repo, repoID, ghIssues, forceRefresh)
-}
-
 // syncIssuesFromList processes a pre-fetched list of open issues
 // via the REST path. Handles per-issue upsert and closure detection.
 func (s *Syncer) syncIssuesFromList(
