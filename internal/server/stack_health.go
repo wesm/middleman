@@ -26,18 +26,8 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 			allGreen = false
 		}
 
-		isBlocked := m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED"
-		if isBlocked {
-			hasDescendant := false
-			for j := i + 1; j < len(members); j++ {
-				if members[j].State != "merged" {
-					hasDescendant = true
-					break
-				}
-			}
-			if hasDescendant {
-				hasBlocker = true
-			}
+		if m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED" {
+			hasBlocker = true
 		}
 	}
 

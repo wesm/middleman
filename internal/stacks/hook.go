@@ -25,7 +25,12 @@ func SyncCompletedHook(ctx context.Context, database *db.DB, next func([]ghclien
 				continue
 			}
 			repo, err := database.GetRepoByOwnerName(ctx, result.Owner, result.Name)
-			if err != nil || repo == nil {
+			if err != nil {
+				slog.Error("stack detection: repo lookup failed",
+					"repo", result.Owner+"/"+result.Name, "err", err)
+				continue
+			}
+			if repo == nil {
 				continue
 			}
 			if err := RunDetection(ctx, database, repo.ID); err != nil {

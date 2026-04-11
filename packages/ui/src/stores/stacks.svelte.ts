@@ -78,7 +78,10 @@ export function createStacksStore(opts: StacksStoreOptions) {
           error.detail ?? error.title ?? "failed to load stacks",
         );
       }
-      stacks = (data as StackResponse[]) ?? [];
+      stacks = ((data as StackResponse[]) ?? []).map((s) => ({
+        ...s,
+        members: s.members ?? [],
+      }));
     } catch (err) {
       if (seq !== requestSeq) return;
       storeError = err instanceof Error ? err.message : String(err);

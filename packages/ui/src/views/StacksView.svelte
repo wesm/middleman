@@ -1,19 +1,12 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { getStores, getNavigate } from "../context.js";
 
-  const { stacks, settings, sync } = getStores();
+  const { stacks, settings } = getStores();
   const navigate = getNavigate();
-
-  let unsubSync: (() => void) | undefined;
 
   onMount(() => {
     void stacks.loadStacks();
-    unsubSync = sync.subscribeSyncComplete(() => void stacks.loadStacks());
-  });
-
-  onDestroy(() => {
-    unsubSync?.();
   });
 
   let expandedRepos = $state<Set<string>>(new Set());

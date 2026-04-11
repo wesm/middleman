@@ -39,7 +39,7 @@ func (d *DB) ListPRsForStackDetection(ctx context.Context, repoID int64) ([]Merg
 
 // UpsertStack inserts or updates a stack keyed by (repo_id, base_number).
 func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name string) (int64, error) {
-	res, err := d.rw.ExecContext(ctx, `
+	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_stacks (repo_id, base_number, name)
 		VALUES (?, ?, ?)
 		ON CONFLICT(repo_id, base_number) DO UPDATE SET
@@ -49,15 +49,13 @@ func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name
 	if err != nil {
 		return 0, fmt.Errorf("upsert stack: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil || id == 0 {
-		err = d.ro.QueryRowContext(ctx,
-			`SELECT id FROM middleman_stacks WHERE repo_id = ? AND base_number = ?`,
-			repoID, baseNumber,
-		).Scan(&id)
-		if err != nil {
-			return 0, fmt.Errorf("get stack id: %w", err)
-		}
+	var id int64
+	err = d.ro.QueryRowContext(ctx,
+		`SELECT id FROM middleman_stacks WHERE repo_id = ? AND base_number = ?`,
+		repoID, baseNumber,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("get stack id: %w", err)
 	}
 	return id, nil
 }
