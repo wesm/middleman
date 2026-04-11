@@ -4399,3 +4399,53 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	// REST fallback was called with empty mock — count reflects REST result.
 	assert.Equal(0, issue.CommentCount)
 }
+
+func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issueTime := makeTimestamp(now)
+	issueID := int64(50000)
+	issueNumber := 50
+	issueTitle := "REST issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/50"
+	issueLogin := "grace"
+
+	ghIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		User:      &gh.User{Login: &issueLogin},
+		CreatedAt: issueTime,
+		UpdatedAt: issueTime,
+	}
+
+	mock := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+		openIssues:     []*gh.Issue{ghIssue},
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return ghIssue, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	// No fetchers set — fetcherFor returns nil, REST path runs.
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", 50)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("REST issue", issue.Title)
+	assert.Equal("grace", issue.Author)
+}

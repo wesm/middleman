@@ -1304,16 +1304,57 @@ func (s *Syncer) indexSyncRepo(
 		}
 	}
 
-	// Index issues (list-only, no detail).
-	// Issues have an independent etag, so this still runs even when the
-	// PR list returned 304.
-	if err := s.indexSyncIssues(
-		ctx, repo, repoID, forceIssues,
-	); err != nil {
-		slog.Error("index sync issues failed",
-			"repo", repo.Owner+"/"+repo.Name, "err", err,
-		)
-		failedScope |= failIssues
+	// Index issues — ETag-gated, with GraphQL when available.
+	// Same structure as PR sync: REST list first (ETag gate),
+	// then GraphQL if available, REST fallback if not.
+	ghIssues, issueListErr := client.ListOpenIssues(
+		ctx, repo.Owner, repo.Name,
+	)
+	if issueListErr != nil {
+		if IsNotModified(issueListErr) {
+			// 304: open issue list unchanged, skip.
+		} else {
+			slog.Error("list open issues failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"err", issueListErr,
+			)
+			failedScope |= failIssues
+		}
+	} else {
+		graphQLIssuesDone := false
+		if fetcher := s.fetcherFor(repo); fetcher != nil {
+			if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+				issueResult, gqlErr := fetcher.FetchRepoIssues(
+					ctx, repo.Owner, repo.Name,
+				)
+				if gqlErr != nil {
+					slog.Warn("GraphQL issue fetch failed, falling back to REST",
+						"repo", repo.Owner+"/"+repo.Name,
+						"err", gqlErr,
+					)
+				} else {
+					if err := s.doSyncRepoGraphQLIssues(
+						ctx, repo, repoID, issueResult,
+					); err != nil {
+						failedScope |= failIssues
+					}
+					graphQLIssuesDone = true
+				}
+			}
+		}
+
+		if !graphQLIssuesDone {
+			// REST fallback using already-fetched ghIssues.
+			if err := s.syncIssuesFromList(
+				ctx, repo, repoID, ghIssues, forceIssues,
+			); err != nil {
+				slog.Error("REST issue sync failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", err,
+				)
+				failedScope |= failIssues
+			}
+		}
 	}
 
 	if failedScope != 0 {
@@ -2304,15 +2345,23 @@ func (s *Syncer) indexSyncIssues(
 		ctx, repo.Owner, repo.Name,
 	)
 	if err != nil {
-		// 304: open issue list unchanged since the previous sync.
-		// No issue opened, closed, or modified. Skip per-issue
-		// upserts and closure detection.
 		if IsNotModified(err) {
 			return nil
 		}
 		return fmt.Errorf("list open issues: %w", err)
 	}
+	return s.syncIssuesFromList(ctx, repo, repoID, ghIssues, forceRefresh)
+}
 
+// syncIssuesFromList processes a pre-fetched list of open issues
+// via the REST path. Handles per-issue upsert and closure detection.
+func (s *Syncer) syncIssuesFromList(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghIssues []*gh.Issue,
+	forceRefresh bool,
+) error {
 	stillOpen := make(map[int]bool, len(ghIssues))
 	for _, issue := range ghIssues {
 		stillOpen[issue.GetNumber()] = true
@@ -2330,7 +2379,6 @@ func (s *Syncer) indexSyncIssues(
 		}
 	}
 
-	// Detect closed issues and fetch final state.
 	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
 		ctx, repoID, stillOpen,
 	)
