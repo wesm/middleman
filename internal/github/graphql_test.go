@@ -331,6 +331,13 @@ func TestAdaptIssue(t *testing.T) {
 	assert.Equal("bug", issue.Labels[0].GetName())
 	assert.Equal("d73a4a", issue.Labels[0].GetColor())
 	assert.Nil(issue.ClosedAt)
+	// Comments.TotalCount should map to issue comment count, not len(Nodes).
+	assert.Equal(0, issue.GetComments())
+
+	// TotalCount > len(Nodes): server has more comments than page returned.
+	gql.Comments.TotalCount = 42
+	issue = adaptIssue(&gql)
+	assert.Equal(42, issue.GetComments())
 
 	// Test closed state
 	gql.State = "CLOSED"
