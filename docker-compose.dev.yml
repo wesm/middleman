@@ -1,0 +1,39 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    network_mode: host
+    volumes:
+      - .:/app
+      - go-mod:/go/pkg/mod
+      - go-cache:/go/cache
+    environment:
+      MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
+      GOCACHE: /go/cache
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p internal/web/dist
+        [ -n "$$(ls internal/web/dist/ 2>/dev/null)" ] || echo ok > internal/web/dist/stub.html
+        air -c .air.toml -- -config docker/dev-config.toml
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    network_mode: host
+    volumes:
+      - .:/app
+    environment:
+      MIDDLEMAN_API_URL: http://127.0.0.1:18090
+    working_dir: /app/frontend
+    command:
+      - sh
+      - -c
+      - bun install && bun run dev -- --port 15173
+
+volumes:
+  go-mod:
+  go-cache:

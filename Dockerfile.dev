@@ -1,0 +1,12 @@
+FROM golang:1.26-bookworm
+
+# shasum needed by scripts/dev-backend-build.sh
+RUN apt-get update && apt-get install -y --no-install-recommends perl && rm -rf /var/lib/apt/lists/*
+
+# Bun for frontend tooling
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+
+# Air for Go live reload
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
