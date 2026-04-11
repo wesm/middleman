@@ -1,0 +1,85 @@
+package server
+
+import "github.com/wesm/middleman/internal/db"
+
+func computeStackHealth(members []db.StackMemberWithPR) string {
+	if len(members) == 0 {
+		return "in_progress"
+	}
+
+	hasMerged := false
+	allGreen := true
+	hasBlocker := false
+	lowestOpenIdx := -1
+
+	for i, m := range members {
+		if m.State == "merged" {
+			hasMerged = true
+			continue
+		}
+		if lowestOpenIdx == -1 {
+			lowestOpenIdx = i
+		}
+
+		isGreen := m.CIStatus == "success" && m.ReviewDecision == "APPROVED"
+		if !isGreen {
+			allGreen = false
+		}
+
+		if m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED" {
+			hasBlocker = true
+		}
+	}
+
+	switch {
+	case hasBlocker:
+		return "blocked"
+	case hasMerged:
+		return "partial_merge"
+	case allGreen:
+		return "all_green"
+	case lowestOpenIdx >= 0:
+		m := members[lowestOpenIdx]
+		if m.CIStatus == "success" && m.ReviewDecision == "APPROVED" {
+			return "base_ready"
+		}
+	}
+	return "in_progress"
+}
+
+func computeBlockedBy(members []db.StackMemberWithPR) map[int]int {
+	blockedBy := make(map[int]int)
+	var rootBlocker int
+	for _, m := range members {
+		if m.State == "merged" {
+			continue
+		}
+		isBlocked := m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED"
+		if isBlocked && rootBlocker == 0 {
+			rootBlocker = m.Number
+		} else if rootBlocker != 0 && m.Number != rootBlocker {
+			blockedBy[m.Number] = rootBlocker
+		}
+	}
+	return blockedBy
+}
+
+func toStackMemberResponses(members []db.StackMemberWithPR) []stackMemberResponse {
+	blocked := computeBlockedBy(members)
+	out := make([]stackMemberResponse, len(members))
+	for i, m := range members {
+		out[i] = stackMemberResponse{
+			Number:         m.Number,
+			Title:          m.Title,
+			State:          m.State,
+			CIStatus:       m.CIStatus,
+			ReviewDecision: m.ReviewDecision,
+			Position:       m.Position,
+			IsDraft:        m.IsDraft,
+		}
+		if b, ok := blocked[m.Number]; ok {
+			out[i].BlockedBy = &b
+		}
+	}
+	return out
+}

@@ -21,6 +21,10 @@ type mergeRequestResponse struct {
 	WorktreeLinks   []worktreeLinkResponse `json:"worktree_links"`
 	DetailLoaded    bool                   `json:"detail_loaded"`
 	DetailFetchedAt string                 `json:"detail_fetched_at,omitempty"`
+	StackID         *int64                 `json:"stack_id"`
+	StackName       *string                `json:"stack_name"`
+	StackPosition   *int                   `json:"stack_position"`
+	StackSize       *int                   `json:"stack_size"`
 }
 
 type workflowApprovalResponse struct {
@@ -126,6 +130,35 @@ const activitySafetyCap = 5000
 type activityResponse struct {
 	Items  []activityItemResponse `json:"items"`
 	Capped bool                   `json:"capped"`
+}
+
+type stackMemberResponse struct {
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	State          string `json:"state"`
+	CIStatus       string `json:"ci_status"`
+	ReviewDecision string `json:"review_decision"`
+	Position       int    `json:"position"`
+	IsDraft        bool   `json:"is_draft"`
+	BlockedBy      *int   `json:"blocked_by"`
+}
+
+type stackResponse struct {
+	ID        int64                 `json:"id"`
+	Name      string                `json:"name"`
+	RepoOwner string                `json:"repo_owner"`
+	RepoName  string                `json:"repo_name"`
+	Health    string                `json:"health"`
+	Members   []stackMemberResponse `json:"members"`
+}
+
+type stackContextResponse struct {
+	StackID   int64                 `json:"stack_id"`
+	StackName string                `json:"stack_name"`
+	Position  int                   `json:"position"`
+	Size      int                   `json:"size"`
+	Health    string                `json:"health"`
+	Members   []stackMemberResponse `json:"members"`
 }
 
 type activityItemResponse struct {

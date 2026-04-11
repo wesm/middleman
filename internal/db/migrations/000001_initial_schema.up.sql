@@ -155,3 +155,4 @@ CREATE INDEX IF NOT EXISTS idx_issue_events_created
     ON middleman_issue_events(issue_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_starred_items_type
     ON middleman_starred_items(item_type, starred_at DESC);
+

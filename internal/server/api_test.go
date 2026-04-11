@@ -22,6 +22,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/stacks"
 )
 
 // mockGH implements ghclient.Client for testing.
@@ -2842,4 +2843,162 @@ func TestAPIListActivity(t *testing.T) {
 	require.NotNil(resp.JSON200.Items)
 	assert.NotEmpty(*resp.JSON200.Items,
 		"activity feed should contain PR and comment items")
+}
+
+// --- Stacks E2E ---
+
+func seedStackedPR(
+	t *testing.T, database *db.DB,
+	owner, name string, number int,
+	head, base, state, ci, review string,
+) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	pr := &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     int64(number) * 1000,
+		Number:         number,
+		Title:          fmt.Sprintf("PR #%d: %s", number, head),
+		Author:         "testuser",
+		State:          state,
+		HeadBranch:     head,
+		BaseBranch:     base,
+		CIStatus:       ci,
+		ReviewDecision: review,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+	prID, err := database.UpsertMergeRequest(ctx, pr)
+	require.NoError(t, err)
+	require.NoError(t, database.EnsureKanbanState(ctx, prID))
+	return prID
+}
+
+func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
+	t.Helper()
+	ctx := context.Background()
+	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	require.NoError(t, stacks.RunDetection(ctx, database, repo.ID))
+}
+
+func TestAPIListStacks(t *testing.T) {
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// Seed a 3-PR chain.
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/auth", "main", "open", "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/auth-retry", "feat/auth", "open", "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 12, "feat/auth-ui", "feat/auth-retry", "open", "pending", "")
+	runStackDetection(t, database, "acme", "widget")
+
+	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+
+	var stks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &stks))
+	assert.Len(stks, 1)
+	assert.Equal("auth", stks[0].Name)
+	require.NotNil(t, stks[0].Members)
+	assert.Len(*stks[0].Members, 3)
+	assert.Equal(int64(10), (*stks[0].Members)[0].Number)
+}
+
+func TestAPIListStacks_RepoFilter(t *testing.T) {
+	assert := Assert.New(t)
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+	}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// Stack in widget.
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/a", "main", "open", "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/b", "feat/a", "open", "", "")
+	runStackDetection(t, database, "acme", "widget")
+
+	// Stack in tools.
+	seedStackedPR(t, database, "acme", "tools", 20, "feat/c", "main", "open", "", "")
+	seedStackedPR(t, database, "acme", "tools", 21, "feat/d", "feat/c", "open", "", "")
+	runStackDetection(t, database, "acme", "tools")
+
+	// Unfiltered returns both.
+	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	require.NoError(t, err)
+	var allStks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(respAll.Body, &allStks))
+	assert.Len(allStks, 2)
+
+	// Filtered returns only widget.
+	repo := "acme/widget"
+	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &repo})
+	require.NoError(t, err)
+	assert.Equal(http.StatusOK, resp.StatusCode())
+	var filtered []generated.StackResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &filtered))
+	assert.Len(filtered, 1)
+	assert.Equal("acme", filtered[0].RepoOwner)
+	assert.Equal("widget", filtered[0].RepoName)
+
+	// Malformed filter returns 400 with error message.
+	bad := "noslash"
+	resp2, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &bad})
+	require.NoError(t, err)
+	assert.Equal(http.StatusBadRequest, resp2.StatusCode())
+	assert.Contains(string(resp2.Body), "invalid repo filter")
+}
+
+func TestAPIGetStackForPR(t *testing.T) {
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/api-base", "main", "open", "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", "open", "failure", "")
+	runStackDetection(t, database, "acme", "widget")
+
+	// PR in stack.
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	assert.Equal("api", resp.JSON200.StackName)
+	assert.Equal(int64(2), resp.JSON200.Size)
+	assert.Equal("blocked", resp.JSON200.Health)
+	require.NotNil(t, resp.JSON200.Members)
+	assert.Len(*resp.JSON200.Members, 2)
+
+	// PR not in stack.
+	seedPR(t, database, "acme", "widget", 99)
+	resp2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 99)
+	require.NoError(t, err)
+	assert.Equal(http.StatusNotFound, resp2.StatusCode())
+}
+
+func TestAPIListStacks_Empty(t *testing.T) {
+	assert := Assert.New(t)
+	srv, _ := setupTestServer(t)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListStacksWithResponse(context.Background(), &generated.ListStacksParams{})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	var stks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &stks))
+	assert.Empty(stks)
 }

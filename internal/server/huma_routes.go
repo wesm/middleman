@@ -15,6 +15,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/stacks"
 )
 
 type listPullsInput struct {
@@ -198,6 +199,18 @@ type rateLimitsOutput struct {
 	Body rateLimitsResponse
 }
 
+type listStacksInput struct {
+	Repo string `query:"repo"`
+}
+
+type listStacksOutput struct {
+	Body []stackResponse
+}
+
+type getStackForPROutput struct {
+	Body stackContextResponse
+}
+
 type listActivityInput struct {
 	Repo   string   `query:"repo"`
 	Types  []string `query:"types"`
@@ -294,6 +307,8 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/commits", s.getCommits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
+	huma.Get(api, "/stacks", s.listStacks)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/stack", s.getStackForPR)
 }
 
 func NewOpenAPI() *huma.OpenAPI {
@@ -360,11 +375,15 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			wl = []worktreeLinkResponse{}
 		}
 		resp := mergeRequestResponse{
-			MergeRequest:  mr,
+			MergeRequest:  mr.MergeRequest,
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
 			WorktreeLinks: wl,
 			DetailLoaded:  mr.DetailFetchedAt != nil,
+			StackID:       mr.StackID,
+			StackName:     mr.StackName,
+			StackPosition: mr.StackPosition,
+			StackSize:     mr.StackSize,
 		}
 		if mr.DetailFetchedAt != nil {
 			resp.DetailFetchedAt = mr.DetailFetchedAt.UTC().Format(time.RFC3339)
@@ -1160,6 +1179,13 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error502BadGateway("sync PR: " + syncErr.Error())
 	}
 
+	// Re-run stack detection for this repo after syncing a single PR.
+	if repo, repoErr := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name); repoErr == nil && repo != nil {
+		if sdErr := stacks.RunDetection(ctx, s.db, repo.ID); sdErr != nil {
+			slog.Warn("stack detection after syncPR failed", "err", sdErr)
+		}
+	}
+
 	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
@@ -1407,6 +1433,68 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 	}
 
 	return repoID, nil
+}
+
+// --- Stacks ---
+
+func (s *Server) listStacks(ctx context.Context, input *listStacksInput) (*listStacksOutput, error) {
+	if input.Repo != "" {
+		if strings.Count(input.Repo, "/") != 1 {
+			return nil, huma.Error400BadRequest("invalid repo filter: expected owner/name")
+		}
+		owner, name, _ := strings.Cut(input.Repo, "/")
+		if owner == "" || name == "" {
+			return nil, huma.Error400BadRequest("invalid repo filter: expected owner/name")
+		}
+	}
+	stacks, memberMap, err := s.db.ListStacksWithMembers(ctx, input.Repo)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list stacks failed")
+	}
+
+	out := make([]stackResponse, 0, len(stacks))
+	for _, st := range stacks {
+		members := memberMap[st.ID]
+		out = append(out, stackResponse{
+			ID:        st.ID,
+			Name:      st.Name,
+			RepoOwner: st.RepoOwner,
+			RepoName:  st.RepoName,
+			Health:    computeStackHealth(members),
+			Members:   toStackMemberResponses(members),
+		})
+	}
+
+	return &listStacksOutput{Body: out}, nil
+}
+
+func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
+	stack, members, err := s.db.GetStackForPR(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get stack for pr failed")
+	}
+	if stack == nil {
+		return nil, huma.Error404NotFound("PR is not part of a stack")
+	}
+
+	var position int
+	for _, m := range members {
+		if m.Number == input.Number {
+			position = m.Position
+			break
+		}
+	}
+
+	return &getStackForPROutput{
+		Body: stackContextResponse{
+			StackID:   stack.ID,
+			StackName: stack.Name,
+			Position:  position,
+			Size:      len(members),
+			Health:    computeStackHealth(members),
+			Members:   toStackMemberResponses(members),
+		},
+	}, nil
 }
 
 // --- Commits ---

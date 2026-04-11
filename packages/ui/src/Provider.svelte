@@ -69,6 +69,12 @@
   import {
     createEventsStore,
   } from "./stores/events.svelte.js";
+  import type {
+    StacksStoreOptions,
+  } from "./stores/stacks.svelte.js";
+  import {
+    createStacksStore,
+  } from "./stores/stacks.svelte.js";
 
   interface Props {
     client: MiddlemanClient;
@@ -190,6 +196,12 @@
     }
     const diffStore = createDiffStore(diffOpts);
 
+    const stacksOpts: StacksStoreOptions = { client: cl };
+    if (hs.getGlobalRepo) {
+      stacksOpts.getGlobalRepo = hs.getGlobalRepo;
+    }
+    const stacksStore = createStacksStore(stacksOpts);
+
     const eventsStore = createEventsStore({
       ...(cfg.basePath != null && {
         getBasePath: () => cfg.basePath as string,
@@ -198,6 +210,7 @@
         void pullsStore.loadPulls();
         void issuesStore.loadIssues();
         void activityStore.loadActivity();
+        void stacksStore.loadStacks();
       },
       onSyncStatus: (status) => {
         syncStore.setSyncStatus(status);
@@ -215,6 +228,7 @@
       collapsedRepos,
       settings: settingsStore,
       events: eventsStore,
+      stacks: stacksStore,
     };
 
     if (roborevBase) {

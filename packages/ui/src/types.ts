@@ -27,7 +27,7 @@ export interface ActionRegistry {
 export interface NavigateEvent {
   path: string;
   route: {
-    page: "pulls" | "issues" | "activity" | "diff" | "board" | "reviews";
+    page: "pulls" | "issues" | "activity" | "diff" | "board" | "reviews" | "stacks";
     view?: string;
     tab?: string;
     presentation?: "fullLayout" | "focus";
@@ -91,6 +91,7 @@ export type { DaemonStore } from "./stores/roborev/daemon.svelte.js";
 export type { JobsStore } from "./stores/roborev/jobs.svelte.js";
 export type { ReviewStore } from "./stores/roborev/review.svelte.js";
 export type { LogStore } from "./stores/roborev/log.svelte.js";
+export type { StacksStore } from "./stores/stacks.svelte.js";
 
 import type { PullsStore } from "./stores/pulls.svelte.js";
 import type { IssuesStore } from "./stores/issues.svelte.js";
@@ -106,6 +107,7 @@ import type { DaemonStore } from "./stores/roborev/daemon.svelte.js";
 import type { JobsStore } from "./stores/roborev/jobs.svelte.js";
 import type { ReviewStore } from "./stores/roborev/review.svelte.js";
 import type { LogStore } from "./stores/roborev/log.svelte.js";
+import type { StacksStore } from "./stores/stacks.svelte.js";
 
 export interface StoreInstances {
   pulls: PullsStore;
@@ -118,6 +120,7 @@ export interface StoreInstances {
   collapsedRepos: CollapsedReposStore;
   settings: SettingsStore;
   events: EventsStore;
+  stacks: StacksStore;
   roborevDaemon?: DaemonStore;
   roborevJobs?: JobsStore;
   roborevReview?: ReviewStore;
