@@ -1566,7 +1566,12 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	}
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
-		normalized.DetailFetchedAt = existing.DetailFetchedAt
+		// Only preserve DetailFetchedAt when comments are complete.
+		// When incomplete, clear it so the detail drain re-queues
+		// this issue if the REST fallback fails.
+		if bulk.CommentsComplete {
+			normalized.DetailFetchedAt = existing.DetailFetchedAt
+		}
 	}
 
 	issueID, err := s.db.UpsertIssue(ctx, normalized)
