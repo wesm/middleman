@@ -8,6 +8,7 @@
     KanbanBoardView,
     ReviewsView,
     FocusListView,
+    WorkspacesView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -58,6 +59,13 @@
     getIssueActions,
     getActiveWorktreeKey,
     invokeAction,
+    getWorkspaceData,
+    emitWorkspaceCommand,
+    initWorkspaceBridge,
+    isHeaderHidden,
+    getInitialRoute,
+    getSidebarWidth,
+    emitLayoutChanged,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
 
@@ -67,6 +75,11 @@
   onMount(() => {
     initTheme();
     initSidebar();
+    initWorkspaceBridge();
+    const initialRoute = getInitialRoute();
+    if (initialRoute) {
+      replaceUrl(initialRoute);
+    }
     const ui = getUIConfig();
     applyConfigRepo(ui.repo, ui.hideRepoSelector);
     const appEl = document.getElementById("app")!;
@@ -284,6 +297,7 @@
     const page = getPage();
     if (page === "settings") return;
     if (page === "reviews") return;
+    if (page === "workspaces") return;
 
     if (page === "activity") {
       if (
@@ -458,7 +472,9 @@
       </main>
     {/if}
   {:else}
-    <AppHeader />
+    {#if !isHeaderHidden()}
+      <AppHeader />
+    {/if}
     <FlashBanner />
 
     <main class="app-main">
@@ -526,6 +542,16 @@
         {:else}
           <ReviewsView />
         {/if}
+      {:else if getPage() === "workspaces"}
+        <WorkspacesView
+          workspaceData={getWorkspaceData()}
+          onCommand={emitWorkspaceCommand}
+          sidebarWidth={getSidebarWidth()}
+          onSidebarResize={(width) => emitLayoutChanged({
+            sidebar: { width },
+            pinnedPanel: { width: 0, visible: false },
+          })}
+        />
       {/if}
     </main>
 

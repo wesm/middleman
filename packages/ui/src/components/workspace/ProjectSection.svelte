@@ -1,0 +1,277 @@
+<script lang="ts">
+  import WorktreeRow from "./WorktreeRow.svelte";
+
+  interface Props {
+    project: WorkspaceProject;
+    hostKey: string;
+    selectedWorktreeKey: string | null;
+    onCommand: (
+      command: string,
+      payload: Record<string, unknown>,
+    ) => void;
+  }
+
+  let {
+    project,
+    hostKey,
+    selectedWorktreeKey,
+    onCommand,
+  }: Props = $props();
+
+  const storageKey = $derived(
+    `middleman-project-${project.key}-collapsed`,
+  );
+
+  let collapsed = $state(false);
+  let showHidden = $state(false);
+  let showMenu = $state(false);
+  let menuX = $state(0);
+  let menuY = $state(0);
+
+  // Hydrate collapse state from localStorage on mount
+  $effect(() => {
+    const key = storageKey;
+    try {
+      collapsed = localStorage.getItem(key) === "true";
+    } catch {
+      // localStorage unavailable
+    }
+  });
+
+  // Persist collapse state
+  function toggleCollapsed(): void {
+    collapsed = !collapsed;
+    try {
+      localStorage.setItem(storageKey, String(collapsed));
+    } catch {
+      // localStorage unavailable
+    }
+  }
+
+  const visibleWorktrees = $derived(
+    project.worktrees.filter((w) => !w.isHidden),
+  );
+  const hiddenWorktrees = $derived(
+    project.worktrees.filter((w) => w.isHidden),
+  );
+  const hasStaleWorktrees = $derived(
+    project.worktrees.some((w) => w.isStale),
+  );
+
+  function handleHeaderContext(e: MouseEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    menuX = e.clientX;
+    menuY = e.clientY;
+    showMenu = true;
+  }
+
+  function closeMenu(): void {
+    showMenu = false;
+  }
+
+  function menuAction(
+    command: string,
+    payload: Record<string, unknown> = {},
+  ): void {
+    onCommand(command, {
+      hostKey,
+      projectKey: project.key,
+      ...payload,
+    });
+    closeMenu();
+  }
+</script>
+
+<svelte:window onclick={showMenu ? closeMenu : undefined} oncontextmenu={showMenu ? closeMenu : undefined} />
+
+<section class="project-section">
+  <button
+    class="project-header"
+    onclick={toggleCollapsed}
+    oncontextmenu={handleHeaderContext}
+  >
+    <span class="chevron">{collapsed ? "▶" : "▼"}</span>
+    <span class="project-name">{project.name}</span>
+    {#if project.platformRepo}
+      <span class="platform-repo">{project.platformRepo}</span>
+    {/if}
+    {#if collapsed && hiddenWorktrees.length > 0}
+      <span class="hidden-count">
+        +{hiddenWorktrees.length} hidden
+      </span>
+    {/if}
+  </button>
+
+  {#if !collapsed}
+    <div class="worktree-list">
+      {#each visibleWorktrees as worktree (worktree.key)}
+        <WorktreeRow
+          {worktree}
+          {hostKey}
+          projectKey={project.key}
+          isSelected={worktree.key === selectedWorktreeKey}
+          {onCommand}
+        />
+      {/each}
+
+      {#if hiddenWorktrees.length > 0}
+        <button
+          class="hidden-toggle"
+          onclick={() => (showHidden = !showHidden)}
+        >
+          {showHidden
+            ? "Hide"
+            : `Show ${hiddenWorktrees.length} hidden`}
+        </button>
+      {/if}
+
+      {#if showHidden}
+        {#each hiddenWorktrees as worktree (worktree.key)}
+          <WorktreeRow
+            {worktree}
+            {hostKey}
+            projectKey={project.key}
+            isSelected={worktree.key === selectedWorktreeKey}
+            {onCommand}
+          />
+        {/each}
+      {/if}
+    </div>
+  {/if}
+</section>
+
+{#if showMenu}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="context-menu"
+    style="left: {menuX}px; top: {menuY}px"
+    oncontextmenu={(e) => e.preventDefault()}
+  >
+    <button
+      class="menu-item menu-item--danger"
+      onclick={() => menuAction("removeProject")}
+    >
+      Remove project
+    </button>
+    {#if hasStaleWorktrees}
+      <button
+        class="menu-item menu-item--danger"
+        onclick={() => menuAction("removeAllStaleWorktrees")}
+      >
+        Remove all stale worktrees
+      </button>
+    {/if}
+  </div>
+{/if}
+
+<style>
+  .project-section {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .project-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    text-align: left;
+    background: var(--bg-surface);
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .project-header:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .chevron {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    width: 12px;
+  }
+
+  .project-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .platform-repo {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .hidden-count {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .worktree-list {
+    display: flex;
+    flex-direction: column;
+    padding-left: 8px;
+  }
+
+  .hidden-toggle {
+    display: block;
+    width: 100%;
+    padding: 4px 12px;
+    text-align: left;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .hidden-toggle:hover {
+    color: var(--text-secondary);
+  }
+
+  .context-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 180px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: 4px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    text-align: left;
+    font-size: 12px;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .menu-item:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .menu-item--danger {
+    color: var(--accent-red);
+  }
+</style>

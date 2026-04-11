@@ -63,6 +63,7 @@
           else if (v === "issues") navigate("/issues");
           else if (v === "board") navigate("/pulls/board");
           else if (v === "reviews") navigate("/reviews");
+          else if (v === "workspaces") navigate("/workspaces");
           else if (v === "settings") navigate("/settings");
         }}
       >
@@ -71,6 +72,7 @@
         <option value="issues">Issues</option>
         <option value="board">Board</option>
         <option value="reviews">Reviews</option>
+        <option value="workspaces">Workspaces</option>
         {#if !isEmbedded() && getPage() === "settings"}
           <option value="settings">Settings</option>
         {/if}
@@ -97,6 +99,11 @@
             <span class="daemon-indicator" title="Daemon unavailable"></span>
           {/if}
         </button>
+        <button
+          class="view-tab"
+          class:active={getPage() === "workspaces"}
+          onclick={() => navigate("/workspaces")}
+        >Workspaces</button>
       </div>
     {/if}
   </nav>

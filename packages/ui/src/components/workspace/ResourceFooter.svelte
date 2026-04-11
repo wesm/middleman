@@ -1,0 +1,33 @@
+<script lang="ts">
+  interface Props {
+    resources: WorkspaceResources | null;
+  }
+
+  let { resources }: Props = $props();
+</script>
+
+{#if resources}
+  <footer class="resource-footer">
+    <span class="stat">CPU {resources.cpuPercent}%</span>
+    <span class="stat">Mem {resources.residentMB}MB</span>
+  </footer>
+{/if}
+
+<style>
+  .resource-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 10px;
+    height: 28px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-muted);
+    flex-shrink: 0;
+  }
+
+  .stat {
+    white-space: nowrap;
+  }
+</style>
