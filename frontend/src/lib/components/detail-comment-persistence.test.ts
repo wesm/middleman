@@ -603,6 +603,61 @@ describe("comment draft persistence", () => {
     });
   });
 
+  it("submits with Cmd+Enter even when autocomplete is open", async () => {
+    const submitComment = async () => Promise.resolve();
+    const submitSpy = vi.fn(submitComment);
+
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        submitComment: submitSpy,
+        autocompleteResponse: {
+          users: ["alice", "albert"],
+          references: [],
+        },
+      },
+    });
+
+    setCommentDraft("pull", "octo", "repo", 1, "@al");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("@al");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /@alice/i })).toBeTruthy();
+    });
+
+    await fireEvent.keyDown(getCommentEditor(), { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      expect(submitSpy).toHaveBeenCalledWith("octo", "repo", 1, "@al");
+    });
+  });
+
+  it("persists the first typed change after syncing the editor from props", async () => {
+    render(CommentBoxContextHarness, {
+      props: { kind: "pull" },
+    });
+
+    setCommentDraft("pull", "octo", "repo", 1, "draft review note");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("draft review note");
+    });
+
+    const editor = getCommentEditor();
+    await fireEvent.focus(editor);
+    await fireEvent.input(editor, {
+      inputType: "insertText",
+      data: "!",
+      target: { textContent: "draft review note!" },
+    });
+
+    await waitFor(() => {
+      expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("draft review note!");
+    });
+  });
+
   it("submits from the editor with Cmd+Enter", async () => {
     const submitComment = async () => Promise.resolve();
     const submitSpy = vi.fn(submitComment);

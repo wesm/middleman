@@ -269,7 +269,46 @@
 
   function handleKeydown(e: KeyboardEvent): void {
     if (!stores) return;
-    if (shouldIgnoreGlobalShortcutTarget(e.target)) {
+    const selectionAnchor =
+      typeof window !== "undefined"
+        ? window.getSelection()?.anchorNode ?? null
+        : null;
+    const focusedEditor =
+      typeof document !== "undefined"
+        ? document.querySelector(
+            ".ProseMirror-focused, [contenteditable='true']:focus",
+          )
+        : null;
+    const commentEditorVisible =
+      typeof document !== "undefined"
+        ? document.querySelector(".comment-editor-input") !== null
+        : false;
+    const commentEditorFocused =
+      typeof document !== "undefined"
+        ? document.body.dataset.commentEditorFocus === "true"
+        : false;
+    if (commentEditorFocused || focusedEditor) {
+      return;
+    }
+
+    if (
+      shouldIgnoreGlobalShortcutTarget(e.target) ||
+      shouldIgnoreGlobalShortcutTarget(document.activeElement) ||
+      shouldIgnoreGlobalShortcutTarget(selectionAnchor)
+    ) {
+      return;
+    }
+
+    if (
+      commentEditorVisible &&
+      (
+        e.key === "1" ||
+        e.key === "2" ||
+        e.key === "j" ||
+        e.key === "k" ||
+        (e.key === "[" && (e.metaKey || e.ctrlKey))
+      )
+    ) {
       return;
     }
 

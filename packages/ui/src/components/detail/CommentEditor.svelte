@@ -169,8 +169,18 @@
     let listElement: HTMLUListElement | null = null;
     let selectedIndex = 0;
     let currentProps: SuggestionProps<SuggestionItem, SuggestionItem> | null = null;
+    let listenersAttached = false;
+
+    const handleViewportChange = () => {
+      repositionMenu();
+    };
 
     function removeMenu(): void {
+      if (listenersAttached) {
+        window.removeEventListener("resize", handleViewportChange);
+        window.removeEventListener("scroll", handleViewportChange, true);
+        listenersAttached = false;
+      }
       menuElement?.remove();
       menuElement = null;
       listElement = null;
@@ -190,6 +200,12 @@
       listElement.className = "comment-editor-menu-list";
       menuElement.appendChild(listElement);
       document.body.appendChild(menuElement);
+
+      if (!listenersAttached) {
+        window.addEventListener("resize", handleViewportChange);
+        window.addEventListener("scroll", handleViewportChange, true);
+        listenersAttached = true;
+      }
     }
 
     function repositionMenu(): void {
@@ -315,6 +331,46 @@
     };
   }
 
+  function removeSuggestionMenus(): void {
+    document
+      .querySelectorAll(".comment-editor-menu")
+      .forEach((element) => element.remove());
+  }
+
+  function handleCompositionStart(): void {
+    isComposingInput = true;
+    if (editor) {
+      exitSuggestion(editor.view, mentionSuggestionKey);
+      exitSuggestion(editor.view, referenceSuggestionKey);
+    }
+    removeSuggestionMenus();
+  }
+
+  function handleCompositionEnd(): void {
+    isComposingInput = false;
+    queueMicrotask(() => {
+      if (!editor || !editor.isFocused) return;
+      editor.view.dispatch(editor.state.tr);
+    });
+  }
+
+  function setGlobalEditorFocusState(isFocused: boolean): void {
+    if (typeof document === "undefined") return;
+    if (isFocused) {
+      document.body.dataset.commentEditorFocus = "true";
+      return;
+    }
+    delete document.body.dataset.commentEditorFocus;
+  }
+
+  function handleEditorFocusState(): void {
+    setGlobalEditorFocusState(true);
+  }
+
+  function handleEditorBlurState(): void {
+    setGlobalEditorFocusState(false);
+  }
+
   function createAutocompleteExtension(trigger: "@" | "#", pluginKey: PluginKey) {
     return Extension.create({
       name: trigger === "@" ? "commentUserAutocomplete" : "commentReferenceAutocomplete",
@@ -345,6 +401,8 @@
   }
 
   function handleEditorKeydown(event: KeyboardEvent): boolean {
+    event.stopPropagation();
+
     if (event.isComposing || event.keyCode === 229) {
       return false;
     }
@@ -399,18 +457,7 @@
         handleDOMEvents: {
           mousedown: () => {
             pointerFocusPending = true;
-            return false;
-          },
-          compositionstart: () => {
-            isComposingInput = true;
-            if (editor) {
-              exitSuggestion(editor.view, mentionSuggestionKey);
-              exitSuggestion(editor.view, referenceSuggestionKey);
-            }
-            return false;
-          },
-          compositionend: () => {
-            isComposingInput = false;
+            setGlobalEditorFocusState(true);
             return false;
           },
           focus: () => {
@@ -441,8 +488,18 @@
 
     editor = current;
 
+    current.view.dom.addEventListener("compositionstart", handleCompositionStart);
+    current.view.dom.addEventListener("compositionend", handleCompositionEnd);
+    current.view.dom.addEventListener("focus", handleEditorFocusState);
+    current.view.dom.addEventListener("blur", handleEditorBlurState);
+
     return () => {
       suggestionAbortController?.abort();
+      current.view.dom.removeEventListener("compositionstart", handleCompositionStart);
+      current.view.dom.removeEventListener("compositionend", handleCompositionEnd);
+      current.view.dom.removeEventListener("focus", handleEditorFocusState);
+      current.view.dom.removeEventListener("blur", handleEditorBlurState);
+      setGlobalEditorFocusState(false);
       current.destroy();
       editor = null;
     };
