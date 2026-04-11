@@ -31,7 +31,6 @@ services:
       - /app/frontend/node_modules
     environment:
       MIDDLEMAN_API_URL: http://backend:18091
-    working_dir: /app/frontend
     depends_on:
       - backend
     command:
