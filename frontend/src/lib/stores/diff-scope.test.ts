@@ -36,6 +36,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function installFetchMocks(commitCount = 3): void {
+  mockFetch.mockImplementation((input: string | URL | Request) => {
+    const url = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+    if (url.includes("/commits")) {
+      return Promise.resolve(jsonResponse(makeCommitsResponse(commitCount)));
+    }
+    if (url.includes("/files")) {
+      return Promise.resolve(jsonResponse({
+        stale: false,
+        files: makeDiffResponse().files,
+      }));
+    }
+    if (url.includes("/diff")) {
+      return Promise.resolve(jsonResponse(makeDiffResponse()));
+    }
+
+    throw new Error(`unexpected fetch URL: ${url}`);
+  });
+}
+
 describe("diff store scope", () => {
   let store: ReturnType<typeof createDiffStore>;
 
@@ -50,9 +75,7 @@ describe("diff store scope", () => {
   });
 
   it("loadCommits fetches and stores commits", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -62,22 +85,17 @@ describe("diff store scope", () => {
   });
 
   it("loadCommits is a no-op if already loaded", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
     await store.loadCommits();
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it("selectCommit sets scope and refetches diff", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -87,10 +105,7 @@ describe("diff store scope", () => {
   });
 
   it("selectRange orders SHAs by commit index", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -103,11 +118,7 @@ describe("diff store scope", () => {
   });
 
   it("resetToHead returns to HEAD and refetches", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -118,10 +129,7 @@ describe("diff store scope", () => {
   });
 
   it("stepPrev from HEAD goes to newest commit", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -131,9 +139,7 @@ describe("diff store scope", () => {
   });
 
   it("stepNext from HEAD is a no-op", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -143,11 +149,7 @@ describe("diff store scope", () => {
   });
 
   it("stepNext from newest commit returns to HEAD", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -158,10 +160,7 @@ describe("diff store scope", () => {
   });
 
   it("stepPrev from oldest commit is a no-op", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -172,11 +171,7 @@ describe("diff store scope", () => {
   });
 
   it("stepPrev from range collapses to fromSha", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -187,11 +182,7 @@ describe("diff store scope", () => {
   });
 
   it("stepNext from range collapses to toSha", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -202,10 +193,7 @@ describe("diff store scope", () => {
   });
 
   it("diff fetch includes commit param when scope is single commit", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -219,10 +207,7 @@ describe("diff store scope", () => {
   });
 
   it("diff fetch includes from+to params when scope is range", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -237,10 +222,7 @@ describe("diff store scope", () => {
   });
 
   it("clearDiff resets scope and commits", async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()))
-      .mockResolvedValueOnce(jsonResponse(makeCommitsResponse(3)))
-      .mockResolvedValueOnce(jsonResponse(makeDiffResponse()));
+    installFetchMocks();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();

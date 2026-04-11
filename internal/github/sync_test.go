@@ -851,6 +851,27 @@ func TestSyncStatusUpdated(t *testing.T) {
 	assert.Empty(status.LastError)
 }
 
+func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
+	oldLocal := time.Local
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() { time.Local = oldLocal })
+
+	ctx := context.Background()
+	d := openTestDB(t)
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer.RunOnce(ctx)
+
+	status := syncer.Status()
+	Assert.Equal(t, time.UTC, status.LastRunAt.Location())
+}
+
 // blockingMockClient embeds mockClient but blocks in
 // ListOpenPullRequests until the provided channel is closed.
 type blockingMockClient struct {

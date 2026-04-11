@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/wesm/middleman/internal/db"
 )
@@ -101,6 +102,10 @@ func parseRepoFilter(repo string) (owner, name string) {
 
 func validateStarredRequest(body starredRequest) bool {
 	return body.ItemType == "pr" || body.ItemType == "issue"
+}
+
+func formatUTCRFC3339(t time.Time) string {
+	return t.UTC().Format(time.RFC3339)
 }
 
 // toWorktreeLinkResponses converts DB links to API responses.

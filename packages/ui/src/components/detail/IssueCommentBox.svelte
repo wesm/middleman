@@ -6,7 +6,6 @@
     clearCommentDraft,
     finishCommentSubmit,
     getCommentDraft,
-    getCommentDraftKey,
     getCommentSubmitError,
     isCommentSubmitPending,
     setCommentSubmitError,
@@ -23,9 +22,6 @@
 
   const { owner, name, number }: Props = $props();
 
-  const currentDraftKey = $derived(
-    getCommentDraftKey("issue", owner, name, number),
-  );
   const body = $derived(getCommentDraft("issue", owner, name, number));
 
   const isEmpty = $derived(body.trim() === "");

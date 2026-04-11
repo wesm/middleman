@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../context.js";
+  import { getStores, getNavigate, getActions, getHostState } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
@@ -8,7 +8,6 @@
   const navigate = getNavigate();
   const actions = getActions();
   const hostState = getHostState();
-  const { isEmbedded } = getSidebar();
 
   const importAction = $derived(
     (actions.pull ?? []).find(

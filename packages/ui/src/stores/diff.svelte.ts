@@ -327,7 +327,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         if (fileListAbortController !== filesAc) return;
         fileList = data as FilesResult;
         setActiveIfNeeded((data as FilesResult).files);
-      } catch (err) {
+      } catch {
         if (filesAc.signal.aborted) return;
         if (fileListAbortController !== filesAc) return;
         fileList = null;

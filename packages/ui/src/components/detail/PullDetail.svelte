@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CICheck, KanbanStatus } from "../../api/types.js";
-  import { getStores, getClient, getNavigate, getActions, getUIConfig, getHostState } from "../../context.js";
+  import { getStores, getClient, getNavigate, getActions, getUIConfig } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -17,7 +17,6 @@
   const navigate = getNavigate();
   const actions = getActions();
   const uiConfig = getUIConfig();
-  const hostState = getHostState();
 
   interface Props {
     owner: string;

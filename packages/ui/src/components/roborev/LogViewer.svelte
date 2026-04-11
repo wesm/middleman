@@ -27,7 +27,7 @@
 
   $effect(() => {
     if (!logStore || !container) return;
-    const _ = logStore.getLines().length;
+    void logStore.getLines().length;
     if (logStore.getFollowMode()) {
       container.scrollTop = container.scrollHeight;
     }

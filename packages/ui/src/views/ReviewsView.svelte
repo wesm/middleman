@@ -2,7 +2,6 @@
   import { onMount, onDestroy } from "svelte";
   import {
     getStores,
-    getNavigate,
     getUIConfig,
   } from "../context.js";
   import FilterBar
@@ -22,7 +21,6 @@
   let { jobId }: Props = $props();
 
   const stores = getStores();
-  const navigate = getNavigate();
   const uiConfig = getUIConfig();
 
   let helpOpen = $state(false);

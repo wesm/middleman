@@ -1095,7 +1095,7 @@ dispatch:
 		slog.Info("sync canceled", "repos", total, "err", err)
 		s.publishStatus(&SyncStatus{
 			Running:   false,
-			LastRunAt: time.Now(),
+			LastRunAt: time.Now().UTC(),
 			LastError: err.Error(),
 		})
 		return
@@ -1109,7 +1109,7 @@ dispatch:
 
 	s.publishStatus(&SyncStatus{
 		Running:   false,
-		LastRunAt: time.Now(),
+		LastRunAt: time.Now().UTC(),
 		LastError: lastErr,
 	})
 }
@@ -1136,7 +1136,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		)
 	}
 
-	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now()); err != nil {
+	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now().UTC()); err != nil {
 		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
@@ -1163,7 +1163,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	if syncErr != nil {
 		syncErrStr = syncErr.Error()
 	}
-	if err := s.db.UpdateRepoSyncCompleted(ctx, repoID, time.Now(), syncErrStr); err != nil {
+	if err := s.db.UpdateRepoSyncCompleted(ctx, repoID, time.Now().UTC(), syncErrStr); err != nil {
 		slog.Error("mark sync completed", "repo", repo.Owner+"/"+repo.Name, "err", err)
 	}
 

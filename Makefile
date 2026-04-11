@@ -141,7 +141,7 @@ vet: ensure-embed-dir
 
 # Enforce testify helper usage for assertion-heavy tests
 testify-helper-check: ensure-embed-dir
-	go run ./cmd/testify-helper-check ./...
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
 
 # Lint Go code and auto-fix where possible
 lint: ensure-embed-dir
@@ -150,7 +150,7 @@ lint: ensure-embed-dir
 		exit 1; \
 	fi
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" mise exec -- golangci-lint run --fix
-	go run ./cmd/testify-helper-check ./...
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
 
 # Tidy dependencies
 tidy:
