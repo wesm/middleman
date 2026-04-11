@@ -1452,6 +1452,31 @@ func (s *Syncer) syncOpenMRFromBulk(
 	number := bulk.PR.GetNumber()
 	normalized := NormalizePR(repoID, bulk.PR)
 
+	// Preserve derived fields that NormalizePR doesn't populate.
+	// Without this, upsert overwrites them with zero values; if
+	// nested connections are truncated the later allComplete guard
+	// skips restoring them and correct data is lost.
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
+		ctx, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing MR #%d: %w", number, err,
+		)
+	}
+	if existing != nil {
+		normalized.CommentCount = existing.CommentCount
+		normalized.ReviewDecision = existing.ReviewDecision
+		normalized.CIStatus = existing.CIStatus
+		normalized.CIChecksJSON = existing.CIChecksJSON
+		normalized.CIHadPending = existing.CIHadPending
+		normalized.DetailFetchedAt = existing.DetailFetchedAt
+		if normalized.AuthorDisplayName == "" {
+			normalized.AuthorDisplayName =
+				existing.AuthorDisplayName
+		}
+	}
+
 	// Resolve display name if missing.
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
