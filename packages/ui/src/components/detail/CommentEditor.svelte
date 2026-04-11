@@ -66,6 +66,9 @@
 
   let editor = $state<Editor | null>(null);
   let syncingFromProps = false;
+  let suggestionAbortController: AbortController | null = null;
+  let suggestionRequestSequence = 0;
+  let pointerFocusPending = false;
 
   function escapeHTML(text: string): string {
     return text
@@ -82,7 +85,7 @@
   }
 
   function plainTextFromEditor(current: CoreEditor): string {
-    return current.getText({ blockSeparator: "\n" });
+    return current.getText({ blockSeparator: "\n" }).replace(/\n$/, "");
   }
 
   function toSuggestionItems(
@@ -110,9 +113,15 @@
     trigger: "@" | "#",
     query: string,
   ): Promise<SuggestionItem[]> {
+    suggestionAbortController?.abort();
+    const abortController = new AbortController();
+    suggestionAbortController = abortController;
+    const requestSequence = ++suggestionRequestSequence;
+
     const { data, error } = await client.GET(
       "/repos/{owner}/{name}/comment-autocomplete",
       {
+        signal: abortController.signal,
         params: {
           path: { owner, name },
           query: {
@@ -122,7 +131,22 @@
           },
         },
       },
-    );
+    ).catch((err: unknown) => {
+      if (
+        err instanceof DOMException &&
+        err.name === "AbortError"
+      ) {
+        return { data: undefined, error: undefined };
+      }
+      throw err;
+    });
+
+    if (
+      abortController.signal.aborted ||
+      requestSequence !== suggestionRequestSequence
+    ) {
+      return [];
+    }
 
     if (error || data === undefined) {
       return [];
@@ -219,7 +243,8 @@
           selectedIndex = index;
           renderMenu();
         };
-        button.onclick = () => {
+        button.onpointerdown = (event) => {
+          event.preventDefault();
           currentProps?.command(item);
         };
 
@@ -252,6 +277,9 @@
       },
       onKeyDown(props: SuggestionKeyDownProps) {
         if (!currentProps || currentProps.items.length === 0) return false;
+        if (props.event.isComposing || props.event.keyCode === 229) {
+		  return true;
+        }
 
         if (props.event.key === "ArrowDown") {
           selectedIndex = (selectedIndex + 1) % currentProps.items.length;
@@ -315,6 +343,10 @@
   }
 
   function handleEditorKeydown(event: KeyboardEvent): boolean {
+    if (event.isComposing || event.keyCode === 229) {
+	  return true;
+    }
+
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       onsubmit();
@@ -363,10 +395,17 @@
           spellcheck: "true",
         },
         handleDOMEvents: {
+          mousedown: () => {
+            pointerFocusPending = true;
+            return false;
+          },
           focus: () => {
             queueMicrotask(() => {
               if (!editor || !editor.isFocused) return;
-              editor.commands.focus("end");
+              if (!pointerFocusPending) {
+                editor.commands.focus("end");
+              }
+              pointerFocusPending = false;
               editor.view.dispatch(editor.state.tr);
             });
             return false;
@@ -389,6 +428,7 @@
     editor = current;
 
     return () => {
+      suggestionAbortController?.abort();
       current.destroy();
       editor = null;
     };
@@ -447,7 +487,7 @@
     margin: 0;
   }
 
-  :global(.comment-editor-input.is-editor-empty:first-child::before) {
+  :global(.comment-editor-input p.is-empty:first-child::before) {
     content: attr(data-placeholder);
     color: var(--text-muted);
     pointer-events: none;

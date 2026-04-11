@@ -771,6 +771,11 @@ func (s *Server) getCommentAutocomplete(
 	ctx context.Context,
 	input *commentAutocompleteInput,
 ) (*commentAutocompleteOutput, error) {
+	repo, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
+	if err != nil || repo == nil {
+		return nil, huma.Error404NotFound("repo not found")
+	}
+
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 10
@@ -783,7 +788,7 @@ func (s *Server) getCommentAutocomplete(
 	case "@":
 		users, err := s.db.ListCommentAutocompleteUsers(
 			ctx,
-			"github.com",
+			repo.PlatformHost,
 			input.Owner,
 			input.Name,
 			input.Q,
@@ -796,7 +801,7 @@ func (s *Server) getCommentAutocomplete(
 	case "#":
 		references, err := s.db.ListCommentAutocompleteReferences(
 			ctx,
-			"github.com",
+			repo.PlatformHost,
 			input.Owner,
 			input.Name,
 			input.Q,

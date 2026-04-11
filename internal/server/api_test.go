@@ -1612,6 +1612,40 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	assert.Empty(refBody.Users)
 }
 
+func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "ghe.example.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     12000,
+		Number:         12,
+		URL:            "https://ghe.example.com/acme/widget/pull/12",
+		Title:          "Polish mentions",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature-12",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body commentAutocompleteResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal([]db.CommentAutocompleteReference{{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}}, body.References)
+}
+
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
 	setTestLocalEDT(t)

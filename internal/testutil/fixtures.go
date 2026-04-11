@@ -599,6 +599,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			return &FixtureClient{
 				OpenPRs:    openPRs,
 				OpenIssues: openIssues,
+				Comments:   make(map[string][]*gh.IssueComment),
+				nextID:     10_000,
 			}
 		},
 	}
