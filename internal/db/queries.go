@@ -800,7 +800,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 	defer rows.Close()
 
-	var mrs []MergeRequest
+	var mrs []MergeRequestRow
 	var mrIDs []int64
 	for rows.Next() {
 		var mr MergeRequestRow
