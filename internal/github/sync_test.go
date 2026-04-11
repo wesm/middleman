@@ -4250,3 +4250,73 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 	assert.Len(events, 1)
 	assert.Equal("REST comment", events[0].Body)
 }
+
+func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Pre-seed an open issue that will not appear in GraphQL results
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     30000,
+		Number:         30,
+		URL:            "https://github.com/owner/repo/issues/30",
+		Title:          "Will be closed",
+		Author:         "eve",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+
+	closedAt := gh.Timestamp{Time: now}
+	closedState := "closed"
+	closedIssueID := int64(30000)
+	closedNumber := 30
+	closedTitle := "Will be closed"
+
+	mock := &mockClient{
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			if number == 30 {
+				return &gh.Issue{
+					ID:       &closedIssueID,
+					Number:   &closedNumber,
+					Title:    &closedTitle,
+					State:    &closedState,
+					ClosedAt: &closedAt,
+				}, nil
+			}
+			return nil, fmt.Errorf("unexpected issue %d", number)
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	// GraphQL returns no issues (issue #30 was closed)
+	result := &RepoBulkResult{Issues: []BulkIssue{}}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// Issue should now be closed
+	issue, err := d.GetIssue(ctx, "owner", "repo", 30)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("closed", issue.State)
+	assert.NotNil(issue.ClosedAt)
+}
