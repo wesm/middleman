@@ -28,10 +28,10 @@
   Purpose: add a small shared helper for UTC RFC3339 API serialization.
 
 - Modify: `internal/server/huma_routes.go`
-  Purpose: standardize API datetime formatting on the helper and remove ad hoc layout strings.
+  Purpose: standardize API datetime formatting on the helper and normalize server-side merge/close/reopen write paths to UTC before persisting.
 
 - Modify: `internal/server/api_test.go`
-  Purpose: add API regression tests for UTC RFC3339 output with trailing `Z`.
+  Purpose: add API regression tests for UTC RFC3339 output with trailing `Z` and for UTC timestamps written by state-transition handlers.
 
 - Modify: `packages/ui/src/utils/time.ts`
   Purpose: centralize API timestamp parsing and local presentation helpers.
@@ -48,7 +48,10 @@
   Purpose: lint `packages/ui`, including a narrow rule that bans locale-formatting calls outside the shared time helper.
 
 - Modify: `packages/ui/package.json`
-  Purpose: add `lint` and `typecheck` scripts so the package can be checked directly in CI.
+  Purpose: add or align `lint` and Svelte-aware `typecheck` scripts so the package can be checked directly in CI.
+
+- Modify: `frontend/tests/e2e-full/activity-filters.spec.ts`
+  Purpose: add end-to-end coverage for UTC API timestamps flowing through to localized UI rendering.
 
 ### Task 1: Add Backend UTC Regression Tests First
 
@@ -115,12 +118,13 @@ Add coverage to existing API tests for:
 - `detail_fetched_at` in `TestAPIPullDetailLoadedFlag`
 - `last_run_at` in `TestAPISyncStatus`
 - `created_at` in a new `TestAPIActivityReturnsUTCCreatedAt`
+- `closed_at` and `merged_at` in new or expanded state-transition tests that exercise the `UpdateMRState` and `UpdateIssueState` handlers end-to-end through the API
 
 - [ ] **Step 4: Run the backend regression tests and confirm at least the sync/API UTC checks fail before implementation**
 
-Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTimeNormalizesLocationToUTC|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIPullDetailLoadedFlag|TestAPIActivityReturnsUTCCreatedAt' -count=1`
+Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTimeNormalizesLocationToUTC|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIPullDetailLoadedFlag|TestAPIActivityReturnsUTCCreatedAt|TestAPIPullStateTransitionsPersistUTC' -count=1`
 
-Expected: DB parser test passes, but at least one sync/API UTC test fails because the current code still creates or formats some timestamps outside the new canonical rule.
+Expected: DB parser test passes, but at least one sync/API UTC test fails because the current code still creates or formats some timestamps outside the new canonical rule, including state-transition write paths in `internal/server/huma_routes.go`.
 
 - [ ] **Step 5: Commit the test-first checkpoint**
 
@@ -173,9 +177,9 @@ out[i] = activityItemResponse{
 
 The key cleanup here is removing the custom layout string at the activity endpoint and using `time.RFC3339` consistently.
 
-- [ ] **Step 3: Normalize sync engine timestamps at creation time**
+- [ ] **Step 3: Normalize sync engine and server write timestamps at creation time**
 
-Update `internal/github/sync.go` so status and sync bookkeeping use UTC immediately:
+Update `internal/github/sync.go` so status and sync bookkeeping use UTC immediately, and update `internal/server/huma_routes.go` so merge/close/reopen handlers persist `time.Now().UTC()` instead of local wall-clock values:
 
 ```go
 s.publishStatus(&SyncStatus{
@@ -191,11 +195,16 @@ if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now().UTC()); err != nil 
 if err := s.db.UpdateRepoSyncCompleted(ctx, repoID, time.Now().UTC(), syncErrStr); err != nil {
 	slog.Error("mark sync completed", "repo", repo.Owner+"/"+repo.Name, "err", err)
 }
+
+now := time.Now().UTC()
+if err := s.db.UpdateMRState(ctx, mrID, state, merged, &now); err != nil {
+	return err
+}
 ```
 
 - [ ] **Step 4: Re-run the targeted backend tests and then the wider backend suite**
 
-Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTimeNormalizesLocationToUTC|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIPullDetailLoadedFlag|TestAPIActivityReturnsUTCCreatedAt' -count=1`
+Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTimeNormalizesLocationToUTC|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIPullDetailLoadedFlag|TestAPIActivityReturnsUTCCreatedAt|TestAPIPullStateTransitionsPersistUTC' -count=1`
 
 Expected: PASS
 
@@ -315,7 +324,7 @@ git commit -m "refactor: centralize UI datetime presentation"
 
 - [ ] **Step 1: Add targeted Go lint guardrails with `forbidigo`**
 
-Extend `.golangci.yml` with narrow timezone rules that are safe to enforce repository-wide:
+Extend `.golangci.yml` with narrow timezone rules that are safe to enforce in non-test backend code:
 
 ```yaml
     forbidigo:
@@ -328,7 +337,7 @@ Extend `.golangci.yml` with narrow timezone rules that are safe to enforce repos
           msg: Do not create backend timezone conversions outside tests.
 ```
 
-Keep these rules narrow. Do not ban `time.Now()` globally, because deadlines and timers legitimately use it.
+Apply them only to non-test Go files, either via `files`/`exclude` scoping or an equivalent golangci-lint exclusion, so regression tests can still use `time.Local` and `time.FixedZone` intentionally. Do not ban `time.Now()` globally, because deadlines and timers legitimately use it.
 
 - [ ] **Step 2: Add `packages/ui` linting that bans locale-formatting calls outside the shared helper**
 
@@ -367,12 +376,12 @@ Update `packages/ui/package.json` with:
 {
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "bunx tsc --noEmit -p ./tsconfig.json"
+    "typecheck": "bunx svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && bunx tsc --noEmit -p ./tsconfig.json"
   }
 }
 ```
 
-If Bun workspace resolution requires local devDependencies for ESLint, add the same lint-related packages already used by `frontend` rather than inventing a different toolchain.
+Keep `svelte-check` in the script even if `tsc` also runs, because this package exports `.svelte` components and plain TypeScript compilation is not enough to cover them. If Bun workspace resolution requires local devDependencies for ESLint or Svelte tooling, add the same lint-related packages already used by `frontend` rather than inventing a different toolchain.
 
 - [ ] **Step 4: Wire the checks into CI**
 
@@ -428,12 +437,39 @@ git add .golangci.yml .github/workflows/ci.yml packages/ui/eslint.config.mjs pac
 git commit -m "build: enforce UTC datetime policy in lint and CI"
 ```
 
+### Task 5: Add E2E Coverage For User-Visible UTC Behavior
+
+**Files:**
+- Modify: `frontend/tests/e2e-full/activity-filters.spec.ts`
+
+- [ ] **Step 1: Extend an existing Playwright full-stack test to verify UTC timestamps stay canonical in the API and localize only in the UI**
+
+Exercise a real end-to-end flow that loads activity or detail data from the Go server, then assert both of these conditions:
+
+- the underlying API payload contains RFC3339 UTC strings with trailing `Z`
+- the rendered UI shows a localized date label derived from that canonical timestamp rather than echoing the raw API string
+
+Prefer extending an existing activity-focused E2E spec instead of creating a brand-new suite.
+
+- [ ] **Step 2: Run the targeted E2E coverage locally**
+
+Run: `cd frontend && bun run test:e2e --config playwright-e2e.config.ts --grep "activity"`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit the E2E regression coverage**
+
+```bash
+git add frontend/tests/e2e-full/activity-filters.spec.ts
+git commit -m "test: cover UTC datetime behavior end to end"
+```
+
 ## Spec Coverage Check
 
 - UTC storage/API rule: covered by Tasks 1 and 2
 - frontend presentation-only localization: covered by Task 3
 - ADR and CLAUDE changes: already completed before this plan
-- tests for DB/API/UI boundaries: covered by Tasks 1 and 3
+- tests for DB/API/UI boundaries: covered by Tasks 1, 3, and 5
 - lint/CI enforcement: covered by Task 4
 
 ## Final Verification
@@ -445,6 +481,7 @@ make test
 make lint
 cd frontend && bun run typecheck && bun run lint && bun run test
 cd packages/ui && bun run typecheck && bun run lint
+cd frontend && bun run test:e2e --config playwright-e2e.config.ts --grep "activity"
 ```
 
 Expected:
@@ -453,3 +490,4 @@ Expected:
 - golangci-lint passes with the new `forbidigo` rules
 - frontend typecheck/lint/tests pass
 - `packages/ui` typecheck/lint pass
+- the targeted Playwright E2E UTC flow passes
