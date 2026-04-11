@@ -73,6 +73,10 @@ make lint       # golangci-lint
 make vet        # go vet
 ```
 
+### End-to-End Tests
+
+**E2E tests are non-negotiable.** Every major feature, bug fix, and refactor must include e2e tests that exercise the full stack (HTTP API with real SQLite). Even small changes merit e2e coverage when they touch API behavior, data flow between layers, or anything a user would notice if it broke. When in doubt, write the e2e test — the cost of a missing one is always higher than the cost of writing it.
+
 ### Test Guidelines
 
 - Table-driven tests for Go code
