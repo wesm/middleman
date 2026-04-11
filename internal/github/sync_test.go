@@ -49,6 +49,7 @@ type mockClient struct {
 	singlePR               *gh.PullRequest
 	getPullRequestFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn             func(context.Context, string, string, int) (*gh.Issue, error)
+	getUserFn              func(context.Context, string) (*gh.User, error)
 	listOpenPRsFn          func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listPullRequestsPageFn func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn       func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
@@ -107,9 +108,12 @@ func (m *mockClient) GetIssue(
 	return nil, nil
 }
 
-func (m *mockClient) GetUser(_ context.Context, login string) (*gh.User, error) {
+func (m *mockClient) GetUser(ctx context.Context, login string) (*gh.User, error) {
 	m.trackCall()
 	m.getUserCalls.Add(1)
+	if m.getUserFn != nil {
+		return m.getUserFn(ctx, login)
+	}
 	name := "Display " + login
 	return &gh.User{Login: &login, Name: &name}, nil
 }
@@ -3922,4 +3926,151 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 		close(release) // unblock the mock so the test can tear down
 		require.FailNow("Stop did not return after ctx cancellation")
 	}
+}
+
+func TestResolveDisplayName(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name          string
+		login         string
+		getUserFn     func(context.Context, string) (*gh.User, error)
+		wantName      string
+		wantOK        bool
+		wantAPICalled bool
+	}{
+		{
+			name:  "regular user with display name",
+			login: "alice",
+			getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+				name := "Alice Smith"
+				return &gh.User{Login: &login, Name: &name}, nil
+			},
+			wantName:      "Alice Smith",
+			wantOK:        true,
+			wantAPICalled: true,
+		},
+		{
+			name:  "regular user without display name",
+			login: "bob",
+			getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+				return &gh.User{Login: &login}, nil
+			},
+			wantName:      "",
+			wantOK:        true,
+			wantAPICalled: true,
+		},
+		{
+			name:  "bot login skips API call",
+			login: "renovate[bot]",
+			getUserFn: func(_ context.Context, _ string) (*gh.User, error) {
+				return nil, nil
+			},
+			wantName:      "renovate[bot]",
+			wantOK:        true,
+			wantAPICalled: false,
+		},
+		{
+			name:  "API-returned bot uses login as display name",
+			login: "ci-helper",
+			getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+				botType := "Bot"
+				return &gh.User{Login: &login, Type: &botType}, nil
+			},
+			wantName:      "ci-helper",
+			wantOK:        true,
+			wantAPICalled: true,
+		},
+		{
+			name:  "user not found returns false",
+			login: "ghost",
+			getUserFn: func(_ context.Context, _ string) (*gh.User, error) {
+				return nil, fmt.Errorf("GET https://api.github.com/users/ghost: 404 Not Found")
+			},
+			wantName:      "",
+			wantOK:        false,
+			wantAPICalled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			apiCalled := false
+			mc := &mockClient{getUserFn: func(ctx context.Context, login string) (*gh.User, error) {
+				apiCalled = true
+				return tt.getUserFn(ctx, login)
+			}}
+			syncer := NewSyncer(
+				map[string]Client{"github.com": mc}, nil, nil, nil,
+				time.Minute, nil, nil,
+			)
+			syncer.displayNames = make(map[string]displayNameResult)
+
+			name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", tt.login)
+			assert.Equal(tt.wantName, name)
+			assert.Equal(tt.wantOK, ok)
+			assert.Equal(tt.wantAPICalled, apiCalled, "GetUser call expectation")
+		})
+	}
+}
+
+func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	callCount := 0
+	mc := &mockClient{
+		getUserFn: func(_ context.Context, _ string) (*gh.User, error) {
+			callCount++
+			return nil, fmt.Errorf("404 Not Found")
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, nil, nil, nil,
+		time.Minute, nil, nil,
+	)
+	syncer.displayNames = make(map[string]displayNameResult)
+
+	// First call: hits API, returns failure.
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
+	assert.Empty(name1)
+	assert.False(ok1)
+	assert.Equal(1, callCount)
+
+	// Second call: should use cache, no additional API call.
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
+	assert.Empty(name2)
+	assert.False(ok2)
+	assert.Equal(1, callCount, "GetUser should not be called again for cached failure")
+}
+
+func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	callCount := 0
+	mc := &mockClient{
+		getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+			callCount++
+			return &gh.User{Login: &login}, nil // no display name
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, nil, nil, nil,
+		time.Minute, nil, nil,
+	)
+	syncer.displayNames = make(map[string]displayNameResult)
+
+	// First call: hits API, succeeds with empty name.
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	assert.Empty(name1)
+	assert.True(ok1, "successful lookup of empty name should return ok=true")
+	assert.Equal(1, callCount)
+
+	// Second call: cache hit must still return ok=true, not flip to false.
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	assert.Empty(name2)
+	assert.True(ok2, "cached empty name must remain ok=true")
+	assert.Equal(1, callCount, "GetUser should not be called again for cached success")
 }

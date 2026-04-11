@@ -432,10 +432,15 @@ func loginOrEmpty(u *gh.User) string {
 	return u.GetLogin()
 }
 
-// nameOrEmpty returns the GitHub display name for a user, or "" if unavailable.
+// nameOrEmpty returns the GitHub display name for a user, or "" if
+// unavailable. Bot accounts (Type == "Bot") use their login as display name
+// since they have no user-facing name on the GitHub API.
 func nameOrEmpty(u *gh.User) string {
 	if u == nil {
 		return ""
+	}
+	if u.GetType() == "Bot" {
+		return u.GetLogin()
 	}
 	return sanitizeDisplayName(u.GetName())
 }

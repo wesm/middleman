@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -115,6 +116,14 @@ type WatchedMR struct {
 // per-host GitHub rate limit / abuse-detection thresholds.
 const defaultParallelism = 4
 
+// displayNameResult caches a resolved display name along with whether
+// the lookup succeeded, so empty names from real users are not confused
+// with failed lookups.
+type displayNameResult struct {
+	name string
+	ok   bool
+}
+
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
 	clients       map[string]Client // host -> client
@@ -141,7 +150,7 @@ type Syncer struct {
 	stopped            bool                 // guarded by lifecycleMu
 	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
 	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
-	displayNames       map[string]string    // "host\x00login" -> display name, per sync run
+	displayNames       map[string]displayNameResult // "host\x00login" -> resolved name, per sync run
 	displayNamesMu     sync.Mutex
 	displayNameGroup   singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced         func(owner, name string, mr *db.MergeRequest)
@@ -969,7 +978,7 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 		Progress: fmt.Sprintf("0/%d", total),
 	})
 	s.displayNamesMu.Lock()
-	s.displayNames = make(map[string]string)
+	s.displayNames = make(map[string]displayNameResult)
 	s.displayNamesMu.Unlock()
 	slog.Info("sync started", "repos", total)
 
@@ -2087,15 +2096,27 @@ func computeLastActivity(
 // callers can preserve existing data. Uses an in-memory cache across
 // a sync run plus singleflight dedup so concurrent workers racing on
 // the same author only trigger one GetUser call.
+//
+// Bot logins (ending with "[bot]") are returned as-is since bot accounts
+// have no display name on the GitHub API.
 func (s *Syncer) resolveDisplayName(
 	ctx context.Context, client Client, host, login string,
 ) (string, bool) {
 	key := host + "\x00" + login
 	s.displayNamesMu.Lock()
-	name, ok := s.displayNames[key]
+	if s.displayNames == nil {
+		s.displayNames = make(map[string]displayNameResult)
+	}
+	cached, ok := s.displayNames[key]
 	s.displayNamesMu.Unlock()
 	if ok {
-		return name, true
+		return cached.name, cached.ok
+	}
+	if strings.HasSuffix(login, "[bot]") {
+		s.displayNamesMu.Lock()
+		s.displayNames[key] = displayNameResult{name: login, ok: true}
+		s.displayNamesMu.Unlock()
+		return login, true
 	}
 
 	v, err, _ := s.displayNameGroup.Do(key, func() (any, error) {
@@ -2111,21 +2132,25 @@ func (s *Syncer) resolveDisplayName(
 
 		user, err := client.GetUser(ctx, login)
 		if err != nil {
-			return "", err
+			return displayNameResult{}, err
 		}
-		resolved := sanitizeDisplayName(user.GetName())
+		result := displayNameResult{name: nameOrEmpty(user), ok: true}
 		s.displayNamesMu.Lock()
-		s.displayNames[key] = resolved
+		s.displayNames[key] = result
 		s.displayNamesMu.Unlock()
-		return resolved, nil
+		return result, nil
 	})
 	if err != nil {
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
 		)
+		s.displayNamesMu.Lock()
+		s.displayNames[key] = displayNameResult{ok: false}
+		s.displayNamesMu.Unlock()
 		return "", false
 	}
-	return v.(string), true
+	result := v.(displayNameResult)
+	return result.name, result.ok
 }
 
 // --- Issue sync ---
@@ -2816,13 +2841,14 @@ func (s *Syncer) syncMRWithHost(
 	normalized := NormalizePR(repoID, ghPR)
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
-		if existing != nil && existing.AuthorDisplayName != "" {
-			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		// Resolve directly instead of using s.resolveDisplayName to
+		// preserve existing display names on failure.
+		if displayName, ok := s.resolveDisplayName(ctx, client, host, normalized.Author); ok {
+			normalized.AuthorDisplayName = displayName
 		} else {
-			user, userErr := client.GetUser(ctx, normalized.Author)
-			if userErr == nil {
-				normalized.AuthorDisplayName = sanitizeDisplayName(user.GetName())
+			existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
+			if existing != nil {
+				normalized.AuthorDisplayName = existing.AuthorDisplayName
 			}
 		}
 	}
