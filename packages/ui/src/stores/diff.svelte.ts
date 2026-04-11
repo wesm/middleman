@@ -489,13 +489,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       return;
     }
     if (commits.length === 0) return;
-    if (scope.kind === "head") {
-      selectCommit(commits[0].sha);
-    } else if (scope.kind === "commit") {
-      const idx = commits.findIndex((c) => c.sha === scope.sha);
-      if (idx < commits.length - 1) selectCommit(commits[idx + 1].sha);
+    const s = scope;
+    if (s.kind === "head") {
+      selectCommit(commits[0]!.sha);
+    } else if (s.kind === "commit") {
+      const idx = commits.findIndex((c) => c.sha === s.sha);
+      if (idx < commits.length - 1) selectCommit(commits[idx + 1]!.sha);
     } else {
-      selectCommit(scope.fromSha);
+      selectCommit(s.fromSha);
     }
   }
 
@@ -505,17 +506,18 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       return;
     }
     if (commits.length === 0) return;
-    if (scope.kind === "head") {
+    const s = scope;
+    if (s.kind === "head") {
       return;
-    } else if (scope.kind === "commit") {
-      const idx = commits.findIndex((c) => c.sha === scope.sha);
+    } else if (s.kind === "commit") {
+      const idx = commits.findIndex((c) => c.sha === s.sha);
       if (idx > 0) {
-        selectCommit(commits[idx - 1].sha);
+        selectCommit(commits[idx - 1]!.sha);
       } else {
         resetToHead();
       }
     } else {
-      selectCommit(scope.toSha);
+      selectCommit(s.toSha);
     }
   }
 

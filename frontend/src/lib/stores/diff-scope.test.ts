@@ -58,7 +58,7 @@ describe("diff store scope", () => {
     await store.loadCommits();
 
     expect(store.getCommits()).toHaveLength(3);
-    expect(store.getCommits()![0].sha).toBe("sha3");
+    expect(store.getCommits()![0]!.sha).toBe("sha3");
   });
 
   it("loadCommits is a no-op if already loaded", async () => {
@@ -212,8 +212,8 @@ describe("diff store scope", () => {
     store.selectCommit("sha2");
 
     await vi.waitFor(() => {
-      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
-      const url = lastCall[0] as string;
+      const lastCall = mockFetch.mock.calls.at(-1);
+      const url = lastCall![0] as string;
       expect(url).toContain("commit=sha2");
     });
   });
@@ -229,8 +229,8 @@ describe("diff store scope", () => {
     store.selectRange("sha1", "sha3");
 
     await vi.waitFor(() => {
-      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
-      const url = lastCall[0] as string;
+      const lastCall = mockFetch.mock.calls.at(-1);
+      const url = lastCall![0] as string;
       expect(url).toContain("from=sha1");
       expect(url).toContain("to=sha3");
     });
