@@ -497,6 +497,277 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert.Equal("reviewing", prs[0].KanbanStatus)
 }
 
+func TestListMergeRequests_AttachesLabels(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+
+	_, err = d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     101,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Add labels",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	mrID, err := d.GetMRIDByRepoAndNumber(ctx, "acme", "widget", 7)
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, mrID, []Label{{
+		PlatformID:  5001,
+		Name:        "needs-review",
+		Description: "Needs another reviewer",
+		Color:       "fbca04",
+		IsDefault:   true,
+		UpdatedAt:   now,
+	}}))
+
+	mrs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{})
+	require.NoError(err)
+	require.Len(mrs, 1)
+	require.Len(mrs[0].Labels, 1)
+	require.Equal("needs-review", mrs[0].Labels[0].Name)
+	require.Equal("Needs another reviewer", mrs[0].Labels[0].Description)
+	require.Equal("fbca04", mrs[0].Labels[0].Color)
+	require.True(mrs[0].Labels[0].IsDefault)
+	require.True(mrs[0].Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestGetMergeRequest_AttachesLabels(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     102,
+		Number:         8,
+		URL:            "https://github.com/acme/widget/pull/8",
+		Title:          "Detail labels",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	mrID, err := d.GetMRIDByRepoAndNumber(ctx, "acme", "widget", 8)
+	require.NoError(err)
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, mrID, []Label{{
+		PlatformID:  5002,
+		Name:        "backend",
+		Description: "Backend changes",
+		Color:       "5319e7",
+		IsDefault:   false,
+		UpdatedAt:   now,
+	}}))
+
+	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 8)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Len(mr.Labels, 1)
+	require.Equal("backend", mr.Labels[0].Name)
+	require.Equal("Backend changes", mr.Labels[0].Description)
+	require.Equal("5319e7", mr.Labels[0].Color)
+	require.False(mr.Labels[0].IsDefault)
+	require.True(mr.Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestReplaceMergeRequestLabels_RejectsWrongRepoID(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoA := insertTestRepo(t, d, "acme", "widget")
+	repoB := insertTestRepo(t, d, "acme", "gadget")
+	mrID := insertTestMR(t, d, repoA, 9, "repo guarded", now)
+
+	err := d.ReplaceMergeRequestLabels(ctx, repoB, mrID, []Label{{
+		PlatformID:  9009,
+		Name:        "wrong-repo",
+		Description: "should fail",
+		Color:       "ff0000",
+		UpdatedAt:   now,
+	}})
+	require.Error(err)
+
+	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 9)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Empty(mr.Labels)
+}
+
+func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  41,
+		Name:        "old-name",
+		Description: "before rename",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  41,
+		Name:        "new-name",
+		Description: "after rename",
+		Color:       "222222",
+		IsDefault:   true,
+		UpdatedAt:   now.Add(time.Minute),
+	}}))
+
+	var count int
+	err := d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		repoID,
+	).Scan(&count)
+	require.NoError(err)
+	require.Equal(1, count)
+
+	var name, description, color string
+	var isDefault bool
+	var updatedAt time.Time
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT name, description, color, is_default, updated_at
+		 FROM middleman_labels
+		 WHERE repo_id = ? AND platform_id = ?`,
+		repoID, 41,
+	).Scan(&name, &description, &color, &isDefault, &updatedAt)
+	require.NoError(err)
+	require.Equal("new-name", name)
+	require.Equal("after rename", description)
+	require.Equal("222222", color)
+	require.True(isDefault)
+	require.True(updatedAt.Equal(now.Add(time.Minute)))
+}
+
+func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 17, "rename labels", now)
+	issueID := insertTestIssue(t, d, repoID, 23, "rename labels", now)
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  200,
+		Name:        "old-name",
+		Description: "old platform label",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, mrID, []Label{{
+		Name:        "new-name",
+		Description: "stale name-only label",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		Name:        "new-name",
+		Description: "stale name-only label",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  200,
+		Name:        "new-name",
+		Description: "renamed label",
+		Color:       "333333",
+		IsDefault:   true,
+		UpdatedAt:   now.Add(time.Minute),
+	}}))
+
+	var count int
+	err := d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		repoID,
+	).Scan(&count)
+	require.NoError(err)
+	require.Equal(1, count)
+
+	var labelID int64
+	var platformID int64
+	var name, description, color string
+	var isDefault bool
+	err = d.ReadDB().QueryRowContext(ctx, `
+		SELECT id, platform_id, name, description, color, is_default
+		FROM middleman_labels
+		WHERE repo_id = ?`, repoID,
+	).Scan(&labelID, &platformID, &name, &description, &color, &isDefault)
+	require.NoError(err)
+	require.Equal(int64(200), platformID)
+	require.Equal("new-name", name)
+	require.Equal("renamed label", description)
+	require.Equal("333333", color)
+	require.True(isDefault)
+
+	mr, err := d.GetMergeRequest(ctx, "acme", "widget", 17)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Len(mr.Labels, 1)
+	require.Equal(labelID, mr.Labels[0].ID)
+	require.Equal("new-name", mr.Labels[0].Name)
+
+	issue, err := d.GetIssue(ctx, "acme", "widget", 23)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Len(issue.Labels, 1)
+	require.Equal(labelID, issue.Labels[0].ID)
+	require.Equal("new-name", issue.Labels[0].Name)
+}
+
+func TestUpsertLabels_RejectsAmbiguousNameAndPlatformIDMatch(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  100,
+		Name:        "bug",
+		Description: "by name",
+		Color:       "111111",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  200,
+		Name:        "renamed",
+		Description: "by platform",
+		Color:       "222222",
+		UpdatedAt:   now,
+	}}))
+
+	err := d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID:  200,
+		Name:        "bug",
+		Description: "ambiguous",
+		Color:       "333333",
+		UpdatedAt:   now.Add(time.Minute),
+	}})
+	require.Error(err)
+}
+
 func TestKanbanState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -776,6 +1047,173 @@ func TestUpdatePRState(t *testing.T) {
 	assert.Equal("merged", pr.State)
 	require.NotNil(pr.MergedAt)
 	assert.True(pr.MergedAt.Equal(mergedAt))
+}
+
+func TestListIssues_AttachesLabels(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     201,
+		Number:         3,
+		URL:            "https://github.com/acme/widget/issues/3",
+		Title:          "Bug",
+		Author:         "bob",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		PlatformID:  11,
+		Name:        "bug",
+		Description: "Something is broken",
+		Color:       "d73a4a",
+		IsDefault:   true,
+		UpdatedAt:   now,
+	}}))
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{})
+	require.NoError(err)
+	require.Len(issues, 1)
+	require.Len(issues[0].Labels, 1)
+	require.Equal("bug", issues[0].Labels[0].Name)
+	require.Equal("Something is broken", issues[0].Labels[0].Description)
+	require.Equal("d73a4a", issues[0].Labels[0].Color)
+	require.True(issues[0].Labels[0].IsDefault)
+	require.True(issues[0].Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestGetIssue_AttachesLabels(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     202,
+		Number:         4,
+		URL:            "https://github.com/acme/widget/issues/4",
+		Title:          "Docs",
+		Author:         "bob",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		PlatformID:  12,
+		Name:        "documentation",
+		Description: "Docs updates",
+		Color:       "0075ca",
+		IsDefault:   false,
+		UpdatedAt:   now,
+	}}))
+
+	issue, err := d.GetIssue(ctx, "acme", "widget", 4)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Len(issue.Labels, 1)
+	require.Equal("documentation", issue.Labels[0].Name)
+	require.Equal("Docs updates", issue.Labels[0].Description)
+	require.Equal("0075ca", issue.Labels[0].Color)
+	require.False(issue.Labels[0].IsDefault)
+	require.True(issue.Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoA := insertTestRepo(t, d, "acme", "widget")
+	repoB := insertTestRepo(t, d, "acme", "gadget")
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoA,
+		PlatformID:     204,
+		Number:         6,
+		URL:            "https://github.com/acme/widget/issues/6",
+		Title:          "repo guarded issue",
+		Author:         "bob",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	err = d.ReplaceIssueLabels(ctx, repoB, issueID, []Label{{
+		PlatformID:  220,
+		Name:        "wrong-repo",
+		Description: "should fail",
+		Color:       "ff0000",
+		UpdatedAt:   now,
+	}})
+	require.Error(err)
+
+	issue, err := d.GetIssue(ctx, "acme", "widget", 6)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Empty(issue.Labels)
+}
+
+func TestListIssues_UsesRepoScopedLabels(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	now := baseTime()
+
+	repoA, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	repoB, err := d.UpsertRepo(ctx, "github.com", "acme", "gadget")
+	require.NoError(err)
+
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoA,
+		PlatformID:     203,
+		Number:         5,
+		URL:            "https://github.com/acme/widget/issues/5",
+		Title:          "Repo scoped bug",
+		Author:         "bob",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	require.NoError(d.ReplaceIssueLabels(ctx, repoA, issueID, []Label{{
+		PlatformID:  21,
+		Name:        "bug",
+		Description: "Widget bug",
+		Color:       "d73a4a",
+		UpdatedAt:   now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoB, []Label{{
+		PlatformID:  22,
+		Name:        "bug",
+		Description: "Gadget bug",
+		Color:       "0e8a16",
+		UpdatedAt:   now,
+	}}))
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{})
+	require.NoError(err)
+	require.Len(issues, 1)
+	require.Len(issues[0].Labels, 1)
+	require.Equal("bug", issues[0].Labels[0].Name)
+	require.Equal("d73a4a", issues[0].Labels[0].Color)
 }
 
 func TestSetWorktreeLinks(t *testing.T) {

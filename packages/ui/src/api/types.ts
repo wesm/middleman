@@ -24,10 +24,8 @@ export type MergeParams = components["schemas"]["MergePRInputBody"];
 export type WorktreeLink =
   components["schemas"]["WorktreeLinkResponse"];
 
-export interface IssueLabel {
-  name: string;
-  color: string;
-}
+export type Label = components["schemas"]["Label"];
+export type IssueLabel = Label;
 
 export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";
 

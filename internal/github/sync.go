@@ -254,6 +254,28 @@ func repoFailKey(repo RepoRef) string {
 	return host + "/" + repo.Owner + "/" + repo.Name
 }
 
+func (s *Syncer) replaceMergeRequestLabels(
+	ctx context.Context,
+	repoID, mrID int64,
+	labels []db.Label,
+) error {
+	if err := s.db.ReplaceMergeRequestLabels(ctx, repoID, mrID, labels); err != nil {
+		return fmt.Errorf("replace merge request labels: %w", err)
+	}
+	return nil
+}
+
+func (s *Syncer) replaceIssueLabels(
+	ctx context.Context,
+	repoID, issueID int64,
+	labels []db.Label,
+) error {
+	if err := s.db.ReplaceIssueLabels(ctx, repoID, issueID, labels); err != nil {
+		return fmt.Errorf("replace issue labels: %w", err)
+	}
+	return nil
+}
+
 // consumeRepoFailed returns the failScope bitmask for a previously
 // failed repo. Returns 0 if the repo had no failure. The flag remains
 // set until a subsequent successful sync explicitly clears it.
@@ -1349,6 +1371,9 @@ func (s *Syncer) indexUpsertMR(
 			"upsert MR #%d: %w", ghPR.GetNumber(), err,
 		)
 	}
+	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for MR #%d: %w", ghPR.GetNumber(), err)
+	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
 		return fmt.Errorf(
@@ -1701,6 +1726,9 @@ func (s *Syncer) fetchMRDetail(
 			"upsert MR #%d: %w", number, err,
 		)
 	}
+	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+		return calls, fmt.Errorf("persist labels for MR #%d: %w", number, err)
+	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
 		return calls, fmt.Errorf(
@@ -1833,6 +1861,9 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf(
 			"upsert issue #%d: %w", number, err,
 		)
+	}
+	if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+		return calls, fmt.Errorf("persist labels for issue #%d: %w", number, err)
 	}
 
 	if err := s.refreshIssueTimeline(
@@ -2157,6 +2188,9 @@ func (s *Syncer) syncOpenIssue(
 			"upsert issue #%d: %w", ghIssue.GetNumber(), err,
 		)
 	}
+	if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for issue #%d: %w", ghIssue.GetNumber(), err)
+	}
 
 	if !needsTimeline {
 		return nil
@@ -2226,9 +2260,24 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		closedAt = &t
 	}
 
-	return s.db.UpdateIssueState(
+	if err := s.db.UpdateIssueState(
 		ctx, repoID, number, ghIssue.GetState(), closedAt,
-	)
+	); err != nil {
+		return err
+	}
+
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get closed issue #%d for labels: %w", number, err)
+	}
+	if issue != nil {
+		normalized := NormalizeIssue(repoID, ghIssue)
+		if err := s.replaceIssueLabels(ctx, repoID, issue.ID, normalized.Labels); err != nil {
+			return fmt.Errorf("persist labels for closed issue #%d: %w", number, err)
+		}
+	}
+
+	return nil
 }
 
 // --- Detail Drain ---
@@ -2524,6 +2573,7 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			prPage++
+			pageFailed := false
 			prs, hasMore, err := client.ListPullRequestsPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", prPage,
@@ -2537,7 +2587,7 @@ func (s *Syncer) backfillRepo(
 			}
 			for _, ghPR := range prs {
 				normalized := NormalizePR(repoID, ghPR)
-				if _, uErr := s.db.UpsertMergeRequest(
+				if mrID, uErr := s.db.UpsertMergeRequest(
 					ctx, normalized,
 				); uErr != nil {
 					slog.Warn("backfill upsert PR failed",
@@ -2545,7 +2595,21 @@ func (s *Syncer) backfillRepo(
 						"number", ghPR.GetNumber(),
 						"err", uErr,
 					)
+					pageFailed = true
+					break
+				} else if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+					slog.Warn("backfill replace PR labels failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghPR.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
 				}
+			}
+			if pageFailed {
+				prPage--
+				break
 			}
 			if !hasMore {
 				prComplete = true
@@ -2575,6 +2639,7 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			issuePage++
+			pageFailed := false
 			issues, hasMore, err := client.ListIssuesPage(
 				ctx, repo.Owner, repo.Name,
 				"closed", issuePage,
@@ -2588,7 +2653,7 @@ func (s *Syncer) backfillRepo(
 			}
 			for _, ghIssue := range issues {
 				normalized := NormalizeIssue(repoID, ghIssue)
-				if _, uErr := s.db.UpsertIssue(
+				if issueID, uErr := s.db.UpsertIssue(
 					ctx, normalized,
 				); uErr != nil {
 					slog.Warn("backfill upsert issue failed",
@@ -2596,7 +2661,21 @@ func (s *Syncer) backfillRepo(
 						"number", ghIssue.GetNumber(),
 						"err", uErr,
 					)
+					pageFailed = true
+					break
+				} else if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+					slog.Warn("backfill replace issue labels failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghIssue.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
 				}
+			}
+			if pageFailed {
+				issuePage--
+				break
 			}
 			if !hasMore {
 				issueComplete = true
@@ -2718,6 +2797,9 @@ func (s *Syncer) syncMRWithHost(
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
+	}
+	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for MR #%d: %w", number, err)
 	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
@@ -2843,6 +2925,9 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 	if err != nil {
 		return fmt.Errorf("upsert issue #%d: %w", number, err)
 	}
+	if err := s.replaceIssueLabels(ctx, repoID, issueID, normalized.Labels); err != nil {
+		return fmt.Errorf("persist labels for issue #%d: %w", number, err)
+	}
 
 	if err := s.refreshIssueTimeline(ctx, repo, issueID, ghIssue); err != nil {
 		return err
@@ -2933,6 +3018,17 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		ghPR.GetHead().GetSHA(), ghPR.GetBase().GetSHA(),
 	); err != nil {
 		return fmt.Errorf("update closed MR #%d: %w", number, err)
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get closed MR #%d for labels: %w", number, err)
+	}
+	if mr != nil {
+		normalized := NormalizePR(repoID, ghPR)
+		if err := s.replaceMergeRequestLabels(ctx, repoID, mr.ID, normalized.Labels); err != nil {
+			return fmt.Errorf("persist labels for closed MR #%d: %w", number, err)
+		}
 	}
 
 	// Compute diff SHAs so the diff endpoint works.

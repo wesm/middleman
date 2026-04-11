@@ -9,6 +9,346 @@ import (
 	"time"
 )
 
+func sqlPlaceholders(count int) string {
+	parts := make([]string, count)
+	for i := range parts {
+		parts[i] = "?"
+	}
+	return strings.Join(parts, ",")
+}
+
+func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
+	var id int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT id FROM middleman_labels WHERE repo_id = ? AND name = ?`,
+		repoID, name,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
+func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.NullInt64, error) {
+	var platformID sql.NullInt64
+	err := tx.QueryRowContext(ctx,
+		`SELECT platform_id FROM middleman_labels WHERE id = ?`,
+		labelID,
+	).Scan(&platformID)
+	if err != nil {
+		return sql.NullInt64{}, err
+	}
+	return platformID, nil
+}
+
+func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_issue_labels (issue_id, label_id)
+		SELECT issue_id, ? FROM middleman_issue_labels WHERE label_id = ?
+		ON CONFLICT(issue_id, label_id) DO NOTHING`,
+		toLabelID, fromLabelID,
+	); err != nil {
+		return fmt.Errorf("move issue label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_issue_labels WHERE label_id = ?`,
+		fromLabelID,
+	); err != nil {
+		return fmt.Errorf("delete old issue label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
+		SELECT merge_request_id, ? FROM middleman_merge_request_labels WHERE label_id = ?
+		ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
+		toLabelID, fromLabelID,
+	); err != nil {
+		return fmt.Errorf("move merge request label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_merge_request_labels WHERE label_id = ?`,
+		fromLabelID,
+	); err != nil {
+		return fmt.Errorf("delete old merge request label associations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_labels WHERE id = ?`,
+		fromLabelID,
+	); err != nil {
+		return fmt.Errorf("delete old label row: %w", err)
+	}
+	return nil
+}
+
+func lookupLabelIDByPlatformIDTx(ctx context.Context, tx *sql.Tx, repoID, platformID int64) (int64, bool, error) {
+	if platformID == 0 {
+		return 0, false, nil
+	}
+	var id int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT id FROM middleman_labels WHERE repo_id = ? AND platform_id = ?`,
+		repoID, platformID,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
+func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Label) (int64, bool, error) {
+	platformID, foundByPlatform, err := lookupLabelIDByPlatformIDTx(ctx, tx, repoID, label.PlatformID)
+	if err != nil {
+		return 0, false, fmt.Errorf("lookup label %s by platform id: %w", label.Name, err)
+	}
+	nameID, foundByName, err := lookupLabelIDByNameTx(ctx, tx, repoID, label.Name)
+	if err != nil {
+		return 0, false, fmt.Errorf("lookup label %s by name: %w", label.Name, err)
+	}
+	if foundByPlatform && foundByName && platformID != nameID {
+		namePlatformID, err := labelPlatformIDTx(ctx, tx, nameID)
+		if err != nil {
+			return 0, false, fmt.Errorf("lookup label %s platform id: %w", label.Name, err)
+		}
+		if !namePlatformID.Valid {
+			if err := mergeLabelRowAssociationsTx(ctx, tx, nameID, platformID); err != nil {
+				return 0, false, fmt.Errorf("merge stale label %s into platform row: %w", label.Name, err)
+			}
+			return platformID, true, nil
+		}
+		return 0, false, fmt.Errorf("label %s in repo %d matches different rows by name and platform id", label.Name, repoID)
+	}
+	if foundByPlatform {
+		return platformID, true, nil
+	}
+	if foundByName {
+		return nameID, true, nil
+	}
+	return 0, false, nil
+}
+
+func repoIDForIssueTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, error) {
+	var repoID int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT repo_id FROM middleman_issues WHERE id = ?`,
+		issueID,
+	).Scan(&repoID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("issue %d not found", issueID)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("lookup issue repo: %w", err)
+	}
+	return repoID, nil
+}
+
+func repoIDForMergeRequestTx(ctx context.Context, tx *sql.Tx, mrID int64) (int64, error) {
+	var repoID int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT repo_id FROM middleman_merge_requests WHERE id = ?`,
+		mrID,
+	).Scan(&repoID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("merge request %d not found", mrID)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("lookup merge request repo: %w", err)
+	}
+	return repoID, nil
+}
+
+func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Label) (map[string]int64, error) {
+	ids := make(map[string]int64, len(labels))
+	for _, label := range labels {
+		id, found, err := labelIDForUpsertTx(ctx, tx, repoID, label)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			result, err := tx.ExecContext(ctx, `
+				INSERT INTO middleman_labels (repo_id, platform_id, name, description, color, is_default, updated_at)
+				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?)`,
+				repoID, label.PlatformID, label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("insert label %s: %w", label.Name, err)
+			}
+			id, err = result.LastInsertId()
+			if err != nil {
+				return nil, fmt.Errorf("label insert id %s: %w", label.Name, err)
+			}
+		} else {
+			_, err = tx.ExecContext(ctx, `
+				UPDATE middleman_labels
+				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
+				    name = ?,
+				    description = ?,
+				    color = ?,
+				    is_default = ?,
+				    updated_at = ?
+				WHERE id = ?`,
+				label.PlatformID, label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt, id,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
+			}
+		}
+		ids[label.Name] = id
+	}
+	return ids, nil
+}
+
+func replaceIssueLabelsTx(ctx context.Context, tx *sql.Tx, repoID, issueID int64, labels []Label) error {
+	actualRepoID, err := repoIDForIssueTx(ctx, tx, issueID)
+	if err != nil {
+		return err
+	}
+	if actualRepoID != repoID {
+		return fmt.Errorf("issue %d belongs to repo %d, not repo %d", issueID, actualRepoID, repoID)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_issue_labels WHERE issue_id = ?`, issueID); err != nil {
+		return fmt.Errorf("delete issue labels: %w", err)
+	}
+	if len(labels) == 0 {
+		return nil
+	}
+	ids, err := upsertLabelsTx(ctx, tx, actualRepoID, labels)
+	if err != nil {
+		return err
+	}
+	for _, label := range labels {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO middleman_issue_labels (issue_id, label_id) VALUES (?, ?) ON CONFLICT(issue_id, label_id) DO NOTHING`,
+			issueID, ids[label.Name],
+		); err != nil {
+			return fmt.Errorf("insert issue label %s: %w", label.Name, err)
+		}
+	}
+	return nil
+}
+
+func replaceMergeRequestLabelsTx(ctx context.Context, tx *sql.Tx, repoID, mrID int64, labels []Label) error {
+	actualRepoID, err := repoIDForMergeRequestTx(ctx, tx, mrID)
+	if err != nil {
+		return err
+	}
+	if actualRepoID != repoID {
+		return fmt.Errorf("merge request %d belongs to repo %d, not repo %d", mrID, actualRepoID, repoID)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_merge_request_labels WHERE merge_request_id = ?`, mrID); err != nil {
+		return fmt.Errorf("delete merge request labels: %w", err)
+	}
+	if len(labels) == 0 {
+		return nil
+	}
+	ids, err := upsertLabelsTx(ctx, tx, actualRepoID, labels)
+	if err != nil {
+		return err
+	}
+	for _, label := range labels {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO middleman_merge_request_labels (merge_request_id, label_id) VALUES (?, ?) ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
+			mrID, ids[label.Name],
+		); err != nil {
+			return fmt.Errorf("insert merge request label %s: %w", label.Name, err)
+		}
+	}
+	return nil
+}
+
+func (d *DB) UpsertLabels(ctx context.Context, repoID int64, labels []Label) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		_, err := upsertLabelsTx(ctx, tx, repoID, labels)
+		return err
+	})
+}
+
+func (d *DB) ReplaceIssueLabels(ctx context.Context, repoID, issueID int64, labels []Label) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		return replaceIssueLabelsTx(ctx, tx, repoID, issueID, labels)
+	})
+}
+
+func (d *DB) ReplaceMergeRequestLabels(ctx context.Context, repoID, mrID int64, labels []Label) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		return replaceMergeRequestLabelsTx(ctx, tx, repoID, mrID, labels)
+	})
+}
+
+func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[int64][]Label, error) {
+	if len(ids) == 0 {
+		return map[int64][]Label{}, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	query := fmt.Sprintf(`
+		SELECT ml.merge_request_id, l.id, l.repo_id, COALESCE(l.platform_id, 0), l.name, l.description, l.color, l.is_default, l.updated_at
+		FROM middleman_merge_request_labels ml
+		JOIN middleman_labels l ON l.id = ml.label_id
+		WHERE ml.merge_request_id IN (%s)
+		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
+	rows, err := d.ro.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query merge request labels: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]Label, len(ids))
+	for rows.Next() {
+		var ownerID int64
+		var label Label
+		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan merge request label: %w", err)
+		}
+		out[ownerID] = append(out[ownerID], label)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate merge request labels: %w", err)
+	}
+	return out, nil
+}
+
+func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]Label, error) {
+	if len(ids) == 0 {
+		return map[int64][]Label{}, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	query := fmt.Sprintf(`
+		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0), l.name, l.description, l.color, l.is_default, l.updated_at
+		FROM middleman_issue_labels il
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE il.issue_id IN (%s)
+		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
+	rows, err := d.ro.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query issue labels: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]Label, len(ids))
+	for rows.Next() {
+		var ownerID int64
+		var label Label
+		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan issue label: %w", err)
+		}
+		out[ownerID] = append(out[ownerID], label)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate issue labels: %w", err)
+	}
+	return out, nil
+}
+
 // PurgeOtherHosts deletes all data for platform hosts other
 // than keepHost. Deletes in FK-dependency order so it works
 // on existing DBs where CASCADE may not be retrofitted.
@@ -325,6 +665,62 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 	if err != nil {
 		return nil, fmt.Errorf("get merge request: %w", err)
 	}
+	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load merge request labels: %w", err)
+	}
+	mr.Labels = labelsByMR[mr.ID]
+	return &mr, nil
+}
+
+// GetMergeRequestByRepoIDAndNumber returns a merge request by repo ID and number.
+func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*MergeRequest, error) {
+	var mr MergeRequest
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
+		       p.author, p.author_display_name, p.state, p.is_draft,
+		       p.body, p.head_branch, p.base_branch,
+		       p.platform_head_sha, p.platform_base_sha,
+		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
+		       p.head_repo_clone_url,
+		       p.additions, p.deletions, p.comment_count, p.review_decision,
+		       p.ci_status, p.ci_checks_json,
+		       p.created_at, p.updated_at, p.last_activity_at,
+		       p.merged_at, p.closed_at, p.mergeable_state,
+		       p.detail_fetched_at, p.ci_had_pending,
+		       COALESCE(k.status, '') AS kanban_status,
+		       (s.number IS NOT NULL) AS starred
+		FROM middleman_merge_requests p
+		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
+		LEFT JOIN middleman_starred_items s
+		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
+		WHERE p.repo_id = ? AND p.number = ?`,
+		repoID, number,
+	).Scan(
+		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
+		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
+		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
+		&mr.HeadRepoCloneURL,
+		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
+		&mr.CIStatus, &mr.CIChecksJSON,
+		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
+		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
+		&mr.DetailFetchedAt, &mr.CIHadPending,
+		&mr.KanbanStatus, &mr.Starred,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get merge request by repo id: %w", err)
+	}
+	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load merge request labels: %w", err)
+	}
+	mr.Labels = labelsByMR[mr.ID]
 	return &mr, nil
 }
 
@@ -399,6 +795,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	defer rows.Close()
 
 	var mrs []MergeRequest
+	var mrIDs []int64
 	for rows.Next() {
 		var mr MergeRequest
 		if err := rows.Scan(
@@ -418,8 +815,19 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			return nil, fmt.Errorf("scan merge request: %w", err)
 		}
 		mrs = append(mrs, mr)
+		mrIDs = append(mrIDs, mr.ID)
 	}
-	return mrs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, mrIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load merge request labels: %w", err)
+	}
+	for i := range mrs {
+		mrs[i].Labels = labelsByMR[mrs[i].ID]
+	}
+	return mrs, nil
 }
 
 // --- Events ---
@@ -827,6 +1235,47 @@ func (d *DB) GetIssue(
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
 	}
+	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load issue labels: %w", err)
+	}
+	issue.Labels = labelsByIssue[issue.ID]
+	return &issue, nil
+}
+
+// GetIssueByRepoIDAndNumber returns an issue by repo ID and number.
+func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*Issue, error) {
+	var issue Issue
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.detail_fetched_at,
+		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
+		       (s.number IS NOT NULL) AS starred
+		FROM middleman_issues i
+		LEFT JOIN middleman_starred_items s
+		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
+		WHERE i.repo_id = ? AND i.number = ?`,
+		repoID, number,
+	).Scan(
+		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
+		&issue.URL, &issue.Title, &issue.Author, &issue.State,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.DetailFetchedAt,
+		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
+		&issue.ClosedAt, &issue.Starred,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get issue by repo id: %w", err)
+	}
+	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
+	if err != nil {
+		return nil, fmt.Errorf("load issue labels: %w", err)
+	}
+	issue.Labels = labelsByIssue[issue.ID]
 	return &issue, nil
 }
 
@@ -889,6 +1338,7 @@ func (d *DB) ListIssues(
 	defer rows.Close()
 
 	var issues []Issue
+	var issueIDs []int64
 	for rows.Next() {
 		var issue Issue
 		if err := rows.Scan(
@@ -902,8 +1352,19 @@ func (d *DB) ListIssues(
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
 		issues = append(issues, issue)
+		issueIDs = append(issueIDs, issue.ID)
 	}
-	return issues, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	labelsByIssue, err := d.loadLabelsForIssues(ctx, issueIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load issue labels: %w", err)
+	}
+	for i := range issues {
+		issues[i].Labels = labelsByIssue[issues[i].ID]
+	}
+	return issues, nil
 }
 
 // GetIssueIDByRepoAndNumber returns the internal issue ID for a given repo+number.
