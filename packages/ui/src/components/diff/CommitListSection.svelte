@@ -140,6 +140,8 @@
 
   .commit-section__body {
     padding: 2px 0 4px;
+    max-height: 40vh;
+    overflow-y: auto;
   }
 
   .commit-section__state {
