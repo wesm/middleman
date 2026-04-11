@@ -47,6 +47,7 @@
     "dompurify": "3.3.3",
     "marked": "17.0.5",
     "openapi-fetch": "^0.17.0",
+    "prosemirror-state": "^1.4.4",
     "shiki": "^4.0.2",
     "svelte-tiptap": "3.0.1"
   },

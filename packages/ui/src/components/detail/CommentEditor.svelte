@@ -10,7 +10,7 @@
     type Editor as CoreEditor,
     type Range,
   } from "@tiptap/core";
-  import { PluginKey } from "@tiptap/pm/state";
+  import { PluginKey } from "prosemirror-state";
   import Suggestion, {
     exitSuggestion,
     type SuggestionKeyDownProps,
