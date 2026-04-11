@@ -291,7 +291,7 @@ func NormalizeCIChecks(
 			// Map commit status state to check run status/conclusion.
 			status := "completed"
 			conclusion := s.GetState()
-			if conclusion == "pending" {
+			if conclusion == "pending" || conclusion == "expected" {
 				status = "in_progress"
 				conclusion = ""
 			}

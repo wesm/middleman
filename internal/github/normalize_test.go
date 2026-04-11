@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -309,6 +310,38 @@ func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
 		},
 	}
 	Assert.Equal(t, "pending", DeriveOverallCIStatus(runs, combined))
+}
+
+func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
+	assert := Assert.New(t)
+
+	combined := &gh.CombinedStatus{
+		TotalCount: new(2),
+		State:      new("pending"),
+		Statuses: []*gh.RepoStatus{
+			{State: new("pending"), Context: new("ci/build")},
+			{State: new("expected"), Context: new("ci/required")},
+		},
+	}
+
+	raw := NormalizeCIChecks(nil, combined)
+	require.NotEmpty(t, raw)
+
+	var checks []struct {
+		Name       string `json:"name"`
+		Status     string `json:"status"`
+		Conclusion string `json:"conclusion"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 2)
+
+	assert.Equal("ci/build", checks[0].Name)
+	assert.Equal("in_progress", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+
+	assert.Equal("ci/required", checks[1].Name)
+	assert.Equal("in_progress", checks[1].Status)
+	assert.Empty(checks[1].Conclusion)
 }
 
 func TestDeriveReviewDecision_Empty(t *testing.T) {

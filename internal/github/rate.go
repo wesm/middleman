@@ -29,6 +29,7 @@ type RateTracker struct {
 	mu            sync.Mutex
 	db            *db.DB
 	platformHost  string
+	apiType       string
 	count         int
 	hourStart     time.Time
 	remaining     int
@@ -38,14 +39,15 @@ type RateTracker struct {
 	onWindowReset func()
 }
 
-// NewRateTracker creates a tracker for the given platform host.
+// NewRateTracker creates a tracker for the given platform host and API type.
 // It hydrates from DB if a row exists for the current hour.
 func NewRateTracker(
-	database *db.DB, platformHost string,
+	database *db.DB, platformHost string, apiType string,
 ) *RateTracker {
 	rt := &RateTracker{
 		db:           database,
 		platformHost: platformHost,
+		apiType:      apiType,
 		remaining:    -1,
 		limit:        -1,
 		hourStart:    truncateHour(time.Now().UTC()),
@@ -55,7 +57,7 @@ func NewRateTracker(
 }
 
 func (rt *RateTracker) hydrate() {
-	row, err := rt.db.GetRateLimit(rt.platformHost)
+	row, err := rt.db.GetRateLimit(rt.platformHost, rt.apiType)
 	if err != nil || row == nil {
 		return
 	}
@@ -264,6 +266,7 @@ func (rt *RateTracker) rollIfNeeded() {
 func (rt *RateTracker) persist() {
 	err := rt.db.UpsertRateLimit(
 		rt.platformHost,
+		rt.apiType,
 		rt.count,
 		rt.hourStart,
 		rt.remaining,

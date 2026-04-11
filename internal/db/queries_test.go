@@ -129,10 +129,10 @@ func TestPurgeOtherHosts(t *testing.T) {
 
 	// Insert rate limits for both hosts.
 	require.NoError(d.UpsertRateLimit(
-		"github.com", 10, base, 4990, -1, nil,
+		"github.com", "rest", 10, base, 4990, -1, nil,
 	))
 	require.NoError(d.UpsertRateLimit(
-		"ghes.company.com", 5, base, 4995, -1, nil,
+		"ghes.company.com", "rest", 5, base, 4995, -1, nil,
 	))
 
 	// Purge all hosts except github.com.
@@ -193,13 +193,13 @@ func TestPurgeOtherHosts(t *testing.T) {
 	assert.Equal(0, gheEvtCount)
 
 	// github.com rate limits should remain.
-	ghRL, err := d.GetRateLimit("github.com")
+	ghRL, err := d.GetRateLimit("github.com", "rest")
 	require.NoError(err)
 	require.NotNil(ghRL)
 	assert.Equal(10, ghRL.RequestsHour)
 
 	// ghes.company.com rate limits should be gone.
-	gheRL, err := d.GetRateLimit("ghes.company.com")
+	gheRL, err := d.GetRateLimit("ghes.company.com", "rest")
 	require.NoError(err)
 	assert.Nil(gheRL)
 }
@@ -710,24 +710,41 @@ func TestRateLimitCRUD(t *testing.T) {
 	hourStart := baseTime()
 	resetAt := hourStart.Add(30 * time.Minute)
 
-	// Insert
-	require.NoError(d.UpsertRateLimit(host, 5, hourStart, 4995, -1, &resetAt))
+	// Insert REST
+	require.NoError(d.UpsertRateLimit(host, "rest", 5, hourStart, 4995, -1, &resetAt))
 
-	got, err := d.GetRateLimit(host)
+	got, err := d.GetRateLimit(host, "rest")
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal(host, got.PlatformHost)
+	assert.Equal("rest", got.APIType)
 	assert.Equal(5, got.RequestsHour)
 	assert.True(got.HourStart.Equal(hourStart))
 	assert.Equal(4995, got.RateRemaining)
 	require.NotNil(got.RateResetAt)
 	assert.True(got.RateResetAt.Equal(resetAt))
 
+	// Insert GraphQL for same host — separate row
+	require.NoError(d.UpsertRateLimit(host, "graphql", 2, hourStart, 4998, 5000, nil))
+
+	gql, err := d.GetRateLimit(host, "graphql")
+	require.NoError(err)
+	require.NotNil(gql)
+	assert.Equal("graphql", gql.APIType)
+	assert.Equal(2, gql.RequestsHour)
+	assert.Equal(4998, gql.RateRemaining)
+
+	// REST row unchanged
+	rest, err := d.GetRateLimit(host, "rest")
+	require.NoError(err)
+	require.NotNil(rest)
+	assert.Equal(5, rest.RequestsHour)
+
 	// Update via upsert
 	laterStart := hourStart.Add(time.Hour)
-	require.NoError(d.UpsertRateLimit(host, 10, laterStart, 4990, -1, nil))
+	require.NoError(d.UpsertRateLimit(host, "rest", 10, laterStart, 4990, -1, nil))
 
-	got2, err := d.GetRateLimit(host)
+	got2, err := d.GetRateLimit(host, "rest")
 	require.NoError(err)
 	require.NotNil(got2)
 	assert.Equal(10, got2.RequestsHour)
@@ -736,7 +753,7 @@ func TestRateLimitCRUD(t *testing.T) {
 	assert.Nil(got2.RateResetAt)
 
 	// Not found
-	missing, err := d.GetRateLimit("no.such.host")
+	missing, err := d.GetRateLimit("no.such.host", "rest")
 	require.NoError(err)
 	assert.Nil(missing)
 }

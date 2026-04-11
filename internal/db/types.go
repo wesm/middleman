@@ -168,6 +168,7 @@ type WorktreeLink struct {
 type RateLimit struct {
 	ID            int64
 	PlatformHost  string
+	APIType       string
 	RequestsHour  int
 	HourStart     time.Time
 	RateRemaining int

@@ -15,7 +15,7 @@ func TestRateTrackerCounting(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	assert.Equal(0, rt.RequestsThisHour())
 	assert.Equal(-1, rt.Remaining())
@@ -27,7 +27,7 @@ func TestRateTrackerCounting(t *testing.T) {
 	assert.Equal(3, rt.RequestsThisHour())
 
 	// Verify persisted to DB
-	rl, err := d.GetRateLimit("github.com")
+	rl, err := d.GetRateLimit("github.com", "rest")
 	require.NoError(err)
 	require.NotNil(rl)
 	assert.Equal(3, rl.RequestsHour)
@@ -38,7 +38,7 @@ func TestRateTrackerBackoff(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	// No backoff when remaining is -1 (unknown)
 	backoff, wait := rt.ShouldBackoff()
@@ -86,7 +86,7 @@ func TestRateTrackerBackoff(t *testing.T) {
 
 func TestRateTrackerHourRollover(t *testing.T) {
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	for range 5 {
 		rt.RecordRequest()
@@ -105,7 +105,7 @@ func TestRateTrackerHourRollover(t *testing.T) {
 
 func TestRateTrackerConcurrentAccess(t *testing.T) {
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	var wg sync.WaitGroup
 	for range 100 {
@@ -123,7 +123,7 @@ func TestRateTrackerConcurrentAccess(t *testing.T) {
 func TestRateTrackerThrottleFactor(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	// Unknown state (limit=-1): no throttling
 	assert.Equal(1, rt.ThrottleFactor())
@@ -178,7 +178,7 @@ func TestRateTrackerThrottleFactor(t *testing.T) {
 func TestRateTrackerStaleQuota(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	pastReset := time.Now().Add(-1 * time.Minute)
 	rt.UpdateFromRate(gh.Rate{
@@ -196,7 +196,7 @@ func TestRateTrackerHydrateFromDB(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 
-	rt1 := NewRateTracker(d, "github.com")
+	rt1 := NewRateTracker(d, "github.com", "rest")
 	futureReset := time.Now().Add(30 * time.Minute)
 	rt1.UpdateFromRate(gh.Rate{
 		Limit:     5000,
@@ -207,7 +207,7 @@ func TestRateTrackerHydrateFromDB(t *testing.T) {
 		rt1.RecordRequest()
 	}
 
-	rt2 := NewRateTracker(d, "github.com")
+	rt2 := NewRateTracker(d, "github.com", "rest")
 
 	assert.Equal(10, rt2.RequestsThisHour())
 	assert.Equal(2000, rt2.Remaining())
@@ -219,7 +219,7 @@ func TestRateTrackerHydrateFromDB(t *testing.T) {
 func TestRateTrackerWindowRolloverResetsQuota(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	futureReset := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(gh.Rate{
@@ -248,7 +248,7 @@ func TestRateTrackerWindowRolloverResetsQuota(t *testing.T) {
 func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	// Use a future resetAt so requests accumulate normally.
 	reset1 := time.Now().Add(30 * time.Minute)
@@ -288,7 +288,7 @@ func TestRateTrackerWindowResetResetsCounter(t *testing.T) {
 func TestRateTrackerResetAtJitterDoesNotResetCounter(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	reset1 := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(gh.Rate{
@@ -321,7 +321,7 @@ func TestRateTrackerResetAtJitterDoesNotResetCounter(t *testing.T) {
 func TestRateTrackerProductionFlow(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com")
+	rt := NewRateTracker(d, "github.com", "rest")
 
 	futureReset := time.Now().Add(30 * time.Minute)
 
@@ -365,4 +365,41 @@ func TestRateTrackerProductionFlow(t *testing.T) {
 	// Counter should be 3
 	assert.Equal(3, rt.RequestsThisHour())
 	assert.Equal(3, rt.RequestsThisHour())
+}
+
+func TestRateTrackerAPITypeIsolation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	restRT := NewRateTracker(d, "github.com", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "graphql")
+
+	// Record requests on each independently
+	for range 5 {
+		restRT.RecordRequest()
+	}
+	for range 3 {
+		gqlRT.RecordRequest()
+	}
+
+	assert.Equal(5, restRT.RequestsThisHour())
+	assert.Equal(3, gqlRT.RequestsThisHour())
+
+	// Verify DB isolation
+	restRow, err := d.GetRateLimit("github.com", "rest")
+	require.NoError(err)
+	require.NotNil(restRow)
+	assert.Equal(5, restRow.RequestsHour)
+
+	gqlRow, err := d.GetRateLimit("github.com", "graphql")
+	require.NoError(err)
+	require.NotNil(gqlRow)
+	assert.Equal(3, gqlRow.RequestsHour)
+
+	// Hydrate new trackers — they pick up correct state
+	restRT2 := NewRateTracker(d, "github.com", "rest")
+	gqlRT2 := NewRateTracker(d, "github.com", "graphql")
+	assert.Equal(5, restRT2.RequestsThisHour())
+	assert.Equal(3, gqlRT2.RequestsThisHour())
 }
