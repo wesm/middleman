@@ -2,6 +2,7 @@
   import type { DiffFile } from "../../api/types.js";
   import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
+  import CommitListSection from "../diff/CommitListSection.svelte";
   import PullItem from "./PullItem.svelte";
 
   const { pulls, sync, diff, grouping, collapsedRepos, settings } = getStores();
@@ -152,6 +153,7 @@
 </script>
 
 {#snippet diffFilesInline()}
+  <CommitListSection />
   <div class="diff-files">
     {#if diff.isFileListLoading() && !diff.getFileList()}
       <div class="diff-files-state diff-files-state--loading">Loading files</div>
