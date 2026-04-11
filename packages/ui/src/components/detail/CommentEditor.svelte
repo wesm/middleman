@@ -1,14 +1,25 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Editor as CoreEditor } from "@tiptap/core";
   import Document from "@tiptap/extension-document";
   import HardBreak from "@tiptap/extension-hard-break";
   import Paragraph from "@tiptap/extension-paragraph";
   import Placeholder from "@tiptap/extension-placeholder";
   import Text from "@tiptap/extension-text";
+  import {
+    Extension,
+    type Editor as CoreEditor,
+    type Range,
+  } from "@tiptap/core";
+  import { PluginKey } from "@tiptap/pm/state";
+  import Suggestion, {
+    exitSuggestion,
+    type SuggestionKeyDownProps,
+    type SuggestionProps,
+  } from "@tiptap/suggestion";
   import { Editor, EditorContent } from "svelte-tiptap";
 
   import { getClient } from "../../context.js";
+  import { computeCommentEditorMenuPosition } from "./commentEditorMenuPosition";
 
   interface Props {
     owner: string;
@@ -18,13 +29,6 @@
     placeholder?: string;
     oninput: (value: string) => void;
     onsubmit: () => void;
-  }
-
-  interface ActiveToken {
-    trigger: "@" | "#";
-    from: number;
-    to: number;
-    query: string;
   }
 
   interface SuggestionItem {
@@ -46,6 +50,8 @@
     references?: CommentAutocompleteReference[] | null;
   }
 
+  const mentionSuggestionKey = new PluginKey("comment-editor-user-suggestion");
+  const referenceSuggestionKey = new PluginKey("comment-editor-reference-suggestion");
   const client = getClient();
 
   let {
@@ -59,12 +65,7 @@
   }: Props = $props();
 
   let editor = $state<Editor | null>(null);
-  let menuOpen = $state(false);
-  let suggestions = $state<SuggestionItem[]>([]);
-  let highlightedIndex = $state(0);
-  let activeToken = $state<ActiveToken | null>(null);
   let syncingFromProps = false;
-  let requestSequence = 0;
 
   function escapeHTML(text: string): string {
     return text
@@ -82,34 +83,6 @@
 
   function plainTextFromEditor(current: CoreEditor): string {
     return current.getText({ blockSeparator: "\n" });
-  }
-
-  function closeMenu(): void {
-    requestSequence += 1;
-    menuOpen = false;
-    suggestions = [];
-    highlightedIndex = 0;
-    activeToken = null;
-  }
-
-  function detectActiveToken(current: CoreEditor): ActiveToken | null {
-    const { from, to } = current.state.selection;
-    if (from !== to) return null;
-
-    const prefix = current.state.doc.textBetween(0, from, "\n", "\n");
-    const match = prefix.match(/(?:^|[\s([])([@#])([A-Za-z0-9_-]*)$/);
-    if (!match) return null;
-
-    const trigger = match[1] as "@" | "#";
-    const query = match[2] ?? "";
-    const tokenLength = 1 + query.length;
-
-    return {
-      trigger,
-      query,
-      from: Math.max(1, from - tokenLength),
-      to: from,
-    };
   }
 
   function toSuggestionItems(
@@ -133,71 +106,212 @@
     }));
   }
 
-  async function refreshSuggestions(): Promise<void> {
-    if (!editor || disabled) {
-      closeMenu();
-      return;
-    }
-
-    const token = detectActiveToken(editor);
-    activeToken = token;
-    if (token === null) {
-      closeMenu();
-      return;
-    }
-
-    const sequence = ++requestSequence;
+  async function loadSuggestionItems(
+    trigger: "@" | "#",
+    query: string,
+  ): Promise<SuggestionItem[]> {
     const { data, error } = await client.GET(
       "/repos/{owner}/{name}/comment-autocomplete",
       {
         params: {
           path: { owner, name },
           query: {
-            trigger: token.trigger,
-            q: token.query,
+            trigger,
+            q: query,
             limit: 8,
           },
         },
       },
     );
 
-    if (sequence !== requestSequence) return;
     if (error || data === undefined) {
-      suggestions = [];
-      menuOpen = false;
-      return;
+      return [];
     }
 
-    suggestions = toSuggestionItems(token.trigger, data);
-    highlightedIndex = 0;
-    menuOpen = suggestions.length > 0;
+    return toSuggestionItems(trigger, data);
   }
 
-  function acceptSuggestion(item: SuggestionItem): void {
-    if (!editor || activeToken === null) return;
-
-    editor
+  function insertSuggestionText(current: CoreEditor, range: Range, insertText: string): void {
+    current
       .chain()
       .focus()
-      .insertContentAt(
-        { from: activeToken.from, to: activeToken.to },
-        `${item.insertText} `,
-      )
+      .insertContentAt(range, `${insertText} `)
       .run();
-
-    closeMenu();
   }
 
-  function acceptHighlightedSuggestion(): boolean {
-    const item = suggestions[highlightedIndex];
-    if (!menuOpen || !item) return false;
-    acceptSuggestion(item);
-    return true;
+  function createSuggestionRenderer() {
+    let menuElement: HTMLDivElement | null = null;
+    let listElement: HTMLUListElement | null = null;
+    let selectedIndex = 0;
+    let currentProps: SuggestionProps<SuggestionItem, SuggestionItem> | null = null;
+
+    function removeMenu(): void {
+      menuElement?.remove();
+      menuElement = null;
+      listElement = null;
+      currentProps = null;
+      selectedIndex = 0;
+    }
+
+    function ensureMenu(): void {
+      if (menuElement && listElement) return;
+
+      menuElement = document.createElement("div");
+      menuElement.className = "comment-editor-menu";
+      menuElement.setAttribute("role", "listbox");
+      menuElement.setAttribute("aria-label", "Comment autocomplete suggestions");
+
+      listElement = document.createElement("ul");
+      listElement.className = "comment-editor-menu-list";
+      menuElement.appendChild(listElement);
+      document.body.appendChild(menuElement);
+    }
+
+    function repositionMenu(): void {
+      if (!menuElement || !currentProps?.clientRect) return;
+      const caretRect = currentProps.clientRect();
+      if (!caretRect) return;
+
+      const position = computeCommentEditorMenuPosition({
+        caretRect: {
+          left: caretRect.left,
+          top: caretRect.top,
+          bottom: caretRect.bottom,
+          width: caretRect.width,
+        },
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        menuHeight: menuElement.offsetHeight || 180,
+      });
+
+      menuElement.style.left = `${position.left}px`;
+      menuElement.style.top = `${position.top}px`;
+      menuElement.style.width = `${position.width}px`;
+      menuElement.style.maxWidth = `${position.maxWidth}px`;
+    }
+
+    function renderMenu(): void {
+      const list = listElement;
+      if (!list || !currentProps) return;
+      list.replaceChildren();
+
+      currentProps.items.forEach((item, index) => {
+        const listItem = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "comment-editor-option";
+        if (index === selectedIndex) {
+          button.classList.add("is-highlighted");
+        }
+        button.setAttribute("role", "option");
+        button.setAttribute("aria-selected", index === selectedIndex ? "true" : "false");
+
+        const label = document.createElement("span");
+        label.className = "comment-editor-option-label";
+        label.textContent = item.label;
+
+        const detail = document.createElement("span");
+        detail.className = "comment-editor-option-detail";
+        detail.textContent = item.detail;
+
+        button.append(label, detail);
+        button.onmouseenter = () => {
+          selectedIndex = index;
+          renderMenu();
+        };
+        button.onclick = () => {
+          currentProps?.command(item);
+        };
+
+        listItem.appendChild(button);
+        list.appendChild(listItem);
+      });
+
+      repositionMenu();
+    }
+
+    function updateMenu(props: SuggestionProps<SuggestionItem, SuggestionItem>): void {
+      currentProps = props;
+      if (props.items.length === 0 || !props.clientRect) {
+        removeMenu();
+        return;
+      }
+
+      ensureMenu();
+      selectedIndex = Math.min(selectedIndex, props.items.length - 1);
+      renderMenu();
+    }
+
+    return {
+      onStart(props: SuggestionProps<SuggestionItem, SuggestionItem>) {
+        selectedIndex = 0;
+        updateMenu(props);
+      },
+      onUpdate(props: SuggestionProps<SuggestionItem, SuggestionItem>) {
+        updateMenu(props);
+      },
+      onKeyDown(props: SuggestionKeyDownProps) {
+        if (!currentProps || currentProps.items.length === 0) return false;
+
+        if (props.event.key === "ArrowDown") {
+          selectedIndex = (selectedIndex + 1) % currentProps.items.length;
+          renderMenu();
+          return true;
+        }
+
+        if (props.event.key === "ArrowUp") {
+          selectedIndex = (selectedIndex - 1 + currentProps.items.length) % currentProps.items.length;
+          renderMenu();
+          return true;
+        }
+
+        if (props.event.key === "Enter" || props.event.key === "Tab") {
+          const item = currentProps.items[selectedIndex];
+          if (!item) return false;
+          currentProps.command(item);
+          return true;
+        }
+
+        if (props.event.key === "Escape") {
+          exitSuggestion(props.view);
+          removeMenu();
+          return true;
+        }
+
+        return false;
+      },
+      onExit() {
+        removeMenu();
+      },
+    };
   }
 
-  function moveHighlight(delta: number): void {
-    if (!menuOpen || suggestions.length === 0) return;
-    highlightedIndex = (highlightedIndex + delta + suggestions.length) % suggestions.length;
+  function createAutocompleteExtension(trigger: "@" | "#", pluginKey: PluginKey) {
+    return Extension.create({
+      name: trigger === "@" ? "commentUserAutocomplete" : "commentReferenceAutocomplete",
+      addProseMirrorPlugins() {
+        return [
+          Suggestion<SuggestionItem, SuggestionItem>({
+            editor: this.editor,
+            pluginKey,
+            char: trigger,
+            allowedPrefixes: [" ", "(", "["],
+            items: async ({ query }) => loadSuggestionItems(trigger, query),
+            command: ({ editor, range, props }) => {
+              insertSuggestionText(editor, range, props.insertText);
+            },
+            render: createSuggestionRenderer,
+          }),
+        ];
+      },
+    });
+  }
+
+  function hasActiveSuggestion(): boolean {
+    if (!editor) return false;
+    const mentionState = mentionSuggestionKey.getState(editor.state) as { active?: boolean } | undefined;
+    const referenceState = referenceSuggestionKey.getState(editor.state) as { active?: boolean } | undefined;
+    return mentionState?.active === true || referenceState?.active === true;
   }
 
   function handleEditorKeydown(event: KeyboardEvent): boolean {
@@ -207,26 +321,11 @@
       return true;
     }
 
-    if (menuOpen) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        moveHighlight(1);
-        return true;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        moveHighlight(-1);
-        return true;
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault();
-        if (acceptHighlightedSuggestion()) return true;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeMenu();
-        return true;
-      }
+    if (
+      hasActiveSuggestion() &&
+      ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)
+    ) {
+      return false;
     }
 
     if (event.key === "Enter") {
@@ -245,6 +344,8 @@
         Paragraph,
         Text,
         HardBreak,
+        createAutocompleteExtension("@", mentionSuggestionKey),
+        createAutocompleteExtension("#", referenceSuggestionKey),
         Placeholder.configure({
           placeholder,
           emptyEditorClass: "is-editor-empty",
@@ -263,7 +364,11 @@
         },
         handleDOMEvents: {
           focus: () => {
-            void refreshSuggestions();
+            queueMicrotask(() => {
+              if (!editor || !editor.isFocused) return;
+              editor.commands.focus("end");
+              editor.view.dispatch(editor.state.tr);
+            });
             return false;
           },
         },
@@ -278,10 +383,6 @@
         if (nextValue === value) return;
         if (!updated.isFocused) return;
         oninput(nextValue);
-        void refreshSuggestions();
-      },
-      onSelectionUpdate: () => {
-        void refreshSuggestions();
       },
     });
 
@@ -298,7 +399,6 @@
     if (editor.isEditable !== !disabled) {
       editor.setEditable(!disabled);
     }
-    if (disabled) closeMenu();
   });
 
   $effect(() => {
@@ -313,29 +413,6 @@
 <div class="comment-editor">
   {#if editor}
     <EditorContent {editor} />
-  {/if}
-
-  {#if menuOpen}
-    <ul class="comment-editor-menu" role="listbox" aria-label="Comment autocomplete suggestions">
-      {#each suggestions as item, index (item.id)}
-        <li>
-          <button
-            type="button"
-            class="comment-editor-option"
-            class:is-highlighted={index === highlightedIndex}
-            role="option"
-            aria-selected={index === highlightedIndex}
-            onclick={() => acceptSuggestion(item)}
-            onmouseenter={() => {
-              highlightedIndex = index;
-            }}
-          >
-            <span class="comment-editor-option-label">{item.label}</span>
-            <span class="comment-editor-option-detail">{item.detail}</span>
-          </button>
-        </li>
-      {/each}
-    </ul>
   {/if}
 </div>
 
@@ -378,16 +455,10 @@
     height: 0;
   }
 
-  .comment-editor-menu {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(100% + 6px);
+  :global(.comment-editor-menu) {
+    position: fixed;
     max-height: 220px;
     overflow-y: auto;
-    list-style: none;
-    margin: 0;
-    padding: 4px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
@@ -395,7 +466,13 @@
     z-index: 20;
   }
 
-  .comment-editor-option {
+  :global(.comment-editor-menu-list) {
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+  }
+
+  :global(.comment-editor-option) {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -410,16 +487,16 @@
     text-align: left;
   }
 
-  .comment-editor-option.is-highlighted {
+  :global(.comment-editor-option.is-highlighted) {
     background: var(--bg-surface-hover);
   }
 
-  .comment-editor-option-label {
+  :global(.comment-editor-option-label) {
     color: var(--text-primary);
     font-weight: 600;
   }
 
-  .comment-editor-option-detail {
+  :global(.comment-editor-option-detail) {
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
