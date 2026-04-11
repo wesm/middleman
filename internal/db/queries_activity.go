@@ -147,18 +147,47 @@ func (d *DB) ListActivity(
 	var items []ActivityItem
 	for rows.Next() {
 		var it ActivityItem
+		var createdAtStr string
 		if err := rows.Scan(
 			&it.ActivityType, &it.Source, &it.SourceID,
 			&it.RepoOwner, &it.RepoName,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
 			&it.ItemURL, &it.ItemState, &it.Author,
-			&it.CreatedAt, &it.BodyPreview,
+			&createdAtStr, &it.BodyPreview,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity item: %w", err)
 		}
+		t, err := parseDBTime(createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"parse activity created_at %q: %w",
+				createdAtStr, err)
+		}
+		it.CreatedAt = t
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+// dbTimeLayouts lists formats the modernc.org/sqlite driver may
+// produce for DATETIME columns, ordered by likelihood.
+var dbTimeLayouts = []string{
+	"2006-01-02 15:04:05 +0000 UTC",
+	"2006-01-02 15:04:05 -0700 -0700",
+	"2006-01-02 15:04:05 -0700 MST",
+	"2006-01-02T15:04:05Z",
+	time.RFC3339,
+	time.RFC3339Nano,
+	"2006-01-02 15:04:05",
+}
+
+func parseDBTime(s string) (time.Time, error) {
+	for _, layout := range dbTimeLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized time format: %q", s)
 }
 
 // EncodeCursor encodes a sort position into an opaque cursor string.

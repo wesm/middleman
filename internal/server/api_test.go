@@ -2811,3 +2811,35 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 }
+
+func TestAPIListActivity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+
+	prID := seedPR(t, database, "acme", "widget", 1)
+	ctx := context.Background()
+
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: prID,
+			EventType:      "issue_comment",
+			Author:         "reviewer",
+			Body:           "Looks good",
+			CreatedAt:      time.Now().UTC(),
+			DedupeKey:      "comment-1",
+		},
+	}))
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	resp, err := client.HTTP.GetActivityWithResponse(
+		ctx, &generated.GetActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	assert.NotEmpty(*resp.JSON200.Items,
+		"activity feed should contain PR and comment items")
+}
