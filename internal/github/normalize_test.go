@@ -234,6 +234,30 @@ func TestNormalizeForcePushEvent(t *testing.T) {
 	require.Contains(event.MetadataJSON, `"ref":"feature"`)
 }
 
+func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
+	assert := Assert.New(t)
+	edt := time.FixedZone("EDT", -4*3600)
+	authorDate := time.Date(2024, 6, 1, 10, 30, 0, 0, edt)
+	sha := "abcdef1234567890abcdef1234567890abcdef12"
+
+	commit := &gh.RepositoryCommit{
+		SHA: &sha,
+		Commit: &gh.Commit{
+			Message: new("fix things"),
+			Author: &gh.CommitAuthor{
+				Date: &gh.Timestamp{Time: authorDate},
+				Name: new("Alice"),
+			},
+		},
+		Author: &gh.User{Login: new("alice")},
+	}
+
+	event := NormalizeCommitEvent(5, commit)
+
+	assert.Equal(time.UTC, event.CreatedAt.Location())
+	assert.True(event.CreatedAt.Equal(authorDate))
+}
+
 func TestNormalizeIssueCommentEvent(t *testing.T) {
 	assert := Assert.New(t)
 	now := time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)

@@ -212,6 +212,8 @@ export function createDetailStore(
     loading = true;
     syncing = false;
     storeError = null;
+    detail = null;
+    detailLoaded = false;
     try {
       const { data, error: requestError } =
         await apiClient.GET(
