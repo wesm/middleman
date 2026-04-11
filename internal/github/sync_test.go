@@ -69,6 +69,7 @@ type mockClient struct {
 	getCombinedCalls           atomic.Int32
 	invalidateCalls            atomic.Int32
 	listIssueCommentsCalled    atomic.Int32
+	listIssueCommentsErr       error
 }
 
 func (m *mockClient) trackCall() {
@@ -143,6 +144,9 @@ func (m *mockClient) GetPullRequest(
 func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
 	m.trackCall()
 	m.listIssueCommentsCalled.Add(1)
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
 	return m.comments, nil
 }
 
@@ -4378,16 +4382,93 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// DetailFetchedAt should be preserved through the upsert path.
-	// CommentCount is updated by the REST fallback (0 comments returned
-	// by the mock), which is the expected behavior: REST gives ground truth.
+	// DetailFetchedAt is cleared when CommentsComplete=false so the
+	// detail drain can re-queue the issue if the REST fallback fails
+	// on a future cycle. CommentCount is updated by the REST fallback
+	// (0 comments returned by the mock).
 	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
 	require.NoError(t, err)
 	require.NotNil(t, issue)
-	require.NotNil(t, issue.DetailFetchedAt)
-	assert.WithinDuration(fetchedAt, *issue.DetailFetchedAt, time.Second)
-	// REST fallback was called with empty mock — count reflects REST result.
+	assert.Nil(issue.DetailFetchedAt)
 	assert.Equal(0, issue.CommentCount)
+}
+
+func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	fetchedAt := now.Add(-time.Hour)
+
+	// Pre-seed issue with non-nil DetailFetchedAt (previously fetched).
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      45000,
+		Number:          45,
+		URL:             "https://github.com/owner/repo/issues/45",
+		Title:           "Previously fetched",
+		Author:          "grace",
+		State:           "open",
+		CommentCount:    3,
+		DetailFetchedAt: &fetchedAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(t, err)
+
+	commentTime := gh.Timestamp{Time: now}
+	mock := &mockClient{
+		listIssueCommentsErr: fmt.Errorf("transient API failure"),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	issueID := int64(45000)
+	issueNumber := 45
+	issueTitle := "Previously fetched"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/45"
+	issueLogin := "grace"
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueLogin},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				CommentsComplete: false, // triggers REST fallback
+			},
+		},
+	}
+
+	// REST fallback will fail due to listIssueCommentsErr.
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	// Partial failure expected.
+	require.Error(t, err)
+
+	// DetailFetchedAt must be nil so the detail drain re-queues this issue.
+	issue, err := d.GetIssue(ctx, "owner", "repo", 45)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Nil(issue.DetailFetchedAt)
 }
 
 func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {

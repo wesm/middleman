@@ -1579,6 +1579,22 @@ func (s *Syncer) syncOpenIssueFromBulk(
 		return fmt.Errorf("upsert issue #%d: %w", number, err)
 	}
 
+	// UpsertIssue uses COALESCE to preserve existing detail_fetched_at,
+	// so passing nil doesn't clear it. When comments are incomplete,
+	// explicitly clear it so the detail drain re-queues this issue
+	// if the REST fallback fails.
+	if !bulk.CommentsComplete {
+		_, err = s.db.WriteDB().ExecContext(ctx,
+			`UPDATE middleman_issues SET detail_fetched_at = NULL WHERE id = ?`,
+			issueID,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"clear detail_fetched_at for issue #%d: %w", number, err,
+			)
+		}
+	}
+
 	if err := s.replaceIssueLabels(
 		ctx, repoID, issueID, normalized.Labels,
 	); err != nil {
