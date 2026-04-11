@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/shurcooL/githubv4"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
@@ -4428,7 +4430,19 @@ func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
 		time.Minute, nil, testBudget(1000),
 	)
 
-	// No fetchers set — fetcherFor returns nil, REST path runs.
+	// Configure a GraphQL fetcher that returns errors. The HTTP server
+	// responds with a GraphQL error, so FetchRepoIssues fails and the
+	// sync engine falls back to REST using the already-fetched issue list.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"errors":[{"message":"server error"}]}`))
+	}))
+	defer errSrv.Close()
+	gqlClient := githubv4.NewEnterpriseClient(errSrv.URL, errSrv.Client())
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": {client: gqlClient},
+	})
+
 	syncer.RunOnce(ctx)
 
 	issue, err := d.GetIssue(ctx, "owner", "repo", 50)

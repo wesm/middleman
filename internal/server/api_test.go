@@ -1962,7 +1962,11 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 	}}, *resp.JSON200.Issue.Labels)
 }
 
-func TestAPISyncIssuesViaGraphQL(t *testing.T) {
+// TestAPIIssueDataFromGraphQLSync verifies the API correctly serves
+// issue data that was persisted by the GraphQL sync path. The sync
+// path itself (GraphQL fetch → normalize → DB upsert) is tested in
+// internal/github/sync_test.go; this test covers the DB → API layer.
+func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -1970,7 +1974,7 @@ func TestAPISyncIssuesViaGraphQL(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
-	// Seed via DB directly — simulating what GraphQL sync produces.
+	// Seed DB directly — same shape as GraphQL sync output.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(t, err)
 
