@@ -293,6 +293,54 @@ func TestAdaptPRNilFields(t *testing.T) {
 	assert.False(pr.GetMerged())
 }
 
+func TestAdaptIssue(t *testing.T) {
+	assert := Assert.New(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	closed := now.Add(-time.Hour)
+
+	gql := gqlIssue{
+		DatabaseId: 99999,
+		Number:     10,
+		Title:      "Bug report",
+		State:      "OPEN",
+		Body:       "Something broke",
+		URL:        "https://github.com/o/r/issues/10",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	gql.Author.Login = "alice"
+	gql.Labels.Nodes = []gqlLabel{
+		{Name: "bug", Color: "d73a4a", Description: "Something broken", IsDefault: false},
+	}
+	gql.Comments.Nodes = []gqlComment{
+		{DatabaseId: 501, Body: "I see this too", CreatedAt: now, UpdatedAt: now},
+	}
+	gql.Comments.Nodes[0].Author.Login = "bob"
+
+	issue := adaptIssue(&gql)
+
+	assert.Equal(int64(99999), issue.GetID())
+	assert.Equal(10, issue.GetNumber())
+	assert.Equal("Bug report", issue.GetTitle())
+	assert.Equal("open", issue.GetState())
+	assert.Equal("Something broke", issue.GetBody())
+	assert.Equal("https://github.com/o/r/issues/10", issue.GetHTMLURL())
+	assert.Equal("alice", issue.GetUser().GetLogin())
+	require.Len(t, issue.Labels, 1)
+	assert.Equal("bug", issue.Labels[0].GetName())
+	assert.Equal("d73a4a", issue.Labels[0].GetColor())
+	assert.Nil(issue.ClosedAt)
+
+	// Test closed state
+	gql.State = "CLOSED"
+	gql.ClosedAt = &closed
+	issue = adaptIssue(&gql)
+	assert.Equal("closed", issue.GetState())
+	require.NotNil(t, issue.ClosedAt)
+	assert.Equal(closed, issue.ClosedAt.Time)
+}
+
 func TestStateConversion(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Equal("open", stateToREST("OPEN"))

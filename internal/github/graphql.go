@@ -116,6 +116,35 @@ type gqlCommit struct {
 	}
 }
 
+type gqlIssueQuery struct {
+	Repository struct {
+		Issues struct {
+			Nodes    []gqlIssue
+			PageInfo pageInfo
+		} `graphql:"issues(first: $pageSize, states: OPEN, after: $cursor)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+type gqlIssue struct {
+	DatabaseId int64 `graphql:"databaseId"`
+	Number     int
+	Title      string
+	State      string
+	Body       string
+	URL        string `graphql:"url"`
+	Author     struct{ Login string }
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	ClosedAt   *time.Time
+	Labels     struct {
+		Nodes []gqlLabel
+	} `graphql:"labels(first: 100)"`
+	Comments struct {
+		Nodes    []gqlComment
+		PageInfo pageInfo
+	} `graphql:"comments(first: 100)"`
+}
+
 type gqlLabel struct {
 	Name        string
 	Color       string
@@ -207,6 +236,39 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 	}
 
 	return pr
+}
+
+func adaptIssue(gql *gqlIssue) *gh.Issue {
+	state := stateToREST(gql.State)
+	issue := &gh.Issue{
+		ID:      new(gql.DatabaseId),
+		Number:  new(gql.Number),
+		Title:   new(gql.Title),
+		State:   new(state),
+		Body:    new(gql.Body),
+		HTMLURL: new(gql.URL),
+		User:    &gh.User{Login: new(gql.Author.Login)},
+	}
+
+	created := gh.Timestamp{Time: gql.CreatedAt}
+	updated := gh.Timestamp{Time: gql.UpdatedAt}
+	issue.CreatedAt = &created
+	issue.UpdatedAt = &updated
+
+	if gql.ClosedAt != nil {
+		t := gh.Timestamp{Time: *gql.ClosedAt}
+		issue.ClosedAt = &t
+	}
+	for _, l := range gql.Labels.Nodes {
+		issue.Labels = append(issue.Labels, &gh.Label{
+			Name:        new(l.Name),
+			Color:       new(l.Color),
+			Description: new(l.Description),
+			Default:     new(l.IsDefault),
+		})
+	}
+
+	return issue
 }
 
 func stateToREST(graphqlState string) string {
