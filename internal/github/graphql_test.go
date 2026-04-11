@@ -341,6 +341,40 @@ func TestAdaptIssue(t *testing.T) {
 	assert.Equal(closed, issue.ClosedAt.Time)
 }
 
+func TestConvertGQLIssue(t *testing.T) {
+	assert := Assert.New(t)
+
+	now := time.Now()
+	gql := gqlIssue{
+		DatabaseId: 1,
+		Number:     5,
+		Title:      "test",
+		State:      "OPEN",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	gql.Author.Login = "user"
+
+	// All complete (no next page)
+	bulk := convertGQLIssue(&gql)
+	assert.True(bulk.CommentsComplete)
+	assert.NotNil(bulk.Issue)
+	assert.Equal(5, bulk.Issue.GetNumber())
+	assert.Empty(bulk.Comments)
+
+	// Add comments with next page
+	gql.Comments.Nodes = []gqlComment{
+		{DatabaseId: 100, Body: "hello", CreatedAt: now, UpdatedAt: now},
+	}
+	gql.Comments.Nodes[0].Author.Login = "commenter"
+	gql.Comments.PageInfo.HasNextPage = true
+
+	bulk = convertGQLIssue(&gql)
+	assert.False(bulk.CommentsComplete)
+	require.Len(t, bulk.Comments, 1)
+	assert.Equal("hello", bulk.Comments[0].GetBody())
+}
+
 func TestStateConversion(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Equal("open", stateToREST("OPEN"))

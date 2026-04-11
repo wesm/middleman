@@ -382,9 +382,19 @@ func toLower(s string) string {
 
 // --- Bulk result types ---
 
-// RepoBulkResult holds all open PRs fetched via GraphQL for a repo.
+// RepoBulkResult holds all open PRs and issues fetched via GraphQL for a repo.
 type RepoBulkResult struct {
 	PullRequests []BulkPR
+	Issues       []BulkIssue
+}
+
+// BulkIssue holds an issue and its nested comments from a single
+// GraphQL query. CommentsComplete indicates whether the comments
+// connection was fully paginated.
+type BulkIssue struct {
+	Issue            *gh.Issue
+	Comments         []*gh.IssueComment
+	CommentsComplete bool
 }
 
 // BulkPR holds a PR and its nested data from a single GraphQL query.
@@ -402,6 +412,19 @@ type BulkPR struct {
 	ReviewsComplete  bool
 	CommitsComplete  bool
 	CIComplete       bool
+}
+
+func convertGQLIssue(gql *gqlIssue) BulkIssue {
+	bulk := BulkIssue{
+		Issue:            adaptIssue(gql),
+		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
+	}
+
+	for i := range gql.Comments.Nodes {
+		bulk.Comments = append(bulk.Comments, adaptComment(&gql.Comments.Nodes[i]))
+	}
+
+	return bulk
 }
 
 // --- GraphQL rate transport ---
