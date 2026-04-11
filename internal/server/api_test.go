@@ -1984,7 +1984,7 @@ func TestAPISyncIssuesViaGraphQL(t *testing.T) {
 		Author:         "testuser",
 		State:          "open",
 		Body:           "Synced via GraphQL",
-		CommentCount:   2,
+		CommentCount:   1,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastActivityAt: now,
@@ -2032,7 +2032,7 @@ func TestAPISyncIssuesViaGraphQL(t *testing.T) {
 	require.Equal(t, 200, detailResp.StatusCode())
 	require.NotNil(t, detailResp.JSON200)
 	assert.Equal("Synced via GraphQL", detailResp.JSON200.Issue.Body)
-	assert.Equal(int64(2), detailResp.JSON200.Issue.CommentCount)
+	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
 }
 
 func make422Error() error {

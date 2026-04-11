@@ -3926,6 +3926,9 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 
 	// Comments were complete — ListIssueComments should NOT be called.
 	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
+
+	// detail_fetched_at should be set for complete bulk issues.
+	assert.NotNil(issue.DetailFetchedAt)
 }
 
 // blockingCtxMockClient blocks in ListOpenPullRequests until either
@@ -4379,7 +4382,8 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
 	require.NoError(t, err)
 	require.NotNil(t, issue)
-	assert.NotNil(issue.DetailFetchedAt)
+	require.NotNil(t, issue.DetailFetchedAt)
+	assert.WithinDuration(fetchedAt, *issue.DetailFetchedAt, time.Second)
 	// REST fallback was called with empty mock — count reflects REST result.
 	assert.Equal(0, issue.CommentCount)
 }

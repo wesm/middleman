@@ -1612,6 +1612,21 @@ func (s *Syncer) syncOpenIssueFromBulk(
 				"update issue #%d derived fields: %w", number, err,
 			)
 		}
+
+		// Mark detail as fetched so the detail drain doesn't
+		// re-queue this issue for REST detail fetches.
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if err := s.db.UpdateIssueDetailFetched(
+			ctx, host, repo.Owner, repo.Name, number,
+		); err != nil {
+			slog.Warn("mark GraphQL issue detail fetched failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
 	} else {
 		// Comments truncated — fall back to REST.
 		if err := s.refreshIssueTimeline(
