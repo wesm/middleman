@@ -3,10 +3,10 @@ FROM golang:1.26-bookworm
 # shasum needed by scripts/dev-backend-build.sh
 RUN apt-get update && apt-get install -y --no-install-recommends perl && rm -rf /var/lib/apt/lists/*
 
-# Bun for frontend tooling
-RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+# Bun for frontend tooling (pinned to match frontend/package.json)
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local BUN_VERSION=1.3.11 bash
 
 # Air for Go live reload
-RUN go install github.com/air-verse/air@latest
+RUN go install github.com/air-verse/air@v1.65.0
 
 WORKDIR /app

@@ -1,3 +1,6 @@
+# NOTE: network_mode: host is Linux-only. Docker Desktop (macOS/Windows)
+# does not support it. The Go server validates that it binds to a loopback
+# address, so bridge networking with port mapping is not an option.
 services:
   backend:
     build:
