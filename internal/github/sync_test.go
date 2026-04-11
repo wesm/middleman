@@ -4173,3 +4173,80 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 	assert.True(ok2, "cached empty name must remain ok=true")
 	assert.Equal(1, callCount, "GetUser should not be called again for cached success")
 }
+
+func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	commentTime := gh.Timestamp{Time: now}
+
+	commentID := int64(777)
+	commentBody := "REST comment"
+	commentLogin := "carol"
+
+	mock := &mockClient{
+		comments: []*gh.IssueComment{
+			{
+				ID:        &commentID,
+				Body:      &commentBody,
+				User:      &gh.User{Login: &commentLogin},
+				CreatedAt: &commentTime,
+				UpdatedAt: &commentTime,
+			},
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	issueID := int64(20000)
+	issueNumber := 20
+	issueTitle := "Lots of comments"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/20"
+	issueLogin := "dave"
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueLogin},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				CommentsComplete: false,
+			},
+		},
+	}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// REST fallback should have been called
+	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
+
+	// Verify the REST comment landed
+	issue, err := d.GetIssue(ctx, "owner", "repo", 20)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Len(events, 1)
+	assert.Equal("REST comment", events[0].Body)
+}
