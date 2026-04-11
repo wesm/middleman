@@ -18,7 +18,7 @@ services:
       - |
         mkdir -p internal/web/dist
         [ -n "$$(ls internal/web/dist/ 2>/dev/null)" ] || echo ok > internal/web/dist/stub.html
-        socat TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:18090 &
+        socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:18090 &
         air -c .air.toml -- -config docker/dev-config.toml
 
   frontend:
