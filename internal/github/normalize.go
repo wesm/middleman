@@ -133,7 +133,7 @@ func NormalizeCommitEvent(mrID int64, c *gh.RepositoryCommit) db.MREvent {
 	if c.GetCommit() != nil {
 		event.Body = c.GetCommit().GetMessage()
 		if c.GetCommit().Author != nil && c.GetCommit().Author.Date != nil {
-			event.CreatedAt = c.GetCommit().Author.Date.Time
+			event.CreatedAt = c.GetCommit().Author.Date.UTC()
 		}
 	}
 	return event

@@ -879,12 +879,20 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	var events []MREvent
 	for rows.Next() {
 		var e MREvent
+		var createdAtStr string
 		if err := rows.Scan(
 			&e.ID, &e.MergeRequestID, &e.PlatformID, &e.EventType, &e.Author, &e.Summary,
-			&e.Body, &e.MetadataJSON, &e.CreatedAt, &e.DedupeKey,
+			&e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
 		); err != nil {
 			return nil, fmt.Errorf("scan mr event: %w", err)
 		}
+		t, err := parseDBTime(createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"parse mr event created_at %q: %w",
+				createdAtStr, err)
+		}
+		e.CreatedAt = t
 		events = append(events, e)
 	}
 	return events, rows.Err()
@@ -1591,12 +1599,20 @@ func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, 
 	var events []IssueEvent
 	for rows.Next() {
 		var e IssueEvent
+		var createdAtStr string
 		if err := rows.Scan(
 			&e.ID, &e.IssueID, &e.PlatformID, &e.EventType, &e.Author,
-			&e.Summary, &e.Body, &e.MetadataJSON, &e.CreatedAt, &e.DedupeKey,
+			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue event: %w", err)
 		}
+		t, err := parseDBTime(createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"parse issue event created_at %q: %w",
+				createdAtStr, err)
+		}
+		e.CreatedAt = t
 		events = append(events, e)
 	}
 	return events, rows.Err()

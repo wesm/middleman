@@ -904,6 +904,52 @@ func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 	assert.Equal(2, total)
 }
 
+func TestListMREventsHandlesNonUTCTimes(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	prID := insertTestMR(t, d, repoID, 1, "pr one", baseTime())
+
+	// Insert events with times in various non-UTC zones,
+	// reproducing the formats the sqlite driver stores.
+	edt := time.FixedZone("EDT", -4*3600)
+	cdt := time.FixedZone("CDT", -5*3600)
+	jst := time.FixedZone("JST", 9*3600)
+	zones := []struct {
+		key  string
+		zone *time.Location
+	}{
+		{"commit-utc", time.UTC},
+		{"commit-edt", edt},
+		{"commit-cdt", cdt},
+		{"commit-jst", jst},
+	}
+	var events []MREvent
+	base := baseTime()
+	for i, z := range zones {
+		events = append(events, MREvent{
+			MergeRequestID: prID,
+			EventType:      "commit",
+			Author:         "alice",
+			CreatedAt:      base.Add(time.Duration(i) * time.Hour).In(z.zone),
+			DedupeKey:      z.key,
+		})
+	}
+	require.NoError(d.UpsertMREvents(ctx, events))
+
+	got, err := d.ListMREvents(ctx, prID)
+	require.NoError(err)
+	require.Len(got, len(zones))
+
+	for _, e := range got {
+		assert.Equal(time.UTC, e.CreatedAt.Location(),
+			"event %s should be returned in UTC", e.DedupeKey)
+	}
+}
+
 func TestGetPRIDByRepoAndNumber(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
