@@ -20,6 +20,7 @@
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { shouldIgnoreGlobalShortcutTarget } from "./lib/utils/keyboardShortcuts.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
     initTheme,
@@ -276,13 +277,9 @@
 
   function handleKeydown(e: KeyboardEvent): void {
     if (!stores) return;
-    const tag = (e.target as HTMLElement).tagName;
-    if (
-      tag === "INPUT" ||
-      tag === "TEXTAREA" ||
-      tag === "SELECT"
-    )
+    if (shouldIgnoreGlobalShortcutTarget(e.target)) {
       return;
+    }
 
     if (
       e.key === "[" &&
