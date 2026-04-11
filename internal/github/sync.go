@@ -1657,6 +1657,19 @@ func (s *Syncer) syncOpenIssueFromBulk(
 				"refresh timeline for issue #%d: %w", number, err,
 			)
 		}
+		// REST fallback succeeded — mark detail as fetched.
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if err := s.db.UpdateIssueDetailFetched(
+			ctx, host, repo.Owner, repo.Name, number,
+		); err != nil {
+			slog.Warn("mark issue detail fetched after REST fallback failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
 	}
 
 	return nil

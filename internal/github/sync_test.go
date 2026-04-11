@@ -4382,14 +4382,13 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// DetailFetchedAt is cleared when CommentsComplete=false so the
-	// detail drain can re-queue the issue if the REST fallback fails
-	// on a future cycle. CommentCount is updated by the REST fallback
-	// (0 comments returned by the mock).
+	// DetailFetchedAt is cleared before REST fallback, then re-set
+	// after successful refreshIssueTimeline. CommentCount is updated
+	// by the REST fallback (0 comments returned by the mock).
 	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
 	require.NoError(t, err)
 	require.NotNil(t, issue)
-	assert.Nil(issue.DetailFetchedAt)
+	assert.NotNil(issue.DetailFetchedAt)
 	assert.Equal(0, issue.CommentCount)
 }
 
