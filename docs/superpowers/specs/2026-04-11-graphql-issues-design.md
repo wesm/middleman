@@ -82,22 +82,24 @@ Helper `convertGQLIssue(*gqlIssue) BulkIssue` parallel to `convertGQLPR`.
 
 ## Sync Integration
 
-In `indexSyncRepo`, after the PR GraphQL/REST block, the existing `indexSyncIssues` call gains a GraphQL path:
+In `indexSyncRepo`, the issue sync block follows the same ETag-gated pattern as PRs:
 
-1. Check `fetcherFor(repo)` and `ShouldBackoff()`.
-2. If available and not rate-limited: call `FetchRepoIssues()`.
-3. On error: log warning, fall through to REST `indexSyncIssues`.
-4. On success: call `doSyncRepoGraphQLIssues()`, set `graphQLIssuesDone = true`.
-5. If `!graphQLIssuesDone`: run existing REST `indexSyncIssues`.
+- Call REST `ListOpenIssues` first (ETag check). If 304 (unchanged), skip issue sync entirely — same optimization PRs use. This avoids burning GraphQL budget on every cycle when no issues changed.
+- If not 304 and a GraphQL fetcher is available and not rate-limited: call `FetchRepoIssues()`.
+- On GraphQL error: log warning, fall through to REST processing using the already-fetched `ghIssues`.
+- On GraphQL success: call `doSyncRepoGraphQLIssues()`, skip REST processing.
+- If no GraphQL fetcher or rate-limited: process via existing REST path using the already-fetched `ghIssues`.
+
+This matches the PR path's structure: REST list (ETag gate) → GraphQL (when available) → REST fallback (using pre-fetched data).
 
 New `doSyncRepoGraphQLIssues()` method on `Syncer`, parallel to `doSyncRepoGraphQL()`:
 
 For each `BulkIssue`:
-1. `NormalizeIssue(repoID, bulk.Issue)` (existing function).
-2. Preserve existing `CommentCount` and `DetailFetchedAt` from DB row if present (same pattern as `syncOpenMRFromBulk` preserving derived fields).
-3. `UpsertIssue` then `replaceIssueLabels`.
-4. If `CommentsComplete`: upsert events and update comment count from bulk data directly, skipping REST `ListIssueComments`.
-5. If `!CommentsComplete`: fall back to `refreshIssueTimeline` via REST.
+- `NormalizeIssue(repoID, bulk.Issue)` (existing function).
+- Preserve existing `CommentCount` and `DetailFetchedAt` from DB row if present (same pattern as `syncOpenMRFromBulk` preserving derived fields).
+- `UpsertIssue` then `replaceIssueLabels`.
+- If `CommentsComplete`: upsert events and update comment count from bulk data directly, skipping REST `ListIssueComments`.
+- If `!CommentsComplete`: fall back to `refreshIssueTimeline` via REST.
 
 Closure detection: same DB-diff pattern as PRs. `GetPreviouslyOpenIssueNumbers` then `fetchAndUpdateClosedIssue` via REST for each.
 
