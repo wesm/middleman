@@ -240,3 +240,61 @@ func TestListActivity(t *testing.T) {
 
 	_ = prID2
 }
+
+func TestParseDBTime(t *testing.T) {
+	assert := Assert.New(t)
+	tests := []struct {
+		name  string
+		input string
+		want  time.Time
+	}{
+		{
+			name:  "go time.String format",
+			input: "2026-04-09 21:27:11 +0000 UTC",
+			want:  time.Date(2026, 4, 9, 21, 27, 11, 0, time.UTC),
+		},
+		{
+			name:  "ISO 8601 UTC",
+			input: "2026-04-09T21:27:11Z",
+			want:  time.Date(2026, 4, 9, 21, 27, 11, 0, time.UTC),
+		},
+		{
+			name:  "RFC3339 with offset",
+			input: "2026-04-09T21:27:11+00:00",
+			want:  time.Date(2026, 4, 9, 21, 27, 11, 0, time.UTC),
+		},
+		{
+			name:  "RFC3339Nano",
+			input: "2026-04-09T21:27:11.123456Z",
+			want:  time.Date(2026, 4, 9, 21, 27, 11, 123456000, time.UTC),
+		},
+		{
+			name:  "local tz with repeated numeric offset",
+			input: "2026-04-10 18:48:35 -0400 -0400",
+			want:  time.Date(2026, 4, 10, 22, 48, 35, 0, time.UTC),
+		},
+		{
+			name:  "local tz with named zone",
+			input: "2026-04-10 18:48:35 -0400 EDT",
+			want:  time.Date(2026, 4, 10, 22, 48, 35, 0, time.UTC),
+		},
+		{
+			name:  "bare datetime",
+			input: "2026-04-09 21:27:11",
+			want:  time.Date(2026, 4, 9, 21, 27, 11, 0, time.UTC),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseDBTime(tc.input)
+			require.NoError(t, err)
+			assert.True(tc.want.Equal(got),
+				"want %v, got %v", tc.want, got)
+		})
+	}
+
+	t.Run("invalid format returns error", func(t *testing.T) {
+		_, err := parseDBTime("not-a-date")
+		assert.Error(err)
+	})
+}

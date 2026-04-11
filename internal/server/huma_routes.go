@@ -1258,6 +1258,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
+		slog.Error("list activity failed", "err", err)
 		return nil, huma.Error500InternalServerError("list activity failed")
 	}
 
