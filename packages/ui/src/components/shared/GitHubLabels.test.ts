@@ -112,7 +112,6 @@ describe("GitHubLabels", () => {
 
     rerender({
       mode: "full",
-      labels: undefined,
     });
 
     expect(container.querySelector(".github-labels")).toBeNull();

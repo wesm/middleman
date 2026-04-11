@@ -32,6 +32,14 @@ export default tseslint.config(
           minimumDescriptionLength: 10,
         },
       ],
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          varsIgnorePattern: "^_",
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
       "@typescript-eslint/no-explicit-any": ["error", { fixToUnknown: true }],
     },
   },
@@ -52,6 +60,7 @@ export default tseslint.config(
       "svelte/prefer-svelte-reactivity": "off",
       "svelte/require-each-key": "off",
       "svelte/no-unused-svelte-ignore": "off",
+      "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/ban-ts-comment": [
         "error",
         {

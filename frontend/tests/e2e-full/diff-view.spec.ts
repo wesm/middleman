@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 
 // --- Fixtures ---
 
 // Small fixture: 4 files covering modified (multi-hunk), added, deleted, binary.
-const smallDiff = {
+const smallDiff: DiffResult = {
   stale: false,
   whitespace_only_count: 0,
   files: [
@@ -123,9 +124,9 @@ const smallDiff = {
 
 // Generate a large diff (50 files) for perf tests.
 function makeLargeDiff(): typeof smallDiff {
-  const files = [];
+  const files: DiffFile[] = [];
   for (let i = 0; i < 50; i++) {
-    const lines = [];
+    const lines: DiffLine[] = [];
     for (let j = 1; j <= 20; j++) {
       if (j % 5 === 0) {
         lines.push({ type: "delete" as const, content: `  old line ${j}`, old_num: j });
@@ -155,7 +156,7 @@ const staleDiff = { ...smallDiff, stale: true };
 
 // --- Helpers ---
 
-function filesFromDiff(fixture: typeof smallDiff): { stale: boolean; files: typeof smallDiff.files } {
+function filesFromDiff(fixture: DiffResult): FilesResult {
   return {
     stale: fixture.stale,
     files: fixture.files.map((f) => ({

@@ -69,8 +69,9 @@ frontend-dev:
 frontend-dev-bun:
 	cd frontend && bun install && bun run dev
 
-# Run frontend type checks
+# Run TypeScript/Svelte lint and type checks
 frontend-check:
+	cd packages/ui && bun run typecheck && bun run lint
 	cd frontend && bun run typecheck && bun run lint
 
 # Regenerate the checked-in OpenAPI documents and generated clients
@@ -186,6 +187,7 @@ help:
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Install deps and run Vite dev server"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
+	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""
 	@echo "  test           - Run all tests"

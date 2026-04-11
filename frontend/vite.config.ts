@@ -1,16 +1,17 @@
 import { createRequire } from "node:module";
-import path from "node:path";
-import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
+import type { UserConfig } from "vite";
+import type { InlineConfig } from "vitest/node";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
 const apiUrl = process.env.MIDDLEMAN_API_URL ?? "http://127.0.0.1:8090";
-const uiPkg = path.resolve(__dirname, "../packages/ui");
+const uiPkg = fileURLToPath(new URL("../packages/ui", import.meta.url));
 
-export default defineConfig({
+const config = {
   base: "/",
   plugins: [svelte(), svelteTesting()],
   resolve: {
@@ -47,4 +48,6 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
   },
-});
+} satisfies UserConfig & { test: InlineConfig };
+
+export default config;
