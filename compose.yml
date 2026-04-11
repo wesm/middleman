@@ -9,6 +9,7 @@ services:
       - .:/app
       - go-mod:/go/pkg/mod
       - go-cache:/go/cache
+      - middleman-data:/data
     environment:
       MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
       GOCACHE: /go/cache
@@ -42,3 +43,4 @@ services:
 volumes:
   go-mod:
   go-cache:
+  middleman-data:

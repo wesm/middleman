@@ -5,6 +5,7 @@ sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 18090
+data_dir = "/data"
 
 [[repos]]
 owner = "wesm"
