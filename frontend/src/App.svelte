@@ -79,11 +79,19 @@
         appReady = true;
       },
     });
+    const onBeforeUnload = () => {
+      stores?.events.disconnect();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       cancelStartup();
       cleanupTheme();
       cleanupContainer();
       cleanupItemRefs();
+      window.removeEventListener(
+        "beforeunload",
+        onBeforeUnload,
+      );
     };
   });
 

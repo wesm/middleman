@@ -116,7 +116,6 @@ describe("createDiffStore loadDiff", () => {
   });
 
   it("aborts in-flight requests when switching PRs", async () => {
-    const filesA = makeFilesResult(["a.ts"]);
     const diffB = makeDiffResult(["b.ts"]);
     const filesB = makeFilesResult(["b.ts"]);
 
@@ -161,7 +160,7 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ getBasePath: () => "/" });
 
     // Start loading PR A (will hang).
-    const loadA = store.loadDiff("owner", "repo", 1);
+    void store.loadDiff("owner", "repo", 1);
 
     // Switch to PR B — should abort PR A.
     await store.loadDiff("owner", "repo", 2);
