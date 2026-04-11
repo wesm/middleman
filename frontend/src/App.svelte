@@ -158,15 +158,6 @@
 
     if (route.page === "pulls") {
       if (
-        "view" in route &&
-        route.view === "diff"
-      ) {
-        stores.pulls.selectPR(
-          route.owner,
-          route.name,
-          route.number,
-        );
-      } else if (
         "selected" in route &&
         route.selected &&
         stores.settings.hasConfiguredRepos()
