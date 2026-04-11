@@ -2104,6 +2104,9 @@ func (s *Syncer) resolveDisplayName(
 ) (string, bool) {
 	key := host + "\x00" + login
 	s.displayNamesMu.Lock()
+	if s.displayNames == nil {
+		s.displayNames = make(map[string]displayNameResult)
+	}
 	cached, ok := s.displayNames[key]
 	s.displayNamesMu.Unlock()
 	if ok {
@@ -2838,13 +2841,14 @@ func (s *Syncer) syncMRWithHost(
 	normalized := NormalizePR(repoID, ghPR)
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
-		existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
-		if existing != nil && existing.AuthorDisplayName != "" {
-			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		// Resolve directly instead of using s.resolveDisplayName to
+		// preserve existing display names on failure.
+		if displayName, ok := s.resolveDisplayName(ctx, client, host, normalized.Author); ok {
+			normalized.AuthorDisplayName = displayName
 		} else {
-			user, userErr := client.GetUser(ctx, normalized.Author)
-			if userErr == nil {
-				normalized.AuthorDisplayName = sanitizeDisplayName(user.GetName())
+			existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
+			if existing != nil {
+				normalized.AuthorDisplayName = existing.AuthorDisplayName
 			}
 		}
 	}
