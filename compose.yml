@@ -36,7 +36,7 @@ services:
     command:
       - sh
       - -c
-      - make frontend-dev ARGS="--host 0.0.0.0 --port 15173"
+      - make frontend-dev BUN_INSTALL_FLAGS=--frozen-lockfile ARGS="--host 0.0.0.0 --port 15173"
 
 volumes:
   go-mod:
