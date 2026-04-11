@@ -6,9 +6,13 @@ github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 18090
 
-# [[repos]]
-# owner = "your-org"
-# name = "your-repo"
+[[repos]]
+owner = "wesm"
+name = "middleman"
+
+[[repos]]
+owner = "roborev-dev"
+name = "roborev"
 
 [activity]
 view_mode = "threaded"
