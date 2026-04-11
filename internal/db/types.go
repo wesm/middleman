@@ -150,6 +150,13 @@ type IssueEvent struct {
 	DedupeKey    string
 }
 
+type CommentAutocompleteReference struct {
+	Kind   string `json:"kind"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+}
+
 type ListIssuesOpts struct {
 	RepoOwner string
 	RepoName  string

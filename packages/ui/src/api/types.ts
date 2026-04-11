@@ -16,6 +16,10 @@ export type RateLimitsResponse =
   components["schemas"]["RateLimitsResponse"];
 export type ActivityItem = components["schemas"]["ActivityItemResponse"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
+export type CommentAutocompleteResponse =
+  components["schemas"]["CommentAutocompleteResponse"];
+export type CommentAutocompleteReference =
+  components["schemas"]["CommentAutocompleteReference"];
 export type ActivityParams = NonNullable<operations["get-activity"]["parameters"]["query"]>;
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];

@@ -65,6 +65,11 @@ type issueDetailResponse struct {
 	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
 }
 
+type commentAutocompleteResponse struct {
+	Users      []string                          `json:"users,omitempty"`
+	References []db.CommentAutocompleteReference `json:"references,omitempty"`
+}
+
 type resolveItemResponse struct {
 	ItemType    string `json:"item_type" doc:"'pr' or 'issue'"`
 	Number      int    `json:"number"`
@@ -121,6 +126,7 @@ type commitResponse struct {
 type commitsResponse struct {
 	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
 }
+
 const activitySafetyCap = 5000
 
 type activityResponse struct {

@@ -116,6 +116,18 @@ type getRepoOutput struct {
 	Body db.Repo
 }
 
+type commentAutocompleteInput struct {
+	Owner   string `path:"owner"`
+	Name    string `path:"name"`
+	Trigger string `query:"trigger"`
+	Q       string `query:"q"`
+	Limit   int    `query:"limit"`
+}
+
+type commentAutocompleteOutput struct {
+	Body commentAutocompleteResponse
+}
+
 type approvePRInput struct {
 	Owner  string `path:"owner"`
 	Name   string `path:"name"`
@@ -265,6 +277,7 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/repos", s.listRepos)
 	huma.Get(api, "/repos/{owner}/{name}", s.getRepo)
+	huma.Get(api, "/repos/{owner}/{name}/comment-autocomplete", s.getCommentAutocomplete)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve-workflows", s.approveWorkflows)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
@@ -738,6 +751,50 @@ func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutp
 		return nil, huma.Error404NotFound("repo not found")
 	}
 	return &getRepoOutput{Body: *repo}, nil
+}
+
+func (s *Server) getCommentAutocomplete(
+	ctx context.Context,
+	input *commentAutocompleteInput,
+) (*commentAutocompleteOutput, error) {
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 25 {
+		limit = 25
+	}
+
+	switch input.Trigger {
+	case "@":
+		users, err := s.db.ListCommentAutocompleteUsers(
+			ctx,
+			"github.com",
+			input.Owner,
+			input.Name,
+			input.Q,
+			limit,
+		)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list comment autocomplete users failed")
+		}
+		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
+	case "#":
+		references, err := s.db.ListCommentAutocompleteReferences(
+			ctx,
+			"github.com",
+			input.Owner,
+			input.Name,
+			input.Q,
+			limit,
+		)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list comment autocomplete references failed")
+		}
+		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{References: references}}, nil
+	default:
+		return nil, huma.Error400BadRequest("trigger must be @ or #")
+	}
 }
 
 func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {

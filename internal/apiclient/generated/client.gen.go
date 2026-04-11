@@ -57,6 +57,22 @@ type ApprovePRInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// CommentAutocompleteReference defines model for CommentAutocompleteReference.
+type CommentAutocompleteReference struct {
+	Kind   string `json:"kind"`
+	Number int64  `json:"number"`
+	State  string `json:"state"`
+	Title  string `json:"title"`
+}
+
+// CommentAutocompleteResponse defines model for CommentAutocompleteResponse.
+type CommentAutocompleteResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                         `json:"$schema,omitempty"`
+	References *[]CommentAutocompleteReference `json:"references,omitempty"`
+	Users      *[]string                       `json:"users,omitempty"`
+}
+
 // CommitResponse defines model for CommitResponse.
 type CommitResponse struct {
 	// AuthorName Commit author display name
@@ -540,6 +556,13 @@ type ListPullsParams struct {
 	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetReposByOwnerByNameCommentAutocompleteParams defines parameters for GetReposByOwnerByNameCommentAutocomplete.
+type GetReposByOwnerByNameCommentAutocompleteParams struct {
+	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+	Q       *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
 type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -671,6 +694,9 @@ type ClientInterface interface {
 
 	// GetReposByOwnerByName request
 	GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetReposByOwnerByNameCommentAutocomplete request
+	GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNameIssuesByNumber request
 	GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -819,6 +845,18 @@ func (c *Client) ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (
 
 func (c *Client) GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetReposByOwnerByNameRequest(c.Server, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNameCommentAutocompleteRequest(c.Server, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1673,6 +1711,101 @@ func NewGetReposByOwnerByNameRequest(server string, owner string, name string) (
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetReposByOwnerByNameCommentAutocompleteRequest generates requests for GetReposByOwnerByNameCommentAutocomplete
+func NewGetReposByOwnerByNameCommentAutocompleteRequest(server string, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/comment-autocomplete", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Trigger != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "trigger", *params.Trigger, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -2903,6 +3036,9 @@ type ClientWithResponsesInterface interface {
 	// GetReposByOwnerByNameWithResponse request
 	GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error)
 
+	// GetReposByOwnerByNameCommentAutocompleteWithResponse request
+	GetReposByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameCommentAutocompleteResponse, error)
+
 	// GetReposByOwnerByNameIssuesByNumberWithResponse request
 	GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error)
 
@@ -3120,6 +3256,29 @@ func (r GetReposByOwnerByNameResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetReposByOwnerByNameResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetReposByOwnerByNameCommentAutocompleteResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CommentAutocompleteResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNameCommentAutocompleteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3682,6 +3841,15 @@ func (c *ClientWithResponses) GetReposByOwnerByNameWithResponse(ctx context.Cont
 	return ParseGetReposByOwnerByNameResponse(rsp)
 }
 
+// GetReposByOwnerByNameCommentAutocompleteWithResponse request returning *GetReposByOwnerByNameCommentAutocompleteResponse
+func (c *ClientWithResponses) GetReposByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameCommentAutocompleteResponse, error) {
+	rsp, err := c.GetReposByOwnerByNameCommentAutocomplete(ctx, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNameCommentAutocompleteResponse(rsp)
+}
+
 // GetReposByOwnerByNameIssuesByNumberWithResponse request returning *GetReposByOwnerByNameIssuesByNumberResponse
 func (c *ClientWithResponses) GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error) {
 	rsp, err := c.GetReposByOwnerByNameIssuesByNumber(ctx, owner, name, number, reqEditors...)
@@ -4133,6 +4301,39 @@ func ParseGetReposByOwnerByNameResponse(rsp *http.Response) (*GetReposByOwnerByN
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Repo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNameCommentAutocompleteResponse parses an HTTP response from a GetReposByOwnerByNameCommentAutocompleteWithResponse call
+func ParseGetReposByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (*GetReposByOwnerByNameCommentAutocompleteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNameCommentAutocompleteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommentAutocompleteResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

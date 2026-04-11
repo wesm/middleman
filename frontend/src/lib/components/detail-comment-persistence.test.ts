@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { STORES_KEY } from "../../../../packages/ui/src/context.js";
+import {
+  API_CLIENT_KEY,
+  STORES_KEY,
+} from "../../../../packages/ui/src/context.js";
 import CommentBox from "../../../../packages/ui/src/components/detail/CommentBox.svelte";
 import IssueCommentBox from "../../../../packages/ui/src/components/detail/IssueCommentBox.svelte";
 import {
@@ -13,6 +16,51 @@ import {
   setCommentDraft,
 } from "../../../../packages/ui/src/components/detail/comment-drafts.svelte.js";
 import CommentBoxContextHarness from "./CommentBoxContextHarness.svelte";
+
+interface AutocompleteResponse {
+  users: string[];
+  references: Array<{
+    kind: string;
+    number: number;
+    title: string;
+    state: string;
+  }>;
+}
+
+function mockAutocompleteClient(
+  response: AutocompleteResponse = { users: [], references: [] },
+) {
+  return {
+    GET: async (path: string) => {
+      if (path === "/repos/{owner}/{name}/comment-autocomplete") {
+        return { data: response };
+      }
+      return { data: undefined, error: { title: "not mocked" } };
+    },
+  };
+}
+
+function getCommentEditor(): HTMLElement {
+  const editor = document.querySelector(".comment-editor-input");
+  if (!(editor instanceof HTMLElement)) {
+    throw new Error("comment editor not found");
+  }
+  return editor;
+}
+
+function getCommentEditorText(): string {
+  return getCommentEditor().textContent ?? "";
+}
+
+function isCommentEditorDisabled(): boolean {
+  return getCommentEditor().getAttribute("contenteditable") === "false";
+}
+
+async function waitForCommentButtonEnabled(name = "Comment"): Promise<void> {
+  await waitFor(() => {
+    expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(false);
+  });
+}
 
 function deferred(): {
   promise: Promise<void>;
@@ -32,7 +80,8 @@ function deferredByNumber(numbers: number[]): Map<number, ReturnType<typeof defe
 function renderPullCommentBox(owner = "octo", name = "repo", number = 1) {
   return render(CommentBox, {
     props: { owner, name, number },
-    context: new Map([
+    context: new Map<symbol, unknown>([
+      [API_CLIENT_KEY, mockAutocompleteClient()],
       [STORES_KEY, {
         detail: {
           submitComment: async () => {},
@@ -46,7 +95,8 @@ function renderPullCommentBox(owner = "octo", name = "repo", number = 1) {
 function renderIssueCommentBox(owner = "octo", name = "repo", number = 1) {
   return render(IssueCommentBox, {
     props: { owner, name, number },
-    context: new Map([
+    context: new Map<symbol, unknown>([
+      [API_CLIENT_KEY, mockAutocompleteClient()],
       [STORES_KEY, {
         issues: {
           submitIssueComment: async () => {},
@@ -77,37 +127,33 @@ describe("comment draft persistence", () => {
   it("keeps the pull request comment draft when the box remounts", async () => {
     const firstRender = renderPullCommentBox("octo", "repo", 1);
 
-    const textarea = screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ) as HTMLTextAreaElement;
-    await fireEvent.input(textarea, { target: { value: "draft review note" } });
+    setCommentDraft("pull", "octo", "repo", 1, "draft review note");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("draft review note");
+    });
 
     firstRender.unmount();
     renderPullCommentBox("octo", "repo", 1);
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).value,
-    ).toBe("draft review note");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("draft review note");
+    });
   });
 
   it("keeps the issue comment draft when the box remounts", async () => {
     const firstRender = renderIssueCommentBox("octo", "repo", 2);
 
-    const textarea = screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ) as HTMLTextAreaElement;
-    await fireEvent.input(textarea, { target: { value: "draft issue note" } });
+    setCommentDraft("issue", "octo", "repo", 2, "draft issue note");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("draft issue note");
+    });
 
     firstRender.unmount();
     renderIssueCommentBox("octo", "repo", 2);
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).value,
-    ).toBe("draft issue note");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("draft issue note");
+    });
   });
 
   it("does not clear the newly selected pull request draft when an earlier submit resolves", async () => {
@@ -122,9 +168,8 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "old pull draft" } });
+    setCommentDraft("pull", "octo", "repo", 1, "old pull draft");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     setCommentDraft("pull", "octo", "repo", 2, "new pull draft");
@@ -136,11 +181,9 @@ describe("comment draft persistence", () => {
       submitComment: async () => submit.promise,
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(false);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(false);
+    });
     expect(isCommentSubmitPending("pull", "octo", "repo", 2)).toBe(false);
     expect(
       (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
@@ -152,11 +195,9 @@ describe("comment draft persistence", () => {
       expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("");
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).value,
-    ).toBe("new pull draft");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("new pull draft");
+    });
     expect(getCommentDraft("pull", "octo", "repo", 2)).toBe("new pull draft");
   });
 
@@ -172,9 +213,8 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "old issue draft" } });
+    setCommentDraft("issue", "octo", "repo", 1, "old issue draft");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     setCommentDraft("issue", "octo", "repo", 2, "new issue draft");
@@ -186,11 +226,9 @@ describe("comment draft persistence", () => {
       submitComment: async () => submit.promise,
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(false);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(false);
+    });
     expect(isCommentSubmitPending("issue", "octo", "repo", 2)).toBe(false);
     expect(
       (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
@@ -202,11 +240,9 @@ describe("comment draft persistence", () => {
       expect(getCommentDraft("issue", "octo", "repo", 1)).toBe("");
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).value,
-    ).toBe("new issue draft");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("new issue draft");
+    });
     expect(getCommentDraft("issue", "octo", "repo", 2)).toBe("new issue draft");
   });
 
@@ -225,22 +261,20 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "old pull draft" } });
+    setCommentDraft("pull", "octo", "repo", 1, "old pull draft");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     setCommentDraft("pull", "octo", "repo", 2, "new pull draft");
     await rerender({ kind: "pull", owner: "octo", name: "repo", number: 2, submitComment });
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     await rerender({ kind: "pull", owner: "octo", name: "repo", number: 1, submitComment });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(true);
+    });
     expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
@@ -251,22 +285,18 @@ describe("comment draft persistence", () => {
       expect(getCommentDraft("pull", "octo", "repo", 2)).toBe("");
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(true);
+    });
 
     submits.get(1)?.resolve();
     await waitFor(() => {
       expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("");
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(false);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(false);
+    });
     expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(false);
   });
 
@@ -285,22 +315,20 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "old issue draft" } });
+    setCommentDraft("issue", "octo", "repo", 1, "old issue draft");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     setCommentDraft("issue", "octo", "repo", 2, "new issue draft");
     await rerender({ kind: "issue", owner: "octo", name: "repo", number: 2, submitComment });
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     await rerender({ kind: "issue", owner: "octo", name: "repo", number: 1, submitComment });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(true);
+    });
     expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
@@ -311,22 +339,18 @@ describe("comment draft persistence", () => {
       expect(getCommentDraft("issue", "octo", "repo", 2)).toBe("");
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(true);
+    });
 
     submits.get(1)?.resolve();
     await waitFor(() => {
       expect(getCommentDraft("issue", "octo", "repo", 1)).toBe("");
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(false);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(false);
+    });
     expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(false);
   });
 
@@ -342,9 +366,8 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "draft review note" } });
+    setCommentDraft("pull", "octo", "repo", 1, "draft review note");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
     expect(isCommentSubmitPending("pull", "octo", "repo", 1)).toBe(true);
 
@@ -359,11 +382,9 @@ describe("comment draft persistence", () => {
       },
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(true);
+    });
 
     submit.resolve();
     await waitFor(() => {
@@ -383,9 +404,8 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "draft issue note" } });
+    setCommentDraft("issue", "octo", "repo", 1, "draft issue note");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
     expect(isCommentSubmitPending("issue", "octo", "repo", 1)).toBe(true);
 
@@ -400,11 +420,9 @@ describe("comment draft persistence", () => {
       },
     });
 
-    expect(
-      (screen.getByPlaceholderText(
-        "Write a comment... (Cmd+Enter to submit)",
-      ) as HTMLTextAreaElement).disabled,
-    ).toBe(true);
+    await waitFor(() => {
+      expect(isCommentEditorDisabled()).toBe(true);
+    });
 
     submit.resolve();
     await waitFor(() => {
@@ -425,9 +443,8 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "draft review note" } });
+    setCommentDraft("pull", "octo", "repo", 1, "draft review note");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     submit.resolve();
@@ -463,9 +480,8 @@ describe("comment draft persistence", () => {
       },
     });
 
-    await fireEvent.input(screen.getByPlaceholderText(
-      "Write a comment... (Cmd+Enter to submit)",
-    ), { target: { value: "draft issue note" } });
+    setCommentDraft("issue", "octo", "repo", 1, "draft issue note");
+    await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
 
     submit.resolve();
@@ -486,5 +502,90 @@ describe("comment draft persistence", () => {
     });
 
     expect(screen.getByText("issue submit failed")).toBeTruthy();
+  });
+
+  it("shows username autocomplete suggestions and inserts the selected mention", async () => {
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        autocompleteResponse: {
+          users: ["alice", "albert"],
+          references: [],
+        },
+      },
+    });
+
+    setCommentDraft("pull", "octo", "repo", 1, "@al");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("@al");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /@alice/i })).toBeTruthy();
+    });
+
+    await fireEvent.keyDown(getCommentEditor(), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(getCommentDraft("pull", "octo", "repo", 1)).toBe("@alice ");
+    });
+  });
+
+  it("shows issue and pull request reference suggestions and inserts the selected item", async () => {
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        autocompleteResponse: {
+          users: [],
+          references: [
+            { kind: "pull", number: 12, title: "Polish mentions", state: "open" },
+            { kind: "issue", number: 17, title: "Mention bug", state: "open" },
+          ],
+        },
+      },
+    });
+
+    setCommentDraft("issue", "octo", "repo", 1, "#1");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("#1");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /#12/i })).toBeTruthy();
+    });
+
+    await fireEvent.keyDown(getCommentEditor(), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(getCommentDraft("issue", "octo", "repo", 1)).toBe("#12 ");
+    });
+  });
+
+  it("submits from the editor with Cmd+Enter", async () => {
+    const submitComment = async () => Promise.resolve();
+    const submitSpy = vi.fn(submitComment);
+
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "pull",
+        submitComment: submitSpy,
+      },
+    });
+
+    setCommentDraft("pull", "octo", "repo", 1, "hello @alice");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("hello @alice");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+    await fireEvent.keyDown(getCommentEditor(), { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      expect(submitSpy).toHaveBeenCalledWith("octo", "repo", 1, "hello @alice");
+    });
   });
 });
