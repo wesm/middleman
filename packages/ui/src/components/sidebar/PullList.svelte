@@ -138,6 +138,11 @@
     _getDetailTab() === "files" && selectedVisiblePR !== null,
   );
 
+  // True when in files tab and selected PR is NOT in filtered list — show fallback file listing.
+  const needsFallbackFileList = $derived(
+    _getDetailTab() === "files" && pulls.getSelectedPR() !== null && selectedVisiblePR === null,
+  );
+
   const isSelectedActiveWorktree = $derived.by(() => {
     const key = activeWorktreeKey;
     const pr = selectedVisiblePR;
@@ -349,6 +354,9 @@
       {/if}
     {/if}
   </div>
+  {#if needsFallbackFileList}
+    {@render diffFilesInline()}
+  {/if}
   <div class="sidebar-footer">
     {#if !isEmbedded()}
       <button class="add-repo-link" onclick={() => navigate("/settings")}>

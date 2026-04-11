@@ -2,7 +2,6 @@ export type Route =
   | { page: "activity" }
   | { page: "workspaces" }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
-  | { page: "pulls"; view: "diff"; owner: string; name: string; number: number }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
   | { page: "settings" }
   | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
@@ -209,12 +208,6 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     event.owner = r.owner;
     event.name = r.name;
     event.number = r.number;
-  } else if (
-    r.page === "pulls" && "view" in r && r.view === "diff"
-  ) {
-    event.owner = r.owner;
-    event.name = r.name;
-    event.number = r.number;
   } else if (r.page === "pulls" && "selected" in r && r.selected) {
     event.owner = r.selected.owner;
     event.name = r.selected.name;
@@ -282,17 +275,12 @@ if (typeof window !== "undefined") {
 export type DetailTab = "conversation" | "files";
 
 export function getDetailTab(): DetailTab {
-  if (route.page === "pulls" && "view" in route && route.view === "diff") return "files";
   if (route.page === "pulls" && "tab" in route && route.tab === "files") return "files";
   return "conversation";
 }
 
-/** Returns the selected PR info regardless of whether the route is list or diff view. */
 export function getSelectedPRFromRoute(): { owner: string; name: string; number: number } | null {
   if (route.page !== "pulls") return null;
-  if ("view" in route && route.view === "diff") {
-    return { owner: route.owner, name: route.name, number: route.number };
-  }
   if ("selected" in route && route.selected) {
     return route.selected;
   }
@@ -325,6 +313,5 @@ export function setTab(t: Tab): void {
 }
 
 export function isDiffView(): boolean {
-  return (route.page === "pulls" && "view" in route && route.view === "diff") ||
-    (route.page === "pulls" && "tab" in route && route.tab === "files");
+  return route.page === "pulls" && "tab" in route && route.tab === "files";
 }
