@@ -587,6 +587,12 @@ describe("comment draft persistence", () => {
       expect(screen.getByRole("option", { name: /@alice/i })).toBeTruthy();
     });
 
+    await fireEvent.compositionStart(getCommentEditor());
+
+    await waitFor(() => {
+      expect(screen.queryByRole("option", { name: /@alice/i })).toBeNull();
+    });
+
     await fireEvent.keyDown(getCommentEditor(), {
       key: "Enter",
       isComposing: true,

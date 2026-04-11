@@ -69,6 +69,7 @@
   let suggestionAbortController: AbortController | null = null;
   let suggestionRequestSequence = 0;
   let pointerFocusPending = false;
+  let isComposingInput = false;
 
   function escapeHTML(text: string): string {
     return text
@@ -278,7 +279,7 @@
       onKeyDown(props: SuggestionKeyDownProps) {
         if (!currentProps || currentProps.items.length === 0) return false;
         if (props.event.isComposing || props.event.keyCode === 229) {
-		  return true;
+          return false;
         }
 
         if (props.event.key === "ArrowDown") {
@@ -324,6 +325,7 @@
             pluginKey,
             char: trigger,
             allowedPrefixes: [" ", "(", "["],
+            allow: () => !isComposingInput,
             items: async ({ query }) => loadSuggestionItems(trigger, query),
             command: ({ editor, range, props }) => {
               insertSuggestionText(editor, range, props.insertText);
@@ -344,7 +346,7 @@
 
   function handleEditorKeydown(event: KeyboardEvent): boolean {
     if (event.isComposing || event.keyCode === 229) {
-	  return true;
+      return false;
     }
 
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -397,6 +399,18 @@
         handleDOMEvents: {
           mousedown: () => {
             pointerFocusPending = true;
+            return false;
+          },
+          compositionstart: () => {
+            isComposingInput = true;
+            if (editor) {
+              exitSuggestion(editor.view, mentionSuggestionKey);
+              exitSuggestion(editor.view, referenceSuggestionKey);
+            }
+            return false;
+          },
+          compositionend: () => {
+            isComposingInput = false;
             return false;
           },
           focus: () => {
