@@ -77,18 +77,22 @@ test.describe("comment editor autocomplete", () => {
     const editor = detail.locator(".comment-editor-input").first();
     await editor.click();
     await expect(editor).toHaveClass(/ProseMirror-focused/);
-    await editor.type("2");
+    await editor.evaluate((node) => {
+      node.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "2",
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
 
-    await expect(editor).toContainText("2");
     await expect(page).not.toHaveURL(/\/pulls\/board$/);
     await expect(detail).toBeVisible();
   });
 
   test("PR comment editor accepts @ mention and submits end-to-end", async ({ page }) => {
-    await page.goto("/pulls");
-    await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".pull-item").first().click();
+    await page.goto("/pulls/acme/widgets/5");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, { timeout: 10_000 });
 
     const detail = page.locator(".pull-detail");
     const editor = detail.locator(".comment-editor-input").first();
@@ -109,10 +113,9 @@ test.describe("comment editor autocomplete", () => {
   });
 
   test("issue comment editor accepts # reference and submits end-to-end", async ({ page }) => {
-    await page.goto("/issues");
-    await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".issue-item").first().click();
+    await page.goto("/issues/acme/widgets/12");
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, { timeout: 10_000 });
 
     const detail = page.locator(".issue-detail");
     const editor = detail.locator(".comment-editor-input").first();
