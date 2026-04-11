@@ -116,6 +116,36 @@ type gqlCommit struct {
 	}
 }
 
+type gqlIssueQuery struct {
+	Repository struct {
+		Issues struct {
+			Nodes    []gqlIssue
+			PageInfo pageInfo
+		} `graphql:"issues(first: $pageSize, states: OPEN, after: $cursor)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+type gqlIssue struct {
+	DatabaseId int64 `graphql:"databaseId"`
+	Number     int
+	Title      string
+	State      string
+	Body       string
+	URL        string `graphql:"url"`
+	Author     struct{ Login string }
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	ClosedAt   *time.Time
+	Labels     struct {
+		Nodes []gqlLabel
+	} `graphql:"labels(first: 100)"`
+	Comments struct {
+		TotalCount int
+		Nodes      []gqlComment
+		PageInfo   pageInfo
+	} `graphql:"comments(first: 100)"`
+}
+
 type gqlLabel struct {
 	Name        string
 	Color       string
@@ -207,6 +237,40 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 	}
 
 	return pr
+}
+
+func adaptIssue(gql *gqlIssue) *gh.Issue {
+	state := stateToREST(gql.State)
+	issue := &gh.Issue{
+		ID:       new(gql.DatabaseId),
+		Number:   new(gql.Number),
+		Title:    new(gql.Title),
+		State:    new(state),
+		Body:     new(gql.Body),
+		HTMLURL:  new(gql.URL),
+		Comments: new(gql.Comments.TotalCount),
+		User:     &gh.User{Login: new(gql.Author.Login)},
+	}
+
+	created := gh.Timestamp{Time: gql.CreatedAt}
+	updated := gh.Timestamp{Time: gql.UpdatedAt}
+	issue.CreatedAt = &created
+	issue.UpdatedAt = &updated
+
+	if gql.ClosedAt != nil {
+		t := gh.Timestamp{Time: *gql.ClosedAt}
+		issue.ClosedAt = &t
+	}
+	for _, l := range gql.Labels.Nodes {
+		issue.Labels = append(issue.Labels, &gh.Label{
+			Name:        new(l.Name),
+			Color:       new(l.Color),
+			Description: new(l.Description),
+			Default:     new(l.IsDefault),
+		})
+	}
+
+	return issue
 }
 
 func stateToREST(graphqlState string) string {
@@ -320,9 +384,19 @@ func toLower(s string) string {
 
 // --- Bulk result types ---
 
-// RepoBulkResult holds all open PRs fetched via GraphQL for a repo.
+// RepoBulkResult holds all open PRs and issues fetched via GraphQL for a repo.
 type RepoBulkResult struct {
 	PullRequests []BulkPR
+	Issues       []BulkIssue
+}
+
+// BulkIssue holds an issue and its nested comments from a single
+// GraphQL query. CommentsComplete indicates whether the comments
+// connection was fully paginated.
+type BulkIssue struct {
+	Issue            *gh.Issue
+	Comments         []*gh.IssueComment
+	CommentsComplete bool
 }
 
 // BulkPR holds a PR and its nested data from a single GraphQL query.
@@ -340,6 +414,19 @@ type BulkPR struct {
 	ReviewsComplete  bool
 	CommitsComplete  bool
 	CIComplete       bool
+}
+
+func convertGQLIssue(gql *gqlIssue) BulkIssue {
+	bulk := BulkIssue{
+		Issue:            adaptIssue(gql),
+		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
+	}
+
+	for i := range gql.Comments.Nodes {
+		bulk.Comments = append(bulk.Comments, adaptComment(&gql.Comments.Nodes[i]))
+	}
+
+	return bulk
 }
 
 // --- GraphQL rate transport ---
@@ -484,6 +571,57 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	for i := range gqlPRs {
 		bulk := convertGQLPR(&gqlPRs[i])
 		result.PullRequests = append(result.PullRequests, bulk)
+	}
+	return result, nil
+}
+
+func (g *GraphQLFetcher) FetchRepoIssues(
+	ctx context.Context, owner, name string,
+) (*RepoBulkResult, error) {
+	result, err := g.fetchRepoIssuesWithPageSize(
+		ctx, owner, name, topLevelPageSize,
+	)
+	if err != nil {
+		slog.Warn("GraphQL issue query failed, retrying with smaller page",
+			"owner", owner, "name", name,
+			"err", err, "retryPageSize", retryPageSize,
+		)
+		result, err = g.fetchRepoIssuesWithPageSize(
+			ctx, owner, name, retryPageSize,
+		)
+	}
+	return result, err
+}
+
+func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
+	ctx context.Context, owner, name string, pageSize int,
+) (*RepoBulkResult, error) {
+	gqlIssues, err := fetchAllPages(ctx, func(
+		ctx context.Context, cursor *string,
+	) ([]gqlIssue, pageInfo, error) {
+		var q gqlIssueQuery
+		vars := map[string]any{
+			"owner":    githubv4.String(owner),
+			"name":     githubv4.String(name),
+			"pageSize": githubv4.Int(pageSize),
+			"cursor":   cursorVar(cursor),
+		}
+		if err := g.client.Query(ctx, &q, vars); err != nil {
+			return nil, pageInfo{}, err
+		}
+		return q.Repository.Issues.Nodes,
+			q.Repository.Issues.PageInfo, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := &RepoBulkResult{
+		Issues: make([]BulkIssue, 0, len(gqlIssues)),
+	}
+	for i := range gqlIssues {
+		bulk := convertGQLIssue(&gqlIssues[i])
+		result.Issues = append(result.Issues, bulk)
 	}
 	return result, nil
 }
