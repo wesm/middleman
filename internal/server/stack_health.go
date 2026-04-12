@@ -28,7 +28,15 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 		}
 
 		if m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED" {
-			hasBlocker = true
+			// A PR only counts as "blocked" when it actually blocks something
+			// downstream — i.e. has at least one non-merged descendant. A
+			// failing tip with nothing below it is not blocking anything.
+			for j := i + 1; j < len(members); j++ {
+				if members[j].State != "merged" {
+					hasBlocker = true
+					break
+				}
+			}
 		}
 	}
 

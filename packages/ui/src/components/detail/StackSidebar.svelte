@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { getClient, getNavigate } from "../../context.js";
+  import { onDestroy } from "svelte";
+  import { getClient, getNavigate, getStores } from "../../context.js";
 
   const client = getClient();
   const navigate = getNavigate();
+  const { sync } = getStores();
 
   interface Props {
     owner: string;
@@ -36,15 +38,8 @@
   let visible = $state(false);
   let requestSeq = 0;
 
-  $effect(() => {
-    const o = owner;
-    const n = name;
-    const num = number;
+  function fetchStack(o: string, n: string, num: number): void {
     const seq = ++requestSeq;
-
-    visible = false;
-    data = null;
-
     client.GET("/repos/{owner}/{name}/pulls/{number}/stack", {
       params: { path: { owner: o, name: n, number: num } },
     }).then(({ data: resp, error }) => {
@@ -59,7 +54,22 @@
       if (seq !== requestSeq) return;
       visible = false;
     });
+  }
+
+  $effect(() => {
+    const o = owner;
+    const n = name;
+    const num = number;
+    visible = false;
+    data = null;
+    fetchStack(o, n, num);
   });
+
+  // Refetch stack state when a sync completes — PR states (CI, review,
+  // merge status) can change for the same PR number while the sidebar is
+  // open and must be reflected without navigation.
+  const unsubSync = sync.subscribeSyncComplete(() => fetchStack(owner, name, number));
+  onDestroy(() => unsubSync());
 
   function getDotColor(member: StackMember): string {
     if (member.state === "merged") return "#8b949e";
