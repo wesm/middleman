@@ -29,6 +29,7 @@ func setupEmbeddedServer(
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
 	return New(
 		database,
 		syncer,

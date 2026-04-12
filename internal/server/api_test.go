@@ -1004,6 +1004,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 1)
@@ -1046,6 +1047,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 2)
@@ -1097,6 +1099,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 3)
@@ -1150,6 +1153,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 4)
@@ -1206,6 +1210,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 5)
@@ -1261,6 +1266,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 6)
@@ -1310,6 +1316,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 7)
@@ -1363,6 +1370,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	seedPR(t, database, "acme", "widget", 8)
@@ -1462,6 +1470,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 		map[string]ghclient.Client{"github.com": mock},
 		database, clones, defaultTestRepos, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
 	client := setupTestClient(t, srv)
@@ -1579,6 +1588,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
 	)
+	t.Cleanup(syncer.Stop)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil).WithContext(ctx)
@@ -1635,6 +1645,7 @@ func TestAPIReadyForReview(t *testing.T) {
 		},
 	}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
@@ -2768,6 +2779,7 @@ func TestAPIRateLimits(t *testing.T) {
 		map[string]*ghclient.RateTracker{"github.com": rt},
 		nil,
 	)
+	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	ts := httptest.NewServer(srv)
@@ -2818,6 +2830,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 		map[string]*ghclient.RateTracker{"github.com": rt},
 		nil,
 	)
+	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	ts := httptest.NewServer(srv)
@@ -2878,6 +2891,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 		map[string]*ghclient.RateTracker{"github.com": rt},
 		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(500)},
 	)
+	t.Cleanup(syncer.Stop)
 
 	// Simulate some budget spend.
 	budgets := syncer.Budgets()
@@ -3085,6 +3099,7 @@ func setupTestServerWithClones(t *testing.T) (
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
 
 	seedPR(t, database, "acme", "widget", 1)
@@ -3231,6 +3246,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "rootrepo", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
 
 	seedPR(t, database, "acme", "rootrepo", 1)
