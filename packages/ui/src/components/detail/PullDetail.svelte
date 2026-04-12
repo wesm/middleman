@@ -12,6 +12,7 @@
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
+  import DiffSidebar from "../diff/DiffSidebar.svelte";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -233,7 +234,14 @@
         </div>
       {/if}
       {#if !hideTabs && activeTab === "files"}
-        <DiffView {owner} {name} {number} />
+        <div class="files-layout">
+          <aside class="files-sidebar">
+            <DiffSidebar />
+          </aside>
+          <div class="files-main">
+            <DiffView {owner} {name} {number} />
+          </div>
+        </div>
       {:else}
         <div class="pull-detail">
       {#if detailStore.isStaleRefreshing()}
@@ -613,6 +621,31 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
+  }
+
+  .files-layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .files-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .files-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 

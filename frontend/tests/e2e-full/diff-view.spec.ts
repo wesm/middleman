@@ -506,7 +506,7 @@ test.describe("diff view", () => {
       .toHaveCount(0);
 
     // Fallback file list renders outside .list-body (selected PR is gone).
-    const fallback = page.locator(".pull-list > .diff-files");
+    const fallback = page.locator(".pull-list > .diff-files-wrap");
     await expect(fallback).toHaveCount(1);
     await expect(fallback.locator(".diff-file-row")).toHaveCount(4);
   });
@@ -634,7 +634,7 @@ test.describe("diff view", () => {
     // PR row hidden, but fallback file list renders outside .list-body.
     await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
       .toHaveCount(0);
-    const fallback = page.locator(".pull-list > .diff-files");
+    const fallback = page.locator(".pull-list > .diff-files-wrap");
     await expect(fallback).toHaveCount(1);
     await expect(fallback.locator(".diff-file-row")).toHaveCount(4);
   });

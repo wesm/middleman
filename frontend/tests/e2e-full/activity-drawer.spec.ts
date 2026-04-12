@@ -198,6 +198,70 @@ test.describe("activity drawer", () => {
     await expect(page.locator(".kanban-board")).toBeVisible();
   });
 
+  test("activity drawer Files tab renders the file/commit sidebar", async ({ page }) => {
+    // Regression guard: when the drawer is on the Files tab, the
+    // left pane must include the same Commits section + file list
+    // that the standalone PR browser shows. Without this, the
+    // drawer's diff view loses navigability for multi-file PRs.
+    await mockDiffForAllPRs(page, tinyDiff);
+
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    // The Files tab is a horizontal split: sidebar on the left,
+    // diff view on the right.
+    const sidebar = drawer.locator(".files-layout > .files-sidebar");
+    await expect(sidebar).toBeVisible();
+    await expect(drawer.locator(".files-layout > .files-main .diff-view")).toBeVisible();
+
+    // Sidebar shows the collapsed Commits section header.
+    await expect(sidebar.locator(".commit-section .commit-section__label"))
+      .toHaveText("Commits");
+
+    // Sidebar lists the diff files (one row per file in tinyDiff).
+    await expect(sidebar.locator(".diff-file-row")).toHaveCount(1);
+    await expect(sidebar.locator(".diff-file-row .diff-file-name"))
+      .toHaveText("handler.go");
+  });
+
+  test("kanban drawer Files tab renders the file/commit sidebar", async ({ page }) => {
+    await mockDiffForAllPRs(page, tinyDiff);
+
+    await page.goto("/pulls/board");
+    await page.locator(".kanban-card").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const card = page.locator(".kanban-card")
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await card.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    const sidebar = drawer.locator(".files-layout > .files-sidebar");
+    await expect(sidebar).toBeVisible();
+    await expect(drawer.locator(".files-layout > .files-main .diff-view")).toBeVisible();
+
+    await expect(sidebar.locator(".commit-section .commit-section__label"))
+      .toHaveText("Commits");
+    await expect(sidebar.locator(".diff-file-row")).toHaveCount(1);
+    await expect(sidebar.locator(".diff-file-row .diff-file-name"))
+      .toHaveText("handler.go");
+  });
+
   test("issue drawer scrolls internally to bottom of content", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);

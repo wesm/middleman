@@ -1,11 +1,10 @@
 <script lang="ts">
-  import type { DiffFile } from "../../api/types.js";
   import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
-  import CommitListSection from "../diff/CommitListSection.svelte";
+  import DiffSidebar from "../diff/DiffSidebar.svelte";
   import PullItem from "./PullItem.svelte";
 
-  const { pulls, sync, diff, grouping, collapsedRepos, settings } = getStores();
+  const { pulls, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
   const actions = getActions();
   const hostState = getHostState();
@@ -30,53 +29,6 @@
     getDetailTab?: () => string;
   }
   const { getDetailTab: _getDetailTab = () => "conversation" }: Props = $props();
-
-  function filename(path: string): string {
-    const i = path.lastIndexOf("/");
-    return i >= 0 ? path.slice(i + 1) : path;
-  }
-
-  interface FileGroup { dir: string; files: DiffFile[] }
-
-  function groupByDir(files: DiffFile[]): FileGroup[] {
-    // Group all files with the same directory together regardless of
-    // input order — API can return files in diff order, not path-sorted.
-    const map = new Map<string, DiffFile[]>();
-    for (const f of files) {
-      const i = f.path.lastIndexOf("/");
-      const dir = i > 0 ? f.path.slice(0, i) : "";
-      const bucket = map.get(dir);
-      if (bucket) bucket.push(f);
-      else map.set(dir, [f]);
-    }
-    const result: FileGroup[] = [];
-    for (const [dir, dirFiles] of map) {
-      result.push({ dir, files: dirFiles });
-    }
-    return result;
-  }
-
-  function statusLetter(s: string): string {
-    switch (s) {
-      case "modified": return "M";
-      case "added": return "A";
-      case "deleted": return "D";
-      case "renamed": return "R";
-      case "copied": return "C";
-      default: return "?";
-    }
-  }
-
-  function statusColor(s: string): string {
-    switch (s) {
-      case "modified": return "var(--accent-amber)";
-      case "added": return "var(--accent-green)";
-      case "deleted": return "var(--accent-red)";
-      case "renamed":
-      case "copied": return "var(--accent-blue)";
-      default: return "var(--text-muted)";
-    }
-  }
 
   let searchInput = $state(pulls.getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -154,26 +106,6 @@
     _getDetailTab() === "files" && pulls.getSelectedPR() !== null && selectedVisiblePR === null,
   );
 
-  // Per-diff file filter input (shown when 10+ files in diff).
-  let fileFilterText = $state("");
-  // Reset filter whenever selected PR changes so stale filter text doesn't
-  // silently hide files in the next PR.
-  $effect(() => {
-    pulls.getSelectedPR();
-    fileFilterText = "";
-  });
-  const showFileFilter = $derived((diff.getFileList()?.files.length ?? 0) >= 10);
-  const filteredDiffFiles = $derived.by(() => {
-    const list = diff.getFileList();
-    if (!list) return null;
-    // Only apply filter when the filter UI is visible to avoid silent
-    // hiding when the next PR has fewer files.
-    if (!showFileFilter) return list.files;
-    const q = fileFilterText.trim().toLowerCase();
-    if (!q) return list.files;
-    return list.files.filter((f) => f.path.toLowerCase().includes(q));
-  });
-
   const isSelectedActiveWorktree = $derived.by(() => {
     const key = activeWorktreeKey;
     const pr = selectedVisiblePR;
@@ -181,44 +113,6 @@
     return pr.worktree_links.some((l) => l.worktree_key === key);
   });
 </script>
-
-{#snippet diffFilesInline()}
-  <CommitListSection />
-  <div class="diff-files">
-    {#if diff.isFileListLoading() && !diff.getFileList()}
-      <div class="diff-files-state diff-files-state--loading">Loading files</div>
-    {:else if filteredDiffFiles}
-      {#if showFileFilter}
-        <div class="diff-files-filter">
-          <input
-            type="text"
-            class="diff-files-filter__input"
-            placeholder="Filter files..."
-            bind:value={fileFilterText}
-          />
-        </div>
-      {/if}
-      {@const grouped = groupByDir(filteredDiffFiles)}
-      {#each grouped as group, gi (gi)}
-        {#if group.dir}
-          <div class="diff-dir-header">{group.dir}/</div>
-        {/if}
-        {#each group.files as f (f.path)}
-          <button
-            class="diff-file-row"
-            class:diff-file-row--active={diff.getActiveFile() === f.path}
-            class:diff-file-row--nested={!!group.dir}
-            onclick={() => diff.requestScrollToFile(f.path)}
-            title={f.path}
-          >
-            <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
-            <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
-          </button>
-        {/each}
-      {/each}
-    {/if}
-  </div>
-{/snippet}
 
 <div class="pull-list">
   <div class="filter-bar">
@@ -354,7 +248,9 @@
                   onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
                 />
                 {#if prSelected && _getDetailTab() === "files"}
-                  {@render diffFilesInline()}
+                  <div class="diff-files-wrap">
+                  <DiffSidebar />
+                </div>
                 {/if}
               {/each}
             {/if}
@@ -374,7 +270,9 @@
                 onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
               />
               {#if prSelected && _getDetailTab() === "files"}
-                {@render diffFilesInline()}
+                <div class="diff-files-wrap">
+                  <DiffSidebar />
+                </div>
               {/if}
             {/each}
           </div>
@@ -390,14 +288,18 @@
             onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
           />
           {#if prSelected && _getDetailTab() === "files"}
-            {@render diffFilesInline()}
+            <div class="diff-files-wrap">
+                  <DiffSidebar />
+                </div>
           {/if}
         {/each}
       {/if}
     {/if}
   </div>
   {#if needsFallbackFileList}
-    {@render diffFilesInline()}
+    <div class="diff-files-wrap">
+                  <DiffSidebar />
+                </div>
   {/if}
   <div class="sidebar-footer">
     {#if !isEmbedded()}
@@ -526,11 +428,11 @@
     color: var(--text-secondary);
   }
 
-  .list-body--diff-focus .diff-files {
+  .list-body--diff-focus .diff-files-wrap {
     border-left: 3px solid var(--accent-blue);
   }
 
-  .list-body--diff-focus-worktree .diff-files {
+  .list-body--diff-focus-worktree .diff-files-wrap {
     border-left-color: var(--accent-teal, var(--accent-green));
   }
 
@@ -710,97 +612,8 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
 
-  .diff-files {
-    border-bottom: 1px solid var(--border-muted);
-    padding: 4px 0;
+  .diff-files-wrap {
     max-height: 40vh;
     overflow-y: auto;
-  }
-
-  .diff-files-filter {
-    padding: 4px 10px 6px 24px;
-  }
-
-  .diff-files-filter__input {
-    width: 100%;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-muted);
-    background: var(--bg-inset);
-    color: var(--text-primary);
-  }
-
-  .diff-files-filter__input:focus {
-    border-color: var(--accent-blue);
-    outline: none;
-  }
-
-  .diff-files-state {
-    padding: 6px 24px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .diff-files-state--loading {
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  .diff-dir-header {
-    padding: 5px 12px 2px 24px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .diff-file-row {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    width: 100%;
-    padding: 2px 12px 2px 24px;
-    text-align: left;
-    color: var(--text-secondary);
-    transition: background 0.15s ease;
-  }
-
-  .diff-file-row--nested {
-    padding-left: 36px;
-  }
-
-  .diff-file-row:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .diff-file-row--active {
-    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-    color: var(--text-primary);
-  }
-
-  .diff-file-status {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    width: 12px;
-    flex-shrink: 0;
-    text-align: center;
-  }
-
-  .diff-file-name {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .diff-file-name--deleted {
-    text-decoration: line-through;
-    opacity: 0.7;
   }
 </style>
