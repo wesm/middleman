@@ -3792,6 +3792,7 @@ func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
 
 func TestAPIListStacks(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -3802,20 +3803,21 @@ func TestAPIListStacks(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	var stks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(resp.Body, &stks))
+	require.NoError(json.Unmarshal(resp.Body, &stks))
 	assert.Len(stks, 1)
 	assert.Equal("auth", stks[0].Name)
-	require.NotNil(t, stks[0].Members)
+	require.NotNil(stks[0].Members)
 	assert.Len(*stks[0].Members, 3)
 	assert.Equal(int64(10), (*stks[0].Members)[0].Number)
 }
 
 func TestAPIListStacks_RepoFilter(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
@@ -3833,29 +3835,30 @@ func TestAPIListStacks_RepoFilter(t *testing.T) {
 	runStackDetection(t, database, "acme", "tools")
 
 	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
+	require.NoError(err)
 	var allStks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(respAll.Body, &allStks))
+	require.NoError(json.Unmarshal(respAll.Body, &allStks))
 	assert.Len(allStks, 2)
 
 	repo := "acme/widget"
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &repo})
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(http.StatusOK, resp.StatusCode())
 	var filtered []generated.StackResponse
-	require.NoError(t, json.Unmarshal(resp.Body, &filtered))
+	require.NoError(json.Unmarshal(resp.Body, &filtered))
 	assert.Len(filtered, 1)
 	assert.Equal("widget", filtered[0].RepoName)
 
 	bad := "noslash"
 	resp2, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &bad})
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(http.StatusBadRequest, resp2.StatusCode())
 	assert.Contains(string(resp2.Body), "invalid repo filter")
 }
 
 func TestAPIGetStackForPR(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -3866,16 +3869,16 @@ func TestAPIGetStackForPR(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
 	assert.Equal("api", resp.JSON200.StackName)
 	assert.Equal(int64(2), resp.JSON200.Size)
 	assert.Equal("blocked", resp.JSON200.Health)
 
 	seedPR(t, database, "acme", "widget", 99)
 	resp2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 99)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(http.StatusNotFound, resp2.StatusCode())
 }
 
@@ -3900,6 +3903,7 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 
 func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -3910,12 +3914,12 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	var stks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(resp.Body, &stks))
-	require.Len(t, stks, 1)
+	require.NoError(json.Unmarshal(resp.Body, &stks))
+	require.Len(stks, 1)
 	assert.NotEqual("all_green", stks[0].Health, "all-draft stack must not be all_green")
 	assert.NotEqual("base_ready", stks[0].Health, "draft base must not be base_ready")
 }
@@ -3927,6 +3931,7 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 // data produced entirely by the sync-completion callback path.
 func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	ctx := context.Background()
 
 	// Build GitHub PRs the mock will return; the sync will persist these
@@ -3968,17 +3973,17 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 
 	// Stacks should be populated purely by the hook path.
 	listResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, listResp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
 	var stks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(listResp.Body, &stks))
-	require.Len(t, stks, 1, "sync-hook detection should produce one stack")
+	require.NoError(json.Unmarshal(listResp.Body, &stks))
+	require.Len(stks, 1, "sync-hook detection should produce one stack")
 	assert.Equal("hook", stks[0].Name)
 
 	ctxResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, ctxResp.StatusCode())
-	require.NotNil(t, ctxResp.JSON200)
+	require.NoError(err)
+	require.Equal(http.StatusOK, ctxResp.StatusCode())
+	require.NotNil(ctxResp.JSON200)
 	assert.Equal("hook", ctxResp.JSON200.StackName)
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
 }
@@ -4005,6 +4010,7 @@ func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 
 func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -4015,10 +4021,10 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.NotNil(t, resp.JSON200.Members)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Members)
 	assert.Len(*resp.JSON200.Members, 2)
 	assert.Equal("master", (*resp.JSON200.Members)[0].BaseBranch)
 	assert.Equal("feat/base", (*resp.JSON200.Members)[1].BaseBranch)

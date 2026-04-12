@@ -263,11 +263,6 @@ test.describe("activity drawer", () => {
     const drawer = page.locator(".drawer-panel");
     await expect(drawer).toBeVisible();
 
-    // Wait for PullDetail to finish its initial load. The tab bar
-    // doesn't render until the detail store resolves, so the stats
-    // chips won't exist during the loading state.
-    await drawer.locator(".detail-title").waitFor({ state: "visible" });
-
     const filesTab = drawer.locator(".detail-tab", { hasText: "Files changed" });
     await expect(filesTab).toBeVisible();
 
