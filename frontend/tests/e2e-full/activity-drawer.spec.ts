@@ -154,21 +154,25 @@ test.describe("activity drawer", () => {
     const issueDetail = drawer.locator(".issue-detail");
     await expect(issueDetail).toBeVisible();
 
-    // Force a scroll to the bottom. If scroll ownership is broken, this
-    // either no-ops or scrolls the wrong container.
-    await issueDetail.evaluate((el) => {
+    // Force a scroll to the bottom. If scroll ownership is broken, the
+    // walker finds no scroll container and the test fails.
+    const result = await issueDetail.evaluate((el) => {
       // Walk up to find the scroll container (could be the element itself
-      // or an ancestor).
+      // or an ancestor). Use Element (not HTMLElement) since scroll props
+      // are defined on the Element interface.
       let target: Element | null = el;
       while (target) {
         const style = getComputedStyle(target);
         if (style.overflowY === "auto" || style.overflowY === "scroll") {
           target.scrollTop = target.scrollHeight;
-          return;
+          return { found: true };
         }
         target = target.parentElement;
       }
+      return { found: false };
     });
+
+    expect(result.found).toBe(true);
 
     // The drawer itself should still be visible after the scroll action.
     await expect(drawer).toBeVisible();
