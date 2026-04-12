@@ -59,6 +59,18 @@
     project.worktrees.some((w) => w.isStale),
   );
 
+  function safeHref(url: string): string | null {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        return parsed.href;
+      }
+    } catch {
+      // malformed URL
+    }
+    return null;
+  }
+
   function handleHeaderContext(e: MouseEvent): void {
     e.preventDefault();
     e.stopPropagation();
@@ -87,22 +99,34 @@
 <svelte:window onclick={showMenu ? closeMenu : undefined} oncontextmenu={showMenu ? closeMenu : undefined} />
 
 <section class="project-section">
-  <button
-    class="project-header"
-    onclick={toggleCollapsed}
-    oncontextmenu={handleHeaderContext}
-  >
-    <span class="chevron">{collapsed ? "▶" : "▼"}</span>
-    <span class="project-name">{project.name}</span>
-    {#if project.platformRepo}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="project-header" oncontextmenu={handleHeaderContext}>
+    <button class="collapse-toggle" onclick={toggleCollapsed}>
+      <span class="chevron">{collapsed ? "▶" : "▼"}</span>
+      <span class="project-name">{project.name}</span>
+      <span class="worktree-count">
+        {project.worktrees.length} worktree{project.worktrees.length !== 1 ? "s" : ""}
+      </span>
+      {#if hasStaleWorktrees}
+        <span class="stale-dot" title="Has stale worktrees">&#9888;</span>
+      {/if}
+      {#if collapsed && hiddenWorktrees.length > 0}
+        <span class="hidden-count">
+          +{hiddenWorktrees.length} hidden
+        </span>
+      {/if}
+    </button>
+    {#if project.platformURL && safeHref(project.platformURL)}
+      <a
+        href={safeHref(project.platformURL)}
+        target="_blank"
+        rel="noopener"
+        class="repo-link"
+      >{project.platformRepo}</a>
+    {:else if project.platformRepo}
       <span class="platform-repo">{project.platformRepo}</span>
     {/if}
-    {#if collapsed && hiddenWorktrees.length > 0}
-      <span class="hidden-count">
-        +{hiddenWorktrees.length} hidden
-      </span>
-    {/if}
-  </button>
+  </div>
 
   {#if !collapsed}
     <div class="worktree-list">
@@ -179,15 +203,25 @@
     width: 100%;
     height: 32px;
     padding: 0 10px;
-    text-align: left;
     background: var(--bg-surface);
-    border: none;
-    cursor: pointer;
     transition: background 0.1s;
   }
 
   .project-header:hover {
     background: var(--bg-surface-hover);
+  }
+
+  .collapse-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
   }
 
   .chevron {
@@ -213,6 +247,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+
+  .worktree-count {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .stale-dot {
+    color: var(--accent-amber);
+    font-size: 10px;
+  }
+
+  .repo-link {
+    color: var(--text-muted);
+    font-size: 11px;
+    text-decoration: none;
+  }
+
+  .repo-link:hover {
+    text-decoration: underline;
   }
 
   .hidden-count {

@@ -10,8 +10,9 @@
 
 {#if resources}
   <footer class="resource-footer">
-    <span class="stat">CPU {resources.cpuPercent}%</span>
-    <span class="stat">Mem {resources.residentMB}MB</span>
+    <span class="stat">{resources.cpuPercent.toFixed(1)}% CPU</span>
+    <span class="sep">&middot;</span>
+    <span class="stat">{resources.residentMB}M RAM</span>
   </footer>
 {/if}
 
@@ -31,5 +32,9 @@
 
   .stat {
     white-space: nowrap;
+  }
+
+  .sep {
+    color: var(--text-muted);
   }
 </style>

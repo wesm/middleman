@@ -60,6 +60,10 @@ export function isHeaderHidden(): boolean {
   return readConfig()?.embed?.hideHeader === true;
 }
 
+export function isStatusBarHidden(): boolean {
+  return readConfig()?.embed?.hideStatusBar === true;
+}
+
 export function getThemeMode():
   "light" | "dark" | "system" | undefined {
   return readConfig()?.theme?.mode;
