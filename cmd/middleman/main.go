@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/web"
 )
 
@@ -199,6 +200,7 @@ func run(configPath string) error {
 		syscall.SIGTERM,
 	)
 
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.Start(ctx)
 	defer syncer.Stop()
 	defer stop()

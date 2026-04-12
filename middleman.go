@@ -16,6 +16,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/web"
 )
 
@@ -342,26 +343,28 @@ func New(opts Options) (*Instance, error) {
 				},
 			)
 		}
-		if opts.EmbedHooks.OnSyncCompleted != nil {
-			cb := opts.EmbedHooks.OnSyncCompleted
-			syncer.SetOnSyncCompleted(
-				func(results []ghclient.RepoSyncResult) {
-					out := make(
-						[]RepoSyncResult, len(results),
-					)
-					for i, r := range results {
-						out[i] = RepoSyncResult{
-							Owner:        r.Owner,
-							Name:         r.Name,
-							PlatformHost: r.PlatformHost,
-							Error:        r.Error,
-						}
-					}
-					cb(out)
-				},
-			)
+	}
+
+	// Adapter for embed hook if present.
+	var embedNext func([]ghclient.RepoSyncResult)
+	if opts.EmbedHooks != nil && opts.EmbedHooks.OnSyncCompleted != nil {
+		cb := opts.EmbedHooks.OnSyncCompleted
+		embedNext = func(results []ghclient.RepoSyncResult) {
+			out := make([]RepoSyncResult, len(results))
+			for i, r := range results {
+				out[i] = RepoSyncResult{
+					Owner:        r.Owner,
+					Name:         r.Name,
+					PlatformHost: r.PlatformHost,
+					Error:        r.Error,
+				}
+			}
+			cb(out)
 		}
 	}
+	// New() has no ctx — use context.Background(). The syncer manages its
+	// own lifecycle; the hook won't fire after syncer.Stop().
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(context.Background(), database, embedNext))
 
 	srv := server.New(
 		database, syncer, frontend,
