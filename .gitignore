@@ -18,6 +18,8 @@ tmp/
 *.db
 .env
 .superpowers/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
 .worktrees/
 .agents/skills/
 .claude/skills/
