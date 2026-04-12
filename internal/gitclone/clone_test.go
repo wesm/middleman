@@ -43,7 +43,9 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", msg)
 	run(t, work, "git", "push", "origin", "main")
-	out, err := exec.Command("git", "-C", work, "rev-parse", "HEAD").Output()
+	cmd := exec.Command("git", "-C", work, "rev-parse", "HEAD")
+	cmd.Env = filteredGitTestEnv()
+	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }
@@ -221,7 +223,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", clonePath,
 		"config", "--get-all", "remote.origin.fetch")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(gitenv.StripInherited(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 	out, err := cmd.Output()
 	if err != nil {

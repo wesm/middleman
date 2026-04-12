@@ -80,3 +80,24 @@ func TestStripInheritedMixed(t *testing.T) {
 	r.Contains(out, "HOME=/Users/test")
 	r.Contains(out, "GIT_TERMINAL_PROMPT=0")
 }
+
+func TestStripAllRemovesEveryGitVar(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"HOME=/Users/test",
+		"GIT_DIR=/tmp/x",
+		"GIT_TRACE=1",
+		"GIT_SSL_CAINFO=/etc/ssl/cert.pem",
+		"GIT_DEFAULT_HASH=sha256",
+		"GIT_TERMINAL_PROMPT=0",
+		"SSH_ASKPASS=/bin/false",
+		"HTTPS_PROXY=http://proxy:8080",
+	}
+
+	out := StripAll(env)
+	assert := assert.New(t)
+	assert.Len(out, 3)
+	assert.Contains(out, "PATH=/usr/bin")
+	assert.Contains(out, "HOME=/Users/test")
+	assert.Contains(out, "HTTPS_PROXY=http://proxy:8080")
+}

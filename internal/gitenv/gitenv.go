@@ -44,6 +44,24 @@ func StripInherited(env []string) []string {
 	return out
 }
 
+// StripAll removes every GIT_* variable and SSH_ASKPASS from env.
+// Use this in test fixtures that build throwaway repos and want
+// full isolation from the host environment. Unlike [StripInherited],
+// it also removes transport/diagnostic variables (GIT_SSL_*,
+// GIT_TRACE*, GIT_DEFAULT_HASH, etc.) that could change the shape
+// of a freshly initialized repo.
+func StripAll(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		key, _, _ := strings.Cut(e, "=")
+		if strings.HasPrefix(key, "GIT_") || key == "SSH_ASKPASS" {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func isInherited(e string) bool {
 	key, _, _ := strings.Cut(e, "=")
 	switch key {
