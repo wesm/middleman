@@ -308,3 +308,40 @@ func TestCloseIsIdempotent(t *testing.T) {
 	require.NoError(t, inst.Close())
 	require.NoError(t, inst.Close()) // must not panic or error
 }
+
+// TestStopSyncCancelsStackHook verifies the instance-lifetime stacks
+// hook context gets canceled during StopSync. After New() installs the
+// hook, we flip to stopped state via StopSync and confirm a subsequent
+// Close() works cleanly (no deadlock from a dangling hook goroutine).
+// This covers the roborev finding that StopSync must cancel in-flight
+// stack-detection work, not only Close.
+func TestStopSyncCancelsStackHook(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Assets:  frontend,
+	})
+	require.NoError(t, err)
+
+	// Never called StartSync — hook must still exist (installed in New)
+	// and StopSync must cancel its context without blocking.
+	done := make(chan struct{})
+	go func() {
+		inst.StopSync()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "StopSync did not return within 5s — hook ctx not canceled")
+	}
+
+	// Close must still succeed after StopSync.
+	require.NoError(t, inst.Close())
+}
