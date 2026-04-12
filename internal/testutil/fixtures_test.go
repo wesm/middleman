@@ -36,11 +36,11 @@ func TestSeedFixtures_PRCounts(t *testing.T) {
 
 	allPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "all"})
 	require.NoError(err)
-	assert.Len(allPRs, 9)
+	assert.Len(allPRs, 12)
 
 	openPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "open"})
 	require.NoError(err)
-	assert.Len(openPRs, 5)
+	assert.Len(openPRs, 8)
 
 	mergedPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "merged"})
 	require.NoError(err)

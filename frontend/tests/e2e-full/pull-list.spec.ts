@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Seeded data summary:
-//   open PRs (5): widgets#1, #2, #6, #7, tools#1
+//   open PRs (8): widgets#1, #2, #6, #7, tools#1, tools#10, #11, #12 (last three form a stack)
 //   closed/merged PRs (4): widgets#3 (merged), #4 (merged), #5 (closed), tools#2 (merged)
 
 async function waitForPullList(page: Page): Promise<void> {
@@ -18,7 +18,7 @@ test.describe("PR list view", () => {
 
   test("renders open PRs by default with correct count", async ({ page }) => {
     const countBadge = page.locator(".count-badge");
-    await expect(countBadge).toHaveText(/^5 PRs$/);
+    await expect(countBadge).toHaveText(/^8 PRs$/);
   });
 
   test("closed state shows closed and merged PRs with correct count", async ({ page }) => {

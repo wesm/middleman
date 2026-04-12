@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Seed data repos: acme/widgets (most items) and acme/tools (fewer items).
-// Open PRs (5): widgets#1, #2, #6, #7, tools#1
+// Open PRs (8): widgets#1, #2, #6, #7, tools#1, #10, #11, #12 (last three form a stack)
 // Open issues (4): widgets#10, #11, #13, tools#5
 
 async function waitForPullList(page: Page): Promise<void> {

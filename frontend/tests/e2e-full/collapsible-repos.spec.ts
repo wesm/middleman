@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Seed data repos: acme/widgets (most items) and acme/tools (fewer items).
-// Open PRs (5): widgets#1, #2, #6, #7, tools#1   -> widgets 4, tools 1
+// Open PRs (8): widgets#1, #2, #6, #7, tools#1, #10, #11, #12 -> widgets 4, tools 4
 // Open issues (4): widgets#10, #11, #13, tools#5 -> widgets 3, tools 1
 
 async function waitForPullList(page: Page): Promise<void> {
@@ -40,7 +40,7 @@ test.describe("collapsible repo groups", () => {
     await expect(toolsHeader(page)).toBeVisible();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
     await expect(toolsHeader(page)).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator(".pull-item")).toHaveCount(5);
+    await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
   test("PR list — collapsing acme/widgets hides its items, keeps header and count", async ({ page }) => {
@@ -52,19 +52,19 @@ test.describe("collapsible repo groups", () => {
       widgetsHeader(page).locator(".repo-header__count"),
     ).toHaveText("4");
 
-    // Only acme/tools' single PR remains visible.
-    await expect(page.locator(".pull-item")).toHaveCount(1);
+    // Only acme/tools' PRs remain visible (tools#1 + stack #10/#11/#12).
+    await expect(page.locator(".pull-item")).toHaveCount(4);
     // acme/tools stays expanded.
     await expect(toolsHeader(page)).toHaveAttribute("aria-expanded", "true");
   });
 
   test("PR list — expanding acme/widgets again restores its items", async ({ page }) => {
     await widgetsHeader(page).click();
-    await expect(page.locator(".pull-item")).toHaveCount(1);
+    await expect(page.locator(".pull-item")).toHaveCount(4);
 
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator(".pull-item")).toHaveCount(5);
+    await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
   test("PR list — keyboard activation via Enter and Space toggles collapse", async ({ page }) => {
@@ -72,12 +72,12 @@ test.describe("collapsible repo groups", () => {
     await widgetsHeader(page).focus();
     await page.keyboard.press("Enter");
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator(".pull-item")).toHaveCount(1);
+    await expect(page.locator(".pull-item")).toHaveCount(4);
 
     await widgetsHeader(page).focus();
     await page.keyboard.press("Space");
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator(".pull-item")).toHaveCount(5);
+    await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
   test("PR list — collapse state persists across reload", async ({ page }) => {
@@ -88,7 +88,7 @@ test.describe("collapsible repo groups", () => {
     await waitForPullList(page);
 
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator(".pull-item")).toHaveCount(1);
+    await expect(page.locator(".pull-item")).toHaveCount(4);
   });
 
   test("collapse is independent across pulls and issues surfaces", async ({ page }) => {
