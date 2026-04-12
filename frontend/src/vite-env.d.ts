@@ -51,6 +51,17 @@ interface MiddlemanConfig {
     pullRequest?: ActionHookDef[];
     issue?: ActionHookDef[];
   };
+  workspace?: WorkspaceData;
+  onWorkspaceCommand?: WorkspaceCommandHandler;
+  embed?: {
+    hideHeader?: boolean;
+    initialRoute?: string;
+    sidebarWidth?: number;
+  };
+  onLayoutChanged?: (layout: {
+    sidebar: { width: number };
+    pinnedPanel: { width: number; visible: boolean };
+  }) => void;
   onNavigate?: (event: MiddlemanNavigateEvent) => void;
   onRouteChange?: (event: MiddlemanNavigateEvent) => void;
 }
@@ -67,8 +78,98 @@ interface ActionHookDef {
   }) => void | Promise<void>;
 }
 
+interface WorkspaceHost {
+  key: string;
+  label: string;
+  connectionState:
+    | "connected"
+    | "connecting"
+    | "disconnected"
+    | "error";
+  projects: WorkspaceProject[];
+  sessions: WorkspaceSession[];
+  resources: WorkspaceResources | null;
+}
+
+interface WorkspaceProject {
+  key: string;
+  name: string;
+  kind: "repository" | "scratch";
+  repoKind: string;
+  defaultBranch: string;
+  platformRepo: string | null;
+  worktrees: WorkspaceWorktree[];
+}
+
+interface WorkspaceWorktree {
+  key: string;
+  name: string;
+  branch: string;
+  isPrimary: boolean;
+  isHidden: boolean;
+  isStale: boolean;
+  sessionBackend: string | null;
+  linkedPR: WorkspaceLinkedPR | null;
+  activity: WorkspaceActivity;
+  diff: WorkspaceDiff | null;
+}
+
+interface WorkspaceLinkedPR {
+  number: number;
+  title: string;
+  state: "open" | "closed" | "merged";
+  checksStatus: string | null;
+  updatedAt: string | null;
+}
+
+interface WorkspaceActivity {
+  state: "idle" | "active" | "running" | "needsAttention";
+  lastOutputAt: string | null;
+}
+
+interface WorkspaceDiff {
+  added: number;
+  removed: number;
+}
+
+interface WorkspaceSession {
+  key: string;
+  name: string;
+  worktreeKey: string | null;
+  isHidden: boolean;
+}
+
+interface WorkspaceResources {
+  cpuPercent: number;
+  residentMB: number;
+}
+
+interface WorkspaceData {
+  hosts: WorkspaceHost[];
+  selectedWorktreeKey: string | null;
+  selectedHostKey: string | null;
+}
+
+interface CommandResult {
+  ok: boolean;
+  message?: string;
+}
+
+interface WorkspaceCommandHandler {
+  (
+    command: string,
+    payload: Record<string, unknown>,
+  ): CommandResult | Promise<CommandResult>;
+}
+
+interface WorkspaceDetailContext {
+  worktree: WorkspaceWorktree | null;
+  project: WorkspaceProject | null;
+  host: WorkspaceHost | null;
+}
+
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "board" | "reviews";
+  type: "pull" | "issue" | "activity" | "board" | "reviews" | "workspaces";
   owner?: string;
   name?: string;
   number?: number;
@@ -82,5 +183,22 @@ interface Window {
   __BASE_PATH__?: string;
   __middleman_config?: MiddlemanConfig;
   __middleman_notify_config_changed?: () => void;
-
+  __middleman_update_workspace?: (data: WorkspaceData) => void;
+  __middleman_navigate_to_route?: (route: string) => void;
+  __middleman_set_repo_filter?: (
+    repo: { owner: string; name: string } | null,
+  ) => void;
+  __middleman_update_selection?: (
+    selection: {
+      hostKey?: string | null;
+      worktreeKey?: string | null;
+    },
+  ) => void;
+  __middleman_update_host_state?: (
+    hostKey: string,
+    patch: {
+      connectionState?: WorkspaceHost["connectionState"];
+      resources?: WorkspaceResources | null;
+    },
+  ) => void;
 }

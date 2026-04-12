@@ -1,5 +1,6 @@
 export type Route =
   | { page: "activity" }
+  | { page: "workspaces" }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number } }
   | { page: "pulls"; view: "diff"; owner: string; name: string; number: number }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
@@ -121,6 +122,9 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "reviews" };
   }
+  if (path === "/workspaces" || path.startsWith("/workspaces/")) {
+    return { page: "workspaces" };
+  }
   return { page: "activity" };
 }
 
@@ -139,7 +143,7 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" {
+  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" {
   return route.page;
 }
 
@@ -186,6 +190,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "issue";
   } else if (r.page === "reviews") {
     navType = "reviews";
+  } else if (r.page === "workspaces") {
+    navType = "workspaces";
   } else {
     navType = r.page as "activity";
   }
@@ -259,6 +265,13 @@ if (typeof window !== "undefined") {
     );
     fireRouteChange(route);
   });
+}
+
+// Expose imperative navigation for the host embedder.
+if (typeof window !== "undefined") {
+  window.__middleman_navigate_to_route = (route: string) => {
+    navigate(route);
+  };
 }
 
 // --- detail tab derived from route ---

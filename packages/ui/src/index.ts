@@ -109,3 +109,6 @@ export {
 export {
   default as FocusListView,
 } from "./views/FocusListView.svelte";
+export {
+  default as WorkspacesView,
+} from "./views/WorkspacesView.svelte";
