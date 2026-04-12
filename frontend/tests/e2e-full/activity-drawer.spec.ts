@@ -178,3 +178,43 @@ test.describe("activity drawer", () => {
     await expect(drawer).toBeVisible();
   });
 });
+
+test.describe("PR list tabs", () => {
+  test("only one tab bar with Conversation and Files changed tabs", async ({ page }) => {
+    // Mock the diff so navigating to /files does not depend on real data.
+    await mockDiffForAllPRs(page, tinyDiff);
+
+    await page.goto("/pulls/acme/widgets/1");
+
+    // Wait for the tab bar to render.
+    await page.locator(".detail-tabs").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    // Assert exactly one tab bar is present. If PullDetail ever stops
+    // respecting hideTabs, there would be 2 .detail-tabs containers
+    // (PRListView's external bar + PullDetail's internal bar).
+    await expect(page.locator(".detail-tabs")).toHaveCount(1);
+
+    // And exactly one of each tab button (matched by the tab-specific
+    // .detail-tab class so we don't pick up unrelated buttons that
+    // happen to contain the same text — e.g., the current pull-detail
+    // files-changed-btn).
+    await expect(
+      page.locator(".detail-tab", { hasText: "Conversation" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".detail-tab", { hasText: "Files changed" }),
+    ).toHaveCount(1);
+
+    // Same guards for the files route.
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".diff-view").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.locator(".detail-tabs")).toHaveCount(1);
+    await expect(
+      page.locator(".detail-tab", { hasText: "Conversation" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".detail-tab", { hasText: "Files changed" }),
+    ).toHaveCount(1);
+  });
+});
