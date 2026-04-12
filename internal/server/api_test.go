@@ -23,6 +23,7 @@ import (
 	"github.com/wesm/middleman/internal/apiclient/generated"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/stacks"
 )
@@ -3466,26 +3467,11 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	assert.Equal("comment", commentItem.ActivityType)
 }
 
-// filteredTestEnv returns os.Environ() with GIT_DIR, GIT_WORK_TREE, and
-// GIT_INDEX_FILE removed so tests that shell out to git are not
-// contaminated by the parent process (e.g. pre-commit hooks).
-func filteredTestEnv() []string {
-	var env []string
-	for _, e := range os.Environ() {
-		key, _, _ := strings.Cut(e, "=")
-		if strings.HasPrefix(key, "GIT_") {
-			continue
-		}
-		env = append(env, e)
-	}
-	return env
-}
-
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(filteredTestEnv(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v failed: %s", args, out)
 }
@@ -3494,7 +3480,7 @@ func testGitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := exec.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
-	cmd.Env = append(filteredTestEnv(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
