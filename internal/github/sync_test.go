@@ -851,10 +851,20 @@ func TestSyncStatusUpdated(t *testing.T) {
 	assert.Empty(status.LastError)
 }
 
-func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
+func setTestLocalEDT(t *testing.T) {
+	t.Helper()
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
 	oldLocal := time.Local
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
 	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	t.Cleanup(func() {
+		//nolint:forbidigo // Tests intentionally restore the overridden process local zone.
+		time.Local = oldLocal
+	})
+}
+
+func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
+	setTestLocalEDT(t)
 
 	ctx := context.Background()
 	d := openTestDB(t)
@@ -3324,9 +3334,7 @@ func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 
 func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 	require := require.New(t)
-	oldLocal := time.Local
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	setTestLocalEDT(t)
 
 	ctx := context.Background()
 	d := openTestDB(t)

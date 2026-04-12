@@ -275,6 +275,18 @@ func assertRFC3339UTC(t *testing.T, got string, want time.Time) {
 	Assert.True(t, strings.HasSuffix(got, "Z"), "expected UTC RFC3339 with trailing Z: %s", got)
 }
 
+func setTestLocalEDT(t *testing.T) {
+	t.Helper()
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
+	oldLocal := time.Local
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() {
+		//nolint:forbidigo // Tests intentionally restore the overridden process local zone.
+		time.Local = oldLocal
+	})
+}
+
 func assertTimePtrUTC(t *testing.T, got *time.Time) {
 	t.Helper()
 	require.NotNil(t, got)
@@ -548,9 +560,7 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 
 func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	require := require.New(t)
-	oldLocal := time.Local
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -1530,9 +1540,7 @@ func TestAPIListRepos(t *testing.T) {
 
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
-	oldLocal := time.Local
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	setTestLocalEDT(t)
 
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -1778,9 +1786,7 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 
 func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
-	oldLocal := time.Local
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -1860,9 +1866,7 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 
 func TestAPICloseIssue(t *testing.T) {
 	require := require.New(t)
-	oldLocal := time.Local
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
@@ -2623,14 +2627,13 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	oldLocal := time.Local
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
+	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	prID := seedPR(t, database, "acme", "widget", 1)
 	ctx := context.Background()
+	//nolint:forbidigo // Test fixture intentionally uses a non-UTC timestamp to verify UTC normalization.
 	createdAt := time.Date(2026, 4, 11, 12, 0, 0, 0, time.FixedZone("EDT", -4*60*60))
 
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{

@@ -728,4 +728,31 @@ test.describe("diff view (git-backed)", () => {
     await expect(collapsed).toHaveCount(1);
     await expect(collapsed).toContainText("unchanged lines");
   });
+
+  test("commit list uses UTC API values and local date rendering", async ({ page }) => {
+    await page.addInitScript((offsetMs) => {
+      const originalNow = Date.now.bind(Date);
+      Date.now = () => originalNow() + offsetMs;
+    }, 20 * 24 * 60 * 60 * 1000);
+
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".commit-section__toggle").click();
+    await page.locator(".commit-item").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const payload = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/repos/acme/widgets/pulls/1/commits");
+      return response.json();
+    });
+
+    expect(payload.commits[0].authored_at).toMatch(/Z$/);
+
+    const expectedLabel = await page.evaluate((iso: string) =>
+      new Date(iso).toLocaleDateString(),
+    payload.commits[0].authored_at);
+
+    await expect(page.locator(".commit-item__date").first()).toHaveText(expectedLabel);
+    expect(expectedLabel).not.toContain("T");
+    expect(expectedLabel).not.toContain("Z");
+  });
 });

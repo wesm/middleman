@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	ghclient "github.com/wesm/middleman/internal/github"
@@ -72,6 +73,15 @@ func (c *FixtureClient) GetPullRequest(
 	return nil, nil
 }
 
+func (c *FixtureClient) findPullRequest(owner, repo string, number int) *gh.PullRequest {
+	for _, pr := range c.OpenPRs[repoKey(owner, repo)] {
+		if pr.GetNumber() == number {
+			return pr
+		}
+	}
+	return nil
+}
+
 // GetIssue looks up the issue by owner/repo and number from
 // the seeded open issue set. Returns nil, nil if not found.
 func (c *FixtureClient) GetIssue(
@@ -83,6 +93,15 @@ func (c *FixtureClient) GetIssue(
 		}
 	}
 	return nil, nil
+}
+
+func (c *FixtureClient) findIssue(owner, repo string, number int) *gh.Issue {
+	for _, issue := range c.OpenIssues[repoKey(owner, repo)] {
+		if issue.GetNumber() == number {
+			return issue
+		}
+	}
+	return nil
 }
 
 // ListIssueComments returns nil (read-only stub).
@@ -164,23 +183,61 @@ func (c *FixtureClient) MarkPullRequestReadyForReview(
 
 // MergePullRequest returns an error (mutations not supported).
 func (c *FixtureClient) MergePullRequest(
-	_ context.Context, _, _ string, _ int, _, _, _ string,
+	_ context.Context, owner, repo string, number int, _, _, _ string,
 ) (*gh.PullRequestMergeResult, error) {
-	return nil, errFixtureReadOnly
+	pr := c.findPullRequest(owner, repo, number)
+	if pr == nil {
+		return nil, nil
+	}
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	state := "closed"
+	merged := true
+	pr.State = &state
+	pr.Merged = &merged
+	pr.ClosedAt = &now
+	pr.MergedAt = &now
+	sha := pr.GetHead().GetSHA()
+	msg := "merged"
+	return &gh.PullRequestMergeResult{SHA: &sha, Merged: &merged, Message: &msg}, nil
 }
 
-// EditPullRequest returns an error (mutations not supported).
+// EditPullRequest updates the seeded PR state for E2E mutations.
 func (c *FixtureClient) EditPullRequest(
-	_ context.Context, _, _ string, _ int, _ string,
+	_ context.Context, owner, repo string, number int, state string,
 ) (*gh.PullRequest, error) {
-	return nil, errFixtureReadOnly
+	pr := c.findPullRequest(owner, repo, number)
+	if pr == nil {
+		return nil, nil
+	}
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	pr.State = &state
+	if state == "closed" {
+		pr.ClosedAt = &now
+	} else {
+		pr.ClosedAt = nil
+		pr.MergedAt = nil
+		merged := false
+		pr.Merged = &merged
+	}
+	return pr, nil
 }
 
-// EditIssue returns an error (mutations not supported).
+// EditIssue updates the seeded issue state for E2E mutations.
 func (c *FixtureClient) EditIssue(
-	_ context.Context, _, _ string, _ int, _ string,
+	_ context.Context, owner, repo string, number int, state string,
 ) (*gh.Issue, error) {
-	return nil, errFixtureReadOnly
+	issue := c.findIssue(owner, repo, number)
+	if issue == nil {
+		return nil, nil
+	}
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	issue.State = &state
+	if state == "closed" {
+		issue.ClosedAt = &now
+	} else {
+		issue.ClosedAt = nil
+	}
+	return issue, nil
 }
 
 // ListPullRequestsPage returns nil (read-only stub).
