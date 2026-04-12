@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -37,44 +39,89 @@ async function readServerInfo(filePath: string): Promise<E2EServerInfo | null> {
   }
 }
 
-async function waitForServerInfo(
+function readServerInfoSync(filePath: string): E2EServerInfo | null {
+  try {
+    return JSON.parse(readFileSync(filePath, "utf8")) as E2EServerInfo;
+  } catch {
+    return null;
+  }
+}
+
+async function isServerReachable(baseURL: string): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const url = new URL(baseURL);
+    const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+      url,
+      { method: "GET", timeout: pollIntervalMs },
+      (response) => {
+        response.resume();
+        resolve(
+          (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300,
+        );
+      },
+    );
+
+    request.on("error", () => {
+      resolve(false);
+    });
+    request.on("timeout", () => {
+      request.destroy();
+      resolve(false);
+    });
+    request.end();
+  });
+}
+
+export async function waitForServerInfo(
   filePath: string,
-  child: ChildProcess,
+  child: { exitCode: number | null },
 ): Promise<E2EServerInfo> {
   const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
     const info = await readServerInfo(filePath);
-    if (info) {
+    if (info && (await isServerReachable(info.base_url))) {
       return info;
     }
     if (child.exitCode !== null) {
       throw new Error(
-        `e2e server exited with code ${child.exitCode} before writing ${filePath}`,
+        `e2e server exited with code ${child.exitCode} before becoming ready from ${filePath}`,
       );
     }
     await delay(pollIntervalMs);
   }
-  throw new Error(`timed out waiting for e2e server info file ${filePath}`);
+  throw new Error(`timed out waiting for ready e2e server from ${filePath}`);
 }
 
 async function removeServerInfo(filePath: string): Promise<void> {
   await rm(filePath, { force: true });
 }
 
-function installCleanup(): void {
+export function cleanupManagedServerProcess(
+  child: { pid?: number; exitCode: number | null } | null = managedChild,
+  infoFile: string | undefined = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE,
+): void {
+  const serverPID = infoFile ? readServerInfoSync(infoFile)?.pid : undefined;
+  const fallbackPID = child?.exitCode === null ? child.pid : undefined;
+  const pid = serverPID ?? fallbackPID;
+  if (!pid) {
+    return;
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // Process already exited.
+  }
+}
+
+function installCleanup(infoFile: string): void {
   if (cleanupInstalled) {
     return;
   }
   cleanupInstalled = true;
 
   const cleanup = () => {
-    if (managedChild?.pid && managedChild.exitCode === null) {
-      try {
-        process.kill(managedChild.pid, "SIGTERM");
-      } catch {
-        // Process already exited.
-      }
-    }
+    cleanupManagedServerProcess(managedChild, infoFile);
   };
 
   process.once("exit", cleanup);
@@ -128,7 +175,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
       env: process.env,
     });
 
-    installCleanup();
+    installCleanup(serverInfoFile);
 
     const info = await waitForServerInfo(serverInfoFile, managedChild);
     process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
