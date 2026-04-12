@@ -293,6 +293,112 @@ func TestAdaptPRNilFields(t *testing.T) {
 	assert.False(pr.GetMerged())
 }
 
+func TestAdaptIssue(t *testing.T) {
+	assert := Assert.New(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	closed := now.Add(-time.Hour)
+
+	gql := gqlIssue{
+		DatabaseId: 99999,
+		Number:     10,
+		Title:      "Bug report",
+		State:      "OPEN",
+		Body:       "Something broke",
+		URL:        "https://github.com/o/r/issues/10",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	gql.Author.Login = "alice"
+	gql.Labels.Nodes = []gqlLabel{
+		{Name: "bug", Color: "d73a4a", Description: "Something broken", IsDefault: false},
+	}
+	gql.Comments.Nodes = []gqlComment{
+		{DatabaseId: 501, Body: "I see this too", CreatedAt: now, UpdatedAt: now},
+	}
+	gql.Comments.Nodes[0].Author.Login = "bob"
+
+	issue := adaptIssue(&gql)
+
+	assert.Equal(int64(99999), issue.GetID())
+	assert.Equal(10, issue.GetNumber())
+	assert.Equal("Bug report", issue.GetTitle())
+	assert.Equal("open", issue.GetState())
+	assert.Equal("Something broke", issue.GetBody())
+	assert.Equal("https://github.com/o/r/issues/10", issue.GetHTMLURL())
+	assert.Equal("alice", issue.GetUser().GetLogin())
+	require.Len(t, issue.Labels, 1)
+	assert.Equal("bug", issue.Labels[0].GetName())
+	assert.Equal("d73a4a", issue.Labels[0].GetColor())
+	assert.Nil(issue.ClosedAt)
+	// Comments.TotalCount should map to issue comment count, not len(Nodes).
+	assert.Equal(0, issue.GetComments())
+
+	// TotalCount > len(Nodes): server has more comments than page returned.
+	gql.Comments.TotalCount = 42
+	issue = adaptIssue(&gql)
+	assert.Equal(42, issue.GetComments())
+
+	// Test closed state
+	gql.State = "CLOSED"
+	gql.ClosedAt = &closed
+	issue = adaptIssue(&gql)
+	assert.Equal("closed", issue.GetState())
+	require.NotNil(t, issue.ClosedAt)
+	assert.Equal(closed, issue.ClosedAt.Time)
+}
+
+func TestAdaptIssueNilFields(t *testing.T) {
+	assert := Assert.New(t)
+
+	gql := gqlIssue{
+		Number:    1,
+		Title:     "minimal",
+		State:     "OPEN",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	// Author empty, no labels, no ClosedAt
+	issue := adaptIssue(&gql)
+	assert.Empty(issue.GetUser().GetLogin())
+	assert.Nil(issue.ClosedAt)
+	assert.Empty(issue.Labels)
+}
+
+func TestConvertGQLIssue(t *testing.T) {
+	assert := Assert.New(t)
+
+	now := time.Now()
+	gql := gqlIssue{
+		DatabaseId: 1,
+		Number:     5,
+		Title:      "test",
+		State:      "OPEN",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	gql.Author.Login = "user"
+
+	// All complete (no next page)
+	bulk := convertGQLIssue(&gql)
+	assert.True(bulk.CommentsComplete)
+	assert.NotNil(bulk.Issue)
+	assert.Equal(5, bulk.Issue.GetNumber())
+	assert.Empty(bulk.Comments)
+
+	// Add comments with next page
+	gql.Comments.Nodes = []gqlComment{
+		{DatabaseId: 100, Body: "hello", CreatedAt: now, UpdatedAt: now},
+	}
+	gql.Comments.Nodes[0].Author.Login = "commenter"
+	gql.Comments.PageInfo.HasNextPage = true
+
+	bulk = convertGQLIssue(&gql)
+	assert.False(bulk.CommentsComplete)
+	require.Len(t, bulk.Comments, 1)
+	assert.Equal("hello", bulk.Comments[0].GetBody())
+}
+
 func TestStateConversion(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Equal("open", stateToREST("OPEN"))
