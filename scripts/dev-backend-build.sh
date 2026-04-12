@@ -11,6 +11,34 @@ frontend_client="packages/ui/src/api/generated/client.ts"
 
 mkdir -p "$state_dir"
 
+resolve_go_bin() {
+  if command -v go >/dev/null 2>&1; then
+    command -v go
+    return
+  fi
+
+  if [ -x /usr/local/go/bin/go ]; then
+    printf '%s\n' /usr/local/go/bin/go
+    return
+  fi
+
+  printf '%s\n' "go toolchain not found" >&2
+  exit 127
+}
+
+resolve_bun_bin() {
+  if command -v bun >/dev/null 2>&1; then
+    command -v bun
+    return
+  fi
+
+  printf '%s\n' "bun runtime not found" >&2
+  exit 127
+}
+
+GO_BIN="$(resolve_go_bin)"
+BUN_BIN="$(resolve_bun_bin)"
+
 compute_inputs_hash() {
   {
     printf '%s\n' "go.mod" "go.sum"
@@ -59,8 +87,8 @@ generate_api_artifacts() {
   tmp_backend_spec="$(mktemp "$state_dir/backend-openapi.XXXXXX")"
   frontend_changed=0
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$tmp_frontend_spec"
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$tmp_backend_spec" -version 3.0
+  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_frontend_spec"
+  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_backend_spec" -version 3.0
 
   if write_if_changed "$frontend_spec" "$tmp_frontend_spec"; then
     frontend_changed=1
@@ -72,13 +100,17 @@ generate_api_artifacts() {
     tmp_schema="$(mktemp "$state_dir/frontend-schema.XXXXXX")"
     (
       cd frontend
-      bunx openapi-typescript openapi/openapi.json -o "../$tmp_schema"
+      "$BUN_BIN" x openapi-typescript openapi/openapi.json -o "../$tmp_schema"
     )
     write_if_changed "$frontend_schema" "$tmp_schema" >/dev/null 2>&1 || true
     generate_frontend_client
   fi
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
+  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" \
+    "$GO_BIN" tool oapi-codegen \
+    --config internal/apiclient/generated/config.yaml \
+    -o internal/apiclient/generated/client.gen.go \
+    internal/apiclient/spec/openapi.json
 }
 
 current_inputs_hash="$(compute_inputs_hash)"
@@ -93,4 +125,4 @@ if [ "$current_inputs_hash" != "$previous_inputs_hash" ]; then
   printf '%s\n' "$current_inputs_hash" > "$input_hash_file"
 fi
 
-go build -o ./tmp/middleman ./cmd/middleman
+"$GO_BIN" build -o ./tmp/middleman ./cmd/middleman

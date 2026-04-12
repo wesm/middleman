@@ -245,6 +245,9 @@ func newServer(
 		bgCancel: bgCancel,
 	}
 
+	healthAPI := humago.New(mux, healthAPIConfig())
+	s.registerHealthAPI(healthAPI)
+
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
 
@@ -308,9 +311,13 @@ func newServer(
 
 	// When serving under a base path, use an outer mux with
 	// StripPrefix so the inner mux sees clean paths like /api/v1/...
+	// Health endpoints stay at the root so external probes do not need
+	// to know about the UI base path.
 	if basePath != "/" {
 		outer := http.NewServeMux()
 		prefix := strings.TrimSuffix(basePath, "/")
+		outer.Handle("/healthz", mux)
+		outer.Handle("/livez", mux)
 		outer.Handle(basePath, http.StripPrefix(prefix, mux))
 		s.handler = outer
 	} else {
