@@ -43,13 +43,8 @@ func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
-func TestPatchFixturePRSHAsUpdatesOpenAndAllPRs(t *testing.T) {
+func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
 	openPR := &gh.PullRequest{
-		Number: new(1),
-		Head:   &gh.PullRequestBranch{},
-		Base:   &gh.PullRequestBranch{},
-	}
-	allPR := &gh.PullRequest{
 		Number: new(1),
 		Head:   &gh.PullRequestBranch{},
 		Base:   &gh.PullRequestBranch{},
@@ -58,9 +53,6 @@ func TestPatchFixturePRSHAsUpdatesOpenAndAllPRs(t *testing.T) {
 		OpenPRs: map[string][]*gh.PullRequest{
 			"acme/widgets": {openPR},
 		},
-		PRs: map[string][]*gh.PullRequest{
-			"acme/widgets": {allPR},
-		},
 	}
 
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, "head-sha", "base-sha")
@@ -68,6 +60,4 @@ func TestPatchFixturePRSHAsUpdatesOpenAndAllPRs(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Equal("head-sha", openPR.GetHead().GetSHA())
 	assert.Equal("base-sha", openPR.GetBase().GetSHA())
-	assert.Equal("head-sha", allPR.GetHead().GetSHA())
-	assert.Equal("base-sha", allPR.GetBase().GetSHA())
 }

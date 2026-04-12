@@ -1904,6 +1904,180 @@ func TestAPIReopenIssue(t *testing.T) {
 	require.Nil(issue.ClosedAt, "closed_at should be cleared on reopen")
 }
 
+func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	staleUpdatedAt := time.Date(2026, 4, 12, 1, 0, 0, 0, time.UTC)
+	syncStarted := make(chan struct{}, 1)
+	releaseSync := make(chan struct{})
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			syncStarted <- struct{}{}
+			<-releaseSync
+
+			id := int64(101)
+			state := "open"
+			title := "stale sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			createdAt := gh.Timestamp{Time: staleUpdatedAt.Add(-time.Hour)}
+			updatedAt := gh.Timestamp{Time: staleUpdatedAt}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	syncDone := make(chan *generated.PostReposByOwnerByNamePullsByNumberSyncResponse, 1)
+	syncErr := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+			context.Background(), "acme", "widget", 1,
+		)
+		if err != nil {
+			syncErr <- err
+			return
+		}
+		syncDone <- resp
+	}()
+
+	<-syncStarted
+
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	closedPR, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal("closed", closedPR.State)
+	require.NotNil(closedPR.ClosedAt)
+
+	close(releaseSync)
+
+	completed := false
+	select {
+	case err := <-syncErr:
+		require.NoError(err)
+		completed = true
+	case resp := <-syncDone:
+		require.Equal(http.StatusOK, resp.StatusCode())
+		completed = true
+	case <-time.After(5 * time.Second):
+	}
+	require.True(completed, "timed out waiting for stale PR sync")
+
+	finalPR, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	assert.Equal("closed", finalPR.State)
+	assert.NotNil(finalPR.ClosedAt)
+	assert.True(finalPR.UpdatedAt.After(staleUpdatedAt))
+}
+
+func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	staleUpdatedAt := time.Date(2026, 4, 12, 1, 0, 0, 0, time.UTC)
+	syncStarted := make(chan struct{}, 1)
+	releaseSync := make(chan struct{})
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
+			syncStarted <- struct{}{}
+			<-releaseSync
+
+			id := int64(202)
+			state := "open"
+			title := "stale issue sync"
+			url := "https://github.com/acme/widget/issues/5"
+			author := "alice"
+			createdAt := gh.Timestamp{Time: staleUpdatedAt.Add(-time.Hour)}
+			updatedAt := gh.Timestamp{Time: staleUpdatedAt}
+			return &gh.Issue{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	syncDone := make(chan *generated.PostReposByOwnerByNameIssuesByNumberSyncResponse, 1)
+	syncErr := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.PostReposByOwnerByNameIssuesByNumberSyncWithResponse(
+			context.Background(), "acme", "widget", 5,
+		)
+		if err != nil {
+			syncErr <- err
+			return
+		}
+		syncDone <- resp
+	}()
+
+	<-syncStarted
+
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+		context.Background(), "acme", "widget", 5,
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	closedIssue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.NoError(err)
+	require.Equal("closed", closedIssue.State)
+	require.NotNil(closedIssue.ClosedAt)
+
+	close(releaseSync)
+
+	completed := false
+	select {
+	case err := <-syncErr:
+		require.NoError(err)
+		completed = true
+	case resp := <-syncDone:
+		require.Equal(http.StatusOK, resp.StatusCode())
+		completed = true
+	case <-time.After(5 * time.Second):
+	}
+	require.True(completed, "timed out waiting for stale issue sync")
+
+	finalIssue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.NoError(err)
+	assert.Equal("closed", finalIssue.State)
+	assert.NotNil(finalIssue.ClosedAt)
+	assert.True(finalIssue.UpdatedAt.After(staleUpdatedAt))
+}
+
 func TestAPIListPullsStateFilter(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
