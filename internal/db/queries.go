@@ -605,7 +605,10 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.state
 		                               ELSE middleman_merge_requests.state
 		                             END,
-		    is_draft             = excluded.is_draft,
+		    is_draft             = CASE
+		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.is_draft
+		                               ELSE middleman_merge_requests.is_draft
+		                             END,
 		    body                 = excluded.body,
 		    head_branch          = excluded.head_branch,
 		    base_branch          = excluded.base_branch,

@@ -77,6 +77,19 @@ async function isServerReachable(baseURL: string): Promise<boolean> {
   });
 }
 
+export async function getReusableServerInfo(
+  filePath: string,
+): Promise<E2EServerInfo | null> {
+  const info = await readServerInfo(filePath);
+  if (!info) {
+    return null;
+  }
+  if (!(await isServerReachable(info.base_url))) {
+    return null;
+  }
+  return info;
+}
+
 export async function waitForServerInfo(
   filePath: string,
   child: Pick<ManagedChildLike, "exitCode">,
@@ -140,6 +153,34 @@ function installCleanup(infoFile: string): void {
   });
 }
 
+async function startManagedServer(): Promise<E2EServerInfo> {
+  const args = [
+    "run",
+    "./cmd/e2e-server",
+    "-port",
+    "0",
+    "-server-info-file",
+    serverInfoFile,
+  ];
+  if (process.env.ROBOREV_ENDPOINT) {
+    args.push("-roborev", process.env.ROBOREV_ENDPOINT);
+  }
+
+  managedChild = spawn("go", args, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+
+  installCleanup(serverInfoFile);
+
+  const info = await waitForServerInfo(serverInfoFile, managedChild);
+  process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
+  process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE = serverInfoFile;
+  process.env[ownedServerEnvVar] = "1";
+  return info;
+}
+
 export async function ensureE2EServer(): Promise<E2EServerInfo> {
   if (serverPromise) {
     return await serverPromise;
@@ -150,45 +191,21 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
   if (existingBaseURL && existingInfoFile) {
     delete process.env[ownedServerEnvVar];
     serverPromise = (async () => {
-      const info = await readServerInfo(existingInfoFile);
-      if (!info) {
-        throw new Error(
-          `failed to read existing e2e server info file ${existingInfoFile}`,
-        );
+      const info = await getReusableServerInfo(existingInfoFile);
+      if (info) {
+        process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
+        process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE = existingInfoFile;
+        return info;
       }
-      return info;
+
+      delete process.env.PLAYWRIGHT_E2E_BASE_URL;
+      delete process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE;
+      return await startManagedServer();
     })();
     return await serverPromise;
   }
 
-  serverPromise = (async () => {
-    const args = [
-      "run",
-      "./cmd/e2e-server",
-      "-port",
-      "0",
-      "-server-info-file",
-      serverInfoFile,
-    ];
-    if (process.env.ROBOREV_ENDPOINT) {
-      args.push("-roborev", process.env.ROBOREV_ENDPOINT);
-    }
-
-    managedChild = spawn("go", args, {
-      cwd: repoRoot,
-      stdio: "inherit",
-      env: process.env,
-    });
-
-    installCleanup(serverInfoFile);
-
-    const info = await waitForServerInfo(serverInfoFile, managedChild);
-    process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
-    process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE = serverInfoFile;
-    process.env[ownedServerEnvVar] = "1";
-    return info;
-  })();
-
+  serverPromise = startManagedServer();
   return await serverPromise;
 }
 

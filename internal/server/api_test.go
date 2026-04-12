@@ -1994,6 +1994,152 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	assert.True(finalPR.UpdatedAt.After(staleUpdatedAt))
 }
 
+func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	staleUpdatedAt := time.Date(2026, 4, 12, 1, 0, 0, 0, time.UTC)
+	readyUpdatedAt := staleUpdatedAt.Add(30 * time.Minute)
+	syncStarted := make(chan struct{}, 1)
+	releaseSync := make(chan struct{})
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			syncStarted <- struct{}{}
+			<-releaseSync
+
+			id := int64(101)
+			state := "open"
+			title := "stale sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			draft := true
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			createdAt := gh.Timestamp{Time: staleUpdatedAt.Add(-time.Hour)}
+			updatedAt := gh.Timestamp{Time: staleUpdatedAt}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+		markReadyForReviewFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			id := int64(101)
+			state := "open"
+			title := "ready for review"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			draft := false
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			createdAt := gh.Timestamp{Time: staleUpdatedAt.Add(-time.Hour)}
+			updatedAt := gh.Timestamp{Time: readyUpdatedAt}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	repoID, err := database.UpsertRepo(context.Background(), "github.com", "acme", "widget")
+	require.NoError(err)
+
+	prID, err := database.UpsertMergeRequest(context.Background(), &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      101,
+		Number:          1,
+		URL:             "https://github.com/acme/widget/pull/1",
+		Title:           "draft PR",
+		Author:          "alice",
+		State:           "open",
+		IsDraft:         true,
+		Body:            "",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123",
+		PlatformBaseSHA: "def456",
+		Additions:       0,
+		Deletions:       0,
+		CommentCount:    0,
+		ReviewDecision:  "",
+		CIStatus:        "",
+		CreatedAt:       staleUpdatedAt.Add(-time.Hour),
+		UpdatedAt:       staleUpdatedAt.Add(-time.Minute),
+		LastActivityAt:  staleUpdatedAt.Add(-time.Minute),
+	})
+	require.NoError(err)
+	require.NoError(database.EnsureKanbanState(context.Background(), prID))
+
+	syncDone := make(chan *generated.PostReposByOwnerByNamePullsByNumberSyncResponse, 1)
+	syncErr := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+			context.Background(), "acme", "widget", 1,
+		)
+		if err != nil {
+			syncErr <- err
+			return
+		}
+		syncDone <- resp
+	}()
+
+	<-syncStarted
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	readyPR, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.False(readyPR.IsDraft)
+	assert.True(readyPR.UpdatedAt.Equal(readyUpdatedAt))
+
+	close(releaseSync)
+
+	completed := false
+	select {
+	case err := <-syncErr:
+		require.NoError(err)
+		completed = true
+	case resp := <-syncDone:
+		require.Equal(http.StatusOK, resp.StatusCode())
+		completed = true
+	case <-time.After(5 * time.Second):
+	}
+	require.True(completed, "timed out waiting for stale draft sync")
+
+	finalPR, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	assert.False(finalPR.IsDraft)
+	assert.True(finalPR.UpdatedAt.Equal(readyUpdatedAt))
+}
+
 func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

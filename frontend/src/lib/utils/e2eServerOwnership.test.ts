@@ -99,6 +99,66 @@ describe("waitForServerInfo", () => {
   });
 });
 
+describe("getReusableServerInfo", () => {
+  it("ignores stale server info when the recorded base URL is unreachable", async () => {
+    const getReusableServerInfo = (
+      e2eServerModule as {
+        getReusableServerInfo?: (filePath: string) => Promise<{
+          host: string;
+          port: number;
+          base_url: string;
+          pid: number;
+        } | null>;
+      }
+    ).getReusableServerInfo;
+
+    expect(getReusableServerInfo).toBeTypeOf("function");
+    if (!getReusableServerInfo) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const infoFile = path.join(dir, "server-info.json");
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+    });
+
+    const port = await new Promise<number>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          reject(new Error("server did not bind a TCP port"));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    writeFileSync(
+      infoFile,
+      JSON.stringify({
+        host: "127.0.0.1",
+        port,
+        base_url: `http://127.0.0.1:${port}`,
+        pid: 99999,
+      }),
+    );
+
+    await expect(getReusableServerInfo(infoFile)).resolves.toBeNull();
+  });
+});
+
 describe("cleanupManagedServerProcess", () => {
   it("kills the real server pid from server-info instead of the wrapper pid", () => {
     const cleanupManagedServerProcess = (
