@@ -19,6 +19,7 @@ const serverInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
 const serverInfoFile = path.join(serverInfoDir, "server-info.json");
 const startupTimeoutMs = 30_000;
 const pollIntervalMs = 100;
+const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
 
 let serverPromise: Promise<E2EServerInfo> | null = null;
 let managedChild: ChildProcess | null = null;
@@ -57,7 +58,7 @@ async function waitForServerInfo(
 }
 
 async function removeServerInfo(filePath: string): Promise<void> {
-  await rm(path.dirname(filePath), { recursive: true, force: true });
+  await rm(filePath, { force: true });
 }
 
 function installCleanup(): void {
@@ -95,6 +96,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
   const existingBaseURL = process.env.PLAYWRIGHT_E2E_BASE_URL;
   const existingInfoFile = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE;
   if (existingBaseURL && existingInfoFile) {
+    delete process.env[ownedServerEnvVar];
     serverPromise = (async () => {
       const info = await readServerInfo(existingInfoFile);
       if (!info) {
@@ -131,6 +133,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
     const info = await waitForServerInfo(serverInfoFile, managedChild);
     process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
     process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE = serverInfoFile;
+    process.env[ownedServerEnvVar] = "1";
     return info;
   })();
 
@@ -140,6 +143,9 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
 export async function stopE2EServer(): Promise<void> {
   const filePath = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE;
   if (!filePath) {
+    return;
+  }
+  if (process.env[ownedServerEnvVar] !== "1") {
     return;
   }
 
@@ -153,4 +159,7 @@ export async function stopE2EServer(): Promise<void> {
   }
 
   await removeServerInfo(filePath);
+  delete process.env[ownedServerEnvVar];
+  delete process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE;
+  delete process.env.PLAYWRIGHT_E2E_BASE_URL;
 }
