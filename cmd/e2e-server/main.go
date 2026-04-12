@@ -27,9 +27,14 @@ import (
 
 func main() {
 	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
+	// Default to an unbindable address so test code never silently
+	// proxies to a real local roborev daemon. The runner script
+	// (scripts/run-roborev-e2e.sh) sets this explicitly to the
+	// dockerized seeded daemon. Direct invocation without the script
+	// gets a hard "daemon unreachable" instead of mutating real state.
 	roborev := flag.String(
-		"roborev", "",
-		"roborev daemon endpoint (enables proxy)",
+		"roborev", "http://127.0.0.1:1",
+		"roborev daemon endpoint",
 	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
@@ -107,9 +112,7 @@ func run(port int, roborevEndpoint, serverInfoFile string) error {
 		},
 	}
 
-	if roborevEndpoint != "" {
-		cfg.Roborev.Endpoint = roborevEndpoint
-	}
+	cfg.Roborev.Endpoint = roborevEndpoint
 
 	fc := result.FixtureClient()
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
