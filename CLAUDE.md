@@ -87,6 +87,7 @@ make vet        # go vet
 - Use `openTestDB(t)` helper for database tests
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
+- Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
 
 ## Build Requirements
 
