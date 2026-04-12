@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
@@ -174,6 +175,21 @@ func run(configPath string) error {
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{},
 	)
+
+	// Drain HTTP-handler-spawned background goroutines (and stop
+	// the HTTP listener) before DB close. LIFO ordering of defers
+	// below runs this after stop()/syncer.Stop and before the
+	// deferred database.Close, so the DB stays open for in-flight
+	// requests and the mergePR post-failure refresh.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 10*time.Second,
+		)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server shutdown", "err", err)
+		}
+	}()
 
 	// Wire status callback and prime the SSE event hub so clients
 	// can show live sync state without polling.

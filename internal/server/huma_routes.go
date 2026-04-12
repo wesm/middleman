@@ -841,6 +841,11 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
+	if pr == nil {
+		// No PR payload means we cannot verify GitHub accepted the
+		// transition, so don't claim success or poison the cache.
+		return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+	}
 
 	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if err == nil && repoObj != nil {
@@ -884,13 +889,13 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 			if ghErr.Response.StatusCode == http.StatusMethodNotAllowed ||
 				ghErr.Response.StatusCode == http.StatusConflict {
-				go func() {
+				s.runBackground(func(bgCtx context.Context) {
 					if syncErr := s.syncer.SyncMR(
-						context.WithoutCancel(ctx), input.Owner, input.Name, input.Number,
+						bgCtx, input.Owner, input.Name, input.Number,
 					); syncErr != nil {
 						slog.Warn("background sync after merge failure", "err", syncErr)
 					}
-				}()
+				})
 				return nil, huma.Error409Conflict(ghErr.Message)
 			}
 

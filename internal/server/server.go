@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -64,6 +67,27 @@ type Server struct {
 	activeWorktreeMu  sync.Mutex
 	activeWorktreeKey string
 	activeWorktreeSet bool
+
+	// bg tracks short-lived goroutines that HTTP handlers spawn
+	// outside of the Syncer's own wait group (e.g. mergePR's
+	// post-failure refresh). Shutdown waits on bg before the
+	// caller tears down the DB.
+	//
+	// bgMu guards shuttingDown, drainDone, and httpSrv, and
+	// serializes bg.Add against Shutdown's bg.Wait so the
+	// WaitGroup cannot observe Add racing with Wait when the
+	// counter transiently hits zero.
+	bgMu         sync.Mutex
+	bg           sync.WaitGroup
+	bgCtx        context.Context
+	bgCancel     context.CancelFunc
+	shuttingDown bool
+	// drainDone is created the first time Shutdown is called and
+	// closed when bg.Wait returns. Every caller waits on it
+	// subject to its own ctx, so a retry with a longer deadline
+	// observes true drain after an earlier caller's ctx expired.
+	drainDone chan struct{}
+	httpSrv   *http.Server
 }
 
 // Hub returns the server's SSE event hub. Callers should never
@@ -72,6 +96,67 @@ func (s *Server) Hub() *EventHub { return s.hub }
 
 // SetVersion sets the version string returned by GET /api/v1/version.
 func (s *Server) SetVersion(v string) { s.version = v }
+
+// runBackground launches fn as a tracked goroutine. fn receives a
+// context cancelled by Shutdown. If Shutdown has already started,
+// runBackground drops the task: these goroutines are best-effort
+// refreshes and starting one during drain would race with bg.Wait.
+func (s *Server) runBackground(fn func(ctx context.Context)) {
+	s.bgMu.Lock()
+	if s.shuttingDown {
+		s.bgMu.Unlock()
+		return
+	}
+	s.bg.Add(1)
+	s.bgMu.Unlock()
+	go func() {
+		defer s.bg.Done()
+		fn(s.bgCtx)
+	}()
+}
+
+// Shutdown stops the HTTP listener (if started via ListenAndServe
+// or Serve), cancels background goroutines' context, and blocks
+// until they finish or ctx expires. Safe to call concurrently and
+// repeatedly. Every caller drives http.Server.Shutdown with its
+// own ctx (stdlib polls idle-conn closure per call) and waits on
+// a shared drain channel, so a retry with a longer deadline
+// observes true drain for both HTTP handlers and the bg group.
+// Only the first caller sets shuttingDown and cancels bgCtx.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.bgMu.Lock()
+	first := !s.shuttingDown
+	if first {
+		s.shuttingDown = true
+		s.drainDone = make(chan struct{})
+	}
+	drainDone := s.drainDone
+	httpSrv := s.httpSrv
+	s.bgMu.Unlock()
+
+	var httpErr error
+	if httpSrv != nil {
+		httpErr = httpSrv.Shutdown(ctx)
+	}
+
+	if first {
+		s.bgCancel()
+		go func() {
+			s.bg.Wait()
+			close(drainDone)
+		}()
+	}
+
+	select {
+	case <-drainDone:
+		return httpErr
+	case <-ctx.Done():
+		if httpErr != nil {
+			return errors.Join(httpErr, ctx.Err())
+		}
+		return ctx.Err()
+	}
+}
 
 // SetActiveWorktreeKey sets the key of the currently
 // focused worktree. Thread-safe.
@@ -137,6 +222,7 @@ func newServer(
 ) *Server {
 	mux := http.NewServeMux()
 
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	s := &Server{
 		db:       database,
 		basePath: basePath,
@@ -146,6 +232,8 @@ func newServer(
 		cfgPath:  cfgPath,
 		options:  options,
 		hub:      NewEventHub(),
+		bgCtx:    bgCtx,
+		bgCancel: bgCancel,
 	}
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
@@ -307,10 +395,21 @@ func checkCSRF(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// ListenAndServe starts the HTTP server on addr.
+// ListenAndServe starts the HTTP server on addr. Returns
+// http.ErrServerClosed when stopped by Shutdown (matches net/http).
 func (s *Server) ListenAndServe(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(ln)
+}
+
+// Serve accepts HTTP connections on the provided listener. Useful
+// for tests and any caller that wants to own the listener lifetime.
+// Returns http.ErrServerClosed when stopped by Shutdown.
+func (s *Server) Serve(ln net.Listener) error {
 	srv := &http.Server{
-		Addr:        addr,
 		Handler:     s,
 		ReadTimeout: 15 * time.Second,
 		// WriteTimeout is 0 (disabled) because the roborev
@@ -320,7 +419,17 @@ func (s *Server) ListenAndServe(addr string) error {
 		// after the deadline.
 		IdleTimeout: 60 * time.Second,
 	}
-	return srv.ListenAndServe()
+
+	s.bgMu.Lock()
+	if s.shuttingDown {
+		s.bgMu.Unlock()
+		_ = ln.Close()
+		return http.ErrServerClosed
+	}
+	s.httpSrv = srv
+	s.bgMu.Unlock()
+
+	return srv.Serve(ln)
 }
 
 // handleSSE streams server events to a client. The handler subscribes
