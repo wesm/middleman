@@ -35,9 +35,13 @@ type mockGH struct {
 	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
+	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 }
 
-func (m *mockGH) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
+	if m.listOpenPullRequestsFn != nil {
+		return m.listOpenPullRequestsFn(ctx, owner, repo)
+	}
 	return nil, nil
 }
 
@@ -3455,6 +3459,69 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	require.Len(t, stks, 1)
 	assert.NotEqual("all_green", stks[0].Health, "all-draft stack must not be all_green")
 	assert.NotEqual("base_ready", stks[0].Health, "draft base must not be base_ready")
+}
+
+// TestAPIStacks_DetectionViaSyncHook exercises the production wiring:
+// SetOnSyncCompleted(stacks.SyncCompletedHook) fires after RunOnce and
+// populates stacks without calling RunDetection directly. Verifies that
+// GET /stacks and GET /repos/{owner}/{name}/pulls/{number}/stack return
+// data produced entirely by the sync-completion callback path.
+func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	// Build GitHub PRs the mock will return; the sync will persist these
+	// into DB as open PRs forming a linear chain.
+	now := time.Now().UTC().Truncate(time.Second)
+	stringPtr := func(s string) *string { return &s }
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d: %s", number, head)
+		return &gh.PullRequest{
+			ID:        &id,
+			Number:    &number,
+			State:     stringPtr("open"),
+			Title:     &title,
+			Body:      stringPtr(""),
+			User:      &gh.User{Login: stringPtr("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now},
+			UpdatedAt: &gh.Timestamp{Time: now},
+			Head:      &gh.PullRequestBranch{Ref: &head, SHA: &sha},
+			Base:      &gh.PullRequestBranch{Ref: &base, SHA: stringPtr("basesha")},
+		}
+	}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{
+				makeGHPR(1001, 10, "feat/hook-base", "main"),
+				makeGHPR(1011, 11, "feat/hook-tip", "feat/hook-base"),
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	// Wire the production hook and run one sync pass. RunOnce will fetch
+	// from the mock, persist PRs into DB, then invoke OnSyncCompleted,
+	// which runs stack detection.
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	srv.syncer.RunOnce(ctx)
+
+	// Stacks should be populated purely by the hook path.
+	listResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, listResp.StatusCode())
+	var stks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(listResp.Body, &stks))
+	require.Len(t, stks, 1, "sync-hook detection should produce one stack")
+	assert.Equal("hook", stks[0].Name)
+
+	ctxResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, ctxResp.StatusCode())
+	require.NotNil(t, ctxResp.JSON200)
+	assert.Equal("hook", ctxResp.JSON200.StackName)
+	assert.Equal(int64(2), ctxResp.JSON200.Size)
 }
 
 func TestAPIListStacks_Empty(t *testing.T) {
