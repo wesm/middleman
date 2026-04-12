@@ -85,6 +85,7 @@ func toStackMemberResponses(members []db.StackMemberWithPR) []stackMemberRespons
 			ReviewDecision: m.ReviewDecision,
 			Position:       m.Position,
 			IsDraft:        m.IsDraft,
+			BaseBranch:     m.BaseBranch,
 		}
 		if b, ok := blocked[m.Number]; ok {
 			out[i].BlockedBy = &b

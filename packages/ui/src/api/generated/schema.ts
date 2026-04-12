@@ -1082,6 +1082,7 @@ export interface components {
             stack_name: string;
         };
         StackMemberResponse: {
+            base_branch: string;
             /** Format: int64 */
             blocked_by: number | null;
             ci_status: string;

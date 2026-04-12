@@ -489,6 +489,7 @@ type StackContextResponse struct {
 
 // StackMemberResponse defines model for StackMemberResponse.
 type StackMemberResponse struct {
+	BaseBranch     string `json:"base_branch"`
 	BlockedBy      *int64 `json:"blocked_by"`
 	CiStatus       string `json:"ci_status"`
 	IsDraft        bool   `json:"is_draft"`
