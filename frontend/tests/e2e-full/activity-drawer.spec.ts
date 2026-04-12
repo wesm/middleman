@@ -177,6 +177,155 @@ test.describe("activity drawer", () => {
     // The drawer itself should still be visible after the scroll action.
     await expect(drawer).toBeVisible();
   });
+
+  test("activity drawer spans full viewport width", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+
+    const viewport = page.viewportSize();
+    const drawerBox = await drawer.boundingBox();
+    expect(viewport).not.toBeNull();
+    expect(drawerBox).not.toBeNull();
+    // Drawer spans the full viewport width (Task 6 widened to 100%).
+    expect(drawerBox!.width).toBe(viewport!.width);
+  });
+
+  test("kanban drawer spans full viewport width", async ({ page }) => {
+    await page.goto("/pulls/board");
+    await page.locator(".kanban-card").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".kanban-card").first().click();
+
+    const drawer = page.locator(".kanban-wrap .drawer");
+    await expect(drawer).toBeVisible();
+
+    const viewport = page.viewportSize();
+    const drawerBox = await drawer.boundingBox();
+    expect(viewport).not.toBeNull();
+    expect(drawerBox).not.toBeNull();
+    // Drawer spans the full viewport width (Task 8 widened to 100%).
+    // Sub-pixel rounding from layout can yield a box width that differs
+    // from the viewport by a fraction of a pixel, so allow 1px slack.
+    expect(Math.abs(drawerBox!.width - viewport!.width)).toBeLessThan(1);
+  });
+
+  test("active tab visual state switches with selection", async ({ page }) => {
+    await mockDiffForAllPRs(page, tinyDiff);
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+
+    const conversationTab = drawer.locator(".detail-tab", { hasText: "Conversation" });
+    const filesTab = drawer.locator(".detail-tab", { hasText: "Files changed" });
+
+    // Conversation is active by default.
+    await expect(conversationTab).toHaveClass(/detail-tab--active/);
+    await expect(filesTab).not.toHaveClass(/detail-tab--active/);
+
+    // Clicking Files shifts active state.
+    await filesTab.click();
+    await expect(filesTab).toHaveClass(/detail-tab--active/);
+    await expect(conversationTab).not.toHaveClass(/detail-tab--active/);
+
+    // Clicking back restores conversation as active.
+    await conversationTab.click();
+    await expect(conversationTab).toHaveClass(/detail-tab--active/);
+    await expect(filesTab).not.toHaveClass(/detail-tab--active/);
+  });
+
+  test("Files changed tab renders inline additions/deletions chips", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+
+    // Wait for PullDetail to finish its initial load. The tab bar
+    // doesn't render until the detail store resolves, so the stats
+    // chips won't exist during the loading state.
+    await drawer.locator(".detail-title").waitFor({ state: "visible" });
+
+    const filesTab = drawer.locator(".detail-tab", { hasText: "Files changed" });
+    await expect(filesTab).toBeVisible();
+
+    // The Files tab button conditionally renders .files-stat--add and
+    // .files-stat--del spans based on the PR's Additions/Deletions
+    // counts. For a typical seeded PR at least one of the two chips
+    // should appear.
+    const hasAdditions = await filesTab.locator(".files-stat--add").count() > 0;
+    const hasDeletions = await filesTab.locator(".files-stat--del").count() > 0;
+    expect(hasAdditions || hasDeletions).toBe(true);
+  });
+
+  test("Escape closes drawer from Files tab", async ({ page }) => {
+    await mockDiffForAllPRs(page, tinyDiff);
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+
+    // Switch to the Files tab and confirm the diff renders.
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+    await expect(drawer.locator(".diff-view")).toBeVisible();
+
+    // Escape should still close the drawer, even from the Files tab state.
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
+  });
+
+  test("clicking the drawer backdrop does not close the drawer", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+
+    // At 100% width there is no exposed backdrop area visually. The
+    // backdrop element still exists as a positional wrapper, but its
+    // click handler was removed in Task 6. Dispatching a click event
+    // directly on the backdrop bypasses z-order layering, so if a
+    // handler were reintroduced the drawer would close here.
+    await page.locator(".drawer-backdrop").dispatchEvent("click");
+
+    // Drawer should still be visible.
+    await expect(drawer).toBeVisible();
+  });
 });
 
 test.describe("PR list tabs", () => {
