@@ -475,6 +475,41 @@ type SetKanbanStateInputBody struct {
 	Status string  `json:"status"`
 }
 
+// StackContextResponse defines model for StackContextResponse.
+type StackContextResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string                `json:"$schema,omitempty"`
+	Health    string                 `json:"health"`
+	Members   *[]StackMemberResponse `json:"members"`
+	Position  int64                  `json:"position"`
+	Size      int64                  `json:"size"`
+	StackId   int64                  `json:"stack_id"`
+	StackName string                 `json:"stack_name"`
+}
+
+// StackMemberResponse defines model for StackMemberResponse.
+type StackMemberResponse struct {
+	BaseBranch     string `json:"base_branch"`
+	BlockedBy      *int64 `json:"blocked_by"`
+	CiStatus       string `json:"ci_status"`
+	IsDraft        bool   `json:"is_draft"`
+	Number         int64  `json:"number"`
+	Position       int64  `json:"position"`
+	ReviewDecision string `json:"review_decision"`
+	State          string `json:"state"`
+	Title          string `json:"title"`
+}
+
+// StackResponse defines model for StackResponse.
+type StackResponse struct {
+	Health    string                 `json:"health"`
+	Id        int64                  `json:"id"`
+	Members   *[]StackMemberResponse `json:"members"`
+	Name      string                 `json:"name"`
+	RepoName  string                 `json:"repo_name"`
+	RepoOwner string                 `json:"repo_owner"`
+}
+
 // StarredRequest defines model for StarredRequest.
 type StarredRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -552,6 +587,11 @@ type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// ListStacksParams defines parameters for ListStacks.
+type ListStacksParams struct {
+	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
 }
 
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
@@ -732,6 +772,9 @@ type ClientInterface interface {
 	// PostReposByOwnerByNamePullsByNumberReadyForReview request
 	PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetReposByOwnerByNamePullsByNumberStack request
+	GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SetKanbanStateWithBody request with any body
 	SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -739,6 +782,9 @@ type ClientInterface interface {
 
 	// PostReposByOwnerByNamePullsByNumberSync request
 	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListStacks request
+	ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UnsetStarredWithBody request with any body
 	UnsetStarredWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1093,6 +1139,18 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.C
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberStackRequest(c.Server, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetKanbanStateRequestWithBody(c.Server, owner, name, number, contentType, body)
 	if err != nil {
@@ -1119,6 +1177,18 @@ func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, 
 
 func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostReposByOwnerByNamePullsByNumberSyncRequest(c.Server, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListStacksRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2599,6 +2669,54 @@ func NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(server string, 
 	return req, nil
 }
 
+// NewGetReposByOwnerByNamePullsByNumberStackRequest generates requests for GetReposByOwnerByNamePullsByNumberStack
+func NewGetReposByOwnerByNamePullsByNumberStackRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/stack", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetKanbanStateRequest calls the generic SetKanbanState builder with application/json body
 func NewSetKanbanStateRequest(server string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2701,6 +2819,55 @@ func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner stri
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListStacksRequest generates requests for ListStacks
+func NewListStacksRequest(server string, params *ListStacksParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/stacks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Repo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo", *params.Repo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2963,6 +3130,9 @@ type ClientWithResponsesInterface interface {
 	// PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse request
 	PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error)
 
+	// GetReposByOwnerByNamePullsByNumberStackWithResponse request
+	GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberStackResponse, error)
+
 	// SetKanbanStateWithBodyWithResponse request with any body
 	SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
@@ -2970,6 +3140,9 @@ type ClientWithResponsesInterface interface {
 
 	// PostReposByOwnerByNamePullsByNumberSyncWithResponse request
 	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
+
+	// ListStacksWithResponse request
+	ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error)
 
 	// UnsetStarredWithBodyWithResponse request with any body
 	UnsetStarredWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UnsetStarredResponse, error)
@@ -3494,6 +3667,29 @@ func (r PostReposByOwnerByNamePullsByNumberReadyForReviewResponse) StatusCode() 
 	return 0
 }
 
+type GetReposByOwnerByNamePullsByNumberStackResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *StackContextResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNamePullsByNumberStackResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNamePullsByNumberStackResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type SetKanbanStateResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -3533,6 +3729,29 @@ func (r PostReposByOwnerByNamePullsByNumberSyncResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostReposByOwnerByNamePullsByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListStacksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]StackResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListStacksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListStacksResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3874,6 +4093,15 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberReadyForReviewW
 	return ParsePostReposByOwnerByNamePullsByNumberReadyForReviewResponse(rsp)
 }
 
+// GetReposByOwnerByNamePullsByNumberStackWithResponse request returning *GetReposByOwnerByNamePullsByNumberStackResponse
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberStackResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberStack(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNamePullsByNumberStackResponse(rsp)
+}
+
 // SetKanbanStateWithBodyWithResponse request with arbitrary body returning *SetKanbanStateResponse
 func (c *ClientWithResponses) SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
 	rsp, err := c.SetKanbanStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
@@ -3898,6 +4126,15 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithRespons
 		return nil, err
 	}
 	return ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp)
+}
+
+// ListStacksWithResponse request returning *ListStacksResponse
+func (c *ClientWithResponses) ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error) {
+	rsp, err := c.ListStacks(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListStacksResponse(rsp)
 }
 
 // UnsetStarredWithBodyWithResponse request with arbitrary body returning *UnsetStarredResponse
@@ -4678,6 +4915,39 @@ func ParsePostReposByOwnerByNamePullsByNumberReadyForReviewResponse(rsp *http.Re
 	return response, nil
 }
 
+// ParseGetReposByOwnerByNamePullsByNumberStackResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberStackWithResponse call
+func ParseGetReposByOwnerByNamePullsByNumberStackResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberStackResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNamePullsByNumberStackResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StackContextResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseSetKanbanStateResponse parses an HTTP response from a SetKanbanStateWithResponse call
 func ParseSetKanbanStateResponse(rsp *http.Response) (*SetKanbanStateResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -4720,6 +4990,39 @@ func ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp *http.Response) (*
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListStacksResponse parses an HTTP response from a ListStacksWithResponse call
+func ParseListStacksResponse(rsp *http.Response) (*ListStacksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListStacksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []StackResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

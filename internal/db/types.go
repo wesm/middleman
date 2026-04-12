@@ -207,6 +207,44 @@ type ActivityItem struct {
 	BodyPreview  string
 }
 
+// Stack represents a detected chain of dependent PRs.
+type Stack struct {
+	ID         int64
+	RepoID     int64
+	BaseNumber int
+	Name       string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// StackMember links a merge request to a stack with a position.
+type StackMember struct {
+	StackID        int64
+	MergeRequestID int64
+	Position       int
+}
+
+// StackWithRepo extends Stack with resolved repo owner/name.
+type StackWithRepo struct {
+	Stack
+	RepoOwner string
+	RepoName  string
+}
+
+// StackMemberWithPR combines stack membership with PR fields needed for display.
+type StackMemberWithPR struct {
+	StackID        int64
+	MergeRequestID int64
+	Position       int
+	Number         int
+	Title          string
+	State          string
+	CIStatus       string
+	ReviewDecision string
+	IsDraft        bool
+	BaseBranch     string
+}
+
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
 	Repo   string     // "owner/name" filter

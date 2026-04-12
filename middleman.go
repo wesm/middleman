@@ -16,6 +16,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/web"
 )
 
@@ -178,6 +179,12 @@ type Instance struct {
 	server     *server.Server
 	syncer     *ghclient.Syncer
 	cancelSync context.CancelFunc
+	// cancelHook aborts any in-flight stack-detection pass triggered by
+	// SetOnSyncCompleted. Separate from cancelSync so the hook context
+	// spans the entire Instance lifetime (including ad-hoc syncs via
+	// TriggerRun before StartSync), and so StopSync can cancel hook
+	// work even when callers started sync with context.Background().
+	cancelHook context.CancelFunc
 	stopMu     sync.Mutex
 	closed     bool
 }
@@ -342,26 +349,31 @@ func New(opts Options) (*Instance, error) {
 				},
 			)
 		}
-		if opts.EmbedHooks.OnSyncCompleted != nil {
-			cb := opts.EmbedHooks.OnSyncCompleted
-			syncer.SetOnSyncCompleted(
-				func(results []ghclient.RepoSyncResult) {
-					out := make(
-						[]RepoSyncResult, len(results),
-					)
-					for i, r := range results {
-						out[i] = RepoSyncResult{
-							Owner:        r.Owner,
-							Name:         r.Name,
-							PlatformHost: r.PlatformHost,
-							Error:        r.Error,
-						}
-					}
-					cb(out)
-				},
-			)
+	}
+
+	// Adapter for embed hook if present.
+	var embedNext func([]ghclient.RepoSyncResult)
+	if opts.EmbedHooks != nil && opts.EmbedHooks.OnSyncCompleted != nil {
+		cb := opts.EmbedHooks.OnSyncCompleted
+		embedNext = func(results []ghclient.RepoSyncResult) {
+			out := make([]RepoSyncResult, len(results))
+			for i, r := range results {
+				out[i] = RepoSyncResult{
+					Owner:        r.Owner,
+					Name:         r.Name,
+					PlatformHost: r.PlatformHost,
+					Error:        r.Error,
+				}
+			}
+			cb(out)
 		}
 	}
+	// Install the stacks hook eagerly with an instance-lifetime context.
+	// This ensures ad-hoc syncs (TriggerRun) triggered before StartSync
+	// still run detection, and makes detection cancelable from both
+	// StopSync and Close regardless of how callers parent their ctx.
+	hookCtx, cancelHook := context.WithCancel(context.Background())
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(hookCtx, database, embedNext))
 
 	srv := server.New(
 		database, syncer, frontend,
@@ -373,9 +385,10 @@ func New(opts Options) (*Instance, error) {
 	)
 
 	return &Instance{
-		db:     database,
-		server: srv,
-		syncer: syncer,
+		db:         database,
+		server:     srv,
+		syncer:     syncer,
+		cancelHook: cancelHook,
 	}, nil
 }
 
@@ -393,6 +406,11 @@ func (i *Instance) StartSync(ctx context.Context) {
 
 // StopSync stops the periodic GitHub sync.
 func (i *Instance) StopSync() {
+	// Cancel any in-flight stack-detection pass before stopping the syncer
+	// so the hook does not continue after StopSync returns.
+	if i.cancelHook != nil {
+		i.cancelHook()
+	}
 	i.syncer.Stop()
 }
 

@@ -128,6 +128,36 @@ type activityResponse struct {
 	Capped bool                   `json:"capped"`
 }
 
+type stackMemberResponse struct {
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	State          string `json:"state"`
+	CIStatus       string `json:"ci_status"`
+	ReviewDecision string `json:"review_decision"`
+	Position       int    `json:"position"`
+	IsDraft        bool   `json:"is_draft"`
+	BaseBranch     string `json:"base_branch"`
+	BlockedBy      *int   `json:"blocked_by"`
+}
+
+type stackResponse struct {
+	ID        int64                 `json:"id"`
+	Name      string                `json:"name"`
+	RepoOwner string                `json:"repo_owner"`
+	RepoName  string                `json:"repo_name"`
+	Health    string                `json:"health"`
+	Members   []stackMemberResponse `json:"members"`
+}
+
+type stackContextResponse struct {
+	StackID   int64                 `json:"stack_id"`
+	StackName string                `json:"stack_name"`
+	Position  int                   `json:"position"`
+	Size      int                   `json:"size"`
+	Health    string                `json:"health"`
+	Members   []stackMemberResponse `json:"members"`
+}
+
 type activityItemResponse struct {
 	ID           string `json:"id"`
 	Cursor       string `json:"cursor"`

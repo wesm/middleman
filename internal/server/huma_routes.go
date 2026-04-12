@@ -198,6 +198,18 @@ type rateLimitsOutput struct {
 	Body rateLimitsResponse
 }
 
+type listStacksInput struct {
+	Repo string `query:"repo"`
+}
+
+type listStacksOutput struct {
+	Body []stackResponse
+}
+
+type getStackForPROutput struct {
+	Body stackContextResponse
+}
+
 type listActivityInput struct {
 	Repo   string   `query:"repo"`
 	Types  []string `query:"types"`
@@ -294,6 +306,8 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/commits", s.getCommits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
+	huma.Get(api, "/stacks", s.listStacks)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/stack", s.getStackForPR)
 }
 
 func NewOpenAPI() *huma.OpenAPI {
@@ -1615,4 +1629,66 @@ func (s *Server) validateSHAs(
 		}
 	}
 	return indexMap, nil
+}
+
+// --- Stacks ---
+
+func (s *Server) listStacks(ctx context.Context, input *listStacksInput) (*listStacksOutput, error) {
+	if input.Repo != "" {
+		if strings.Count(input.Repo, "/") != 1 {
+			return nil, huma.Error400BadRequest("invalid repo filter: expected owner/name")
+		}
+		owner, name, _ := strings.Cut(input.Repo, "/")
+		if owner == "" || name == "" {
+			return nil, huma.Error400BadRequest("invalid repo filter: expected owner/name")
+		}
+	}
+	stackList, memberMap, err := s.db.ListStacksWithMembers(ctx, input.Repo)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list stacks failed")
+	}
+
+	out := make([]stackResponse, 0, len(stackList))
+	for _, st := range stackList {
+		members := memberMap[st.ID]
+		out = append(out, stackResponse{
+			ID:        st.ID,
+			Name:      st.Name,
+			RepoOwner: st.RepoOwner,
+			RepoName:  st.RepoName,
+			Health:    computeStackHealth(members),
+			Members:   toStackMemberResponses(members),
+		})
+	}
+
+	return &listStacksOutput{Body: out}, nil
+}
+
+func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
+	stack, members, err := s.db.GetStackForPR(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get stack for pr failed")
+	}
+	if stack == nil {
+		return nil, huma.Error404NotFound("PR is not part of a stack")
+	}
+
+	var position int
+	for _, m := range members {
+		if m.Number == input.Number {
+			position = m.Position
+			break
+		}
+	}
+
+	return &getStackForPROutput{
+		Body: stackContextResponse{
+			StackID:   stack.ID,
+			StackName: stack.Name,
+			Position:  position,
+			Size:      len(members),
+			Health:    computeStackHealth(members),
+			Members:   toStackMemberResponses(members),
+		},
+	}, nil
 }

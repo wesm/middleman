@@ -20,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
 	"github.com/wesm/middleman/internal/web"
 )
@@ -72,6 +73,21 @@ func run(port int, roborevEndpoint, serverInfoFile string) error {
 	result, err := testutil.SeedFixtures(ctx, database)
 	if err != nil {
 		return fmt.Errorf("seed fixtures: %w", err)
+	}
+
+	// Run stack detection so seeded stacked chains are discoverable
+	// via /api/v1/stacks and the PR detail sidebar.
+	for _, rp := range []struct{ owner, name string }{
+		{"acme", "widgets"},
+		{"acme", "tools"},
+	} {
+		repo, err := database.GetRepoByOwnerName(ctx, rp.owner, rp.name)
+		if err != nil || repo == nil {
+			continue
+		}
+		if err := stacks.RunDetection(ctx, database, repo.ID); err != nil {
+			return fmt.Errorf("stack detection %s/%s: %w", rp.owner, rp.name, err)
+		}
 	}
 
 	diffRepo, err := testutil.SetupDiffRepo(ctx, tmpDir, database)
