@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import { ensureE2EServer } from "./tests/e2e-full/support/e2eServer";
 
-const server = `../cmd/e2e-server/e2e-server${process.platform === "win32" ? ".exe" : ""}`;
+const serverInfo = await ensureE2EServer();
 
 export default defineConfig({
   testDir: "./tests/e2e-full",
@@ -11,17 +12,10 @@ export default defineConfig({
     timeout: 5_000,
   },
   use: {
-    baseURL: "http://127.0.0.1:4174",
+    baseURL: serverInfo.base_url,
     trace: "on-first-retry",
   },
-  webServer: {
-    command: process.env.ROBOREV_ENDPOINT
-      ? `${server} -port 4174 -roborev ${process.env.ROBOREV_ENDPOINT}`
-      : `${server} -port 4174`,
-    port: 4174,
-    reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
-  },
+  globalTeardown: "./tests/e2e-full/support/e2eServerTeardown.ts",
   projects: [
     {
       name: "chromium",

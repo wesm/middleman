@@ -581,7 +581,7 @@ func (d *DB) UpdateRepoSettings(
 // --- Merge Requests ---
 
 // UpsertMergeRequest inserts or updates a merge request, returning its internal ID.
-// On conflict (repo_id, number) all fields except created_at are updated.
+// On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_merge_requests
@@ -621,7 +621,8 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
-		    mergeable_state      = excluded.mergeable_state`,
+		    mergeable_state      = excluded.mergeable_state
+		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.Body, mr.HeadBranch, mr.BaseBranch,
@@ -1198,6 +1199,7 @@ func (d *DB) UpdateMRState(
 // --- Issues ---
 
 // UpsertIssue inserts or updates an issue, returning its internal ID.
+// On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
@@ -1217,7 +1219,8 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
 		    updated_at        = excluded.updated_at,
 		    last_activity_at  = excluded.last_activity_at,
-		    closed_at         = excluded.closed_at`,
+		    closed_at         = excluded.closed_at
+		WHERE excluded.updated_at >= middleman_issues.updated_at`,
 		issue.RepoID, issue.PlatformID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
 		issue.Body, issue.CommentCount, issue.LabelsJSON,

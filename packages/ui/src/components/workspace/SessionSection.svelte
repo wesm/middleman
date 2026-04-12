@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { WorkspaceSession } from "../../api/types.js";
+
   interface Props {
     sessions: WorkspaceSession[];
     onCommand: (
