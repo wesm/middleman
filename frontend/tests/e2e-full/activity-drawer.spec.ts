@@ -452,12 +452,55 @@ test.describe("activity drawer", () => {
   });
 
   test("kanban drawer Close action refreshes board with open filter", async ({ page }) => {
-    // Mock the state-change endpoint so the test does not depend on
-    // backend PR state mutation support (the fixture client would
-    // otherwise reject the live GitHub call).
+    // Fully synthetic /pulls response so the test does not depend on
+    // the shared backend's mutable state. Other parallel tests can
+    // touch widgets#1 freely without affecting this test.
+    let pullsContainsWidgets1 = true;
+    const buildPullsResponse = (): unknown[] => {
+      if (!pullsContainsWidgets1) return [];
+      return [{
+        ID: 1001,
+        Number: 1,
+        Title: "Add widget caching layer",
+        Body: "",
+        Author: "alice",
+        AuthorDisplayName: "alice",
+        State: "open",
+        KanbanStatus: "new",
+        IsDraft: false,
+        Additions: 240,
+        Deletions: 30,
+        CreatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+        UpdatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+        URL: "https://github.com/acme/widgets/pull/1",
+        CIStatus: "",
+        ReviewDecision: "",
+        MergeableState: "",
+        Starred: false,
+        CIChecksJSON: "",
+        labels: [],
+        repo_owner: "acme",
+        repo_name: "widgets",
+        worktree_links: [],
+      }];
+    };
+
+    await page.route("**/api/v1/pulls*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(buildPullsResponse()),
+      });
+    });
+
+    // Mock the state-change endpoint and flip the synthetic list on
+    // success. The detail load goes through the real backend (which
+    // still shows widgets#1 as open), but the kanban board reads only
+    // from the mocked /pulls endpoint.
     await page.route(
       "**/api/v1/repos/*/*/pulls/*/github-state",
       async (route) => {
+        pullsContainsWidgets1 = false;
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -482,48 +525,13 @@ test.describe("activity drawer", () => {
       }
     });
 
-    // Mock the pulls list so that after close is clicked the
-    // response omits widgets#1. Until then, fall through to the
-    // real backend so the board renders with seeded data.
-    let filterWidgets1 = false;
-    await page.route("**/api/v1/pulls*", async (route) => {
-      if (!filterWidgets1) {
-        await route.fallback();
-        return;
-      }
-      const response = await route.fetch();
-      const bodyText = await response.text();
-      let body = bodyText;
-      try {
-        // The /pulls endpoint returns an array of
-        // MergeRequestResponse, not a wrapping object.
-        const data = JSON.parse(bodyText) as unknown;
-        if (Array.isArray(data)) {
-          const filtered = (
-            data as { Number: number; repo_name?: string }[]
-          ).filter(
-            (pr) => !(pr.Number === 1 && pr.repo_name === "widgets"),
-          );
-          body = JSON.stringify(filtered);
-        }
-      } catch {
-        // Body is not JSON; fall through with the original.
-      }
-      await route.fulfill({
-        status: response.status(),
-        contentType: "application/json",
-        body,
-      });
-    });
-
     await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first()
-      .waitFor({ state: "visible", timeout: 10_000 });
 
     // Open widgets#1 in the kanban drawer.
     const card = page.locator(".kanban-card")
       .filter({ hasText: "Add widget caching layer" })
       .first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
     await card.click();
 
     const drawer = page.locator(".drawer-panel");
@@ -534,16 +542,11 @@ test.describe("activity drawer", () => {
     const closeBtn = drawer.locator("button.btn--close");
     await expect(closeBtn).toBeVisible();
 
-    // Activate the response filter and click Close. onPullsRefresh
-    // (wired by KanbanBoard to pulls.loadPulls({state: "open"})) is
-    // expected to trigger a refetch that removes widgets#1 from the
-    // board.
-    filterWidgets1 = true;
     closeClicked = true;
     await closeBtn.click();
 
     // After the close succeeds, widgets#1 disappears from the kanban
-    // board because the refetched open-state list omits it.
+    // board because the refetched synthetic /pulls list omits it.
     await expect(
       page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }),
     ).toHaveCount(0, { timeout: 10_000 });
