@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
@@ -21,20 +25,31 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 4174, "port to listen on")
+	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
 	roborev := flag.String(
 		"roborev", "",
 		"roborev daemon endpoint (enables proxy)",
 	)
+	serverInfoFile := flag.String(
+		"server-info-file", "",
+		"path to write discovered server port info as JSON",
+	)
 	flag.Parse()
 
-	if err := run(*port, *roborev); err != nil {
+	if err := run(*port, *roborev, *serverInfoFile); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(port int, roborevEndpoint string) error {
+type e2eServerInfo struct {
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	BaseURL string `json:"base_url"`
+	PID     int    `json:"pid"`
+}
+
+func run(port int, roborevEndpoint, serverInfoFile string) error {
 	tmpDir, err := os.MkdirTemp("", "middleman-e2e-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -81,18 +96,7 @@ func run(port int, roborevEndpoint string) error {
 	}
 
 	fc := result.FixtureClient()
-
-	// Patch the fixture client's PR for acme/widgets#1 with the real
-	// SHAs from the test repo. Without this, the detail store's
-	// background sync (POST /repos/.../pulls/1/sync) would upsert the
-	// PR with empty platform SHAs, overwriting what SetupDiffRepo set.
-	for _, pr := range fc.OpenPRs["acme/widgets"] {
-		if pr.GetNumber() == 1 {
-			pr.Head.SHA = &diffRepo.HeadSHA
-			pr.Base.SHA = &diffRepo.BaseSHA
-			break
-		}
-	}
+	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
 
 	repos := make([]ghclient.RepoRef, len(cfg.Repos))
 	for i, r := range cfg.Repos {
@@ -115,13 +119,40 @@ func run(port int, roborevEndpoint string) error {
 	// incomplete fixture client data. The syncer only needs to exist
 	// for Status() and IsTrackedRepo() calls.
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	slog.Info(fmt.Sprintf("starting e2e server at http://%s", addr))
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	defer listener.Close()
+
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("unexpected listener addr type %T", listener.Addr())
+	}
+
+	info := e2eServerInfo{
+		Host:    "127.0.0.1",
+		Port:    tcpAddr.Port,
+		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
+		PID:     os.Getpid(),
+	}
+	if err := writeServerInfoFile(serverInfoFile, info); err != nil {
+		return fmt.Errorf("write server info file: %w", err)
+	}
+	defer cleanupServerInfoFile(serverInfoFile)
+
+	slog.Info(fmt.Sprintf("starting e2e server at %s", info.BaseURL))
+
+	httpServer := &http.Server{
+		Handler:     srv,
+		ReadTimeout: 15 * time.Second,
+		IdleTimeout: 60 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		if listenErr := srv.ListenAndServe(addr); !errors.Is(listenErr, http.ErrServerClosed) {
-			errCh <- listenErr
+		if serveErr := httpServer.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
 		}
 	}()
 
@@ -132,4 +163,62 @@ func run(port int, roborevEndpoint string) error {
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+func cleanupServerInfoFile(path string) {
+	if path == "" {
+		return
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("cleanup server info file failed", "path", path, "err", err)
+	}
+}
+
+func writeServerInfoFile(path string, info e2eServerInfo) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir server info dir: %w", err)
+	}
+
+	content, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("marshal server info: %w", err)
+	}
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, append(content, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write temp server info file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("rename server info file: %w", err)
+	}
+	return nil
+}
+
+func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number int, headSHA, baseSHA string) {
+	if fc == nil {
+		return
+	}
+
+	repoKey := fmt.Sprintf("%s/%s", owner, repo)
+	patch := func(prs []*gh.PullRequest) {
+		for _, pr := range prs {
+			if pr.GetNumber() != number {
+				continue
+			}
+			if pr.Head == nil {
+				pr.Head = &gh.PullRequestBranch{}
+			}
+			if pr.Base == nil {
+				pr.Base = &gh.PullRequestBranch{}
+			}
+			pr.Head.SHA = &headSHA
+			pr.Base.SHA = &baseSHA
+		}
+	}
+
+	patch(fc.OpenPRs[repoKey])
+	patch(fc.PRs[repoKey])
 }
