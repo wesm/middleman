@@ -170,9 +170,11 @@
   </div>
 
   <div class="footer">
-    <button class="add-repo-btn" onclick={addRepository}>
-      Add Repository
-    </button>
+    {#if selectedHost}
+      <button class="add-repo-btn" onclick={addRepository}>
+        Add Repository
+      </button>
+    {/if}
     {#if selectedHost}
       <ResourceFooter
         resources={selectedHost.resources}

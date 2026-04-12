@@ -3,7 +3,7 @@
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
   import RepoTypeahead from "../RepoTypeahead.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
-  import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
+  import { isEmbedded, getUIConfig, getWorkspaceData } from "../../stores/embed-config.svelte.js";
   import { isNarrow } from "../../stores/container.svelte.js";
   import {
     isDark, toggleTheme, isThemeToggleVisible,
@@ -72,7 +72,9 @@
         <option value="issues">Issues</option>
         <option value="board">Board</option>
         <option value="reviews">Reviews</option>
-        <option value="workspaces">Workspaces</option>
+        {#if getWorkspaceData()}
+          <option value="workspaces">Workspaces</option>
+        {/if}
         {#if !isEmbedded() && getPage() === "settings"}
           <option value="settings">Settings</option>
         {/if}
@@ -99,11 +101,13 @@
             <span class="daemon-indicator" title="Daemon unavailable"></span>
           {/if}
         </button>
-        <button
-          class="view-tab"
-          class:active={getPage() === "workspaces"}
-          onclick={() => navigate("/workspaces")}
-        >Workspaces</button>
+        {#if getWorkspaceData()}
+          <button
+            class="view-tab"
+            class:active={getPage() === "workspaces"}
+            onclick={() => navigate("/workspaces")}
+          >Workspaces</button>
+        {/if}
       </div>
     {/if}
   </nav>
