@@ -3282,6 +3282,15 @@ func seedStackedPR(
 	owner, name string, number int,
 	head, base, state, ci, review string,
 ) int64 {
+	return seedStackedPRDraft(t, database, owner, name, number, head, base, state, ci, review, false)
+}
+
+func seedStackedPRDraft(
+	t *testing.T, database *db.DB,
+	owner, name string, number int,
+	head, base, state, ci, review string,
+	isDraft bool,
+) int64 {
 	t.Helper()
 	ctx := context.Background()
 	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
@@ -3294,6 +3303,7 @@ func seedStackedPR(
 		Title:          fmt.Sprintf("PR #%d: %s", number, head),
 		Author:         "testuser",
 		State:          state,
+		IsDraft:        isDraft,
 		HeadBranch:     head,
 		BaseBranch:     base,
 		CIStatus:       ci,
@@ -3403,6 +3413,47 @@ func TestAPIGetStackForPR(t *testing.T) {
 	resp2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 99)
 	require.NoError(t, err)
 	assert.Equal(http.StatusNotFound, resp2.StatusCode())
+}
+
+func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// Draft base with green CI + approval; non-draft tip pending.
+	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/x", "main", "open", "success", "APPROVED", true)
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", "open", "pending", "")
+	runStackDetection(t, database, "acme", "widget")
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	assert.NotEqual("base_ready", resp.JSON200.Health, "draft base must not be base_ready")
+	assert.NotEqual("all_green", resp.JSON200.Health, "draft stack must not be all_green")
+}
+
+func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// Both draft, green CI + approved — must not be all_green.
+	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/a", "main", "open", "success", "APPROVED", true)
+	seedStackedPRDraft(t, database, "acme", "widget", 11, "feat/b", "feat/a", "open", "success", "APPROVED", true)
+	runStackDetection(t, database, "acme", "widget")
+
+	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+
+	var stks []generated.StackResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &stks))
+	require.Len(t, stks, 1)
+	assert.NotEqual("all_green", stks[0].Health, "all-draft stack must not be all_green")
+	assert.NotEqual("base_ready", stks[0].Health, "draft base must not be base_ready")
 }
 
 func TestAPIListStacks_Empty(t *testing.T) {
