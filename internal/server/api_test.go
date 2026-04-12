@@ -2499,6 +2499,7 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 // path itself (GraphQL fetch → normalize → DB upsert) is tested in
 // internal/github/sync_test.go; this test covers the DB → API layer.
 func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -2508,7 +2509,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 
 	// Seed DB directly — same shape as GraphQL sync output.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issueID, err := database.UpsertIssue(ctx, &db.Issue{
@@ -2525,15 +2526,15 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Add a label
-	require.NoError(t, database.ReplaceIssueLabels(ctx, repoID, issueID, []db.Label{
+	require.NoError(database.ReplaceIssueLabels(ctx, repoID, issueID, []db.Label{
 		{PlatformID: 1, Name: "bug", Color: "d73a4a", UpdatedAt: now},
 	}))
 
 	// Add a comment event
-	require.NoError(t, database.UpsertIssueEvents(ctx, []db.IssueEvent{
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
 		{
 			IssueID:   issueID,
 			EventType: "issue_comment",
@@ -2546,27 +2547,27 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 
 	// Verify via ListIssues API
 	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.Len(t, *resp.JSON200, 1)
+	require.NoError(err)
+	require.Equal(200, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
 
 	apiIssue := (*resp.JSON200)[0]
 	assert.Equal(int64(60), apiIssue.Number)
 	assert.Equal("GraphQL synced issue", apiIssue.Title)
 	assert.Equal("testuser", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
-	require.NotNil(t, apiIssue.Labels)
-	require.Len(t, *apiIssue.Labels, 1)
+	require.NotNil(apiIssue.Labels)
+	require.Len(*apiIssue.Labels, 1)
 	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
 
 	// Verify via GetIssue API
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 60,
 	)
-	require.NoError(t, err)
-	require.Equal(t, 200, detailResp.StatusCode())
-	require.NotNil(t, detailResp.JSON200)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced via GraphQL", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
 }
@@ -2577,6 +2578,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 // the HTTP API. Exercises: GraphQL HTTP → adapter → NormalizeIssue →
 // UpsertIssue → HTTP API handler → JSON response.
 func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -2652,26 +2654,26 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, listResp.StatusCode())
-	require.NotNil(t, listResp.JSON200)
-	require.Len(t, *listResp.JSON200, 1)
+	require.NoError(err)
+	require.Equal(200, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 1)
 
 	apiIssue := (*listResp.JSON200)[0]
 	assert.Equal(int64(80), apiIssue.Number)
 	assert.Equal("Full stack GraphQL issue", apiIssue.Title)
 	assert.Equal("ivy", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
-	require.NotNil(t, apiIssue.Labels)
-	require.Len(t, *apiIssue.Labels, 1)
+	require.NotNil(apiIssue.Labels)
+	require.Len(*apiIssue.Labels, 1)
 	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
 
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 80,
 	)
-	require.NoError(t, err)
-	require.Equal(t, 200, detailResp.StatusCode())
-	require.NotNil(t, detailResp.JSON200)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced through the HTTP API", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
 }
@@ -2684,6 +2686,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 // GraphQL's TotalCount, not the stale existing.CommentCount.
 // Regression test for the "preserve existing.CommentCount" overwrite.
 func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -2748,9 +2751,18 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// Pre-seed DB with a stale CommentCount (5). REST fallback fails,
 	// so UpsertIssue's value is what survives. With the bug, it's 5.
 	// Without the bug, it's TotalCount=42.
+	//
+	// The pre-seed UpdatedAt must be strictly older than the
+	// GraphQL mock's updatedAt (`now` above). UpsertIssue's
+	// stale-snapshot guard skips the update when
+	// excluded.updated_at < middleman_issues.updated_at, so if
+	// `stale` rolls forward past `now` (common under the race
+	// detector's slower execution) the fresh GraphQL data would be
+	// blocked and the assertion below would read back the stale 5
+	// — a test-only flake, not a production bug.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
-	require.NoError(t, err)
-	stale := time.Now().UTC().Truncate(time.Second)
+	require.NoError(err)
+	stale := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Second)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
 		PlatformID:     90000,
@@ -2764,7 +2776,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 		UpdatedAt:      stale,
 		LastActivityAt: stale,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
 	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
@@ -2779,9 +2791,9 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 90,
 	)
-	require.NoError(t, err)
-	require.Equal(t, 200, detailResp.StatusCode())
-	require.NotNil(t, detailResp.JSON200)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
 	assert.Equal(int64(42), detailResp.JSON200.Issue.CommentCount)
 }
 
@@ -3792,6 +3804,7 @@ func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
 
 func TestAPIListStacks(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -3802,20 +3815,21 @@ func TestAPIListStacks(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	var stks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(resp.Body, &stks))
+	require.NoError(json.Unmarshal(resp.Body, &stks))
 	assert.Len(stks, 1)
 	assert.Equal("auth", stks[0].Name)
-	require.NotNil(t, stks[0].Members)
+	require.NotNil(stks[0].Members)
 	assert.Len(*stks[0].Members, 3)
 	assert.Equal(int64(10), (*stks[0].Members)[0].Number)
 }
 
 func TestAPIListStacks_RepoFilter(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
@@ -3833,29 +3847,30 @@ func TestAPIListStacks_RepoFilter(t *testing.T) {
 	runStackDetection(t, database, "acme", "tools")
 
 	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
+	require.NoError(err)
 	var allStks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(respAll.Body, &allStks))
+	require.NoError(json.Unmarshal(respAll.Body, &allStks))
 	assert.Len(allStks, 2)
 
 	repo := "acme/widget"
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &repo})
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(http.StatusOK, resp.StatusCode())
 	var filtered []generated.StackResponse
-	require.NoError(t, json.Unmarshal(resp.Body, &filtered))
+	require.NoError(json.Unmarshal(resp.Body, &filtered))
 	assert.Len(filtered, 1)
 	assert.Equal("widget", filtered[0].RepoName)
 
 	bad := "noslash"
 	resp2, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{Repo: &bad})
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(http.StatusBadRequest, resp2.StatusCode())
 	assert.Contains(string(resp2.Body), "invalid repo filter")
 }
 
 func TestAPIGetStackForPR(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -3866,16 +3881,16 @@ func TestAPIGetStackForPR(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
 	assert.Equal("api", resp.JSON200.StackName)
 	assert.Equal(int64(2), resp.JSON200.Size)
 	assert.Equal("blocked", resp.JSON200.Health)
 
 	seedPR(t, database, "acme", "widget", 99)
 	resp2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 99)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal(http.StatusNotFound, resp2.StatusCode())
 }
 
@@ -3900,6 +3915,7 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 
 func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -3910,12 +3926,12 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
 
 	var stks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(resp.Body, &stks))
-	require.Len(t, stks, 1)
+	require.NoError(json.Unmarshal(resp.Body, &stks))
+	require.Len(stks, 1)
 	assert.NotEqual("all_green", stks[0].Health, "all-draft stack must not be all_green")
 	assert.NotEqual("base_ready", stks[0].Health, "draft base must not be base_ready")
 }
@@ -3927,6 +3943,7 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 // data produced entirely by the sync-completion callback path.
 func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	ctx := context.Background()
 
 	// Build GitHub PRs the mock will return; the sync will persist these
@@ -3968,17 +3985,17 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 
 	// Stacks should be populated purely by the hook path.
 	listResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, listResp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
 	var stks []generated.StackResponse
-	require.NoError(t, json.Unmarshal(listResp.Body, &stks))
-	require.Len(t, stks, 1, "sync-hook detection should produce one stack")
+	require.NoError(json.Unmarshal(listResp.Body, &stks))
+	require.Len(stks, 1, "sync-hook detection should produce one stack")
 	assert.Equal("hook", stks[0].Name)
 
 	ctxResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, ctxResp.StatusCode())
-	require.NotNil(t, ctxResp.JSON200)
+	require.NoError(err)
+	require.Equal(http.StatusOK, ctxResp.StatusCode())
+	require.NotNil(ctxResp.JSON200)
 	assert.Equal("hook", ctxResp.JSON200.StackName)
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
 }
@@ -4005,6 +4022,7 @@ func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 
 func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
@@ -4015,10 +4033,10 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.NotNil(t, resp.JSON200.Members)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Members)
 	assert.Len(*resp.JSON200.Members, 2)
 	assert.Equal("master", (*resp.JSON200.Members)[0].BaseBranch)
 	assert.Equal("feat/base", (*resp.JSON200.Members)[1].BaseBranch)

@@ -112,10 +112,11 @@ func TestServerShutdownRaceNoPanic(t *testing.T) {
 // the HTTP listener passed to Serve and that subsequent requests
 // fail fast.
 func TestServerShutdownStopsHTTPListener(t *testing.T) {
+	req := require.New(t)
 	srv, _ := setupTestServer(t)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	req.NoError(err)
 	addr := ln.Addr().String()
 
 	listenErrCh := make(chan error, 1)
@@ -123,7 +124,7 @@ func TestServerShutdownStopsHTTPListener(t *testing.T) {
 		listenErrCh <- srv.Serve(ln)
 	}()
 
-	require.Eventually(t, func() bool {
+	req.Eventually(func() bool {
 		resp, err := http.Get("http://" + addr + "/api/v1/version")
 		if err != nil {
 			return false
@@ -135,17 +136,17 @@ func TestServerShutdownStopsHTTPListener(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	require.NoError(t, srv.Shutdown(ctx))
+	req.NoError(srv.Shutdown(ctx))
 
 	select {
 	case listenErr := <-listenErrCh:
-		require.ErrorIs(t, listenErr, http.ErrServerClosed)
+		req.ErrorIs(listenErr, http.ErrServerClosed)
 	case <-time.After(time.Second):
-		require.FailNow(t, "Serve did not return after Shutdown")
+		req.FailNow("Serve did not return after Shutdown")
 	}
 
 	_, err = http.Get("http://" + addr + "/api/v1/version")
-	require.Error(t, err)
+	req.Error(err)
 }
 
 // TestServerShutdownRetryWithLongerCtx verifies that a second
@@ -176,6 +177,7 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 // a later call with a longer deadline still invokes
 // http.Server.Shutdown and blocks until the handler drains.
 func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
+	req := require.New(t)
 	srv, _ := setupTestServer(t)
 
 	release := make(chan struct{})
@@ -190,7 +192,7 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	req.NoError(err)
 	addr := ln.Addr().String()
 
 	serveErr := make(chan error, 1)
@@ -211,13 +213,13 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		require.FailNow(t, "slow handler never started")
+		req.FailNow("slow handler never started")
 	}
 
 	shortCtx, shortCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer shortCancel()
 	err = srv.Shutdown(shortCtx)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	req.ErrorIs(err, context.DeadlineExceeded)
 
 	longErrCh := make(chan error, 1)
 	go func() {
@@ -228,19 +230,19 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 
 	select {
 	case <-longErrCh:
-		require.FailNow(t, "second Shutdown returned before HTTP handler drained")
+		req.FailNow("second Shutdown returned before HTTP handler drained")
 	case <-time.After(100 * time.Millisecond):
 	}
 
 	close(release)
 	<-reqDone
-	require.NoError(t, <-longErrCh)
+	req.NoError(<-longErrCh)
 
 	select {
 	case e := <-serveErr:
-		require.ErrorIs(t, e, http.ErrServerClosed)
+		req.ErrorIs(e, http.ErrServerClosed)
 	case <-time.After(time.Second):
-		require.FailNow(t, "Serve did not return after Shutdown")
+		req.FailNow("Serve did not return after Shutdown")
 	}
 }
 
@@ -249,10 +251,11 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 // <-done arm. Without this, http.Server.Shutdown would hang
 // waiting on the never-returning SSE handler until ctx timeout.
 func TestServerShutdownClosesSSESubscribers(t *testing.T) {
+	req := require.New(t)
 	srv, _ := setupTestServer(t)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	req.NoError(err)
 	addr := ln.Addr().String()
 
 	serveErr := make(chan error, 1)
@@ -261,9 +264,9 @@ func TestServerShutdownClosesSSESubscribers(t *testing.T) {
 	// Open an SSE connection and pull the first line so we know
 	// the handler is actively streaming.
 	resp, err := http.Get("http://" + addr + "/api/v1/events")
-	require.NoError(t, err)
+	req.NoError(err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	req.Equal(http.StatusOK, resp.StatusCode)
 
 	// Read in a goroutine so we can observe the connection close.
 	readDone := make(chan struct{})
@@ -278,20 +281,20 @@ func TestServerShutdownClosesSSESubscribers(t *testing.T) {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	require.NoError(t, srv.Shutdown(ctx))
-	require.Less(t, time.Since(start), time.Second,
+	req.NoError(srv.Shutdown(ctx))
+	req.Less(time.Since(start), time.Second,
 		"Shutdown took too long; SSE hub likely not closed")
 
 	select {
 	case <-readDone:
 	case <-time.After(time.Second):
-		require.FailNow(t, "SSE connection did not close after Shutdown")
+		req.FailNow("SSE connection did not close after Shutdown")
 	}
 
 	select {
 	case e := <-serveErr:
-		require.ErrorIs(t, e, http.ErrServerClosed)
+		req.ErrorIs(e, http.ErrServerClosed)
 	case <-time.After(time.Second):
-		require.FailNow(t, "Serve did not return after Shutdown")
+		req.FailNow("Serve did not return after Shutdown")
 	}
 }

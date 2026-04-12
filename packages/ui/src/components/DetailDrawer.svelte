@@ -8,15 +8,12 @@
     name: string;
     number: number;
     onClose: () => void;
+    onPullsRefresh?: () => Promise<void>;
   }
 
-  let { itemType, owner, name, number, onClose }: Props = $props();
-
-  function handleBackdropClick(e: MouseEvent): void {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }
+  let {
+    itemType, owner, name, number, onClose, onPullsRefresh,
+  }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape" && !e.defaultPrevented) {
@@ -31,9 +28,7 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="drawer-backdrop" onclick={handleBackdropClick}>
+<div class="drawer-backdrop">
   <aside class="drawer-panel">
     <div class="drawer-header">
       <button class="close-btn" onclick={onClose} title="Close (Esc)">&#x2715;</button>
@@ -44,7 +39,12 @@
     <div class="drawer-body">
       {#key `${owner}/${name}/${number}`}
         {#if itemType === "pr"}
-          <PullDetail {owner} {name} {number} />
+          <PullDetail
+            {owner}
+            {name}
+            {number}
+            {...(onPullsRefresh ? { onPullsRefresh } : {})}
+          />
         {:else}
           <IssueDetail {owner} {name} {number} />
         {/if}
@@ -68,8 +68,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 65%;
-    min-width: 500px;
+    width: 100%;
     background: var(--bg-surface);
     border-left: 1px solid var(--border-default);
     box-shadow: var(--shadow-lg);
@@ -106,12 +105,8 @@
 
   .drawer-body {
     flex: 1;
-    overflow-y: auto;
-  }
-
-  :global(#app.container-narrow) .drawer-panel,
-  :global(#app.container-medium) .drawer-panel {
-    width: 100%;
-    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 </style>

@@ -76,6 +76,7 @@
           owner={selectedPR.owner}
           name={selectedPR.name}
           number={selectedPR.number}
+          hideTabs={true}
         />
       {/if}
     {:else}

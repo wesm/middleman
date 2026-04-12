@@ -164,11 +164,12 @@ func openTestDB(t *testing.T) *realdb.DB {
 
 func TestRunDetection(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
 	repoID, err := d.UpsertRepo(ctx, "", "org", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Create a 3-PR chain.
 	now := time.Now()
@@ -186,14 +187,14 @@ func TestRunDetection(t *testing.T) {
 			HeadBranch: pr.head, BaseBranch: pr.base,
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})
-		require.NoError(t, err)
+		require.NoError(err)
 	}
 
 	err = RunDetection(ctx, d, repoID)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	stack, members, err := d.GetStackForPR(ctx, "org", "repo", 101)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.NotNil(stack)
 	assert.Equal("auth", stack.Name)
 	assert.Len(members, 3)
@@ -203,11 +204,12 @@ func TestRunDetection(t *testing.T) {
 
 func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 
 	repoID, err := d.UpsertRepo(ctx, "", "org", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now()
 	// Start with an open chain.
@@ -224,13 +226,13 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 			HeadBranch: pr.head, BaseBranch: pr.base,
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})
-		require.NoError(t, err)
+		require.NoError(err)
 	}
 
 	err = RunDetection(ctx, d, repoID)
-	require.NoError(t, err)
+	require.NoError(err)
 	stack, _, err := d.GetStackForPR(ctx, "org", "repo", 100)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.NotNil(stack, "stack should exist while PRs are open")
 
 	// Now mark both PRs as merged and re-detect.
@@ -247,13 +249,13 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 			}(),
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})
-		require.NoError(t, err)
+		require.NoError(err)
 	}
 
 	err = RunDetection(ctx, d, repoID)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	stack2, _, err := d.GetStackForPR(ctx, "org", "repo", 100)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Nil(stack2, "fully merged stack should be deleted")
 }

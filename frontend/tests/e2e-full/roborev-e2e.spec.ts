@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
+  assertSeededRoborevDaemon,
   stopDaemon,
   startDaemon,
   restartDaemon,
@@ -9,6 +10,15 @@ import {
 } from "./support/roborev-helpers.js";
 
 test.describe.serial("Roborev", () => {
+  // Refuse to run if the e2e server is not proxying to the
+  // script-managed seeded daemon. This catches the failure mode
+  // where playwright is invoked directly instead of via
+  // scripts/run-roborev-e2e.sh, while a real local roborev daemon
+  // is bound to 127.0.0.1:7373 (the e2e server's silent default).
+  test.beforeAll(async () => {
+    await assertSeededRoborevDaemon();
+  });
+
   // -------------------------------------------------------
   // Group 1: Table and Data Display
   // -------------------------------------------------------
@@ -228,15 +238,18 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       await page.locator(".status-select").selectOption("failed");
-      // Wait for re-fetch
-      await page.waitForTimeout(500);
-      await waitForJobRows(page, 1);
 
-      const badges = page.locator(".status-badge");
-      const count = await badges.count();
-      for (let i = 0; i < count; i++) {
-        await expect(badges.nth(i)).toHaveClass(/status-failed/);
-      }
+      // Wait atomically for the filter to settle: at least one failed
+      // badge must be visible AND no non-failed badges may remain.
+      // This auto-retries both conditions, removing the brittle
+      // waitForTimeout + count-then-iterate pattern that races against
+      // re-renders under parallel load.
+      await expect(
+        page.locator(".status-badge.status-failed").first(),
+      ).toBeVisible({ timeout: 5_000 });
+      await expect(
+        page.locator(".status-badge:not(.status-failed)"),
+      ).toHaveCount(0);
     });
 
     test("status dropdown: select done shows only done jobs", async ({
@@ -246,15 +259,13 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       await page.locator(".status-select").selectOption("done");
-      await page.waitForTimeout(500);
-      await waitForJobRows(page, 1);
 
-      const badges = page.locator(".status-badge");
-      const count = await badges.count();
-      expect(count).toBeGreaterThan(0);
-      for (let i = 0; i < count; i++) {
-        await expect(badges.nth(i)).toHaveClass(/status-done/);
-      }
+      await expect(
+        page.locator(".status-badge.status-done").first(),
+      ).toBeVisible({ timeout: 5_000 });
+      await expect(
+        page.locator(".status-badge:not(.status-done)"),
+      ).toHaveCount(0);
     });
 
     test("repo picker: select repo filters to that repo's jobs", async ({
@@ -272,18 +283,17 @@ test.describe.serial("Roborev", () => {
         .locator(".dropdown-item.repo-item")
         .filter({ hasText: "test-repo-beta" });
       await betaItem.click();
-      await page.waitForTimeout(500);
 
-      // All visible repo names should be test-repo-beta
-      await waitForJobRows(page, 1);
-      const repoNames = page.locator(".repo-name");
-      const count = await repoNames.count();
-      expect(count).toBeGreaterThan(0);
-      for (let i = 0; i < count; i++) {
-        await expect(repoNames.nth(i)).toHaveText(
-          "test-repo-beta",
-        );
-      }
+      // Wait atomically for the filter to settle: at least one
+      // matching row visible AND no non-matching repo names remain.
+      await expect(
+        page.locator(".repo-name", { hasText: "test-repo-beta" }).first(),
+      ).toBeVisible({ timeout: 5_000 });
+      await expect(
+        page.locator(".repo-name").filter({
+          hasNotText: "test-repo-beta",
+        }),
+      ).toHaveCount(0);
     });
 
     test("branch picker: select branch within repo", async ({
@@ -309,16 +319,14 @@ test.describe.serial("Roborev", () => {
         .filter({ hasText: "feat/auth" });
       await expect(branchItem).toBeVisible();
       await branchItem.click();
-      await page.waitForTimeout(500);
 
-      // All visible branches should be feat/auth
-      await waitForJobRows(page, 1);
-      const branchNames = page.locator(".branch-name");
-      const count = await branchNames.count();
-      expect(count).toBeGreaterThan(0);
-      for (let i = 0; i < count; i++) {
-        await expect(branchNames.nth(i)).toHaveText("feat/auth");
-      }
+      // Wait atomically for the filter to settle.
+      await expect(
+        page.locator(".branch-name", { hasText: "feat/auth" }).first(),
+      ).toBeVisible({ timeout: 5_000 });
+      await expect(
+        page.locator(".branch-name").filter({ hasNotText: "feat/auth" }),
+      ).toHaveCount(0);
     });
 
     test("search input: filter by exact git ref", async ({
@@ -332,23 +340,14 @@ test.describe.serial("Roborev", () => {
         .locator(".filter-bar .search-input")
         .fill("aa000049");
 
-      // Wait for debounce + refetch
-      await page.waitForTimeout(800);
-      await waitForJobRows(page, 1);
-
-      // Verify results narrowed: fewer rows than unfiltered,
-      // and every visible git-ref matches the query.
-      const rows = page.locator(".job-row");
-      const rowCount = await rows.count();
-      expect(rowCount).toBeGreaterThan(0);
-      expect(rowCount).toBeLessThan(50);
-      const refs = page.locator(".git-ref");
-      const refCount = await refs.count();
-      for (let i = 0; i < refCount; i++) {
-        await expect(refs.nth(i)).toContainText(
-          "aa000049",
-        );
-      }
+      // Wait atomically for the filter to settle: at least one row
+      // with a matching ref AND no rows with a non-matching ref.
+      await expect(
+        page.locator(".git-ref", { hasText: "aa000049" }).first(),
+      ).toBeVisible({ timeout: 5_000 });
+      await expect(
+        page.locator(".git-ref").filter({ hasNotText: "aa000049" }),
+      ).toHaveCount(0);
     });
 
     test("hide-closed: hides jobs whose review is closed", async ({
@@ -363,9 +362,12 @@ test.describe.serial("Roborev", () => {
       await page
         .locator(".hide-closed input[type=checkbox]")
         .check();
-      await page.waitForTimeout(500);
 
-      // Should have fewer or equal rows (5 are closed in seed)
+      // Auto-retry until the row count drops to or below the
+      // unfiltered baseline. The seed has closed jobs that should
+      // disappear, so the count strictly decreases unless none were
+      // closed (in which case the assertion still passes since the
+      // count is unchanged but not greater).
       await expect(async () => {
         const afterCount = await page.locator(".job-row").count();
         expect(afterCount).toBeLessThanOrEqual(beforeCount);
@@ -378,18 +380,30 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      // Apply a filter
+      // Capture the unfiltered baseline before applying the filter.
+      // The reset must restore exactly this count, not just "more
+      // rows than the filtered subset" — a partial reload would also
+      // satisfy the looser condition.
+      const baselineCount = await page.locator(".job-row").count();
+
+      // Apply a filter and wait for it to take effect.
       await page.locator(".status-select").selectOption("failed");
-      await page.waitForTimeout(500);
+      await expect(
+        page.locator(".status-badge.status-failed").first(),
+      ).toBeVisible({ timeout: 5_000 });
+      await expect(
+        page.locator(".status-badge:not(.status-failed)"),
+      ).toHaveCount(0);
       const filteredCount = await page.locator(".job-row").count();
+      expect(filteredCount).toBeLessThan(baselineCount);
 
-      // Reset the filter
+      // Reset the filter and wait for the unfiltered list to reload
+      // back to the baseline count exactly.
       await page.locator(".status-select").selectOption("");
-      await page.waitForTimeout(500);
-      await waitForJobRows(page, 10);
-
-      const resetCount = await page.locator(".job-row").count();
-      expect(resetCount).toBeGreaterThan(filteredCount);
+      await expect(async () => {
+        const resetCount = await page.locator(".job-row").count();
+        expect(resetCount).toBe(baselineCount);
+      }).toPass({ timeout: 5_000 });
     });
   });
 

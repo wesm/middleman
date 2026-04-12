@@ -175,7 +175,14 @@ func git(dir string, args ...string) error {
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(os.Environ(),
+	// Filter out inherited GIT_* repo-context env vars. If this
+	// test is run from within a git hook (e.g. the go-test-short
+	// pre-commit hook in prek.toml), git sets GIT_DIR/GIT_WORK_TREE
+	// etc. to the parent repo. Leaving those in place makes child
+	// git commands target the parent repo instead of the temp one,
+	// which silently runs the parent's pre-commit hook from the
+	// temp cwd and then fails.
+	cmd.Env = append(stripGitRepoEnv(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_AUTHOR_DATE=2026-03-28T12:00:00Z",
 		"GIT_COMMITTER_DATE=2026-03-28T12:00:00Z",
@@ -187,6 +194,31 @@ func git(dir string, args ...string) error {
 			"git %s: %w: %s", args[0], err, stderr.String())
 	}
 	return nil
+}
+
+// stripGitRepoEnv removes inherited GIT_* repo-context env vars that
+// would make a child git command target the parent repo instead of
+// its own cwd. Only vars that encode repo location are filtered;
+// author/committer/identity vars are preserved.
+func stripGitRepoEnv(env []string) []string {
+	bad := map[string]struct{}{
+		"GIT_DIR":              {},
+		"GIT_WORK_TREE":        {},
+		"GIT_INDEX_FILE":       {},
+		"GIT_OBJECT_DIRECTORY": {},
+		"GIT_COMMON_DIR":       {},
+		"GIT_NAMESPACE":        {},
+		"GIT_PREFIX":           {},
+	}
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		key, _, _ := strings.Cut(e, "=")
+		if _, skip := bad[key]; skip {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func revParse(dir, ref string) (string, error) {

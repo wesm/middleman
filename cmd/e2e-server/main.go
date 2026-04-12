@@ -25,11 +25,20 @@ import (
 	"github.com/wesm/middleman/internal/web"
 )
 
+// defaultRoborevEndpoint is the address the e2e server points the
+// roborev proxy at when -roborev is not provided. It is deliberately
+// an unbindable loopback port so direct playwright runs fail closed
+// (the proxy returns 502) instead of silently forwarding test
+// traffic to a real local roborev daemon (typically at
+// 127.0.0.1:7373). The runner script (scripts/run-roborev-e2e.sh)
+// always passes -roborev explicitly to the dockerized seeded daemon.
+const defaultRoborevEndpoint = "http://127.0.0.1:1"
+
 func main() {
 	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
 	roborev := flag.String(
-		"roborev", "",
-		"roborev daemon endpoint (enables proxy)",
+		"roborev", defaultRoborevEndpoint,
+		"roborev daemon endpoint",
 	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
@@ -37,7 +46,14 @@ func main() {
 	)
 	flag.Parse()
 
-	if err := run(*port, *roborev, *serverInfoFile); err != nil {
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	if err := run(ctx, *port, *roborev, *serverInfoFile); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -50,7 +66,10 @@ type e2eServerInfo struct {
 	PID     int    `json:"pid"`
 }
 
-func run(port int, roborevEndpoint, serverInfoFile string) error {
+// run starts the e2e server and blocks until ctx is canceled or the
+// HTTP server errors out. Tests call it directly with a cancellable
+// context; main() wires it to SIGINT/SIGTERM.
+func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) error {
 	tmpDir, err := os.MkdirTemp("", "middleman-e2e-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -62,13 +81,6 @@ func run(port int, roborevEndpoint, serverInfoFile string) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer database.Close()
-
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGTERM,
-	)
-	defer stop()
 
 	result, err := testutil.SeedFixtures(ctx, database)
 	if err != nil {
@@ -107,9 +119,7 @@ func run(port int, roborevEndpoint, serverInfoFile string) error {
 		},
 	}
 
-	if roborevEndpoint != "" {
-		cfg.Roborev.Endpoint = roborevEndpoint
-	}
+	cfg.Roborev.Endpoint = roborevEndpoint
 
 	fc := result.FixtureClient()
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
@@ -170,11 +180,24 @@ func run(port int, roborevEndpoint, serverInfoFile string) error {
 		if serveErr := httpServer.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
 			errCh <- serveErr
 		}
+		close(errCh)
 	}()
 
 	select {
 	case <-ctx.Done():
 		slog.Info("shutting down")
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
+			slog.Warn("http shutdown error", "err", shutdownErr)
+		}
+		// Drain any late error from Serve before returning so the
+		// goroutine does not outlive the function.
+		if serveErr, ok := <-errCh; ok {
+			return fmt.Errorf("server: %w", serveErr)
+		}
 		return nil
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
