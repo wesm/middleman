@@ -2751,9 +2751,18 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// Pre-seed DB with a stale CommentCount (5). REST fallback fails,
 	// so UpsertIssue's value is what survives. With the bug, it's 5.
 	// Without the bug, it's TotalCount=42.
+	//
+	// The pre-seed UpdatedAt must be strictly older than the
+	// GraphQL mock's updatedAt (`now` above). UpsertIssue's
+	// stale-snapshot guard skips the update when
+	// excluded.updated_at < middleman_issues.updated_at, so if
+	// `stale` rolls forward past `now` (common under the race
+	// detector's slower execution) the fresh GraphQL data would be
+	// blocked and the assertion below would read back the stale 5
+	// — a test-only flake, not a production bug.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
-	stale := time.Now().UTC().Truncate(time.Second)
+	stale := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Second)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
 		PlatformID:     90000,
