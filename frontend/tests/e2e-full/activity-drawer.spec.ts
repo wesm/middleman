@@ -111,4 +111,28 @@ test.describe("activity drawer", () => {
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
   });
+
+  test("kanban drawer shows diff when switching to Files tab", async ({ page }) => {
+    await mockDiffForAllPRs(page, tinyDiff);
+
+    await page.goto("/pulls/board");
+    await page.locator(".kanban-card").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    // Click the first kanban card in any column. The wildcard diff mock
+    // covers whichever PR number this card represents.
+    await page.locator(".kanban-card").first().click();
+
+    // Kanban drawer (distinct from DetailDrawer) uses .drawer as its panel.
+    const drawer = page.locator(".kanban-wrap .drawer");
+    await expect(drawer).toBeVisible();
+
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    await expect(drawer.locator(".diff-view")).toBeVisible();
+    await expect(drawer.locator(".diff-file")).toHaveCount(1);
+
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
+  });
 });
