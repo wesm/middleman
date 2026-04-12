@@ -1,11 +1,14 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
+  import CommentEditor from "./CommentEditor.svelte";
   import {
     beginCommentSubmit,
     clearCommentSubmitError,
     clearCommentDraft,
     finishCommentSubmit,
     getCommentDraft,
+    getCommentDraftByKey,
+    getCommentDraftKey,
     getCommentSubmitError,
     isCommentSubmitPending,
     setCommentSubmitError,
@@ -22,7 +25,10 @@
 
   const { owner, name, number }: Props = $props();
 
-  const body = $derived(getCommentDraft("pull", owner, name, number));
+  const currentDraftKey = $derived(
+    getCommentDraftKey("pull", owner, name, number),
+  );
+  const body = $derived(getCommentDraftByKey(currentDraftKey));
 
   const isEmpty = $derived(body.trim() === "");
   const visibleError = $derived(
@@ -31,16 +37,6 @@
   const isPostingCurrent = $derived(
     isCommentSubmitPending("pull", owner, name, number),
   );
-
-  function handleInput(e: Event): void {
-    setCommentDraft(
-      "pull",
-      owner,
-      name,
-      number,
-      (e.currentTarget as HTMLTextAreaElement).value,
-    );
-  }
 
   async function handleSubmit(): Promise<void> {
     if (isEmpty || isPostingCurrent) return;
@@ -89,24 +85,23 @@
       );
     }
   }
-
-  function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      void handleSubmit();
-    }
-  }
 </script>
 
 <div class="comment-box">
-  <textarea
-    class="comment-textarea"
-    placeholder="Write a comment... (Cmd+Enter to submit)"
-    value={body}
-    oninput={handleInput}
-    onkeydown={handleKeydown}
-    disabled={isPostingCurrent}
-    rows={4}
-  ></textarea>
+  {#key `pull:${owner}/${name}/${number}`}
+    <CommentEditor
+      {owner}
+      {name}
+      value={body}
+      disabled={isPostingCurrent}
+      oninput={(nextBody) => {
+        setCommentDraft("pull", owner, name, number, nextBody);
+      }}
+      onsubmit={() => {
+        void handleSubmit();
+      }}
+    />
+  {/key}
   {#if visibleError !== null}
     <p class="error-msg">{visibleError}</p>
   {/if}
@@ -126,30 +121,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-
-  .comment-textarea {
-    width: 100%;
-    resize: vertical;
-    font-size: 13px;
-    line-height: 1.5;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    padding: 8px 10px;
-    color: var(--text-primary);
-    outline: none;
-    min-height: 80px;
-    max-height: 200px;
-  }
-
-  .comment-textarea:focus {
-    border-color: var(--accent-blue);
-  }
-
-  .comment-textarea:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .error-msg {

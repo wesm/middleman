@@ -1538,6 +1538,109 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPICommentAutocomplete(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	prID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     12000,
+		Number:         12,
+		URL:            "https://github.com/acme/widget/pull/12",
+		Title:          "Polish mentions",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature-12",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+	require.NoError(database.EnsureKanbanState(ctx, prID))
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     17000,
+		Number:         17,
+		URL:            "https://github.com/acme/widget/issues/17",
+		Title:          "Mention bug",
+		Author:         "alex",
+		State:          "open",
+		CreatedAt:      time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "comment",
+		Author:         "albert",
+		CreatedAt:      time.Now().UTC().Add(-time.Hour).Truncate(time.Second),
+		DedupeKey:      "autocomplete-mr-comment",
+	}}))
+
+	userReq := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?trigger=@&q=al&limit=10", nil)
+	userRR := httptest.NewRecorder()
+	srv.ServeHTTP(userRR, userReq)
+	require.Equal(http.StatusOK, userRR.Code, userRR.Body.String())
+
+	var userBody commentAutocompleteResponse
+	require.NoError(json.NewDecoder(userRR.Body).Decode(&userBody))
+	assert.Equal([]string{"albert", "alex", "alice"}, userBody.Users)
+	assert.Empty(userBody.References)
+
+	refReq := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	refRR := httptest.NewRecorder()
+	srv.ServeHTTP(refRR, refReq)
+	require.Equal(http.StatusOK, refRR.Code, refRR.Body.String())
+
+	var refBody commentAutocompleteResponse
+	require.NoError(json.NewDecoder(refRR.Body).Decode(&refBody))
+	assert.Equal([]db.CommentAutocompleteReference{
+		{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"},
+		{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"},
+	}, refBody.References)
+	assert.Empty(refBody.Users)
+}
+
+func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "ghe.example.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     12000,
+		Number:         12,
+		URL:            "https://ghe.example.com/acme/widget/pull/12",
+		Title:          "Polish mentions",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature-12",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body commentAutocompleteResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal([]db.CommentAutocompleteReference{{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}}, body.References)
+}
+
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
 	setTestLocalEDT(t)
@@ -1568,6 +1671,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		Name:         "widget",
 		PlatformHost: "github.com",
 	}}, time.Minute, nil, nil)
+	t.Cleanup(func() { syncer.Stop() })
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},

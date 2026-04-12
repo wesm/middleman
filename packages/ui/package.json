@@ -36,10 +36,20 @@
     "typecheck": "bunx svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && bunx tsc --noEmit -p ./tsconfig.json"
   },
   "dependencies": {
+    "@tiptap/core": "3.22.3",
+    "@tiptap/extension-document": "3.22.3",
+    "@tiptap/extension-hard-break": "3.22.3",
+    "@tiptap/extension-paragraph": "3.22.3",
+    "@tiptap/extension-placeholder": "3.22.3",
+    "@tiptap/extension-text": "3.22.3",
+    "@tiptap/pm": "3.22.3",
+    "@tiptap/suggestion": "3.22.3",
     "dompurify": "3.3.3",
     "marked": "17.0.5",
     "openapi-fetch": "^0.17.0",
-    "shiki": "^4.0.2"
+    "prosemirror-state": "^1.4.4",
+    "shiki": "^4.0.2",
+    "svelte-tiptap": "3.0.1"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
@@ -48,6 +58,7 @@
     "@eslint/js": "^10.0.1",
     "@testing-library/svelte": "5.2.8",
     "@tsconfig/svelte": "^5.0.0",
+    "@types/node": "^24.9.2",
     "@types/dompurify": "3.2.0",
     "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",
