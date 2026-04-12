@@ -102,8 +102,6 @@
   {/if}
 
   {#if drawerPR !== null}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="drawer-overlay" onclick={closeDrawer} onkeydown={() => {}}></div>
     <aside class="drawer">
       <div class="drawer-header">
         <button class="drawer-close" onclick={closeDrawer} title="Close (Esc)">
@@ -165,26 +163,12 @@
     text-decoration: underline;
   }
 
-  .drawer-overlay {
-    position: absolute;
-    inset: 0;
-    background: var(--overlay-bg, rgba(0, 0, 0, 0.3));
-    z-index: 10;
-    animation: fade-in 0.15s ease-out;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
   .drawer {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
-    width: 65%;
-    min-width: 500px;
+    width: 100%;
     background: var(--bg-primary);
     border-left: 1px solid var(--border-default);
     box-shadow: var(--shadow-lg);
@@ -226,12 +210,8 @@
 
   .drawer-body {
     flex: 1;
-    overflow-y: auto;
-  }
-
-  :global(#app.container-narrow) .drawer,
-  :global(#app.container-medium) .drawer {
-    width: 100%;
-    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 </style>
