@@ -180,13 +180,17 @@ type Instance struct {
 	syncer     *ghclient.Syncer
 	cancelSync context.CancelFunc
 	// cancelHook aborts any in-flight stack-detection pass triggered by
-	// SetOnSyncCompleted. Separate from cancelSync so the hook context
-	// spans the entire Instance lifetime (including ad-hoc syncs via
-	// TriggerRun before StartSync), and so StopSync can cancel hook
-	// work even when callers started sync with context.Background().
+	// SetOnSyncCompleted. Separate from cancelSync so ad-hoc syncs via
+	// TriggerRun before StartSync still run detection, and so StopSync
+	// can cancel hook work regardless of how callers parent their ctx.
 	cancelHook context.CancelFunc
-	stopMu     sync.Mutex
-	closed     bool
+	// installHook reinstalls the sync-completion hook with a fresh
+	// context. Called from the constructor and from StartSync after
+	// StopSync has canceled the previous context, so restarted syncs
+	// keep running stack detection.
+	installHook func(ctx context.Context)
+	stopMu      sync.Mutex
+	closed      bool
 }
 
 // New creates a middleman Instance from the given options.
@@ -368,12 +372,16 @@ func New(opts Options) (*Instance, error) {
 			cb(out)
 		}
 	}
-	// Install the stacks hook eagerly with an instance-lifetime context.
-	// This ensures ad-hoc syncs (TriggerRun) triggered before StartSync
-	// still run detection, and makes detection cancelable from both
-	// StopSync and Close regardless of how callers parent their ctx.
+	installHook := func(ctx context.Context) {
+		syncer.SetOnSyncCompleted(
+			stacks.SyncCompletedHook(ctx, database, embedNext),
+		)
+	}
+
+	// Install the stacks hook eagerly so ad-hoc syncs triggered
+	// before StartSync still run detection.
 	hookCtx, cancelHook := context.WithCancel(context.Background())
-	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(hookCtx, database, embedNext))
+	installHook(hookCtx)
 
 	srv := server.New(
 		database, syncer, frontend,
@@ -385,10 +393,11 @@ func New(opts Options) (*Instance, error) {
 	)
 
 	return &Instance{
-		db:         database,
-		server:     srv,
-		syncer:     syncer,
-		cancelHook: cancelHook,
+		db:          database,
+		server:      srv,
+		syncer:      syncer,
+		cancelHook:  cancelHook,
+		installHook: installHook,
 	}, nil
 }
 
@@ -400,16 +409,28 @@ func (i *Instance) Handler() http.Handler {
 // StartSync begins periodic GitHub sync in the background.
 // The context is used for cancellation during Close.
 func (i *Instance) StartSync(ctx context.Context) {
+	// Reinstall the sync-completion hook with a fresh context if
+	// StopSync canceled the previous one, so restarted syncs keep
+	// running stack detection.
+	if i.cancelHook == nil && i.installHook != nil {
+		hookCtx, cancelHook := context.WithCancel(
+			context.Background(),
+		)
+		i.cancelHook = cancelHook
+		i.installHook(hookCtx)
+	}
 	ctx, i.cancelSync = context.WithCancel(ctx)
 	i.syncer.Start(ctx)
 }
 
 // StopSync stops the periodic GitHub sync.
 func (i *Instance) StopSync() {
-	// Cancel any in-flight stack-detection pass before stopping the syncer
-	// so the hook does not continue after StopSync returns.
+	// Cancel any in-flight stack-detection pass before stopping the
+	// syncer so the hook does not continue after StopSync returns.
+	// The hook is reinstalled on the next StartSync.
 	if i.cancelHook != nil {
 		i.cancelHook()
+		i.cancelHook = nil
 	}
 	i.syncer.Stop()
 }
