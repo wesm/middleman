@@ -257,6 +257,43 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert tools#2: %w", err)
 	}
 
+	// tools#10/#11/#12: open stacked PR chain (auth refactor).
+	// Forms: main <- feat/auth-base <- feat/auth-retry <- feat/auth-ui
+	stackBase := now.Add(-4 * 24 * time.Hour)
+	for i, pr := range []struct {
+		num                int
+		title, head, base  string
+		ci, review, author string
+	}{
+		{10, "Auth: extract token refresh helper", "feat/auth-base", "main", "success", "APPROVED", "alice"},
+		{11, "Auth: add retry with backoff", "feat/auth-retry", "feat/auth-base", "success", "", "alice"},
+		{12, "Auth: error handling UI", "feat/auth-ui", "feat/auth-retry", "pending", "", "alice"},
+	} {
+		created := stackBase.Add(time.Duration(i) * time.Hour)
+		_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:            toolsID,
+			PlatformID:        int64(2010 + i),
+			Number:            pr.num,
+			URL:               fmt.Sprintf("https://github.com/acme/tools/pull/%d", pr.num),
+			Title:             pr.title,
+			Author:            pr.author,
+			AuthorDisplayName: "Alice",
+			State:             "open",
+			HeadBranch:        pr.head,
+			BaseBranch:        pr.base,
+			CIStatus:          pr.ci,
+			ReviewDecision:    pr.review,
+			Additions:         50 + i*10,
+			Deletions:         5,
+			CreatedAt:         created,
+			UpdatedAt:         created,
+			LastActivityAt:    created,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("upsert tools#%d: %w", pr.num, err)
+		}
+	}
+
 	// --- Issues ---
 
 	// widgets#10: open, eve
