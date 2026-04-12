@@ -225,6 +225,13 @@ func setupTestServerWithRepos(
 	t.Cleanup(func() { database.Close() })
 
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
+	// Drain any TriggerRun goroutines (fired by handlers like
+	// POST /sync) before tests tear down. Registered after the DB
+	// cleanup so LIFO ordering runs Stop first: without this, a
+	// leaked goroutine from one test's handler can call time.Now
+	// concurrently with another test's setTestLocalEDT mutating
+	// time.Local, which the race detector flags under -shuffle=on.
+	t.Cleanup(syncer.Stop)
 	srv := New(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},

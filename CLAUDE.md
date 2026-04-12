@@ -79,6 +79,9 @@ make vet        # go vet
 
 ### Test Guidelines
 
+- Always pass `-shuffle=on` when invoking `go test` directly (e.g. `go test ./internal/db -run TestFoo -shuffle=on`). The `make test` and `make test-short` targets already set it. Shuffled ordering catches hidden test-to-test coupling
+- Do not pass `-count=1` to `go test`. `-count=1` is the default and specifying it wastes tokens and disables the build cache unnecessarily. Omit the flag. If a genuine need to bypass cache arises, confirm with the user first
+- Only pass `-count=N` when `N > 1` (e.g. `-count=10` for flake hunting)
 - Table-driven tests for Go code
 - Use `testify` consistently in Go tests; prefer `require` for setup/preconditions and `assert` for non-blocking checks
 - When a test function has more than 3 assertions, create a local helper with `assert := Assert.New(t)` and use the helper methods for the rest of the checks

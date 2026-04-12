@@ -116,15 +116,15 @@ dev: ensure-embed-dir check-air
 
 # Run tests
 test: ensure-embed-dir
-	go test ./... -v -count=1
+	go test ./... -v -shuffle=on
 
 # Run fast tests only
 test-short: ensure-embed-dir
-	go test ./... -short -count=1
+	go test ./... -short -shuffle=on
 
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir
-	go test -tags integration ./... -v -count=1
+	go test -tags integration ./... -v -shuffle=on
 
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
