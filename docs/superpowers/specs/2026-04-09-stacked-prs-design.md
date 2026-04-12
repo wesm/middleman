@@ -40,7 +40,7 @@ Merged PRs display struck-through and dimmed (opacity 0.4). A stack is removed f
 
 ## Data Model
 
-New tables are added to `internal/db/schema.sql` using `CREATE TABLE IF NOT EXISTS` (the project's standard DDL pattern — no ALTER TABLE migrations).
+New tables are added via a numbered migration under `internal/db/migrations/` (e.g. `000006_add_stacks.up.sql` / `.down.sql`). `internal/db/migrations/` is the source of truth for schema evolution per project conventions — no changes to `schema.sql` or `SchemaVersion` (those are legacy and replaced by golang-migrate).
 
 ### New Table: `middleman_stacks`
 
