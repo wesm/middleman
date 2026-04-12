@@ -2,6 +2,7 @@
   import type { DiffFile } from "../../api/types.js";
   import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
+  import CommitListSection from "../diff/CommitListSection.svelte";
   import PullItem from "./PullItem.svelte";
 
   const { pulls, sync, diff, grouping, collapsedRepos, settings } = getStores();
@@ -38,21 +39,20 @@
   interface FileGroup { dir: string; files: DiffFile[] }
 
   function groupByDir(files: DiffFile[]): FileGroup[] {
-    const result: FileGroup[] = [];
-    let currentDir: string | null = null;
-    let currentFiles: DiffFile[] = [];
+    // Group all files with the same directory together regardless of
+    // input order — API can return files in diff order, not path-sorted.
+    const map = new Map<string, DiffFile[]>();
     for (const f of files) {
       const i = f.path.lastIndexOf("/");
       const dir = i > 0 ? f.path.slice(0, i) : "";
-      if (dir !== currentDir) {
-        if (currentFiles.length > 0) result.push({ dir: currentDir ?? "", files: currentFiles });
-        currentDir = dir;
-        currentFiles = [f];
-      } else {
-        currentFiles.push(f);
-      }
+      const bucket = map.get(dir);
+      if (bucket) bucket.push(f);
+      else map.set(dir, [f]);
     }
-    if (currentFiles.length > 0) result.push({ dir: currentDir ?? "", files: currentFiles });
+    const result: FileGroup[] = [];
+    for (const [dir, dirFiles] of map) {
+      result.push({ dir, files: dirFiles });
+    }
     return result;
   }
 
@@ -127,16 +127,52 @@
   const selectedVisiblePR = $derived.by(() => {
     const sel = pulls.getSelectedPR();
     if (sel === null) return null;
-    return pulls.getPulls().find(
+    const pr = pulls.getPulls().find(
       (p) => (p.repo_owner ?? "") === sel.owner
         && (p.repo_name ?? "") === sel.name
         && p.Number === sel.number,
-    ) ?? null;
+    );
+    if (!pr) return null;
+    // In byRepo mode, a user-collapsed repo group hides the PR row — treat
+    // as not visible so the fallback file list renders instead.
+    if (
+      groupingMode === "byRepo"
+      && collapsedRepos.isCollapsed("pulls", `${sel.owner}/${sel.name}`)
+    ) {
+      return null;
+    }
+    return pr;
   });
 
   const isDiffFocus = $derived(
     _getDetailTab() === "files" && selectedVisiblePR !== null,
   );
+
+  // True when in files tab and selected PR isn't actually rendered in sidebar
+  // (either filtered out of list, or in user-collapsed repo group).
+  const needsFallbackFileList = $derived(
+    _getDetailTab() === "files" && pulls.getSelectedPR() !== null && selectedVisiblePR === null,
+  );
+
+  // Per-diff file filter input (shown when 10+ files in diff).
+  let fileFilterText = $state("");
+  // Reset filter whenever selected PR changes so stale filter text doesn't
+  // silently hide files in the next PR.
+  $effect(() => {
+    pulls.getSelectedPR();
+    fileFilterText = "";
+  });
+  const showFileFilter = $derived((diff.getFileList()?.files.length ?? 0) >= 10);
+  const filteredDiffFiles = $derived.by(() => {
+    const list = diff.getFileList();
+    if (!list) return null;
+    // Only apply filter when the filter UI is visible to avoid silent
+    // hiding when the next PR has fewer files.
+    if (!showFileFilter) return list.files;
+    const q = fileFilterText.trim().toLowerCase();
+    if (!q) return list.files;
+    return list.files.filter((f) => f.path.toLowerCase().includes(q));
+  });
 
   const isSelectedActiveWorktree = $derived.by(() => {
     const key = activeWorktreeKey;
@@ -147,11 +183,22 @@
 </script>
 
 {#snippet diffFilesInline()}
+  <CommitListSection />
   <div class="diff-files">
     {#if diff.isFileListLoading() && !diff.getFileList()}
       <div class="diff-files-state diff-files-state--loading">Loading files</div>
-    {:else if diff.getFileList()}
-      {@const grouped = groupByDir(diff.getFileList()!.files)}
+    {:else if filteredDiffFiles}
+      {#if showFileFilter}
+        <div class="diff-files-filter">
+          <input
+            type="text"
+            class="diff-files-filter__input"
+            placeholder="Filter files..."
+            bind:value={fileFilterText}
+          />
+        </div>
+      {/if}
+      {@const grouped = groupByDir(filteredDiffFiles)}
       {#each grouped as group, gi (gi)}
         {#if group.dir}
           <div class="diff-dir-header">{group.dir}/</div>
@@ -349,6 +396,9 @@
       {/if}
     {/if}
   </div>
+  {#if needsFallbackFileList}
+    {@render diffFilesInline()}
+  {/if}
   <div class="sidebar-footer">
     {#if !isEmbedded()}
       <button class="add-repo-link" onclick={() => navigate("/settings")}>
@@ -665,6 +715,25 @@
     padding: 4px 0;
     max-height: 40vh;
     overflow-y: auto;
+  }
+
+  .diff-files-filter {
+    padding: 4px 10px 6px 24px;
+  }
+
+  .diff-files-filter__input {
+    width: 100%;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-muted);
+    background: var(--bg-inset);
+    color: var(--text-primary);
+  }
+
+  .diff-files-filter__input:focus {
+    border-color: var(--accent-blue);
+    outline: none;
   }
 
   .diff-files-state {

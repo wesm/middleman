@@ -3,7 +3,6 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  import DiffSidebar from "./DiffSidebar.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
 
@@ -43,7 +42,7 @@
     scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
   }
 
-  // Watch for scroll requests from the sidebar file tree (via the store).
+  // Watch for scroll requests from the sidebar file list (via the store).
   // Only consume the target once diffArea is mounted and diff data is available,
   // so the request is not lost if the user clicks a file before diff renders.
   $effect(() => {
@@ -135,13 +134,6 @@
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>
     {:else if diff}
-      <DiffSidebar
-        files={diff.files}
-        activeFile={diffStore.getActiveFile()}
-        whitespaceOnlyCount={diff.whitespace_only_count}
-        hideWhitespace={diffStore.getHideWhitespace()}
-        onselect={diffStore.requestScrollToFile}
-      />
       <div class="diff-main">
         <DiffToolbar />
         <div

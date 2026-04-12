@@ -12,6 +12,13 @@
   const commitsError = $derived(diffStore.getCommitsError());
   const scope = $derived(diffStore.getScope());
 
+  // Reset expand state when selected PR changes so section doesn't stay open
+  // with stale/empty commit list after PR switch.
+  $effect(() => {
+    diffStore.getCurrentPR();
+    expanded = false;
+  });
+
   function toggle(): void {
     expanded = !expanded;
     if (expanded) {
@@ -76,6 +83,7 @@
 
 <style>
   .commit-section {
+    background: var(--bg-inset);
     border-bottom: 1px solid var(--diff-border);
   }
 
@@ -139,6 +147,8 @@
 
   .commit-section__body {
     padding: 2px 0 4px;
+    max-height: 40vh;
+    overflow-y: auto;
   }
 
   .commit-section__state {
