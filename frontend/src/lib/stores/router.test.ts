@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import {
   navigate,
   getRoute,
@@ -111,5 +111,63 @@ describe("router basic routes", () => {
       page: "issues",
       selected: { owner: "org", name: "repo", number: 3 },
     });
+  });
+});
+
+describe("router navigation events", () => {
+  beforeEach(() => {
+    navigate("/pulls");
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { __middleman_config?: unknown }).__middleman_config;
+    (window as unknown as { __middleman_notify_config_changed?: () => void })
+      .__middleman_notify_config_changed?.();
+  });
+
+  function installOnNavigate(spy: ReturnType<typeof vi.fn>): void {
+    (window as unknown as { __middleman_config?: unknown }).__middleman_config = { onNavigate: spy };
+    (window as unknown as { __middleman_notify_config_changed?: () => void })
+      .__middleman_notify_config_changed?.();
+  }
+
+  it("fires onNavigate with pull payload for /files route", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/pulls/acme/widgets/42/files");
+
+    expect(spy).toHaveBeenCalled();
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("pull");
+    expect(payload.focus).toBe(false);
+    expect(payload.owner).toBe("acme");
+    expect(payload.name).toBe("widgets");
+    expect(payload.number).toBe(42);
+  });
+
+  it("fires onNavigate with pull payload for conversation route", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/pulls/acme/widgets/42");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("pull");
+    expect(payload.owner).toBe("acme");
+    expect(payload.name).toBe("widgets");
+    expect(payload.number).toBe(42);
+  });
+
+  it("fires onNavigate without owner/name/number for /pulls list", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/pulls");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("pull");
+    expect(payload.owner).toBeUndefined();
+    expect(payload.number).toBeUndefined();
   });
 });

@@ -39,21 +39,20 @@
   interface FileGroup { dir: string; files: DiffFile[] }
 
   function groupByDir(files: DiffFile[]): FileGroup[] {
-    const result: FileGroup[] = [];
-    let currentDir: string | null = null;
-    let currentFiles: DiffFile[] = [];
+    // Group all files with the same directory together regardless of
+    // input order — API can return files in diff order, not path-sorted.
+    const map = new Map<string, DiffFile[]>();
     for (const f of files) {
       const i = f.path.lastIndexOf("/");
       const dir = i > 0 ? f.path.slice(0, i) : "";
-      if (dir !== currentDir) {
-        if (currentFiles.length > 0) result.push({ dir: currentDir ?? "", files: currentFiles });
-        currentDir = dir;
-        currentFiles = [f];
-      } else {
-        currentFiles.push(f);
-      }
+      const bucket = map.get(dir);
+      if (bucket) bucket.push(f);
+      else map.set(dir, [f]);
     }
-    if (currentFiles.length > 0) result.push({ dir: currentDir ?? "", files: currentFiles });
+    const result: FileGroup[] = [];
+    for (const [dir, dirFiles] of map) {
+      result.push({ dir, files: dirFiles });
+    }
     return result;
   }
 
