@@ -47,4 +47,69 @@ test.describe("issue list view", () => {
       expect(title).toContain("Safari");
     }
   });
+
+  test("issue detail scrolls internally and centers horizontally", async ({ page }) => {
+    // Open the Safari issue specifically. Matches widgets#10 on the
+    // seeded fixture (max-width 800px centered layout).
+    await page.locator(".issue-item")
+      .filter({ hasText: "Safari" })
+      .first()
+      .click();
+
+    // IssueListView renders IssueDetail into .detail-area, where
+    // .issue-detail is the designated internal scroll container.
+    const issueDetail = page.locator(".issue-detail");
+    await expect(issueDetail).toBeVisible();
+
+    // Inject a tall filler so overflow is guaranteed even with the
+    // short seeded body. flex-shrink: 0 is required because
+    // .issue-detail is a flex column; without it, the child would be
+    // shrunk to fit.
+    await issueDetail.evaluate((el) => {
+      const filler = document.createElement("div");
+      filler.style.height = "3000px";
+      filler.style.flexShrink = "0";
+      filler.style.background = "transparent";
+      filler.setAttribute("data-test-filler", "issue-scroll");
+      el.appendChild(filler);
+    });
+
+    // .issue-detail owns vertical scroll (overflow-y: auto in the
+    // component style).
+    const overflowY = await issueDetail.evaluate(
+      (el) => getComputedStyle(el).overflowY,
+    );
+    expect(["auto", "scroll"]).toContain(overflowY);
+
+    const before = await issueDetail.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollTop: el.scrollTop,
+    }));
+    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+    expect(before.scrollTop).toBe(0);
+
+    await issueDetail.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+
+    const finalScroll = await issueDetail.evaluate((el) => el.scrollTop);
+    expect(finalScroll).toBeGreaterThan(0);
+
+    // Centering check: .issue-detail has max-width 800px and
+    // margin-inline: auto. Compare its horizontal center against the
+    // center of its parent .detail-area container (the PR list view
+    // has a sidebar, so the viewport center is not relevant).
+    const detailArea = page.locator(".detail-area");
+    const areaBox = await detailArea.boundingBox();
+    const detailBox = await issueDetail.boundingBox();
+    expect(areaBox).not.toBeNull();
+    expect(detailBox).not.toBeNull();
+    if (areaBox !== null && detailBox !== null) {
+      const areaCenter = areaBox.x + areaBox.width / 2;
+      const detailCenter = detailBox.x + detailBox.width / 2;
+      // Allow small slack for sub-pixel layout differences.
+      expect(Math.abs(detailCenter - areaCenter)).toBeLessThan(2);
+    }
+  });
 });
