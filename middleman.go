@@ -183,15 +183,18 @@ type Instance struct {
 	// SetOnSyncCompleted. Separate from cancelSync so ad-hoc syncs via
 	// TriggerRun before StartSync still run detection, and so StopSync
 	// can cancel hook work regardless of how callers parent their ctx.
-	// Read/written only from inside stopOnce.Do in StopSync.
+	// Read/written only from inside cancelHookOnce.Do in StopSync.
 	cancelHook context.CancelFunc
-	// stopOnce ensures the StopSync body runs exactly once even under
-	// concurrent calls from StopSync and Close. Without it, the
-	// cancelHook check/call/reset sequence has a TOCTOU window that
-	// can panic on a nil dereference if two callers race.
-	stopOnce sync.Once
-	stopMu   sync.Mutex
-	closed   bool
+	// cancelHookOnce serializes the cancelHook check/call/reset
+	// sequence in StopSync so concurrent callers cannot race into a
+	// nil-dereference TOCTOU window. It intentionally does NOT cover
+	// i.syncer.Stop(): Syncer.Stop is designed to be called multiple
+	// times and waits up to stopGracePeriod on every call, so a
+	// subsequent Close after a StopSync that hit the grace-period
+	// timeout can still re-wait for lingering sync work.
+	cancelHookOnce sync.Once
+	stopMu         sync.Mutex
+	closed         bool
 }
 
 // New creates a middleman Instance from the given options.
@@ -418,19 +421,25 @@ func (i *Instance) StartSync(ctx context.Context) {
 // StopSync stops the periodic GitHub sync. This operation is
 // terminal: the underlying Syncer permanently refuses further
 // Start or TriggerRun calls after Stop, so callers that need to
-// resume sync must create a new Instance. Safe to call
-// concurrently: stopOnce guarantees the body runs exactly once.
+// resume sync must create a new Instance.
+//
+// Safe to call concurrently. The cancelHook check/call/reset is
+// protected by cancelHookOnce so only the first caller cancels
+// the stack-detection context. i.syncer.Stop() runs on every
+// call by design: Syncer.Stop waits up to stopGracePeriod on
+// each call, so a Close() following a StopSync() that hit the
+// grace-period timeout can still re-wait for lingering work
+// rather than closing the database out from under it.
 func (i *Instance) StopSync() {
-	i.stopOnce.Do(func() {
-		// Cancel any in-flight stack-detection pass before stopping
-		// the syncer so the hook does not continue after StopSync
-		// returns.
+	// Cancel any in-flight stack-detection pass before stopping the
+	// syncer so the hook does not continue after StopSync returns.
+	i.cancelHookOnce.Do(func() {
 		if i.cancelHook != nil {
 			i.cancelHook()
 			i.cancelHook = nil
 		}
-		i.syncer.Stop()
 	})
+	i.syncer.Stop()
 }
 
 // Close stops sync and closes the database. Safe to call
