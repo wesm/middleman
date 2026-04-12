@@ -1,5 +1,10 @@
 # Stacked PRs Implementation Plan
 
+> **Post-implementation note:** Schema work described below references
+> `internal/db/schema.sql` and `SchemaVersion` bumps. The actual
+> implementation uses `internal/db/migrations/` (golang-migrate) — see
+> `000006_add_stacks.up.sql`/`.down.sql`. Replace any `schema.sql` / `SchemaVersion` step with a numbered migration pair when executing this plan today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add stack-aware PR visualization with automatic detection from branch chains, a dedicated Stacks view, and a PR detail sidebar showing stack context.
