@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "127.0.0.1:18090:18091"
+    volumes:
+      - .:/app
+      - go-mod:/go/pkg/mod
+      - go-cache:/go/cache
+      - middleman-data:/data
+    environment:
+      MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
+      GOCACHE: /go/cache
+    command:
+      - sh
+      - -c
+      - |
+        socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:18090 &
+        make dev ARGS="-config docker/dev-config.toml"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "127.0.0.1:15173:15173"
+    volumes:
+      - .:/app
+      - /app/frontend/node_modules
+    environment:
+      MIDDLEMAN_API_URL: http://backend:18091
+    depends_on:
+      - backend
+    command:
+      - sh
+      - -c
+      - make frontend-dev BUN_INSTALL_FLAGS=--frozen-lockfile ARGS="--host 0.0.0.0 --port 15173"
+
+volumes:
+  go-mod:
+  go-cache:
+  middleman-data:
