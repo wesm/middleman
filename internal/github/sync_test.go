@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/shurcooL/githubv4"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
@@ -62,10 +64,12 @@ type mockClient struct {
 	checkRuns              []*gh.CheckRun
 	workflowRuns           []*gh.WorkflowRun
 	approveWorkflowRunFn   func(context.Context, string, string, int64) error
-	listOpenPRsCalled      bool
-	getUserCalls           atomic.Int32
-	getCombinedCalls       atomic.Int32
-	invalidateCalls        atomic.Int32
+	listOpenPRsCalled          bool
+	getUserCalls               atomic.Int32
+	getCombinedCalls           atomic.Int32
+	invalidateCalls            atomic.Int32
+	listIssueCommentsCalled    atomic.Int32
+	listIssueCommentsErr       error
 }
 
 func (m *mockClient) trackCall() {
@@ -139,6 +143,10 @@ func (m *mockClient) GetPullRequest(
 
 func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
 	m.trackCall()
+	m.listIssueCommentsCalled.Add(1)
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
 	return m.comments, nil
 }
 
@@ -3923,6 +3931,95 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	assert.NotEmpty(events, "review event should be persisted after detail retry")
 }
 
+func TestSyncRepoGraphQLIssues(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	mock := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	issueID := int64(10000)
+	issueNumber := 10
+	issueTitle := "Bug report"
+	issueState := "open"
+	issueBody := "Something broke"
+	issueURL := "https://github.com/owner/repo/issues/10"
+	issueAuthor := "alice"
+	commentID := int64(501)
+	commentBody := "I see this too"
+	commentLogin := "bob"
+	commentTime := gh.Timestamp{Time: now}
+	// TotalCount (5) deliberately > len(nodes) (1). Proves the sync
+	// uses GraphQL's TotalCount, not node length.
+	issueCommentTotal := 5
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					Body:      &issueBody,
+					HTMLURL:   &issueURL,
+					Comments:  &issueCommentTotal,
+					User:      &gh.User{Login: &issueAuthor},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				Comments: []*gh.IssueComment{
+					{
+						ID:        &commentID,
+						Body:      &commentBody,
+						User:      &gh.User{Login: &commentLogin},
+						CreatedAt: &commentTime,
+						UpdatedAt: &commentTime,
+					},
+				},
+				CommentsComplete: true,
+			},
+		},
+	}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// Verify issue in DB.
+	issue, err := d.GetIssue(ctx, "owner", "repo", 10)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("Bug report", issue.Title)
+	assert.Equal("alice", issue.Author)
+	assert.Equal("open", issue.State)
+	// Count comes from GraphQL TotalCount (5), not len(Nodes) (1).
+	assert.Equal(5, issue.CommentCount)
+
+	// Verify comment event.
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Len(events, 1)
+	assert.Equal("I see this too", events[0].Body)
+
+	// Comments were complete — ListIssueComments should NOT be called.
+	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
+
+	// detail_fetched_at should be set for complete bulk issues.
+	assert.NotNil(issue.DetailFetchedAt)
+}
+
 // blockingCtxMockClient blocks in ListOpenPullRequests until either
 // the provided channel is closed or the ctx is canceled. Unlike
 // blockingMockClient (which ignores ctx), this variant is used by
@@ -4151,4 +4248,474 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 	assert.Empty(name2)
 	assert.True(ok2, "cached empty name must remain ok=true")
 	assert.Equal(1, callCount, "GetUser should not be called again for cached success")
+}
+
+func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	commentTime := gh.Timestamp{Time: now}
+
+	commentID := int64(777)
+	commentBody := "REST comment"
+	commentLogin := "carol"
+
+	mock := &mockClient{
+		comments: []*gh.IssueComment{
+			{
+				ID:        &commentID,
+				Body:      &commentBody,
+				User:      &gh.User{Login: &commentLogin},
+				CreatedAt: &commentTime,
+				UpdatedAt: &commentTime,
+			},
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	issueID := int64(20000)
+	issueNumber := 20
+	issueTitle := "Lots of comments"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/20"
+	issueLogin := "dave"
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueLogin},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				CommentsComplete: false,
+			},
+		},
+	}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// REST fallback should have been called
+	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
+
+	// Verify the REST comment landed
+	issue, err := d.GetIssue(ctx, "owner", "repo", 20)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Len(events, 1)
+	assert.Equal("REST comment", events[0].Body)
+}
+
+func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Pre-seed an open issue that will not appear in GraphQL results
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     30000,
+		Number:         30,
+		URL:            "https://github.com/owner/repo/issues/30",
+		Title:          "Will be closed",
+		Author:         "eve",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+
+	closedAt := gh.Timestamp{Time: now}
+	closedState := "closed"
+	closedIssueID := int64(30000)
+	closedNumber := 30
+	closedTitle := "Will be closed"
+
+	mock := &mockClient{
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			if number == 30 {
+				return &gh.Issue{
+					ID:       &closedIssueID,
+					Number:   &closedNumber,
+					Title:    &closedTitle,
+					State:    &closedState,
+					ClosedAt: &closedAt,
+				}, nil
+			}
+			return nil, fmt.Errorf("unexpected issue %d", number)
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	// GraphQL returns no issues (issue #30 was closed)
+	result := &RepoBulkResult{Issues: []BulkIssue{}}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// Issue should now be closed
+	issue, err := d.GetIssue(ctx, "owner", "repo", 30)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("closed", issue.State)
+	assert.NotNil(issue.ClosedAt)
+}
+
+func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	fetchedAt := now.Add(-time.Hour)
+
+	// Pre-seed issue with existing derived fields
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      40000,
+		Number:          40,
+		URL:             "https://github.com/owner/repo/issues/40",
+		Title:           "Existing issue",
+		Author:          "frank",
+		State:           "open",
+		CommentCount:    5,
+		DetailFetchedAt: &fetchedAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(t, err)
+
+	commentTime := gh.Timestamp{Time: now}
+	mock := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	// GraphQL returns the same issue with no comments (incomplete)
+	issueID := int64(40000)
+	issueNumber := 40
+	issueTitle := "Existing issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/40"
+	issueLogin := "frank"
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueLogin},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				CommentsComplete: false,
+			},
+		},
+	}
+
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	require.NoError(t, err)
+
+	// DetailFetchedAt is cleared before REST fallback, then re-set
+	// after successful refreshIssueTimeline. CommentCount is updated
+	// by the REST fallback (0 comments returned by the mock).
+	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.NotNil(issue.DetailFetchedAt)
+	assert.Equal(0, issue.CommentCount)
+}
+
+func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	fetchedAt := now.Add(-time.Hour)
+
+	// Pre-seed issue with non-nil DetailFetchedAt (previously fetched).
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      45000,
+		Number:          45,
+		URL:             "https://github.com/owner/repo/issues/45",
+		Title:           "Previously fetched",
+		Author:          "grace",
+		State:           "open",
+		CommentCount:    3,
+		DetailFetchedAt: &fetchedAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(t, err)
+
+	commentTime := gh.Timestamp{Time: now}
+	mock := &mockClient{
+		listIssueCommentsErr: fmt.Errorf("transient API failure"),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	issueID := int64(45000)
+	issueNumber := 45
+	issueTitle := "Previously fetched"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/45"
+	issueLogin := "grace"
+	result := &RepoBulkResult{
+		Issues: []BulkIssue{
+			{
+				Issue: &gh.Issue{
+					ID:        &issueID,
+					Number:    &issueNumber,
+					Title:     &issueTitle,
+					State:     &issueState,
+					HTMLURL:   &issueURL,
+					User:      &gh.User{Login: &issueLogin},
+					CreatedAt: &commentTime,
+					UpdatedAt: &commentTime,
+				},
+				CommentsComplete: false, // triggers REST fallback
+			},
+		},
+	}
+
+	// REST fallback will fail due to listIssueCommentsErr.
+	err = syncer.doSyncRepoGraphQLIssues(ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, result,
+	)
+	// Partial failure expected.
+	require.Error(t, err)
+
+	// DetailFetchedAt must be nil so the detail drain re-queues this issue.
+	issue, err := d.GetIssue(ctx, "owner", "repo", 45)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Nil(issue.DetailFetchedAt)
+}
+
+func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issueTime := makeTimestamp(now)
+	issueID := int64(50000)
+	issueNumber := 50
+	issueTitle := "REST issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/50"
+	issueLogin := "grace"
+
+	ghIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		User:      &gh.User{Login: &issueLogin},
+		CreatedAt: issueTime,
+		UpdatedAt: issueTime,
+	}
+
+	mock := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+		openIssues:     []*gh.Issue{ghIssue},
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return ghIssue, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	// Configure a GraphQL fetcher that returns errors. The HTTP server
+	// responds with a GraphQL error, so FetchRepoIssues fails and the
+	// sync engine falls back to REST using the already-fetched issue list.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"errors":[{"message":"server error"}]}`))
+	}))
+	defer errSrv.Close()
+	gqlClient := githubv4.NewEnterpriseClient(errSrv.URL, errSrv.Client())
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": {client: gqlClient},
+	})
+
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", 50)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("REST issue", issue.Title)
+	assert.Equal("grace", issue.Author)
+}
+
+// TestSyncRepoGraphQLIssuesFullFlow exercises the full GraphQL issue
+// sync path end-to-end: real GraphQLFetcher with a real HTTP backend
+// returning canned JSON, through JSON parsing → gqlIssue adapter →
+// NormalizeIssue → UpsertIssue. Validates that struct tags, adapter
+// mapping, and the full data flow work together.
+func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+
+	// GraphQL server responds with canned issue data. The request
+	// body distinguishes PR queries from issue queries; respond with
+	// empty PRs and a single issue.
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		resp := `{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":70000,
+			"number":70,
+			"title":"Full flow issue",
+			"state":"OPEN",
+			"body":"End to end test",
+			"url":"https://github.com/owner/repo/issues/70",
+			"author":{"login":"heidi"},
+			"createdAt":"` + now + `",
+			"updatedAt":"` + now + `",
+			"closedAt":null,
+			"labels":{"nodes":[{"name":"bug","color":"d73a4a","description":"","isDefault":false}]},
+			"comments":{"totalCount":1,"nodes":[{"databaseId":701,"author":{"login":"commenter"},"body":"Full flow comment","createdAt":"` + now + `","updatedAt":"` + now + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	// REST mock: returns the same issue in list (for ETag gate pass),
+	// and also lists PRs as 304 to focus on issues.
+	issueID := int64(70000)
+	issueNumber := 70
+	issueTitle := "Full flow issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/70"
+	issueLogin := "heidi"
+	issueTime := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	ghIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		User:      &gh.User{Login: &issueLogin},
+		CreatedAt: &issueTime,
+		UpdatedAt: &issueTime,
+	}
+	mock := &mockClient{
+		listOpenPRsErr: notModifiedErr(),
+		openIssues:     []*gh.Issue{ghIssue},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": {client: gqlClient},
+	})
+
+	syncer.RunOnce(ctx)
+
+	// Verify issue persisted with GraphQL data.
+	issue, err := d.GetIssue(ctx, "owner", "repo", 70)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal("Full flow issue", issue.Title)
+	assert.Equal("heidi", issue.Author)
+	assert.Equal("open", issue.State)
+	assert.Equal("End to end test", issue.Body)
+	assert.Equal(1, issue.CommentCount)
+	assert.NotNil(issue.DetailFetchedAt)
+
+	// Labels persisted from GraphQL.
+	require.Len(t, issue.Labels, 1)
+	assert.Equal("bug", issue.Labels[0].Name)
+
+	// Comment events persisted from GraphQL bulk (no REST fallback).
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal("Full flow comment", events[0].Body)
+	assert.Equal("commenter", events[0].Author)
+
+	// GraphQL path skipped REST ListIssueComments.
+	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
 }

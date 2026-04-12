@@ -1304,16 +1304,57 @@ func (s *Syncer) indexSyncRepo(
 		}
 	}
 
-	// Index issues (list-only, no detail).
-	// Issues have an independent etag, so this still runs even when the
-	// PR list returned 304.
-	if err := s.indexSyncIssues(
-		ctx, repo, repoID, forceIssues,
-	); err != nil {
-		slog.Error("index sync issues failed",
-			"repo", repo.Owner+"/"+repo.Name, "err", err,
-		)
-		failedScope |= failIssues
+	// Index issues — ETag-gated, with GraphQL when available.
+	// Same structure as PR sync: REST list first (ETag gate),
+	// then GraphQL if available, REST fallback if not.
+	ghIssues, issueListErr := client.ListOpenIssues(
+		ctx, repo.Owner, repo.Name,
+	)
+	if issueListErr != nil {
+		if IsNotModified(issueListErr) {
+			// 304: open issue list unchanged, skip.
+		} else {
+			slog.Error("list open issues failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"err", issueListErr,
+			)
+			failedScope |= failIssues
+		}
+	} else {
+		graphQLIssuesDone := false
+		if fetcher := s.fetcherFor(repo); fetcher != nil {
+			if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+				issueResult, gqlErr := fetcher.FetchRepoIssues(
+					ctx, repo.Owner, repo.Name,
+				)
+				if gqlErr != nil {
+					slog.Warn("GraphQL issue fetch failed, falling back to REST",
+						"repo", repo.Owner+"/"+repo.Name,
+						"err", gqlErr,
+					)
+				} else {
+					if err := s.doSyncRepoGraphQLIssues(
+						ctx, repo, repoID, issueResult,
+					); err != nil {
+						failedScope |= failIssues
+					}
+					graphQLIssuesDone = true
+				}
+			}
+		}
+
+		if !graphQLIssuesDone {
+			// REST fallback using already-fetched ghIssues.
+			if err := s.syncIssuesFromList(
+				ctx, repo, repoID, ghIssues, forceIssues,
+			); err != nil {
+				slog.Error("REST issue sync failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", err,
+				)
+				failedScope |= failIssues
+			}
+		}
 	}
 
 	if failedScope != 0 {
@@ -1445,6 +1486,196 @@ func (s *Syncer) doSyncRepoGraphQL(
 	if failedScope != 0 {
 		return fmt.Errorf("GraphQL sync had partial failures")
 	}
+	return nil
+}
+
+// doSyncRepoGraphQLIssues processes bulk GraphQL results for issues.
+func (s *Syncer) doSyncRepoGraphQLIssues(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	result *RepoBulkResult,
+) error {
+	var failedScope failScope
+	stillOpen := make(map[int]bool, len(result.Issues))
+
+	for i := range result.Issues {
+		bulk := &result.Issues[i]
+		number := bulk.Issue.GetNumber()
+		stillOpen[number] = true
+
+		if err := s.syncOpenIssueFromBulk(
+			ctx, repo, repoID, bulk,
+		); err != nil {
+			slog.Error("GraphQL sync issue failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			failedScope |= failIssues
+		}
+	}
+
+	// Detect closed issues — same as REST path.
+	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
+		ctx, repoID, stillOpen,
+	)
+	if err != nil {
+		return fmt.Errorf("get previously open issues: %w", err)
+	}
+	for _, number := range closedNumbers {
+		if err := s.fetchAndUpdateClosedIssue(
+			ctx, repo, repoID, number,
+		); err != nil {
+			slog.Error("update closed issue failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			failedScope |= failIssues
+		}
+	}
+
+	if failedScope != 0 {
+		return fmt.Errorf("GraphQL issue sync had partial failures")
+	}
+	return nil
+}
+
+// syncOpenIssueFromBulk processes a single issue from GraphQL bulk
+// results. Uses pre-fetched data instead of per-issue REST calls.
+func (s *Syncer) syncOpenIssueFromBulk(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	bulk *BulkIssue,
+) error {
+	number := bulk.Issue.GetNumber()
+	normalized := NormalizeIssue(repoID, bulk.Issue)
+
+	// Preserve derived fields that NormalizeIssue doesn't populate
+	// from bulk data. Without this, upsert overwrites them with
+	// zero values.
+	existing, err := s.db.GetIssueByRepoIDAndNumber(
+		ctx, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get existing issue #%d: %w", number, err,
+		)
+	}
+	if existing != nil {
+		// Only preserve DetailFetchedAt when comments are complete.
+		// When incomplete, clear it so the detail drain re-queues
+		// this issue if the REST fallback fails.
+		if bulk.CommentsComplete {
+			normalized.DetailFetchedAt = existing.DetailFetchedAt
+		}
+		// CommentCount comes from GraphQL Comments.TotalCount via
+		// adaptIssue, so trust the fresh GraphQL value.
+	}
+
+	issueID, err := s.db.UpsertIssue(ctx, normalized)
+	if err != nil {
+		return fmt.Errorf("upsert issue #%d: %w", number, err)
+	}
+
+	// UpsertIssue uses COALESCE to preserve existing detail_fetched_at,
+	// so passing nil doesn't clear it. When comments are incomplete,
+	// explicitly clear it so the detail drain re-queues this issue
+	// if the REST fallback fails.
+	if !bulk.CommentsComplete {
+		_, err = s.db.WriteDB().ExecContext(ctx,
+			`UPDATE middleman_issues SET detail_fetched_at = NULL WHERE id = ?`,
+			issueID,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"clear detail_fetched_at for issue #%d: %w", number, err,
+			)
+		}
+	}
+
+	if err := s.replaceIssueLabels(
+		ctx, repoID, issueID, normalized.Labels,
+	); err != nil {
+		return fmt.Errorf(
+			"persist labels for issue #%d: %w", number, err,
+		)
+	}
+
+	if bulk.CommentsComplete {
+		// Events from bulk data — skip REST ListIssueComments.
+		var events []db.IssueEvent
+		for _, c := range bulk.Comments {
+			events = append(events, NormalizeIssueCommentEvent(issueID, c))
+		}
+		if len(events) > 0 {
+			if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+				return fmt.Errorf(
+					"upsert issue events for #%d: %w", number, err,
+				)
+			}
+		}
+		// Update last activity from bulk comment timestamps.
+		// comment_count was already written by UpsertIssue using
+		// normalized.CommentCount (GraphQL's authoritative
+		// Comments.TotalCount), so don't overwrite it here.
+		lastActivity := normalized.UpdatedAt
+		for _, c := range bulk.Comments {
+			if c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity) {
+				lastActivity = c.UpdatedAt.Time
+			}
+		}
+		_, err = s.db.WriteDB().ExecContext(ctx,
+			`UPDATE middleman_issues SET last_activity_at = ?
+			 WHERE id = ?`,
+			lastActivity, issueID,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"update issue #%d last_activity_at: %w", number, err,
+			)
+		}
+
+		// Mark detail as fetched so the detail drain doesn't
+		// re-queue this issue for REST detail fetches.
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if err := s.db.UpdateIssueDetailFetched(
+			ctx, host, repo.Owner, repo.Name, number,
+		); err != nil {
+			slog.Warn("mark GraphQL issue detail fetched failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	} else {
+		// Comments truncated — fall back to REST.
+		if err := s.refreshIssueTimeline(
+			ctx, repo, issueID, bulk.Issue,
+		); err != nil {
+			return fmt.Errorf(
+				"refresh timeline for issue #%d: %w", number, err,
+			)
+		}
+		// REST fallback succeeded — mark detail as fetched.
+		host := repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if err := s.db.UpdateIssueDetailFetched(
+			ctx, host, repo.Owner, repo.Name, number,
+		); err != nil {
+			slog.Warn("mark issue detail fetched after REST fallback failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
+
 	return nil
 }
 
@@ -2155,27 +2386,15 @@ func (s *Syncer) resolveDisplayName(
 
 // --- Issue sync ---
 
-// indexSyncIssues syncs issues from list endpoint data and
-// refreshes timeline when data changed or forceRefresh is set.
-// Issues have no separate detail phase, so timeline refresh
-// happens inline here via syncOpenIssue.
-func (s *Syncer) indexSyncIssues(
-	ctx context.Context, repo RepoRef, repoID int64, forceRefresh bool,
+// syncIssuesFromList processes a pre-fetched list of open issues
+// via the REST path. Handles per-issue upsert and closure detection.
+func (s *Syncer) syncIssuesFromList(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	ghIssues []*gh.Issue,
+	forceRefresh bool,
 ) error {
-	client := s.clientFor(repo)
-	ghIssues, err := client.ListOpenIssues(
-		ctx, repo.Owner, repo.Name,
-	)
-	if err != nil {
-		// 304: open issue list unchanged since the previous sync.
-		// No issue opened, closed, or modified. Skip per-issue
-		// upserts and closure detection.
-		if IsNotModified(err) {
-			return nil
-		}
-		return fmt.Errorf("list open issues: %w", err)
-	}
-
 	stillOpen := make(map[int]bool, len(ghIssues))
 	for _, issue := range ghIssues {
 		stillOpen[issue.GetNumber()] = true
@@ -2193,7 +2412,6 @@ func (s *Syncer) indexSyncIssues(
 		}
 	}
 
-	// Detect closed issues and fetch final state.
 	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
 		ctx, repoID, stillOpen,
 	)

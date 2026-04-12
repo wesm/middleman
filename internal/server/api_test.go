@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/shurcooL/githubv4"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/apiclient"
@@ -36,16 +38,25 @@ type mockGH struct {
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listOpenPRsErr            error
+	listOpenIssuesFn          func(context.Context, string, string) ([]*gh.Issue, error)
+	listIssueCommentsErr      error
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	if m.listOpenPullRequestsFn != nil {
 		return m.listOpenPullRequestsFn(ctx, owner, repo)
 	}
+	if m.listOpenPRsErr != nil {
+		return nil, m.listOpenPRsErr
+	}
 	return nil, nil
 }
 
-func (m *mockGH) ListOpenIssues(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+func (m *mockGH) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
+	if m.listOpenIssuesFn != nil {
+		return m.listOpenIssuesFn(ctx, owner, repo)
+	}
 	return nil, nil
 }
 
@@ -70,6 +81,9 @@ func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number 
 func (m *mockGH) ListIssueComments(
 	_ context.Context, _, _ string, _ int,
 ) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
 	return nil, nil
 }
 
@@ -2478,6 +2492,297 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 		Color:       "d73a4a",
 		IsDefault:   true,
 	}}, *resp.JSON200.Issue.Labels)
+}
+
+// TestAPIIssueDataFromGraphQLSync verifies the API correctly serves
+// issue data that was persisted by the GraphQL sync path. The sync
+// path itself (GraphQL fetch → normalize → DB upsert) is tested in
+// internal/github/sync_test.go; this test covers the DB → API layer.
+func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	mock := &mockGH{}
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	// Seed DB directly — same shape as GraphQL sync output.
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     60000,
+		Number:         60,
+		URL:            "https://github.com/acme/widget/issues/60",
+		Title:          "GraphQL synced issue",
+		Author:         "testuser",
+		State:          "open",
+		Body:           "Synced via GraphQL",
+		CommentCount:   1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+
+	// Add a label
+	require.NoError(t, database.ReplaceIssueLabels(ctx, repoID, issueID, []db.Label{
+		{PlatformID: 1, Name: "bug", Color: "d73a4a", UpdatedAt: now},
+	}))
+
+	// Add a comment event
+	require.NoError(t, database.UpsertIssueEvents(ctx, []db.IssueEvent{
+		{
+			IssueID:   issueID,
+			EventType: "issue_comment",
+			Author:    "commenter",
+			Body:      "I can reproduce",
+			CreatedAt: now,
+			DedupeKey: "issue-comment-601",
+		},
+	}))
+
+	// Verify via ListIssues API
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.Len(t, *resp.JSON200, 1)
+
+	apiIssue := (*resp.JSON200)[0]
+	assert.Equal(int64(60), apiIssue.Number)
+	assert.Equal("GraphQL synced issue", apiIssue.Title)
+	assert.Equal("testuser", apiIssue.Author)
+	assert.Equal("open", apiIssue.State)
+	require.NotNil(t, apiIssue.Labels)
+	require.Len(t, *apiIssue.Labels, 1)
+	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
+
+	// Verify via GetIssue API
+	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", 60,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 200, detailResp.StatusCode())
+	require.NotNil(t, detailResp.JSON200)
+	assert.Equal("Synced via GraphQL", detailResp.JSON200.Issue.Body)
+	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
+}
+
+// TestE2EGraphQLIssueSyncThroughAPI is a full-stack test that runs the
+// real GraphQL issue sync path against a mocked GraphQL HTTP backend
+// with real SQLite, then verifies the resulting issue data through
+// the HTTP API. Exercises: GraphQL HTTP → adapter → NormalizeIssue →
+// UpsertIssue → HTTP API handler → JSON response.
+func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+
+	// Mock GraphQL backend returning a single issue with a label
+	// and a comment.
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		resp := `{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":80000,
+			"number":80,
+			"title":"Full stack GraphQL issue",
+			"state":"OPEN",
+			"body":"Synced through the HTTP API",
+			"url":"https://github.com/acme/widget/issues/80",
+			"author":{"login":"ivy"},
+			"createdAt":"` + now + `",
+			"updatedAt":"` + now + `",
+			"closedAt":null,
+			"labels":{"nodes":[{"name":"bug","color":"d73a4a","description":"","isDefault":false}]},
+			"comments":{"totalCount":1,"nodes":[{"databaseId":801,"author":{"login":"judy"},"body":"full stack comment","createdAt":"` + now + `","updatedAt":"` + now + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	// REST mock: PR list returns 304 (skip PR sync), issue list
+	// returns minimal data to pass the ETag gate so GraphQL runs.
+	issueID := int64(80000)
+	issueNumber := 80
+	issueTitle := "Full stack GraphQL issue"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/80"
+	issueLogin := "ivy"
+	issueTime := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	mock := &mockGH{
+		listOpenPRsErr: &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &issueLogin},
+				CreatedAt: &issueTime,
+				UpdatedAt: &issueTime,
+			}}, nil
+		},
+	}
+	srv, _ := setupTestServerWithMock(t, mock)
+
+	// Wire a real GraphQLFetcher pointing at the mock GraphQL server
+	// into the syncer.
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+
+	// Trigger the real sync pipeline.
+	srv.syncer.RunOnce(ctx)
+
+	// Verify through the HTTP API that issue data flowed end-to-end.
+	client := setupTestClient(t, srv)
+
+	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, 200, listResp.StatusCode())
+	require.NotNil(t, listResp.JSON200)
+	require.Len(t, *listResp.JSON200, 1)
+
+	apiIssue := (*listResp.JSON200)[0]
+	assert.Equal(int64(80), apiIssue.Number)
+	assert.Equal("Full stack GraphQL issue", apiIssue.Title)
+	assert.Equal("ivy", apiIssue.Author)
+	assert.Equal("open", apiIssue.State)
+	require.NotNil(t, apiIssue.Labels)
+	require.Len(t, *apiIssue.Labels, 1)
+	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
+
+	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", 80,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 200, detailResp.StatusCode())
+	require.NotNil(t, detailResp.JSON200)
+	assert.Equal("Synced through the HTTP API", detailResp.JSON200.Issue.Body)
+	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
+}
+
+// TestE2EGraphQLIssueSyncTrustsTotalCount pre-seeds an issue with a
+// stale CommentCount, runs a real GraphQL sync with truncated
+// comments (totalCount > nodes, HasNextPage=true), and forces the
+// REST fallback to fail. The only remaining count in the DB is
+// whatever UpsertIssue wrote from NormalizeIssue — which must be
+// GraphQL's TotalCount, not the stale existing.CommentCount.
+// Regression test for the "preserve existing.CommentCount" overwrite.
+func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+
+	// GraphQL: totalCount=42, HasNextPage=true → CommentsComplete=false.
+	// REST ListIssueComments will error. Stale DB count is 5.
+	// Post-sync count must be 42 (fresh GraphQL TotalCount), not 5.
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		resp := `{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":90000,
+			"number":90,
+			"title":"Stale count issue",
+			"state":"OPEN",
+			"body":"GraphQL count must win",
+			"url":"https://github.com/acme/widget/issues/90",
+			"author":{"login":"kate"},
+			"createdAt":"` + now + `",
+			"updatedAt":"` + now + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":{"totalCount":42,"nodes":[{"databaseId":901,"author":{"login":"leo"},"body":"one","createdAt":"` + now + `","updatedAt":"` + now + `"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor1"}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	issueID := int64(90000)
+	issueNumber := 90
+	issueTitle := "Stale count issue"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/90"
+	issueLogin := "kate"
+	issueTime := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	mock := &mockGH{
+		listOpenPRsErr: &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		},
+		listIssueCommentsErr: fmt.Errorf("transient comments failure"),
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &issueLogin},
+				CreatedAt: &issueTime,
+				UpdatedAt: &issueTime,
+			}}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+
+	// Pre-seed DB with a stale CommentCount (5). REST fallback fails,
+	// so UpsertIssue's value is what survives. With the bug, it's 5.
+	// Without the bug, it's TotalCount=42.
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(t, err)
+	stale := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     90000,
+		Number:         90,
+		URL:            issueURL,
+		Title:          issueTitle,
+		Author:         issueLogin,
+		State:          "open",
+		CommentCount:   5, // stale
+		CreatedAt:      stale,
+		UpdatedAt:      stale,
+		LastActivityAt: stale,
+	})
+	require.NoError(t, err)
+
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+
+	srv.syncer.RunOnce(ctx)
+
+	// API must expose GraphQL TotalCount (42), not stale DB (5).
+	// With the preservation bug, count would remain 5.
+	client := setupTestClient(t, srv)
+	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", 90,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 200, detailResp.StatusCode())
+	require.NotNil(t, detailResp.JSON200)
+	assert.Equal(int64(42), detailResp.JSON200.Issue.CommentCount)
 }
 
 func make422Error() error {
