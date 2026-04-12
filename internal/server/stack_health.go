@@ -21,7 +21,8 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 			lowestOpenIdx = i
 		}
 
-		isGreen := m.CIStatus == "success" && m.ReviewDecision == "APPROVED"
+		// Drafts cannot be merged, so they never count as green.
+		isGreen := !m.IsDraft && m.CIStatus == "success" && m.ReviewDecision == "APPROVED"
 		if !isGreen {
 			allGreen = false
 		}
@@ -40,7 +41,7 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 		return "all_green"
 	case lowestOpenIdx >= 0:
 		m := members[lowestOpenIdx]
-		if m.CIStatus == "success" && m.ReviewDecision == "APPROVED" {
+		if !m.IsDraft && m.CIStatus == "success" && m.ReviewDecision == "APPROVED" {
 			return "base_ready"
 		}
 	}

@@ -61,6 +61,9 @@ func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name
 }
 
 // ReplaceStackMembers atomically replaces all members of a stack.
+// Also removes the new members from any other stack they might belong to,
+// so PRs can be reassigned between stacks without violating the unique
+// merge_request_id constraint.
 func (d *DB) ReplaceStackMembers(ctx context.Context, stackID int64, members []StackMember) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
@@ -70,6 +73,15 @@ func (d *DB) ReplaceStackMembers(ctx context.Context, stackID int64, members []S
 		}
 		if len(members) == 0 {
 			return nil
+		}
+		// Evict these PRs from any other stack to avoid unique-index conflict.
+		for _, m := range members {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM middleman_stack_members WHERE merge_request_id = ?`,
+				m.MergeRequestID,
+			); err != nil {
+				return fmt.Errorf("evict existing stack member: %w", err)
+			}
 		}
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_stack_members (stack_id, merge_request_id, position)
