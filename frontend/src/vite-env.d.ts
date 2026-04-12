@@ -55,6 +55,7 @@ interface MiddlemanConfig {
   onWorkspaceCommand?: WorkspaceCommandHandler;
   embed?: {
     hideHeader?: boolean;
+    hideStatusBar?: boolean;
     initialRoute?: string;
     sidebarWidth?: number;
   };

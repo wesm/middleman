@@ -63,6 +63,7 @@
     emitWorkspaceCommand,
     initWorkspaceBridge,
     isHeaderHidden,
+    isStatusBarHidden,
     getInitialRoute,
     getSidebarWidth,
     emitLayoutChanged,
@@ -555,7 +556,9 @@
       {/if}
     </main>
 
-    <StatusBar />
+    {#if !isStatusBarHidden()}
+      <StatusBar />
+    {/if}
   {/if}
 </Provider>
 
