@@ -649,6 +649,27 @@
     overflow: hidden;
   }
 
+  /* On narrow viewports the fixed 280px sidebar would crush the
+     diff pane. Stack the sidebar above the diff with a capped
+     height so the diff stays readable. */
+  @media (max-width: 720px) {
+    .files-layout {
+      flex-direction: column;
+    }
+
+    .files-sidebar {
+      width: 100%;
+      max-height: 35vh;
+      border-right: none;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .files-main {
+      flex: 1;
+      min-height: 0;
+    }
+  }
+
   .pull-detail {
     padding: 20px 24px;
     max-width: 800px;

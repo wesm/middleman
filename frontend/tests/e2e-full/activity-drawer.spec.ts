@@ -262,6 +262,134 @@ test.describe("activity drawer", () => {
       .toHaveText("handler.go");
   });
 
+  test("activity drawer multi-file sidebar clicks navigate DiffView", async ({ page }) => {
+    // Regression guard for the actual navigation bug behind the
+    // sidebar addition: a multi-file PR must let the user click any
+    // file row in the drawer sidebar and see DiffView focus on that
+    // file. A broken DiffSidebar/DiffView hookup would still pass
+    // the single-file render test.
+    await mockDiffForAllPRs(page, multiFileDiff);
+
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    const sidebar = drawer.locator(".files-layout > .files-sidebar");
+    const diffArea = drawer.locator(".files-layout > .files-main");
+
+    // Sidebar lists all 20 fixture files; the first one is active
+    // by default.
+    await expect(sidebar.locator(".diff-file-row")).toHaveCount(20);
+    await expect(
+      sidebar.locator(".diff-file-row.diff-file-row--active"),
+    ).toHaveCount(1);
+    await expect(
+      sidebar.locator(".diff-file-row.diff-file-row--active .diff-file-name"),
+    ).toHaveText("file_0.go");
+
+    // Click a non-first file in the sidebar.
+    await sidebar.locator(".diff-file-row", { hasText: "file_5.go" }).click();
+
+    // The clicked row becomes the active row, and DiffView scrolls
+    // the corresponding DiffFile into view.
+    await expect(
+      sidebar.locator(".diff-file-row.diff-file-row--active .diff-file-name"),
+    ).toHaveText("file_5.go");
+    await expect(
+      diffArea.locator(".diff-file[data-file-path=\"src/file_5.go\"]"),
+    ).toBeInViewport();
+  });
+
+  test("drawer Files tab stacks sidebar on narrow viewports", async ({ page }) => {
+    // Regression guard: below the responsive breakpoint the fixed
+    // 280px sidebar would crush the diff pane. Verify the sidebar
+    // stacks above the diff (flex-direction: column) so the diff
+    // pane keeps a usable width.
+    await page.setViewportSize({ width: 600, height: 800 });
+    await mockDiffForAllPRs(page, tinyDiff);
+
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const prRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await prRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    const layout = drawer.locator(".files-layout");
+    await expect(layout).toBeVisible();
+    const direction = await layout.evaluate(
+      (el) => getComputedStyle(el).flexDirection,
+    );
+    expect(direction).toBe("column");
+
+    // Sidebar and diff pane are both visible, stacked vertically.
+    const sidebar = drawer.locator(".files-layout > .files-sidebar");
+    const main = drawer.locator(".files-layout > .files-main");
+    await expect(sidebar).toBeVisible();
+    await expect(main).toBeVisible();
+
+    const sidebarBox = await sidebar.boundingBox();
+    const mainBox = await main.boundingBox();
+    expect(sidebarBox).not.toBeNull();
+    expect(mainBox).not.toBeNull();
+    // Sidebar sits above the diff pane in stacked layout.
+    expect(sidebarBox!.y + sidebarBox!.height).toBeLessThanOrEqual(
+      mainBox!.y + 1,
+    );
+    // Diff pane takes the full drawer width, not a narrow strip.
+    const drawerBox = await drawer.boundingBox();
+    expect(drawerBox).not.toBeNull();
+    expect(mainBox!.width).toBeGreaterThan(drawerBox!.width - 10);
+  });
+
+  test("kanban drawer multi-file sidebar clicks navigate DiffView", async ({ page }) => {
+    await mockDiffForAllPRs(page, multiFileDiff);
+
+    await page.goto("/pulls/board");
+    await page.locator(".kanban-card").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const card = page.locator(".kanban-card")
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await card.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    const sidebar = drawer.locator(".files-layout > .files-sidebar");
+    const diffArea = drawer.locator(".files-layout > .files-main");
+
+    await expect(sidebar.locator(".diff-file-row")).toHaveCount(20);
+
+    // Click the 12th file (file_11.go) and verify navigation.
+    await sidebar.locator(".diff-file-row", { hasText: "file_11.go" }).click();
+    await expect(
+      sidebar.locator(".diff-file-row.diff-file-row--active .diff-file-name"),
+    ).toHaveText("file_11.go");
+    await expect(
+      diffArea.locator(".diff-file[data-file-path=\"src/file_11.go\"]"),
+    ).toBeInViewport();
+  });
+
   test("issue drawer scrolls internally to bottom of content", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);

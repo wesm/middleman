@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,10 +15,6 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/testutil"
 )
 
@@ -113,38 +109,36 @@ func TestDefaultRoborevEndpointIsUnbindable(t *testing.T) {
 	assert.Positive(port)
 }
 
-// TestDefaultRoborevEndpointFailsClosedThroughProxy is the
-// behavioral guard the test review asked for: it boots a real
-// middleman server with the e2e server's default roborev endpoint
-// and verifies that /api/roborev/api/status returns a closed-fail
-// 502 with the proxy's "not reachable" error JSON, instead of
-// silently forwarding the probe to a real local daemon.
-func TestDefaultRoborevEndpointFailsClosedThroughProxy(t *testing.T) {
+// TestRunDefaultRoborevFailsClosedThroughProxy is the behavioral
+// guard the test review asked for: it calls run() with the default
+// roborev endpoint (no -roborev override) and verifies that the
+// full e2e-server startup path wires the proxy so
+// /api/roborev/api/status returns a closed-fail 502 with the
+// proxy's "not reachable" error JSON, instead of silently
+// forwarding the probe to a real local daemon.
+//
+// The test exercises run() directly (not server.New) so a later
+// regression anywhere in the run() wiring — config population,
+// roborev endpoint propagation, proxy registration — would break
+// this test. Pairs with TestDefaultRoborevEndpointIsUnbindable
+// which pins the constant value itself.
+func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{}, database, nil, nil,
-		time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 
-	cfg := &config.Config{
-		Repos: []config.Repo{},
-	}
-	cfg.Roborev.Endpoint = defaultRoborevEndpoint
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile)
+	}()
 
-	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{})
+	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
 
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-
-	resp, err := http.Get(ts.URL + "/api/roborev/api/status")
+	resp, err := http.Get(baseURL + "/api/roborev/api/status")
 	require.NoError(err)
 	defer resp.Body.Close()
 
@@ -156,4 +150,47 @@ func TestDefaultRoborevEndpointFailsClosedThroughProxy(t *testing.T) {
 	var payload map[string]string
 	require.NoError(json.Unmarshal(body, &payload))
 	assert.Contains(payload["error"], "roborev daemon is not reachable")
+
+	// Cancel and confirm run() exits cleanly so the goroutine does
+	// not outlive the test.
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail("run() did not exit within 10s of cancellation")
+	}
+}
+
+// waitForServerInfoBaseURL polls the server-info file until run()
+// writes it, then returns the BaseURL. Fails the test if run()
+// returns early (done is closed with an error) or the file does
+// not appear within the timeout.
+func waitForServerInfoBaseURL(
+	t *testing.T, path string, done <-chan error,
+) string {
+	t.Helper()
+	r := require.New(t)
+	// 30s headroom: run() does SeedFixtures + SetupDiffRepo + stack
+	// detection before it starts listening, and `go test ./...` can
+	// run this test under parallel load.
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-done:
+			r.Failf("run exited early",
+				"run() exited before server-info was written: %v", err)
+		default:
+		}
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			var info e2eServerInfo
+			if jsonErr := json.Unmarshal(data, &info); jsonErr == nil && info.BaseURL != "" {
+				return info.BaseURL
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	r.FailNow("timed out waiting for server-info file")
+	return ""
 }
