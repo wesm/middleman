@@ -243,3 +243,55 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 		require.FailNow(t, "Serve did not return after Shutdown")
 	}
 }
+
+// TestServerShutdownClosesSSESubscribers verifies that Shutdown
+// closes the EventHub so `handleSSE` handlers exit on their
+// <-done arm. Without this, http.Server.Shutdown would hang
+// waiting on the never-returning SSE handler until ctx timeout.
+func TestServerShutdownClosesSSESubscribers(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+
+	// Open an SSE connection and pull the first line so we know
+	// the handler is actively streaming.
+	resp, err := http.Get("http://" + addr + "/api/v1/events")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Read in a goroutine so we can observe the connection close.
+	readDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		close(readDone)
+	}()
+
+	// Shutdown must complete well within ctx — if the hub is not
+	// closed, http.Server.Shutdown would hang on the SSE handler
+	// until the 2 s deadline.
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, srv.Shutdown(ctx))
+	require.Less(t, time.Since(start), time.Second,
+		"Shutdown took too long; SSE hub likely not closed")
+
+	select {
+	case <-readDone:
+	case <-time.After(time.Second):
+		require.FailNow(t, "SSE connection did not close after Shutdown")
+	}
+
+	select {
+	case e := <-serveErr:
+		require.ErrorIs(t, e, http.ErrServerClosed)
+	case <-time.After(time.Second):
+		require.FailNow(t, "Serve did not return after Shutdown")
+	}
+}

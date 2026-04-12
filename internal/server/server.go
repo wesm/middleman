@@ -116,13 +116,14 @@ func (s *Server) runBackground(fn func(ctx context.Context)) {
 }
 
 // Shutdown stops the HTTP listener (if started via ListenAndServe
-// or Serve), cancels background goroutines' context, and blocks
-// until they finish or ctx expires. Safe to call concurrently and
-// repeatedly. Every caller drives http.Server.Shutdown with its
-// own ctx (stdlib polls idle-conn closure per call) and waits on
-// a shared drain channel, so a retry with a longer deadline
-// observes true drain for both HTTP handlers and the bg group.
-// Only the first caller sets shuttingDown and cancels bgCtx.
+// or Serve), closes the SSE event hub so streaming handlers exit,
+// cancels background goroutines' context, and blocks until they
+// finish or ctx expires. Safe to call concurrently and repeatedly.
+// Every caller drives http.Server.Shutdown with its own ctx
+// (stdlib polls idle-conn closure per call) and waits on a shared
+// drain channel, so a retry with a longer deadline observes true
+// drain for both HTTP handlers and the bg group. Only the first
+// caller closes the hub and cancels bgCtx.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.bgMu.Lock()
 	first := !s.shuttingDown
@@ -133,6 +134,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	drainDone := s.drainDone
 	httpSrv := s.httpSrv
 	s.bgMu.Unlock()
+
+	// Close the hub first so handleSSE subscribers can exit on
+	// their <-done select arm. Otherwise http.Server.Shutdown
+	// below would wait on SSE handlers that never return until
+	// client disconnect, hanging the shutdown until ctx expires.
+	if first && s.hub != nil {
+		s.hub.Close()
+	}
 
 	var httpErr error
 	if httpSrv != nil {

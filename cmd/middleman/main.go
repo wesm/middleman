@@ -176,21 +176,6 @@ func run(configPath string) error {
 		cfg, configPath, server.ServerOptions{},
 	)
 
-	// Drain HTTP-handler-spawned background goroutines (and stop
-	// the HTTP listener) before DB close. LIFO ordering of defers
-	// below runs this after stop()/syncer.Stop and before the
-	// deferred database.Close, so the DB stays open for in-flight
-	// requests and the mergePR post-failure refresh.
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 10*time.Second,
-		)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("server shutdown", "err", err)
-		}
-	}()
-
 	// Wire status callback and prime the SSE event hub so clients
 	// can show live sync state without polling.
 	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
@@ -220,6 +205,21 @@ func run(configPath string) error {
 	syncer.Start(ctx)
 	defer syncer.Stop()
 	defer stop()
+
+	// srv.Shutdown MUST be the last-registered defer so LIFO runs
+	// it FIRST on return: close the HTTP listener (and SSE hub)
+	// before syncer.Stop blocks for up to 30 s, otherwise the
+	// process keeps serving requests against a syncer that is
+	// already winding down.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 10*time.Second,
+		)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server shutdown", "err", err)
+		}
+	}()
 
 	displayVersion := version
 	if version == "dev" && commit != "unknown" {
