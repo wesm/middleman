@@ -345,3 +345,43 @@ func TestStopSyncCancelsStackHook(t *testing.T) {
 	// Close must still succeed after StopSync.
 	require.NoError(t, inst.Close())
 }
+
+// TestStartSyncAfterStopSyncIsTerminal pins the documented contract of
+// StopSync: once the Syncer is stopped, a subsequent StartSync is a
+// silent no-op — it must not resurrect the hook, must not start a new
+// background sync goroutine, and must not panic. A previous attempt at
+// fixing a hook-lifecycle bug reinstalled the hook on StartSync, which
+// only looked like a restart: the underlying Syncer.Start already
+// no-ops once stopped, so the reinstalled hook never fired. This test
+// prevents that half-working restart path from coming back.
+func TestStartSyncAfterStopSyncIsTerminal(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+
+	req := require.New(t)
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Assets:  frontend,
+	})
+	req.NoError(err)
+	t.Cleanup(func() { _ = inst.Close() })
+
+	req.NotNil(inst.cancelHook, "hook must be installed by New")
+	inst.StopSync()
+	req.Nil(inst.cancelHook, "StopSync must cancel and clear the hook")
+
+	// StartSync after StopSync must not reinstall the hook and must
+	// not panic. The Syncer underneath is already permanently stopped
+	// (Start/TriggerRun both no-op once stopped=true).
+	inst.StartSync(t.Context())
+	req.Nil(inst.cancelHook, "StartSync must not resurrect the hook after StopSync")
+
+	// Close remains idempotent and safe after a StopSync/StartSync
+	// sequence.
+	req.NoError(inst.Close())
+	req.NoError(inst.Close())
+}

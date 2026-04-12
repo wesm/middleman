@@ -184,13 +184,8 @@ type Instance struct {
 	// TriggerRun before StartSync still run detection, and so StopSync
 	// can cancel hook work regardless of how callers parent their ctx.
 	cancelHook context.CancelFunc
-	// installHook reinstalls the sync-completion hook with a fresh
-	// context. Called from the constructor and from StartSync after
-	// StopSync has canceled the previous context, so restarted syncs
-	// keep running stack detection.
-	installHook func(ctx context.Context)
-	stopMu      sync.Mutex
-	closed      bool
+	stopMu     sync.Mutex
+	closed     bool
 }
 
 // New creates a middleman Instance from the given options.
@@ -372,16 +367,13 @@ func New(opts Options) (*Instance, error) {
 			cb(out)
 		}
 	}
-	installHook := func(ctx context.Context) {
-		syncer.SetOnSyncCompleted(
-			stacks.SyncCompletedHook(ctx, database, embedNext),
-		)
-	}
-
 	// Install the stacks hook eagerly so ad-hoc syncs triggered
-	// before StartSync still run detection.
+	// before StartSync still run detection. The hook context is
+	// canceled by StopSync, which is a terminal operation.
 	hookCtx, cancelHook := context.WithCancel(context.Background())
-	installHook(hookCtx)
+	syncer.SetOnSyncCompleted(
+		stacks.SyncCompletedHook(hookCtx, database, embedNext),
+	)
 
 	srv := server.New(
 		database, syncer, frontend,
@@ -393,11 +385,10 @@ func New(opts Options) (*Instance, error) {
 	)
 
 	return &Instance{
-		db:          database,
-		server:      srv,
-		syncer:      syncer,
-		cancelHook:  cancelHook,
-		installHook: installHook,
+		db:         database,
+		server:     srv,
+		syncer:     syncer,
+		cancelHook: cancelHook,
 	}, nil
 }
 
@@ -408,26 +399,23 @@ func (i *Instance) Handler() http.Handler {
 
 // StartSync begins periodic GitHub sync in the background.
 // The context is used for cancellation during Close.
+//
+// StartSync must be called at most once per Instance. Once
+// StopSync (or Close) has stopped the syncer, the underlying
+// Syncer cannot be restarted — a subsequent StartSync call is a
+// silent no-op. Construct a new Instance if sync must run again.
 func (i *Instance) StartSync(ctx context.Context) {
-	// Reinstall the sync-completion hook with a fresh context if
-	// StopSync canceled the previous one, so restarted syncs keep
-	// running stack detection.
-	if i.cancelHook == nil && i.installHook != nil {
-		hookCtx, cancelHook := context.WithCancel(
-			context.Background(),
-		)
-		i.cancelHook = cancelHook
-		i.installHook(hookCtx)
-	}
 	ctx, i.cancelSync = context.WithCancel(ctx)
 	i.syncer.Start(ctx)
 }
 
-// StopSync stops the periodic GitHub sync.
+// StopSync stops the periodic GitHub sync. This operation is
+// terminal: the underlying Syncer permanently refuses further
+// Start or TriggerRun calls after Stop, so callers that need to
+// resume sync must create a new Instance.
 func (i *Instance) StopSync() {
 	// Cancel any in-flight stack-detection pass before stopping the
 	// syncer so the hook does not continue after StopSync returns.
-	// The hook is reinstalled on the next StartSync.
 	if i.cancelHook != nil {
 		i.cancelHook()
 		i.cancelHook = nil
