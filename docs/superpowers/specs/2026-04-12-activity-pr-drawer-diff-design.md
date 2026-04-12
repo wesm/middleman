@@ -118,6 +118,15 @@ The `!hideTabs && activeTab === "files"` guard means PRListView (which passes `h
 
 Copy `.detail-tabs` / `.detail-tab` / `.detail-tab--active` styles from `PRListView.svelte` lines 146–171. Tab labels include inline `+N/-N` stats (which is new — PRListView's tabs don't show stats today, but PullDetail's existing files-changed-btn did).
 
+#### `IssueDetail.svelte`
+
+DetailDrawer renders both `PullDetail` and `IssueDetail`. Moving scroll ownership out of `.drawer-body` would break issue scrolling, since `IssueDetail` today relies on the drawer body being scrollable (`.issue-detail` has `max-width: 800px` with no internal scroll at `packages/ui/src/components/detail/IssueDetail.svelte:259`).
+
+Give `IssueDetail` the same internal-scroll + centering treatment as `PullDetail`'s conversation container. IssueDetail has no tabs and no diff, so no wrap element or structural restructure is needed — just CSS changes on the existing `.issue-detail` block:
+
+- Add `overflow-y: auto`, `flex: 1`, `min-height: 0` so it scrolls internally instead of relying on a scrollable parent.
+- Add `width: 100%`, `margin-inline: auto`, `box-sizing: border-box` so the 800px cap stays centered inside the full-width drawer.
+
 #### `DetailDrawer.svelte`
 
 **Width change:**
@@ -126,7 +135,7 @@ Copy `.detail-tabs` / `.detail-tab` / `.detail-tab--active` styles from `PRListV
 
 **Scroll change:**
 - `.drawer-body { overflow-y: auto; }` → `.drawer-body { display: flex; flex-direction: column; min-height: 0; }`
-- Scroll now lives inside PullDetail's `.pull-detail` (conversation) or DiffView's `.diff-area` (files).
+- Scroll now lives inside PullDetail's `.pull-detail` (conversation), DiffView's `.diff-area` (files), or IssueDetail's `.issue-detail`. Both child components are updated to own their scroll before this drawer-body change lands.
 
 **Backdrop:**
 - Remove the `handleBackdropClick` handler and the `onclick` binding on `.drawer-backdrop` (currently `DetailDrawer.svelte` lines 15–19, 36). At 100% width there is no exposed backdrop to click. Close affordances that remain: the header close button (line 39) and the `Escape` key handler (lines 21–31), both already wired up.
@@ -177,24 +186,28 @@ This belongs in `tests/e2e-full/` (managed backend + real SQLite per `playwright
 
 **Kanban drawer e2e coverage**: add a parallel case that opens the drawer from a kanban card and performs steps 3–6.
 
+**Issue drawer regression guard**: add an e2e case that opens an issue from the activity view, seeds a long issue body or enough comments to overflow the drawer, and scrolls to the bottom. This catches any future change that re-breaks internal scroll in `IssueDetail`.
+
 **Manual verification:**
-- Activity drawer: open PR, switch tabs, confirm diff loads and scrolls independently, toolbar sticks.
-- Kanban drawer: same.
+- Activity PR drawer: open PR, switch tabs, confirm diff loads and scrolls independently, toolbar sticks.
+- Activity issue drawer: open issue with long body, confirm scrolling works.
+- Kanban drawer: same as activity PR drawer.
 - PR list view: confirm no double tab bars, files tab still navigates via URL.
-- Narrow viewport: confirm conversation content still readable (800px cap centers in full-width drawer via `margin-inline: auto`).
-- Wide viewport: confirm conversation is centered (not hugging the left edge).
+- Narrow viewport: confirm conversation/issue content still readable (800px cap centers in full-width drawer via `margin-inline: auto`).
+- Wide viewport: confirm conversation/issue is centered (not hugging the left edge).
 
 ## Scope
 
 **In scope:**
 - PullDetail tab bar + DiffView integration.
+- IssueDetail internal scroll + centering (required so DetailDrawer can stop owning scroll).
 - Drawer width → 100% in DetailDrawer and KanbanBoard.
-- Scroll ownership shift from drawer body to PullDetail/DiffView.
-- Centering rule on `.pull-detail` so conversation content stays centered in the wide drawer.
+- Scroll ownership shift from drawer body to PullDetail/DiffView/IssueDetail.
+- Centering rule on `.pull-detail` and `.issue-detail` so content stays centered in the wide drawer.
 - Removal of outside-click dismissal (backdrop handlers) since the overlay has no exposed area at 100% width.
 - Removal of KanbanBoard's visual overlay element (nothing to darken).
 - PRListView `hideTabs` prop pass-through.
-- E2E coverage via `tests/e2e-full/` (activity + kanban drawer paths).
+- E2E coverage via `tests/e2e-full/` (activity PR drawer, activity issue drawer, kanban drawer paths).
 
 **Out of scope:**
 - Unifying DetailDrawer and KanbanBoard's drawer implementations (they remain separate).
@@ -202,3 +215,4 @@ This belongs in `tests/e2e-full/` (managed backend + real SQLite per `playwright
 - Adding file-list navigation to the drawer context (users rely on scroll + `j`/`k`).
 - Any changes to `DiffView` itself, `PullList`, or the diff store.
 - Preserving outside-click dismissal via a partial-width gutter (explicitly rejected in favor of the uncompromised full-width diff).
+- Tab switching in IssueDetail (issues have no diff; no tabs needed).
