@@ -855,6 +855,37 @@ func TestSyncStatusUpdated(t *testing.T) {
 	assert.Empty(status.LastError)
 }
 
+func setTestLocalEDT(t *testing.T) {
+	t.Helper()
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
+	oldLocal := time.Local
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() {
+		//nolint:forbidigo // Tests intentionally restore the overridden process local zone.
+		time.Local = oldLocal
+	})
+}
+
+func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
+	setTestLocalEDT(t)
+
+	ctx := context.Background()
+	d := openTestDB(t)
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer.RunOnce(ctx)
+
+	status := syncer.Status()
+	Assert.Equal(t, time.UTC, status.LastRunAt.Location())
+}
+
 // blockingMockClient embeds mockClient but blocks in
 // ListOpenPullRequests until the provided channel is closed.
 type blockingMockClient struct {
@@ -3303,6 +3334,53 @@ func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 	require.NotNil(stored)
 	require.Len(stored.Labels, 1)
 	require.Equal("backfill-issue", stored.Labels[0].Name)
+}
+
+func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
+	require := require.New(t)
+	setTestLocalEDT(t)
+
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoRow)
+	now := time.Date(2024, 6, 8, 12, 0, 0, 0, time.UTC)
+
+	pr := buildOpenPR(41, now)
+	pr.State = new("closed")
+	issueNumber := 42
+	issueTitle := "backfilled issue"
+	issueState := "closed"
+	issueURL := "https://github.com/owner/repo/issues/42"
+	issueBody := ""
+	issueID := int64(900042)
+	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now)}
+
+	mc := &mockClient{
+		listPullRequestsPageFn: func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
+			return []*gh.PullRequest{pr}, false, nil
+		},
+		listIssuesPageFn: func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
+			return []*gh.Issue{issue}, false, nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
+
+	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
+
+	repoAfter, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repoAfter)
+	require.True(repoAfter.BackfillPRComplete)
+	require.True(repoAfter.BackfillIssueComplete)
+	require.NotNil(repoAfter.BackfillPRCompletedAt)
+	require.NotNil(repoAfter.BackfillIssueCompletedAt)
+	require.Equal(time.UTC, repoAfter.BackfillPRCompletedAt.Location())
+	require.Equal(time.UTC, repoAfter.BackfillIssueCompletedAt.Location())
 }
 
 func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.T) {

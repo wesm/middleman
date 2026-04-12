@@ -3,10 +3,14 @@ import type {
 } from "../../api/roborev/client.js";
 import type {
   components,
+  operations,
 } from "../../api/roborev/generated/schema.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 type JobStats = components["schemas"]["JobStats"];
+type ListJobsQuery = NonNullable<
+  operations["list-jobs"]["parameters"]["query"]
+>;
 
 export interface JobsStoreOptions {
   client: RoborevClient;
@@ -68,8 +72,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
   // Version tracking for race conditions
   let requestVersion = 0;
 
-  function buildQuery(): Record<string, unknown> {
-    const q: Record<string, unknown> = { limit: 50 };
+  function buildQuery(): ListJobsQuery {
+    const q: ListJobsQuery = { limit: 50 };
     if (filterRepo) q.repo = filterRepo;
     if (filterBranch) q.branch = filterBranch;
     if (filterStatus) q.status = filterStatus;
@@ -112,7 +116,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     try {
       const { data, error } = await client.GET(
         "/api/jobs",
-        { params: { query: buildQuery() as any } },
+        { params: { query: buildQuery() } },
       );
       if (error) throw new Error("Failed to load jobs");
       if (version !== requestVersion) return;
@@ -148,7 +152,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       q.before = cursor;
       const { data, error } = await client.GET(
         "/api/jobs",
-        { params: { query: q as any } },
+        { params: { query: q } },
       );
       if (error) {
         throw new Error("Failed to load more jobs");

@@ -57,6 +57,8 @@ afterAll(() => {
 
 import DiffFile from "./DiffFile.svelte";
 import type { DiffFile as DiffFileType } from "../../api/types.js";
+import { STORES_KEY } from "../../context.js";
+import { createDiffStore } from "../../stores/diff.svelte.js";
 
 function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
   return {
@@ -88,36 +90,36 @@ function uniqueOwner(): string {
   return `test-owner-${++testCounter}`;
 }
 
+function renderDiffFile(file: DiffFileType) {
+  return render(DiffFile, {
+    props: { file, owner: uniqueOwner(), name: "n", number: 1 },
+    context: new Map([[STORES_KEY, { diff: createDiffStore() }]]),
+  });
+}
+
 describe("DiffFile", () => {
   afterEach(() => {
     cleanup();
   });
 
   it("renders file content when not collapsed", () => {
-    render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
-    });
+    renderDiffFile(makeFile());
 
     expect(screen.getByText("src/foo.ts")).toBeTruthy();
     expect(screen.getByText(/@@ -1,3 \+1,5 @@/)).toBeTruthy();
   });
 
   it("hides content after clicking the header to collapse", async () => {
-    render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
-    });
+    renderDiffFile(makeFile());
 
     const header = screen.getByTitle("Collapse file");
     await fireEvent.click(header);
 
-    const content = document.querySelector(".file-content");
-    expect(content?.classList.contains("file-content--collapsed")).toBe(true);
+    expect(document.querySelector(".file-content")).toBeNull();
   });
 
   it("shows content again after toggling collapse twice", async () => {
-    render(DiffFile, {
-      props: { file: makeFile(), owner: uniqueOwner(), name: "n", number: 1 },
-    });
+    renderDiffFile(makeFile());
 
     const header = screen.getByTitle("Collapse file");
     await fireEvent.click(header);

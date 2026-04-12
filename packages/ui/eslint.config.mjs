@@ -4,9 +4,28 @@ import globals from "globals";
 import svelte from "eslint-plugin-svelte";
 import tseslint from "typescript-eslint";
 
+const localeFormattingRule = [
+  "error",
+  {
+    selector: "CallExpression[callee.property.name='toLocaleDateString']",
+    message:
+      "Use localDateLabel() from src/utils/time.ts so timestamp localization stays in the presentation helper.",
+  },
+  {
+    selector: "CallExpression[callee.property.name='toLocaleString']",
+    message:
+      "Use shared presentation-layer time helpers instead of inline locale formatting.",
+  },
+  {
+    selector: "CallExpression[callee.property.name='toLocaleTimeString']",
+    message:
+      "Use shared presentation-layer time helpers instead of inline locale formatting.",
+  },
+];
+
 export default tseslint.config(
   {
-    ignores: ["dist/", "node_modules/", "playwright-report/", "test-results/", "eslint.config.mjs"],
+    ignores: ["dist/", "node_modules/", "eslint.config.mjs"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -41,6 +60,7 @@ export default tseslint.config(
         },
       ],
       "@typescript-eslint/no-explicit-any": ["error", { fixToUnknown: true }],
+      "no-restricted-syntax": localeFormattingRule,
     },
   },
   {
@@ -72,6 +92,13 @@ export default tseslint.config(
         },
       ],
       "@typescript-eslint/no-explicit-any": ["error", { fixToUnknown: true }],
+      "no-restricted-syntax": localeFormattingRule,
+    },
+  },
+  {
+    files: ["src/utils/time.ts"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
   eslintConfigPrettier,

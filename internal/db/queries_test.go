@@ -915,8 +915,11 @@ func TestListMREventsHandlesNonUTCTimes(t *testing.T) {
 
 	// Insert events with times in various non-UTC zones,
 	// reproducing the formats the sqlite driver stores.
+	//nolint:forbidigo // Test fixtures intentionally use non-UTC zones to verify normalization.
 	edt := time.FixedZone("EDT", -4*3600)
+	//nolint:forbidigo // Test fixtures intentionally use non-UTC zones to verify normalization.
 	cdt := time.FixedZone("CDT", -5*3600)
+	//nolint:forbidigo // Test fixtures intentionally use non-UTC zones to verify normalization.
 	jst := time.FixedZone("JST", 9*3600)
 	zones := []struct {
 		key  string

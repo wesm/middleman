@@ -1,5 +1,9 @@
 <script lang="ts">
   import type { CommitInfo } from "../../api/types.js";
+  import {
+    localDateLabel,
+    parseAPITimestamp,
+  } from "../../utils/time.js";
 
   interface Props {
     commit: CommitInfo;
@@ -10,7 +14,7 @@
   const { commit, active, onclick }: Props = $props();
 
   function relativeDate(iso: string): string {
-    const diff = Date.now() - new Date(iso).getTime();
+    const diff = Date.now() - parseAPITimestamp(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "now";
     if (mins < 60) return `${mins}m ago`;
@@ -18,7 +22,7 @@
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     if (days < 30) return `${days}d ago`;
-    return new Date(iso).toLocaleDateString();
+    return localDateLabel(iso);
   }
 
   function handleClick(e: MouseEvent): void {

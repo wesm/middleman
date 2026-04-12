@@ -69,8 +69,9 @@ frontend-dev:
 frontend-dev-bun:
 	cd frontend && bun install && bun run dev
 
-# Run frontend type checks
+# Run TypeScript/Svelte lint and type checks
 frontend-check:
+	cd packages/ui && bun run typecheck && bun run lint
 	cd frontend && bun run typecheck && bun run lint
 
 # Regenerate the checked-in OpenAPI documents and generated clients
@@ -127,7 +128,7 @@ test-integration: ensure-embed-dir
 
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
-	go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=chromium
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
@@ -141,7 +142,7 @@ vet: ensure-embed-dir
 
 # Enforce testify helper usage for assertion-heavy tests
 testify-helper-check: ensure-embed-dir
-	go run ./cmd/testify-helper-check ./...
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
 
 # Lint Go code and auto-fix where possible
 lint: ensure-embed-dir
@@ -150,7 +151,7 @@ lint: ensure-embed-dir
 		exit 1; \
 	fi
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" mise exec -- golangci-lint run --fix
-	go run ./cmd/testify-helper-check ./...
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
 
 # Tidy dependencies
 tidy:
@@ -186,6 +187,7 @@ help:
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Install deps and run Vite dev server"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
+	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""
 	@echo "  test           - Run all tests"

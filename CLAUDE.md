@@ -105,6 +105,7 @@ make vet        # go vet
 - `internal/db/migrations/` is the source of truth for schema evolution
 - Add both `.up.sql` and `.down.sql` files for schema changes
 - Validate schema changes through `db.Open()` and application-level tests rather than testing `golang-migrate` internals
+- Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Git Workflow
 

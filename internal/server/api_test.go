@@ -267,6 +267,32 @@ func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 	return client
 }
 
+func assertRFC3339UTC(t *testing.T, got string, want time.Time) {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339, got)
+	require.NoError(t, err)
+	Assert.Equal(t, want.UTC(), parsed.UTC())
+	Assert.True(t, strings.HasSuffix(got, "Z"), "expected UTC RFC3339 with trailing Z: %s", got)
+}
+
+func setTestLocalEDT(t *testing.T) {
+	t.Helper()
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
+	oldLocal := time.Local
+	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
+	time.Local = time.FixedZone("EDT", -4*60*60)
+	t.Cleanup(func() {
+		//nolint:forbidigo // Tests intentionally restore the overridden process local zone.
+		time.Local = oldLocal
+	})
+}
+
+func assertTimePtrUTC(t *testing.T, got *time.Time) {
+	t.Helper()
+	require.NotNil(t, got)
+	Assert.Equal(t, time.UTC, got.Location())
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -530,6 +556,32 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 	require.Contains(string(resp.Body), "Service unavailable")
+}
+
+func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
+	require := require.New(t)
+	setTestLocalEDT(t)
+
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal("merged", pr.State)
+	assertTimePtrUTC(t, pr.MergedAt)
+	assertTimePtrUTC(t, pr.ClosedAt)
 }
 
 func TestAPIClientConstruction(t *testing.T) {
@@ -1488,14 +1540,19 @@ func TestAPIListRepos(t *testing.T) {
 
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
+	setTestLocalEDT(t)
+
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
+	srv.syncer.RunOnce(context.Background())
 
 	resp, err := client.HTTP.GetSyncStatusWithResponse(context.Background())
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.False(resp.JSON200.Running)
+	require.NotNil(resp.JSON200.LastRunAt)
+	Assert.Equal(t, time.UTC, resp.JSON200.LastRunAt.Location())
 }
 
 func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
@@ -1729,6 +1786,8 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 
 func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
+	setTestLocalEDT(t)
+
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -1743,7 +1802,7 @@ func TestAPIClosePR(t *testing.T) {
 	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("closed", pr.State)
-	require.NotNil(pr.ClosedAt)
+	assertTimePtrUTC(t, pr.ClosedAt)
 }
 
 func TestAPIReopenPR(t *testing.T) {
@@ -1807,6 +1866,8 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 
 func TestAPICloseIssue(t *testing.T) {
 	require := require.New(t)
+	setTestLocalEDT(t)
+
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
@@ -1821,7 +1882,7 @@ func TestAPICloseIssue(t *testing.T) {
 	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal("closed", issue.State)
-	require.NotNil(issue.ClosedAt)
+	assertTimePtrUTC(t, issue.ClosedAt)
 }
 
 func TestAPIReopenIssue(t *testing.T) {
@@ -2560,7 +2621,52 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	require.NotNil(resp2.JSON200)
 	assert.True(resp2.JSON200.DetailLoaded)
 	require.NotNil(resp2.JSON200.DetailFetchedAt)
-	assert.Equal(now.Format(time.RFC3339), *resp2.JSON200.DetailFetchedAt)
+	assertRFC3339UTC(t, *resp2.JSON200.DetailFetchedAt, now)
+}
+
+func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	setTestLocalEDT(t)
+
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	prID := seedPR(t, database, "acme", "widget", 1)
+	ctx := context.Background()
+	//nolint:forbidigo // Test fixture intentionally uses a non-UTC timestamp to verify UTC normalization.
+	createdAt := time.Date(2026, 4, 11, 12, 0, 0, 0, time.FixedZone("EDT", -4*60*60))
+
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "Looks good",
+		CreatedAt:      createdAt,
+		DedupeKey:      "comment-utc-created-at",
+	}}))
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	resp, err := client.HTTP.GetActivityWithResponse(
+		ctx, &generated.GetActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.NotEmpty(*resp.JSON200.Items)
+
+	var commentItem *generated.ActivityItemResponse
+	for i := range *resp.JSON200.Items {
+		item := &(*resp.JSON200.Items)[i]
+		if item.Author == "reviewer" && item.ActivityType == "comment" {
+			commentItem = item
+			break
+		}
+	}
+	require.NotNil(commentItem)
+	assertRFC3339UTC(t, commentItem.CreatedAt, createdAt)
+	assert.Equal("reviewer", commentItem.Author)
+	assert.Equal("comment", commentItem.ActivityType)
 }
 
 // filteredTestEnv returns os.Environ() with GIT_DIR, GIT_WORK_TREE, and
@@ -2675,6 +2781,7 @@ func TestAPIGetCommits(t *testing.T) {
 	assert.Len(*resp.JSON200.Commits, 5)
 	assert.Equal(commitSHAs[0], (*resp.JSON200.Commits)[0].Sha)
 	assert.Equal("commit 5", (*resp.JSON200.Commits)[0].Message)
+	assert.Equal(time.UTC, (*resp.JSON200.Commits)[0].AuthoredAt.Location())
 }
 
 func TestAPIGetCommits_NotFound(t *testing.T) {

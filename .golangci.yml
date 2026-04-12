@@ -26,6 +26,12 @@ linters:
           msg: Use testify assert/require helpers in tests.
         - pattern: '^testing\..+\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)$'
           msg: Use testify assert/require helpers in tests.
+        - pattern: '^time\.Local$'
+          msg: Backend timezone conversion is not allowed. Keep storage and API datetimes in UTC.
+        - pattern: '^time\.LoadLocation$'
+          msg: Do not add backend timezone loading for storage or API paths. Local timezone conversion belongs in the Svelte UI.
+        - pattern: '^time\.FixedZone$'
+          msg: Do not create backend timezone conversions outside tests.
       analyze-types: true
   exclusions:
     generated: lax

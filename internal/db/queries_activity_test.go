@@ -293,6 +293,16 @@ func TestParseDBTime(t *testing.T) {
 		})
 	}
 
+	t.Run("parsed values use UTC location", func(t *testing.T) {
+		got, err := parseDBTime("2026-04-10 18:48:35 -0400 EDT")
+		require.NoError(t, err)
+		assert.Equal(time.UTC, got.Location())
+		assert.Equal(
+			time.Date(2026, 4, 10, 22, 48, 35, 0, time.UTC),
+			got,
+		)
+	})
+
 	t.Run("invalid format returns error", func(t *testing.T) {
 		_, err := parseDBTime("not-a-date")
 		assert.Error(err)

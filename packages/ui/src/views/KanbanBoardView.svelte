@@ -1,9 +1,6 @@
 <script lang="ts">
-  import { getStores } from "../context.js";
   import KanbanBoard
     from "../components/kanban/KanbanBoard.svelte";
-
-  const { pulls } = getStores();
 </script>
 
 <div class="board-layout">

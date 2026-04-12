@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 
 // --- Fixtures ---
 
 // Small fixture: 4 files covering modified (multi-hunk), added, deleted, binary.
-const smallDiff = {
+const smallDiff: DiffResult = {
   stale: false,
   whitespace_only_count: 0,
   files: [
@@ -123,9 +124,9 @@ const smallDiff = {
 
 // Generate a large diff (50 files) for perf tests.
 function makeLargeDiff(): typeof smallDiff {
-  const files = [];
+  const files: DiffFile[] = [];
   for (let i = 0; i < 50; i++) {
-    const lines = [];
+    const lines: DiffLine[] = [];
     for (let j = 1; j <= 20; j++) {
       if (j % 5 === 0) {
         lines.push({ type: "delete" as const, content: `  old line ${j}`, old_num: j });
@@ -155,7 +156,7 @@ const staleDiff = { ...smallDiff, stale: true };
 
 // --- Helpers ---
 
-function filesFromDiff(fixture: typeof smallDiff): { stale: boolean; files: typeof smallDiff.files } {
+function filesFromDiff(fixture: DiffResult): FilesResult {
   return {
     stale: fixture.stale,
     files: fixture.files.map((f) => ({
@@ -726,5 +727,32 @@ test.describe("diff view (git-backed)", () => {
     const collapsed = handlerFile.locator(".collapsed-region");
     await expect(collapsed).toHaveCount(1);
     await expect(collapsed).toContainText("unchanged lines");
+  });
+
+  test("commit list uses UTC API values and local date rendering", async ({ page }) => {
+    await page.addInitScript((offsetMs) => {
+      const originalNow = Date.now.bind(Date);
+      Date.now = () => originalNow() + offsetMs;
+    }, 20 * 24 * 60 * 60 * 1000);
+
+    await page.goto("/pulls/acme/widgets/1/files");
+    await page.locator(".commit-section__toggle").click();
+    await page.locator(".commit-item").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const payload = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/repos/acme/widgets/pulls/1/commits");
+      return response.json();
+    });
+
+    expect(payload.commits[0].authored_at).toMatch(/Z$/);
+
+    const expectedLabel = await page.evaluate((iso: string) =>
+      new Date(iso).toLocaleDateString(),
+    payload.commits[0].authored_at);
+
+    await expect(page.locator(".commit-item__date").first()).toHaveText(expectedLabel);
+    expect(expectedLabel).not.toContain("T");
+    expect(expectedLabel).not.toContain("Z");
   });
 });

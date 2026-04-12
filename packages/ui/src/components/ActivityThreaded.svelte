@@ -5,6 +5,10 @@
     collapseActivityCommitRuns,
     isCollapsedActivityRow,
   } from "./activityRows.js";
+  import {
+    localDateLabel,
+    parseAPITimestamp,
+  } from "../utils/time.js";
 
   const { grouping } = getStores();
   import { repoColor } from "../utils/repo-color.js";
@@ -62,7 +66,7 @@
 
     for (const [, events] of itemMap) {
       events.sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        parseAPITimestamp(b.created_at).getTime() - parseAPITimestamp(a.created_at).getTime());
 
       const first = events[0]!;
       allItemGroups.push({
@@ -80,7 +84,7 @@
     }
 
     allItemGroups.sort((a, b) =>
-      new Date(b.latestTime).getTime() - new Date(a.latestTime).getTime());
+      parseAPITimestamp(b.latestTime).getTime() - parseAPITimestamp(a.latestTime).getTime());
 
     if (!byRepo) {
       if (allItemGroups.length === 0) return [];
@@ -118,7 +122,7 @@
     }
 
     repoGroups.sort((a, b) =>
-      new Date(b.latestTime).getTime() - new Date(a.latestTime).getTime());
+      parseAPITimestamp(b.latestTime).getTime() - parseAPITimestamp(a.latestTime).getTime());
 
     return repoGroups;
   });
@@ -145,7 +149,7 @@
   }
 
   function relativeTime(iso: string): string {
-    const diff = Date.now() - new Date(iso).getTime();
+    const diff = Date.now() - parseAPITimestamp(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "just now";
     if (mins < 60) return `${mins}m ago`;
@@ -153,7 +157,7 @@
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     if (days < 7) return `${days}d ago`;
-    return new Date(iso).toLocaleDateString();
+    return localDateLabel(iso);
   }
 
   function handleItemClick(group: ItemGroup): void {

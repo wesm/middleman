@@ -367,7 +367,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}
 		if mr.DetailFetchedAt != nil {
-			resp.DetailFetchedAt = mr.DetailFetchedAt.UTC().Format(time.RFC3339)
+			resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
 		}
 		out = append(out, resp)
 	}
@@ -424,7 +424,7 @@ func (s *Server) buildPullDetailResponse(
 		DetailLoaded:     mr.DetailFetchedAt != nil,
 	}
 	if mr.DetailFetchedAt != nil {
-		resp.DetailFetchedAt = mr.DetailFetchedAt.UTC().Format(time.RFC3339)
+		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
 	}
 	return resp, nil
 }
@@ -643,7 +643,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 			DetailLoaded: issue.DetailFetchedAt != nil,
 		}
 		if issue.DetailFetchedAt != nil {
-			resp.DetailFetchedAt = issue.DetailFetchedAt.UTC().Format(time.RFC3339)
+			resp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
 		}
 		out = append(out, resp)
 	}
@@ -676,7 +676,7 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 		DetailLoaded: issue.DetailFetchedAt != nil,
 	}
 	if issue.DetailFetchedAt != nil {
-		issueResp.DetailFetchedAt = issue.DetailFetchedAt.UTC().Format(time.RFC3339)
+		issueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
 	}
 	return &getIssueOutput{Body: issueResp}, nil
 }
@@ -896,7 +896,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if repoObj != nil {
-		now := time.Now()
+		now := time.Now().UTC()
 		_ = s.db.UpdateMRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
 	}
 
@@ -986,7 +986,7 @@ func (s *Server) setPRGitHubState(
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
-		now := time.Now()
+		now := time.Now().UTC()
 		closedAt = &now
 	}
 	if err := s.db.UpdateMRState(
@@ -1070,7 +1070,7 @@ func (s *Server) setIssueGitHubState(
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
-		now := time.Now()
+		now := time.Now().UTC()
 		closedAt = &now
 	}
 	if err := s.db.UpdateIssueState(
@@ -1120,14 +1120,14 @@ func (s *Server) getRateLimits(
 	for host, rt := range trackers {
 		resetStr := ""
 		if resetAt := rt.ResetAt(); resetAt != nil {
-			resetStr = resetAt.UTC().Format(time.RFC3339)
+			resetStr = formatUTCRFC3339(*resetAt)
 		}
 		status := rateLimitHostStatus{
 			RequestsHour:       rt.RequestsThisHour(),
 			RateRemaining:      rt.Remaining(),
 			RateLimit:          rt.RateLimit(),
 			RateResetAt:        resetStr,
-			HourStart:          rt.HourStart().UTC().Format(time.RFC3339),
+			HourStart:          formatUTCRFC3339(rt.HourStart()),
 			SyncThrottleFactor: rt.ThrottleFactor(),
 			SyncPaused:         rt.IsPaused(),
 			ReserveBuffer:      ghclient.RateReserveBuffer,
@@ -1221,7 +1221,7 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 		DetailLoaded: issue.DetailFetchedAt != nil,
 	}
 	if issue.DetailFetchedAt != nil {
-		syncIssueResp.DetailFetchedAt = issue.DetailFetchedAt.UTC().Format(time.RFC3339)
+		syncIssueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
 	}
 	return &syncIssueOutput{Body: syncIssueResp}, nil
 }
@@ -1298,7 +1298,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ItemURL:      it.ItemURL,
 			ItemState:    it.ItemState,
 			Author:       it.Author,
-			CreatedAt:    it.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			CreatedAt:    formatUTCRFC3339(it.CreatedAt),
 			BodyPreview:  it.BodyPreview,
 		}
 	}
@@ -1446,7 +1446,7 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 			SHA:        c.SHA,
 			Message:    c.Message,
 			AuthorName: c.AuthorName,
-			AuthoredAt: c.AuthoredAt,
+			AuthoredAt: c.AuthoredAt.UTC(),
 		}
 	}
 	return &getCommitsOutput{Body: resp}, nil

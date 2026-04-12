@@ -236,6 +236,7 @@ func TestNormalizeForcePushEvent(t *testing.T) {
 
 func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
 	assert := Assert.New(t)
+	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.
 	edt := time.FixedZone("EDT", -4*3600)
 	authorDate := time.Date(2024, 6, 1, 10, 30, 0, 0, edt)
 	sha := "abcdef1234567890abcdef1234567890abcdef12"

@@ -327,7 +327,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         if (fileListAbortController !== filesAc) return;
         fileList = data as FilesResult;
         setActiveIfNeeded((data as FilesResult).files);
-      } catch (err) {
+      } catch {
         if (filesAc.signal.aborted) return;
         if (fileListAbortController !== filesAc) return;
         fileList = null;
@@ -356,11 +356,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         if (abortController !== diffAc) return;
         diff = data as DiffResult;
         setActiveIfNeeded((data as DiffResult).files);
-      } catch (err) {
+      } catch (_err) {
         if (diffAc.signal.aborted) return;
         if (abortController !== diffAc) return;
         storeError =
-          err instanceof Error ? err.message : String(err);
+          _err instanceof Error ? _err.message : String(_err);
         diff = null;
         fileList = null;
         // Invalidate and abort /files so a late response cannot repopulate.

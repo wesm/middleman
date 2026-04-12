@@ -1,17 +1,13 @@
 <script lang="ts">
   import {
-    getStores, getNavigate, getActions, getSidebar,
+    getNavigate,
   } from "../context.js";
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail
     from "../components/detail/PullDetail.svelte";
   import DiffView from "../components/diff/DiffView.svelte";
 
-  const { pulls, detail, sync } = getStores();
   const navigate = getNavigate();
-  const actions = getActions();
-  const { isSidebarToggleEnabled, toggleSidebar } =
-    getSidebar();
 
   interface Props {
     selectedPR?: {

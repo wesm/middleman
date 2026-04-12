@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { ActivityItem } from "../api/types.js";
-  import { getStores, getNavigate } from "../context.js";
   import ActivityFeed
     from "../components/ActivityFeed.svelte";
   import DetailDrawer
@@ -12,9 +11,6 @@
     name: string;
     number: number;
   };
-
-  const { activity, settings } = getStores();
-  const navigate = getNavigate();
 
   interface Props {
     drawerItem?: DrawerItem | null;

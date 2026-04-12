@@ -3,11 +3,15 @@ import type {
 } from "../../api/roborev/client.js";
 import type {
   components,
+  operations,
 } from "../../api/roborev/generated/schema.js";
 
 type Review = components["schemas"]["Review"];
 type ReviewJob = components["schemas"]["ReviewJob"];
 type ReviewResponse = components["schemas"]["Response"];
+type ListJobsQuery = NonNullable<
+  operations["list-jobs"]["parameters"]["query"]
+>;
 
 export interface ReviewStoreOptions {
   client: RoborevClient;
@@ -59,7 +63,7 @@ export function createReviewStore(
       const jobSettled = await Promise.allSettled([
         client.GET("/api/jobs", {
           params: {
-            query: { id: jobId, limit: 1 } as any,
+            query: { id: jobId, limit: 1 } satisfies ListJobsQuery,
           },
         }),
       ]);

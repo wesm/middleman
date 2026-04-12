@@ -31,8 +31,9 @@ export function setCommentDraft(
 ): void {
   const key = getCommentDraftKey(target, owner, name, number);
   if (body === "") {
-    const { [key]: _removed, ...rest } = drafts;
-    drafts = rest;
+    const next = { ...drafts };
+    delete next[key];
+    drafts = next;
     return;
   }
   drafts = {
@@ -48,8 +49,9 @@ export function clearCommentDraft(
   number: number,
 ): void {
   const key = getCommentDraftKey(target, owner, name, number);
-  const { [key]: _removed, ...rest } = drafts;
-  drafts = rest;
+  const next = { ...drafts };
+  delete next[key];
+  drafts = next;
 }
 
 export function isCommentSubmitPending(
@@ -83,8 +85,9 @@ export function finishCommentSubmit(
   const key = getCommentDraftKey(target, owner, name, number);
   const nextCount = (pendingSubmitCounts[key] ?? 0) - 1;
   if (nextCount <= 0) {
-    const { [key]: _removed, ...rest } = pendingSubmitCounts;
-    pendingSubmitCounts = rest;
+    const next = { ...pendingSubmitCounts };
+    delete next[key];
+    pendingSubmitCounts = next;
     return;
   }
   pendingSubmitCounts = {
@@ -123,6 +126,7 @@ export function clearCommentSubmitError(
   number: number,
 ): void {
   const key = getCommentDraftKey(target, owner, name, number);
-  const { [key]: _removed, ...rest } = submitErrors;
-  submitErrors = rest;
+  const next = { ...submitErrors };
+  delete next[key];
+  submitErrors = next;
 }

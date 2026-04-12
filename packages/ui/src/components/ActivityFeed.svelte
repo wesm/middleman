@@ -8,6 +8,10 @@
     collapseActivityCommitRuns,
     isCollapsedActivityRow,
   } from "./activityRows.js";
+  import {
+    localDateLabel,
+    parseAPITimestamp,
+  } from "../utils/time.js";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -211,7 +215,7 @@
   }
 
   function relativeTime(iso: string): string {
-    const diff = Date.now() - new Date(iso).getTime();
+    const diff = Date.now() - parseAPITimestamp(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "just now";
     if (mins < 60) return `${mins}m ago`;
@@ -219,7 +223,7 @@
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     if (days < 7) return `${days}d ago`;
-    return new Date(iso).toLocaleDateString();
+    return localDateLabel(iso);
   }
 
   function handleRowClick(item: ActivityItem): void {

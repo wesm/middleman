@@ -6,7 +6,7 @@
   let submitting = $state(false);
 
   $effect(() => {
-    const _ = stores.roborevReview?.getSelectedJobId();
+    void stores.roborevReview?.getSelectedJobId();
     commentText = "";
   });
 
