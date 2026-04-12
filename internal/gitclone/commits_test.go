@@ -10,13 +10,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 func commitTestRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(filteredGitEnv(),
+	cmd.Env = append(gitenv.StripInherited(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_SYSTEM="+os.DevNull,
 	)
@@ -62,7 +63,7 @@ func gitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := exec.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
-	cmd.Env = append(filteredGitEnv(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
+	cmd.Env = append(gitenv.StripInherited(os.Environ()), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))

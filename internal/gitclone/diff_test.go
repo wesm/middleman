@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 func TestDiff(t *testing.T) {
@@ -185,7 +186,7 @@ func TestDiffFilesEmpty(t *testing.T) {
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", dir, "rev-parse", ref)
-	cmd.Env = filteredGitEnv()
+	cmd.Env = gitenv.StripInherited(os.Environ())
 	out, err := cmd.Output()
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))

@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 // setupTestRepo creates a bare "remote" repo with one commit and returns
@@ -48,7 +49,7 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 }
 
 func filteredGitTestEnv() []string {
-	return append(filteredGitEnv(),
+	return append(gitenv.StripInherited(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_SYSTEM="+os.DevNull,
 	)
