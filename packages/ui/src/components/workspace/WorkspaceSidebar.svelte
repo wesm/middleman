@@ -91,6 +91,15 @@
             }
           ></span>
           <span class="host-label">{host.label}</span>
+          {#if host.transport}
+            <span class="transport-badge">{host.transport.toUpperCase()}</span>
+          {/if}
+          {#if host.platform}
+            <span class="platform-icon" title={host.platform}>
+              {host.platform === "macOS" ? "\uD83D\uDCBB" : "\uD83D\uDDA5"}
+            </span>
+          {/if}
+          <span class="status-dot status-{host.connectionState}"></span>
           {#if host.connectionState === "disconnected" || host.connectionState === "error"}
             <button
               class="retry-btn"
@@ -268,6 +277,46 @@
   }
 
   .connection-dot.error {
+    background: var(--accent-red);
+  }
+
+  .transport-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: color-mix(
+      in srgb,
+      var(--text-muted) 15%,
+      transparent
+    );
+    color: var(--text-secondary);
+  }
+
+  .platform-icon {
+    font-size: 12px;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .status-connected {
+    background: var(--accent-green);
+  }
+
+  .status-connecting {
+    background: var(--accent-blue);
+  }
+
+  .status-error {
+    background: var(--accent-amber);
+  }
+
+  .status-disconnected {
     background: var(--accent-red);
   }
 
