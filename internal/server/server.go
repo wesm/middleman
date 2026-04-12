@@ -311,9 +311,13 @@ func newServer(
 
 	// When serving under a base path, use an outer mux with
 	// StripPrefix so the inner mux sees clean paths like /api/v1/...
+	// Health endpoints stay at the root so external probes do not need
+	// to know about the UI base path.
 	if basePath != "/" {
 		outer := http.NewServeMux()
 		prefix := strings.TrimSuffix(basePath, "/")
+		outer.Handle("/healthz", mux)
+		outer.Handle("/livez", mux)
 		outer.Handle(basePath, http.StripPrefix(prefix, mux))
 		s.handler = outer
 	} else {

@@ -44,6 +44,39 @@ func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
 	}
 }
 
+func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
+	srv := setupWithBasePath(t, "/middleman/", nil)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "readiness", path: "/healthz"},
+		{name: "liveness", path: "/livez"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			require := require.New(t)
+
+			resp, err := ts.Client().Get(ts.URL + tt.path)
+			require.NoError(err)
+			defer resp.Body.Close()
+
+			assert.Equal(http.StatusOK, resp.StatusCode)
+
+			var body healthResponse
+			err = json.NewDecoder(resp.Body).Decode(&body)
+			require.NoError(err)
+
+			assert.Equal("ok", body.Status)
+		})
+	}
+}
+
 func TestHealthzE2E_ReturnsServiceUnavailableWhenDatabaseClosed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
