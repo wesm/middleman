@@ -69,6 +69,18 @@ jobs:
       - name: Run frontend unit tests
         run: cd frontend && bun run test
 
+      - name: Build frontend assets for e2e
+        run: make frontend
+
+      - name: Build e2e server
+        run: GOFLAGS=-buildvcs=false go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+
+      - name: Install Playwright browser
+        run: cd frontend && bunx playwright install --with-deps chromium
+
+      - name: Run frontend e2e UTC coverage
+        run: cd frontend && bun run test:e2e --config playwright-e2e.config.ts --grep "UTC timestamp"
+
       - name: Run tests
         run: go test ./... -v -count=1
 

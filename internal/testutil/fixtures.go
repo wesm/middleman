@@ -359,13 +359,21 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), 4 commits (alice)
 	commitBase := now.Add(-9 * 24 * time.Hour)
+	w1BobCommentUTC := time.Date(now.Year(), now.Month(), now.Day(), 1, 30, 0, 0, time.UTC).Add(-8 * 24 * time.Hour)
+	w1BobComment, err := time.Parse(
+		time.RFC3339,
+		w1BobCommentUTC.Add(-4*time.Hour).Format("2006-01-02T15:04:05")+"-04:00",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build widgets PR#1 non-UTC comment timestamp: %w", err)
+	}
 	err = d.UpsertMREvents(ctx, []db.MREvent{
 		{
 			MergeRequestID: w1ID,
 			EventType:      "issue_comment",
 			Author:         "bob",
 			Body:           "Looks like a solid approach. Minor nit on naming.",
-			CreatedAt:      now.Add(-7 * 24 * time.Hour),
+			CreatedAt:      w1BobComment,
 			DedupeKey:      "w1-comment-bob-1",
 		},
 		{

@@ -122,7 +122,7 @@ Add coverage to existing API tests for:
 
 - [ ] **Step 4: Run the backend regression tests and confirm at least the sync/API UTC checks fail before implementation**
 
-Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTimeNormalizesLocationToUTC|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIPullDetailLoadedFlag|TestAPIActivityReturnsUTCCreatedAt|TestAPIPullStateTransitionsPersistUTC' -count=1`
+Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTime|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIGetPullDetailLoaded|TestAPIActivityReturnsUTCCreatedAt|TestAPIMergePRStoresUTCTimestamps|TestAPIClosePR|TestAPICloseIssue' -count=1`
 
 Expected: DB parser test passes, but at least one sync/API UTC test fails because the current code still creates or formats some timestamps outside the new canonical rule, including state-transition write paths in `internal/server/huma_routes.go`.
 
@@ -197,14 +197,17 @@ if err := s.db.UpdateRepoSyncCompleted(ctx, repoID, time.Now().UTC(), syncErrStr
 }
 
 now := time.Now().UTC()
-if err := s.db.UpdateMRState(ctx, mrID, state, merged, &now); err != nil {
+if err := s.db.UpdateMRState(ctx, repoID, input.Number, input.Body.State, mergedAt, closedAt); err != nil {
+	return err
+}
+if err := s.db.UpdateIssueState(ctx, repoID, input.Number, input.Body.State, closedAt); err != nil {
 	return err
 }
 ```
 
 - [ ] **Step 4: Re-run the targeted backend tests and then the wider backend suite**
 
-Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTimeNormalizesLocationToUTC|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIPullDetailLoadedFlag|TestAPIActivityReturnsUTCCreatedAt|TestAPIPullStateTransitionsPersistUTC' -count=1`
+Run: `go test ./internal/db ./internal/github ./internal/server -run 'TestParseDBTime|TestSyncStatusUpdatedUsesUTC|TestAPISyncStatus|TestAPIGetPullDetailLoaded|TestAPIActivityReturnsUTCCreatedAt|TestAPIMergePRStoresUTCTimestamps|TestAPIClosePR|TestAPICloseIssue' -count=1`
 
 Expected: PASS
 

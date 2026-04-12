@@ -610,7 +610,7 @@ func (s *Syncer) hostEligibility(
 	hosts []string,
 	nextAfter map[string]time.Time,
 ) map[string]bool {
-	now := time.Now()
+	now := time.Now().UTC()
 	eligible := make(map[string]bool, len(hosts))
 	for _, host := range hosts {
 		if _, checked := eligible[host]; checked {

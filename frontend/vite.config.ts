@@ -37,6 +37,7 @@ const config = {
   },
   test: {
     environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
     include: [
       "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)",

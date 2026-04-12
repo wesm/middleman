@@ -5,6 +5,7 @@ vi.stubGlobal("localStorage", {
   getItem: (k: string) => storage.get(k) ?? null,
   setItem: (k: string, v: string) => storage.set(k, v),
   removeItem: (k: string) => storage.delete(k),
+  clear: () => storage.clear(),
 });
 
 const mockFetch = vi.fn();

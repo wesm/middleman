@@ -439,6 +439,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
 		}
+		normalizeRepoTimestamps(&r)
 		repos = append(repos, r)
 	}
 	return repos, rows.Err()
@@ -502,6 +503,7 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 	if err != nil {
 		return nil, fmt.Errorf("get repo by owner/name: %w", err)
 	}
+	normalizeRepoTimestamps(&r)
 	return &r, nil
 }
 
@@ -536,7 +538,31 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get repo by id: %w", err)
 	}
+	normalizeRepoTimestamps(&r)
 	return &r, nil
+}
+
+func normalizeRepoTimestamps(r *Repo) {
+	if r == nil {
+		return
+	}
+	r.CreatedAt = r.CreatedAt.UTC()
+	if r.LastSyncStartedAt != nil {
+		t := r.LastSyncStartedAt.UTC()
+		r.LastSyncStartedAt = &t
+	}
+	if r.LastSyncCompletedAt != nil {
+		t := r.LastSyncCompletedAt.UTC()
+		r.LastSyncCompletedAt = &t
+	}
+	if r.BackfillPRCompletedAt != nil {
+		t := r.BackfillPRCompletedAt.UTC()
+		r.BackfillPRCompletedAt = &t
+	}
+	if r.BackfillIssueCompletedAt != nil {
+		t := r.BackfillIssueCompletedAt.UTC()
+		r.BackfillIssueCompletedAt = &t
+	}
 }
 
 // UpdateRepoSettings updates the merge method settings for a repo.

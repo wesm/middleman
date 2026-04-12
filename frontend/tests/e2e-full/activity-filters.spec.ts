@@ -177,4 +177,50 @@ test.describe("activity feed filters", () => {
       await expectAllBadges(page, "PR");
     },
   );
+
+});
+
+test.describe("activity UTC timestamp presentation", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript((offsetMs) => {
+      const originalNow = Date.now.bind(Date);
+      Date.now = () => originalNow() + offsetMs;
+    }, 2 * 24 * 60 * 60 * 1000);
+    await page.goto("/");
+    await waitForTable(page);
+  });
+
+  test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
+    await page.reload();
+    await waitForTable(page);
+    await page.locator(".seg-btn", { hasText: "30d" }).click();
+    await expect(page.locator(".activity-row").first()).toBeVisible();
+
+    const payload = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/activity?view_mode=flat&time_range=30d");
+      return response.json();
+    });
+    const prComment = payload.items.find((item: { item_title: string; author: string; created_at: string; activity_type: string }) =>
+      item.item_title === "Add widget caching layer" && item.author === "carol" && item.activity_type === "comment"
+    );
+
+    expect(prComment).toBeTruthy();
+    expect(prComment.created_at).toMatch(/Z$/);
+
+    const expectedLabel = await page.evaluate((iso: string) =>
+      new Date(iso).toLocaleDateString(),
+    prComment.created_at);
+
+    const row = page.locator(".activity-row", {
+      has: page.locator(".item-title", { hasText: "Add widget caching layer" }),
+    }).filter({
+      has: page.locator(".col-author", { hasText: "carol" }),
+    }).filter({
+      has: page.locator(".evt-label.evt-comment"),
+    }).first();
+
+    await expect(row.locator(".col-when")).toHaveText(expectedLabel);
+    expect(expectedLabel).not.toContain("T");
+    expect(expectedLabel).not.toContain("Z");
+  });
 });
