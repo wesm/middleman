@@ -3524,6 +3524,47 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
 }
 
+func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// 2-PR chain where tip is failing but has no descendants.
+	// Per blocked semantics, this is partial_merge when base is merged.
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", "merged", "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", "open", "failure", "")
+	runStackDetection(t, database, "acme", "widget")
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 11)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	assert.Equal("partial_merge", resp.JSON200.Health,
+		"failing tip with merged base and no open descendant is partial_merge, not blocked")
+}
+
+func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// Base PR targets "master" not "main" — API must return real base_branch.
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "master", "open", "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", "open", "pending", "")
+	runStackDetection(t, database, "acme", "widget")
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode())
+	require.NotNil(t, resp.JSON200)
+	require.NotNil(t, resp.JSON200.Members)
+	assert.Len(*resp.JSON200.Members, 2)
+	assert.Equal("master", (*resp.JSON200.Members)[0].BaseBranch)
+	assert.Equal("feat/base", (*resp.JSON200.Members)[1].BaseBranch)
+}
+
 func TestAPIListStacks_Empty(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)

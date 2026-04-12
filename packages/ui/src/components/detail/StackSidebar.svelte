@@ -72,11 +72,21 @@
   const unsubSync = sync.subscribeSyncComplete(() => fetchStack(owner, name, number));
   onDestroy(() => unsubSync());
 
+  // Shared "merge-ready" predicate used for dot color, outline, and
+  // the ready-to-merge label. Drafts never count as merge-ready even
+  // with green CI + approval because GitHub will not merge a draft PR.
+  function isMergeReady(member: StackMember): boolean {
+    return member.state === "open"
+      && !member.is_draft
+      && member.ci_status === "success"
+      && member.review_decision === "APPROVED";
+  }
+
   function getDotColor(member: StackMember): string {
     if (member.state === "merged") return "#8b949e";
     if (member.ci_status === "failure") return "#f85149";
     if (member.ci_status === "pending" || member.review_decision === "CHANGES_REQUESTED") return "#d29922";
-    if (member.state === "open" && member.ci_status === "success" && member.review_decision === "APPROVED") return "#238636";
+    if (isMergeReady(member)) return "#238636";
     return "#21262d";
   }
 
@@ -84,7 +94,7 @@
     return member.state !== "merged"
       && member.ci_status !== "failure"
       && !(member.ci_status === "pending" || member.review_decision === "CHANGES_REQUESTED")
-      && !(member.state === "open" && member.ci_status === "success" && member.review_decision === "APPROVED");
+      && !isMergeReady(member);
   }
 
   function ciLabel(member: StackMember): { text: string; color: string } | null {
@@ -103,11 +113,7 @@
   }
 
   function isBaseReady(member: StackMember, idx: number): boolean {
-    return idx === 0
-      && member.state === "open"
-      && !member.is_draft
-      && member.ci_status === "success"
-      && member.review_decision === "APPROVED";
+    return idx === 0 && isMergeReady(member);
   }
 </script>
 
