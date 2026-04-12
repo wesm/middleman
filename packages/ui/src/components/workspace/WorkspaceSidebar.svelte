@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { WorkspaceData } from "../../api/types.js";
   import ProjectSection from "./ProjectSection.svelte";
   import SessionSection from "./SessionSection.svelte";
   import ResourceFooter from "./ResourceFooter.svelte";

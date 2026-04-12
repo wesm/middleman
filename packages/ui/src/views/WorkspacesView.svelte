@@ -1,5 +1,11 @@
 <script lang="ts">
   import WorkspaceSidebar from "../components/workspace/WorkspaceSidebar.svelte";
+  import type {
+    WorkspaceData,
+    WorkspaceDetailContext,
+    WorkspaceProject,
+    WorkspaceWorktree,
+  } from "../api/types.js";
   import type { Snippet } from "svelte";
 
   interface Props {

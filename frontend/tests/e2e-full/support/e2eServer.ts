@@ -23,6 +23,11 @@ const startupTimeoutMs = 30_000;
 const pollIntervalMs = 100;
 const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
 
+type ManagedChildLike = {
+  pid?: number | undefined;
+  exitCode: number | null;
+};
+
 let serverPromise: Promise<E2EServerInfo> | null = null;
 let managedChild: ChildProcess | null = null;
 let cleanupInstalled = false;
@@ -74,7 +79,7 @@ async function isServerReachable(baseURL: string): Promise<boolean> {
 
 export async function waitForServerInfo(
   filePath: string,
-  child: { exitCode: number | null },
+  child: Pick<ManagedChildLike, "exitCode">,
 ): Promise<E2EServerInfo> {
   const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
@@ -97,7 +102,7 @@ async function removeServerInfo(filePath: string): Promise<void> {
 }
 
 export function cleanupManagedServerProcess(
-  child: { pid?: number; exitCode: number | null } | null = managedChild,
+  child: ManagedChildLike | null = managedChild,
   infoFile: string | undefined = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE,
 ): void {
   const serverPID = infoFile ? readServerInfoSync(infoFile)?.pid : undefined;

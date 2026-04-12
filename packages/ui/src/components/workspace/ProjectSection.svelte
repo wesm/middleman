@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { WorkspaceProject } from "../../api/types.js";
   import WorktreeRow from "./WorktreeRow.svelte";
 
   interface Props {

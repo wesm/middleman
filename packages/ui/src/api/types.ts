@@ -99,3 +99,81 @@ export interface CommitInfo {
   author_name: string;
   authored_at: string;
 }
+
+export interface WorkspaceHost {
+  key: string;
+  label: string;
+  connectionState:
+    | "connected"
+    | "connecting"
+    | "disconnected"
+    | "error";
+  projects: WorkspaceProject[];
+  sessions: WorkspaceSession[];
+  resources: WorkspaceResources | null;
+}
+
+export interface WorkspaceProject {
+  key: string;
+  name: string;
+  kind: "repository" | "scratch";
+  repoKind: string;
+  defaultBranch: string;
+  platformRepo: string | null;
+  worktrees: WorkspaceWorktree[];
+}
+
+export interface WorkspaceWorktree {
+  key: string;
+  name: string;
+  branch: string;
+  isPrimary: boolean;
+  isHidden: boolean;
+  isStale: boolean;
+  sessionBackend: string | null;
+  linkedPR: WorkspaceLinkedPR | null;
+  activity: WorkspaceActivity;
+  diff: WorkspaceDiff | null;
+}
+
+export interface WorkspaceLinkedPR {
+  number: number;
+  title: string;
+  state: "open" | "closed" | "merged";
+  checksStatus: string | null;
+  updatedAt: string | null;
+}
+
+export interface WorkspaceActivity {
+  state: "idle" | "active" | "running" | "needsAttention";
+  lastOutputAt: string | null;
+}
+
+export interface WorkspaceDiff {
+  added: number;
+  removed: number;
+}
+
+export interface WorkspaceSession {
+  key: string;
+  name: string;
+  worktreeKey: string | null;
+  isHidden: boolean;
+}
+
+export interface WorkspaceResources {
+  cpuPercent: number;
+  residentMB: number;
+}
+
+export interface WorkspaceData {
+  hosts: WorkspaceHost[];
+  selectedWorktreeKey: string | null;
+  selectedHostKey: string | null;
+}
+
+export interface WorkspaceDetailContext {
+  worktree: WorkspaceWorktree | null;
+  project: WorkspaceProject | null;
+  host: WorkspaceHost | null;
+}

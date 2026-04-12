@@ -1,4 +1,10 @@
 <script lang="ts">
+  import type {
+    WorkspaceActivity,
+    WorkspaceLinkedPR,
+    WorkspaceWorktree,
+  } from "../../api/types.js";
+
   interface Props {
     worktree: WorkspaceWorktree;
     hostKey: string;

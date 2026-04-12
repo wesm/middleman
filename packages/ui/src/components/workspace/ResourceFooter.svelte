@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { WorkspaceResources } from "../../api/types.js";
+
   interface Props {
     resources: WorkspaceResources | null;
   }
