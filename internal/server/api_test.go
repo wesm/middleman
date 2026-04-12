@@ -3397,8 +3397,9 @@ func TestAPIGetStackForPR(t *testing.T) {
 	client := setupTestClient(t, srv)
 	ctx := context.Background()
 
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/api-base", "main", "open", "success", "APPROVED")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", "open", "failure", "")
+	// Failing base with an open descendant is blocked.
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/api-base", "main", "open", "failure", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", "open", "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx, "acme", "widget", 10)

@@ -44,16 +44,20 @@ func TestComputeStackHealth(t *testing.T) {
 			member(1, 1, "open", "success", "APPROVED"),
 			member(2, 2, "open", "pending", ""),
 		}, "base_ready"},
-		{"single open failure", []db.StackMemberWithPR{
+		{"single open failure not blocked (nothing downstream)", []db.StackMemberWithPR{
 			member(1, 1, "open", "failure", ""),
-		}, "blocked"},
-		{"tip PR failing", []db.StackMemberWithPR{
+		}, "in_progress"},
+		{"tip PR failing not blocked (nothing downstream)", []db.StackMemberWithPR{
 			member(1, 1, "merged", "success", "APPROVED"),
 			member(2, 2, "open", "failure", ""),
-		}, "blocked"},
-		{"changes requested no descendants", []db.StackMemberWithPR{
+		}, "partial_merge"},
+		{"changes requested at tip not blocked", []db.StackMemberWithPR{
 			member(1, 1, "open", "success", "APPROVED"),
 			member(2, 2, "open", "success", "CHANGES_REQUESTED"),
+		}, "base_ready"},
+		{"changes requested with descendant is blocked", []db.StackMemberWithPR{
+			member(1, 1, "open", "success", "CHANGES_REQUESTED"),
+			member(2, 2, "open", "success", "APPROVED"),
 		}, "blocked"},
 		{"in progress", []db.StackMemberWithPR{
 			member(1, 1, "open", "pending", ""),
