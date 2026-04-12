@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
+  assertSeededRoborevDaemon,
   stopDaemon,
   startDaemon,
   restartDaemon,
@@ -9,6 +10,15 @@ import {
 } from "./support/roborev-helpers.js";
 
 test.describe.serial("Roborev", () => {
+  // Refuse to run if the e2e server is not proxying to the
+  // script-managed seeded daemon. This catches the failure mode
+  // where playwright is invoked directly instead of via
+  // scripts/run-roborev-e2e.sh, while a real local roborev daemon
+  // is bound to 127.0.0.1:7373 (the e2e server's silent default).
+  test.beforeAll(async () => {
+    await assertSeededRoborevDaemon();
+  });
+
   // -------------------------------------------------------
   // Group 1: Table and Data Display
   // -------------------------------------------------------

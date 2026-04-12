@@ -63,6 +63,67 @@ function waitForDaemonHealthy(): void {
   throw new Error("Daemon not healthy after 30 attempts");
 }
 
+// Sentinel-bounded probe of the daemon backing the e2e server.
+// The seed creates ~73 jobs total; a real local roborev daemon will
+// have orders of magnitude more. If the e2e server proxies to an
+// unmanaged daemon (e.g. tests run directly without
+// scripts/run-roborev-e2e.sh while a local daemon is bound to
+// 127.0.0.1:7373 — the e2e server's silent default), individual
+// tests would fail with mysterious data mismatches. Refuse upfront
+// with a clear pointer at the runner script instead.
+export async function assertSeededRoborevDaemon(): Promise<void> {
+  const baseURL = process.env["PLAYWRIGHT_E2E_BASE_URL"];
+  if (!baseURL) {
+    throw new Error(
+      "PLAYWRIGHT_E2E_BASE_URL is not set. Run roborev e2e tests " +
+        "via scripts/run-roborev-e2e.sh, not playwright directly.",
+    );
+  }
+  const url = `${baseURL}/api/roborev/api/status`;
+  let body: Record<string, unknown>;
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    body = (await res.json()) as Record<string, unknown>;
+  } catch (err) {
+    throw new Error(
+      `roborev daemon at ${url} is not reachable (${String(err)}). ` +
+        "Run roborev e2e tests via scripts/run-roborev-e2e.sh.",
+      { cause: err },
+    );
+  }
+  const num = (key: string): number => {
+    const v = body[key];
+    return typeof v === "number" ? v : 0;
+  };
+  const total =
+    num("queued_jobs") +
+    num("running_jobs") +
+    num("completed_jobs") +
+    num("failed_jobs") +
+    num("canceled_jobs") +
+    num("applied_jobs") +
+    num("rebased_jobs");
+  // Seed creates 73 jobs. Allow headroom for jobs created during the
+  // run (the rerun-action test enqueues a new job).
+  const maxSeededJobs = 200;
+  if (total > maxSeededJobs) {
+    throw new Error(
+      `roborev daemon at ${url} is not the script-seeded test ` +
+        `daemon (total_jobs=${total}, expected <= ${maxSeededJobs}). ` +
+        "The middleman e2e server defaults the roborev endpoint to " +
+        "http://127.0.0.1:7373 when ROBOREV_ENDPOINT is unset, so " +
+        "running playwright directly while a real local roborev " +
+        "daemon is running will silently hit it. Run roborev e2e " +
+        "tests via scripts/run-roborev-e2e.sh instead.",
+    );
+  }
+}
+
 export async function waitForReviewsReady(
   page: Page,
 ): Promise<void> {
