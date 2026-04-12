@@ -8,9 +8,12 @@
     name: string;
     number: number;
     onClose: () => void;
+    onPullsRefresh?: () => Promise<void>;
   }
 
-  let { itemType, owner, name, number, onClose }: Props = $props();
+  let {
+    itemType, owner, name, number, onClose, onPullsRefresh,
+  }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape" && !e.defaultPrevented) {
@@ -36,7 +39,12 @@
     <div class="drawer-body">
       {#key `${owner}/${name}/${number}`}
         {#if itemType === "pr"}
-          <PullDetail {owner} {name} {number} />
+          <PullDetail
+            {owner}
+            {name}
+            {number}
+            {...(onPullsRefresh ? { onPullsRefresh } : {})}
+          />
         {:else}
           <IssueDetail {owner} {name} {number} />
         {/if}

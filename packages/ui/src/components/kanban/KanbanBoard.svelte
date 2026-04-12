@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import { getStores, getClient, getNavigate, getSidebar } from "../../context.js";
-  import PullDetail from "../detail/PullDetail.svelte";
+  import DetailDrawer from "../DetailDrawer.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
 
   const { pulls, detail, settings } = getStores();
@@ -49,16 +49,6 @@
     detail.stopDetailPolling();
   }
 
-  // Close drawer on Escape
-  $effect(() => {
-    if (drawerPR === null) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === "Escape") { closeDrawer(); e.preventDefault(); }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
   // --- Drag and drop ---
   async function handleDrop(
     owner: string,
@@ -102,23 +92,14 @@
   {/if}
 
   {#if drawerPR !== null}
-    <aside class="drawer">
-      <div class="drawer-header">
-        <button class="drawer-close" onclick={closeDrawer} title="Close (Esc)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
-          </svg>
-        </button>
-      </div>
-      <div class="drawer-body">
-        <PullDetail
-          owner={drawerPR.owner}
-          name={drawerPR.name}
-          number={drawerPR.number}
-          onPullsRefresh={() => pulls.loadPulls({ state: "open" })}
-        />
-      </div>
-    </aside>
+    <DetailDrawer
+      itemType="pr"
+      owner={drawerPR.owner}
+      name={drawerPR.name}
+      number={drawerPR.number}
+      onClose={closeDrawer}
+      onPullsRefresh={() => pulls.loadPulls({ state: "open" })}
+    />
   {/if}
 </div>
 
@@ -161,57 +142,5 @@
 
   .settings-link:hover {
     text-decoration: underline;
-  }
-
-  .drawer {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    background: var(--bg-primary);
-    border-left: 1px solid var(--border-default);
-    box-shadow: var(--shadow-lg);
-    z-index: 11;
-    display: flex;
-    flex-direction: column;
-    animation: slide-in 0.15s ease-out;
-  }
-
-  @keyframes slide-in {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
-  }
-
-  .drawer-header {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-muted);
-    flex-shrink: 0;
-  }
-
-  .drawer-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .drawer-close:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .drawer-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
   }
 </style>

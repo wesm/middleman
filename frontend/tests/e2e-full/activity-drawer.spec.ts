@@ -123,8 +123,7 @@ test.describe("activity drawer", () => {
     // covers whichever PR number this card represents.
     await page.locator(".kanban-card").first().click();
 
-    // Kanban drawer (distinct from DetailDrawer) uses .drawer as its panel.
-    const drawer = page.locator(".kanban-wrap .drawer");
+    const drawer = page.locator(".drawer-panel");
     await expect(drawer).toBeVisible();
 
     await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
@@ -205,7 +204,7 @@ test.describe("activity drawer", () => {
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".kanban-card").first().click();
 
-    const drawer = page.locator(".kanban-wrap .drawer");
+    const drawer = page.locator(".drawer-panel");
     await expect(drawer).toBeVisible();
 
     const viewport = page.viewportSize();
