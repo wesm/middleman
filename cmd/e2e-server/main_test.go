@@ -61,3 +61,22 @@ func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
 	assert.Equal("head-sha", openPR.GetHead().GetSHA())
 	assert.Equal("base-sha", openPR.GetBase().GetSHA())
 }
+
+func TestPatchFixturePRSHAsUpdatesLookupPRs(t *testing.T) {
+	lookupPR := &gh.PullRequest{
+		Number: new(1),
+		Head:   &gh.PullRequestBranch{},
+		Base:   &gh.PullRequestBranch{},
+	}
+	fc := &testutil.FixtureClient{
+		PRs: map[string][]*gh.PullRequest{
+			"acme/widgets": {lookupPR},
+		},
+	}
+
+	patchFixturePRSHAs(fc, "acme", "widgets", 1, "head-sha", "base-sha")
+
+	assert := Assert.New(t)
+	assert.Equal("head-sha", lookupPR.GetHead().GetSHA())
+	assert.Equal("base-sha", lookupPR.GetBase().GetSHA())
+}

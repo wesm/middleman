@@ -22,6 +22,10 @@ export function getCommentDraft(
   return drafts[getCommentDraftKey(target, owner, name, number)] ?? "";
 }
 
+export function getCommentDraftByKey(key: string): string {
+  return drafts[key] ?? "";
+}
+
 export function setCommentDraft(
   target: CommentDraftTarget,
   owner: string,

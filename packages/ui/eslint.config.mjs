@@ -40,6 +40,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      "no-undef": "off",
       "svelte/prefer-svelte-reactivity": "off",
       "@typescript-eslint/ban-ts-comment": [
         "error",
@@ -89,6 +90,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      "no-undef": "off",
       "svelte/no-at-html-tags": "off",
       "svelte/prefer-svelte-reactivity": "off",
       "svelte/require-each-key": "off",

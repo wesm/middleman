@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/comment-autocomplete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name comment autocomplete */
+        get: operations["get-repos-by-owner-by-name-comment-autocomplete"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/issues/{number}": {
         parameters: {
             query?: never;
@@ -539,6 +556,23 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        CommentAutocompleteReference: {
+            kind: string;
+            /** Format: int64 */
+            number: number;
+            state: string;
+            title: string;
+        };
+        CommentAutocompleteResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CommentAutocompleteResponse.json
+             */
+            readonly $schema?: string;
+            references?: components["schemas"]["CommentAutocompleteReference"][] | null;
+            users?: string[] | null;
         };
         CommitResponse: {
             /** @description Commit author display name */
@@ -1336,6 +1370,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Repo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-repos-by-owner-by-name-comment-autocomplete": {
+        parameters: {
+            query?: {
+                trigger?: string;
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentAutocompleteResponse"];
                 };
             };
             /** @description Error */

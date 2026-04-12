@@ -1329,6 +1329,95 @@ func TestGetWorktreeLinksForMR(t *testing.T) {
 	assert.Empty(forMR999)
 }
 
+func TestListCommentAutocompleteUsers(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 12, "Polish mentions", base.Add(2*time.Hour))
+	issueID := insertTestIssue(t, d, repoID, 7, "Mention bug", base.Add(time.Hour))
+
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     9001,
+		Number:         13,
+		URL:            "https://github.com/acme/widget/pull/13",
+		Title:          "Secondary author",
+		Author:         "alex",
+		State:          "open",
+		HeadBranch:     "feature-13",
+		BaseBranch:     "main",
+		CreatedAt:      base.Add(3 * time.Hour),
+		UpdatedAt:      base.Add(3 * time.Hour),
+		LastActivityAt: base.Add(3 * time.Hour),
+	})
+	require.NoError(err)
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     9002,
+		Number:         8,
+		URL:            "https://github.com/acme/widget/issues/8",
+		Title:          "Issue author",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      base.Add(4 * time.Hour),
+		UpdatedAt:      base.Add(4 * time.Hour),
+		LastActivityAt: base.Add(4 * time.Hour),
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "comment",
+		Author:         "albert",
+		CreatedAt:      base.Add(5 * time.Hour),
+		DedupeKey:      "mr-comment-1",
+	}}))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "comment",
+		Author:    "alice",
+		CreatedAt: base.Add(6 * time.Hour),
+		DedupeKey: "issue-comment-1",
+	}}))
+
+	users, err := d.ListCommentAutocompleteUsers(ctx, "github.com", "acme", "widget", "al", 10)
+	require.NoError(err)
+	assert.Equal([]string{"alice", "albert", "alex"}, users)
+
+	users, err = d.ListCommentAutocompleteUsers(ctx, "github.com", "acme", "widget", "bert", 10)
+	require.NoError(err)
+	assert.Equal([]string{"albert"}, users)
+}
+
+func TestListCommentAutocompleteReferences(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	insertTestMR(t, d, repoID, 12, "Polish mentions", base.Add(3*time.Hour))
+	insertTestMR(t, d, repoID, 3, "Add docs", base)
+	insertTestIssue(t, d, repoID, 17, "Mention bug", base.Add(2*time.Hour))
+	insertTestIssue(t, d, repoID, 101, "Numbered item", base.Add(time.Hour))
+
+	refs, err := d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", 10)
+	require.NoError(err)
+	require.Len(refs, 3)
+	assert.Equal(CommentAutocompleteReference{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}, refs[0])
+	assert.Equal(CommentAutocompleteReference{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"}, refs[1])
+	assert.Equal(CommentAutocompleteReference{Kind: "issue", Number: 101, Title: "Numbered item", State: "open"}, refs[2])
+
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "doc", 10)
+	require.NoError(err)
+	require.Len(refs, 1)
+	assert.Equal(CommentAutocompleteReference{Kind: "pull", Number: 3, Title: "Add docs", State: "open"}, refs[0])
+}
+
 func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

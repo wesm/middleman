@@ -236,4 +236,5 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 	}
 
 	patch(fc.OpenPRs[repoKey])
+	patch(fc.PRs[repoKey])
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
@@ -16,19 +17,32 @@ var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
 // seeded PRs and issues from the list methods and stubs out everything else.
 type FixtureClient struct {
 	OpenPRs    map[string][]*gh.PullRequest
+	PRs        map[string][]*gh.PullRequest
 	OpenIssues map[string][]*gh.Issue
+	Issues     map[string][]*gh.Issue
+	Comments   map[string][]*gh.IssueComment
+	mu         sync.Mutex
+	nextID     int64
 }
 
 // NewFixtureClient returns a FixtureClient with empty fixture maps.
 func NewFixtureClient() ghclient.Client {
 	return &FixtureClient{
 		OpenPRs:    make(map[string][]*gh.PullRequest),
+		PRs:        make(map[string][]*gh.PullRequest),
 		OpenIssues: make(map[string][]*gh.Issue),
+		Issues:     make(map[string][]*gh.Issue),
+		Comments:   make(map[string][]*gh.IssueComment),
+		nextID:     10_000,
 	}
 }
 
 func repoKey(owner, repo string) string {
 	return fmt.Sprintf("%s/%s", owner, repo)
+}
+
+func issueKey(owner, repo string, number int) string {
+	return fmt.Sprintf("%s/%s#%d", owner, repo, number)
 }
 
 // ListOpenPullRequests returns the seeded open PRs for the given repo.
@@ -61,11 +75,11 @@ func (c *FixtureClient) GetRepository(_ context.Context, _, _ string) (*gh.Repos
 }
 
 // GetPullRequest looks up the PR by owner/repo and number from
-// the seeded open PR set. Returns nil, nil if not found.
+// the seeded fixture set. Returns nil, nil if not found.
 func (c *FixtureClient) GetPullRequest(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
-	for _, pr := range c.OpenPRs[repoKey(owner, repo)] {
+	for _, pr := range c.PRs[repoKey(owner, repo)] {
 		if pr.GetNumber() == number {
 			return pr, nil
 		}
@@ -83,11 +97,11 @@ func (c *FixtureClient) findPullRequest(owner, repo string, number int) *gh.Pull
 }
 
 // GetIssue looks up the issue by owner/repo and number from
-// the seeded open issue set. Returns nil, nil if not found.
+// the seeded fixture set. Returns nil, nil if not found.
 func (c *FixtureClient) GetIssue(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.Issue, error) {
-	for _, iss := range c.OpenIssues[repoKey(owner, repo)] {
+	for _, iss := range c.Issues[repoKey(owner, repo)] {
 		if iss.GetNumber() == number {
 			return iss, nil
 		}
@@ -106,9 +120,17 @@ func (c *FixtureClient) findIssue(owner, repo string, number int) *gh.Issue {
 
 // ListIssueComments returns nil (read-only stub).
 func (c *FixtureClient) ListIssueComments(
-	_ context.Context, _, _ string, _ int,
+	_ context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	return nil, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	comments := c.Comments[issueKey(owner, repo, number)]
+	if len(comments) == 0 {
+		return nil, nil
+	}
+	out := make([]*gh.IssueComment, len(comments))
+	copy(out, comments)
+	return out, nil
 }
 
 // ListReviews returns nil (read-only stub).
@@ -160,11 +182,26 @@ func (c *FixtureClient) ApproveWorkflowRun(
 	return errFixtureReadOnly
 }
 
-// CreateIssueComment returns an error (mutations not supported).
 func (c *FixtureClient) CreateIssueComment(
-	_ context.Context, _, _ string, _ int, _ string,
+	_ context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
-	return nil, errFixtureReadOnly
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	login := "fixture-bot"
+	now := time.Now().UTC()
+	id := c.nextID
+	c.nextID++
+
+	comment := &gh.IssueComment{
+		ID:        &id,
+		Body:      &body,
+		CreatedAt: &gh.Timestamp{Time: now},
+		User:      &gh.User{Login: &login},
+	}
+	key := issueKey(owner, repo, number)
+	c.Comments[key] = append(c.Comments[key], comment)
+	return comment, nil
 }
 
 // CreateReview returns an error (mutations not supported).
