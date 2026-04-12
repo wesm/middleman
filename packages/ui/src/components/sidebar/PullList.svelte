@@ -127,18 +127,29 @@
   const selectedVisiblePR = $derived.by(() => {
     const sel = pulls.getSelectedPR();
     if (sel === null) return null;
-    return pulls.getPulls().find(
+    const pr = pulls.getPulls().find(
       (p) => (p.repo_owner ?? "") === sel.owner
         && (p.repo_name ?? "") === sel.name
         && p.Number === sel.number,
-    ) ?? null;
+    );
+    if (!pr) return null;
+    // In byRepo mode, a user-collapsed repo group hides the PR row — treat
+    // as not visible so the fallback file list renders instead.
+    if (
+      groupingMode === "byRepo"
+      && collapsedRepos.isCollapsed("pulls", `${sel.owner}/${sel.name}`)
+    ) {
+      return null;
+    }
+    return pr;
   });
 
   const isDiffFocus = $derived(
     _getDetailTab() === "files" && selectedVisiblePR !== null,
   );
 
-  // True when in files tab and selected PR is NOT in filtered list — show fallback file listing.
+  // True when in files tab and selected PR isn't actually rendered in sidebar
+  // (either filtered out of list, or in user-collapsed repo group).
   const needsFallbackFileList = $derived(
     _getDetailTab() === "files" && pulls.getSelectedPR() !== null && selectedVisiblePR === null,
   );

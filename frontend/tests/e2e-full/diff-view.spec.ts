@@ -614,6 +614,30 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row")).toHaveCount(4);
   });
 
+  test("fallback file list renders when selected PR's repo group is collapsed", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // File list renders inline under the PR.
+    const pr1 = page.locator(".pull-item").filter({ hasText: "caching layer" });
+    const inlineFiles = pr1.locator("..").locator(".diff-files");
+    await expect(inlineFiles).toHaveCount(1);
+
+    // Collapse the acme/widgets repo group (containing the selected PR).
+    await page.locator(".repo-header", { hasText: "acme/widgets" }).click();
+    await expect(page.locator(".repo-header", { hasText: "acme/widgets" }))
+      .toHaveAttribute("aria-expanded", "false");
+
+    // PR row hidden, but fallback file list renders outside .list-body.
+    await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
+      .toHaveCount(0);
+    const fallback = page.locator(".pull-list > .diff-files");
+    await expect(fallback).toHaveCount(1);
+    await expect(fallback.locator(".diff-file-row")).toHaveCount(4);
+  });
+
   test("commit list resets expand state when switching PRs", async ({ page }) => {
     // Mock diff for PR 1 and PR 2 (same fixture is fine — we care about expand state).
     await mockDiffApi(page, smallDiff);
@@ -635,9 +659,11 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify([
-          { sha: "abc1234567890123456789012345678901234567", message: "commit one", authored_at: "2026-04-01T00:00:00Z", author_name: "alice" },
-        ]),
+        body: JSON.stringify({
+          commits: [
+            { sha: "abc1234567890123456789012345678901234567", message: "commit one", authored_at: "2026-04-01T00:00:00Z", author_name: "alice" },
+          ],
+        }),
       });
     });
 
@@ -645,16 +671,17 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // Expand commit section under PR 1.
+    // Expand commit section under PR 1 and verify a commit row renders.
     const toggle = page.locator(".commit-section__toggle").first();
     await toggle.click();
     await expect(page.locator(".commit-section__body").first()).toBeVisible();
+    await expect(page.locator(".commit-item").first()).toBeVisible();
 
     // Switch to PR 2.
     await page.goto("/pulls/acme/widgets/2/files");
     await waitForSidebarFilesLoaded(page);
 
-    // Commit section should be collapsed on new PR.
+    // Commit section should be collapsed on new PR (body hidden).
     await expect(page.locator(".commit-section__body")).toHaveCount(0);
   });
 });
