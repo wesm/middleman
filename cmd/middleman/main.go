@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
@@ -204,6 +205,21 @@ func run(configPath string) error {
 	syncer.Start(ctx)
 	defer syncer.Stop()
 	defer stop()
+
+	// srv.Shutdown MUST be the last-registered defer so LIFO runs
+	// it FIRST on return: close the HTTP listener (and SSE hub)
+	// before syncer.Stop blocks for up to 30 s, otherwise the
+	// process keeps serving requests against a syncer that is
+	// already winding down.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 10*time.Second,
+		)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server shutdown", "err", err)
+		}
+	}()
 
 	displayVersion := version
 	if version == "dev" && commit != "unknown" {

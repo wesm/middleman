@@ -241,6 +241,13 @@ func setupTestServerWithRepos(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
 	)
+	// Registered after the DB cleanup so LIFO ordering runs Shutdown
+	// first and lets background goroutines finish before DB close.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
 	return srv, database
 }
 
@@ -2516,6 +2523,26 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 
 	pr, _ := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.Equal("closed", pr.State)
+}
+
+// When MarkPullRequestReadyForReview returns (nil, nil) the handler
+// must return 502 rather than claiming success with no PR payload.
+func TestAPIReadyForReview502OnNilPR(t *testing.T) {
+	require := require.New(t)
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
 }
 
 func TestAPIClosePR422Merged(t *testing.T) {
