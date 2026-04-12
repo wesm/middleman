@@ -10,8 +10,12 @@
 // will then write to the parent repo's .git/config rather than the
 // intended target, silently contaminating the hosting repository.
 //
-// Callers must use [StripInherited] before spawning git and re-append
-// the explicit variables they need on top.
+// [StripAll] is the default choice — it removes every GIT_* variable
+// and is appropriate for production code that injects credentials and
+// for test helpers that initialize throwaway repos. [StripInherited]
+// is the selective alternative that preserves transport/diagnostic
+// variables (GIT_TRACE*, GIT_SSL_*, etc.); use it only when you need
+// inherited transport config to remain visible.
 package gitenv
 
 import "strings"
@@ -45,11 +49,11 @@ func StripInherited(env []string) []string {
 }
 
 // StripAll removes every GIT_* variable and SSH_ASKPASS from env.
-// Use this in test fixtures that build throwaway repos and want
-// full isolation from the host environment. Unlike [StripInherited],
-// it also removes transport/diagnostic variables (GIT_SSL_*,
-// GIT_TRACE*, GIT_DEFAULT_HASH, etc.) that could change the shape
-// of a freshly initialized repo.
+// This is the recommended default for both production code (where an
+// inherited GIT_SSL_NO_VERIFY or GIT_PROXY_COMMAND could leak
+// credentials injected via GIT_CONFIG_*) and test fixtures that
+// build throwaway repos (where GIT_DEFAULT_HASH could create SHA-256
+// repos instead of the expected SHA-1 layout).
 func StripAll(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, e := range env {

@@ -51,7 +51,7 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 }
 
 func filteredGitTestEnv() []string {
-	return append(gitenv.StripInherited(os.Environ()),
+	return append(gitenv.StripAll(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_SYSTEM="+os.DevNull,
 	)
@@ -223,7 +223,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", clonePath,
 		"config", "--get-all", "remote.origin.fetch")
-	cmd.Env = append(gitenv.StripInherited(os.Environ()),
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 	out, err := cmd.Output()
 	if err != nil {

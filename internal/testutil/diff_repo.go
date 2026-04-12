@@ -182,7 +182,7 @@ func git(dir string, args ...string) error {
 	// GIT_WORK_TREE, and friends — which would silently override
 	// cmd.Dir and cause `git config user.email` to write to the
 	// hosting repo's .git/config instead of the fixture workrepo.
-	cmd.Env = append(gitenv.StripInherited(os.Environ()),
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_AUTHOR_DATE=2026-03-28T12:00:00Z",
 		"GIT_COMMITTER_DATE=2026-03-28T12:00:00Z",
@@ -199,7 +199,7 @@ func git(dir string, args ...string) error {
 func revParse(dir, ref string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
-	cmd.Env = gitenv.StripInherited(os.Environ())
+	cmd.Env = gitenv.StripAll(os.Environ())
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

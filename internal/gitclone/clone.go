@@ -173,7 +173,7 @@ func (m *Manager) git(
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(gitenv.StripInherited(os.Environ()),
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
