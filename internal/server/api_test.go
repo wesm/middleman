@@ -2778,6 +2778,7 @@ func TestAPIGetCommits(t *testing.T) {
 	assert.Len(*resp.JSON200.Commits, 5)
 	assert.Equal(commitSHAs[0], (*resp.JSON200.Commits)[0].Sha)
 	assert.Equal("commit 5", (*resp.JSON200.Commits)[0].Message)
+	assert.Equal(time.UTC, (*resp.JSON200.Commits)[0].AuthoredAt.Location())
 }
 
 func TestAPIGetCommits_NotFound(t *testing.T) {
