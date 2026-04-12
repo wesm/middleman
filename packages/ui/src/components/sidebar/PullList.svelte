@@ -2,6 +2,7 @@
   import type { DiffFile } from "../../api/types.js";
   import { getStores, getNavigate, getSidebar, getActions, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
+  import CommitListSection from "../diff/CommitListSection.svelte";
   import PullItem from "./PullItem.svelte";
 
   const { pulls, sync, diff, grouping, collapsedRepos, settings } = getStores();
@@ -138,6 +139,31 @@
     _getDetailTab() === "files" && selectedVisiblePR !== null,
   );
 
+  // True when in files tab and selected PR is NOT in filtered list — show fallback file listing.
+  const needsFallbackFileList = $derived(
+    _getDetailTab() === "files" && pulls.getSelectedPR() !== null && selectedVisiblePR === null,
+  );
+
+  // Per-diff file filter input (shown when 10+ files in diff).
+  let fileFilterText = $state("");
+  // Reset filter whenever selected PR changes so stale filter text doesn't
+  // silently hide files in the next PR.
+  $effect(() => {
+    pulls.getSelectedPR();
+    fileFilterText = "";
+  });
+  const showFileFilter = $derived((diff.getFileList()?.files.length ?? 0) >= 10);
+  const filteredDiffFiles = $derived.by(() => {
+    const list = diff.getFileList();
+    if (!list) return null;
+    // Only apply filter when the filter UI is visible to avoid silent
+    // hiding when the next PR has fewer files.
+    if (!showFileFilter) return list.files;
+    const q = fileFilterText.trim().toLowerCase();
+    if (!q) return list.files;
+    return list.files.filter((f) => f.path.toLowerCase().includes(q));
+  });
+
   const isSelectedActiveWorktree = $derived.by(() => {
     const key = activeWorktreeKey;
     const pr = selectedVisiblePR;
@@ -147,11 +173,22 @@
 </script>
 
 {#snippet diffFilesInline()}
+  <CommitListSection />
   <div class="diff-files">
     {#if diff.isFileListLoading() && !diff.getFileList()}
       <div class="diff-files-state diff-files-state--loading">Loading files</div>
-    {:else if diff.getFileList()}
-      {@const grouped = groupByDir(diff.getFileList()!.files)}
+    {:else if filteredDiffFiles}
+      {#if showFileFilter}
+        <div class="diff-files-filter">
+          <input
+            type="text"
+            class="diff-files-filter__input"
+            placeholder="Filter files..."
+            bind:value={fileFilterText}
+          />
+        </div>
+      {/if}
+      {@const grouped = groupByDir(filteredDiffFiles)}
       {#each grouped as group, gi (gi)}
         {#if group.dir}
           <div class="diff-dir-header">{group.dir}/</div>
@@ -349,6 +386,9 @@
       {/if}
     {/if}
   </div>
+  {#if needsFallbackFileList}
+    {@render diffFilesInline()}
+  {/if}
   <div class="sidebar-footer">
     {#if !isEmbedded()}
       <button class="add-repo-link" onclick={() => navigate("/settings")}>
@@ -665,6 +705,25 @@
     padding: 4px 0;
     max-height: 40vh;
     overflow-y: auto;
+  }
+
+  .diff-files-filter {
+    padding: 4px 10px 6px 24px;
+  }
+
+  .diff-files-filter__input {
+    width: 100%;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-muted);
+    background: var(--bg-inset);
+    color: var(--text-primary);
+  }
+
+  .diff-files-filter__input:focus {
+    border-color: var(--accent-blue);
+    outline: none;
   }
 
   .diff-files-state {

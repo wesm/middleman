@@ -483,6 +483,180 @@ test.describe("diff view", () => {
     await expect(collapsed).toHaveCount(1);
     await expect(collapsed).toContainText("unchanged lines");
   });
+
+  test("fallback file list renders when selected PR is filtered out of sidebar", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // PR 1 "Add widget caching layer" is selected and its file list renders
+    // inline under the pull-item.
+    const pr1 = page.locator(".pull-item").filter({ hasText: "caching layer" });
+    await expect(pr1).toHaveCount(1);
+    const inlineFiles = pr1.locator("..").locator(".diff-files");
+    await expect(inlineFiles).toHaveCount(1);
+
+    // Filter the sidebar to exclude PR 1 by searching for a different PR.
+    await page.locator(".search-input").fill("race");
+    await expect(page.locator(".count-badge"))
+      .toHaveText(/^1 PRs?$/, { timeout: 5_000 });
+    await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
+      .toHaveCount(0);
+
+    // Fallback file list renders outside .list-body (selected PR is gone).
+    const fallback = page.locator(".pull-list > .diff-files");
+    await expect(fallback).toHaveCount(1);
+    await expect(fallback.locator(".diff-file-row")).toHaveCount(4);
+  });
+
+  test("inline file filter appears for large diffs and narrows list", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // Filter input is visible because diff has 50 files (>= 10 threshold).
+    const filterInput = page.locator(".diff-files-filter__input").first();
+    await expect(filterInput).toBeVisible();
+    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+
+    // Narrow the list — "file_1" matches file_1, file_10..file_19 = 11 files.
+    await filterInput.fill("file_1");
+    await expect(page.locator(".diff-file-row")).toHaveCount(11);
+
+    // Clearing filter restores full list.
+    await filterInput.fill("");
+    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+  });
+
+  test("inline file filter is hidden for small diffs", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // smallDiff has 4 files; filter input should not be rendered.
+    await expect(page.locator(".diff-files-filter__input")).toHaveCount(0);
+  });
+
+  test("file filter resets when switching PRs (large -> large)", async ({ page }) => {
+    // PR 1: large diff with filter shown.
+    await mockDiffApi(page, largeDiff);
+    // PR 2: also large so filter UI stays visible after switch.
+    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(largeDiff)),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(largeDiff),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // Type into filter on PR 1.
+    const filterInput = page.locator(".diff-files-filter__input").first();
+    await filterInput.fill("file_1");
+    await expect(page.locator(".diff-file-row")).toHaveCount(11);
+
+    // Switch to PR 2.
+    await page.goto("/pulls/acme/widgets/2/files");
+    await waitForSidebarFilesLoaded(page);
+
+    // Filter input is empty and full list shows.
+    const filterOnPR2 = page.locator(".diff-files-filter__input").first();
+    await expect(filterOnPR2).toHaveValue("");
+    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+  });
+
+  test("file filter doesn't silently hide files when switching to small-diff PR", async ({ page }) => {
+    // PR 1: large diff with filter shown.
+    await mockDiffApi(page, largeDiff);
+    // PR 2: small diff (filter input hidden).
+    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(smallDiff)),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(smallDiff),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // Type into filter on PR 1.
+    await page.locator(".diff-files-filter__input").first().fill("nomatch");
+    await expect(page.locator(".diff-file-row")).toHaveCount(0);
+
+    // Switch to PR 2 (small diff — filter input hidden).
+    await page.goto("/pulls/acme/widgets/2/files");
+    await waitForSidebarFilesLoaded(page);
+
+    // Filter input is hidden and all 4 files show (stale query doesn't apply).
+    await expect(page.locator(".diff-files-filter__input")).toHaveCount(0);
+    await expect(page.locator(".diff-file-row")).toHaveCount(4);
+  });
+
+  test("commit list resets expand state when switching PRs", async ({ page }) => {
+    // Mock diff for PR 1 and PR 2 (same fixture is fine — we care about expand state).
+    await mockDiffApi(page, smallDiff);
+    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(smallDiff)),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(smallDiff),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/*/commits", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { sha: "abc1234567890123456789012345678901234567", message: "commit one", authored_at: "2026-04-01T00:00:00Z", author_name: "alice" },
+        ]),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    // Expand commit section under PR 1.
+    const toggle = page.locator(".commit-section__toggle").first();
+    await toggle.click();
+    await expect(page.locator(".commit-section__body").first()).toBeVisible();
+
+    // Switch to PR 2.
+    await page.goto("/pulls/acme/widgets/2/files");
+    await waitForSidebarFilesLoaded(page);
+
+    // Commit section should be collapsed on new PR.
+    await expect(page.locator(".commit-section__body")).toHaveCount(0);
+  });
 });
 
 // --- Perf tests ---

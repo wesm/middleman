@@ -96,9 +96,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let commitsError = $state<string | null>(null);
   let scope = $state<DiffScope>({ kind: "head" });
 
-  let currentOwner = "";
-  let currentName = "";
-  let currentNumber = 0;
+  let currentOwner = $state("");
+  let currentName = $state("");
+  let currentNumber = $state(0);
+
+  function getCurrentPR(): { owner: string; name: string; number: number } | null {
+    if (!currentOwner) return null;
+    return { owner: currentOwner, name: currentName, number: currentNumber };
+  }
 
   // --- reads ---
 
@@ -523,6 +528,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   return {
     getDiff,
+    getCurrentPR,
     isDiffLoading,
     getDiffError,
     getFileList,
