@@ -43,33 +43,33 @@ func testBudget(limit int) map[string]*SyncBudget {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	budget                 *SyncBudget // optional: simulates transport counting
-	openPRs                []*gh.PullRequest
-	openIssues             []*gh.Issue
-	listOpenPRsErr         error
-	listOpenIssuesErr      error
-	singlePR               *gh.PullRequest
-	getPullRequestFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn             func(context.Context, string, string, int) (*gh.Issue, error)
-	getUserFn              func(context.Context, string) (*gh.User, error)
-	listOpenPRsFn          func(context.Context, string, string) ([]*gh.PullRequest, error)
-	listPullRequestsPageFn func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	listIssuesPageFn       func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	comments               []*gh.IssueComment
-	reviews                []*gh.PullRequestReview
-	commits                []*gh.RepositoryCommit
-	forcePushEvents        []ForcePushEvent
-	forcePushEventsErr     error
-	ciStatus               *gh.CombinedStatus
-	checkRuns              []*gh.CheckRun
-	workflowRuns           []*gh.WorkflowRun
-	approveWorkflowRunFn   func(context.Context, string, string, int64) error
-	listOpenPRsCalled          bool
-	getUserCalls               atomic.Int32
-	getCombinedCalls           atomic.Int32
-	invalidateCalls            atomic.Int32
-	listIssueCommentsCalled    atomic.Int32
-	listIssueCommentsErr       error
+	budget                  *SyncBudget // optional: simulates transport counting
+	openPRs                 []*gh.PullRequest
+	openIssues              []*gh.Issue
+	listOpenPRsErr          error
+	listOpenIssuesErr       error
+	singlePR                *gh.PullRequest
+	getPullRequestFn        func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn              func(context.Context, string, string, int) (*gh.Issue, error)
+	getUserFn               func(context.Context, string) (*gh.User, error)
+	listOpenPRsFn           func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listPullRequestsPageFn  func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	listIssuesPageFn        func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
+	comments                []*gh.IssueComment
+	reviews                 []*gh.PullRequestReview
+	commits                 []*gh.RepositoryCommit
+	forcePushEvents         []ForcePushEvent
+	forcePushEventsErr      error
+	ciStatus                *gh.CombinedStatus
+	checkRuns               []*gh.CheckRun
+	workflowRuns            []*gh.WorkflowRun
+	approveWorkflowRunFn    func(context.Context, string, string, int64) error
+	listOpenPRsCalled       bool
+	getUserCalls            atomic.Int32
+	getCombinedCalls        atomic.Int32
+	invalidateCalls         atomic.Int32
+	listIssueCommentsCalled atomic.Int32
+	listIssueCommentsErr    error
 }
 
 func (m *mockClient) trackCall() {
@@ -3932,12 +3932,13 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssues(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	mock := &mockClient{}
@@ -3995,12 +3996,12 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
 		repoID, result,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Verify issue in DB.
 	issue, err := d.GetIssue(ctx, "owner", "repo", 10)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
+	require.NoError(err)
+	require.NotNil(issue)
 	assert.Equal("Bug report", issue.Title)
 	assert.Equal("alice", issue.Author)
 	assert.Equal("open", issue.State)
@@ -4009,7 +4010,7 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 
 	// Verify comment event.
 	events, err := d.ListIssueEvents(ctx, issue.ID)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Len(events, 1)
 	assert.Equal("I see this too", events[0].Body)
 
@@ -4251,12 +4252,13 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	commentTime := gh.Timestamp{Time: now}
@@ -4311,29 +4313,30 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
 		repoID, result,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// REST fallback should have been called
 	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
 
 	// Verify the REST comment landed
 	issue, err := d.GetIssue(ctx, "owner", "repo", 20)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
+	require.NoError(err)
+	require.NotNil(issue)
 
 	events, err := d.ListIssueEvents(ctx, issue.ID)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Len(events, 1)
 	assert.Equal("REST comment", events[0].Body)
 }
 
 func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -4350,7 +4353,7 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	closedAt := gh.Timestamp{Time: now}
 	closedState := "closed"
@@ -4387,23 +4390,24 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
 		repoID, result,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Issue should now be closed
 	issue, err := d.GetIssue(ctx, "owner", "repo", 30)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
+	require.NoError(err)
+	require.NotNil(issue)
 	assert.Equal("closed", issue.State)
 	assert.NotNil(issue.ClosedAt)
 }
 
 func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	fetchedAt := now.Add(-time.Hour)
@@ -4423,7 +4427,7 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 		UpdatedAt:       now,
 		LastActivityAt:  now,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	commentTime := gh.Timestamp{Time: now}
 	mock := &mockClient{}
@@ -4463,25 +4467,26 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
 		repoID, result,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// DetailFetchedAt is cleared before REST fallback, then re-set
 	// after successful refreshIssueTimeline. CommentCount is updated
 	// by the REST fallback (0 comments returned by the mock).
 	issue, err := d.GetIssue(ctx, "owner", "repo", 40)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
+	require.NoError(err)
+	require.NotNil(issue)
 	assert.NotNil(issue.DetailFetchedAt)
 	assert.Equal(0, issue.CommentCount)
 }
 
 func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	fetchedAt := now.Add(-time.Hour)
@@ -4501,7 +4506,7 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 		UpdatedAt:       now,
 		LastActivityAt:  now,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	commentTime := gh.Timestamp{Time: now}
 	mock := &mockClient{
@@ -4544,12 +4549,12 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 		repoID, result,
 	)
 	// Partial failure expected.
-	require.Error(t, err)
+	require.Error(err)
 
 	// DetailFetchedAt must be nil so the detail drain re-queues this issue.
 	issue, err := d.GetIssue(ctx, "owner", "repo", 45)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
+	require.NoError(err)
+	require.NotNil(issue)
 	assert.Nil(issue.DetailFetchedAt)
 }
 
@@ -4621,6 +4626,7 @@ func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
 // NormalizeIssue → UpsertIssue. Validates that struct tags, adapter
 // mapping, and the full data flow work together.
 func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 	d := openTestDB(t)
@@ -4696,8 +4702,8 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 
 	// Verify issue persisted with GraphQL data.
 	issue, err := d.GetIssue(ctx, "owner", "repo", 70)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
+	require.NoError(err)
+	require.NotNil(issue)
 	assert.Equal("Full flow issue", issue.Title)
 	assert.Equal("heidi", issue.Author)
 	assert.Equal("open", issue.State)
@@ -4706,13 +4712,13 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 	assert.NotNil(issue.DetailFetchedAt)
 
 	// Labels persisted from GraphQL.
-	require.Len(t, issue.Labels, 1)
+	require.Len(issue.Labels, 1)
 	assert.Equal("bug", issue.Labels[0].Name)
 
 	// Comment events persisted from GraphQL bulk (no REST fallback).
 	events, err := d.ListIssueEvents(ctx, issue.ID)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
+	require.NoError(err)
+	require.Len(events, 1)
 	assert.Equal("Full flow comment", events[0].Body)
 	assert.Equal("commenter", events[0].Author)
 

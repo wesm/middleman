@@ -2499,6 +2499,7 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 // path itself (GraphQL fetch → normalize → DB upsert) is tested in
 // internal/github/sync_test.go; this test covers the DB → API layer.
 func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -2508,7 +2509,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 
 	// Seed DB directly — same shape as GraphQL sync output.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issueID, err := database.UpsertIssue(ctx, &db.Issue{
@@ -2525,15 +2526,15 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Add a label
-	require.NoError(t, database.ReplaceIssueLabels(ctx, repoID, issueID, []db.Label{
+	require.NoError(database.ReplaceIssueLabels(ctx, repoID, issueID, []db.Label{
 		{PlatformID: 1, Name: "bug", Color: "d73a4a", UpdatedAt: now},
 	}))
 
 	// Add a comment event
-	require.NoError(t, database.UpsertIssueEvents(ctx, []db.IssueEvent{
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
 		{
 			IssueID:   issueID,
 			EventType: "issue_comment",
@@ -2546,27 +2547,27 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 
 	// Verify via ListIssues API
 	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, resp.StatusCode())
-	require.NotNil(t, resp.JSON200)
-	require.Len(t, *resp.JSON200, 1)
+	require.NoError(err)
+	require.Equal(200, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
 
 	apiIssue := (*resp.JSON200)[0]
 	assert.Equal(int64(60), apiIssue.Number)
 	assert.Equal("GraphQL synced issue", apiIssue.Title)
 	assert.Equal("testuser", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
-	require.NotNil(t, apiIssue.Labels)
-	require.Len(t, *apiIssue.Labels, 1)
+	require.NotNil(apiIssue.Labels)
+	require.Len(*apiIssue.Labels, 1)
 	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
 
 	// Verify via GetIssue API
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 60,
 	)
-	require.NoError(t, err)
-	require.Equal(t, 200, detailResp.StatusCode())
-	require.NotNil(t, detailResp.JSON200)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced via GraphQL", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
 }
@@ -2577,6 +2578,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 // the HTTP API. Exercises: GraphQL HTTP → adapter → NormalizeIssue →
 // UpsertIssue → HTTP API handler → JSON response.
 func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -2652,26 +2654,26 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, listResp.StatusCode())
-	require.NotNil(t, listResp.JSON200)
-	require.Len(t, *listResp.JSON200, 1)
+	require.NoError(err)
+	require.Equal(200, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 1)
 
 	apiIssue := (*listResp.JSON200)[0]
 	assert.Equal(int64(80), apiIssue.Number)
 	assert.Equal("Full stack GraphQL issue", apiIssue.Title)
 	assert.Equal("ivy", apiIssue.Author)
 	assert.Equal("open", apiIssue.State)
-	require.NotNil(t, apiIssue.Labels)
-	require.Len(t, *apiIssue.Labels, 1)
+	require.NotNil(apiIssue.Labels)
+	require.Len(*apiIssue.Labels, 1)
 	assert.Equal("bug", (*apiIssue.Labels)[0].Name)
 
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 80,
 	)
-	require.NoError(t, err)
-	require.Equal(t, 200, detailResp.StatusCode())
-	require.NotNil(t, detailResp.JSON200)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
 	assert.Equal("Synced through the HTTP API", detailResp.JSON200.Issue.Body)
 	assert.Equal(int64(1), detailResp.JSON200.Issue.CommentCount)
 }
@@ -2684,6 +2686,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 // GraphQL's TotalCount, not the stale existing.CommentCount.
 // Regression test for the "preserve existing.CommentCount" overwrite.
 func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
 
@@ -2749,7 +2752,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// so UpsertIssue's value is what survives. With the bug, it's 5.
 	// Without the bug, it's TotalCount=42.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
-	require.NoError(t, err)
+	require.NoError(err)
 	stale := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
@@ -2764,7 +2767,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 		UpdatedAt:      stale,
 		LastActivityAt: stale,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
 	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
@@ -2779,9 +2782,9 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 90,
 	)
-	require.NoError(t, err)
-	require.Equal(t, 200, detailResp.StatusCode())
-	require.NotNil(t, detailResp.JSON200)
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
 	assert.Equal(int64(42), detailResp.JSON200.Issue.CommentCount)
 }
 
