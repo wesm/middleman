@@ -242,6 +242,7 @@ type StackMemberWithPR struct {
 	CIStatus       string
 	ReviewDecision string
 	IsDraft        bool
+	BaseBranch     string
 }
 
 // ListActivityOpts holds filters and pagination for the activity feed.

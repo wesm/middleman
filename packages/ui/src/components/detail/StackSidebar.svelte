@@ -22,6 +22,7 @@
     review_decision: string;
     position: number;
     is_draft: boolean;
+    base_branch: string;
     blocked_by: number | null;
   }
 
@@ -102,7 +103,11 @@
   }
 
   function isBaseReady(member: StackMember, idx: number): boolean {
-    return idx === 0 && member.state === "open" && member.ci_status === "success" && member.review_decision === "APPROVED";
+    return idx === 0
+      && member.state === "open"
+      && !member.is_draft
+      && member.ci_status === "success"
+      && member.review_decision === "APPROVED";
   }
 </script>
 
@@ -148,7 +153,7 @@
               </div>
             {/if}
             {#if isBaseReady(member, i)}
-              <div class="ready-label">Ready to merge &rarr; main</div>
+              <div class="ready-label">Ready to merge &rarr; {member.base_branch || "base"}</div>
             {/if}
             {#if member.blocked_by != null}
               <div class="blocked-label">blocked by #{member.blocked_by}</div>

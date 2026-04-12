@@ -136,6 +136,7 @@ type stackMemberResponse struct {
 	ReviewDecision string `json:"review_decision"`
 	Position       int    `json:"position"`
 	IsDraft        bool   `json:"is_draft"`
+	BaseBranch     string `json:"base_branch"`
 	BlockedBy      *int   `json:"blocked_by"`
 }
 

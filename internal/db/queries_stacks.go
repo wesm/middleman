@@ -165,7 +165,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	}
 	memberQuery := `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
-		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft
+		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft, p.base_branch
 		FROM middleman_stack_members sm
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id IN (` + strings.Join(placeholders, ",") + `)
@@ -182,7 +182,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		var m StackMemberWithPR
 		if err := mRows.Scan(
 			&m.StackID, &m.MergeRequestID, &m.Position,
-			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision, &m.IsDraft,
+			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision, &m.IsDraft, &m.BaseBranch,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
@@ -240,7 +240,7 @@ func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) 
 
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
-		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft
+		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft, p.base_branch
 		FROM middleman_stack_members sm
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id = ?
@@ -256,7 +256,7 @@ func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) 
 		var m StackMemberWithPR
 		if err := rows.Scan(
 			&m.StackID, &m.MergeRequestID, &m.Position,
-			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision, &m.IsDraft,
+			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision, &m.IsDraft, &m.BaseBranch,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
