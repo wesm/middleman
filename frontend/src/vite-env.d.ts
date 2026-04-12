@@ -86,6 +86,8 @@ interface WorkspaceHost {
     | "connecting"
     | "disconnected"
     | "error";
+  transport?: "ssh" | "local";
+  platform?: string;
   projects: WorkspaceProject[];
   sessions: WorkspaceSession[];
   resources: WorkspaceResources | null;
@@ -98,6 +100,7 @@ interface WorkspaceProject {
   repoKind: string;
   defaultBranch: string;
   platformRepo: string | null;
+  platformURL?: string;
   worktrees: WorkspaceWorktree[];
 }
 

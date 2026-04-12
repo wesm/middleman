@@ -69,6 +69,19 @@ export default tseslint.config(
       globals: {
         ...globals.browser,
         ...globals.node,
+        // Workspace types declared in workspace-types.d.ts
+        WorkspaceHost: "readonly",
+        WorkspaceProject: "readonly",
+        WorkspaceWorktree: "readonly",
+        WorkspaceLinkedPR: "readonly",
+        WorkspaceActivity: "readonly",
+        WorkspaceDiff: "readonly",
+        WorkspaceSession: "readonly",
+        WorkspaceResources: "readonly",
+        WorkspaceData: "readonly",
+        CommandResult: "readonly",
+        WorkspaceCommandHandler: "readonly",
+        WorkspaceDetailContext: "readonly",
       },
       parserOptions: {
         parser: tseslint.parser,
