@@ -181,6 +181,10 @@ type Instance struct {
 	cancelSync context.CancelFunc
 	stopMu     sync.Mutex
 	closed     bool
+	// embedNext wraps the caller's OnSyncCompleted for the stacks hook.
+	// Held on Instance so StartSync can register the hook with the
+	// cancelable sync context instead of context.Background().
+	embedNext func([]ghclient.RepoSyncResult)
 }
 
 // New creates a middleman Instance from the given options.
@@ -362,9 +366,9 @@ func New(opts Options) (*Instance, error) {
 			cb(out)
 		}
 	}
-	// New() has no ctx — use context.Background(). The syncer manages its
-	// own lifecycle; the hook won't fire after syncer.Stop().
-	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(context.Background(), database, embedNext))
+	// Defer SyncCompletedHook registration to StartSync so the sync's
+	// cancelable context is available — stack detection can then be
+	// aborted during Instance shutdown.
 
 	srv := server.New(
 		database, syncer, frontend,
@@ -376,9 +380,10 @@ func New(opts Options) (*Instance, error) {
 	)
 
 	return &Instance{
-		db:     database,
-		server: srv,
-		syncer: syncer,
+		db:        database,
+		server:    srv,
+		syncer:    syncer,
+		embedNext: embedNext,
 	}, nil
 }
 
@@ -391,6 +396,9 @@ func (i *Instance) Handler() http.Handler {
 // The context is used for cancellation during Close.
 func (i *Instance) StartSync(ctx context.Context) {
 	ctx, i.cancelSync = context.WithCancel(ctx)
+	// Install the stacks hook with the cancelable sync context so stack
+	// detection can be aborted on Close/StopSync.
+	i.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, i.db, i.embedNext))
 	i.syncer.Start(ctx)
 }
 
