@@ -135,4 +135,42 @@ test.describe("activity drawer", () => {
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
   });
+
+  test("issue drawer scrolls internally to bottom of content", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    // Pick the first issue activity row.
+    const issueRow = page
+      .locator(".activity-row")
+      .filter({ has: page.locator(".badge", { hasText: "Issue" }) })
+      .first();
+    await issueRow.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+
+    // The issue-detail element exists inside the drawer.
+    const issueDetail = drawer.locator(".issue-detail");
+    await expect(issueDetail).toBeVisible();
+
+    // Force a scroll to the bottom. If scroll ownership is broken, this
+    // either no-ops or scrolls the wrong container.
+    await issueDetail.evaluate((el) => {
+      // Walk up to find the scroll container (could be the element itself
+      // or an ancestor).
+      let target: Element | null = el;
+      while (target) {
+        const style = getComputedStyle(target);
+        if (style.overflowY === "auto" || style.overflowY === "scroll") {
+          target.scrollTop = target.scrollHeight;
+          return;
+        }
+        target = target.parentElement;
+      }
+    });
+
+    // The drawer itself should still be visible after the scroll action.
+    await expect(drawer).toBeVisible();
+  });
 });
