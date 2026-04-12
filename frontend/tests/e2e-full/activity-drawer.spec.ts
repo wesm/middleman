@@ -452,46 +452,88 @@ test.describe("activity drawer", () => {
   });
 
   test("kanban drawer Close action refreshes board with open filter", async ({ page }) => {
-    // Fully synthetic /pulls response so the test does not depend on
-    // the shared backend's mutable state. Other parallel tests can
-    // touch widgets#1 freely without affecting this test.
+    // Fully synthetic /pulls?state=open response so the test does not
+    // depend on the shared backend's mutable state. We mock ONLY the
+    // open-filtered list endpoint — the exact path the kanban refreshes
+    // through after the close action — and let every other /pulls
+    // request fall through to the real backend. That way the close
+    // refresh is the only thing that can change what the board shows.
     let pullsContainsWidgets1 = true;
-    const buildPullsResponse = (): unknown[] => {
-      if (!pullsContainsWidgets1) return [];
-      return [{
-        ID: 1001,
-        Number: 1,
-        Title: "Add widget caching layer",
-        Body: "",
-        Author: "alice",
-        AuthorDisplayName: "alice",
-        State: "open",
-        KanbanStatus: "new",
-        IsDraft: false,
-        Additions: 240,
-        Deletions: 30,
-        CreatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-        UpdatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-        URL: "https://github.com/acme/widgets/pull/1",
-        CIStatus: "",
-        ReviewDecision: "",
-        MergeableState: "",
-        Starred: false,
-        CIChecksJSON: "",
-        labels: [],
-        repo_owner: "acme",
-        repo_name: "widgets",
-        worktree_links: [],
-      }];
+
+    const widgets1Card = {
+      ID: 1001,
+      Number: 1,
+      Title: "Add widget caching layer",
+      Body: "",
+      Author: "alice",
+      AuthorDisplayName: "alice",
+      State: "open",
+      KanbanStatus: "new",
+      IsDraft: false,
+      Additions: 240,
+      Deletions: 30,
+      CreatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      UpdatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      URL: "https://github.com/acme/widgets/pull/1",
+      CIStatus: "",
+      ReviewDecision: "",
+      MergeableState: "",
+      Starred: false,
+      CIChecksJSON: "",
+      labels: [],
+      repo_owner: "acme",
+      repo_name: "widgets",
+      worktree_links: [],
     };
 
-    await page.route("**/api/v1/pulls*", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(buildPullsResponse()),
-      });
-    });
+    // Always-present card. Lets the test assert that the close
+    // refresh removes only widgets#1, not unrelated open PRs.
+    const otherCard = {
+      ID: 1002,
+      Number: 2,
+      Title: "Refactor widget pipeline",
+      Body: "",
+      Author: "bob",
+      AuthorDisplayName: "bob",
+      State: "open",
+      KanbanStatus: "reviewing",
+      IsDraft: false,
+      Additions: 80,
+      Deletions: 12,
+      CreatedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
+      UpdatedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
+      URL: "https://github.com/acme/widgets/pull/2",
+      CIStatus: "",
+      ReviewDecision: "",
+      MergeableState: "",
+      Starred: false,
+      CIChecksJSON: "",
+      labels: [],
+      repo_owner: "acme",
+      repo_name: "widgets",
+      worktree_links: [],
+    };
+
+    const buildOpenPullsResponse = (): unknown[] => {
+      if (!pullsContainsWidgets1) return [otherCard];
+      return [widgets1Card, otherCard];
+    };
+
+    // Function predicate: intercept only the top-level
+    // /api/v1/pulls?state=open list. Other /pulls* requests
+    // (per-PR detail, files, diff) fall through to the real backend.
+    await page.route(
+      (url) =>
+        url.pathname.endsWith("/api/v1/pulls")
+        && url.searchParams.get("state") === "open",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(buildOpenPullsResponse()),
+        });
+      },
+    );
 
     // Mock the state-change endpoint and flip the synthetic list on
     // success. The detail load goes through the real backend (which
@@ -546,10 +588,15 @@ test.describe("activity drawer", () => {
     await closeBtn.click();
 
     // After the close succeeds, widgets#1 disappears from the kanban
-    // board because the refetched synthetic /pulls list omits it.
+    // board because the refetched synthetic /pulls?state=open list
+    // omits it. Other open cards remain visible — proves the refresh
+    // dropped only widgets#1, not unrelated entries.
     await expect(
       page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }),
     ).toHaveCount(0, { timeout: 10_000 });
+    await expect(
+      page.locator(".kanban-card").filter({ hasText: "Refactor widget pipeline" }),
+    ).toBeVisible();
 
     // At least one /api/v1/pulls?state=open request must have
     // happened after the close was clicked. This proves the refresh
@@ -605,5 +652,27 @@ test.describe("PR list tabs", () => {
     ).click();
     await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
     await expect(page.locator(".detail-area .detail-tabs")).toHaveCount(1);
+  });
+
+  test("direct load of /pulls/:owner/:name/:number/files renders the diff with a single tab bar", async ({ page }) => {
+    // Regression guard for initialization-only bugs that affect deep
+    // links to the /files sub-route. Going there directly must render
+    // the diff and keep exactly one outer PRListView tab bar — the
+    // router-click test above does not exercise this path.
+    await mockDiffForAllPRs(page, tinyDiff);
+
+    await page.goto("/pulls/acme/widgets/1/files");
+
+    await page.locator(".detail-area .detail-tabs").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(page.locator(".detail-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".diff-view")).toBeVisible();
+    await expect(
+      page.locator(
+        ".detail-area .detail-tabs .detail-tab--active",
+        { hasText: "Files changed" },
+      ),
+    ).toHaveCount(1);
   });
 });

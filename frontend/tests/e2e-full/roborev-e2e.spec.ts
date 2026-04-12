@@ -380,6 +380,12 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
+      // Capture the unfiltered baseline before applying the filter.
+      // The reset must restore exactly this count, not just "more
+      // rows than the filtered subset" — a partial reload would also
+      // satisfy the looser condition.
+      const baselineCount = await page.locator(".job-row").count();
+
       // Apply a filter and wait for it to take effect.
       await page.locator(".status-select").selectOption("failed");
       await expect(
@@ -389,12 +395,14 @@ test.describe.serial("Roborev", () => {
         page.locator(".status-badge:not(.status-failed)"),
       ).toHaveCount(0);
       const filteredCount = await page.locator(".job-row").count();
+      expect(filteredCount).toBeLessThan(baselineCount);
 
-      // Reset the filter and wait for the unfiltered list to reload.
+      // Reset the filter and wait for the unfiltered list to reload
+      // back to the baseline count exactly.
       await page.locator(".status-select").selectOption("");
       await expect(async () => {
         const resetCount = await page.locator(".job-row").count();
-        expect(resetCount).toBeGreaterThan(filteredCount);
+        expect(resetCount).toBe(baselineCount);
       }).toPass({ timeout: 5_000 });
     });
   });
