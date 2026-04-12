@@ -22,7 +22,11 @@ Navigation loses the user's scroll position in the activity feed, closes the dra
 
 ### Why full width instead of matching the PR detail pane
 
-Earlier iteration proposed matching the PR detail pane width (`calc(100% - 340px)`). Full width is simpler (no width math, no narrow-container override) and gives the diff maximum horizontal room. Conversation content is unaffected visually because `.pull-detail` already has `max-width: 800px` — it just centers in a wider container. The backdrop element stays (full-cover click-to-close blocker) but has no visible area anymore.
+Earlier iteration proposed matching the PR detail pane width (`calc(100% - 340px)`). Full width is simpler (no width math, no narrow-container override) and gives the diff maximum horizontal room.
+
+Conversation content keeps its `max-width: 800px`, but needs an explicit horizontal centering rule (`margin-inline: auto`) — without it, the column hugs the left edge inside a wide drawer, leaving a large blank right region. The current `.pull-detail` styles do not center.
+
+**Outside-click dismissal is removed as a side effect.** Both current drawers close on exposed-backdrop click (`DetailDrawer.svelte` line 15, `KanbanBoard.svelte` line 104). At 100% width there is no exposed backdrop area, so this affordance disappears. Close affordances that remain: the drawer header's close button and the `Escape` key. Both are already wired up. This is an acceptable tradeoff because the user explicitly asked for full-width; preserving outside-click would require leaving a visible gutter that compromises the diff experience.
 
 ### Why inside PullDetail rather than at the drawer level
 
@@ -102,7 +106,10 @@ The `!hideTabs && activeTab === "files"` guard means PRListView (which passes `h
 **New CSS:**
 
 - `.pull-detail-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }` — new scroll container boundary.
-- `.pull-detail` keeps existing `max-width: 800px`, `padding: 20px 24px`, `display: flex; flex-direction: column; gap: 16px`, and gains `overflow-y: auto; flex: 1; min-height: 0`. Scroll now lives here instead of in the drawer body. This is required so that when switching to the files tab, `DiffView`'s sticky toolbar works correctly.
+- `.pull-detail` keeps existing `max-width: 800px`, `padding: 20px 24px`, `display: flex; flex-direction: column; gap: 16px`, and gains:
+  - `overflow-y: auto` and `flex: 1; min-height: 0` — scroll now lives here instead of in the drawer body, required so `DiffView`'s sticky toolbar works when switching tabs.
+  - `width: 100%` and `margin-inline: auto` — without these, the 800px max-width cap leaves conversation content hugging the left edge of the wide full-width drawer. These center the column and make it span the full drawer width on narrow viewports.
+  - `box-sizing: border-box` if not already applied globally — so padding is included in the 800px cap.
 
 **Removed:**
 - The `files-changed-btn` and its associated CSS — the tab replaces it.
@@ -121,11 +128,17 @@ Copy `.detail-tabs` / `.detail-tab` / `.detail-tab--active` styles from `PRListV
 - `.drawer-body { overflow-y: auto; }` → `.drawer-body { display: flex; flex-direction: column; min-height: 0; }`
 - Scroll now lives inside PullDetail's `.pull-detail` (conversation) or DiffView's `.diff-area` (files).
 
-Backdrop element stays as a full-cover click-to-close blocker.
+**Backdrop:**
+- Remove the `handleBackdropClick` handler and the `onclick` binding on `.drawer-backdrop` (currently `DetailDrawer.svelte` lines 15–19, 36). At 100% width there is no exposed backdrop to click. Close affordances that remain: the header close button (line 39) and the `Escape` key handler (lines 21–31), both already wired up.
+- The `.drawer-backdrop` element itself can stay as a positional wrapper, or collapse into the panel directly. Keeping it is simpler — it still defines the `top: var(--header-height)` / `bottom: var(--status-bar-height)` bounds that position the drawer inside the app's content region.
 
 #### `KanbanBoard.svelte` (its own drawer)
 
-Same two changes applied to `.drawer` and `.drawer-body` inside KanbanBoard (lines 181–230). No shared component, so edit in place.
+Same changes applied in place inside KanbanBoard:
+- `.drawer { width: 65%; min-width: 500px; }` → `.drawer { width: 100%; }` (lines 181–195).
+- `.drawer-body { overflow-y: auto; }` → `.drawer-body { display: flex; flex-direction: column; min-height: 0; }` (lines 227–230).
+- Remove the `closeDrawer` call from the `.drawer-overlay` click handler and drop the overlay element entirely (lines 104–106) — it's a separate full-cover element that currently darkens the page behind the drawer, but with a 100%-wide drawer there is nothing behind to darken. `Escape` and the header close button (line 109) remain.
+- Remove the `container-narrow`/`container-medium` override (lines 232–236).
 
 #### `PRListView.svelte`
 
@@ -150,24 +163,26 @@ When switching tabs back from files to conversation, `DiffView` unmounts and cal
 
 ## Testing
 
-**E2E test** (`frontend/tests/e2e/activity-drawer-diff.spec.ts` or similar):
+**E2E test** (`frontend/tests/e2e-full/activity-drawer-diff.spec.ts`):
 
-1. Seed the fixture server with a PR that has diff data.
+This belongs in `tests/e2e-full/` (managed backend + real SQLite per `playwright-e2e.config.ts`), not `tests/e2e/` (Vite dev server only). Per project convention the full-stack suite is the non-negotiable path for features that exercise real data flow.
+
+1. Seed the e2e-full backend with a PR that has diff data (follow patterns in existing `tests/e2e-full/diff-view.spec.ts`).
 2. Navigate to the activity view.
-3. Click an activity row that references the PR — drawer opens showing conversation tab.
-4. Click the "Files changed" tab in the drawer — assert `DiffView` is rendered, toolbar is visible, at least one file block is present.
-5. Click "Conversation" tab — assert conversation content returns.
-6. Close drawer with Escape — assert drawer is gone and activity feed is still rendered (scroll preserved if possible).
+3. Click an activity row that references the seeded PR — drawer opens showing conversation tab.
+4. Click the "Files changed" tab in the drawer — assert `DiffView` is rendered, the diff toolbar is visible, and at least one file block is present.
+5. Click "Conversation" tab — assert conversation content returns and diff is unmounted.
+6. Close drawer with `Escape` — assert drawer is gone and activity feed is still rendered.
+7. Confirm backdrop click no longer closes the drawer (optional regression guard for the outside-click removal).
 
-**Unit test** (`packages/ui/src/components/detail/PullDetail.test.ts`):
-- `hideTabs={true}` hides the tab bar.
-- Default tab is `"conversation"`.
+**Kanban drawer e2e coverage**: add a parallel case that opens the drawer from a kanban card and performs steps 3–6.
 
 **Manual verification:**
 - Activity drawer: open PR, switch tabs, confirm diff loads and scrolls independently, toolbar sticks.
 - Kanban drawer: same.
 - PR list view: confirm no double tab bars, files tab still navigates via URL.
-- Narrow viewport: confirm conversation content still readable (800px cap centers in full-width drawer).
+- Narrow viewport: confirm conversation content still readable (800px cap centers in full-width drawer via `margin-inline: auto`).
+- Wide viewport: confirm conversation is centered (not hugging the left edge).
 
 ## Scope
 
@@ -175,11 +190,15 @@ When switching tabs back from files to conversation, `DiffView` unmounts and cal
 - PullDetail tab bar + DiffView integration.
 - Drawer width → 100% in DetailDrawer and KanbanBoard.
 - Scroll ownership shift from drawer body to PullDetail/DiffView.
+- Centering rule on `.pull-detail` so conversation content stays centered in the wide drawer.
+- Removal of outside-click dismissal (backdrop handlers) since the overlay has no exposed area at 100% width.
+- Removal of KanbanBoard's visual overlay element (nothing to darken).
 - PRListView `hideTabs` prop pass-through.
-- E2E coverage.
+- E2E coverage via `tests/e2e-full/` (activity + kanban drawer paths).
 
 **Out of scope:**
 - Unifying DetailDrawer and KanbanBoard's drawer implementations (they remain separate).
 - Syncing the drawer's active tab with the URL (drawers remain URL-agnostic).
 - Adding file-list navigation to the drawer context (users rely on scroll + `j`/`k`).
 - Any changes to `DiffView` itself, `PullList`, or the diff store.
+- Preserving outside-click dismissal via a partial-width gutter (explicitly rejected in favor of the uncompromised full-width diff).
