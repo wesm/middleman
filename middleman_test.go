@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -384,4 +385,42 @@ func TestStartSyncAfterStopSyncIsTerminal(t *testing.T) {
 	// sequence.
 	req.NoError(inst.Close())
 	req.NoError(inst.Close())
+}
+
+// TestStopSyncConcurrent pins the concurrency contract of StopSync:
+// multiple callers racing into StopSync must not panic on a nil
+// cancelHook dereference. Before stopOnce was added, the
+// check/call/reset sequence had a TOCTOU window — caller A could
+// observe cancelHook != nil, caller B could then nil it, and caller
+// A would dereference nil. Under -race this test also verifies no
+// data race exists on the field.
+func TestStopSyncConcurrent(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+	}
+
+	req := require.New(t)
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Assets:  frontend,
+	})
+	req.NoError(err)
+	t.Cleanup(func() { _ = inst.Close() })
+
+	const workers = 16
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			<-start
+			inst.StopSync()
+		}()
+	}
+	close(start)
+	wg.Wait()
 }

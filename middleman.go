@@ -183,9 +183,15 @@ type Instance struct {
 	// SetOnSyncCompleted. Separate from cancelSync so ad-hoc syncs via
 	// TriggerRun before StartSync still run detection, and so StopSync
 	// can cancel hook work regardless of how callers parent their ctx.
+	// Read/written only from inside stopOnce.Do in StopSync.
 	cancelHook context.CancelFunc
-	stopMu     sync.Mutex
-	closed     bool
+	// stopOnce ensures the StopSync body runs exactly once even under
+	// concurrent calls from StopSync and Close. Without it, the
+	// cancelHook check/call/reset sequence has a TOCTOU window that
+	// can panic on a nil dereference if two callers race.
+	stopOnce sync.Once
+	stopMu   sync.Mutex
+	closed   bool
 }
 
 // New creates a middleman Instance from the given options.
@@ -412,15 +418,19 @@ func (i *Instance) StartSync(ctx context.Context) {
 // StopSync stops the periodic GitHub sync. This operation is
 // terminal: the underlying Syncer permanently refuses further
 // Start or TriggerRun calls after Stop, so callers that need to
-// resume sync must create a new Instance.
+// resume sync must create a new Instance. Safe to call
+// concurrently: stopOnce guarantees the body runs exactly once.
 func (i *Instance) StopSync() {
-	// Cancel any in-flight stack-detection pass before stopping the
-	// syncer so the hook does not continue after StopSync returns.
-	if i.cancelHook != nil {
-		i.cancelHook()
-		i.cancelHook = nil
-	}
-	i.syncer.Stop()
+	i.stopOnce.Do(func() {
+		// Cancel any in-flight stack-detection pass before stopping
+		// the syncer so the hook does not continue after StopSync
+		// returns.
+		if i.cancelHook != nil {
+			i.cancelHook()
+			i.cancelHook = nil
+		}
+		i.syncer.Stop()
+	})
 }
 
 // Close stops sync and closes the database. Safe to call
