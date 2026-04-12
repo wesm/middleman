@@ -14,6 +14,13 @@ func member(number, pos int, state, ci, review string) db.StackMemberWithPR {
 	}
 }
 
+func draftMember(number, pos int, ci, review string) db.StackMemberWithPR {
+	return db.StackMemberWithPR{
+		Number: number, Position: pos, State: "open",
+		CIStatus: ci, ReviewDecision: review, IsDraft: true,
+	}
+}
+
 func TestComputeStackHealth(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -50,6 +57,14 @@ func TestComputeStackHealth(t *testing.T) {
 		}, "blocked"},
 		{"in progress", []db.StackMemberWithPR{
 			member(1, 1, "open", "pending", ""),
+			member(2, 2, "open", "pending", ""),
+		}, "in_progress"},
+		{"draft with green CI is not all_green", []db.StackMemberWithPR{
+			draftMember(1, 1, "success", "APPROVED"),
+			member(2, 2, "open", "success", "APPROVED"),
+		}, "in_progress"},
+		{"draft base is not base_ready", []db.StackMemberWithPR{
+			draftMember(1, 1, "success", "APPROVED"),
 			member(2, 2, "open", "pending", ""),
 		}, "in_progress"},
 	}

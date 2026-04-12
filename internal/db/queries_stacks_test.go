@@ -125,13 +125,15 @@ func TestListStacksWithMembers_MalformedFilter(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUniqueStackMemberConstraint(t *testing.T) {
+func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
+	assert := Assert.New(t)
 	d := openTestDB(t)
 	ctx := context.Background()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID := insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", "open")
 
+	// Put PR in stackA.
 	stackA, err := d.UpsertStack(ctx, repoID, 1, "stackA")
 	require.NoError(t, err)
 	err = d.ReplaceStackMembers(ctx, stackA, []StackMember{
@@ -139,13 +141,30 @@ func TestUniqueStackMemberConstraint(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Same PR in a different stack should fail unique constraint.
+	// Reassigning same PR to stackB should succeed by evicting from stackA.
 	stackB, err := d.UpsertStack(ctx, repoID, 2, "stackB")
 	require.NoError(t, err)
 	err = d.ReplaceStackMembers(ctx, stackB, []StackMember{
 		{StackID: stackB, MergeRequestID: mrID, Position: 1},
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+
+	// Only one membership row remains, now in stackB.
+	var count int
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_stack_members WHERE merge_request_id = ?`,
+		mrID,
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(1, count)
+
+	var gotStack int64
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT stack_id FROM middleman_stack_members WHERE merge_request_id = ?`,
+		mrID,
+	).Scan(&gotStack)
+	require.NoError(t, err)
+	assert.Equal(stackB, gotStack)
 }
 
 func TestGetStackForPR(t *testing.T) {
