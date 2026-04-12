@@ -57,6 +57,7 @@ endpoint = %q
 		map[string]ghclient.Client{"github.com": mock},
 		database, nil, nil, time.Minute, nil, nil,
 	)
+	t.Cleanup(syncer.Stop)
 	return NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{},

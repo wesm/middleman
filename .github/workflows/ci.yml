@@ -82,13 +82,13 @@ jobs:
         run: cd frontend && bun run test:e2e --config playwright-e2e.config.ts --grep "UTC timestamp"
 
       - name: Run tests
-        run: go test ./... -v -count=1
+        run: go test ./... -v -shuffle=on
 
       - name: Run integration tests (git-dependent)
-        run: go test -tags integration ./... -v -count=1
+        run: go test -tags integration ./... -v -shuffle=on
 
       - name: Run tests (race detector)
-        run: go test -race ./... -count=1
+        run: go test -race ./... -shuffle=on
 
   build:
     runs-on: ubuntu-latest
