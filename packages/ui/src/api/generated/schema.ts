@@ -374,6 +374,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/pulls/{number}/stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name pulls by number stack */
+        get: operations["get-repos-by-owner-by-name-pulls-by-number-stack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}/state": {
         parameters: {
             query?: never;
@@ -401,6 +418,23 @@ export interface paths {
         put?: never;
         /** Post repos by owner by name pulls by number sync */
         post: operations["post-repos-by-owner-by-name-pulls-by-number-sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stacks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List stacks */
+        get: operations["list-stacks"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1029,6 +1063,45 @@ export interface components {
              */
             readonly $schema?: string;
             status: string;
+        };
+        StackContextResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/StackContextResponse.json
+             */
+            readonly $schema?: string;
+            health: string;
+            members: components["schemas"]["StackMemberResponse"][] | null;
+            /** Format: int64 */
+            position: number;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            stack_id: number;
+            stack_name: string;
+        };
+        StackMemberResponse: {
+            /** Format: int64 */
+            blocked_by: number | null;
+            ci_status: string;
+            is_draft: boolean;
+            /** Format: int64 */
+            number: number;
+            /** Format: int64 */
+            position: number;
+            review_decision: string;
+            state: string;
+            title: string;
+        };
+        StackResponse: {
+            health: string;
+            /** Format: int64 */
+            id: number;
+            members: components["schemas"]["StackMemberResponse"][] | null;
+            name: string;
+            repo_name: string;
+            repo_owner: string;
         };
         StarredRequest: {
             /**
@@ -1835,6 +1908,39 @@ export interface operations {
             };
         };
     };
+    "get-repos-by-owner-by-name-pulls-by-number-stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackContextResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "set-kanban-state": {
         parameters: {
             query?: never;
@@ -1890,6 +1996,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-stacks": {
+        parameters: {
+            query?: {
+                repo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackResponse"][] | null;
                 };
             };
             /** @description Error */
