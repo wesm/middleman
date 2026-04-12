@@ -58,6 +58,7 @@
     "@eslint/js": "^10.0.1",
     "@testing-library/svelte": "5.2.8",
     "@tsconfig/svelte": "^5.0.0",
+    "@types/node": "^24.9.2",
     "@types/dompurify": "3.2.0",
     "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",

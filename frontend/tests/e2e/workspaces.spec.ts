@@ -2,13 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
-const testWorkspaceData = {
+const testWorkspaceData: WorkspaceData = {
   hosts: [{
     key: "local",
     label: "Local",
     connectionState: "connected",
-    transport: "local" as const,
-    platform: "macOS",
     projects: [{
       key: "proj-1",
       name: "test-project",
@@ -16,7 +14,6 @@ const testWorkspaceData = {
       repoKind: "STANDARD",
       defaultBranch: "main",
       platformRepo: "acme/test-project",
-      platformURL: "https://github.com/acme/test-project",
       worktrees: [
         {
           key: "wt-1",
@@ -60,10 +57,8 @@ const testWorkspaceData = {
   selectedHostKey: "local",
 };
 
-// Pre-extract nested objects to avoid noUncheckedIndexedAccess
-// issues when spreading testWorkspaceData.hosts[0] etc.
-const testHost = testWorkspaceData.hosts[0]!;
-const testProject = testHost.projects[0]!;
+const primaryHost = testWorkspaceData.hosts[0]!;
+const primaryProject = primaryHost.projects[0]!;
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
@@ -77,9 +72,6 @@ test("workspaces route renders empty state", async ({ page }) => {
 });
 
 test("AppHeader shows Workspaces tab", async ({ page }) => {
-  await page.addInitScript((d) => {
-    window.__middleman_config = { workspace: d };
-  }, testWorkspaceData);
   await page.goto("/pulls");
   await expect(
     page.getByRole("button", { name: "Workspaces" }),
@@ -89,9 +81,6 @@ test("AppHeader shows Workspaces tab", async ({ page }) => {
 test(
   "Workspaces tab navigates to /workspaces",
   async ({ page }) => {
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, testWorkspaceData);
     await page.goto("/pulls");
     await page
       .getByRole("button", { name: "Workspaces" })
@@ -125,7 +114,7 @@ test(
       page.locator(".project-name", { hasText: "test-project" }),
     ).toBeVisible();
     await expect(
-      page.getByText("Add auth middleware"),
+      page.getByText("feature-auth"),
     ).toBeVisible();
   },
 );
@@ -151,7 +140,7 @@ test(
       page.locator(".project-name", { hasText: "test-project" }),
     ).toBeVisible();
     await expect(
-      page.getByText("Add auth middleware"),
+      page.getByText("feature-auth"),
     ).toBeVisible();
   },
 );
@@ -214,7 +203,7 @@ test(
  */
 async function injectWithCallback(
   page: import("@playwright/test").Page,
-  data: typeof testWorkspaceData,
+  data: WorkspaceData,
 ): Promise<void> {
   await page.addInitScript((d) => {
     window.__middleman_config = {
@@ -251,7 +240,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
+      .filter({ hasText: "feature-auth" });
     await expect(row).toBeVisible();
     await row.click();
 
@@ -272,7 +261,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
+      .filter({ hasText: "feature-auth" });
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
 
@@ -297,7 +286,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
+      .filter({ hasText: "feature-auth" });
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
 
@@ -322,9 +311,9 @@ test(
     const activityData = {
       ...testWorkspaceData,
       hosts: [{
-        ...testHost,
+        ...primaryHost,
         projects: [{
-          ...testProject,
+          ...primaryProject,
           worktrees: [
             {
               key: "wt-idle",
@@ -386,7 +375,7 @@ test(
           ],
         }],
       }],
-    };
+    } satisfies WorkspaceData;
 
     await page.addInitScript((d) => {
       window.__middleman_config = { workspace: d };
@@ -427,10 +416,10 @@ test(
     await expect(selectedRow).toBeVisible();
     await expect(selectedRow).toHaveClass(/selected/);
 
-    // wt-2 ("Add auth middleware") should NOT be selected
+    // wt-2 ("feature-auth") should NOT be selected
     const otherRow = page
       .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
+      .filter({ hasText: "feature-auth" });
     await expect(otherRow).toBeVisible();
     await expect(otherRow).not.toHaveClass(/selected/);
   },
@@ -444,7 +433,7 @@ test(
     }, testWorkspaceData);
     await page.goto("/workspaces");
 
-    const worktreeRow = page.getByText("Add auth middleware");
+    const worktreeRow = page.getByText("feature-auth");
     await expect(worktreeRow).toBeVisible();
 
     // Collapse by clicking project header
@@ -481,7 +470,7 @@ test(
     const multiHostData = {
       ...testWorkspaceData,
       hosts: [
-        testHost,
+        primaryHost,
         {
           key: "remote",
           label: "Build Server",
@@ -491,7 +480,7 @@ test(
           resources: null,
         },
       ],
-    };
+    } satisfies WorkspaceData;
 
     await injectWithCallback(page, multiHostData);
     await page.goto("/workspaces");
@@ -522,21 +511,17 @@ test(
     }, testWorkspaceData);
     await page.goto("/workspaces");
 
-    // Use update_workspace with a new object so Svelte
-    // reactivity detects the change (in-place mutation via
-    // update_selection does not produce a new object reference).
-    await page.evaluate((d) => {
-      window.__middleman_update_workspace?.({
-        ...d,
-        selectedHostKey: "local",
-        selectedWorktreeKey: "wt-2",
-      } as WorkspaceData);
-    }, testWorkspaceData);
+    await page.evaluate(() => {
+      window.__middleman_update_selection?.({
+        hostKey: "local",
+        worktreeKey: "wt-2",
+      });
+    });
 
-    // wt-2 ("Add auth middleware") should now be selected
+    // wt-2 ("feature-auth") should now be selected
     const selectedRow = page
       .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
+      .filter({ hasText: "feature-auth" });
     await expect(selectedRow).toHaveClass(/selected/);
   },
 );
@@ -555,16 +540,12 @@ test(
       .filter({ hasText: "main" });
     await expect(mainRow).toHaveClass(/selected/);
 
-    // Replace workspace data with a different host and no
-    // worktree selected (mirrors what update_selection does
-    // internally, but produces a new object for reactivity).
-    await page.evaluate((d) => {
-      window.__middleman_update_workspace?.({
-        ...d,
-        selectedHostKey: "other",
-        selectedWorktreeKey: null,
-      } as WorkspaceData);
-    }, testWorkspaceData);
+    // Change host without providing worktreeKey
+    await page.evaluate(() => {
+      window.__middleman_update_selection?.({
+        hostKey: "other",
+      });
+    });
 
     // No worktree should be selected now
     const selectedRows = page.locator(".worktree-row.selected");
@@ -580,21 +561,18 @@ test(
     }, testWorkspaceData);
     await page.goto("/workspaces");
 
-    // Host starts connected -- no status banner
+    // Host starts connected — no status banner
     await expect(
       page.locator(".single-host-status"),
     ).toHaveCount(0);
 
-    // Replace workspace data with host set to disconnected
-    // (update_host_state mutates in-place which doesn't
-    // produce a new object reference for Svelte reactivity).
-    await page.evaluate((d) => {
-      const patched = JSON.parse(JSON.stringify(d));
-      patched.hosts[0].connectionState = "disconnected";
-      window.__middleman_update_workspace?.(
-        patched as WorkspaceData,
+    // Patch host to disconnected
+    await page.evaluate(() => {
+      window.__middleman_update_host_state?.(
+        "local",
+        { connectionState: "disconnected" },
       );
-    }, testWorkspaceData);
+    });
 
     await expect(
       page.locator(".single-host-status"),
@@ -694,7 +672,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
+      .filter({ hasText: "feature-auth" });
     await expect(row).toBeVisible();
     await row.click();
 
@@ -715,7 +693,7 @@ test(
 test(
   "empty hosts renders without error",
   async ({ page }) => {
-    const emptyData = {
+    const emptyData: WorkspaceData = {
       hosts: [],
       selectedWorktreeKey: null,
       selectedHostKey: null,
@@ -732,13 +710,11 @@ test(
 
     await page.goto("/workspaces");
 
-    // Should not crash -- renders the sidebar container
-    // with no projects, sessions, or host switcher.
-    // Use toBeAttached() because the empty sidebar has no
-    // visible content, so Playwright considers it hidden.
+    // Should not crash — renders the sidebar container
+    // with no projects, sessions, or host switcher
     await expect(
       page.locator(".workspace-sidebar"),
-    ).toBeAttached();
+    ).toBeVisible();
     expect(errors).toHaveLength(0);
   },
 );
@@ -749,11 +725,11 @@ test(
     const dataWithHidden = {
       ...testWorkspaceData,
       hosts: [{
-        ...testHost,
+        ...primaryHost,
         projects: [{
-          ...testProject,
+          ...primaryProject,
           worktrees: [
-            ...testProject.worktrees,
+            ...primaryProject.worktrees,
             {
               key: "wt-hidden",
               name: "hidden-branch",
@@ -772,7 +748,7 @@ test(
           ],
         }],
       }],
-    };
+    } satisfies WorkspaceData;
     await page.addInitScript((data) => {
       window.__middleman_config = {
         workspace: data,
@@ -809,299 +785,5 @@ test(
     expect(payload.hostKey).toBe("local");
     expect(payload.projectKey).toBe("proj-1");
     expect(payload.worktreeKey).toBe("wt-hidden");
-  },
-);
-
-// --- WorktreeRow enrichment tests ---
-
-test(
-  "ROOT badge visible for primary worktree",
-  async ({ page }) => {
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, testWorkspaceData);
-    await page.goto("/workspaces");
-
-    // wt-1 is isPrimary: true
-    const primaryRow = page
-      .locator(".worktree-row")
-      .filter({ hasText: "main" });
-    await expect(primaryRow).toBeVisible();
-    await expect(
-      primaryRow.locator(".root-badge"),
-    ).toBeVisible();
-    await expect(
-      primaryRow.locator(".root-badge"),
-    ).toHaveText("ROOT");
-
-    // wt-2 is NOT primary
-    const otherRow = page
-      .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
-    await expect(
-      otherRow.locator(".root-badge"),
-    ).toHaveCount(0);
-  },
-);
-
-test(
-  "tmux badge visible when sessionBackend is localTmux",
-  async ({ page }) => {
-    const tmuxData = {
-      ...testWorkspaceData,
-      hosts: [{
-        ...testHost,
-        projects: [{
-          ...testProject,
-          worktrees: [
-            {
-              ...testProject
-                .worktrees[0],
-              sessionBackend: "localTmux",
-            },
-            testProject
-              .worktrees[1],
-          ],
-        }],
-      }],
-    };
-
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, tmuxData);
-    await page.goto("/workspaces");
-
-    // wt-1 now has localTmux
-    const tmuxRow = page
-      .locator(".worktree-row")
-      .filter({ hasText: "main" });
-    await expect(
-      tmuxRow.locator(".tmux-badge"),
-    ).toBeVisible();
-    await expect(
-      tmuxRow.locator(".tmux-badge"),
-    ).toHaveText("tmux");
-
-    // wt-2 still has "local" backend
-    const otherRow = page
-      .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
-    await expect(
-      otherRow.locator(".tmux-badge"),
-    ).toHaveCount(0);
-  },
-);
-
-test(
-  "stale icon visible for stale worktree",
-  async ({ page }) => {
-    const staleData = {
-      ...testWorkspaceData,
-      hosts: [{
-        ...testHost,
-        projects: [{
-          ...testProject,
-          worktrees: [
-            ...testProject.worktrees,
-            {
-              key: "wt-stale",
-              name: "stale-branch",
-              branch: "stale/branch",
-              isPrimary: false,
-              isHidden: false,
-              isStale: true,
-              sessionBackend: "local",
-              linkedPR: null,
-              activity: {
-                state: "idle" as const,
-                lastOutputAt: null,
-              },
-              diff: null,
-            },
-          ],
-        }],
-      }],
-    };
-
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, staleData);
-    await page.goto("/workspaces");
-
-    const staleRow = page
-      .locator(".worktree-row")
-      .filter({ hasText: "stale-branch" });
-    await expect(staleRow).toBeVisible();
-    await expect(
-      staleRow.locator(".stale-icon"),
-    ).toBeVisible();
-  },
-);
-
-test(
-  "delete button visible on row hover",
-  async ({ page }) => {
-    await injectWithCallback(page, testWorkspaceData);
-    await page.goto("/workspaces");
-
-    const row = page
-      .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
-    await expect(row).toBeVisible();
-
-    // Delete button hidden before hover
-    const deleteBtn = row.locator(".delete-btn");
-    await expect(deleteBtn).not.toBeVisible();
-
-    // Hover to reveal
-    await row.hover();
-    await expect(deleteBtn).toBeVisible();
-
-    // Click emits requestDeleteWorktree
-    await deleteBtn.click();
-    const command = await getLastCommand(page);
-    expect(command).toBeTruthy();
-    expect(command.cmd).toBe("requestDeleteWorktree");
-    expect(command.payload.worktreeKey).toBe("wt-2");
-  },
-);
-
-test(
-  "PR badge has state color class",
-  async ({ page }) => {
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, testWorkspaceData);
-    await page.goto("/workspaces");
-
-    // wt-2 has linkedPR with state "open"
-    const prBadge = page.locator("button.pr-badge").first();
-    await expect(prBadge).toBeVisible();
-    await expect(prBadge).toHaveClass(/pr-open/);
-    await expect(prBadge).toContainText("#42 OPEN");
-  },
-);
-
-test(
-  "smart title shows PR title when linked",
-  async ({ page }) => {
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, testWorkspaceData);
-    await page.goto("/workspaces");
-
-    // wt-2 has linkedPR.title "Add auth middleware"
-    const row = page
-      .locator(".worktree-row")
-      .filter({ hasText: "Add auth middleware" });
-    await expect(row).toBeVisible();
-
-    // Title text should be PR title, not worktree name
-    await expect(row.locator(".name")).toHaveText(
-      "Add auth middleware",
-    );
-
-    // Branch should show in meta-row since it differs
-    await expect(
-      row.locator(".branch-text"),
-    ).toHaveText("feature/auth");
-  },
-);
-
-// --- Project header enrichment tests ---
-
-test(
-  "project header shows worktree count",
-  async ({ page }) => {
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, testWorkspaceData);
-    await page.goto("/workspaces");
-
-    const header = page.locator(".project-header").first();
-    await expect(header).toBeVisible();
-    await expect(
-      header.locator(".worktree-count"),
-    ).toHaveText("2 worktrees");
-  },
-);
-
-test(
-  "host button shows transport badge",
-  async ({ page }) => {
-    const multiHostData = {
-      ...testWorkspaceData,
-      hosts: [
-        testHost,
-        {
-          key: "remote",
-          label: "Build Server",
-          connectionState: "connected" as const,
-          transport: "ssh" as const,
-          platform: "Linux",
-          projects: [],
-          sessions: [],
-          resources: null,
-        },
-      ],
-    };
-
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, multiHostData);
-    await page.goto("/workspaces");
-
-    const localBtn = page
-      .locator(".host-btn")
-      .filter({ hasText: "Local" });
-    await expect(
-      localBtn.locator(".transport-badge"),
-    ).toHaveText("LOCAL");
-
-    const remoteBtn = page
-      .locator(".host-btn")
-      .filter({ hasText: "Build Server" });
-    await expect(
-      remoteBtn.locator(".transport-badge"),
-    ).toHaveText("SSH");
-  },
-);
-
-test(
-  "host button shows connection status dot with correct class",
-  async ({ page }) => {
-    const multiHostData = {
-      ...testWorkspaceData,
-      hosts: [
-        testHost,
-        {
-          key: "remote",
-          label: "Build Server",
-          connectionState: "error" as const,
-          projects: [],
-          sessions: [],
-          resources: null,
-        },
-      ],
-    };
-
-    await page.addInitScript((d) => {
-      window.__middleman_config = { workspace: d };
-    }, multiHostData);
-    await page.goto("/workspaces");
-
-    const localBtn = page
-      .locator(".host-btn")
-      .filter({ hasText: "Local" });
-    await expect(
-      localBtn.locator(".status-dot.status-connected"),
-    ).toBeVisible();
-
-    const remoteBtn = page
-      .locator(".host-btn")
-      .filter({ hasText: "Build Server" });
-    await expect(
-      remoteBtn.locator(".status-dot.status-error"),
-    ).toBeVisible();
   },
 );
