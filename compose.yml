@@ -13,6 +13,16 @@ services:
     environment:
       MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
       GOCACHE: /go/cache
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:18091/healthz >/dev/null",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     command:
       - sh
       - -c
@@ -32,7 +42,18 @@ services:
     environment:
       MIDDLEMAN_API_URL: http://backend:18091
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:15173/healthz >/dev/null",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     command:
       - sh
       - -c

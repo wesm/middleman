@@ -245,6 +245,9 @@ func newServer(
 		bgCancel: bgCancel,
 	}
 
+	healthAPI := humago.New(mux, healthAPIConfig())
+	s.registerHealthAPI(healthAPI)
+
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
 

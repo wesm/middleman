@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -30,6 +31,62 @@ func openTestDB(t *testing.T) *db.DB {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	return New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+}
+
+func TestHealthzAndLivez_ReturnOK(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	for _, path := range []string{"/healthz", "/livez"} {
+		resp, err := http.Get(ts.URL + path)
+		require.NoError(err)
+		assert.Equal(http.StatusOK, resp.StatusCode, path)
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
+		var body struct {
+			Status string `json:"status"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		require.NoError(err)
+
+		assert.Equal("ok", body.Status, path)
+	}
+}
+
+func TestHealthz_ReturnsServiceUnavailableAfterDBClose(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	database := openTestDB(t)
+	s := New(database, nil, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.Shutdown(ctx)
+	})
+
+	require.NoError(database.Close())
+
+	resp, err := http.Get(ts.URL + "/healthz")
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(err)
+
+	assert.Equal(http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Contains(string(body), "database unavailable")
 }
 
 func TestSSE_ReturnsEventStream(t *testing.T) {

@@ -4,6 +4,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import type { UserConfig } from "vite";
 import type { InlineConfig } from "vitest/node";
+import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
@@ -13,7 +14,7 @@ const uiPkg = fileURLToPath(new URL("../packages/ui", import.meta.url));
 
 const config = {
   base: "/",
-  plugins: [svelte(), svelteTesting()],
+  plugins: [healthcheckPlugin(), svelte(), svelteTesting()],
   resolve: {
     alias: [
       {
