@@ -1991,6 +1991,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("closed", finalPR.State)
 	assert.NotNil(finalPR.ClosedAt)
+	assert.Equal("Test PR #1", finalPR.Title)
 	assert.True(finalPR.UpdatedAt.After(staleUpdatedAt))
 }
 
@@ -2137,6 +2138,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	finalPR, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	assert.False(finalPR.IsDraft)
+	assert.Equal("ready for review", finalPR.Title)
 	assert.True(finalPR.UpdatedAt.Equal(readyUpdatedAt))
 }
 
@@ -2221,6 +2223,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("closed", finalIssue.State)
 	assert.NotNil(finalIssue.ClosedAt)
+	assert.Equal("Test Issue", finalIssue.Title)
 	assert.True(finalIssue.UpdatedAt.After(staleUpdatedAt))
 }
 

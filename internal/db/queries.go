@@ -581,7 +581,7 @@ func (d *DB) UpdateRepoSettings(
 // --- Merge Requests ---
 
 // UpsertMergeRequest inserts or updates a merge request, returning its internal ID.
-// On conflict (repo_id, number) all fields except created_at are updated.
+// On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_merge_requests
@@ -601,14 +601,8 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    title                = excluded.title,
 		    author               = excluded.author,
 		    author_display_name  = excluded.author_display_name,
-		    state                = CASE
-		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.state
-		                               ELSE middleman_merge_requests.state
-		                             END,
-		    is_draft             = CASE
-		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.is_draft
-		                               ELSE middleman_merge_requests.is_draft
-		                             END,
+		    state                = excluded.state,
+		    is_draft             = excluded.is_draft,
 		    body                 = excluded.body,
 		    head_branch          = excluded.head_branch,
 		    base_branch          = excluded.base_branch,
@@ -623,23 +617,12 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    ci_checks_json       = excluded.ci_checks_json,
 		    detail_fetched_at    = COALESCE(middleman_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
 		    ci_had_pending       = middleman_merge_requests.ci_had_pending,
-		    updated_at           = CASE
-		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.updated_at
-		                               ELSE middleman_merge_requests.updated_at
-		                             END,
-		    last_activity_at     = CASE
-		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.last_activity_at
-		                               ELSE middleman_merge_requests.last_activity_at
-		                             END,
-		    merged_at            = CASE
-		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.merged_at
-		                               ELSE middleman_merge_requests.merged_at
-		                             END,
-		    closed_at            = CASE
-		                               WHEN excluded.updated_at >= middleman_merge_requests.updated_at THEN excluded.closed_at
-		                               ELSE middleman_merge_requests.closed_at
-		                             END,
-		    mergeable_state      = excluded.mergeable_state`,
+		    updated_at           = excluded.updated_at,
+		    last_activity_at     = excluded.last_activity_at,
+		    merged_at            = excluded.merged_at,
+		    closed_at            = excluded.closed_at,
+		    mergeable_state      = excluded.mergeable_state
+		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.Body, mr.HeadBranch, mr.BaseBranch,
@@ -1216,6 +1199,7 @@ func (d *DB) UpdateMRState(
 // --- Issues ---
 
 // UpsertIssue inserts or updates an issue, returning its internal ID.
+// On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
@@ -1228,26 +1212,15 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    url               = excluded.url,
 		    title             = excluded.title,
 		    author            = excluded.author,
-		    state             = CASE
-		                            WHEN excluded.updated_at >= middleman_issues.updated_at THEN excluded.state
-		                            ELSE middleman_issues.state
-		                          END,
+		    state             = excluded.state,
 		    body              = excluded.body,
 		    comment_count     = excluded.comment_count,
 		    labels_json       = excluded.labels_json,
 		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
-		    updated_at        = CASE
-		                            WHEN excluded.updated_at >= middleman_issues.updated_at THEN excluded.updated_at
-		                            ELSE middleman_issues.updated_at
-		                          END,
-		    last_activity_at  = CASE
-		                            WHEN excluded.updated_at >= middleman_issues.updated_at THEN excluded.last_activity_at
-		                            ELSE middleman_issues.last_activity_at
-		                          END,
-		    closed_at         = CASE
-		                            WHEN excluded.updated_at >= middleman_issues.updated_at THEN excluded.closed_at
-		                            ELSE middleman_issues.closed_at
-		                          END`,
+		    updated_at        = excluded.updated_at,
+		    last_activity_at  = excluded.last_activity_at,
+		    closed_at         = excluded.closed_at
+		WHERE excluded.updated_at >= middleman_issues.updated_at`,
 		issue.RepoID, issue.PlatformID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
 		issue.Body, issue.CommentCount, issue.LabelsJSON,
