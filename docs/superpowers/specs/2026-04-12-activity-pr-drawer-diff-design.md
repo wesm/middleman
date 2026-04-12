@@ -188,6 +188,18 @@ This belongs in `tests/e2e-full/` (managed backend + real SQLite per `playwright
 
 **Issue drawer regression guard**: add an e2e case that opens an issue from the activity view, seeds a long issue body or enough comments to overflow the drawer, and scrolls to the bottom. This catches any future change that re-breaks internal scroll in `IssueDetail`.
 
+**PR list single-tab-bar guard** (`frontend/tests/e2e-full/pr-list-tabs.spec.ts` or extend an existing PR list spec):
+
+This is the automated regression guard for the new `hideTabs` prop. Without it, a future change to PullDetail could silently start rendering its internal tab bar in PRListView and double up with the router-driven tab bar.
+
+1. Seed a PR.
+2. Navigate to `/pulls/{owner}/{name}/{number}` (conversation tab).
+3. Assert exactly one element matching the PR-list router tab bar is present (`.detail-tabs` at the PRListView level, or whatever selector uniquely identifies it) and contains a "Conversation" and "Files changed" tab.
+4. Assert that no second tab bar appears anywhere inside the detail area — i.e., `page.locator('.detail-tabs').count()` equals 1.
+5. Navigate to `/pulls/{owner}/{name}/{number}/files` and repeat the assertion (still exactly one tab bar).
+
+A simpler form of the assertion: count how many buttons with text "Conversation" exist on the PR list detail page — it must be exactly 1. The same for "Files changed". If PullDetail ever stops respecting `hideTabs`, these counts become 2.
+
 **Manual verification:**
 - Activity PR drawer: open PR, switch tabs, confirm diff loads and scrolls independently, toolbar sticks.
 - Activity issue drawer: open issue with long body, confirm scrolling works.
@@ -207,7 +219,7 @@ This belongs in `tests/e2e-full/` (managed backend + real SQLite per `playwright
 - Removal of outside-click dismissal (backdrop handlers) since the overlay has no exposed area at 100% width.
 - Removal of KanbanBoard's visual overlay element (nothing to darken).
 - PRListView `hideTabs` prop pass-through.
-- E2E coverage via `tests/e2e-full/` (activity PR drawer, activity issue drawer, kanban drawer paths).
+- E2E coverage via `tests/e2e-full/` (activity PR drawer, activity issue drawer, kanban drawer, PR-list single-tab-bar guard).
 
 **Out of scope:**
 - Unifying DetailDrawer and KanbanBoard's drawer implementations (they remain separate).
