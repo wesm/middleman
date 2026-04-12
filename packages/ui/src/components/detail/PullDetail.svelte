@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CICheck, KanbanStatus } from "../../api/types.js";
-  import { getStores, getClient, getNavigate, getActions, getUIConfig } from "../../context.js";
+  import { getStores, getClient, getActions, getUIConfig } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -11,10 +11,10 @@
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import DiffView from "../diff/DiffView.svelte";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
-  const navigate = getNavigate();
   const actions = getActions();
   const uiConfig = getUIConfig();
 
@@ -23,9 +23,14 @@
     name: string;
     number: number;
     onPullsRefresh?: () => Promise<void>;
+    hideTabs?: boolean;
   }
 
-  const { owner, name, number, onPullsRefresh }: Props = $props();
+  const {
+    owner, name, number, onPullsRefresh, hideTabs = false,
+  }: Props = $props();
+
+  let activeTab = $state<"conversation" | "files">("conversation");
 
   $effect(() => {
     void detailStore.loadDetail(owner, name, number);
@@ -200,7 +205,37 @@
   {@const detail = detailStore.getDetail()}
   {#if detail !== null}
     {@const pr = detail.merge_request}
-    <div class="pull-detail">
+    <div class="pull-detail-wrap">
+      {#if !hideTabs}
+        <div class="detail-tabs">
+          <button
+            type="button"
+            class="detail-tab"
+            class:detail-tab--active={activeTab === "conversation"}
+            onclick={() => { activeTab = "conversation"; }}
+          >
+            Conversation
+          </button>
+          <button
+            type="button"
+            class="detail-tab"
+            class:detail-tab--active={activeTab === "files"}
+            onclick={() => { activeTab = "files"; }}
+          >
+            Files changed
+            {#if pr.Additions > 0}
+              <span class="files-stat files-stat--add">+{pr.Additions}</span>
+            {/if}
+            {#if pr.Deletions > 0}
+              <span class="files-stat files-stat--del">-{pr.Deletions}</span>
+            {/if}
+          </button>
+        </div>
+      {/if}
+      {#if !hideTabs && activeTab === "files"}
+        <DiffView {owner} {name} {number} />
+      {:else}
+        <div class="pull-detail">
       {#if detailStore.isStaleRefreshing()}
         <div class="refresh-banner">
           <span class="sync-dot"></span>
@@ -529,23 +564,6 @@
         </div>
       {/if}
 
-      <!-- Files changed -->
-      <button
-        class="files-changed-btn"
-        onclick={() => navigate(`/pulls/${owner}/${name}/${number}/files`)}
-      >
-        <span class="files-changed-label">Files changed</span>
-        <span class="files-changed-stats">
-          {#if pr.Additions > 0}
-            <span class="files-stat files-stat--add">+{pr.Additions}</span>
-          {/if}
-          {#if pr.Deletions > 0}
-            <span class="files-stat files-stat--del">-{pr.Deletions}</span>
-          {/if}
-        </span>
-        <span class="files-changed-arrow">&#8594;</span>
-      </button>
-
       <!-- Comment box -->
       <div class="section">
         <CommentBox {owner} {name} {number} />
@@ -567,6 +585,8 @@
           <div class="loading-placeholder">Detail not yet loaded</div>
         {/if}
       </div>
+        </div>
+      {/if}
     </div>
   {/if}
 {/if}
@@ -588,12 +608,25 @@
     color: var(--accent-red);
   }
 
+  .pull-detail-wrap {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .pull-detail {
     padding: 20px 24px;
     max-width: 800px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    width: 100%;
+    margin-inline: auto;
   }
 
   .detail-header {
@@ -1010,36 +1043,6 @@
     color: var(--text-secondary);
   }
 
-  .files-changed-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 14px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: background 0.1s, border-color 0.1s;
-  }
-
-  .files-changed-btn:hover {
-    background: var(--bg-surface-hover);
-    border-color: var(--accent-blue);
-  }
-
-  .files-changed-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .files-changed-stats {
-    display: flex;
-    gap: 6px;
-    flex: 1;
-  }
-
   .files-stat {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -1052,16 +1055,6 @@
 
   .files-stat--del {
     color: var(--accent-red);
-  }
-
-  .files-changed-arrow {
-    font-size: 14px;
-    color: var(--text-muted);
-    transition: color 0.1s;
-  }
-
-  .files-changed-btn:hover .files-changed-arrow {
-    color: var(--accent-blue);
   }
 
   .refresh-banner {
@@ -1099,4 +1092,39 @@
     color: var(--text-muted);
   }
 
+  .detail-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .detail-tab {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 16px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+    transition: color 0.1s, border-color 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .detail-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+  }
+
+  .detail-tab--active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent-blue);
+  }
 </style>
