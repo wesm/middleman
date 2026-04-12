@@ -100,6 +100,70 @@ describe("waitForServerInfo", () => {
 });
 
 describe("getReusableServerInfo", () => {
+  it("accepts a reachable server even when the response is slower than the poll interval", async () => {
+    const getReusableServerInfo = (
+      e2eServerModule as {
+        getReusableServerInfo?: (filePath: string) => Promise<{
+          host: string;
+          port: number;
+          base_url: string;
+          pid: number;
+        } | null>;
+      }
+    ).getReusableServerInfo;
+
+    expect(getReusableServerInfo).toBeTypeOf("function");
+    if (!getReusableServerInfo) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const infoFile = path.join(dir, "server-info.json");
+    const server = createServer(async (_req, res) => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+    });
+
+    const port = await new Promise<number>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          reject(new Error("server did not bind a TCP port"));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+
+    writeFileSync(
+      infoFile,
+      JSON.stringify({
+        host: "127.0.0.1",
+        port,
+        base_url: `http://127.0.0.1:${port}`,
+        pid: 99999,
+      }),
+    );
+
+    await expect(getReusableServerInfo(infoFile)).resolves.toEqual({
+      host: "127.0.0.1",
+      port,
+      base_url: `http://127.0.0.1:${port}`,
+      pid: 99999,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+
   it("ignores stale server info when the recorded base URL is unreachable", async () => {
     const getReusableServerInfo = (
       e2eServerModule as {

@@ -21,6 +21,7 @@ const serverInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
 const serverInfoFile = path.join(serverInfoDir, "server-info.json");
 const startupTimeoutMs = 30_000;
 const pollIntervalMs = 100;
+const reachabilityTimeoutMs = 1_000;
 const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
 
 type ManagedChildLike = {
@@ -57,7 +58,7 @@ async function isServerReachable(baseURL: string): Promise<boolean> {
     const url = new URL(baseURL);
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
       url,
-      { method: "GET", timeout: pollIntervalMs },
+      { method: "GET", timeout: reachabilityTimeoutMs },
       (response) => {
         response.resume();
         resolve(
