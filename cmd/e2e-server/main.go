@@ -129,7 +129,34 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name, PlatformHost: "github.com"}
 	}
 
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": fc}, database, diffRepo.Manager, repos, time.Hour, nil, nil)
+	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	// Seed with known values so the budget bars render.
+	rt.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4200,
+		Reset:     gh.Timestamp{Time: time.Now().Add(45 * time.Minute)},
+	})
+
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	gqlRT.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4800,
+		Reset:     gh.Timestamp{Time: time.Now().Add(40 * time.Minute)},
+	})
+
+	budget := ghclient.NewSyncBudget(500)
+	budget.Spend(75)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": fc},
+		database, diffRepo.Manager, repos, time.Hour,
+		map[string]*ghclient.RateTracker{"github.com": rt},
+		map[string]*ghclient.SyncBudget{"github.com": budget},
+	)
+
+	// Wire GraphQL fetcher so GQL rate data appears in the endpoint.
+	gqlFetcher := ghclient.NewGraphQLFetcher("fake-token", "github.com", gqlRT, budget)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": gqlFetcher})
 
 	assets, err := web.Assets()
 	if err != nil {
