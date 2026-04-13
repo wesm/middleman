@@ -1,0 +1,69 @@
+---
+name: capturing-playwright-media
+description: Use when a screenshot or short video needs to be captured with Playwright and shared through the `gh image` GitHub CLI extension, especially when the extension may need installing or fails because browser cookie stores are missing.
+---
+
+# capturing-playwright-media
+
+Generate the artifact with Playwright first, then upload the saved file with `gh image`.
+
+Reference session: `http://127.0.0.1:8080/sessions/opencode%3Ases_2826059aeffeEtdyCVsVwnKi6R`
+
+## Workflow
+
+1. Prefer the repo's existing Playwright config and startup flow. Only add a temporary script or spec if no existing path can capture the state; delete temporary capture code afterward.
+2. Save artifacts under a temp path like `tmp/` or `artifacts/` unless the user explicitly wants them committed.
+3. For screenshots, use Playwright directly:
+
+```js
+await page.screenshot({ path: "tmp/capture.png", fullPage: true });
+```
+
+4. For video, create a recording context, close it, then resolve the generated file:
+
+```js
+const context = await browser.newContext({
+  recordVideo: { dir: "tmp/video", size: { width: 1440, height: 900 } },
+});
+const page = await context.newPage();
+// ... drive the page ...
+await context.close();
+const videoPath = await page.video()?.path();
+```
+
+5. Upload with `gh image` and use the emitted markdown in the final reply or PR body:
+
+```bash
+gh image "tmp/capture.png"
+gh image --repo owner/repo "tmp/capture.png"
+gh image "tmp/video.webm"
+```
+
+If video upload is rejected, keep the local video file, say that `gh image` appears image-only in this environment, and ask whether a screenshot link or a different upload path is preferred.
+
+## Extension Setup
+
+Check whether the extension is available:
+
+```bash
+gh image --help
+```
+
+If it is missing, install the extension used in the reference session:
+
+```bash
+gh extension install drogers0/gh-image
+```
+
+## Cookie Failure Mode
+
+The reference session established that `gh image` may depend on GitHub web-upload cookies from a local browser profile. If errors mention cookies, browser profiles, `Local State`, `Cookies`, Chrome, Brave, Edge, or Chromium, do not assume `gh auth login` is enough.
+
+Tell the user to sign in to GitHub in Chrome, Brave, Edge, or Chromium on that machine, then rerun `gh image`.
+
+## Output
+
+Return:
+- the local artifact path
+- the markdown link(s) printed by `gh image`
+- a brief note if video upload had to fall back to screenshots or another path
