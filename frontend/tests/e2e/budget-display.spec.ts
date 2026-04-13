@@ -207,3 +207,87 @@ test("budget bars show unknown state when host not known", async ({ page }) => {
   // No budget count when budget disabled
   await expect(bars.getByText("req/hr")).not.toBeVisible();
 });
+
+test("paused host shows red health dot and sync paused indicator", async ({ page }) => {
+  await page.route("**/api/v1/rate-limits", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: {
+          "github.com": {
+            requests_hour: 500,
+            rate_remaining: 50,
+            rate_limit: 5000,
+            rate_reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+            hour_start: new Date().toISOString(),
+            sync_throttle_factor: 8,
+            sync_paused: true,
+            reserve_buffer: 200,
+            known: true,
+            budget_limit: 500,
+            budget_spent: 400,
+            budget_remaining: 100,
+            gql_remaining: 100,
+            gql_limit: 5000,
+            gql_reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+            gql_known: true,
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/pulls");
+
+  // Compact bars should be red when paused
+  const bars = page.locator(".budget-bars");
+  await expect(bars.getByText("REST")).toBeVisible();
+
+  // Open popover — should show "sync paused" indicator
+  await bars.click();
+  const popover = page.getByRole("dialog", { name: "API Budget" });
+  await expect(popover).toBeVisible();
+  await expect(popover.getByText("sync paused")).toBeVisible();
+});
+
+test("GQL known but REST unknown hides budget count", async ({ page }) => {
+  await page.route("**/api/v1/rate-limits", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: {
+          "github.com": {
+            requests_hour: 0,
+            rate_remaining: -1,
+            rate_limit: -1,
+            rate_reset_at: "",
+            hour_start: new Date().toISOString(),
+            sync_throttle_factor: 1,
+            sync_paused: false,
+            reserve_buffer: 200,
+            known: false,
+            budget_limit: 500,
+            budget_spent: 10,
+            budget_remaining: 490,
+            gql_remaining: 4800,
+            gql_limit: 5000,
+            gql_reset_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            gql_known: true,
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/pulls");
+
+  const bars = page.locator(".budget-bars");
+  await expect(bars).toBeVisible();
+  // GQL bar should show (known), REST should show --
+  await expect(bars.getByText("GQL")).toBeVisible();
+  await expect(bars.getByText("REST")).not.toBeVisible();
+  // Budget count hidden because REST is unknown (rr < 0)
+  await expect(bars.getByText("req/hr")).not.toBeVisible();
+});
