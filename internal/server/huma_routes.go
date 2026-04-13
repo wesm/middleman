@@ -390,6 +390,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			MergeRequest:  mr,
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
+			PlatformHost:  rp.PlatformHost,
 			WorktreeLinks: wl,
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}

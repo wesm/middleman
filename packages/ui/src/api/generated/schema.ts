@@ -971,6 +971,7 @@ export interface components {
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
+            platform_host: string;
             repo_name: string;
             repo_owner: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;

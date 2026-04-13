@@ -112,3 +112,6 @@ export {
 export {
   default as WorkspacesView,
 } from "./views/WorkspacesView.svelte";
+export {
+  default as WorkspacePanelView,
+} from "./views/WorkspacePanelView.svelte";

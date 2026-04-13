@@ -6,13 +6,18 @@
 
   interface Props {
     workspaceData: WorkspaceData;
+    hoverCardsEnabled?: boolean;
     onCommand: (
       command: string,
       payload: Record<string, unknown>,
     ) => void;
   }
 
-  let { workspaceData, onCommand }: Props = $props();
+  let {
+    workspaceData,
+    hoverCardsEnabled = false,
+    onCommand,
+  }: Props = $props();
 
   const selectedHost = $derived(
     workspaceData.hosts.find(
@@ -36,12 +41,6 @@
     workspaceData.hosts.length > 1,
   );
 
-  const singleHostDisconnected = $derived(
-    !multipleHosts &&
-      selectedHost != null &&
-      selectedHost.connectionState !== "connected",
-  );
-
   function selectHost(key: string): void {
     onCommand("selectHost", { hostKey: key });
   }
@@ -55,6 +54,30 @@
     onCommand("addRepository", {
       hostKey: selectedHost?.key ?? "",
     });
+  }
+
+  function singleHostStatusText(state: string): string {
+    switch (state) {
+      case "connecting":
+        return "Connecting…";
+      case "disconnected":
+        return "Disconnected";
+      case "error":
+        return "Connection error";
+      default:
+        return "";
+    }
+  }
+
+  function singleHostStatusLabel(
+    host: { label: string; connectionState: string },
+  ): string {
+    const status = singleHostStatusText(
+      host.connectionState,
+    );
+    return status === ""
+      ? `Host ${host.label} connected`
+      : `Host ${host.label} ${status}`;
   }
 </script>
 
@@ -115,35 +138,52 @@
         </div>
       {/each}
     </div>
-  {/if}
-
-  {#if singleHostDisconnected && selectedHost}
-    <div class="single-host-status">
-      <span
-        class="connection-dot"
-        class:connecting={
-          selectedHost.connectionState === "connecting"
-        }
-        class:disconnected={
-          selectedHost.connectionState === "disconnected"
-        }
-        class:error={
-          selectedHost.connectionState === "error"
-        }
-      ></span>
-      <span class="status-label">
-        {selectedHost.connectionState === "connecting"
-          ? "Connecting..."
-          : selectedHost.connectionState === "error"
-            ? "Connection error"
-            : "Disconnected"}
-      </span>
-      <button
-        class="retry-btn"
-        onclick={() => retryHost(selectedHost.key)}
+  {:else if selectedHost}
+    <div class="host-switcher">
+      <div
+        class="host-chip"
+        data-testid="single-host-chip"
+        role="status"
+        aria-label={singleHostStatusLabel(selectedHost)}
       >
-        Retry
-      </button>
+        <span
+          class="connection-dot"
+          class:connected={
+            selectedHost.connectionState === "connected"
+          }
+          class:connecting={
+            selectedHost.connectionState === "connecting"
+          }
+          class:disconnected={
+            selectedHost.connectionState === "disconnected"
+          }
+          class:error={
+            selectedHost.connectionState === "error"
+          }
+        ></span>
+        <span class="host-label">{selectedHost.label}</span>
+        {#if selectedHost.transport}
+          <span class="transport-badge">{selectedHost.transport.toUpperCase()}</span>
+        {/if}
+        {#if selectedHost.platform}
+          <span class="platform-icon" title={selectedHost.platform}>
+            {selectedHost.platform === "macOS" ? "\uD83D\uDCBB" : "\uD83D\uDDA5"}
+          </span>
+        {/if}
+        {#if selectedHost.connectionState !== "connected"}
+          <span class="status-text">
+            {singleHostStatusText(selectedHost.connectionState)}
+          </span>
+        {/if}
+        {#if selectedHost.connectionState === "disconnected" || selectedHost.connectionState === "error"}
+          <button
+            class="retry-btn"
+            onclick={() => retryHost(selectedHost.key)}
+          >
+            Retry
+          </button>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -156,6 +196,7 @@
           selectedWorktreeKey={
             workspaceData.selectedWorktreeKey
           }
+          {hoverCardsEnabled}
           {onCommand}
         />
       {/each}
@@ -167,6 +208,7 @@
           selectedWorktreeKey={
             workspaceData.selectedWorktreeKey
           }
+          {hoverCardsEnabled}
           {onCommand}
         />
       {/each}
@@ -197,6 +239,13 @@
   .workspace-sidebar {
     display: flex;
     flex-direction: column;
+    /* Fill the parent pane horizontally. Parents like
+       `.sidebar-pane` in WorkspacesView.svelte are
+       `display: flex` row containers, so without an explicit
+       width the sidebar shrinks to its widest child and leaves
+       visible whitespace on the right of the column. */
+    width: 100%;
+    min-width: 0;
     height: 100%;
     background: var(--bg-primary);
   }
@@ -241,20 +290,29 @@
     min-width: 0;
   }
 
-  .single-host-status {
+  .host-chip {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 10px;
+    padding: 4px 10px;
+    height: 28px;
     font-size: 12px;
     color: var(--text-secondary);
-    border-bottom: 1px solid var(--border-muted);
-    flex-shrink: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm, 4px);
+    white-space: nowrap;
+    /* Allow the label inside to ellipsize instead of forcing
+       the chip to overflow the sidebar on long host names. */
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 auto;
   }
 
-  .status-label {
-    flex: 1;
-    min-width: 0;
+  .status-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
   }
 
   .connection-dot {

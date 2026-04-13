@@ -9,6 +9,7 @@
     ReviewsView,
     FocusListView,
     WorkspacesView,
+    WorkspacePanelView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -68,6 +69,8 @@
     getInitialRoute,
     getSidebarWidth,
     emitLayoutChanged,
+    getEmbedActivePlatformHost,
+    getEmbedHoverCardsEnabled,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
 
@@ -305,6 +308,7 @@
     if (page === "settings") return;
     if (page === "reviews") return;
     if (page === "workspaces") return;
+    if (page === "workspaces-panel") return;
 
     if (page === "activity") {
       if (
@@ -549,9 +553,43 @@
         {:else}
           <ReviewsView />
         {/if}
+      {:else if getPage() === "workspaces-panel"}
+        {@const route = getRoute()}
+        {#if route.page === "workspaces-panel"}
+          <WorkspacePanelView
+            view={route.view}
+            platformHost={"platformHost" in route ? route.platformHost : undefined}
+            owner={"owner" in route ? route.owner : undefined}
+            name={"name" in route ? route.name : undefined}
+            number={"number" in route ? route.number : undefined}
+            emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
+            activePlatformHost={getEmbedActivePlatformHost()}
+            onSelectPR={(n) => {
+              if ("platformHost" in route) {
+                navigate(`/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`);
+              }
+            }}
+            onBack={() => {
+              if ("platformHost" in route) {
+                navigate(`/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}`);
+              }
+            }}
+            onCreateWorktree={(n) => {
+              if ("owner" in route) {
+                emitWorkspaceCommand("createWorktreeFromPR", {
+                  number: n,
+                  owner: route.owner,
+                  name: route.name,
+                  platformHost: route.platformHost,
+                });
+              }
+            }}
+          />
+        {/if}
       {:else if getPage() === "workspaces"}
         <WorkspacesView
           workspaceData={getWorkspaceData()}
+          hoverCardsEnabled={getEmbedHoverCardsEnabled()}
           onCommand={emitWorkspaceCommand}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={(width) => emitLayoutChanged({

@@ -6,6 +6,7 @@
     project: WorkspaceProject;
     hostKey: string;
     selectedWorktreeKey: string | null;
+    hoverCardsEnabled?: boolean;
     onCommand: (
       command: string,
       payload: Record<string, unknown>,
@@ -16,6 +17,7 @@
     project,
     hostKey,
     selectedWorktreeKey,
+    hoverCardsEnabled = false,
     onCommand,
   }: Props = $props();
 
@@ -136,6 +138,7 @@
           {hostKey}
           projectKey={project.key}
           isSelected={worktree.key === selectedWorktreeKey}
+          {hoverCardsEnabled}
           {onCommand}
         />
       {/each}

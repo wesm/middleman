@@ -10,6 +10,7 @@
 
   interface Props {
     workspaceData: WorkspaceData | undefined;
+    hoverCardsEnabled?: boolean;
     onCommand: (
       command: string,
       payload: Record<string, unknown>,
@@ -21,6 +22,7 @@
 
   let {
     workspaceData,
+    hoverCardsEnabled = false,
     onCommand,
     detailSnippet,
     sidebarWidth,
@@ -102,7 +104,7 @@
         ? currentWidth + 'px'
         : '100%'}"
     >
-      <WorkspaceSidebar {workspaceData} {onCommand} />
+      <WorkspaceSidebar {workspaceData} {hoverCardsEnabled} {onCommand} />
     </div>
 
     {#if detailSnippet}

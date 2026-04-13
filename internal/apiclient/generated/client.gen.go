@@ -394,6 +394,7 @@ type MergeRequestResponse struct {
 	DetailFetchedAt   *string                 `json:"detail_fetched_at,omitempty"`
 	DetailLoaded      bool                    `json:"detail_loaded"`
 	Labels            *[]Label                `json:"labels,omitempty"`
+	PlatformHost      string                  `json:"platform_host"`
 	RepoName          string                  `json:"repo_name"`
 	RepoOwner         string                  `json:"repo_owner"`
 	WorktreeLinks     *[]WorktreeLinkResponse `json:"worktree_links"`

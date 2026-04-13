@@ -61,7 +61,15 @@ test.describe("comment editor autocomplete", () => {
     });
 
     await page.keyboard.type("@a");
-    await expect(page.locator(".comment-editor-option").first()).toBeVisible({ timeout: 10_000 });
+    // Wait for the specific "@alice" option to appear. @tiptap/suggestion
+    // binds the commit range into props at update time, so accepting while
+    // a stale props object is still current (items fetch still in-flight)
+    // commits against an out-of-date range and leaves the trigger chars
+    // behind. Waiting for the filtered option ensures currentProps has been
+    // swapped to the latest update before we commit.
+    await expect(
+      page.locator(".comment-editor-option").filter({ hasText: "@alice" }),
+    ).toBeVisible({ timeout: 10_000 });
     await editor.press("Enter");
 
     await expect(editor).toContainText("hello @alice world");
@@ -99,8 +107,9 @@ test.describe("comment editor autocomplete", () => {
     await editor.click();
     await page.keyboard.type("<script>alert('x')</script> @a");
 
-    const firstSuggestion = page.locator(".comment-editor-option").first();
-    await expect(firstSuggestion).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator(".comment-editor-option").filter({ hasText: "@alice" }),
+    ).toBeVisible({ timeout: 10_000 });
     await editor.press("Enter");
     await expect(editor).toContainText("@alice");
 

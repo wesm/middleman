@@ -120,6 +120,21 @@ test(
 );
 
 test(
+  "single host renders the host chip with transport and platform",
+  async ({ page }) => {
+    await page.addInitScript((d) => {
+      window.__middleman_config = { workspace: d };
+    }, testWorkspaceData);
+    await page.goto("/workspaces");
+    const chip = page.getByTestId("single-host-chip");
+    await expect(chip).toBeVisible();
+    await expect(chip).toContainText("Local");
+    await expect(chip.locator(".transport-badge")).toContainText("LOCAL");
+    await expect(chip.locator(".platform-icon")).toBeVisible();
+  },
+);
+
+test(
   "bridge update method renders workspace data",
   async ({ page }) => {
     // Start with embedded config but no workspace data
@@ -554,17 +569,17 @@ test(
 );
 
 test(
-  "update_host_state shows disconnected banner",
+  "update_host_state shows retry in host chip when disconnected",
   async ({ page }) => {
     await page.addInitScript((d) => {
       window.__middleman_config = { workspace: d };
     }, testWorkspaceData);
     await page.goto("/workspaces");
 
-    // Host starts connected — no status banner
-    await expect(
-      page.locator(".single-host-status"),
-    ).toHaveCount(0);
+    // Host starts connected — chip visible, no retry button
+    const chip = page.getByTestId("single-host-chip");
+    await expect(chip).toBeVisible();
+    await expect(chip.locator(".retry-btn")).toHaveCount(0);
 
     // Patch host to disconnected
     await page.evaluate(() => {
@@ -574,9 +589,8 @@ test(
       );
     });
 
-    await expect(
-      page.locator(".single-host-status"),
-    ).toBeVisible();
+    // Chip should now show retry button
+    await expect(chip.locator(".retry-btn")).toBeVisible();
   },
 );
 
@@ -605,6 +619,24 @@ test(
       return localStorage.getItem("middleman-filter-repo");
     });
     expect(cleared).toBeNull();
+  },
+);
+
+test(
+  "embed.activePlatformHost is readable from config",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+      };
+    });
+    await page.goto("/workspaces");
+
+    const host = await page.evaluate(
+      () =>
+        window.__middleman_config?.embed?.activePlatformHost,
+    );
+    expect(host).toBe("github.com");
   },
 );
 
@@ -785,5 +817,71 @@ test(
     expect(payload.hostKey).toBe("local");
     expect(payload.projectKey).toBe("proj-1");
     expect(payload.worktreeKey).toBe("wt-hidden");
+  },
+);
+
+test(
+  "long-hover over a worktree row emits requestHoverCard",
+  async ({ page }) => {
+    await page.addInitScript((data) => {
+      window.__middleman_config = {
+        workspace: data,
+        embed: { hoverCardsEnabled: true },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+          (window as Record<string, any>).__last_workspace_command = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    }, testWorkspaceData);
+    await page.goto("/workspaces");
+    const row = page.locator(".worktree-row").first();
+    await row.hover();
+    await page.waitForTimeout(600);
+    const command = await page.evaluate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+      () => (window as Record<string, any>).__last_workspace_command,
+    );
+    expect(command.cmd).toBe("requestHoverCard");
+    expect(command.payload.worktreeKey).toBeDefined();
+    expect(command.payload.anchorRect).toBeDefined();
+  },
+);
+
+test(
+  "hover card not emitted when hoverCardsEnabled is false",
+  async ({ page }) => {
+    await page.addInitScript((data) => {
+      window.__middleman_config = {
+        workspace: data,
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+          (window as Record<string, any>).__last_workspace_command = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    }, testWorkspaceData);
+    await page.goto("/workspaces");
+    const row = page.locator(".worktree-row").first();
+    await row.hover();
+    await page.waitForTimeout(600);
+    const command = await page.evaluate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+      () => (window as Record<string, any>).__last_workspace_command,
+    );
+    // No command should have been emitted
+    expect(command).toBeFalsy();
   },
 );

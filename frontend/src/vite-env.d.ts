@@ -58,6 +58,9 @@ interface MiddlemanConfig {
     hideStatusBar?: boolean;
     initialRoute?: string;
     sidebarWidth?: number;
+    activePlatformHost?: string | null;
+    panelMode?: boolean;
+    hoverCardsEnabled?: boolean;
   };
   onLayoutChanged?: (layout: {
     sidebar: { width: number };
