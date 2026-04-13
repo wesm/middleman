@@ -10,6 +10,7 @@
     hostKey: string;
     projectKey: string;
     isSelected: boolean;
+    hoverCardsEnabled?: boolean;
     onCommand: (
       command: string,
       payload: Record<string, unknown>,
@@ -21,6 +22,7 @@
     hostKey,
     projectKey,
     isSelected,
+    hoverCardsEnabled = false,
     onCommand,
   }: Props = $props();
 
@@ -57,6 +59,39 @@
     showMenu = false;
   }
 
+  let hoverTimer: ReturnType<typeof setTimeout> | null =
+    null;
+
+  function startHoverTimer(event: MouseEvent): void {
+    if (!hoverCardsEnabled) return;
+    cancelHoverTimer();
+    const target =
+      event.currentTarget as HTMLElement | null;
+    if (!target) return;
+    hoverTimer = setTimeout(() => {
+      const rect = target.getBoundingClientRect();
+      onCommand("requestHoverCard", {
+        hostKey,
+        projectKey,
+        worktreeKey: worktree.key,
+        anchorRect: {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        },
+      });
+      hoverTimer = null;
+    }, 500);
+  }
+
+  function cancelHoverTimer(): void {
+    if (hoverTimer != null) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+  }
+
   function menuAction(
     command: string,
     payload: Record<string, unknown> = {},
@@ -86,6 +121,8 @@
   })}
   onkeydown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) onCommand("selectWorktree", { hostKey, projectKey, worktreeKey: worktree.key }); }}
   oncontextmenu={handleContextMenu}
+  onmouseenter={startHoverTimer}
+  onmouseleave={cancelHoverTimer}
 >
   <span
     class="activity-dot {worktree.activity.state}"

@@ -147,6 +147,20 @@ export function getSidebarWidth(): number | undefined {
   return readConfig()?.embed?.sidebarWidth;
 }
 
+export function getEmbedPanelMode(): boolean {
+  return readConfig()?.embed?.panelMode === true;
+}
+
+export function getEmbedHoverCardsEnabled(): boolean {
+  return readConfig()?.embed?.hoverCardsEnabled === true;
+}
+
+export function getEmbedActivePlatformHost(): string | null {
+  const value = readConfig()?.embed?.activePlatformHost;
+  if (value === undefined) return null;
+  return value;
+}
+
 export function getOnLayoutChanged():
   MiddlemanConfig["onLayoutChanged"] | undefined {
   return readConfig()?.onLayoutChanged;

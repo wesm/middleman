@@ -1,6 +1,9 @@
 export type Route =
   | { page: "activity" }
   | { page: "workspaces" }
+  | { page: "workspaces-panel"; view: "list"; platformHost: string; owner: string; name: string }
+  | { page: "workspaces-panel"; view: "detail"; platformHost: string; owner: string; name: string; number: number }
+  | { page: "workspaces-panel"; view: "empty"; emptyReason: string }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
   | { page: "settings" }
@@ -77,6 +80,42 @@ function parseRoute(fullPath: string): Route {
       };
     }
   }
+  if (path.startsWith("/workspaces/panel")) {
+    const rest = path.slice("/workspaces/panel".length);
+    if (rest.startsWith("/empty/")) {
+      const reason = rest.slice("/empty/".length);
+      return {
+        page: "workspaces-panel",
+        view: "empty",
+        emptyReason: reason,
+      };
+    }
+    const detail = rest.match(
+      /^\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
+    );
+    if (detail) {
+      return {
+        page: "workspaces-panel",
+        view: "detail",
+        platformHost: detail[1]!,
+        owner: detail[2]!,
+        name: detail[3]!,
+        number: parseInt(detail[4]!, 10),
+      };
+    }
+    const list = rest.match(
+      /^\/([^/]+)\/([^/]+)\/([^/]+)$/,
+    );
+    if (list) {
+      return {
+        page: "workspaces-panel",
+        view: "list",
+        platformHost: list[1]!,
+        owner: list[2]!,
+        name: list[3]!,
+      };
+    }
+  }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
     if (rest === "/board") return { page: "pulls", view: "board" };
@@ -145,7 +184,7 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" {
+  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" | "workspaces-panel" {
   return route.page;
 }
 
@@ -192,7 +231,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "issue";
   } else if (r.page === "reviews") {
     navType = "reviews";
-  } else if (r.page === "workspaces") {
+  } else if (r.page === "workspaces" || r.page === "workspaces-panel") {
     navType = "workspaces";
   } else {
     navType = r.page as "activity";

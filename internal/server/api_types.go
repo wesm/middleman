@@ -18,6 +18,7 @@ type mergeRequestResponse struct {
 	db.MergeRequest
 	RepoOwner       string                 `json:"repo_owner"`
 	RepoName        string                 `json:"repo_name"`
+	PlatformHost    string                 `json:"platform_host"`
 	WorktreeLinks   []worktreeLinkResponse `json:"worktree_links"`
 	DetailLoaded    bool                   `json:"detail_loaded"`
 	DetailFetchedAt string                 `json:"detail_fetched_at,omitempty"`
