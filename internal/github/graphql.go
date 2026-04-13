@@ -475,6 +475,15 @@ type GraphQLFetcher struct {
 	rateTracker *RateTracker
 }
 
+// RateTracker returns the GraphQL rate tracker, or nil if none
+// (or if called on a nil receiver).
+func (f *GraphQLFetcher) RateTracker() *RateTracker {
+	if f == nil {
+		return nil
+	}
+	return f.rateTracker
+}
+
 // NewGraphQLFetcher creates a fetcher for the given host. budget may be nil.
 func NewGraphQLFetcher(
 	token string,

@@ -806,6 +806,22 @@ func (s *Syncer) Budgets() map[string]*SyncBudget {
 	return s.budgets
 }
 
+// GQLRateTrackers returns per-host GraphQL rate trackers
+// extracted from the registered GraphQL fetchers. Hosts with
+// nil fetchers or trackers are skipped.
+func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
+	result := make(map[string]*RateTracker, len(s.fetchers))
+	for host, f := range s.fetchers {
+		if f == nil {
+			continue
+		}
+		if rt := f.RateTracker(); rt != nil {
+			result[host] = rt
+		}
+	}
+	return result
+}
+
 // runState holds the per-RunOnce mutable state shared by the
 // worker pool. Extracted into a struct so runWorker can be a
 // directly testable method instead of an inline closure.

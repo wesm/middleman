@@ -3371,6 +3371,106 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 	assert.Equal(458, gh.BudgetRemaining)
 }
 
+func TestAPIRateLimitsWithGQL(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": restRT},
+		nil,
+	)
+
+	fetcher := ghclient.NewGraphQLFetcher("token", "github.com", gqlRT, nil)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": fetcher,
+	})
+
+	// Simulate GraphQL rate data.
+	gqlRT.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4800,
+		Reset:     gh.Timestamp{Time: time.Now().Add(30 * time.Minute)},
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	host, ok := body.Hosts["github.com"]
+	assert.True(ok)
+
+	// GQL fields should be populated.
+	assert.Equal(4800, host.GQLRemaining)
+	assert.Equal(5000, host.GQLLimit)
+	assert.True(host.GQLKnown)
+	assert.NotEmpty(host.GQLResetAt)
+}
+
+func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": rt},
+		nil,
+	)
+	// No SetFetchers call — GQL data should be unknown.
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	host := body.Hosts["github.com"]
+	assert.Equal(-1, host.GQLRemaining)
+	assert.Equal(-1, host.GQLLimit)
+	assert.False(host.GQLKnown)
+	assert.Empty(host.GQLResetAt)
+}
+
 func TestAPIGetPullDetailLoaded(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
