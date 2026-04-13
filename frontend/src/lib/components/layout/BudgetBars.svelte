@@ -93,7 +93,7 @@
     </span>
   </span>
 
-  {#if b.hasAny}
+  {#if b.hasAny && (rr >= 0 || gr >= 0)}
     <span class="budget-count">{b.spent} req/hr</span>
   {/if}
 </button>

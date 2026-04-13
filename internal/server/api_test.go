@@ -3471,6 +3471,76 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 	assert.Empty(host.GQLResetAt)
 }
 
+func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	// Two hosts: github.com has GQL data, ghe.example.com does not.
+	ghRT := ghclient.NewRateTracker(database, "github.com", "rest")
+	gheRT := ghclient.NewRateTracker(database, "ghe.example.com", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	gqlRT.UpdateFromRate(gh.Rate{
+		Limit:     5000,
+		Remaining: 4500,
+		Reset:     gh.Timestamp{Time: time.Now().Add(30 * time.Minute)},
+	})
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      &mockGH{},
+			"ghe.example.com": &mockGH{},
+		},
+		database, nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "corp", Name: "internal", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		map[string]*ghclient.RateTracker{
+			"github.com":      ghRT,
+			"ghe.example.com": gheRT,
+		},
+		nil,
+	)
+
+	fetcher := ghclient.NewGraphQLFetcher("token", "github.com", gqlRT, nil)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": fetcher,
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	// Both hosts present.
+	assert.Len(body.Hosts, 2)
+
+	// github.com has GQL data.
+	ghHost := body.Hosts["github.com"]
+	assert.True(ghHost.GQLKnown)
+	assert.Equal(4500, ghHost.GQLRemaining)
+	assert.Equal(5000, ghHost.GQLLimit)
+
+	// ghe.example.com has no GQL fetcher — defaults to unknown.
+	gheHost := body.Hosts["ghe.example.com"]
+	assert.Equal(-1, gheHost.GQLRemaining)
+	assert.Equal(-1, gheHost.GQLLimit)
+	assert.False(gheHost.GQLKnown)
+}
+
 func TestAPIGetPullDetailLoaded(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

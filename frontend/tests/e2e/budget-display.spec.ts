@@ -31,8 +31,8 @@ test("clicking budget area opens popover", async ({ page }) => {
   // Popover exposes itself as a dialog with the expected accessible name.
   const popover = page.getByRole("dialog", { name: "API Budget" });
   await expect(popover).toBeVisible();
-  await expect(popover.getByText(/requests/)).toBeVisible();
-  await expect(popover.getByText(/points/)).toBeVisible();
+  await expect(popover.getByText(/req\b/)).toBeVisible();
+  await expect(popover.getByText(/pts\b/)).toBeVisible();
 });
 
 test("popover dismisses on Escape", async ({ page }) => {
@@ -150,8 +150,8 @@ test("mixed known/unknown hosts show worst-case from known only", async ({ page 
   const popover = page.locator(".budget-popover");
   await expect(popover.getByText("github.com")).toBeVisible();
   await expect(popover.getByText("ghe.corp.example.com")).toBeVisible();
-  // Known host shows requests, unknown shows "not yet observed"
-  await expect(popover.getByText(/4,500.*5,000.*requests/)).toBeVisible();
+  // Known host shows compact ratio + abbreviated unit
+  await expect(popover.getByText(/4\.5k\s*\/\s*5k\s+req\b/)).toBeVisible();
   await expect(popover.getByText("not yet observed").first()).toBeVisible();
 
   // Unknown host's health dot must be tagged unknown so it renders
