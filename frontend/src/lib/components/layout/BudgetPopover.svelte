@@ -61,6 +61,7 @@
   }
 
   function hostHealthColor(h: RateLimitHostStatus): string {
+    if (h.sync_paused) return "var(--budget-red)";
     if (isHostUnknown(h)) return "var(--text-muted)";
     const restKnown = h.known && h.rate_limit > 0;
     const gqlKnown = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0;
