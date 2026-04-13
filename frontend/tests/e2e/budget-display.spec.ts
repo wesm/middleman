@@ -31,8 +31,8 @@ test("clicking budget area opens popover", async ({ page }) => {
   // Popover exposes itself as a dialog with the expected accessible name.
   const popover = page.getByRole("dialog", { name: "API Budget" });
   await expect(popover).toBeVisible();
-  await expect(popover.getByText(/req\b/)).toBeVisible();
-  await expect(popover.getByText(/pts\b/)).toBeVisible();
+  await expect(popover.getByText("req", { exact: true })).toBeVisible();
+  await expect(popover.getByText("pts", { exact: true })).toBeVisible();
 });
 
 test("popover dismisses on Escape", async ({ page }) => {

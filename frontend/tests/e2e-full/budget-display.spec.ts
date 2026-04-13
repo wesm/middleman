@@ -16,8 +16,8 @@ test("popover shows per-host breakdown from seeded data", async ({ page }) => {
   // Popover exposes itself as a dialog with the expected accessible name.
   const popover = page.getByRole("dialog", { name: "API Budget" });
   await expect(popover).toBeVisible();
-  await expect(popover.getByText(/req\b/)).toBeVisible();
-  await expect(popover.getByText(/pts\b/)).toBeVisible(); // GQL data
+  await expect(popover.getByText("req", { exact: true })).toBeVisible();
+  await expect(popover.getByText("pts", { exact: true })).toBeVisible(); // GQL data
   await expect(popover.getByText(/75/)).toBeVisible(); // budget_spent
 });
 
