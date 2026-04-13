@@ -452,13 +452,14 @@ func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 	return s.fetchers[host]
 }
 
-// TriggerRun kicks off a non-blocking RunOnce on the Syncer's
-// wait group so callers can request an ad-hoc sync without
-// blocking the caller. The run participates in the Syncer's
-// lifecycle: Stop cancels the merged context so any in-flight
-// GitHub call unblocks, then waits for the goroutine to exit.
-// The caller's ctx is honored too, so per-request deadlines still
-// apply.
+// TriggerRun kicks off a non-blocking ad-hoc sync on the Syncer's
+// wait group so callers can request an immediate run without
+// blocking the caller. Ad-hoc runs bypass the normal nextSyncAfter
+// cadence gate, but still respect hard rate-limit pauses and the
+// syncer's lifecycle: Stop cancels the merged context so any
+// in-flight GitHub call unblocks, then waits for the goroutine to
+// exit. The caller's ctx is honored too, so per-request deadlines
+// still apply.
 func (s *Syncer) TriggerRun(ctx context.Context) {
 	s.lifecycleMu.Lock()
 	if s.stopped {
@@ -472,7 +473,7 @@ func (s *Syncer) TriggerRun(ctx context.Context) {
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.RunOnce(merged)
+		s.runOnce(merged, true)
 	}()
 }
 
@@ -975,6 +976,13 @@ func (s *Syncer) publishMonotonicProgress(
 // per-host GitHub rate limit and abuse-detection thresholds happy
 // while still capturing most of the wall-clock win on network I/O.
 func (s *Syncer) RunOnce(ctx context.Context) {
+	s.runOnce(ctx, false)
+}
+
+func (s *Syncer) runOnce(
+	ctx context.Context,
+	bypassNextSyncAfter bool,
+) {
 	if !s.running.CompareAndSwap(false, true) {
 		return
 	}
@@ -1024,9 +1032,11 @@ func (s *Syncer) RunOnce(ctx context.Context) {
 		}
 		repoHosts[i] = host
 	}
-	eligibleHosts := s.hostEligibility(
-		repoHosts, s.nextSyncAfter,
-	)
+	nextAfter := s.nextSyncAfter
+	if bypassNextSyncAfter {
+		nextAfter = nil
+	}
+	eligibleHosts := s.hostEligibility(repoHosts, nextAfter)
 
 	var (
 		completed atomic.Int32

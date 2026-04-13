@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1789,6 +1790,68 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	}
 
 	Assert.Fail(t, "expected sync to complete despite request context cancellation")
+}
+
+func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
+	require := require.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	var listCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			listCalls.Add(1)
+			return nil, nil
+		},
+	}
+	trackers := map[string]*ghclient.RateTracker{
+		"github.com": ghclient.NewRateTracker(
+			database, "github.com", "rest",
+		),
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Owner:        "acme",
+			Name:         "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		trackers,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
+
+	// Seed the host cooldown window exactly like a recent background sync.
+	syncer.RunOnce(context.Background())
+	require.Equal(int32(1), listCalls.Load())
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.TriggerSyncWithResponse(
+		context.Background(),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode())
+
+	require.Eventually(func() bool {
+		return listCalls.Load() == 2
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestAPIReadyForReview(t *testing.T) {
