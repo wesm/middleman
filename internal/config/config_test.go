@@ -54,7 +54,7 @@ name = "repo"
 	require.NoError(t, err)
 	assert.Equal("5m", cfg.SyncInterval)
 	assert.Equal("127.0.0.1", cfg.Host)
-	assert.Equal(8090, cfg.Port)
+	assert.Equal(8091, cfg.Port)
 }
 
 func TestLoadNoRepos(t *testing.T) {
@@ -582,7 +582,7 @@ name = "b"
 	require.NoError(t, err)
 	assert.Equal("5m", cfg2.SyncInterval)
 	assert.Equal("127.0.0.1", cfg2.Host)
-	assert.Equal(8090, cfg2.Port)
+	assert.Equal(8091, cfg2.Port)
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("7d", cfg2.Activity.TimeRange)
 }

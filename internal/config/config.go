@@ -20,7 +20,7 @@ const (
 	defaultGitHubTokenEnv    = "MIDDLEMAN_GITHUB_TOKEN"
 	defaultSyncInterval      = "5m"
 	defaultHost              = "127.0.0.1"
-	defaultPort              = 8090
+	defaultPort              = 8091
 	defaultViewMode          = "threaded"
 	defaultTimeRange         = "7d"
 	defaultBasePath          = "/"
@@ -230,7 +230,7 @@ func EnsureDefault(path string) error {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 # Add repositories to monitor (or add them in the Settings UI).
 # [[repos]]

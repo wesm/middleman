@@ -28,7 +28,7 @@ func setupTestServerWithConfig(
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"
@@ -179,7 +179,7 @@ func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"
@@ -297,7 +297,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 		SyncInterval:   "5m",
 		GitHubTokenEnv: "UNUSED",
 		Host:           "127.0.0.1",
-		Port:           8090,
+		Port:           8091,
 		BasePath:       "/",
 		DataDir:        dir,
 		Repos: []config.Repo{
@@ -381,7 +381,7 @@ func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"
@@ -430,7 +430,7 @@ func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"
@@ -480,7 +480,7 @@ func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"
@@ -531,7 +531,7 @@ func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) 
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"
@@ -573,7 +573,7 @@ func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"
@@ -624,7 +624,7 @@ func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"
@@ -675,7 +675,7 @@ func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"
@@ -761,7 +761,7 @@ func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"

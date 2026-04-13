@@ -35,7 +35,7 @@ func setupTestServerWithRoborev(
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"

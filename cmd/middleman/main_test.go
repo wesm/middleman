@@ -126,7 +126,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	cfg := &config.Config{
 		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
-		Port:           8090,
+		Port:           8091,
 		BasePath:       "/",
 		DataDir:        dir,
 		Repos: []config.Repo{

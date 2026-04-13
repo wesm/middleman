@@ -14,7 +14,7 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
                HTTP Server → REST API + Embedded SPA
 ```
 
-- **Server**: Huma-based HTTP server on loopback (default 127.0.0.1:8090)
+- **Server**: Huma-based HTTP server on loopback (default 127.0.0.1:8091)
 - **Storage**: SQLite with WAL mode (pure Go driver: modernc.org/sqlite)
 - **Sync**: Periodic pull from GitHub API (configurable, default 5m)
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
@@ -62,7 +62,7 @@ make frontend-dev   # Run Vite dev server (use alongside make dev)
 make install        # Build and install to ~/.local/bin or GOPATH
 ```
 
-For development, run `make dev` and `make frontend-dev` in parallel. Vite proxies `/api` to the Go server on :8090.
+For development, run `make dev` and `make frontend-dev` in parallel. Vite proxies `/api` to the Go server on :8091.
 
 ## Testing
 
