@@ -205,3 +205,46 @@ test(
     expect(command.payload.platformHost).toBe("github.com");
   },
 );
+
+test(
+  "panel + Worktree button activates via keyboard without row navigation",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+          (window as Record<string, any>).__last_workspace_command = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets",
+    );
+
+    const createBtn = page.locator("button.create-wt-btn").first();
+    await expect(createBtn).toBeVisible();
+    await createBtn.focus();
+    await page.keyboard.press("Enter");
+
+    // URL stays on list view — row keydown handler must not hijack the button
+    await expect(page).toHaveURL(
+      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    );
+
+    const command = await page.evaluate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+      () => (window as Record<string, any>).__last_workspace_command,
+    );
+    expect(command).toBeTruthy();
+    expect(command.cmd).toBe("createWorktreeFromPR");
+    expect(command.payload.number).toBe(42);
+  },
+);

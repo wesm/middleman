@@ -47,6 +47,7 @@
   tabindex="0"
   onclick={() => onSelect(pull.Number)}
   onkeydown={(e) => {
+    if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onSelect(pull.Number);
