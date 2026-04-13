@@ -21,8 +21,6 @@ tmp/
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
 .worktrees/
-.agents/skills/
-.claude/skills/
 cmd/e2e-server/e2e-server
 cmd/e2e-server/e2e-server.exe
 /e2e-server
