@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,6 +67,8 @@ type e2eServerInfo struct {
 	PID     int    `json:"pid"`
 }
 
+type globRefreshContextKey struct{}
+
 // run starts the e2e server and blocks until ctx is canceled or the
 // HTTP server errors out. Tests call it directly with a cancellable
 // context; main() wires it to SIGINT/SIGTERM.
@@ -108,10 +111,12 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	}
 
 	cfg := &config.Config{
+		BasePath: "/",
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "widgets"},
 			{Owner: "acme", Name: "tools"},
 			{Owner: "acme", Name: "archived"},
+			{Owner: "roborev-dev", Name: "*"},
 		},
 		Activity: config.Activity{
 			ViewMode:  "flat",
@@ -120,13 +125,58 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	}
 
 	cfg.Roborev.Endpoint = roborevEndpoint
+	cfgPath := filepath.Join(tmpDir, "config.toml")
+	if err := cfg.Save(cfgPath); err != nil {
+		return fmt.Errorf("save e2e config: %w", err)
+	}
 
 	fc := result.FixtureClient()
+	fc.ListRepositoriesByOwnerFn = func(
+		ctx context.Context, owner string,
+	) ([]*gh.Repository, error) {
+		if owner != "roborev-dev" {
+			return fc.ReposByOwner[owner], nil
+		}
+
+		repos := []*gh.Repository{
+			{
+				Name:     new("middleman"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			},
+			{
+				Name:     new("worker"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			},
+			{
+				Name:     new("archived"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(true),
+			},
+		}
+		if includeRefreshRepo, _ := ctx.Value(globRefreshContextKey{}).(bool); includeRefreshRepo {
+			repos = append(repos, &gh.Repository{
+				Name:     new("review-bot"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			})
+		}
+		return repos, nil
+	}
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
 
-	repos := make([]ghclient.RepoRef, len(cfg.Repos))
-	for i, r := range cfg.Repos {
-		repos[i] = ghclient.RepoRef{Owner: r.Owner, Name: r.Name, PlatformHost: "github.com"}
+	startupResolved := ghclient.ResolveConfiguredRepos(
+		ctx,
+		map[string]ghclient.Client{"github.com": fc},
+		cfg.Repos,
+	)
+	for _, repo := range startupResolved.Expanded {
+		if _, err := database.UpsertRepo(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name,
+		); err != nil {
+			return fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
+		}
 	}
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
@@ -149,7 +199,7 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": fc},
-		database, diffRepo.Manager, repos, time.Hour,
+		database, diffRepo.Manager, startupResolved.Expanded, time.Hour,
 		map[string]*ghclient.RateTracker{"github.com": rt},
 		map[string]*ghclient.SyncBudget{"github.com": budget},
 	)
@@ -163,8 +213,19 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
-	srv := server.New(database, syncer, assets, "/", cfg, server.ServerOptions{
-		Clones: diffRepo.Manager,
+	srv := server.NewWithConfig(
+		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
+		server.ServerOptions{Clones: diffRepo.Manager},
+	)
+	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost &&
+			strings.Contains(r.URL.Path, "/api/v1/repos/roborev-dev/") &&
+			strings.HasSuffix(r.URL.Path, "/refresh") {
+			r = r.WithContext(
+				context.WithValue(r.Context(), globRefreshContextKey{}, true),
+			)
+		}
+		srv.ServeHTTP(w, r)
 	})
 
 	// Do not start the syncer's background loop. The seeded DB is the
@@ -197,7 +258,7 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	slog.Info(fmt.Sprintf("starting e2e server at %s", info.BaseURL))
 
 	httpServer := &http.Server{
-		Handler:     srv,
+		Handler:     rootHandler,
 		ReadTimeout: 15 * time.Second,
 		IdleTimeout: 60 * time.Second,
 	}

@@ -147,9 +147,9 @@ type Syncer struct {
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
-	stopped            bool                 // guarded by lifecycleMu
-	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
-	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
+	stopped            bool                         // guarded by lifecycleMu
+	nextSyncAfter      map[string]time.Time         // host -> next eligible background sync time
+	nextWatchSyncAfter map[string]time.Time         // host -> next eligible watch-sync time
 	displayNames       map[string]displayNameResult // "host\x00login" -> resolved name, per sync run
 	displayNamesMu     sync.Mutex
 	displayNameGroup   singleflight.Group // dedups concurrent GetUser calls
@@ -497,7 +497,8 @@ func (s *Syncer) ClientForRepo(
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, r := range s.repos {
-		if r.Owner == owner && r.Name == name {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			return s.clientFor(r), nil
 		}
 	}
@@ -523,7 +524,8 @@ func (s *Syncer) ClientForHost(
 // owner/name. Returns "github.com" if not found.
 func (s *Syncer) hostFor(owner, name string) string {
 	for _, r := range s.repos {
-		if r.Owner == owner && r.Name == name {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			if r.PlatformHost != "" {
 				return r.PlatformHost
 			}
@@ -2996,11 +2998,22 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	repos := s.repos
 	s.reposMu.Unlock()
 	for _, r := range repos {
-		if r.Owner == owner && r.Name == name {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			return true
 		}
 	}
 	return false
+}
+
+// TrackedRepos returns a snapshot of the tracked repositories.
+func (s *Syncer) TrackedRepos() []RepoRef {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+
+	repos := make([]RepoRef, len(s.repos))
+	copy(repos, s.repos)
+	return repos
 }
 
 // isTrackedRepoOnHost checks whether the given repo on a specific host
@@ -3018,11 +3031,19 @@ func (s *Syncer) isTrackedRepoOnHost(owner, name, host string) bool {
 		if rHost == "" {
 			rHost = "github.com"
 		}
-		if r.Owner == owner && r.Name == name && rHost == host {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) &&
+			strings.EqualFold(rHost, host) {
 			return true
 		}
 	}
 	return false
+}
+
+// IsTrackedRepoOnHost checks whether the given repo on a specific host
+// is in the configured list.
+func (s *Syncer) IsTrackedRepoOnHost(owner, name, host string) bool {
+	return s.isTrackedRepoOnHost(owner, name, host)
 }
 
 // SyncMR fetches fresh data for a single MR from GitHub and updates the DB.
@@ -3287,6 +3308,12 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		return fmt.Errorf("get closed PR #%d: %w", number, err)
+	}
+	if ghPR == nil {
+		return fmt.Errorf(
+			"get closed PR #%d: client returned nil pull request",
+			number,
+		)
 	}
 
 	state := ghPR.GetState()

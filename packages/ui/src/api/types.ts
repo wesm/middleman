@@ -51,6 +51,8 @@ export interface ActivitySettings {
 export interface ConfigRepo {
   owner: string;
   name: string;
+  is_glob: boolean;
+  matched_repo_count: number;
 }
 
 export interface Settings {

@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -137,14 +139,9 @@ func run(configPath string) error {
 		cloneTokens[host] = token
 	}
 
-	repos := make([]ghclient.RepoRef, len(cfg.Repos))
-	for i, r := range cfg.Repos {
-		repos[i] = ghclient.RepoRef{
-			Owner:        r.Owner,
-			Name:         r.Name,
-			PlatformHost: r.PlatformHostOrDefault(),
-		}
-	}
+	repos := resolveStartupRepos(
+		context.Background(), cfg, clients, database,
+	)
 
 	cloneMgr := gitclone.New(
 		filepath.Join(cfg.DataDir, "clones"), cloneTokens,
@@ -244,4 +241,93 @@ func run(configPath string) error {
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+func resolveStartupRepos(
+	ctx context.Context,
+	cfg *config.Config,
+	clients map[string]ghclient.Client,
+	database *db.DB,
+) []ghclient.RepoRef {
+	seen := make(map[string]struct{})
+	repos := make([]ghclient.RepoRef, 0, len(cfg.Repos))
+	for _, raw := range cfg.Repos {
+		_, expanded, err := ghclient.ResolveConfiguredRepo(
+			ctx, clients, raw,
+		)
+		if err != nil {
+			slog.Warn("resolve configured repo", "err", err)
+			if raw.HasNameGlob() {
+				expanded = fallbackGlobFromDB(
+					ctx, database, raw,
+				)
+			} else {
+				expanded = []ghclient.RepoRef{{
+					Owner:        raw.Owner,
+					Name:         raw.Name,
+					PlatformHost: raw.PlatformHostOrDefault(),
+				}}
+			}
+		}
+		for _, repo := range expanded {
+			key := strings.ToLower(repo.PlatformHost) + "\x00" +
+				strings.ToLower(repo.Owner) + "\x00" +
+				strings.ToLower(repo.Name)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			repos = append(repos, repo)
+		}
+	}
+	return repos
+}
+
+// fallbackGlobFromDB returns repos from the database that match
+// the glob config entry, preserving previously tracked matches
+// when GitHub is unreachable at startup.
+func fallbackGlobFromDB(
+	ctx context.Context,
+	database *db.DB,
+	raw config.Repo,
+) []ghclient.RepoRef {
+	if database == nil {
+		return nil
+	}
+	dbRepos, err := database.ListRepos(ctx)
+	if err != nil {
+		slog.Warn("fallback glob from db", "err", err)
+		return nil
+	}
+	host := raw.PlatformHostOrDefault()
+	var matches []ghclient.RepoRef
+	for _, r := range dbRepos {
+		dbHost := r.PlatformHost
+		if dbHost == "" {
+			dbHost = "github.com"
+		}
+		if !strings.EqualFold(dbHost, host) ||
+			!strings.EqualFold(r.Owner, raw.Owner) {
+			continue
+		}
+		matched, _ := path.Match(
+			strings.ToLower(raw.Name),
+			strings.ToLower(r.Name),
+		)
+		if matched {
+			matches = append(matches, ghclient.RepoRef{
+				Owner:        r.Owner,
+				Name:         r.Name,
+				PlatformHost: dbHost,
+			})
+		}
+	}
+	if len(matches) > 0 {
+		slog.Info(
+			"using DB-persisted repos for offline glob",
+			"pattern", raw.Owner+"/"+raw.Name,
+			"count", len(matches),
+		)
+	}
+	return matches
 }

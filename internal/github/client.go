@@ -27,6 +27,7 @@ type Client interface {
 	ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error)
 	GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	GetUser(ctx context.Context, login string) (*gh.User, error)
+	ListRepositoriesByOwner(ctx context.Context, owner string) ([]*gh.Repository, error)
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
@@ -236,6 +237,54 @@ func (c *liveClient) ListOpenIssues(
 		}
 	}
 	return all, nil
+}
+
+func (c *liveClient) ListRepositoriesByOwner(
+	ctx context.Context, owner string,
+) ([]*gh.Repository, error) {
+	orgRepos, err := collectPages(
+		ctx,
+		func(opts *gh.ListOptions) ([]*gh.Repository, *gh.Response, error) {
+			page, resp, err := c.gh.Repositories.ListByOrg(
+				ctx, owner, &gh.RepositoryListByOrgOptions{
+					Type:        "all",
+					ListOptions: *opts,
+				},
+			)
+			if err != nil {
+				return nil, resp, err
+			}
+			return page, resp, nil
+		},
+		c.trackRate,
+	)
+	if err == nil {
+		return orgRepos, nil
+	}
+
+	userRepos, userErr := collectPages(
+		ctx,
+		func(opts *gh.ListOptions) ([]*gh.Repository, *gh.Response, error) {
+			page, resp, err := c.gh.Repositories.ListByUser(
+				ctx, owner, &gh.RepositoryListByUserOptions{
+					Type:        "owner",
+					ListOptions: *opts,
+				},
+			)
+			if err != nil {
+				return nil, resp, err
+			}
+			return page, resp, nil
+		},
+		c.trackRate,
+	)
+	if userErr != nil {
+		return nil, fmt.Errorf(
+			"listing repositories for %s: org=%v user=%w",
+			owner, err, userErr,
+		)
+	}
+	return userRepos, nil
 }
 
 func (c *liveClient) GetIssue(

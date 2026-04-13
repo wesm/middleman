@@ -105,6 +105,38 @@ name = ".git"
 	require.Error(t, err)
 }
 
+func TestLoadRejectsGlobInOwner(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "acme-*"
+name = "widgets"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "glob syntax in owner")
+}
+
+func TestLoadRejectsGlobInOwnerBeforeGitHubRefNormalization(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "acme-*"
+name = "https://github.com/acme/widgets"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "glob syntax in owner")
+}
+
+func TestRepoHasNameGlob(t *testing.T) {
+	assert := Assert.New(t)
+
+	assert.False((&Repo{Owner: "acme", Name: "widgets"}).HasNameGlob())
+	assert.True((&Repo{Owner: "acme", Name: "widgets-*"}).HasNameGlob())
+	assert.True((&Repo{Owner: "acme", Name: "widgets-?"}).HasNameGlob())
+}
+
 func TestGitHubToken(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}

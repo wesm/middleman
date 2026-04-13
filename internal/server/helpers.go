@@ -36,8 +36,8 @@ func buildRepoLookup(repos []db.Repo) map[int64]db.Repo {
 }
 
 // lookupRepoMap fetches repos and returns an ID-keyed map. When config is
-// available, only configured repos are included so that removed repos are
-// filtered out of list responses.
+// available, only currently tracked repos are included so that removed repos
+// are filtered out of list responses.
 func (s *Server) lookupRepoMap(ctx context.Context) (map[int64]db.Repo, error) {
 	repos, err := s.db.ListRepos(ctx)
 	if err != nil {
@@ -49,18 +49,11 @@ func (s *Server) lookupRepoMap(ctx context.Context) (map[int64]db.Repo, error) {
 	return buildRepoLookup(repos), nil
 }
 
-// filterConfiguredRepos returns only repos that are in the config.
+// filterConfiguredRepos returns only repos that are currently tracked.
 func (s *Server) filterConfiguredRepos(repos []db.Repo) []db.Repo {
-	s.cfgMu.Lock()
-	configured := make(map[string]bool, len(s.cfg.Repos))
-	for _, cr := range s.cfg.Repos {
-		configured[cr.Owner+"/"+cr.Name] = true
-	}
-	s.cfgMu.Unlock()
-
 	filtered := make([]db.Repo, 0, len(repos))
 	for _, r := range repos {
-		if configured[r.Owner+"/"+r.Name] {
+		if s.syncer.IsTrackedRepoOnHost(r.Owner, r.Name, r.PlatformHost) {
 			filtered = append(filtered, r)
 		}
 	}

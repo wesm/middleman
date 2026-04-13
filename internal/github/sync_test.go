@@ -49,9 +49,11 @@ type mockClient struct {
 	listOpenPRsErr          error
 	listOpenIssuesErr       error
 	singlePR                *gh.PullRequest
+	getRepositoryFn         func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn        func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn              func(context.Context, string, string, int) (*gh.Issue, error)
 	getUserFn               func(context.Context, string) (*gh.User, error)
+	listReposByOwnerFn      func(context.Context, string) ([]*gh.Repository, error)
 	listOpenPRsFn           func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listPullRequestsPageFn  func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn        func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
@@ -120,6 +122,16 @@ func (m *mockClient) GetUser(ctx context.Context, login string) (*gh.User, error
 	}
 	name := "Display " + login
 	return &gh.User{Login: &login, Name: &name}, nil
+}
+
+func (m *mockClient) ListRepositoriesByOwner(
+	ctx context.Context, owner string,
+) ([]*gh.Repository, error) {
+	m.trackCall()
+	if m.listReposByOwnerFn != nil {
+		return m.listReposByOwnerFn(ctx, owner)
+	}
+	return nil, nil
 }
 
 func (m *mockClient) GetPullRequest(
@@ -201,9 +213,12 @@ func (m *mockClient) CreateIssueComment(
 }
 
 func (m *mockClient) GetRepository(
-	_ context.Context, _, _ string,
+	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
 	m.trackCall()
+	if m.getRepositoryFn != nil {
+		return m.getRepositoryFn(ctx, owner, repo)
+	}
 	return &gh.Repository{}, nil
 }
 
@@ -1576,9 +1591,24 @@ func TestIsTrackedRepo(t *testing.T) {
 	}, time.Minute, nil, nil)
 
 	assert.True(syncer.IsTrackedRepo("acme", "widget"))
+	assert.True(syncer.IsTrackedRepo("Acme", "Widget"))
 	assert.True(syncer.IsTrackedRepo("corp", "lib"))
 	assert.False(syncer.IsTrackedRepo("acme", "other"))
 	assert.False(syncer.IsTrackedRepo("nobody", "widget"))
+}
+
+func TestClientForRepoMatchesCaseInsensitively(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	mc := &mockClient{}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
+		{Owner: "Acme", Name: "Widget", PlatformHost: "github.com"},
+	}, time.Minute, nil, nil)
+
+	client, err := syncer.ClientForRepo("acme", "widget")
+	require.NoError(err)
+	require.Same(mc, client)
 }
 
 func TestSyncItemByNumber_Issue(t *testing.T) {

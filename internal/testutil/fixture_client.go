@@ -16,24 +16,27 @@ var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
 // FixtureClient is a ghclient.Client implementation for E2E tests. It serves
 // seeded PRs and issues from the list methods and stubs out everything else.
 type FixtureClient struct {
-	OpenPRs    map[string][]*gh.PullRequest
-	PRs        map[string][]*gh.PullRequest
-	OpenIssues map[string][]*gh.Issue
-	Issues     map[string][]*gh.Issue
-	Comments   map[string][]*gh.IssueComment
-	mu         sync.Mutex
-	nextID     int64
+	OpenPRs                   map[string][]*gh.PullRequest
+	PRs                       map[string][]*gh.PullRequest
+	OpenIssues                map[string][]*gh.Issue
+	Issues                    map[string][]*gh.Issue
+	Comments                  map[string][]*gh.IssueComment
+	ReposByOwner              map[string][]*gh.Repository
+	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
+	mu                        sync.Mutex
+	nextID                    int64
 }
 
 // NewFixtureClient returns a FixtureClient with empty fixture maps.
 func NewFixtureClient() ghclient.Client {
 	return &FixtureClient{
-		OpenPRs:    make(map[string][]*gh.PullRequest),
-		PRs:        make(map[string][]*gh.PullRequest),
-		OpenIssues: make(map[string][]*gh.Issue),
-		Issues:     make(map[string][]*gh.Issue),
-		Comments:   make(map[string][]*gh.IssueComment),
-		nextID:     10_000,
+		OpenPRs:      make(map[string][]*gh.PullRequest),
+		PRs:          make(map[string][]*gh.PullRequest),
+		OpenIssues:   make(map[string][]*gh.Issue),
+		Issues:       make(map[string][]*gh.Issue),
+		Comments:     make(map[string][]*gh.IssueComment),
+		ReposByOwner: make(map[string][]*gh.Repository),
+		nextID:       10_000,
 	}
 }
 
@@ -64,10 +67,31 @@ func (c *FixtureClient) GetUser(_ context.Context, login string) (*gh.User, erro
 	return &gh.User{Login: &login}, nil
 }
 
+func (c *FixtureClient) ListRepositoriesByOwner(
+	ctx context.Context, owner string,
+) ([]*gh.Repository, error) {
+	if c.ListRepositoriesByOwnerFn != nil {
+		return c.ListRepositoriesByOwnerFn(ctx, owner)
+	}
+	repos := c.ReposByOwner[owner]
+	if len(repos) == 0 {
+		return nil, nil
+	}
+	out := make([]*gh.Repository, len(repos))
+	copy(out, repos)
+	return out, nil
+}
+
 // GetRepository returns a repository with all merge methods enabled.
-func (c *FixtureClient) GetRepository(_ context.Context, _, _ string) (*gh.Repository, error) {
+func (c *FixtureClient) GetRepository(
+	_ context.Context, owner, repo string,
+) (*gh.Repository, error) {
 	t := true
+	archived := repo == "archived"
 	return &gh.Repository{
+		Name:             &repo,
+		Owner:            &gh.User{Login: &owner},
+		Archived:         &archived,
 		AllowSquashMerge: &t,
 		AllowMergeCommit: &t,
 		AllowRebaseMerge: &t,

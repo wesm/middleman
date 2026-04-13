@@ -30,6 +30,7 @@ import (
 
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
+	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
@@ -38,6 +39,7 @@ type mockGH struct {
 	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
+	listReposByOwnerFn        func(context.Context, string) ([]*gh.Repository, error)
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listOpenPRsErr            error
 	listOpenIssuesFn          func(context.Context, string, string) ([]*gh.Issue, error)
@@ -70,6 +72,15 @@ func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (
 
 func (m *mockGH) GetUser(_ context.Context, login string) (*gh.User, error) {
 	return &gh.User{Login: &login}, nil
+}
+
+func (m *mockGH) ListRepositoriesByOwner(
+	ctx context.Context, owner string,
+) ([]*gh.Repository, error) {
+	if m.listReposByOwnerFn != nil {
+		return m.listReposByOwnerFn(ctx, owner)
+	}
+	return nil, nil
 }
 
 func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
@@ -147,9 +158,16 @@ func (m *mockGH) CreateIssueComment(
 }
 
 func (m *mockGH) GetRepository(
-	_ context.Context, _, _ string,
+	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
-	return &gh.Repository{}, nil
+	if m.getRepositoryFn != nil {
+		return m.getRepositoryFn(ctx, owner, repo)
+	}
+	return &gh.Repository{
+		Name:     &repo,
+		Owner:    &gh.User{Login: &owner},
+		Archived: new(false),
+	}, nil
 }
 
 func (m *mockGH) CreateReview(
@@ -1581,6 +1599,33 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(
+		t,
+		&mockGH{},
+		[]ghclient.RepoRef{{
+			Owner:        "Acme",
+			Name:         "widget",
+			PlatformHost: "github.com",
+		}},
+	)
+	client := setupTestClient(t, srv)
+
+	seedPR(t, database, "acme", "widget", 7)
+
+	resp, err := client.HTTP.PostPrCommentWithResponse(
+		context.Background(),
+		"acme",
+		"widget",
+		7,
+		generated.PostPrCommentJSONRequestBody{Body: "looks good"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusCreated, resp.StatusCode())
+	require.NotNil(resp.JSON201)
+}
+
 func TestAPICommentAutocomplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2691,7 +2736,8 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := context.Background()
 
-	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	nowRFC3339 := now.Format(time.RFC3339)
 
 	// GraphQL: totalCount=42, HasNextPage=true → CommentsComplete=false.
 	// REST ListIssueComments will error. Stale DB count is 5.
@@ -2712,11 +2758,11 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 			"body":"GraphQL count must win",
 			"url":"https://github.com/acme/widget/issues/90",
 			"author":{"login":"kate"},
-			"createdAt":"` + now + `",
-			"updatedAt":"` + now + `",
+			"createdAt":"` + nowRFC3339 + `",
+			"updatedAt":"` + nowRFC3339 + `",
 			"closedAt":null,
 			"labels":{"nodes":[]},
-			"comments":{"totalCount":42,"nodes":[{"databaseId":901,"author":{"login":"leo"},"body":"one","createdAt":"` + now + `","updatedAt":"` + now + `"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor1"}}
+			"comments":{"totalCount":42,"nodes":[{"databaseId":901,"author":{"login":"leo"},"body":"one","createdAt":"` + nowRFC3339 + `","updatedAt":"` + nowRFC3339 + `"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor1"}}
 		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
 		_, _ = w.Write([]byte(resp))
 	}))
@@ -2728,7 +2774,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	issueState := "open"
 	issueURL := "https://github.com/acme/widget/issues/90"
 	issueLogin := "kate"
-	issueTime := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	issueTime := gh.Timestamp{Time: now}
 	mock := &mockGH{
 		listOpenPRsErr: &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusNotModified},
@@ -2763,7 +2809,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// — a test-only flake, not a production bug.
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
-	stale := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Second)
+	stale := now.Add(-time.Second)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
 		PlatformID:     90000,

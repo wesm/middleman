@@ -24,7 +24,7 @@ export async function updateSettings(
 export async function addRepo(
   owner: string,
   name: string,
-): Promise<{ owner: string; name: string }> {
+): Promise<Settings> {
   const res = await fetch(`${BASE}/repos`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -34,7 +34,7 @@ export async function addRepo(
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text);
   }
-  return res.json();
+  return res.json() as Promise<Settings>;
 }
 
 export async function removeRepo(
@@ -42,11 +42,26 @@ export async function removeRepo(
   name: string,
 ): Promise<void> {
   const res = await fetch(
-    `${BASE}/repos/${owner}/${name}`,
+    `${BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
     { method: "DELETE", headers: { "Content-Type": "application/json" } },
   );
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text);
   }
+}
+
+export async function refreshRepo(
+  owner: string,
+  name: string,
+): Promise<Settings> {
+  const res = await fetch(
+    `${BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/refresh`,
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(text);
+  }
+  return res.json() as Promise<Settings>;
 }

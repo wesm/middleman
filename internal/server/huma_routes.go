@@ -1355,16 +1355,9 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 
 	if s.cfg != nil {
-		s.cfgMu.Lock()
-		configured := make(map[string]bool, len(s.cfg.Repos))
-		for _, cr := range s.cfg.Repos {
-			configured[cr.Owner+"/"+cr.Name] = true
-		}
-		s.cfgMu.Unlock()
-
 		filtered := items[:0]
 		for _, it := range items {
-			if configured[it.RepoOwner+"/"+it.RepoName] {
+			if s.syncer.IsTrackedRepo(it.RepoOwner, it.RepoName) {
 				filtered = append(filtered, it)
 			}
 		}
