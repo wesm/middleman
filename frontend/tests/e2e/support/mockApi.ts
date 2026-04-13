@@ -76,6 +76,32 @@ const syncStatus = {
   last_error: "",
 };
 
+function makeRateLimits() {
+  const now = Date.now();
+  return {
+    hosts: {
+      "github.com": {
+        requests_hour: 188,
+        rate_remaining: 4812,
+        rate_limit: 5000,
+        rate_reset_at: new Date(now + 42 * 60_000).toISOString(),
+        hour_start: new Date(now - 18 * 60_000).toISOString(),
+        sync_throttle_factor: 1,
+        sync_paused: false,
+        reserve_buffer: 200,
+        known: true,
+        budget_limit: 500,
+        budget_spent: 42,
+        budget_remaining: 458,
+        gql_remaining: 4950,
+        gql_limit: 5000,
+        gql_reset_at: new Date(now + 38 * 60_000).toISOString(),
+        gql_known: true,
+      },
+    },
+  };
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
@@ -107,6 +133,11 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/sync/status") {
       await fulfillJson(route, syncStatus);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/v1/rate-limits") {
+      await fulfillJson(route, makeRateLimits());
       return;
     }
 

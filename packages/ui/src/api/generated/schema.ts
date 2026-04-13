@@ -1016,6 +1016,12 @@ export interface components {
             budget_remaining: number;
             /** Format: int64 */
             budget_spent: number;
+            gql_known: boolean;
+            /** Format: int64 */
+            gql_limit: number;
+            /** Format: int64 */
+            gql_remaining: number;
+            gql_reset_at: string;
             hour_start: string;
             known: boolean;
             /** Format: int64 */

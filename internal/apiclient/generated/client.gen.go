@@ -431,6 +431,10 @@ type RateLimitHostStatus struct {
 	BudgetLimit        int64  `json:"budget_limit"`
 	BudgetRemaining    int64  `json:"budget_remaining"`
 	BudgetSpent        int64  `json:"budget_spent"`
+	GqlKnown           bool   `json:"gql_known"`
+	GqlLimit           int64  `json:"gql_limit"`
+	GqlRemaining       int64  `json:"gql_remaining"`
+	GqlResetAt         string `json:"gql_reset_at"`
 	HourStart          string `json:"hour_start"`
 	Known              bool   `json:"known"`
 	RateLimit          int64  `json:"rate_limit"`

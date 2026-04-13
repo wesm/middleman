@@ -213,6 +213,23 @@ func TestGraphqlRateTransport(t *testing.T) {
 	assert.Equal(5000, rt.RateLimit())
 }
 
+func TestGraphQLFetcherRateTracker(t *testing.T) {
+	d := openTestDB(t)
+	rt := NewRateTracker(d, "github.com", "graphql")
+	f := NewGraphQLFetcher("fake-token", "github.com", rt, nil)
+	require.Same(t, rt, f.RateTracker())
+}
+
+func TestGraphQLFetcherRateTrackerNil(t *testing.T) {
+	f := NewGraphQLFetcher("fake-token", "github.com", nil, nil)
+	require.Nil(t, f.RateTracker())
+}
+
+func TestGraphQLFetcherRateTrackerNilReceiver(t *testing.T) {
+	var f *GraphQLFetcher
+	require.Nil(t, f.RateTracker())
+}
+
 func TestConvertGQLPRCompleteness(t *testing.T) {
 	assert := Assert.New(t)
 

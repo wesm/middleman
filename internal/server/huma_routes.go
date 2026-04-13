@@ -1196,6 +1196,7 @@ func (s *Server) getRateLimits(
 	_ context.Context, _ *struct{},
 ) (*rateLimitsOutput, error) {
 	trackers := s.syncer.RateTrackers()
+	gqlTrackers := s.syncer.GQLRateTrackers()
 	budgets := s.syncer.Budgets()
 	hosts := make(map[string]rateLimitHostStatus, len(trackers))
 	for host, rt := range trackers {
@@ -1213,6 +1214,16 @@ func (s *Server) getRateLimits(
 			SyncPaused:         rt.IsPaused(),
 			ReserveBuffer:      ghclient.RateReserveBuffer,
 			Known:              rt.Known(),
+			GQLRemaining:       -1,
+			GQLLimit:           -1,
+		}
+		if gqlRT := gqlTrackers[host]; gqlRT != nil {
+			status.GQLRemaining = gqlRT.Remaining()
+			status.GQLLimit = gqlRT.RateLimit()
+			status.GQLKnown = gqlRT.Known()
+			if resetAt := gqlRT.ResetAt(); resetAt != nil {
+				status.GQLResetAt = resetAt.UTC().Format(time.RFC3339)
+			}
 		}
 		if b := budgets[host]; b != nil {
 			status.BudgetLimit = b.Limit()

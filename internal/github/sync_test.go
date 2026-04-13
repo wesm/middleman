@@ -4725,3 +4725,74 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 	// GraphQL path skipped REST ListIssueComments.
 	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
 }
+
+func TestSyncerGQLRateTrackers(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	rt := NewRateTracker(d, "github.com", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "graphql")
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*RateTracker{"github.com": rt},
+		nil,
+	)
+
+	fetcher := NewGraphQLFetcher("token", "github.com", gqlRT, nil)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": fetcher})
+
+	gqlTrackers := syncer.GQLRateTrackers()
+	assert.Len(gqlTrackers, 1)
+	assert.Same(gqlRT, gqlTrackers["github.com"])
+}
+
+func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil, nil,
+	)
+
+	// Nil fetcher entry and a fetcher with no tracker both skipped.
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com":            nil,
+		"ghe.corp.example.com":  NewGraphQLFetcher("tok", "ghe.corp.example.com", nil, nil),
+	})
+
+	assert.Empty(syncer.GQLRateTrackers())
+}
+
+func TestSyncerGQLRateTrackersMixed(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	validRT := NewRateTracker(d, "github.com", "graphql")
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil, nil,
+	)
+
+	// Mix of nil fetcher, fetcher-without-tracker, and valid fetcher.
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"nil.example.com":       nil,
+		"no-tracker.example.com": NewGraphQLFetcher("tok", "no-tracker.example.com", nil, nil),
+		"github.com":            NewGraphQLFetcher("tok", "github.com", validRT, nil),
+	})
+
+	got := syncer.GQLRateTrackers()
+	assert.Len(got, 1)
+	assert.Same(validRT, got["github.com"])
+}
