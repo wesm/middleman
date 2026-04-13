@@ -63,10 +63,11 @@
   function hostHealthColor(h: RateLimitHostStatus): string {
     if (h.sync_paused) return "var(--budget-red)";
     if (isHostUnknown(h)) return "var(--text-muted)";
-    const restKnown = h.known && h.rate_limit > 0;
-    const gqlKnown = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0;
-    const rr = restKnown ? h.rate_remaining / h.rate_limit : 1;
-    const gr = gqlKnown ? (h.gql_remaining ?? 0) / (h.gql_limit ?? 1) : 1;
+    const restFresh = h.known && h.rate_limit > 0 && h.rate_remaining >= 0;
+    const gqlFresh = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0 && (h.gql_remaining ?? -1) >= 0;
+    if (!restFresh && !gqlFresh) return "var(--text-muted)";
+    const rr = restFresh ? h.rate_remaining / h.rate_limit : 1;
+    const gr = gqlFresh ? (h.gql_remaining ?? 0) / (h.gql_limit ?? 1) : 1;
     return budgetColor(Math.min(rr, gr));
   }
 

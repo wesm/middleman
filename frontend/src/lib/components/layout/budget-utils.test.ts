@@ -52,28 +52,44 @@ describe("worstCaseRatio", () => {
   it("returns -1 for empty array", () => {
     expect(worstCaseRatio([])).toBe(-1);
   });
+
+  it("excludes stale trackers with known=true but remaining=-1", () => {
+    const entries: HostBudgetEntry[] = [
+      { remaining: 4000, limit: 5000, known: true },
+      { remaining: -1, limit: 5000, known: true }, // stale after window reset
+    ];
+    expect(worstCaseRatio(entries)).toBeCloseTo(0.8);
+  });
 });
 
 describe("aggregateBudget", () => {
-  it("sums budget from enabled hosts", () => {
+  it("sums budget from enabled known hosts", () => {
     const result = aggregateBudget([
-      { budget_limit: 500, budget_spent: 42 },
-      { budget_limit: 300, budget_spent: 10 },
+      { budget_limit: 500, budget_spent: 42, known: true },
+      { budget_limit: 300, budget_spent: 10, known: true },
     ]);
     expect(result).toEqual({ spent: 52, limit: 800, hasAny: true });
   });
 
   it("excludes disabled hosts", () => {
     const result = aggregateBudget([
-      { budget_limit: 500, budget_spent: 42 },
-      { budget_limit: 0, budget_spent: 0 },
+      { budget_limit: 500, budget_spent: 42, known: true },
+      { budget_limit: 0, budget_spent: 0, known: true },
+    ]);
+    expect(result).toEqual({ spent: 42, limit: 500, hasAny: true });
+  });
+
+  it("excludes unknown hosts even with budget enabled", () => {
+    const result = aggregateBudget([
+      { budget_limit: 500, budget_spent: 42, known: true },
+      { budget_limit: 500, budget_spent: 0, known: false },
     ]);
     expect(result).toEqual({ spent: 42, limit: 500, hasAny: true });
   });
 
   it("returns hasAny false when all disabled", () => {
     const result = aggregateBudget([
-      { budget_limit: 0, budget_spent: 0 },
+      { budget_limit: 0, budget_spent: 0, known: true },
     ]);
     expect(result).toEqual({ spent: 0, limit: 0, hasAny: false });
   });
