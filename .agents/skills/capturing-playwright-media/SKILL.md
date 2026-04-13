@@ -1,1 +1,0 @@
-../../../skills/capturing-playwright-media/SKILL.md

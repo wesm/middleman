@@ -1,9 +1,9 @@
 ---
-name: capturing-playwright-media
+name: capture-playwright
 description: Use when a screenshot or short video needs to be captured with Playwright and shared through the `gh image` GitHub CLI extension, especially when the extension may need installing or fails because browser cookie stores are missing.
 ---
 
-# capturing-playwright-media
+# capture-playwright
 
 Generate the artifact with Playwright first, then upload the saved file with `gh image`.
 
