@@ -88,6 +88,25 @@ type Server struct {
 	// observes true drain after an earlier caller's ctx expired.
 	drainDone chan struct{}
 	httpSrv   *http.Server
+	// connWG tracks per-connection goroutines spawned by Serve.
+	// Incremented from ConnState(StateNew), decremented from
+	// ConnState(StateClosed|StateHijacked). Shutdown waits on it
+	// after http.Server.Shutdown so that the deferred setState in
+	// (*conn).serve (which reads time.Now()) finishes before the
+	// test returns. Without this, a later test that mutates
+	// time.Local races with that read under -race -shuffle=on.
+	connWG sync.WaitGroup
+}
+
+// trackHTTPConn is installed as http.Server.ConnState by Serve so
+// Shutdown can wait for per-connection goroutines to fully unwind.
+func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
+	switch state {
+	case http.StateNew:
+		s.connWG.Add(1)
+	case http.StateHijacked, http.StateClosed:
+		s.connWG.Done()
+	}
 }
 
 // Hub returns the server's SSE event hub. Callers should never
@@ -146,6 +165,25 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	var httpErr error
 	if httpSrv != nil {
 		httpErr = httpSrv.Shutdown(ctx)
+		// http.Server.Shutdown returns when active connections
+		// become idle and are removed from its tracking map, but
+		// the per-connection goroutine's deferred setState(Closed)
+		// chain — which reads time.Now() — is still running on its
+		// way out. Wait for our ConnState hook to observe the
+		// final state transition so callers (tests in particular,
+		// which override time.Local) cannot race with that read.
+		connDone := make(chan struct{})
+		go func() {
+			s.connWG.Wait()
+			close(connDone)
+		}()
+		select {
+		case <-connDone:
+		case <-ctx.Done():
+			if httpErr == nil {
+				httpErr = ctx.Err()
+			}
+		}
 	}
 
 	if first {
@@ -434,6 +472,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		// /api/roborev/api/stream/events and /api/job/log
 		// after the deadline.
 		IdleTimeout: 60 * time.Second,
+		ConnState:   s.trackHTTPConn,
 	}
 
 	s.bgMu.Lock()
