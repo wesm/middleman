@@ -247,11 +247,74 @@ test("paused host shows red health dot and sync paused indicator", async ({ page
   const restFill = bars.locator(".budget-fill").first();
   await expect(restFill).toHaveCSS("background-color", "rgb(248, 113, 113)");
 
-  // Open popover — should show "sync paused" indicator and red health dot
+  // Open popover — should show "sync paused" indicator
   await bars.click();
   const popover = page.getByRole("dialog", { name: "API Budget" });
   await expect(popover).toBeVisible();
   await expect(popover.getByText("sync paused")).toBeVisible();
+  // Single-host mode hides hostname header (and health dot).
+  // Health dot color is tested in the multi-host paused case below.
+});
+
+test("paused multi-host shows red health dot in popover", async ({ page }) => {
+  await page.route("**/api/v1/rate-limits", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: {
+          "github.com": {
+            requests_hour: 500,
+            rate_remaining: 50,
+            rate_limit: 5000,
+            rate_reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+            hour_start: new Date().toISOString(),
+            sync_throttle_factor: 8,
+            sync_paused: true,
+            reserve_buffer: 200,
+            known: true,
+            budget_limit: 500,
+            budget_spent: 400,
+            budget_remaining: 100,
+            gql_remaining: 100,
+            gql_limit: 5000,
+            gql_reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+            gql_known: true,
+          },
+          "ghe.example.com": {
+            requests_hour: 10,
+            rate_remaining: 4900,
+            rate_limit: 5000,
+            rate_reset_at: new Date(Date.now() + 50 * 60_000).toISOString(),
+            hour_start: new Date().toISOString(),
+            sync_throttle_factor: 1,
+            sync_paused: false,
+            reserve_buffer: 200,
+            known: true,
+            budget_limit: 0,
+            budget_spent: 0,
+            budget_remaining: 0,
+            gql_remaining: -1,
+            gql_limit: -1,
+            gql_reset_at: "",
+            gql_known: false,
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/pulls");
+
+  await page.locator(".budget-bars").click();
+  const popover = page.getByRole("dialog", { name: "API Budget" });
+  await expect(popover).toBeVisible();
+
+  // Paused host (github.com) health dot should be red
+  const pausedDot = popover.locator(".host-section").filter({
+    hasText: "github.com",
+  }).locator(".health-dot");
+  await expect(pausedDot).toHaveCSS("background-color", "rgb(248, 113, 113)");
 });
 
 test("GQL known but REST unknown hides budget count", async ({ page }) => {
