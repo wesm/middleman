@@ -606,6 +606,201 @@ func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
 	require.Equal(int64(802), stored.Labels[0].PlatformID)
 }
 
+// TestSyncIssueNilUpdatedAt verifies refreshIssueTimeline
+// tolerates a GitHub issue whose updated_at is null. Before
+// the nil guard this panicked the sync goroutine when GitHub
+// occasionally returned missing timestamps.
+func TestSyncIssueNilUpdatedAt(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
+	issueNumber := 7
+	issueTitle := "no updated_at"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/7"
+	issueBody := ""
+	issueID := int64(900007)
+	issue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: nil, // the case under test
+	}
+
+	commentID := int64(9001)
+	commentBody := "later comment"
+	commentURL := "https://github.com/owner/repo/issues/7#issuecomment-9001"
+	commentTime := now.Add(2 * time.Hour)
+	commentAuthor := "alice"
+	comment := &gh.IssueComment{
+		ID:        &commentID,
+		Body:      &commentBody,
+		HTMLURL:   &commentURL,
+		CreatedAt: makeTimestamp(commentTime),
+		UpdatedAt: makeTimestamp(commentTime),
+		User:      &gh.User{Login: &commentAuthor},
+	}
+
+	mc := &mockClient{
+		getIssueFn: func(
+			context.Context, string, string, int,
+		) (*gh.Issue, error) {
+			return issue, nil
+		},
+		comments: []*gh.IssueComment{comment},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner:        "owner",
+			Name:         "repo",
+			PlatformHost: "github.com",
+		}},
+		time.Minute, nil, nil,
+	)
+
+	// Must not panic and must succeed.
+	require.NoError(
+		syncer.SyncIssue(ctx, "owner", "repo", issueNumber),
+	)
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stored)
+	// last_activity_at should track the comment timestamp
+	// even though the issue had no updated_at.
+	assert.Equal(commentTime.UTC(), stored.LastActivityAt.UTC())
+}
+
+// TestSyncIssueNilUpdatedAtNoComments verifies the CreatedAt
+// fallback when UpdatedAt is nil and there are no comments.
+// Without the fallback, lastActivity would be zero time and
+// the issue would sort incorrectly in activity views.
+func TestSyncIssueNilUpdatedAtNoComments(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	created := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
+	issueNumber := 8
+	issueTitle := "no updated_at, no comments"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/8"
+	issueBody := ""
+	issueID := int64(900008)
+	issue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(created),
+		UpdatedAt: nil,
+	}
+
+	mc := &mockClient{
+		getIssueFn: func(
+			context.Context, string, string, int,
+		) (*gh.Issue, error) {
+			return issue, nil
+		},
+		comments: []*gh.IssueComment{},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner:        "owner",
+			Name:         "repo",
+			PlatformHost: "github.com",
+		}},
+		time.Minute, nil, nil,
+	)
+
+	require.NoError(
+		syncer.SyncIssue(ctx, "owner", "repo", issueNumber),
+	)
+
+	stored, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(created.UTC(), stored.LastActivityAt.UTC(),
+		"lastActivity should fall back to CreatedAt, not zero time")
+}
+
+// TestHostForConcurrentSetRepos verifies that concurrent
+// SetRepos calls don't race with hostFor readers. Run under
+// go test -race to catch regressions in the reposMu locking
+// inside hostFor. Readers exercise all three hostFor return
+// paths (tracked-with-host, tracked-with-empty-host, not-found)
+// so a future refactor that reintroduces unsynchronized access
+// on any branch is caught.
+func TestHostForConcurrentSetRepos(t *testing.T) {
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}}, nil, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Writer: rotate between three shapes so readers see each
+	// hostFor branch at some point in the run.
+	wg.Go(func() {
+		withHost := []RepoRef{
+			{Owner: "o", Name: "r", PlatformHost: "ghe.example.com"},
+			{Owner: "o2", Name: "r2", PlatformHost: "github.com"},
+		}
+		emptyHost := []RepoRef{
+			{Owner: "o", Name: "r", PlatformHost: ""},
+		}
+		orig := []RepoRef{
+			{Owner: "o", Name: "r", PlatformHost: "github.com"},
+		}
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			syncer.SetRepos(withHost)
+			syncer.SetRepos(emptyHost)
+			syncer.SetRepos(orig)
+		}
+	})
+
+	// Readers: hit every unlocked hostFor caller, including
+	// the not-found branch (ghost/missing) and the empty-host
+	// branch driven by the writer's emptyHost state.
+	for range 4 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = syncer.HostForRepo("o", "r")
+				_ = syncer.HostForRepo("ghost", "missing")
+				_ = syncer.IsTrackedRepo("o", "r")
+			}
+		})
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+}
+
 func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

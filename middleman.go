@@ -61,9 +61,11 @@ func uniqueHosts(repos []Repo) []string {
 }
 
 // resolveHostTokens builds a map of host -> token. When
-// resolveToken is set it is called once per host; otherwise
-// staticToken is used for all hosts.
+// resolveToken is set it is called once per host with ctx;
+// otherwise staticToken is used for all hosts. ctx lets
+// callers bound slow or hung token providers.
 func resolveHostTokens(
+	ctx context.Context,
 	hosts []string,
 	staticToken string,
 	resolveToken func(ctx context.Context, host string) (string, error),
@@ -71,9 +73,7 @@ func resolveHostTokens(
 	tokens := make(map[string]string, len(hosts))
 	for _, host := range hosts {
 		if resolveToken != nil {
-			tok, err := resolveToken(
-				context.Background(), host,
-			)
+			tok, err := resolveToken(ctx, host)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"middleman: resolve token for %s: %w",
@@ -197,10 +197,31 @@ type Instance struct {
 	closed         bool
 }
 
-// New creates a middleman Instance from the given options.
+// New creates a middleman Instance from the given options. It
+// wraps NewWithContext with context.Background(); callers that
+// need to bound or cancel a slow ResolveToken callback should
+// use NewWithContext directly.
+//
 // Either Token or ResolveToken must yield a non-empty token.
 // Either DBPath or DataDir must be provided.
 func New(opts Options) (*Instance, error) {
+	return NewWithContext(context.Background(), opts)
+}
+
+// NewWithContext creates a middleman Instance from the given
+// options. The provided ctx is used for ResolveToken lookups
+// during initialization so hosts that depend on a slow secret
+// store can bound it. A nil ctx is treated as
+// context.Background() to preserve the panic-free contract of
+// the older New(opts) entry point. ctx is not retained past
+// New; runtime sync cancellation is controlled by StartSync /
+// Close.
+func NewWithContext(
+	ctx context.Context, opts Options,
+) (*Instance, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// DB path: prefer explicit DBPath over DataDir-derived.
 	dbPath := opts.DBPath
 	if dbPath == "" {
@@ -232,7 +253,7 @@ func New(opts Options) (*Instance, error) {
 
 	// Build per-host tokens.
 	hostTokens, err := resolveHostTokens(
-		hosts, opts.Token, opts.ResolveToken,
+		ctx, hosts, opts.Token, opts.ResolveToken,
 	)
 	if err != nil {
 		return nil, err
@@ -461,9 +482,27 @@ func (i *Instance) Close() error {
 }
 
 // PurgeOtherHosts deletes all data for platform hosts other
-// than keepHost.
+// than keepHost. Uses context.Background(); callers that need
+// to bound a long-running purge should call
+// PurgeOtherHostsWithContext instead.
 func (inst *Instance) PurgeOtherHosts(keepHost string) error {
-	return inst.db.PurgeOtherHosts(keepHost)
+	return inst.PurgeOtherHostsWithContext(
+		context.Background(), keepHost,
+	)
+}
+
+// PurgeOtherHostsWithContext deletes all data for platform
+// hosts other than keepHost under the given ctx. A nil ctx is
+// treated as context.Background() so callers that previously
+// used the context-less API do not hit database/sql's nil-ctx
+// panic.
+func (inst *Instance) PurgeOtherHostsWithContext(
+	ctx context.Context, keepHost string,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return inst.db.PurgeOtherHosts(ctx, keepHost)
 }
 
 // SetWatchedMRs sets the list of merge requests to sync on a
@@ -473,10 +512,27 @@ func (inst *Instance) SetWatchedMRs(mrs []WatchedMR) {
 }
 
 // SetWorktreeLinks replaces all worktree links atomically.
+// Uses context.Background(); callers that need cancellation
+// should call SetWorktreeLinksWithContext.
 func (inst *Instance) SetWorktreeLinks(
 	links []WorktreeLink,
 ) error {
-	return inst.db.SetWorktreeLinks(links)
+	return inst.SetWorktreeLinksWithContext(
+		context.Background(), links,
+	)
+}
+
+// SetWorktreeLinksWithContext replaces all worktree links
+// atomically under the given ctx. A nil ctx is treated as
+// context.Background() so callers that previously used the
+// context-less API do not hit database/sql's nil-ctx panic.
+func (inst *Instance) SetWorktreeLinksWithContext(
+	ctx context.Context, links []WorktreeLink,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return inst.db.SetWorktreeLinks(ctx, links)
 }
 
 // SetActiveWorktree sets the key of the currently focused worktree.

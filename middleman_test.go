@@ -216,6 +216,59 @@ func TestNewResolveTokenError(t *testing.T) {
 	Assert.Contains(t, err.Error(), "auth failed")
 }
 
+// TestNewWithContextCancelsResolveToken verifies NewWithContext
+// propagates the caller's ctx to ResolveToken so a slow or hung
+// token provider can be bounded.
+func TestNewWithContextCancelsResolveToken(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel
+
+	_, err := NewWithContext(ctx, Options{
+		ResolveToken: func(
+			resolveCtx context.Context, _ string,
+		) (string, error) {
+			// Observe cancellation and propagate it.
+			return "", resolveCtx.Err()
+		},
+		DataDir: t.TempDir(),
+		Repos:   []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+// TestNewWithContextNilCtx verifies a nil ctx is treated as
+// context.Background() so ResolveToken callbacks that call
+// ctx.Err() / ctx.Done() / context.WithTimeout(ctx, ...) do not
+// panic. Regression test for the old New(opts) contract.
+func TestNewWithContextNilCtx(t *testing.T) {
+	dir := t.TempDir()
+	var observed context.Context
+	//nolint:staticcheck // intentional: verifying nil-ctx normalization
+	inst, err := NewWithContext(nil, Options{
+		ResolveToken: func(
+			resolveCtx context.Context, _ string,
+		) (string, error) {
+			observed = resolveCtx
+			// Exercise ctx methods that would panic on a
+			// nil ctx: Err, Done, WithTimeout.
+			_ = resolveCtx.Err()
+			_ = resolveCtx.Done()
+			c, cancel := context.WithTimeout(
+				resolveCtx, time.Second,
+			)
+			cancel()
+			_ = c
+			return "tok", nil
+		},
+		DataDir: dir,
+		Repos:   []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+	require.NotNil(t, observed)
+	require.NoError(t, observed.Err())
+}
+
 func TestNewResolveTokenOverridesStatic(t *testing.T) {
 	dir := t.TempDir()
 	inst, err := New(Options{
@@ -423,4 +476,36 @@ func TestStopSyncConcurrent(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
+}
+
+// TestInstancePurgeOtherHostsWithContextNilCtx verifies a nil
+// ctx is normalized to context.Background() at the API
+// boundary so database/sql does not panic.
+func TestInstancePurgeOtherHostsWithContextNilCtx(t *testing.T) {
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Repos:   []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	//nolint:staticcheck // intentional: verifying nil-ctx normalization
+	require.NoError(t, inst.PurgeOtherHostsWithContext(nil, "github.com"))
+}
+
+// TestInstanceSetWorktreeLinksWithContextNilCtx verifies a nil
+// ctx is normalized to context.Background() at the API
+// boundary so database/sql does not panic.
+func TestInstanceSetWorktreeLinksWithContextNilCtx(t *testing.T) {
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Repos:   []Repo{{Owner: "t", Name: "r"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	//nolint:staticcheck // intentional: verifying nil-ctx normalization
+	require.NoError(t, inst.SetWorktreeLinksWithContext(nil, nil))
 }

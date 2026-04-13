@@ -352,8 +352,8 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 // PurgeOtherHosts deletes all data for platform hosts other
 // than keepHost. Deletes in FK-dependency order so it works
 // on existing DBs where CASCADE may not be retrofitted.
-func (d *DB) PurgeOtherHosts(keepHost string) error {
-	return d.Tx(context.Background(), func(tx *sql.Tx) error {
+func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
 		queries := []string{
 			`DELETE FROM middleman_starred_items WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
 			`DELETE FROM middleman_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
@@ -366,7 +366,7 @@ func (d *DB) PurgeOtherHosts(keepHost string) error {
 			`DELETE FROM middleman_rate_limits WHERE platform_host != ?`,
 		}
 		for _, q := range queries {
-			if _, err := tx.Exec(q, keepHost); err != nil {
+			if _, err := tx.ExecContext(ctx, q, keepHost); err != nil {
 				return err
 			}
 		}
@@ -1897,9 +1897,11 @@ func (d *DB) GetRateLimit(
 // SetWorktreeLinks replaces all worktree links atomically.
 // The existing rows are deleted and the provided links are
 // inserted in a single transaction.
-func (d *DB) SetWorktreeLinks(links []WorktreeLink) error {
-	return d.Tx(context.Background(), func(tx *sql.Tx) error {
-		if _, err := tx.Exec(
+func (d *DB) SetWorktreeLinks(
+	ctx context.Context, links []WorktreeLink,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM middleman_mr_worktree_links`,
 		); err != nil {
 			return fmt.Errorf("delete worktree links: %w", err)
@@ -1907,7 +1909,7 @@ func (d *DB) SetWorktreeLinks(links []WorktreeLink) error {
 		if len(links) == 0 {
 			return nil
 		}
-		stmt, err := tx.Prepare(`
+		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_mr_worktree_links
 			    (merge_request_id, worktree_key,
 			     worktree_path, worktree_branch, linked_at)
@@ -1920,7 +1922,7 @@ func (d *DB) SetWorktreeLinks(links []WorktreeLink) error {
 		defer stmt.Close()
 		for i := range links {
 			l := &links[i]
-			if _, err := stmt.Exec(
+			if _, err := stmt.ExecContext(ctx,
 				l.MergeRequestID, l.WorktreeKey,
 				l.WorktreePath, l.WorktreeBranch,
 				l.LinkedAt.UTC().Format(time.RFC3339),
@@ -1938,9 +1940,9 @@ func (d *DB) SetWorktreeLinks(links []WorktreeLink) error {
 // GetWorktreeLinksForMR returns worktree links for a
 // specific merge request.
 func (d *DB) GetWorktreeLinksForMR(
-	mergeRequestID int64,
+	ctx context.Context, mergeRequestID int64,
 ) ([]WorktreeLink, error) {
-	rows, err := d.ro.Query(`
+	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, worktree_key,
 		       worktree_path, worktree_branch, linked_at
 		FROM middleman_mr_worktree_links
@@ -1961,7 +1963,7 @@ func (d *DB) GetWorktreeLinksForMR(
 // given merge request IDs. IDs are batched to stay within
 // SQLite's bind-parameter limit.
 func (d *DB) GetWorktreeLinksForMRs(
-	mrIDs []int64,
+	ctx context.Context, mrIDs []int64,
 ) ([]WorktreeLink, error) {
 	if len(mrIDs) == 0 {
 		return nil, nil
@@ -1984,7 +1986,7 @@ func (d *DB) GetWorktreeLinksForMRs(
 			WHERE merge_request_id IN (` +
 			strings.Join(placeholders, ",") + `)
 			ORDER BY linked_at DESC`
-		rows, err := d.ro.Query(query, args...)
+		rows, err := d.ro.QueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"get worktree links for MRs: %w", err,
@@ -2002,8 +2004,10 @@ func (d *DB) GetWorktreeLinksForMRs(
 
 // GetAllWorktreeLinks returns all worktree links ordered
 // by linked_at DESC.
-func (d *DB) GetAllWorktreeLinks() ([]WorktreeLink, error) {
-	rows, err := d.ro.Query(`
+func (d *DB) GetAllWorktreeLinks(
+	ctx context.Context,
+) ([]WorktreeLink, error) {
+	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, worktree_key,
 		       worktree_path, worktree_branch, linked_at
 		FROM middleman_mr_worktree_links

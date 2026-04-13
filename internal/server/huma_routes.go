@@ -370,7 +370,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	for i, mr := range mrs {
 		mrIDs[i] = mr.ID
 	}
-	links, err := s.db.GetWorktreeLinksForMRs(mrIDs)
+	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("load worktree links failed")
 	}
@@ -433,7 +433,7 @@ func (s *Server) buildPullDetailResponse(
 		events = []db.MREvent{}
 	}
 
-	dbLinks, err := s.db.GetWorktreeLinksForMR(mr.ID)
+	dbLinks, err := s.db.GetWorktreeLinksForMR(ctx, mr.ID)
 	if err != nil {
 		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
 			"load worktree links failed",

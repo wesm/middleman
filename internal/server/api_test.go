@@ -3162,15 +3162,17 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 	prID := seedPR(t, database, "acme", "widget", 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	require.NoError(database.SetWorktreeLinks([]db.WorktreeLink{
-		{
-			MergeRequestID: prID,
-			WorktreeKey:    "wt-abc",
-			WorktreePath:   "/tmp/wt",
-			WorktreeBranch: "feature",
-			LinkedAt:       now,
-		},
-	}))
+	require.NoError(database.SetWorktreeLinks(
+		context.Background(),
+		[]db.WorktreeLink{
+			{
+				MergeRequestID: prID,
+				WorktreeKey:    "wt-abc",
+				WorktreePath:   "/tmp/wt",
+				WorktreeBranch: "feature",
+				LinkedAt:       now,
+			},
+		}))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
 	rr := httptest.NewRecorder()
@@ -3190,14 +3192,16 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 	prID := seedPR(t, database, "acme", "widget", 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	require.NoError(database.SetWorktreeLinks([]db.WorktreeLink{
-		{
-			MergeRequestID: prID,
-			WorktreeKey:    "wt-detail",
-			WorktreePath:   "/tmp/detail",
-			LinkedAt:       now,
-		},
-	}))
+	require.NoError(database.SetWorktreeLinks(
+		context.Background(),
+		[]db.WorktreeLink{
+			{
+				MergeRequestID: prID,
+				WorktreeKey:    "wt-detail",
+				WorktreePath:   "/tmp/detail",
+				LinkedAt:       now,
+			},
+		}))
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/repos/acme/widget/pulls/1", nil)
