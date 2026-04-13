@@ -33,6 +33,7 @@ type mockGH struct {
 	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
+	getUserFn                 func(context.Context, string) (*gh.User, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, string) (*gh.PullRequest, error)
 	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
@@ -70,7 +71,10 @@ func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (
 	return nil, nil
 }
 
-func (m *mockGH) GetUser(_ context.Context, login string) (*gh.User, error) {
+func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
+	if m.getUserFn != nil {
+		return m.getUserFn(ctx, login)
+	}
 	return &gh.User{Login: &login}, nil
 }
 
@@ -4324,4 +4328,69 @@ func TestAPIListStacks_Empty(t *testing.T) {
 	var stks []generated.StackResponse
 	require.NoError(t, json.Unmarshal(resp.Body, &stks))
 	assert.Empty(stks)
+}
+
+// TestDisplayNameCacheE2E verifies the display-name cache
+// through the full stack: sync → SQLite → HTTP API. Two
+// RunOnce passes populate and then cache-hit the display name;
+// the test asserts /api/v1/pulls returns the expected
+// AuthorDisplayName after each pass, and that GetUser is only
+// called during the first sync.
+func TestDisplayNameCacheE2E(t *testing.T) {
+	require := require.New(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	prID := int64(1000)
+	prNumber := 1
+	prTitle := "test pr"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/1"
+	prBody := ""
+	prAuthor := "alice"
+	displayName := "Alice Smith"
+	getUserCalls := 0
+
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				Body:      &prBody,
+				User:      &gh.User{Login: &prAuthor},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+			}}, nil
+		},
+		getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+			getUserCalls++
+			return &gh.User{Login: &login, Name: &displayName}, nil
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+
+	// First sync: populates display name via GetUser.
+	srv.syncer.RunOnce(context.Background())
+	require.Positive(getUserCalls, "first sync should call GetUser")
+	firstCalls := getUserCalls
+
+	// GET /api/v1/pulls — display name must appear.
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	require.Contains(rr.Body.String(), `"AuthorDisplayName":"Alice Smith"`)
+
+	// Second sync: cache hit, no new GetUser calls.
+	srv.syncer.RunOnce(context.Background())
+	require.Equal(firstCalls, getUserCalls,
+		"second sync must not re-fetch cached display names")
+
+	// GET /api/v1/pulls — display name still present.
+	rr2 := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, rr2.Code)
+	require.Contains(rr2.Body.String(), `"AuthorDisplayName":"Alice Smith"`)
 }
