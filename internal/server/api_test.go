@@ -2421,6 +2421,68 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	assert.True(finalIssue.UpdatedAt.After(staleUpdatedAt))
 }
 
+// TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt drives the full
+// HTTP handler -> syncer -> SQLite path with a GitHub response that
+// has updated_at: null, and verifies last_activity_at falls back to
+// created_at via the nil guard in refreshIssueTimeline. The sync_test
+// unit tests cover the same logic at the syncer layer; this test
+// covers the request path users actually hit in production.
+func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	createdAt := time.Date(2025, 3, 14, 9, 0, 0, 0, time.UTC)
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			id := int64(9999)
+			state := "open"
+			title := "nil updated_at"
+			url := "https://github.com/acme/widget/issues/9"
+			author := "alice"
+			createdTs := gh.Timestamp{Time: createdAt}
+			return &gh.Issue{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &createdTs,
+				UpdatedAt: nil,
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedIssue(t, database, "acme", "widget", 9, "open")
+	client := setupTestClient(t, srv)
+
+	// Before the nil guard, refreshIssueTimeline panicked on
+	// ghIssue.UpdatedAt.Time and the handler returned 502.
+	syncResp, err := client.HTTP.PostReposByOwnerByNameIssuesByNumberSyncWithResponse(
+		ctx, "acme", "widget", 9,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp.StatusCode())
+	require.NotNil(syncResp.JSON200)
+	// LastActivityAt must equal CreatedAt, not Go's zero time.
+	// Without the fallback, activity-ordered views would sort
+	// this issue at 0001-01-01 instead of its creation date.
+	assert.False(syncResp.JSON200.Issue.LastActivityAt.IsZero())
+	assert.Equal(createdAt, syncResp.JSON200.Issue.LastActivityAt.UTC())
+
+	// Verify the persisted value round-trips through the read
+	// endpoint so the storage -> serializer path is covered.
+	getResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", 9,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	assert.Equal(createdAt, getResp.JSON200.Issue.LastActivityAt.UTC())
+}
+
 func TestAPIListPullsStateFilter(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
