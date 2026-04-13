@@ -63,33 +63,33 @@ describe("worstCaseRatio", () => {
 });
 
 describe("aggregateBudget", () => {
-  it("sums budget from enabled known hosts", () => {
+  it("sums budget from enabled hosts", () => {
     const result = aggregateBudget([
-      { budget_limit: 500, budget_spent: 42, known: true },
-      { budget_limit: 300, budget_spent: 10, known: true },
+      { budget_limit: 500, budget_spent: 42 },
+      { budget_limit: 300, budget_spent: 10 },
     ]);
     expect(result).toEqual({ spent: 52, limit: 800, hasAny: true });
   });
 
   it("excludes disabled hosts", () => {
     const result = aggregateBudget([
-      { budget_limit: 500, budget_spent: 42, known: true },
-      { budget_limit: 0, budget_spent: 0, known: true },
+      { budget_limit: 500, budget_spent: 42 },
+      { budget_limit: 0, budget_spent: 0 },
     ]);
     expect(result).toEqual({ spent: 42, limit: 500, hasAny: true });
   });
 
-  it("excludes unknown hosts even with budget enabled", () => {
+  it("includes unknown hosts with budget enabled (budget is independent of rate observation)", () => {
     const result = aggregateBudget([
-      { budget_limit: 500, budget_spent: 42, known: true },
-      { budget_limit: 500, budget_spent: 0, known: false },
+      { budget_limit: 500, budget_spent: 42 },
+      { budget_limit: 500, budget_spent: 10 },
     ]);
-    expect(result).toEqual({ spent: 42, limit: 500, hasAny: true });
+    expect(result).toEqual({ spent: 52, limit: 1000, hasAny: true });
   });
 
   it("returns hasAny false when all disabled", () => {
     const result = aggregateBudget([
-      { budget_limit: 0, budget_spent: 0, known: true },
+      { budget_limit: 0, budget_spent: 0 },
     ]);
     expect(result).toEqual({ spent: 0, limit: 0, hasAny: false });
   });

@@ -54,20 +54,19 @@
     return `resets ${min}m`;
   }
 
-  function isHostUnknown(h: RateLimitHostStatus): boolean {
-    const restKnown = h.known && h.rate_limit > 0;
-    const gqlKnown = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0;
-    return !restKnown && !gqlKnown;
+  function isHostFresh(h: RateLimitHostStatus): boolean {
+    const restFresh = h.known && h.rate_limit > 0 && h.rate_remaining >= 0;
+    const gqlFresh = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0 && (h.gql_remaining ?? -1) >= 0;
+    return restFresh || gqlFresh;
   }
 
   function hostHealthColor(h: RateLimitHostStatus): string {
     if (h.sync_paused) return "var(--budget-red)";
-    if (isHostUnknown(h)) return "var(--text-muted)";
-    const restFresh = h.known && h.rate_limit > 0 && h.rate_remaining >= 0;
-    const gqlFresh = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0 && (h.gql_remaining ?? -1) >= 0;
-    if (!restFresh && !gqlFresh) return "var(--text-muted)";
-    const rr = restFresh ? h.rate_remaining / h.rate_limit : 1;
-    const gr = gqlFresh ? (h.gql_remaining ?? 0) / (h.gql_limit ?? 1) : 1;
+    if (!isHostFresh(h)) return "var(--text-muted)";
+    const restOk = h.known && h.rate_limit > 0 && h.rate_remaining >= 0;
+    const gqlOk = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0 && (h.gql_remaining ?? -1) >= 0;
+    const rr = restOk ? h.rate_remaining / h.rate_limit : 1;
+    const gr = gqlOk ? (h.gql_remaining ?? 0) / (h.gql_limit ?? 1) : 1;
     return budgetColor(Math.min(rr, gr));
   }
 
@@ -92,7 +91,7 @@
         <div class="host-name">
           <span
             class="health-dot"
-            class:health-dot--unknown={isHostUnknown(h)}
+            class:health-dot--unknown={!isHostFresh(h)}
             style:background={hostHealthColor(h)}
           ></span>
           {hostname}

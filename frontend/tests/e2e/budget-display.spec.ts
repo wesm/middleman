@@ -317,7 +317,7 @@ test("paused multi-host shows red health dot in popover", async ({ page }) => {
   await expect(pausedDot).toHaveCSS("background-color", "rgb(248, 113, 113)");
 });
 
-test("GQL known but REST unknown hides budget count", async ({ page }) => {
+test("GQL known but REST unknown still shows budget count", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -355,6 +355,73 @@ test("GQL known but REST unknown hides budget count", async ({ page }) => {
   await expect(bars.getByText("GQL")).toBeVisible();
   await expect(bars.getByText("REST")).not.toBeVisible();
   await expect(bars.getByText("--").first()).toBeVisible();
-  // Budget count hidden because REST is unknown (rr < 0)
-  await expect(bars.getByText("req/hr")).not.toBeVisible();
+  // Budget count visible — budget is independent of REST rate observation
+  await expect(bars.getByText("10 req/hr")).toBeVisible();
+});
+
+test("stale host excluded from compact bars, fresh host drives ratio", async ({ page }) => {
+  await page.route("**/api/v1/rate-limits", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: {
+          "github.com": {
+            requests_hour: 100,
+            rate_remaining: 4500,
+            rate_limit: 5000,
+            rate_reset_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            hour_start: new Date().toISOString(),
+            sync_throttle_factor: 1,
+            sync_paused: false,
+            reserve_buffer: 200,
+            known: true,
+            budget_limit: 500,
+            budget_spent: 100,
+            budget_remaining: 400,
+            gql_remaining: 4900,
+            gql_limit: 5000,
+            gql_reset_at: new Date(Date.now() + 25 * 60_000).toISOString(),
+            gql_known: true,
+          },
+          "ghe.example.com": {
+            requests_hour: 0,
+            rate_remaining: -1,
+            rate_limit: 5000,
+            rate_reset_at: "",
+            hour_start: new Date().toISOString(),
+            sync_throttle_factor: 1,
+            sync_paused: false,
+            reserve_buffer: 200,
+            known: true,
+            budget_limit: 0,
+            budget_spent: 0,
+            budget_remaining: 0,
+            gql_remaining: -1,
+            gql_limit: -1,
+            gql_reset_at: "",
+            gql_known: false,
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/pulls");
+
+  // Compact bars should show REST/GQL from fresh host (github.com)
+  const bars = page.locator(".budget-bars");
+  await expect(bars.getByText("REST")).toBeVisible();
+  await expect(bars.getByText("GQL")).toBeVisible();
+  // Bar fill should be visible (driven by fresh host, not stale)
+  await expect(bars.locator(".budget-fill").first()).toBeVisible();
+
+  // Popover: stale host health dot should be muted
+  await bars.click();
+  const popover = page.getByRole("dialog", { name: "API Budget" });
+  await expect(popover).toBeVisible();
+  const staleDot = popover.locator(".host-section").filter({
+    hasText: "ghe.example.com",
+  }).locator(".health-dot");
+  await expect(staleDot).toHaveClass(/health-dot--unknown/);
 });
