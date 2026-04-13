@@ -1,5 +1,7 @@
 <script lang="ts">
   import { getStores } from "@middleman/ui";
+  import BudgetBars from "./BudgetBars.svelte";
+  import BudgetPopover from "./BudgetPopover.svelte";
 
   const { pulls, issues, sync } = getStores();
 
@@ -14,7 +16,6 @@
       .catch(() => {});
   });
 
-  // Force re-render every 10s so relative times stay fresh
   let tick = $state(0);
   let tickHandle: ReturnType<typeof setInterval> | null = null;
   $effect(() => {
@@ -23,14 +24,14 @@
   });
 
   function syncText(): string {
-    void tick; // reactive dependency
+    void tick;
     const st = sync.getSyncState();
     if (st === null) return "";
     if (st.running) {
       if (st.progress) {
         return `syncing (${st.progress})`;
       }
-      return "syncing…";
+      return "syncing\u2026";
     }
     if (!st.last_run_at) return "not synced";
     const diffMs = Date.now() - new Date(st.last_run_at).getTime();
@@ -47,96 +48,44 @@
     return repos.size;
   }
 
-  function rateLimitText(): {
-    text: string;
-    level: "normal" | "warning" | "critical";
-  } {
-    void tick; // reactive dependency
-    const hosts = sync.getRateLimits();
-    const entries = Object.values(hosts);
-    if (entries.length === 0) {
-      return { text: "", level: "normal" };
-    }
+  let popoverOpen = $state(false);
 
-    // Prefer known hosts; fall back to all if none are known yet.
-    const knownEntries = entries.filter(h => h.known);
-    const pool = knownEntries.length > 0 ? knownEntries : entries;
-
-    // Pick worst-status host from the pool
-    let worst = pool[0]!;
-    for (const h of pool) {
-      if (h.sync_paused && !worst.sync_paused) {
-        worst = h;
-      } else if (h.sync_throttle_factor > worst.sync_throttle_factor) {
-        worst = h;
-      }
-    }
-
-    if (!worst.known) {
-      return { text: "GitHub: --", level: "normal" };
-    }
-
-    const globalUsed = worst.rate_limit - worst.rate_remaining;
-    const budgetLimit = worst.budget_limit ?? 0;
-    const budgetSpent = worst.budget_spent ?? 0;
-    let text = `GitHub: ${globalUsed}/${worst.rate_limit} global`;
-    if (budgetLimit > 0) {
-      text += `, ${budgetSpent}/${budgetLimit} budget`;
-    }
-
-    // Reset time
-    if (worst.rate_reset_at) {
-      const resetMs = new Date(worst.rate_reset_at).getTime() - Date.now();
-      if (resetMs > 0) {
-        const resetMin = Math.ceil(resetMs / 60_000);
-        text += ` · resets ${resetMin}m`;
-      }
-    }
-
-    // Throttle status
-    if (worst.sync_paused) {
-      text += " · sync paused";
-    } else if (worst.sync_throttle_factor > 1) {
-      text += ` · sync ${worst.sync_throttle_factor}x slower`;
-    }
-
-    // Color level
-    const pct = worst.rate_remaining / worst.rate_limit;
-    let level: "normal" | "warning" | "critical" = "normal";
-    if (worst.sync_paused || pct < 0.1) {
-      level = "critical";
-    } else if (pct < 0.5) {
-      level = "warning";
-    }
-
-    return { text, level };
+  function togglePopover() {
+    popoverOpen = !popoverOpen;
   }
 
-  let rateInfo = $derived(rateLimitText());
+  function closePopover() {
+    popoverOpen = false;
+  }
+
+  let rateLimitHosts = $derived.by(() => {
+    void tick;
+    return sync.getRateLimits();
+  });
+  let hasHosts = $derived(Object.keys(rateLimitHosts).length > 0);
 </script>
 
 <footer class="status-bar">
   <div class="status-left">
     <span class="status-item">{pulls.getPulls().length} PRs</span>
-    <span class="status-sep">·</span>
+    <span class="status-sep">&middot;</span>
     <span class="status-item">{issues.getIssues().length} issues</span>
-    <span class="status-sep">·</span>
+    <span class="status-sep">&middot;</span>
     <span class="status-item">{repoCount()} repos</span>
   </div>
   <div class="status-right">
-    {#if rateInfo.text}
-      <span
-        class="status-item"
-        class:status-item--warning={rateInfo.level === "warning"}
-        class:status-item--critical={rateInfo.level === "critical"}
-      >
-        {rateInfo.text}
+    {#if hasHosts}
+      <span class="budget-wrapper">
+        <BudgetBars hosts={rateLimitHosts} onclick={togglePopover} expanded={popoverOpen} />
+        {#if popoverOpen}
+          <BudgetPopover hosts={rateLimitHosts} onclose={closePopover} />
+        {/if}
       </span>
-      <span class="status-sep">·</span>
+      <span class="status-sep">&middot;</span>
     {/if}
     {#if sync.getSyncState()?.last_error}
       <span class="status-item status-item--error" title={sync.getSyncState()?.last_error}>sync error</span>
-      <span class="status-sep">·</span>
+      <span class="status-sep">&middot;</span>
     {/if}
     <span class="status-item" class:status-item--active={sync.getSyncState()?.running}>
       {#if sync.getSyncState()?.running}
@@ -145,7 +94,7 @@
       {syncText()}
     </span>
     {#if appVersion}
-      <span class="status-sep">·</span>
+      <span class="status-sep">&middot;</span>
       <span class="status-item status-item--version">{appVersion}</span>
     {/if}
   </div>
@@ -175,12 +124,6 @@
   .status-item--error {
     color: var(--accent-red);
   }
-  .status-item--warning {
-    color: var(--accent-amber);
-  }
-  .status-item--critical {
-    color: var(--accent-red);
-  }
   .status-item--active {
     color: var(--accent-green);
     display: flex;
@@ -193,6 +136,11 @@
     border-radius: 50%;
     background: var(--accent-green);
     animation: pulse 1.5s ease-in-out infinite;
+  }
+  .budget-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
   }
   @keyframes pulse {
     0%, 100% { opacity: 0.4; }
