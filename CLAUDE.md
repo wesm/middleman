@@ -123,6 +123,8 @@ make vet        # go vet
 ## Pull Requests
 
 - PR descriptions should be concise: summarize what changed, not how or why in detail
+- When a PR adds or changes visible UI, use the `capture-playwright` skill to capture a Playwright screenshot or short video and attach it with `gh image`
+- Do this before opening the PR so the description can include the visual artifact links
 - No test plans, implementation details, or checklists in PR descriptions
 - No marketing language (critical, robust, comprehensive, etc.)
 - A bulleted summary of user-visible changes is sufficient
