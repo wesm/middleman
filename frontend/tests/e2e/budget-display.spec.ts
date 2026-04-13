@@ -240,11 +240,14 @@ test("paused host shows red health dot and sync paused indicator", async ({ page
 
   await page.goto("/pulls");
 
-  // Compact bars should be red when paused
+  // Compact bars should be red when paused — labels inherit barColor
   const bars = page.locator(".budget-bars");
   await expect(bars.getByText("REST")).toBeVisible();
+  // Bar fill should use budget-red
+  const restFill = bars.locator(".budget-fill").first();
+  await expect(restFill).toHaveCSS("background-color", "rgb(248, 113, 113)");
 
-  // Open popover — should show "sync paused" indicator
+  // Open popover — should show "sync paused" indicator and red health dot
   await bars.click();
   const popover = page.getByRole("dialog", { name: "API Budget" });
   await expect(popover).toBeVisible();
@@ -285,9 +288,10 @@ test("GQL known but REST unknown hides budget count", async ({ page }) => {
 
   const bars = page.locator(".budget-bars");
   await expect(bars).toBeVisible();
-  // GQL bar should show (known), REST should show --
+  // GQL bar should show (known), REST should show -- placeholder
   await expect(bars.getByText("GQL")).toBeVisible();
   await expect(bars.getByText("REST")).not.toBeVisible();
+  await expect(bars.getByText("--").first()).toBeVisible();
   // Budget count hidden because REST is unknown (rr < 0)
   await expect(bars.getByText("req/hr")).not.toBeVisible();
 });
