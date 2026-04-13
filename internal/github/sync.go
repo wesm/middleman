@@ -116,13 +116,16 @@ type WatchedMR struct {
 // per-host GitHub rate limit / abuse-detection thresholds.
 const defaultParallelism = 4
 
-// displayNameResult caches a resolved display name along with whether
-// the lookup succeeded, so empty names from real users are not confused
-// with failed lookups.
-type displayNameResult struct {
-	name string
-	ok   bool
-}
+// Display-name cache parameters. Display names rarely change,
+// so the success TTL is long enough to skip lookups across many
+// sync passes; failures use a shorter TTL so a transient 404
+// does not suppress a real retry for hours. The size bound is
+// well above any realistic author set for a fixed repo list.
+const (
+	displayNameCacheSize   = 1024
+	displayNameSuccessTTL  = 24 * time.Hour
+	displayNameFailureTTL  = 15 * time.Minute
+)
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
@@ -147,12 +150,15 @@ type Syncer struct {
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
-	stopped            bool                         // guarded by lifecycleMu
-	nextSyncAfter      map[string]time.Time         // host -> next eligible background sync time
-	nextWatchSyncAfter map[string]time.Time         // host -> next eligible watch-sync time
-	displayNames       map[string]displayNameResult // "host\x00login" -> resolved name, per sync run
-	displayNamesMu     sync.Mutex
-	displayNameGroup   singleflight.Group // dedups concurrent GetUser calls
+	stopped            bool                 // guarded by lifecycleMu
+	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
+	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
+	// displayNames is a bounded TTL + LRU cache for resolved
+	// GitHub display names. It spans the Syncer's lifetime so
+	// cache hits survive across sync runs; per-entry TTL
+	// handles profile-name changes without an explicit flush.
+	displayNames     *displayNameCache
+	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
 	onMRSynced         func(owner, name string, mr *db.MergeRequest)
 	onSyncCompleted    func(results []RepoSyncResult)
 	onStatusChange     func(status *SyncStatus)
@@ -346,6 +352,11 @@ func NewSyncer(
 		nextSyncAfter:      make(map[string]time.Time),
 		nextWatchSyncAfter: make(map[string]time.Time),
 		stopCh:             make(chan struct{}),
+		displayNames: newDisplayNameCache(
+			displayNameCacheSize,
+			displayNameSuccessTTL,
+			displayNameFailureTTL,
+		),
 	}
 	s.parallelism.Store(defaultParallelism)
 	s.status.Store(&SyncStatus{})
@@ -1003,9 +1014,6 @@ func (s *Syncer) runOnce(
 		Running:  true,
 		Progress: fmt.Sprintf("0/%d", total),
 	})
-	s.displayNamesMu.Lock()
-	s.displayNames = make(map[string]displayNameResult)
-	s.displayNamesMu.Unlock()
 	slog.Info("sync started", "repos", total)
 
 	workers := min(max(int(s.parallelism.Load()), 1), total)
@@ -2350,65 +2358,64 @@ func computeLastActivity(
 	return latest
 }
 
-// resolveDisplayName returns the GitHub display name for a login and
-// whether the lookup succeeded. Returns ("", false) on API failure so
-// callers can preserve existing data. Uses an in-memory cache across
-// a sync run plus singleflight dedup so concurrent workers racing on
-// the same author only trigger one GetUser call.
+// resolveDisplayName returns the GitHub display name for a
+// login and whether the lookup succeeded. Returns ("", false)
+// on API failure so callers can preserve existing data. Uses a
+// TTL + LRU cache that spans the Syncer's lifetime plus
+// singleflight dedup so concurrent workers racing on the same
+// author only trigger one GetUser call. When a refetch fails
+// but a stale cache entry exists, the stale value is returned
+// (stale-while-error).
 //
-// Bot logins (ending with "[bot]") are returned as-is since bot accounts
-// have no display name on the GitHub API.
+// Bot logins (ending with "[bot]") are returned as-is since bot
+// accounts have no display name on the GitHub API.
 func (s *Syncer) resolveDisplayName(
 	ctx context.Context, client Client, host, login string,
 ) (string, bool) {
 	key := host + "\x00" + login
-	s.displayNamesMu.Lock()
-	if s.displayNames == nil {
-		s.displayNames = make(map[string]displayNameResult)
-	}
-	cached, ok := s.displayNames[key]
-	s.displayNamesMu.Unlock()
-	if ok {
+	if cached, fresh := s.displayNames.get(key); fresh {
 		return cached.name, cached.ok
 	}
 	if strings.HasSuffix(login, "[bot]") {
-		s.displayNamesMu.Lock()
-		s.displayNames[key] = displayNameResult{name: login, ok: true}
-		s.displayNamesMu.Unlock()
+		s.displayNames.putSuccess(key, login)
 		return login, true
 	}
 
 	v, err, _ := s.displayNameGroup.Do(key, func() (any, error) {
-		// Re-check the cache inside the singleflight slot: another
-		// caller may have populated it while this one was waiting
-		// for its turn to run.
-		s.displayNamesMu.Lock()
-		if cached, ok := s.displayNames[key]; ok {
-			s.displayNamesMu.Unlock()
+		// Re-check the cache inside the singleflight slot:
+		// another caller may have populated a fresh entry
+		// while this one was waiting for its turn to run.
+		if cached, fresh := s.displayNames.get(key); fresh {
 			return cached, nil
 		}
-		s.displayNamesMu.Unlock()
-
 		user, err := client.GetUser(ctx, login)
 		if err != nil {
-			return displayNameResult{}, err
+			return displayNameEntry{}, err
 		}
-		result := displayNameResult{name: nameOrEmpty(user), ok: true}
-		s.displayNamesMu.Lock()
-		s.displayNames[key] = result
-		s.displayNamesMu.Unlock()
-		return result, nil
+		name := nameOrEmpty(user)
+		s.displayNames.putSuccess(key, name)
+		return displayNameEntry{name: name, ok: true}, nil
 	})
 	if err != nil {
+		// Fall back to a stale cached name if one exists so a
+		// transient network error does not blank out an
+		// already-known name. A zero entry has ok=false, so a
+		// total miss falls through to the failure path below.
+		//
+		// Also back off the retry window: re-use the stored
+		// name but with failureTTL so repeated failures do not
+		// hit /users every sync for the life of successTTL.
+		if stale, _ := s.displayNames.get(key); stale.ok {
+			s.displayNames.putStaleFallback(key, stale.name)
+			return stale.name, true
+		}
 		slog.Warn("get user display name failed",
 			"login", login, "err", err,
 		)
-		s.displayNamesMu.Lock()
-		s.displayNames[key] = displayNameResult{ok: false}
-		s.displayNamesMu.Unlock()
+		s.displayNames.putFailure(key)
 		return "", false
 	}
-	result := v.(displayNameResult)
+	result := v.(displayNameEntry)
 	return result.name, result.ok
 }
 

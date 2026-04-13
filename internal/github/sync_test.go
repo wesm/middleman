@@ -4406,8 +4406,6 @@ func TestResolveDisplayName(t *testing.T) {
 				map[string]Client{"github.com": mc}, nil, nil, nil,
 				time.Minute, nil, nil,
 			)
-			syncer.displayNames = make(map[string]displayNameResult)
-
 			name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", tt.login)
 			assert.Equal(tt.wantName, name)
 			assert.Equal(tt.wantOK, ok)
@@ -4431,7 +4429,6 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 		map[string]Client{"github.com": mc}, nil, nil, nil,
 		time.Minute, nil, nil,
 	)
-	syncer.displayNames = make(map[string]displayNameResult)
 
 	// First call: hits API, returns failure.
 	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
@@ -4461,7 +4458,6 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 		map[string]Client{"github.com": mc}, nil, nil, nil,
 		time.Minute, nil, nil,
 	)
-	syncer.displayNames = make(map[string]displayNameResult)
 
 	// First call: hits API, succeeds with empty name.
 	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
@@ -5020,4 +5016,154 @@ func TestSyncerGQLRateTrackersMixed(t *testing.T) {
 	got := syncer.GQLRateTrackers()
 	assert.Len(got, 1)
 	assert.Same(validRT, got["github.com"])
+}
+
+// TestDisplayNameCacheSurvivesRunOnce verifies the key
+// behavioral change: the cache persists across RunOnce
+// invocations instead of being reset. With the old per-run
+// map, the second RunOnce would re-fetch every author. With
+// the TTL cache, the second RunOnce sees a fresh cache hit
+// and makes zero /users calls.
+func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	prNumber := 1
+	prTitle := "test"
+	prState := "open"
+	prURL := "https://github.com/owner/repo/pull/1"
+	prBody := ""
+	prAuthor := "alice"
+	prDisplayName := "Alice Smith"
+
+	getUserCalls := 0
+	mc := &mockClient{
+		openPRs: []*gh.PullRequest{buildOpenPR(prNumber, now)},
+		getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+			getUserCalls++
+			return &gh.User{Login: &login, Name: &prDisplayName}, nil
+		},
+	}
+	// Patch the open PR to have the author we care about.
+	mc.openPRs[0].User = &gh.User{Login: &prAuthor}
+	mc.openPRs[0].Title = &prTitle
+	mc.openPRs[0].State = &prState
+	mc.openPRs[0].HTMLURL = &prURL
+	mc.openPRs[0].Body = &prBody
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	// First RunOnce: resolves display name for "alice".
+	syncer.RunOnce(ctx)
+	firstRunCalls := getUserCalls
+	assert.Positive(firstRunCalls,
+		"first RunOnce should have fetched the display name")
+
+	// Verify the display name landed in SQLite.
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", prNumber)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("Alice Smith", mr.AuthorDisplayName,
+		"AuthorDisplayName must be persisted to SQLite after first sync")
+
+	// Second RunOnce: cache hit, no new GetUser calls.
+	syncer.RunOnce(ctx)
+	assert.Equal(firstRunCalls, getUserCalls,
+		"second RunOnce must not re-fetch cached display names")
+
+	// DB still has the name after the cache-hit sync pass.
+	mr2, err := d.GetMergeRequest(ctx, "owner", "repo", prNumber)
+	require.NoError(err)
+	require.NotNil(mr2)
+	assert.Equal("Alice Smith", mr2.AuthorDisplayName,
+		"AuthorDisplayName must survive a cache-hit sync pass")
+}
+
+// TestResolveDisplayName_StaleWhileErrorBacksOff verifies the
+// behavior when a successful cache entry has expired and the
+// refresh call keeps failing:
+//
+//  1. Stale name is returned instead of "" (stale-while-error).
+//  2. Follow-up calls within failureTTL do NOT hit the API — the
+//     expiry is rewritten to failureTTL so retries back off.
+//  3. After failureTTL elapses, one retry fires again.
+//
+// Without the backoff step 2, every subsequent sync would hit
+// /users while the outage persists, defeating the cache.
+func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	callCount := 0
+	shouldFail := false
+	mc := &mockClient{
+		getUserFn: func(_ context.Context, login string) (*gh.User, error) {
+			callCount++
+			if shouldFail {
+				return nil, fmt.Errorf("upstream outage")
+			}
+			name := "Alice Smith"
+			return &gh.User{Login: &login, Name: &name}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, nil, nil, nil,
+		time.Minute, nil, nil,
+	)
+
+	// Inject a fake clock into the cache so we can expire
+	// entries without waiting 24 hours.
+	fakeNow := time.Unix(1_700_000_000, 0)
+	syncer.displayNames.now = func() time.Time { return fakeNow }
+
+	// Warm the cache with a successful lookup.
+	name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	assert.Equal("Alice Smith", name)
+	assert.True(ok)
+	assert.Equal(1, callCount)
+
+	// Flip upstream to failing and expire the successful entry.
+	shouldFail = true
+	fakeNow = fakeNow.Add(displayNameSuccessTTL + time.Second)
+
+	// First refresh: API hit fails, stale name is returned.
+	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	assert.Equal("Alice Smith", name,
+		"stale name must be returned on refresh failure")
+	assert.True(ok)
+	assert.Equal(2, callCount, "refresh should hit the API once")
+
+	// Second refresh inside failureTTL: no API call, still
+	// serves stale name.
+	fakeNow = fakeNow.Add(displayNameFailureTTL / 2)
+	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	assert.Equal("Alice Smith", name)
+	assert.True(ok)
+	assert.Equal(2, callCount,
+		"retries within failureTTL must reuse the cached stale entry",
+	)
+
+	// Past failureTTL: one more API attempt is allowed.
+	fakeNow = fakeNow.Add(displayNameFailureTTL + time.Second)
+	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	assert.Equal("Alice Smith", name)
+	assert.True(ok)
+	assert.Equal(3, callCount,
+		"a retry should fire once failureTTL has elapsed",
+	)
+
+	// Recovered upstream: next call refreshes successfully.
+	shouldFail = false
+	fakeNow = fakeNow.Add(displayNameFailureTTL + time.Second)
+	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	assert.Equal("Alice Smith", name)
+	assert.True(ok)
+	assert.Equal(4, callCount)
 }
