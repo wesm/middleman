@@ -263,6 +263,24 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 		IdleTimeout: 60 * time.Second,
 	}
 
+	// Drain HTTP handlers and bg goroutines before DB close.
+	// LIFO ordering: this runs after stop() but before the
+	// deferred database.Close above. srv.Shutdown closes the
+	// hub so SSE handlers exit, then drains bg goroutines;
+	// httpServer.Shutdown drains in-flight HTTP handlers.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 10*time.Second,
+		)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server shutdown", "err", err)
+		}
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("http shutdown", "err", err)
+		}
+	}()
+
 	errCh := make(chan error, 1)
 	go func() {
 		if serveErr := httpServer.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
@@ -274,15 +292,20 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	select {
 	case <-ctx.Done():
 		slog.Info("shutting down")
+		// Trigger Shutdown so Serve unblocks (the defer is a
+		// safety net for other exit paths and is idempotent).
 		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
+			context.Background(), 10*time.Second,
 		)
 		defer cancel()
-		if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
-			slog.Warn("http shutdown error", "err", shutdownErr)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("server shutdown", "err", err)
 		}
-		// Drain any late error from Serve before returning so the
-		// goroutine does not outlive the function.
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("http shutdown", "err", err)
+		}
+		// Drain errCh so a real Serve failure (not
+		// ErrServerClosed) is surfaced instead of swallowed.
 		if serveErr, ok := <-errCh; ok {
 			return fmt.Errorf("server: %w", serveErr)
 		}

@@ -521,8 +521,10 @@ func (s *Syncer) ClientForHost(
 }
 
 // hostFor returns the platform host for a repo identified by
-// owner/name. Returns "github.com" if not found.
+// owner/name. Returns "github.com" if not found. Thread-safe.
 func (s *Syncer) hostFor(owner, name string) string {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
 	for _, r := range s.repos {
 		if strings.EqualFold(r.Owner, owner) &&
 			strings.EqualFold(r.Name, name) {
@@ -538,8 +540,6 @@ func (s *Syncer) hostFor(owner, name string) string {
 // HostForRepo returns the platform host for a tracked repo.
 // Thread-safe.
 func (s *Syncer) HostForRepo(owner, name string) string {
-	s.reposMu.Lock()
-	defer s.reposMu.Unlock()
 	return s.hostFor(owner, name)
 }
 
@@ -2522,7 +2522,12 @@ func (s *Syncer) refreshIssueTimeline(
 		)
 	}
 
-	lastActivity := ghIssue.UpdatedAt.Time
+	var lastActivity time.Time
+	if ghIssue.UpdatedAt != nil {
+		lastActivity = ghIssue.UpdatedAt.Time
+	} else if ghIssue.CreatedAt != nil {
+		lastActivity = ghIssue.CreatedAt.Time
+	}
 	for _, c := range comments {
 		if c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity) {
 			lastActivity = c.UpdatedAt.Time

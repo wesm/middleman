@@ -110,7 +110,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	}))
 
 	// Insert worktree links for both MRs.
-	require.NoError(d.SetWorktreeLinks([]WorktreeLink{
+	require.NoError(d.SetWorktreeLinks(ctx, []WorktreeLink{
 		{
 			MergeRequestID: ghMRID,
 			WorktreeKey:    "wt-gh",
@@ -136,7 +136,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	))
 
 	// Purge all hosts except github.com.
-	require.NoError(d.PurgeOtherHosts("github.com"))
+	require.NoError(d.PurgeOtherHosts(ctx, "github.com"))
 
 	// github.com data should remain.
 	repos, err := d.ListRepos(ctx)
@@ -156,7 +156,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	assert.Len(ghEvents, 1)
 
 	// github.com worktree links should remain.
-	ghLinks, err := d.GetWorktreeLinksForMR(ghMRID)
+	ghLinks, err := d.GetWorktreeLinksForMR(ctx, ghMRID)
 	require.NoError(err)
 	assert.Len(ghLinks, 1)
 
@@ -1269,6 +1269,7 @@ func TestSetWorktreeLinks(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
+	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	mrID1 := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
@@ -1279,9 +1280,9 @@ func TestSetWorktreeLinks(t *testing.T) {
 		{MergeRequestID: mrID1, WorktreeKey: "wt-1", WorktreePath: "/tmp/wt1", WorktreeBranch: "feature-1", LinkedAt: now},
 		{MergeRequestID: mrID2, WorktreeKey: "wt-2", WorktreePath: "/tmp/wt2", WorktreeBranch: "feature-2", LinkedAt: now.Add(time.Hour)},
 	}
-	require.NoError(d.SetWorktreeLinks(links))
+	require.NoError(d.SetWorktreeLinks(ctx, links))
 
-	all, err := d.GetAllWorktreeLinks()
+	all, err := d.GetAllWorktreeLinks(ctx)
 	require.NoError(err)
 	require.Len(all, 2)
 	// Newest first.
@@ -1294,9 +1295,9 @@ func TestSetWorktreeLinks(t *testing.T) {
 	replacement := []WorktreeLink{
 		{MergeRequestID: mrID1, WorktreeKey: "wt-3", WorktreePath: "/tmp/wt3", WorktreeBranch: "hotfix", LinkedAt: now},
 	}
-	require.NoError(d.SetWorktreeLinks(replacement))
+	require.NoError(d.SetWorktreeLinks(ctx, replacement))
 
-	all2, err := d.GetAllWorktreeLinks()
+	all2, err := d.GetAllWorktreeLinks(ctx)
 	require.NoError(err)
 	require.Len(all2, 1)
 	assert.Equal("wt-3", all2[0].WorktreeKey)
@@ -1306,6 +1307,7 @@ func TestGetWorktreeLinksForMR(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
+	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	mrID1 := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
@@ -1316,15 +1318,15 @@ func TestGetWorktreeLinksForMR(t *testing.T) {
 		{MergeRequestID: mrID1, WorktreeKey: "wt-a", LinkedAt: now},
 		{MergeRequestID: mrID2, WorktreeKey: "wt-b", LinkedAt: now},
 	}
-	require.NoError(d.SetWorktreeLinks(links))
+	require.NoError(d.SetWorktreeLinks(ctx, links))
 
-	forMR1, err := d.GetWorktreeLinksForMR(mrID1)
+	forMR1, err := d.GetWorktreeLinksForMR(ctx, mrID1)
 	require.NoError(err)
 	require.Len(forMR1, 1)
 	assert.Equal("wt-a", forMR1[0].WorktreeKey)
 
 	// Empty when no links for a given MR.
-	forMR999, err := d.GetWorktreeLinksForMR(999)
+	forMR999, err := d.GetWorktreeLinksForMR(ctx, 999)
 	require.NoError(err)
 	assert.Empty(forMR999)
 }
@@ -1429,9 +1431,9 @@ func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {
 	links := []WorktreeLink{
 		{MergeRequestID: mrID, WorktreeKey: "wt-del", LinkedAt: baseTime()},
 	}
-	require.NoError(d.SetWorktreeLinks(links))
+	require.NoError(d.SetWorktreeLinks(ctx, links))
 
-	all, err := d.GetAllWorktreeLinks()
+	all, err := d.GetAllWorktreeLinks(ctx)
 	require.NoError(err)
 	require.Len(all, 1)
 
@@ -1440,7 +1442,34 @@ func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {
 		`DELETE FROM middleman_merge_requests WHERE id = ?`, mrID)
 	require.NoError(err)
 
-	after, err := d.GetAllWorktreeLinks()
+	after, err := d.GetAllWorktreeLinks(ctx)
 	require.NoError(err)
 	require.Empty(after)
+}
+
+// TestWorktreeAndPurgeRespectCanceledContext verifies a
+// pre-canceled context aborts the database/sql call rather
+// than running the query. Locks in the cancellation guarantee
+// the ctx plumbing added for worktree-link and purge queries.
+func TestWorktreeAndPurgeRespectCanceledContext(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := d.PurgeOtherHosts(canceled, "github.com")
+	require.ErrorIs(err, context.Canceled)
+
+	err = d.SetWorktreeLinks(canceled, nil)
+	require.ErrorIs(err, context.Canceled)
+
+	_, err = d.GetWorktreeLinksForMR(canceled, 1)
+	require.ErrorIs(err, context.Canceled)
+
+	_, err = d.GetWorktreeLinksForMRs(canceled, []int64{1, 2})
+	require.ErrorIs(err, context.Canceled)
+
+	_, err = d.GetAllWorktreeLinks(canceled)
+	require.ErrorIs(err, context.Canceled)
 }
