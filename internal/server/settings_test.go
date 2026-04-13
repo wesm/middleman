@@ -166,6 +166,86 @@ func TestHandleAddRepo(t *testing.T) {
 	require.Len(t, cfg2.Repos, 2)
 }
 
+func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
+	require := require.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8090
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`), 0o644))
+
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	mock := &mockGH{}
+	trackers := map[string]*ghclient.RateTracker{
+		"github.com": ghclient.NewRateTracker(
+			database, "github.com", "rest",
+		),
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Owner:        "acme",
+			Name:         "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		trackers,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{},
+	)
+
+	// Prime nextSyncAfter so the add-repo trigger exercises the same
+	// cooldown path as a user clicking Sync right after a recent sync.
+	syncer.RunOnce(context.Background())
+
+	rr := doJSON(
+		t, srv, http.MethodPost, "/api/v1/repos",
+		map[string]string{
+			"owner": "other-org",
+			"name":  "other-repo",
+		},
+	)
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	require.Eventually(func() bool {
+		repos, err := database.ListRepos(context.Background())
+		if err != nil {
+			return false
+		}
+		if len(repos) != 2 {
+			return false
+		}
+		for _, repo := range repos {
+			if repo.Owner == "other-org" &&
+				repo.Name == "other-repo" {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
 func TestHandleAddRepoDuplicate(t *testing.T) {
 	srv, _, _ := setupTestServerWithConfig(t)
 
