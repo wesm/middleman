@@ -79,7 +79,7 @@
         ({platformHost}).
       </p>
     </div>
-  {:else if view === "detail" && selectedPull}
+  {:else if view === "detail"}
     <div class="panel-detail">
       <div class="detail-header">
         <button class="back-btn" onclick={onBack} aria-label="Back to list">
@@ -97,15 +97,27 @@
             />
           </svg>
         </button>
-        <span class="detail-title">
-          #{selectedPull.Number} {selectedPull.Title}
-        </span>
+        {#if selectedPull}
+          <span class="detail-title">
+            #{selectedPull.Number} {selectedPull.Title}
+          </span>
+        {/if}
       </div>
       <div class="detail-body">
-        {#if selectedPull.Body}
-          <p class="body-text">{selectedPull.Body}</p>
+        {#if selectedPull}
+          {#if selectedPull.Body}
+            <p class="body-text">{selectedPull.Body}</p>
+          {:else}
+            <p class="body-empty">No description provided.</p>
+          {/if}
+        {:else if pulls.isLoading()}
+          <p class="body-empty" data-testid="detail-loading">
+            Loading...
+          </p>
         {:else}
-          <p class="body-empty">No description provided.</p>
+          <p class="body-empty" data-testid="detail-not-found">
+            Pull request #{number} not found.
+          </p>
         {/if}
       </div>
     </div>

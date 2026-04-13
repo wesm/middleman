@@ -636,8 +636,10 @@ func TestAPIListPulls(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.Len(*resp.JSON200, 1)
-	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
-	require.Equal("widget", (*resp.JSON200)[0].RepoName)
+	assert := Assert.New(t)
+	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
+	assert.Equal("github.com", (*resp.JSON200)[0].PlatformHost)
 }
 
 func TestAPIListPullsIncludesLabels(t *testing.T) {

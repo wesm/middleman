@@ -248,3 +248,28 @@ test(
     expect(command.payload.number).toBe(42);
   },
 );
+
+test(
+  "panel detail not-found when PR missing from store",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+      };
+    });
+    // PR #999 is not in the mock fixture
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets/999",
+    );
+
+    await expect(
+      page.getByTestId("detail-not-found"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("detail-not-found"),
+    ).toContainText("#999");
+    await expect(
+      page.getByRole("button", { name: "Back to list" }),
+    ).toBeVisible();
+  },
+);
