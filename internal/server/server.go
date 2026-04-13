@@ -255,6 +255,7 @@ func newServer(
 	mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/v1/settings", s.handleUpdateSettings)
 	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/refresh", s.handleRefreshRepo)
 	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.handleDeleteRepo)
 	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
 

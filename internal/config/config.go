@@ -38,6 +38,10 @@ func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
+func (r Repo) HasNameGlob() bool {
+	return strings.ContainsAny(r.Name, "*?[")
+}
+
 // PlatformHostOrDefault returns the configured platform host,
 // defaulting to "github.com" when empty.
 func (r Repo) PlatformHostOrDefault() string {
@@ -82,6 +86,10 @@ func (r *Repo) normalize() error {
 		return errors.New("must have owner and name")
 	}
 	return nil
+}
+
+func (r Repo) ownerHasGlob() bool {
+	return strings.ContainsAny(r.Owner, "*?[")
 }
 
 // parseGitHubRef extracts owner and repo name from a GitHub URL or
@@ -336,6 +344,11 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) Validate() error {
 	for i := range c.Repos {
+		if c.Repos[i].ownerHasGlob() {
+			return fmt.Errorf(
+				"config: repos[%d]: glob syntax in owner is not supported", i,
+			)
+		}
 		if err := c.Repos[i].normalize(); err != nil {
 			return fmt.Errorf("config: repos[%d]: %w", i, err)
 		}

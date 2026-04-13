@@ -3,19 +3,234 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/wesm/middleman/internal/config"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 type settingsResponse struct {
-	Repos    []config.Repo   `json:"repos"`
-	Activity config.Activity `json:"activity"`
+	Repos    []ghclient.ConfiguredRepoStatus `json:"repos"`
+	Activity config.Activity                 `json:"activity"`
 }
 
 type updateSettingsRequest struct {
 	Activity config.Activity `json:"activity"`
+}
+
+func (s *Server) configuredClients(
+	repos []config.Repo,
+) map[string]ghclient.Client {
+	clients := make(map[string]ghclient.Client)
+	for _, repo := range repos {
+		host := repo.PlatformHostOrDefault()
+		if _, ok := clients[host]; ok {
+			continue
+		}
+		client, err := s.syncer.ClientForHost(host)
+		if err != nil {
+			continue
+		}
+		clients[host] = client
+	}
+	return clients
+}
+
+// buildLocalSettingsResponse builds the settings response from
+// in-memory state (syncer tracked repos) without calling GitHub.
+func (s *Server) buildLocalSettingsResponse() settingsResponse {
+	s.cfgMu.Lock()
+	repos := append([]config.Repo(nil), s.cfg.Repos...)
+	activity := s.cfg.Activity
+	s.cfgMu.Unlock()
+
+	tracked := s.syncer.TrackedRepos()
+	configured := make(
+		[]ghclient.ConfiguredRepoStatus, len(repos),
+	)
+	for i, raw := range repos {
+		configured[i] = ghclient.ConfiguredRepoStatus{
+			Owner:            raw.Owner,
+			Name:             raw.Name,
+			IsGlob:           raw.HasNameGlob(),
+			MatchedRepoCount: matchedRepoCount(raw, tracked),
+		}
+	}
+	return settingsResponse{
+		Repos:    configured,
+		Activity: activity,
+	}
+}
+
+func matchedRepoCount(
+	raw config.Repo, tracked []ghclient.RepoRef,
+) int {
+	host := raw.PlatformHostOrDefault()
+	count := 0
+	for _, repo := range tracked {
+		if !samePlatformHost(repo.PlatformHost, host) ||
+			!strings.EqualFold(repo.Owner, raw.Owner) {
+			continue
+		}
+		if raw.HasNameGlob() {
+			matched, _ := path.Match(
+				strings.ToLower(raw.Name),
+				strings.ToLower(repo.Name),
+			)
+			if matched {
+				count++
+			}
+		} else if strings.EqualFold(repo.Name, raw.Name) {
+			count++
+		}
+	}
+	return count
+}
+
+// mergeTrackedRepos adds repos to the syncer's tracked set,
+// deduplicating by host/owner/name.
+func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
+	current := s.syncer.TrackedRepos()
+	seen := make(map[string]struct{}, len(current))
+	for _, r := range current {
+		key := strings.ToLower(r.PlatformHost) + "\x00" +
+			strings.ToLower(r.Owner) + "\x00" +
+			strings.ToLower(r.Name)
+		seen[key] = struct{}{}
+	}
+	for _, r := range add {
+		key := strings.ToLower(r.PlatformHost) + "\x00" +
+			strings.ToLower(r.Owner) + "\x00" +
+			strings.ToLower(r.Name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		current = append(current, r)
+	}
+	s.syncer.SetRepos(current)
+}
+
+// replaceGlobRepos removes repos that only match the refreshed
+// glob entry, preserves repos still matched by other config
+// entries, then adds the newly resolved matches.
+func (s *Server) replaceGlobRepos(
+	raw config.Repo,
+	expanded []ghclient.RepoRef,
+	configured []config.Repo,
+) {
+	current := s.syncer.TrackedRepos()
+	kept := make([]ghclient.RepoRef, 0, len(current))
+	seen := make(map[string]struct{}, len(current)+len(expanded))
+	for _, repo := range current {
+		if repoMatchesConfig(repo, raw) &&
+			!repoMatchesOtherConfig(repo, raw, configured) {
+			continue
+		}
+		appendTrackedRepo(&kept, seen, repo)
+	}
+	for _, repo := range expanded {
+		appendTrackedRepo(&kept, seen, repo)
+	}
+	s.syncer.SetRepos(kept)
+}
+
+// removeConfigRepos keeps only tracked repos that match at
+// least one of the remaining config entries.
+func (s *Server) removeConfigRepos(
+	remaining []config.Repo,
+) {
+	current := s.syncer.TrackedRepos()
+	kept := make([]ghclient.RepoRef, 0, len(current))
+	for _, repo := range current {
+		for _, raw := range remaining {
+			if repoMatchesConfig(repo, raw) {
+				kept = append(kept, repo)
+				break
+			}
+		}
+	}
+	s.syncer.SetRepos(kept)
+}
+
+func repoMatchesOtherConfig(
+	repo ghclient.RepoRef,
+	target config.Repo,
+	configured []config.Repo,
+) bool {
+	for _, raw := range configured {
+		if sameConfiguredRepo(raw, target) {
+			continue
+		}
+		if repoMatchesConfig(repo, raw) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameConfiguredRepo(left, right config.Repo) bool {
+	return samePlatformHost(
+		left.PlatformHostOrDefault(),
+		right.PlatformHostOrDefault(),
+	) &&
+		strings.EqualFold(left.Owner, right.Owner) &&
+		strings.EqualFold(left.Name, right.Name)
+}
+
+func repoMatchesConfig(
+	repo ghclient.RepoRef, raw config.Repo,
+) bool {
+	host := raw.PlatformHostOrDefault()
+	if !samePlatformHost(repo.PlatformHost, host) ||
+		!strings.EqualFold(repo.Owner, raw.Owner) {
+		return false
+	}
+	if raw.HasNameGlob() {
+		matched, _ := path.Match(
+			strings.ToLower(raw.Name),
+			strings.ToLower(repo.Name),
+		)
+		return matched
+	}
+	return strings.EqualFold(repo.Name, raw.Name)
+}
+
+func appendTrackedRepo(
+	dst *[]ghclient.RepoRef,
+	seen map[string]struct{},
+	repo ghclient.RepoRef,
+) {
+	key := strings.ToLower(repo.PlatformHost) + "\x00" +
+		strings.ToLower(repo.Owner) + "\x00" +
+		strings.ToLower(repo.Name)
+	if _, ok := seen[key]; ok {
+		return
+	}
+	seen[key] = struct{}{}
+	*dst = append(*dst, repo)
+}
+
+func samePlatformHost(left, right string) bool {
+	if left == "" {
+		left = "github.com"
+	}
+	if right == "" {
+		right = "github.com"
+	}
+	return strings.EqualFold(left, right)
+}
+
+func classifyResolveError(err error) (int, string) {
+	switch {
+	case errors.Is(err, ghclient.ErrConfiguredRepoArchived):
+		return http.StatusBadRequest, err.Error()
+	default:
+		return http.StatusBadGateway, "GitHub API error: " + err.Error()
+	}
 }
 
 func (s *Server) handleGetSettings(
@@ -27,16 +242,7 @@ func (s *Server) handleGetSettings(
 		return
 	}
 
-	s.cfgMu.Lock()
-	repos := make([]config.Repo, len(s.cfg.Repos))
-	copy(repos, s.cfg.Repos)
-	activity := s.cfg.Activity
-	s.cfgMu.Unlock()
-
-	writeJSON(w, http.StatusOK, settingsResponse{
-		Repos:    repos,
-		Activity: activity,
-	})
+	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
 }
 
 func (s *Server) handleUpdateSettings(
@@ -63,26 +269,24 @@ func (s *Server) handleUpdateSettings(
 	}
 
 	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-
 	prev := s.cfg.Activity
 	s.cfg.Activity = candidate
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prev
+		s.cfgMu.Unlock()
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prev
+		s.cfgMu.Unlock()
 		writeError(w, http.StatusInternalServerError,
 			"save config: "+err.Error())
 		return
 	}
+	s.cfgMu.Unlock()
 
-	writeJSON(w, http.StatusOK, settingsResponse{
-		Repos:    s.cfg.Repos,
-		Activity: s.cfg.Activity,
-	})
+	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
 }
 
 func (s *Server) handleAddRepo(
@@ -108,54 +312,132 @@ func (s *Server) handleAddRepo(
 		return
 	}
 
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
+	newRepo := config.Repo{Owner: body.Owner, Name: body.Name}
 
+	// Pre-check (racy but gives a fast 400 before the GitHub call).
+	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
 		if rp.Owner == body.Owner && rp.Name == body.Name {
+			s.cfgMu.Unlock()
 			writeError(w, http.StatusBadRequest,
 				body.Owner+"/"+body.Name+" is already configured")
 			return
 		}
 	}
+	allRepos := append(
+		append([]config.Repo(nil), s.cfg.Repos...), newRepo,
+	)
+	s.cfgMu.Unlock()
 
-	ghClient, clientErr := s.syncer.ClientForHost("github.com")
-	if clientErr != nil {
-		writeError(w, http.StatusServiceUnavailable,
-			"no GitHub client available")
+	_, expanded, err := ghclient.ResolveConfiguredRepo(
+		r.Context(), s.configuredClients(allRepos), newRepo,
+	)
+	if err != nil {
+		status, msg := classifyResolveError(err)
+		writeError(w, status, msg)
 		return
 	}
-	if _, err := ghClient.GetRepository(
-		r.Context(), body.Owner, body.Name,
-	); err != nil {
-		writeError(w, http.StatusBadGateway,
-			"GitHub API error: "+err.Error())
+
+	// Re-acquire lock and apply the addition to current state
+	// so concurrent activity/settings changes are not lost.
+	s.cfgMu.Lock()
+	for _, rp := range s.cfg.Repos {
+		if rp.Owner == body.Owner && rp.Name == body.Name {
+			s.cfgMu.Unlock()
+			writeError(w, http.StatusBadRequest,
+				body.Owner+"/"+body.Name+" is already configured")
+			return
+		}
+	}
+	s.cfg.Repos = append(s.cfg.Repos, newRepo)
+	if err := s.cfg.Validate(); err != nil {
+		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
+		s.cfgMu.Unlock()
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	s.cfg.Repos = append(s.cfg.Repos,
-		config.Repo{Owner: body.Owner, Name: body.Name})
-
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
+		s.cfgMu.Unlock()
 		writeError(w, http.StatusInternalServerError,
 			"save config: "+err.Error())
 		return
 	}
+	s.mergeTrackedRepos(expanded)
+	s.cfgMu.Unlock()
 
-	refs := make([]ghclient.RepoRef, len(s.cfg.Repos))
-	for i, rp := range s.cfg.Repos {
-		refs[i] = ghclient.RepoRef{
-			Owner:        rp.Owner,
-			Name:         rp.Name,
-			PlatformHost: rp.PlatformHostOrDefault(),
+	s.syncer.TriggerRun(context.WithoutCancel(r.Context()))
+	writeJSON(w, http.StatusCreated, s.buildLocalSettingsResponse())
+}
+
+func (s *Server) handleRefreshRepo(
+	w http.ResponseWriter, r *http.Request,
+) {
+	if s.cfgPath == "" {
+		writeError(w, http.StatusNotFound,
+			"settings not available")
+		return
+	}
+
+	owner := r.PathValue("owner")
+	name := r.PathValue("name")
+
+	s.cfgMu.Lock()
+	repos := append([]config.Repo(nil), s.cfg.Repos...)
+	s.cfgMu.Unlock()
+
+	var target *config.Repo
+	for i := range repos {
+		if repos[i].Owner == owner && repos[i].Name == name {
+			target = &repos[i]
+			break
 		}
 	}
-	s.syncer.SetRepos(refs)
-	s.syncer.TriggerRun(context.WithoutCancel(r.Context()))
+	if target == nil {
+		writeError(w, http.StatusNotFound,
+			owner+"/"+name+" is not configured")
+		return
+	}
+	if !target.HasNameGlob() {
+		writeError(w, http.StatusBadRequest,
+			"refresh is only supported for glob patterns")
+		return
+	}
 
-	writeJSON(w, http.StatusCreated,
-		config.Repo{Owner: body.Owner, Name: body.Name})
+	_, expanded, err := ghclient.ResolveConfiguredRepo(
+		r.Context(), s.configuredClients(repos), *target,
+	)
+	if err != nil {
+		status, msg := classifyResolveError(err)
+		writeError(w, status, msg)
+		return
+	}
+
+	// Re-acquire cfgMu and verify the target glob still exists
+	// in the config before applying the resolved matches.
+	// Without this, a concurrent DELETE on the same glob
+	// could run between the unlock above and the helper below,
+	// and the stale expansion would resurrect removed repos.
+	s.cfgMu.Lock()
+	stillExists := false
+	currentRepos := append([]config.Repo(nil), s.cfg.Repos...)
+	for _, rp := range currentRepos {
+		if rp.Owner == owner && rp.Name == name {
+			stillExists = true
+			break
+		}
+	}
+	if !stillExists {
+		s.cfgMu.Unlock()
+		writeError(w, http.StatusNotFound,
+			owner+"/"+name+" is no longer configured")
+		return
+	}
+	s.replaceGlobRepos(*target, expanded, currentRepos)
+	s.cfgMu.Unlock()
+
+	s.syncer.TriggerRun(context.WithoutCancel(r.Context()))
+	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
 }
 
 func (s *Server) handleDeleteRepo(
@@ -171,8 +453,6 @@ func (s *Server) handleDeleteRepo(
 	name := r.PathValue("name")
 
 	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-
 	idx := -1
 	for i, rp := range s.cfg.Repos {
 		if rp.Owner == owner && rp.Name == name {
@@ -181,35 +461,25 @@ func (s *Server) handleDeleteRepo(
 		}
 	}
 	if idx == -1 {
+		s.cfgMu.Unlock()
 		writeError(w, http.StatusNotFound,
 			owner+"/"+name+" is not configured")
 		return
 	}
 
-	removed := s.cfg.Repos[idx]
+	prev := append([]config.Repo(nil), s.cfg.Repos...)
 	s.cfg.Repos = append(
 		s.cfg.Repos[:idx], s.cfg.Repos[idx+1:]...,
 	)
-
 	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Repos = append(
-			s.cfg.Repos[:idx],
-			append([]config.Repo{removed}, s.cfg.Repos[idx:]...)...,
-		)
+		s.cfg.Repos = prev
+		s.cfgMu.Unlock()
 		writeError(w, http.StatusInternalServerError,
 			"save config: "+err.Error())
 		return
 	}
-
-	refs := make([]ghclient.RepoRef, len(s.cfg.Repos))
-	for i, rp := range s.cfg.Repos {
-		refs[i] = ghclient.RepoRef{
-			Owner:        rp.Owner,
-			Name:         rp.Name,
-			PlatformHost: rp.PlatformHostOrDefault(),
-		}
-	}
-	s.syncer.SetRepos(refs)
+	s.removeConfigRepos(s.cfg.Repos)
+	s.cfgMu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -15,6 +15,11 @@ export type E2EServerInfo = {
   pid: number;
 };
 
+export type IsolatedE2EServer = {
+  info: E2EServerInfo;
+  stop: () => Promise<void>;
+};
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../../..");
 const serverInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
@@ -115,6 +120,34 @@ async function removeServerInfo(filePath: string): Promise<void> {
   await rm(filePath, { force: true });
 }
 
+async function spawnServer(infoFile: string): Promise<{
+  child: ChildProcess;
+  info: E2EServerInfo;
+}> {
+  const args = [
+    "run",
+    "./cmd/e2e-server",
+    "-port",
+    "0",
+    "-server-info-file",
+    infoFile,
+  ];
+  if (process.env.ROBOREV_ENDPOINT) {
+    args.push("-roborev", process.env.ROBOREV_ENDPOINT);
+  }
+
+  const child = spawn("go", args, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+
+  return {
+    child,
+    info: await waitForServerInfo(infoFile, child),
+  };
+}
+
 export function cleanupManagedServerProcess(
   child: ManagedChildLike | null = managedChild,
   infoFile: string | undefined = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE,
@@ -155,27 +188,12 @@ function installCleanup(infoFile: string): void {
 }
 
 async function startManagedServer(): Promise<E2EServerInfo> {
-  const args = [
-    "run",
-    "./cmd/e2e-server",
-    "-port",
-    "0",
-    "-server-info-file",
-    serverInfoFile,
-  ];
-  if (process.env.ROBOREV_ENDPOINT) {
-    args.push("-roborev", process.env.ROBOREV_ENDPOINT);
-  }
-
-  managedChild = spawn("go", args, {
-    cwd: repoRoot,
-    stdio: "inherit",
-    env: process.env,
-  });
+  const started = await spawnServer(serverInfoFile);
+  managedChild = started.child;
 
   installCleanup(serverInfoFile);
 
-  const info = await waitForServerInfo(serverInfoFile, managedChild);
+  const info = started.info;
   process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
   process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE = serverInfoFile;
   process.env[ownedServerEnvVar] = "1";
@@ -232,4 +250,19 @@ export async function stopE2EServer(): Promise<void> {
   delete process.env[ownedServerEnvVar];
   delete process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE;
   delete process.env.PLAYWRIGHT_E2E_BASE_URL;
+}
+
+export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
+  const isolatedInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
+  const isolatedInfoFile = path.join(isolatedInfoDir, "server-info.json");
+  const started = await spawnServer(isolatedInfoFile);
+
+  return {
+    info: started.info,
+    stop: async () => {
+      cleanupManagedServerProcess(started.child, isolatedInfoFile);
+      await removeServerInfo(isolatedInfoFile);
+      await rm(isolatedInfoDir, { force: true, recursive: true });
+    },
+  };
 }
