@@ -22,6 +22,8 @@ type FixtureClient struct {
 	Issues                    map[string][]*gh.Issue
 	Comments                  map[string][]*gh.IssueComment
 	ReposByOwner              map[string][]*gh.Repository
+	CombinedStatuses          map[string]*gh.CombinedStatus
+	CheckRuns                 map[string][]*gh.CheckRun
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.Mutex
 	nextID                    int64
@@ -30,13 +32,15 @@ type FixtureClient struct {
 // NewFixtureClient returns a FixtureClient with empty fixture maps.
 func NewFixtureClient() ghclient.Client {
 	return &FixtureClient{
-		OpenPRs:      make(map[string][]*gh.PullRequest),
-		PRs:          make(map[string][]*gh.PullRequest),
-		OpenIssues:   make(map[string][]*gh.Issue),
-		Issues:       make(map[string][]*gh.Issue),
-		Comments:     make(map[string][]*gh.IssueComment),
-		ReposByOwner: make(map[string][]*gh.Repository),
-		nextID:       10_000,
+		OpenPRs:          make(map[string][]*gh.PullRequest),
+		PRs:              make(map[string][]*gh.PullRequest),
+		OpenIssues:       make(map[string][]*gh.Issue),
+		Issues:           make(map[string][]*gh.Issue),
+		Comments:         make(map[string][]*gh.IssueComment),
+		ReposByOwner:     make(map[string][]*gh.Repository),
+		CombinedStatuses: make(map[string]*gh.CombinedStatus),
+		CheckRuns:        make(map[string][]*gh.CheckRun),
+		nextID:           10_000,
 	}
 }
 
@@ -46,6 +50,10 @@ func repoKey(owner, repo string) string {
 
 func issueKey(owner, repo string, number int) string {
 	return fmt.Sprintf("%s/%s#%d", owner, repo, number)
+}
+
+func refKey(owner, repo, ref string) string {
+	return fmt.Sprintf("%s/%s@%s", owner, repo, ref)
 }
 
 // ListOpenPullRequests returns the seeded open PRs for the given repo.
@@ -178,18 +186,24 @@ func (c *FixtureClient) ListForcePushEvents(
 	return nil, nil
 }
 
-// GetCombinedStatus returns nil (read-only stub).
+// GetCombinedStatus returns a seeded combined status by repo/ref.
 func (c *FixtureClient) GetCombinedStatus(
-	_ context.Context, _, _, _ string,
+	_ context.Context, owner, repo, ref string,
 ) (*gh.CombinedStatus, error) {
-	return nil, nil
+	return c.CombinedStatuses[refKey(owner, repo, ref)], nil
 }
 
-// ListCheckRunsForRef returns nil (read-only stub).
+// ListCheckRunsForRef returns seeded check runs by repo/ref.
 func (c *FixtureClient) ListCheckRunsForRef(
-	_ context.Context, _, _, _ string,
+	_ context.Context, owner, repo, ref string,
 ) ([]*gh.CheckRun, error) {
-	return nil, nil
+	runs := c.CheckRuns[refKey(owner, repo, ref)]
+	if len(runs) == 0 {
+		return nil, nil
+	}
+	out := make([]*gh.CheckRun, len(runs))
+	copy(out, runs)
+	return out, nil
 }
 
 // ListWorkflowRunsForHeadSHA returns nil (read-only stub).
