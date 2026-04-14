@@ -199,7 +199,8 @@
             disabled={stateSubmitting}
             onclick={() => handleStateChange("closed")}
             tone="danger"
-            surface="soft"
+            surface="outline"
+            size="sm"
           >
             {stateSubmitting ? "Closing..." : "Close issue"}
           </ActionButton>
@@ -210,6 +211,7 @@
             onclick={() => handleStateChange("open")}
             tone="success"
             surface="solid"
+            size="sm"
           >
             {stateSubmitting ? "Reopening..." : "Reopen issue"}
           </ActionButton>

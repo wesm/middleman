@@ -11,7 +11,7 @@ describe("ActionButton", () => {
     render(ActionButton, {
       props: {
         tone: "danger",
-        surface: "soft",
+        surface: "outline",
         class: "btn--close",
         label: "Close",
       },
@@ -20,7 +20,7 @@ describe("ActionButton", () => {
     const button = screen.getByRole("button", { name: "Close" });
     expect(button.classList.contains("action-button")).toBe(true);
     expect(button.classList.contains("action-button--danger")).toBe(true);
-    expect(button.classList.contains("action-button--soft")).toBe(true);
+    expect(button.classList.contains("action-button--outline")).toBe(true);
     expect(button.classList.contains("btn--close")).toBe(true);
     expect(button.getAttribute("type")).toBe("button");
   });
