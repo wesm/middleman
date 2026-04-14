@@ -192,29 +192,31 @@
       {#if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
-        {#each renderedFile.hunks as hunk, hunkIdx}
-          {#if hunkIdx > 0}
-            {@const gap = computeCollapsedLines(renderedFile.hunks, hunkIdx)}
-            {#if gap > 0}
-              <CollapsedRegion lineCount={gap} />
+        <div class="file-rows">
+          {#each renderedFile.hunks as hunk, hunkIdx}
+            {#if hunkIdx > 0}
+              {@const gap = computeCollapsedLines(renderedFile.hunks, hunkIdx)}
+              {#if gap > 0}
+                <CollapsedRegion lineCount={gap} />
+              {/if}
             {/if}
-          {/if}
-          <div class="hunk-header">
-            <span class="hunk-gutter"></span>
-            <span class="hunk-gutter"></span>
-            <span class="hunk-text">@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@{hunk.section ? ` ${hunk.section}` : ""}</span>
-          </div>
-          {#each hunk.lines as line, lineIdx}
-            <DiffLineComponent
-              type={line.type}
-              content={line.content}
-              {...(line.old_num != null ? { oldNum: line.old_num } : {})}
-              {...(line.new_num != null ? { newNum: line.new_num } : {})}
-              {...(line.no_newline ? { noNewline: line.no_newline } : {})}
-              tokens={getTokens(hunkIdx, lineIdx)}
-            />
+            <div class="hunk-header">
+              <span class="hunk-gutter"></span>
+              <span class="hunk-gutter"></span>
+              <span class="hunk-text">@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@{hunk.section ? ` ${hunk.section}` : ""}</span>
+            </div>
+            {#each hunk.lines as line, lineIdx}
+              <DiffLineComponent
+                type={line.type}
+                content={line.content}
+                {...(line.old_num != null ? { oldNum: line.old_num } : {})}
+                {...(line.new_num != null ? { newNum: line.new_num } : {})}
+                {...(line.no_newline ? { noNewline: line.no_newline } : {})}
+                tokens={getTokens(hunkIdx, lineIdx)}
+              />
+            {/each}
           {/each}
-        {/each}
+        </div>
       {/if}
     </div>
   {/if}
@@ -298,6 +300,11 @@
 
   .file-content {
     overflow-x: auto;
+  }
+
+  .file-rows {
+    min-width: 100%;
+    width: max-content;
   }
 
   .binary-notice {

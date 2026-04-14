@@ -96,8 +96,7 @@
   }
 
   .code {
-    flex: 1;
-    min-width: 0;
+    flex: 1 0 auto;
     margin: 0;
     padding: 0 8px 0 4px;
     font-family: var(--font-mono);
@@ -105,7 +104,6 @@
     line-height: 20px;
     color: var(--diff-text);
     white-space: pre;
-    overflow-x: visible;
     background: transparent;
     border: none;
   }
