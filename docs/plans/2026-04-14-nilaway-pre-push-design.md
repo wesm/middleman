@@ -7,10 +7,9 @@ Add dedicated `make nilaway` task that runs Uber's NilAway against first-party p
 ## Goals
 
 - Add explicit repo task for NilAway.
-- Add explicit repo task for NilAway.
 - Run NilAway before push, not on every commit.
 - Skip NilAway on pure frontend pushes.
-- Limit analysis to repo package prefix `github.com/wesm/middleman`.
+- Limit analysis to repo module package prefix.
 - Fail with clear install hint when `nilaway` binary is missing.
 - Keep existing `make lint` flow unchanged.
 
@@ -35,13 +34,15 @@ Add dedicated `make nilaway` task that runs Uber's NilAway against first-party p
 Add `nilaway` target to `Makefile`.
 
 Behavior:
+- Determine current module path from `go list -m`.
 - Check `nilaway` exists in `PATH`.
 - If missing, print install command:
   - `go install go.uber.org/nilaway/cmd/nilaway@latest`
 - Run:
-  - `nilaway -include-pkgs="github.com/wesm/middleman" ./...`
+  - `nilaway -include-pkgs="$(go list -m)" ./...`
 
 Reasoning:
+- Keeps NilAway scope aligned with `go.mod` automatically.
 - Gives developers explicit local command.
 - Keeps hook config thin.
 - Makes later CI reuse trivial.
@@ -54,11 +55,12 @@ Add local hook:
 - `language = "system"`
 - `entry = "make nilaway"`
 - `stages = ["pre-push"]`
-- `files = "^(.*\\.go|go\\.mod|go\\.sum)$"`
+- `types_or = ["go", "go-mod", "go-sum"]`
 - `pass_filenames = false`
 
 Reasoning:
 - Hook should run only when pushed changes include Go source or Go module metadata.
+- `types_or` uses `identify` tags for Go source plus `go.mod` and `go.sum`.
 - `pass_filenames = false` still lets NilAway analyze repo-wide package graph once triggered.
 - `pre-push` timing keeps heavier static analysis off `pre-commit` path.
 
@@ -76,9 +78,10 @@ Reasoning:
 
 Update README hook section to mention:
 - repo uses `prek` for `pre-commit` and `pre-push`
-- NilAway runs on `pre-push` only when pushed changes include `*.go`, `go.mod`, or `go.sum`
+- NilAway runs on `pre-push` only when pushed changes include Go-tagged files (`go`, `go-mod`, `go-sum`)
 - NilAway must be installed separately
 - install command for NilAway
+- `make install-hooks` is preferred setup command
 
 ## Alternatives considered
 
@@ -140,14 +143,36 @@ NilAway output passes through unchanged. Hook blocks push on non-zero exit.
 ### Functional verification
 
 - Run `make nilaway` with binary available.
-- Confirm command targets package prefix `github.com/wesm/middleman`.
-- Run `prek install -f` and confirm both `pre-commit` and `pre-push` hooks install.
-- Verify `prek.toml` hook selector matches only `*.go`, `go.mod`, and `go.sum` changes.
-- If supported, run `prek run nilaway --hook-stage pre-push --files <go-file>` to confirm hook selection. Otherwise inspect installed hook behavior plus direct `make nilaway` execution.
+- Confirm command derives module path from `go list -m` and scopes `-include-pkgs` to that value.
+- With `nilaway` absent from `PATH`, confirm `make nilaway` exits non-zero and prints install hint.
+- Run `make install-hooks` and confirm both `pre-commit` and `pre-push` hooks install.
+- Verify `prek.toml` uses `types_or = ["go", "go-mod", "go-sum"]` for hook selection.
+- If supported, run `prek run nilaway --stage pre-push --from-ref <old> --to-ref <new> --dry-run` to confirm pre-push selection. Otherwise inspect installed hook behavior plus direct `make nilaway` execution.
 
 ### Scope rationale
 
 No new app behavior, API behavior, or DB behavior. E2E test not needed for this tooling-only change.
+
+## Acceptance details
+
+### Makefile
+
+- Add `nilaway` to `.PHONY`.
+- Add `nilaway` target.
+- Add `nilaway` to `help` output.
+- Update `install-hooks` comments and help text to mention pre-commit and pre-push.
+
+### prek.toml
+
+- Install both `pre-commit` and `pre-push` hook shims.
+- Add `nilaway` local hook with `types_or = ["go", "go-mod", "go-sum"]` and `stages = ["pre-push"]`.
+
+### README
+
+- Add `make nilaway` to target list.
+- Rename hook section to cover both pre-commit and pre-push.
+- Document `go install go.uber.org/nilaway/cmd/nilaway@latest`.
+- Document `make install-hooks` as recommended hook installation command.
 
 ## Files to change
 
