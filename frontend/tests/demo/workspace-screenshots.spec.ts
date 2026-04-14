@@ -2,8 +2,8 @@
  * Workspace panel demo / screenshot harness.
  *
  * Usage:
- *   bun run demo:workspace            # headless, saves PNGs
- *   bun run demo:workspace --headed   # opens browser for visual inspection
+ *   bun run demo-workspace            # headless, saves PNGs
+ *   bun run demo-workspace --headed   # opens browser for visual inspection
  *
  * Screenshots land in frontend/tests/demo/screenshots/
  */
@@ -12,15 +12,6 @@ import { expect, test } from "@playwright/test";
 import { mockApi } from "../e2e/support/mockApi";
 
 const SCREENSHOT_DIR = "tests/demo/screenshots";
-
-function _embedConfig(
-  host: string | null = "github.com",
-) {
-  return {
-    embed: { activePlatformHost: host },
-    onWorkspaceCommand: () => ({ ok: true }),
-  };
-}
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);

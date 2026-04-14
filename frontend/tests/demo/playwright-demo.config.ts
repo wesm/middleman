@@ -1,4 +1,12 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig, devices } from "@playwright/test";
+
+const frontendDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 export default defineConfig({
   testDir: ".",
@@ -13,7 +21,7 @@ export default defineConfig({
     command:
       "bun run dev --host 127.0.0.1 --port 4173 --strictPort",
     port: 4173,
-    cwd: "../..",
+    cwd: frontendDir,
     reuseExistingServer: true,
     timeout: 120_000,
   },
