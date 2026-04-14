@@ -13,7 +13,8 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "bun run check && bunx tsc --noEmit -p ./tsconfig.json",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "demo-workspace": "playwright test --config tests/demo/playwright-demo.config.ts"
   },
   "dependencies": {
     "@middleman/ui": "workspace:*",

@@ -1,4 +1,7 @@
 {
   "private": true,
-  "workspaces": ["frontend", "packages/*"]
+  "workspaces": ["frontend", "packages/*"],
+  "scripts": {
+    "demo-workspace": "bun run --cwd frontend demo-workspace"
+  }
 }

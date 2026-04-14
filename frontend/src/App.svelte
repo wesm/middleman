@@ -76,26 +76,43 @@
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
-  let panelSoftPinned = $state(false);
+  let softPinnedKey = $state<string | null>(null);
   let panelHardPinned = $state(false);
 
-  // Sync pin state from route transitions. Hard-pin is sticky
-  // (cleared only by explicit unpin). Soft-pin syncs from URL
-  // and clears when the panel navigates away from detail.
+  function detailKey(
+    host: string, owner: string, name: string, n: number,
+  ): string {
+    return `${host}/${owner}/${name}/${n}`;
+  }
+
+  // Derive current detail route key for pin matching.
+  const currentDetailKey = $derived.by(() => {
+    const r = getRoute();
+    if (
+      r.page === "workspaces-panel" &&
+      r.view === "detail" &&
+      "platformHost" in r
+    ) {
+      return detailKey(r.platformHost, r.owner, r.name, r.number);
+    }
+    return null;
+  });
+
+  // Hard-pin is sticky (cleared only by explicit unpin).
+  // Soft-pin from URL sets softPinnedKey for the current route.
   $effect(() => {
     const r = getRoute();
-    if (r.page !== "workspaces-panel") {
-      panelSoftPinned = false;
-      return;
-    }
+    if (r.page !== "workspaces-panel") return;
     if ("pin" in r && r.pin === "hard") {
       panelHardPinned = true;
     }
-    if ("pin" in r && r.pin === "soft") {
-      panelSoftPinned = true;
-    }
-    if (r.page === "workspaces-panel" && r.view !== "detail") {
-      panelSoftPinned = false;
+    if (
+      "pin" in r && r.pin === "soft" &&
+      r.view === "detail" && "platformHost" in r
+    ) {
+      softPinnedKey = detailKey(
+        r.platformHost, r.owner, r.name, r.number,
+      );
     }
   });
 
@@ -579,7 +596,9 @@
         {@const route = getRoute()}
         {#if route.page === "workspaces-panel"}
           {@const isPinned =
-            panelHardPinned || panelSoftPinned}
+            panelHardPinned ||
+            (softPinnedKey != null &&
+              softPinnedKey === currentDetailKey)}
           <WorkspacePanelView
             view={route.view}
             {isPinned}
@@ -591,7 +610,9 @@
             activePlatformHost={getEmbedActivePlatformHost()}
             onSelectPR={(n) => {
               if ("platformHost" in route) {
-                panelSoftPinned = true;
+                softPinnedKey = detailKey(
+                  route.platformHost, route.owner, route.name, n,
+                );
                 navigate(
                   `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`,
                 );
@@ -605,7 +626,7 @@
             }}
             onBack={() => {
               if ("platformHost" in route) {
-                panelSoftPinned = false;
+                softPinnedKey = null;
                 navigate(
                   `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}`,
                 );
@@ -628,7 +649,7 @@
               });
             }}
             onUnpin={() => {
-              panelSoftPinned = false;
+              softPinnedKey = null;
               panelHardPinned = false;
               emitWorkspaceCommand("unpinPanelContext", {});
             }}
