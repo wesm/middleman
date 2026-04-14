@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CICheck, KanbanStatus } from "../../api/types.js";
+  import type { KanbanStatus } from "../../api/types.js";
   import { getStores, getClient, getActions, getUIConfig } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -13,6 +13,7 @@
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
+  import CIStatus from "./CIStatus.svelte";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -116,36 +117,9 @@
     }).catch(() => {});
   });
 
-  let ciExpanded = $state(false);
   const workflowApproval = $derived(
     detailStore.getDetail()?.workflow_approval,
   );
-  const checks = $derived(parseCIChecks(detailStore.getDetail()?.merge_request?.CIChecksJSON ?? ""));
-  const failedChecks = $derived(checks.filter(c => c.conclusion === "failure"));
-
-  function parseCIChecks(json: string): CICheck[] {
-    if (!json) return [];
-    try {
-      return JSON.parse(json) as CICheck[];
-    } catch {
-      return [];
-    }
-  }
-
-  function checkIcon(c: CICheck): string {
-    if (c.status !== "completed") return "◦";
-    if (c.conclusion === "success") return "✓";
-    if (c.conclusion === "failure") return "✗";
-    if (c.conclusion === "skipped" || c.conclusion === "neutral") return "–";
-    return "?";
-  }
-
-  function checkColor(c: CICheck): string {
-    if (c.status !== "completed") return "var(--accent-amber)";
-    if (c.conclusion === "success") return "var(--accent-green)";
-    if (c.conclusion === "failure") return "var(--accent-red)";
-    return "var(--text-muted)";
-  }
 
   const kanbanOptions: { value: KanbanStatus; label: string }[] = [
     { value: "new", label: "New" },
@@ -153,13 +127,6 @@
     { value: "waiting", label: "Waiting" },
     { value: "awaiting_merge", label: "Awaiting Merge" },
   ];
-
-  function ciColor(status: string): string {
-    if (status === "success") return "chip--green";
-    if (status === "failure" || status === "error") return "chip--red";
-    if (status === "pending") return "chip--amber";
-    return "chip--muted";
-  }
 
   function reviewColor(decision: string): string {
     if (decision === "APPROVED") return "chip--green";
@@ -310,19 +277,12 @@
         {:else}
           <span class="chip chip--green">Open</span>
         {/if}
-        {#if pr.CIStatus || checks.length > 0}
-          <button
-            class="chip chip--clickable {ciColor(pr.CIStatus)}"
-            onclick={() => { ciExpanded = !ciExpanded; }}
-            title={ciExpanded ? "Collapse CI checks" : "Expand CI checks"}
-          >
-            CI: {pr.CIStatus || "unknown"}
-            {#if checks.length > 0}
-              ({checks.length})
-            {/if}
-            <span class="chip-chevron" class:chip-chevron--open={ciExpanded}>▾</span>
-          </button>
-        {/if}
+        <CIStatus
+          status={pr.CIStatus}
+          checksJSON={pr.CIChecksJSON}
+          detailLoaded={detailStore.getDetailLoaded()}
+          detailSyncing={detailStore.isDetailSyncing()}
+        />
         {#if pr.ReviewDecision}
           <span class="chip {reviewColor(pr.ReviewDecision)}">{pr.ReviewDecision.replace(/_/g, " ")}</span>
         {/if}
@@ -336,58 +296,6 @@
 
       {#if labels.length > 0}
         <GitHubLabels {labels} mode="full" />
-      {/if}
-
-      <!-- Expanded CI checks -->
-      {#if ciExpanded}
-        {#if !detailStore.getDetailLoaded()}
-          {#if detailStore.isDetailSyncing()}
-            <div class="loading-placeholder">
-              <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-              </svg>
-              Loading checks...
-            </div>
-          {:else}
-            <div class="loading-placeholder">Detail not yet loaded</div>
-          {/if}
-        {:else if checks.length > 0}
-          <div class="ci-checks">
-            {#if failedChecks.length > 0}
-              <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
-              {#each failedChecks as check}
-                <a
-                  class="ci-check"
-                  href={check.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-                  <span class="ci-name">{check.name}</span>
-                  {#if check.app}
-                    <span class="ci-app">{check.app}</span>
-                  {/if}
-                  <span class="ci-arrow">→</span>
-                </a>
-              {/each}
-            {/if}
-            {#each checks.filter(c => c.conclusion !== "failure") as check}
-              <a
-                class="ci-check"
-                href={check.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-                <span class="ci-name">{check.name}</span>
-                {#if check.app}
-                  <span class="ci-app">{check.app}</span>
-                {/if}
-                <span class="ci-arrow">→</span>
-              </a>
-            {/each}
-          </div>
-        {/if}
       {/if}
 
       <!-- Kanban state -->
@@ -817,85 +725,6 @@
       transparent
     );
     color: var(--accent-teal, var(--accent-green));
-  }
-
-  .chip--clickable {
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    transition: opacity 0.1s;
-  }
-  .chip--clickable:hover {
-    opacity: 0.8;
-  }
-  .chip-chevron {
-    font-size: 10px;
-    transition: transform 0.15s;
-  }
-  .chip-chevron--open {
-    transform: rotate(180deg);
-  }
-
-  .ci-checks {
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-  .ci-section-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 6px 12px 4px;
-    color: var(--text-muted);
-  }
-  .ci-section-label--red {
-    color: var(--accent-red);
-  }
-  .ci-check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    font-size: 12px;
-    color: var(--text-primary);
-    text-decoration: none;
-    transition: background 0.08s;
-  }
-  .ci-check:hover {
-    background: var(--bg-surface-hover);
-    text-decoration: none;
-  }
-  .ci-check + .ci-check {
-    border-top: 1px solid var(--border-muted);
-  }
-  .ci-icon {
-    font-weight: 700;
-    font-size: 13px;
-    flex-shrink: 0;
-    width: 16px;
-    text-align: center;
-  }
-  .ci-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .ci-app {
-    font-size: 10px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-  .ci-arrow {
-    color: var(--text-muted);
-    flex-shrink: 0;
-    font-size: 12px;
   }
 
   .kanban-row {

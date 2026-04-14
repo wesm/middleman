@@ -25,12 +25,28 @@ export default defineConfig({
       },
     },
     {
+      name: "firefox",
+      testIgnore: /roborev/,
+      use: {
+        ...devices["Desktop Firefox"],
+      },
+    },
+    {
       name: "roborev",
       testMatch: /roborev/,
       fullyParallel: false,
       workers: 1,
       use: {
         ...devices["Desktop Chrome"],
+      },
+    },
+    {
+      name: "roborev-firefox",
+      testMatch: /roborev/,
+      fullyParallel: false,
+      workers: 1,
+      use: {
+        ...devices["Desktop Firefox"],
       },
     },
   ],

@@ -353,6 +353,7 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 	}
 
 	repoKey := fmt.Sprintf("%s/%s", owner, repo)
+	oldHeadSHA := ""
 	patch := func(prs []*gh.PullRequest) {
 		for _, pr := range prs {
 			if pr.GetNumber() != number {
@@ -364,6 +365,9 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 			if pr.Base == nil {
 				pr.Base = &gh.PullRequestBranch{}
 			}
+			if oldHeadSHA == "" {
+				oldHeadSHA = pr.Head.GetSHA()
+			}
 			pr.Head.SHA = &headSHA
 			pr.Base.SHA = &baseSHA
 		}
@@ -371,4 +375,16 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 
 	patch(fc.OpenPRs[repoKey])
 	patch(fc.PRs[repoKey])
+
+	if oldHeadSHA == "" || oldHeadSHA == headSHA {
+		return
+	}
+	oldRefKey := fmt.Sprintf("%s/%s@%s", owner, repo, oldHeadSHA)
+	newRefKey := fmt.Sprintf("%s/%s@%s", owner, repo, headSHA)
+	if combined, ok := fc.CombinedStatuses[oldRefKey]; ok {
+		fc.CombinedStatuses[newRefKey] = combined
+	}
+	if runs, ok := fc.CheckRuns[oldRefKey]; ok {
+		fc.CheckRuns[newRefKey] = runs
+	}
 }
