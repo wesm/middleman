@@ -54,4 +54,22 @@ describe("favicon integration", () => {
     expect(svg).toContain("M45.2 40V11.6H39.6");
     expect(svg).not.toContain("M10.5 37V15H14.7");
   });
+
+  it("packs the stacked MM variant tightly for favicon legibility", () => {
+    const svgPath = resolve(testDir, "../../public/favicon-mm-stacked.svg");
+    const svg = readFileSync(svgPath, "utf8");
+
+    expect(svg).toContain("M7.5 41.2V10.8H13.3");
+    expect(svg).toContain("M21.6 37.8V10.2H26.3");
+    expect(svg).not.toContain("M10.5 38V15H15.1");
+  });
+
+  it("packs the flow mm variant tightly for favicon legibility", () => {
+    const svgPath = resolve(testDir, "../../public/favicon-mm-flow.svg");
+    const svg = readFileSync(svgPath, "utf8");
+
+    expect(svg).toContain("M9.4 39.8V19.6C9.4 14.7");
+    expect(svg).toContain("M21.7 39.8V18.8C21.7 14.2");
+    expect(svg).not.toContain("M12.5 36V21.7C12.5 18.3");
+  });
 });
