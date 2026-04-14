@@ -64,6 +64,13 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			URL:        "https://github.com/acme/widgets/actions/runs/1/job/3",
 			App:        "GitHub Actions",
 		},
+		{
+			Name:       "roborev",
+			Status:     "in_progress",
+			Conclusion: "",
+			URL:        "",
+			App:        "roborev",
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal widgets#1 ci checks: %w", err)
@@ -689,6 +696,13 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 							Conclusion: new("success"),
 							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/3"),
 							App:        &gh.App{Name: new("GitHub Actions")},
+						},
+						{
+							Name:       new("roborev"),
+							Status:     new("in_progress"),
+							Conclusion: new(""),
+							HTMLURL:    new(""),
+							App:        &gh.App{Name: new("roborev")},
 						},
 					},
 				},

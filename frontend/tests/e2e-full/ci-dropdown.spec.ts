@@ -5,15 +5,15 @@ test.describe("CI dropdown", () => {
     await page.goto("/pulls/acme/widgets/1");
 
     const detail = page.locator(".pull-detail");
-    const chip = detail.getByRole("button", { name: /CI:\s*success/i });
+    const chip = detail.getByRole("button", { name: /CI:\s*(success|pending)/i });
     await chip.waitFor({ state: "visible", timeout: 10_000 });
+    const chipBox = await chip.boundingBox();
     await chip.click();
 
     const checks = detail.locator(".ci-checks");
     await expect(checks).toBeVisible();
-    await expect(detail.locator(".ci-check")).toHaveCount(3);
+    await expect(detail.locator(".ci-check")).toHaveCount(4);
 
-    const chipBox = await chip.boundingBox();
     const checksBox = await checks.boundingBox();
     const additionsChipBox = await detail.locator(".chip--muted").boundingBox();
 
@@ -26,5 +26,10 @@ test.describe("CI dropdown", () => {
     await expect(detail.locator(".ci-check").first()).toContainText("build");
     await expect(detail.locator(".ci-check").nth(1)).toContainText("test");
     await expect(detail.locator(".ci-check").nth(2)).toContainText("lint");
+    const roborevRow = detail.locator(".ci-check", { hasText: "roborev" });
+    await expect(roborevRow).toHaveCount(1);
+    expect(
+      await roborevRow.evaluate((node) => node.tagName),
+    ).not.toBe("A");
   });
 });
