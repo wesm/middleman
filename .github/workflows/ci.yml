@@ -75,11 +75,11 @@ jobs:
       - name: Build e2e server
         run: GOFLAGS=-buildvcs=false go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
-      - name: Install Playwright browser
-        run: cd frontend && bunx playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: cd frontend && bunx playwright install --with-deps chromium firefox webkit
 
       - name: Run frontend e2e UTC coverage
-        run: cd frontend && bun run test:e2e --config playwright-e2e.config.ts --project=chromium --grep "UTC timestamp"
+        run: cd frontend && bun run test:e2e --config playwright-e2e.config.ts --grep "UTC timestamp"
 
       - name: Run tests
         run: go test ./... -v -shuffle=on

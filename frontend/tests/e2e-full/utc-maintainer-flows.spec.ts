@@ -1,10 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-async function fetchPullDetail(page: import("@playwright/test").Page, number: number) {
-  return page.evaluate(async (prNumber) => {
-    const response = await fetch(`/api/v1/repos/acme/widgets/pulls/${prNumber}`);
+type PullRef = {
+  owner: string;
+  repo: string;
+  number: number;
+};
+
+async function fetchPullDetail(
+  page: import("@playwright/test").Page,
+  pull: PullRef,
+) {
+  return page.evaluate(async ({ owner, repo, number }) => {
+    const response = await fetch(`/api/v1/repos/${owner}/${repo}/pulls/${number}`);
     return response.json();
-  }, number);
+  }, pull);
 }
 
 async function fetchIssueDetail(page: import("@playwright/test").Page, number: number) {
@@ -12,6 +21,23 @@ async function fetchIssueDetail(page: import("@playwright/test").Page, number: n
     const response = await fetch(`/api/v1/repos/acme/widgets/issues/${issueNumber}`);
     return response.json();
   }, number);
+}
+
+function widgetsPull(number: number): PullRef {
+  return { owner: "acme", repo: "widgets", number };
+}
+
+function mergeTarget(browserName: string): PullRef {
+  switch (browserName) {
+    case "chromium":
+      return widgetsPull(7);
+    case "firefox":
+      return widgetsPull(1);
+    case "webkit":
+      return { owner: "acme", repo: "tools", number: 1 };
+    default:
+      return widgetsPull(7);
+  }
 }
 
 function expectUTCString(value: string | null): void {
@@ -27,20 +53,22 @@ test.describe("UTC maintainer flows", () => {
     await page.locator(".btn--close").click();
     await expect(page.locator(".btn--reopen")).toBeVisible();
 
-    const closed = await fetchPullDetail(page, 6);
+    const closed = await fetchPullDetail(page, widgetsPull(6));
     expect(closed.merge_request.State).toBe("closed");
     expectUTCString(closed.merge_request.ClosedAt);
 
     await page.locator(".btn--reopen").click();
     await expect(page.locator(".btn--close")).toBeVisible();
 
-    const reopened = await fetchPullDetail(page, 6);
+    const reopened = await fetchPullDetail(page, widgetsPull(6));
     expect(reopened.merge_request.State).toBe("open");
     expect(reopened.merge_request.ClosedAt).toBeNull();
   });
 
-  test("merging a pull request stores UTC timestamps and updates the detail view", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/7");
+  test("merging a pull request stores UTC timestamps and updates the detail view", async ({ page, browserName }) => {
+    const pull = mergeTarget(browserName);
+
+    await page.goto(`/pulls/${pull.owner}/${pull.repo}/${pull.number}`);
     await expect(page.locator(".btn--merge")).toBeVisible();
 
     await page.locator(".btn--merge").click();
@@ -49,7 +77,7 @@ test.describe("UTC maintainer flows", () => {
 
     await expect(page.locator(".chip.chip--purple")).toHaveText("Merged");
 
-    const merged = await fetchPullDetail(page, 7);
+    const merged = await fetchPullDetail(page, pull);
     expect(merged.merge_request.State).toBe("merged");
     expectUTCString(merged.merge_request.ClosedAt);
     expectUTCString(merged.merge_request.MergedAt);
