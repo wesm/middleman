@@ -61,7 +61,7 @@ test.describe("collapsible sidebar", () => {
 
     // Navigate to board view (no sidebar strip).
     await page.goto("/pulls/board");
-    await page.waitForTimeout(300);
+    await expect(page).toHaveURL(/\/pulls\/board$/);
 
     // Header expand button should be visible.
     const headerToggle = page.locator(".app-header .sidebar-toggle");
