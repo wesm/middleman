@@ -5,4 +5,12 @@ golangci-lint = "2.11.4"
 
 [tasks.dev-compose]
 description = "Run docker compose with host gh auth token injection"
-run = 'MIDDLEMAN_GITHUB_TOKEN="$(gh auth token)" docker compose up --build'
+run = 'MIDDLEMAN_GITHUB_TOKEN="$(gh auth token)" docker compose up'
+
+[tasks.dev-compose-logs]
+description = "Show docker compose logs"
+run = 'docker compose logs -f'
+
+[tasks.dev-compose-down]
+description = "Stop docker compose stack"
+run = 'docker compose down'
