@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: "SFMono-Regular", "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 18px;
+      max-width: 620px;
+    }
+
+    .card {
+      padding: 16px;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #111827, #0b1220);
+      text-align: center;
+    }
+
+    img {
+      width: 52px;
+      height: 52px;
+      image-rendering: auto;
+    }
+
+    p {
+      margin: 12px 0 0;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="grid">
+    <div class="card">
+      <img src="frontend/public/favicon.svg" alt="Current favicon" />
+      <p>Current</p>
+    </div>
+    <div class="card">
+      <img src="frontend/public/favicon-mm-stacked.svg" alt="Stacked MM favicon variant" />
+      <p>MM Stacked</p>
+    </div>
+    <div class="card">
+      <img src="frontend/public/favicon-mm-mirrored.svg" alt="Mirrored MM favicon variant" />
+      <p>MM Mirrored</p>
+    </div>
+    <div class="card">
+      <img src="frontend/public/favicon-mm-flow.svg" alt="Flow mm favicon variant" />
+      <p>mm Flow</p>
+    </div>
+  </div>
+</body>
+</html>

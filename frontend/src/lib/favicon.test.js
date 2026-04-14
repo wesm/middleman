@@ -9,10 +9,19 @@ describe("favicon integration", () => {
   it("provides the SVG source and PNG fallback", () => {
     const svgPath = resolve(testDir, "../../public/favicon.svg");
     const pngPath = resolve(testDir, "../../public/favicon-32.png");
+    const stackedPath = resolve(testDir, "../../public/favicon-mm-stacked.svg");
+    const mirroredPath = resolve(testDir, "../../public/favicon-mm-mirrored.svg");
+    const flowPath = resolve(testDir, "../../public/favicon-mm-flow.svg");
 
     expect(existsSync(svgPath)).toBe(true);
     expect(existsSync(pngPath)).toBe(true);
+    expect(existsSync(stackedPath)).toBe(true);
+    expect(existsSync(mirroredPath)).toBe(true);
+    expect(existsSync(flowPath)).toBe(true);
     expect(readFileSync(svgPath, "utf8")).toContain("<svg");
+    expect(readFileSync(stackedPath, "utf8")).toContain("<svg");
+    expect(readFileSync(mirroredPath, "utf8")).toContain("<svg");
+    expect(readFileSync(flowPath, "utf8")).toContain("<svg");
   });
 
   it("uses a single solid j-shaped arrow with a chevron head in the SVG favicon", () => {
