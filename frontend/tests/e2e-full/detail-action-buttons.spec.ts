@@ -26,8 +26,8 @@ test.describe("detail action buttons", () => {
       };
     }));
 
-    const first = metrics[0];
-    expect(first).toBeTruthy();
+    expect(metrics.length).toBeGreaterThan(0);
+    const first = metrics[0]!;
 
     for (const metric of metrics) {
       expect(metric.height, `${metric.label} height`).toBe(first.height);
