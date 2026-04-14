@@ -160,7 +160,10 @@ nilaway: ensure-embed-dir
 		echo "go install go.uber.org/nilaway/cmd/nilaway@latest" >&2; \
 		exit 1; \
 	fi
-	@module_path="$$(go list -m)"; \
+	@module_path="$$(go list -m)" || { \
+		echo "failed to determine module path" >&2; \
+		exit 1; \
+	}; \
 		nilaway -include-pkgs="$$module_path" ./...
 
 # Tidy dependencies
