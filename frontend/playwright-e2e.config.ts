@@ -32,6 +32,13 @@ export default defineConfig({
       },
     },
     {
+      name: "webkit",
+      testIgnore: /roborev/,
+      use: {
+        ...devices["Desktop Safari"],
+      },
+    },
+    {
       name: "roborev",
       testMatch: /roborev/,
       fullyParallel: false,
