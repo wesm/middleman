@@ -45,4 +45,13 @@ describe("favicon integration", () => {
     expect(html).toContain('href="/favicon.svg"');
     expect(html).toContain('href="/favicon-32.png"');
   });
+
+  it("packs the mirrored MM variant tightly for favicon legibility", () => {
+    const svgPath = resolve(testDir, "../../public/favicon-mm-mirrored.svg");
+    const svg = readFileSync(svgPath, "utf8");
+
+    expect(svg).toContain("M6.8 40V11.6H12.4");
+    expect(svg).toContain("M45.2 40V11.6H39.6");
+    expect(svg).not.toContain("M10.5 37V15H14.7");
+  });
 });
