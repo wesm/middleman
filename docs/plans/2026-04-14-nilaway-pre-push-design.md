@@ -145,9 +145,9 @@ NilAway output passes through unchanged. Hook blocks push on non-zero exit.
 - Run `make nilaway` with binary available.
 - Confirm command derives module path from `go list -m` and scopes `-include-pkgs` to that value.
 - With `nilaway` absent from `PATH`, confirm `make nilaway` exits non-zero and prints install hint.
-- Run `make install-hooks` and confirm both `pre-commit` and `pre-push` hooks install.
+- Run `make install-hooks` and confirm both `.git/hooks/pre-commit` and `.git/hooks/pre-push` exist.
 - Verify `prek.toml` uses `types_or = ["go", "go-mod", "go-sum"]` for hook selection.
-- If supported, run `prek run nilaway --stage pre-push --from-ref <old> --to-ref <new> --dry-run` to confirm pre-push selection. Otherwise inspect installed hook behavior plus direct `make nilaway` execution.
+- Run `prek run nilaway --stage pre-push --from-ref <old> --to-ref <new> --dry-run` to confirm pre-push selection.
 
 ### Scope rationale
 
