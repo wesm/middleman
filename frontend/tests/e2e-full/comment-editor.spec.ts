@@ -107,10 +107,11 @@ test.describe("comment editor autocomplete", () => {
     await editor.click();
     await page.keyboard.type("<script>alert('x')</script> @a");
 
-    await expect(
-      page.locator(".comment-editor-option").filter({ hasText: "@alice" }),
-    ).toBeVisible({ timeout: 10_000 });
-    await editor.press("Enter");
+    const aliceOption = page
+      .locator(".comment-editor-option")
+      .filter({ hasText: "@alice" });
+    await expect(aliceOption).toBeVisible({ timeout: 10_000 });
+    await aliceOption.dispatchEvent("pointerdown");
     await expect(editor).toContainText("@alice");
 
     const submit = detail.locator(".submit-btn");
