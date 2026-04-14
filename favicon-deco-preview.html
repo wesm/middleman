@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>MM Mirrored Deco Variants</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #0b1220;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --gold: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 32px;
+      background:
+        radial-gradient(circle at top, rgba(245, 158, 11, 0.08), transparent 28%),
+        linear-gradient(180deg, #111827 0%, #0f172a 100%);
+      color: var(--text);
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #f8fafc;
+    }
+
+    .subtitle {
+      margin: 0 0 28px;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 18px;
+      max-width: 980px;
+    }
+
+    .card {
+      padding: 20px 18px 18px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(245, 158, 11, 0.08), transparent 30%),
+        linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    .icon-frame {
+      display: grid;
+      place-items: center;
+      height: 110px;
+      margin-bottom: 14px;
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0.12)),
+        #0f172a;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    img {
+      width: 72px;
+      height: 72px;
+    }
+
+    h2 {
+      margin: 0 0 4px;
+      font-size: 14px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <h1>MM Mirrored Art-Deco Study</h1>
+  <p class="subtitle">
+    Six dense favicon-sized monogram directions based on the mirrored MM concept. Each keeps the dark tile and pushes the design mass close to the inner edges.
+  </p>
+  <div class="grid">
+    <section class="card">
+      <div class="icon-frame"><img src="frontend/public/favicon-mm-mirrored.svg" alt="MM mirrored variant" /></div>
+      <h2>Original</h2>
+      <p>Dense bilateral monogram with a tall central spine and jewel dots.</p>
+    </section>
+    <section class="card">
+      <div class="icon-frame"><img src="frontend/public/favicon-mm-deco-stepped.svg" alt="MM deco stepped variant" /></div>
+      <h2>Stepped</h2>
+      <p>Sharper shoulders and tiered crown geometry for a stricter deco silhouette.</p>
+    </section>
+    <section class="card">
+      <div class="icon-frame"><img src="frontend/public/favicon-mm-deco-channel.svg" alt="MM deco channel variant" /></div>
+      <h2>Channel</h2>
+      <p>Extra vertical fluting pushes the mark toward a skyscraper facade.</p>
+    </section>
+    <section class="card">
+      <div class="icon-frame"><img src="frontend/public/favicon-mm-deco-fan.svg" alt="MM deco fan variant" /></div>
+      <h2>Fan</h2>
+      <p>Mirrored core with a restrained top fan and a grounded base jewel.</p>
+    </section>
+    <section class="card">
+      <div class="icon-frame"><img src="frontend/public/favicon-mm-deco-gate.svg" alt="MM deco gate variant" /></div>
+      <h2>Gate</h2>
+      <p>Portal-like geometry frames the monogram without adding a full border.</p>
+    </section>
+    <section class="card">
+      <div class="icon-frame"><img src="frontend/public/favicon-mm-deco-jewel.svg" alt="MM deco jewel variant" /></div>
+      <h2>Jewel</h2>
+      <p>More explicit diamonds and ornamentation while keeping the mirrored MM dense.</p>
+    </section>
+  </div>
+</body>
+</html>

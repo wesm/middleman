@@ -12,16 +12,31 @@ describe("favicon integration", () => {
     const stackedPath = resolve(testDir, "../../public/favicon-mm-stacked.svg");
     const mirroredPath = resolve(testDir, "../../public/favicon-mm-mirrored.svg");
     const flowPath = resolve(testDir, "../../public/favicon-mm-flow.svg");
+    const decoSteppedPath = resolve(testDir, "../../public/favicon-mm-deco-stepped.svg");
+    const decoChannelPath = resolve(testDir, "../../public/favicon-mm-deco-channel.svg");
+    const decoFanPath = resolve(testDir, "../../public/favicon-mm-deco-fan.svg");
+    const decoGatePath = resolve(testDir, "../../public/favicon-mm-deco-gate.svg");
+    const decoJewelPath = resolve(testDir, "../../public/favicon-mm-deco-jewel.svg");
 
     expect(existsSync(svgPath)).toBe(true);
     expect(existsSync(pngPath)).toBe(true);
     expect(existsSync(stackedPath)).toBe(true);
     expect(existsSync(mirroredPath)).toBe(true);
     expect(existsSync(flowPath)).toBe(true);
+    expect(existsSync(decoSteppedPath)).toBe(true);
+    expect(existsSync(decoChannelPath)).toBe(true);
+    expect(existsSync(decoFanPath)).toBe(true);
+    expect(existsSync(decoGatePath)).toBe(true);
+    expect(existsSync(decoJewelPath)).toBe(true);
     expect(readFileSync(svgPath, "utf8")).toContain("<svg");
     expect(readFileSync(stackedPath, "utf8")).toContain("<svg");
     expect(readFileSync(mirroredPath, "utf8")).toContain("<svg");
     expect(readFileSync(flowPath, "utf8")).toContain("<svg");
+    expect(readFileSync(decoSteppedPath, "utf8")).toContain("<svg");
+    expect(readFileSync(decoChannelPath, "utf8")).toContain("<svg");
+    expect(readFileSync(decoFanPath, "utf8")).toContain("<svg");
+    expect(readFileSync(decoGatePath, "utf8")).toContain("<svg");
+    expect(readFileSync(decoJewelPath, "utf8")).toContain("<svg");
   });
 
   it("uses a single solid j-shaped arrow with a chevron head in the SVG favicon", () => {
