@@ -172,6 +172,9 @@ func SetupDiffRepo(
 }
 
 func git(dir string, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("git: no args")
+	}
 	cmd := exec.Command("git", args...)
 	if dir != "" {
 		cmd.Dir = dir

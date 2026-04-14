@@ -1012,7 +1012,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	)
 	if err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) {
+		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
 			slog.Warn("github merge failed",
 				"owner", input.Owner, "repo", input.Name,
 				"number", input.Number, "method", input.Body.Method,
@@ -1096,7 +1096,7 @@ func (s *Server) setPRGitHubState(
 		input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) &&
+		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state and determine the real cause.
 			repoID, repoErr := s.lookupRepoID(
@@ -1106,7 +1106,7 @@ func (s *Server) setPRGitHubState(
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
-				if fetchErr == nil {
+				if fetchErr == nil && ghPR != nil {
 					normalized := ghclient.NormalizePR(repoID, ghPR)
 					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
 					if ghPR.GetMerged() {
@@ -1185,7 +1185,7 @@ func (s *Server) setIssueGitHubState(
 		input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) &&
+		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state. If already in the
 			// requested state (concurrent edit), treat as success.
@@ -1196,7 +1196,7 @@ func (s *Server) setIssueGitHubState(
 				ghIssue, fetchErr := client.GetIssue(
 					ctx, input.Owner, input.Name, input.Number,
 				)
-				if fetchErr == nil {
+				if fetchErr == nil && ghIssue != nil {
 					normalized := ghclient.NormalizeIssue(repoID, ghIssue)
 					_, _ = s.db.UpsertIssue(ctx, normalized)
 					if ghIssue.GetState() == input.Body.State {
@@ -1425,7 +1425,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 
 	if s.cfg != nil {
-		filtered := items[:0]
+		filtered := make([]db.ActivityItem, 0, len(items))
 		for _, it := range items {
 			if s.syncer.IsTrackedRepo(it.RepoOwner, it.RepoName) {
 				filtered = append(filtered, it)

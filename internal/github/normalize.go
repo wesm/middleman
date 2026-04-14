@@ -31,7 +31,11 @@ func sanitizeURL(raw string) string {
 // If the PR is merged, State is set to "merged". LastActivityAt is
 // initialized to UpdatedAt.
 func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.MergeRequest {
-	mr := &db.MergeRequest{
+	mr := &db.MergeRequest{RepoID: repoID}
+	if ghPR == nil {
+		return mr
+	}
+	mr = &db.MergeRequest{
 		RepoID:            repoID,
 		PlatformID:        ghPR.GetID(),
 		Number:            ghPR.GetNumber(),
@@ -334,7 +338,11 @@ func appName(r *gh.CheckRun) string {
 
 // NormalizeIssue converts a GitHub Issue to a db.Issue.
 func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
-	issue := &db.Issue{
+	issue := &db.Issue{RepoID: repoID}
+	if ghIssue == nil {
+		return issue
+	}
+	issue = &db.Issue{
 		RepoID:       repoID,
 		PlatformID:   ghIssue.GetID(),
 		Number:       ghIssue.GetNumber(),

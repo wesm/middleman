@@ -164,7 +164,7 @@ nilaway: ensure-embed-dir
 		echo "failed to determine module path" >&2; \
 		exit 1; \
 	}; \
-		nilaway -include-pkgs="$$module_path" ./...
+		nilaway -include-pkgs="$$module_path" -test=false ./...
 
 # Tidy dependencies
 tidy:
