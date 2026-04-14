@@ -16,10 +16,17 @@ async function waitForIssueList(page: Page): Promise<void> {
 
 test.describe("grouping toggle", () => {
   test.beforeEach(async ({ page }) => {
-    // Clear localStorage to start with default (By Repo).
+    // Clear persisted grouping once before first app bootstrap so tests start
+    // in default grouped mode without relying on WebKit reload stability.
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem("middleman:test:grouping:init") === "1") {
+        return;
+      }
+      localStorage.removeItem("middleman:groupingMode");
+      localStorage.removeItem("middleman:groupByRepo");
+      sessionStorage.setItem("middleman:test:grouping:init", "1");
+    });
     await page.goto("/pulls");
-    await page.evaluate(() => localStorage.removeItem("middleman:groupByRepo"));
-    await page.reload();
     await waitForPullList(page);
   });
 
@@ -51,13 +58,16 @@ test.describe("grouping toggle", () => {
     await page.locator(".group-btn", { hasText: "All" }).click();
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
-    // Reload the page.
-    await page.reload();
-    await waitForPullList(page);
+    // Verify persisted state in a fresh page in same browser context.
+    const refreshedPage = await page.context().newPage();
+    await refreshedPage.goto("/pulls");
+    await waitForPullList(refreshedPage);
 
     // Should still be ungrouped.
-    await expect(page.locator(".repo-header")).toHaveCount(0);
-    await expect(page.locator(".repo-badge").first()).toBeVisible();
+    await expect(refreshedPage.locator(".repo-header")).toHaveCount(0);
+    await expect(refreshedPage.locator(".repo-badge").first()).toBeVisible();
+
+    await refreshedPage.close();
   });
 
   test("toggle syncs from PRs to issues", async ({ page }) => {
