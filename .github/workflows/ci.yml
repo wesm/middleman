@@ -107,6 +107,11 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    name: e2e (${{ matrix.browser }})
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -131,11 +136,19 @@ jobs:
       - name: Build E2E server
         run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
-      - name: Install Playwright browsers
-        run: cd frontend && bunx playwright install --with-deps chromium
+      - name: Install Playwright browser
+        run: cd frontend && bunx playwright install --with-deps ${{ matrix.browser }}
 
       - name: Run E2E tests
-        run: cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=chromium
+        run: cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: e2e-report-${{ matrix.browser }}
+          path: frontend/playwright-report/
+          retention-days: 7
 
   e2e-roborev:
     runs-on: ubuntu-latest
