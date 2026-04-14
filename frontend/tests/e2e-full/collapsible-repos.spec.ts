@@ -24,14 +24,13 @@ function toolsHeader(page: Page) {
 
 test.describe("collapsible repo groups", () => {
   test.beforeEach(async ({ page }) => {
-    // Clear collapse state so every test starts expanded.
-    // localStorage can only be touched after the first goto.
-    await page.goto("/pulls");
-    await page.evaluate(() => {
+    // Clear collapse state before app bootstrap so each test starts expanded
+    // without relying on WebKit reload stability in CI.
+    await page.addInitScript(() => {
       localStorage.removeItem("middleman:collapsedRepos:pulls");
       localStorage.removeItem("middleman:collapsedRepos:issues");
     });
-    await page.reload();
+    await page.goto("/pulls");
     await waitForPullList(page);
   });
 
@@ -84,11 +83,14 @@ test.describe("collapsible repo groups", () => {
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
 
-    await page.reload();
-    await waitForPullList(page);
+    const refreshedPage = await page.context().newPage();
+    await refreshedPage.goto("/pulls");
+    await waitForPullList(refreshedPage);
 
-    await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator(".pull-item")).toHaveCount(4);
+    await expect(widgetsHeader(refreshedPage)).toHaveAttribute("aria-expanded", "false");
+    await expect(refreshedPage.locator(".pull-item")).toHaveCount(4);
+
+    await refreshedPage.close();
   });
 
   test("collapse is independent across pulls and issues surfaces", async ({ page }) => {
@@ -125,11 +127,14 @@ test.describe("collapsible repo groups", () => {
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(".issue-item")).toHaveCount(4);
 
-    // Collapse again and reload.
+    // Collapse again and verify persisted state in a fresh page.
     await widgetsHeader(page).click();
-    await page.reload();
-    await waitForIssueList(page);
-    await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator(".issue-item")).toHaveCount(1);
+    const refreshedPage = await page.context().newPage();
+    await refreshedPage.goto("/issues");
+    await waitForIssueList(refreshedPage);
+    await expect(widgetsHeader(refreshedPage)).toHaveAttribute("aria-expanded", "false");
+    await expect(refreshedPage.locator(".issue-item")).toHaveCount(1);
+
+    await refreshedPage.close();
   });
 });
