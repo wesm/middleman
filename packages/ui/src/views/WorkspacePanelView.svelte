@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getStores } from "../context.js";
   import type { PullRequest } from "../api/types.js";
+  import type { FetchPullResult } from "../stores/pulls.svelte.js";
   import WorkspacePanelPRItem
     from "../components/workspace/WorkspacePanelPRItem.svelte";
 
@@ -69,7 +70,7 @@
     platformHost !== activePlatformHost,
   );
 
-  let fetchedPull = $state<PullRequest | null>(null);
+  let fetchResult = $state<FetchPullResult | null>(null);
   let fetchingPull = $state(false);
   let lastFetchKey = $state<string | null>(null);
 
@@ -83,7 +84,7 @@
   $effect(() => {
     const key = fetchKey();
     if (view !== "detail" || !key || !number || !owner || !name) {
-      fetchedPull = null;
+      fetchResult = null;
       lastFetchKey = null;
       return;
     }
@@ -93,19 +94,25 @@
     lastFetchKey = key;
     fetchingPull = true;
     const capturedKey = key;
-    pulls.fetchSinglePull(owner, name, number).then((pr) => {
+    pulls.fetchSinglePull(owner, name, number).then((r) => {
       if (capturedKey === fetchKey()) {
-        fetchedPull = pr;
+        fetchResult = r;
         fetchingPull = false;
       }
     });
   });
 
+  const fetchedPull = $derived(
+    fetchResult?.status === "found" ? fetchResult.pull : null,
+  );
+  const fetchError = $derived(
+    fetchResult?.status === "error" ? fetchResult.message : null,
+  );
   const resolvedPull = $derived(selectedPull ?? fetchedPull);
 
   function handleDetailRefresh(): void {
     lastFetchKey = null;
-    fetchedPull = null;
+    fetchResult = null;
     onRefresh?.();
   }
 </script>
@@ -184,6 +191,17 @@
         {:else if fetchingPull}
           <div class="detail-body-empty" data-testid="detail-loading">
             <p>Loading PR #{number}...</p>
+          </div>
+        {:else if fetchError}
+          <div class="detail-body-empty" data-testid="detail-error">
+            <p>Failed to load PR #{number}.</p>
+            <p class="error-hint">{fetchError}</p>
+            {#if onRefresh}
+              <button
+                class="panel-action-btn"
+                onclick={handleDetailRefresh}
+              >Retry</button>
+            {/if}
           </div>
         {:else}
           <div class="detail-body-empty" data-testid="detail-not-found">
@@ -351,6 +369,12 @@
     font-size: 13px;
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  .error-hint {
+    font-size: 11px;
+    color: var(--accent-red);
+    margin-top: 2px;
   }
 
   .panel-list {

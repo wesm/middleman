@@ -1,6 +1,11 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
+export type FetchPullResult =
+  | { status: "found"; pull: PullRequest }
+  | { status: "not-found" }
+  | { status: "error"; message: string };
+
 type PullsParams = {
   repo?: string;
   state?: string;
@@ -290,9 +295,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
-  ): Promise<PullRequest | null> {
+  ): Promise<FetchPullResult> {
     try {
-      const { data, error } = await apiClient.GET(
+      const { data, error, response } = await apiClient.GET(
         "/repos/{owner}/{name}/pulls/{number}",
         {
           params: {
@@ -300,19 +305,35 @@ export function createPullsStore(opts: PullsStoreOptions) {
           },
         },
       );
-      if (error || !data) return null;
+      if (error || !data) {
+        if (response?.status === 404) {
+          return { status: "not-found" };
+        }
+        return {
+          status: "error",
+          message: `API returned ${response?.status ?? "unknown"}`,
+        };
+      }
       const mr = data.merge_request;
       return {
-        ...mr,
-        platform_host: "",
-        repo_owner: data.repo_owner,
-        repo_name: data.repo_name,
-        detail_loaded: data.detail_loaded,
-        detail_fetched_at: data.detail_fetched_at,
-        worktree_links: data.worktree_links,
-      } as PullRequest;
-    } catch {
-      return null;
+        status: "found",
+        pull: {
+          ...mr,
+          platform_host: "",
+          repo_owner: data.repo_owner,
+          repo_name: data.repo_name,
+          detail_loaded: data.detail_loaded,
+          detail_fetched_at: data.detail_fetched_at,
+          worktree_links: data.worktree_links,
+        } as PullRequest,
+      };
+    } catch (err) {
+      return {
+        status: "error",
+        message: err instanceof Error
+          ? err.message
+          : "network error",
+      };
     }
   }
 

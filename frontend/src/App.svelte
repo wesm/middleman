@@ -610,18 +610,20 @@
             activePlatformHost={getEmbedActivePlatformHost()}
             onSelectPR={(n) => {
               if ("platformHost" in route) {
-                softPinnedKey = detailKey(
-                  route.platformHost, route.owner, route.name, n,
-                );
                 navigate(
                   `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`,
                 );
-                emitWorkspaceCommand("softPinPR", {
-                  host: route.platformHost,
-                  owner: route.owner,
-                  name: route.name,
-                  number: n,
-                });
+                if (!panelHardPinned) {
+                  softPinnedKey = detailKey(
+                    route.platformHost, route.owner, route.name, n,
+                  );
+                  emitWorkspaceCommand("softPinPR", {
+                    host: route.platformHost,
+                    owner: route.owner,
+                    name: route.name,
+                    number: n,
+                  });
+                }
               }
             }}
             onBack={() => {

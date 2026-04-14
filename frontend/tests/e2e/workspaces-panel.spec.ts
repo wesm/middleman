@@ -394,6 +394,83 @@ test(
 );
 
 test(
+  "panel detail shows error state on server failure",
+  async ({ page }) => {
+    await page.route(
+      "**/api/v1/repos/acme/widgets/pulls/500",
+      async (route) => {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Internal error" }),
+        });
+      },
+    );
+
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: () => ({ ok: true }),
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets/500",
+    );
+
+    await expect(
+      page.getByTestId("detail-error"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Failed to load PR #500"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Retry" }),
+    ).toBeVisible();
+  },
+);
+
+test(
+  "panel hard-pin skips softPinPR on select",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          (window as Record<string, unknown>).__workspace_commands ??= [];
+          (
+            (window as Record<string, unknown>).__workspace_commands as unknown[]
+          ).push({ cmd, payload });
+          return { ok: true };
+        },
+      };
+    });
+    // Start hard-pinned, go back, then select a PR
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets/42?pin=hard",
+    );
+    await page
+      .getByRole("button", { name: "Back to list" })
+      .click();
+    await page
+      .locator(".panel-pr-item")
+      .filter({ hasText: "Refactor theme system" })
+      .click();
+
+    const cmds = await page.evaluate(
+      () => (window as Record<string, unknown>).__workspace_commands as
+        { cmd: string }[] | undefined,
+    );
+    const softPins = (cmds ?? []).filter(
+      (c) => c.cmd === "softPinPR",
+    );
+    expect(softPins).toHaveLength(0);
+  },
+);
+
+test(
   "panel select PR emits softPinPR and shows Unpin",
   async ({ page }) => {
     await page.addInitScript(() => {
