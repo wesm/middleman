@@ -10,8 +10,10 @@ services:
       - go-mod:/go/pkg/mod
       - go-cache:/go/cache
       - middleman-data:/data
+      - ${HOME}/.config/middleman/config.toml:/data/config.toml:ro
     environment:
       MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
+      MIDDLEMAN_HOME: /data
       GOCACHE: /go/cache
     healthcheck:
       test:
@@ -28,7 +30,7 @@ services:
       - -c
       - |
         socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:18090 &
-        make dev ARGS="-config docker/dev-config.toml"
+        make dev
 
   frontend:
     build:
