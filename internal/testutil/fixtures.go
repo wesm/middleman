@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -39,6 +40,42 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// --- Pull Requests ---
 
+	const widgetsPR1HeadSHA = "1111111111111111111111111111111111111111"
+
+	ciChecksJSON, err := json.Marshal([]db.CICheck{
+		{
+			Name:       "build",
+			Status:     "completed",
+			Conclusion: "success",
+			URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
+			App:        "GitHub Actions",
+		},
+		{
+			Name:       "test",
+			Status:     "completed",
+			Conclusion: "success",
+			URL:        "https://github.com/acme/widgets/actions/runs/1/job/2",
+			App:        "GitHub Actions",
+		},
+		{
+			Name:       "lint",
+			Status:     "completed",
+			Conclusion: "success",
+			URL:        "https://github.com/acme/widgets/actions/runs/1/job/3",
+			App:        "GitHub Actions",
+		},
+		{
+			Name:       "roborev",
+			Status:     "in_progress",
+			Conclusion: "",
+			URL:        "",
+			App:        "roborev",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal widgets#1 ci checks: %w", err)
+	}
+
 	// widgets#1: open, alice, has reviews+comments+4 commits
 	w1Created := now.Add(-10 * 24 * time.Hour)
 	w1ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -55,6 +92,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Additions:         240,
 		Deletions:         30,
 		CommentCount:      3,
+		CIStatus:          "success",
+		CIChecksJSON:      string(ciChecksJSON),
 		CreatedAt:         w1Created,
 		UpdatedAt:         now.Add(-2 * time.Hour),
 		LastActivityAt:    now.Add(-2 * time.Hour),
@@ -569,7 +608,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	openPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
 			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
@@ -581,7 +620,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	allPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1003, 3, "Upgrade dependency versions", "carol", "merged", false, "", now.Add(-10*24*time.Hour), w3Merged), 80, 80),
 			setPRStats(buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", now.Add(-30*24*time.Hour), w4Merged), 420, 310),
@@ -630,7 +669,44 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 				OpenIssues: openIssues,
 				Issues:     allIssues,
 				Comments:   make(map[string][]*gh.IssueComment),
-				nextID:     10_000,
+				CombinedStatuses: map[string]*gh.CombinedStatus{
+					refKey("acme", "widgets", widgetsPR1HeadSHA): {
+						State: new("success"),
+					},
+				},
+				CheckRuns: map[string][]*gh.CheckRun{
+					refKey("acme", "widgets", widgetsPR1HeadSHA): {
+						{
+							Name:       new("build"),
+							Status:     new("completed"),
+							Conclusion: new("success"),
+							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/1"),
+							App:        &gh.App{Name: new("GitHub Actions")},
+						},
+						{
+							Name:       new("test"),
+							Status:     new("completed"),
+							Conclusion: new("success"),
+							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/2"),
+							App:        &gh.App{Name: new("GitHub Actions")},
+						},
+						{
+							Name:       new("lint"),
+							Status:     new("completed"),
+							Conclusion: new("success"),
+							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/3"),
+							App:        &gh.App{Name: new("GitHub Actions")},
+						},
+						{
+							Name:       new("roborev"),
+							Status:     new("in_progress"),
+							Conclusion: new(""),
+							HTMLURL:    new(""),
+							App:        &gh.App{Name: new("roborev")},
+						},
+					},
+				},
+				nextID: 10_000,
 			}
 		},
 	}
@@ -671,6 +747,14 @@ func buildGHPR(
 func setPRStats(pr *gh.PullRequest, additions, deletions int) *gh.PullRequest {
 	pr.Additions = &additions
 	pr.Deletions = &deletions
+	return pr
+}
+
+func setPRHeadSHA(pr *gh.PullRequest, sha string) *gh.PullRequest {
+	if pr.Head == nil {
+		pr.Head = &gh.PullRequestBranch{}
+	}
+	pr.Head.SHA = &sha
 	return pr
 }
 
