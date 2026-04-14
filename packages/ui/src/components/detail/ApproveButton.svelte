@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getClient, getStores } from "../../context.js";
+  import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -52,25 +53,31 @@
       <p class="approve-error">{error}</p>
     {/if}
     <div class="approve-actions">
-      <button
+      <ActionButton
         class="btn btn--secondary"
         onclick={() => { expanded = false; }}
         disabled={submitting}
+        tone="neutral"
+        surface="outline"
       >
         Cancel
-      </button>
-      <button
+      </ActionButton>
+      <ActionButton
         class="btn btn--primary btn--green"
         onclick={() => void handleApprove()}
         disabled={submitting}
+        tone="success"
+        surface="solid"
       >
         {submitting ? "Approving\u2026" : "Approve"}
-      </button>
+      </ActionButton>
     </div>
   {:else}
-    <button
+    <ActionButton
       class="btn btn--approve"
       onclick={() => { expanded = true; }}
+      tone="success"
+      surface="soft"
     >
       <svg
         width="14"
@@ -81,7 +88,7 @@
         <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
       </svg>
       Approve
-    </button>
+    </ActionButton>
   {/if}
 </div>
 
@@ -117,58 +124,5 @@
     display: flex;
     gap: 8px;
     justify-content: flex-end;
-  }
-
-  .btn {
-    font-size: 13px;
-    font-weight: 500;
-    padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: opacity 0.1s;
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn--secondary {
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-default);
-  }
-  .btn--secondary:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-  }
-
-  .btn--primary {
-    color: #e6ffe6;
-    border: none;
-  }
-
-  .btn--green {
-    background: #1a7f37;
-  }
-  .btn--green:hover:not(:disabled) {
-    background: #176b2e;
-  }
-
-  .btn--approve {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: color-mix(
-      in srgb, var(--accent-green) 12%, transparent
-    );
-    color: var(--accent-green);
-    border: 1px solid color-mix(
-      in srgb, var(--accent-green) 30%, transparent
-    );
-    font-weight: 500;
-  }
-  .btn--approve:hover {
-    background: color-mix(
-      in srgb, var(--accent-green) 20%, transparent
-    );
   }
 </style>

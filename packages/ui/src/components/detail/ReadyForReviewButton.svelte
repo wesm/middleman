@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getClient, getStores } from "../../context.js";
+  import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -36,13 +37,15 @@
 </script>
 
 <div class="ready-section">
-  <button
+  <ActionButton
     class="btn btn--ready"
     onclick={() => void handleReadyForReview()}
     disabled={submitting}
+    tone="info"
+    surface="soft"
   >
     {submitting ? "Publishing…" : "Ready for review"}
-  </button>
+  </ActionButton>
   {#if error}
     <p class="ready-error">{error}</p>
   {/if}
@@ -58,35 +61,5 @@
   .ready-error {
     font-size: 12px;
     color: var(--accent-red);
-  }
-
-  .btn {
-    font-size: 13px;
-    font-weight: 500;
-    padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: opacity 0.1s;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn--ready {
-    background: color-mix(
-      in srgb, var(--accent-blue) 10%, transparent
-    );
-    color: var(--accent-blue);
-    border: 1px solid color-mix(
-      in srgb, var(--accent-blue) 30%, transparent
-    );
-  }
-
-  .btn--ready:hover:not(:disabled) {
-    background: color-mix(
-      in srgb, var(--accent-blue) 18%, transparent
-    );
   }
 </style>
