@@ -79,8 +79,10 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    // Wait for syntax highlighting: token spans get style attributes with --dc/--lc.
-    await page.locator(".diff-line .code span[style]").first()
+    // Wait for syntax highlighting on add/delete lines specifically — highlighting
+    // is incremental so a context line span appearing doesn't guarantee the
+    // add/delete rows this test asserts on are ready.
+    await page.locator(".diff-line--add .code span[style]").first()
       .waitFor({ state: "attached", timeout: 10_000 });
 
     const fileContent = page.locator(".file-content").first();
