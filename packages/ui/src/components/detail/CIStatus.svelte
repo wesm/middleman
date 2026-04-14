@@ -93,6 +93,33 @@
             {#if failedChecks.length > 0}
               <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
               {#each failedChecks as check}
+                {#if check.url}
+                  <a
+                    class="ci-check"
+                    href={check.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                    <span class="ci-name">{check.name}</span>
+                    {#if check.app}
+                      <span class="ci-app">{check.app}</span>
+                    {/if}
+                    <span class="ci-arrow">→</span>
+                  </a>
+                {:else}
+                  <div class="ci-check ci-check--static">
+                    <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                    <span class="ci-name">{check.name}</span>
+                    {#if check.app}
+                      <span class="ci-app">{check.app}</span>
+                    {/if}
+                  </div>
+                {/if}
+              {/each}
+            {/if}
+            {#each nonFailedChecks as check}
+              {#if check.url}
                 <a
                   class="ci-check"
                   href={check.url}
@@ -106,22 +133,15 @@
                   {/if}
                   <span class="ci-arrow">→</span>
                 </a>
-              {/each}
-            {/if}
-            {#each nonFailedChecks as check}
-              <a
-                class="ci-check"
-                href={check.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-                <span class="ci-name">{check.name}</span>
-                {#if check.app}
-                  <span class="ci-app">{check.app}</span>
-                {/if}
-                <span class="ci-arrow">→</span>
-              </a>
+              {:else}
+                <div class="ci-check ci-check--static">
+                  <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                  <span class="ci-name">{check.name}</span>
+                  {#if check.app}
+                    <span class="ci-app">{check.app}</span>
+                  {/if}
+                </div>
+              {/if}
             {/each}
           </div>
         {/if}
@@ -200,6 +220,14 @@
   .ci-check:hover {
     background: var(--bg-surface-hover);
     text-decoration: none;
+  }
+
+  .ci-check--static {
+    cursor: default;
+  }
+
+  .ci-check--static:hover {
+    background: transparent;
   }
 
   .ci-check + .ci-check {

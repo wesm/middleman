@@ -33,6 +33,13 @@ describe("CIStatus", () => {
             url: "https://example.com/lint",
             app: "GitHub Actions",
           },
+          {
+            name: "roborev",
+            status: "in_progress",
+            conclusion: "",
+            url: "",
+            app: "roborev",
+          },
         ]),
         detailLoaded: true,
         detailSyncing: false,
@@ -40,12 +47,15 @@ describe("CIStatus", () => {
     });
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /CI:\s*success \(3\)/i }),
+      screen.getByRole("button", { name: /CI:\s*success \(4\)/i }),
     );
 
     expect(screen.getByText("build")).toBeTruthy();
     expect(screen.getByText("test")).toBeTruthy();
     expect(screen.getByText("lint")).toBeTruthy();
-    expect(document.querySelectorAll(".ci-check")).toHaveLength(3);
+    expect(document.querySelectorAll(".ci-name")).toHaveLength(4);
+    expect(document.querySelectorAll(".ci-check")).toHaveLength(4);
+    expect(document.querySelectorAll("a.ci-check")).toHaveLength(3);
+    expect(document.querySelector(".ci-check--static")).toBeTruthy();
   });
 });
