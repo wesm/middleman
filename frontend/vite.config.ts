@@ -4,12 +4,13 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { searchForWorkspaceRoot, type UserConfig } from "vite";
 import type { InlineConfig } from "vitest/node";
+import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
-const apiUrl = process.env.MIDDLEMAN_API_URL ?? "http://127.0.0.1:8091";
+const apiUrl = resolveDevApiUrl();
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 const uiPkg = path.resolve(process.cwd(), "../packages/ui");
 const uiIndex = path.resolve(process.cwd(), "../packages/ui/src/index.ts");
