@@ -71,22 +71,30 @@
 
   let fetchedPull = $state<PullRequest | null>(null);
   let fetchingPull = $state(false);
-  let lastFetchedNumber = $state<number | null>(null);
+  let lastFetchKey = $state<string | null>(null);
+
+  function fetchKey(): string | null {
+    if (!platformHost || !owner || !name || !number) {
+      return null;
+    }
+    return `${platformHost}/${owner}/${name}/${number}`;
+  }
 
   $effect(() => {
-    if (view !== "detail" || !number || !owner || !name) {
+    const key = fetchKey();
+    if (view !== "detail" || !key || !number || !owner || !name) {
       fetchedPull = null;
-      lastFetchedNumber = null;
+      lastFetchKey = null;
       return;
     }
     if (selectedPull) return;
-    if (number === lastFetchedNumber) return;
+    if (key === lastFetchKey) return;
 
-    lastFetchedNumber = number;
+    lastFetchKey = key;
     fetchingPull = true;
-    const n = number;
-    pulls.fetchSinglePull(owner, name, n).then((pr) => {
-      if (n === number) {
+    const capturedKey = key;
+    pulls.fetchSinglePull(owner, name, number).then((pr) => {
+      if (capturedKey === fetchKey()) {
         fetchedPull = pr;
         fetchingPull = false;
       }
@@ -96,7 +104,7 @@
   const resolvedPull = $derived(selectedPull ?? fetchedPull);
 
   function handleDetailRefresh(): void {
-    lastFetchedNumber = null;
+    lastFetchKey = null;
     fetchedPull = null;
     onRefresh?.();
   }

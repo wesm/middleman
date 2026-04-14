@@ -79,15 +79,23 @@
   let panelSoftPinned = $state(false);
   let panelHardPinned = $state(false);
 
-  // Detect hard-pin from URL; cleared only by explicit unpin.
+  // Sync pin state from route transitions. Hard-pin is sticky
+  // (cleared only by explicit unpin). Soft-pin syncs from URL
+  // and clears when the panel navigates away from detail.
   $effect(() => {
     const r = getRoute();
-    if (
-      r.page === "workspaces-panel" &&
-      "pin" in r &&
-      r.pin === "hard"
-    ) {
+    if (r.page !== "workspaces-panel") {
+      panelSoftPinned = false;
+      return;
+    }
+    if ("pin" in r && r.pin === "hard") {
       panelHardPinned = true;
+    }
+    if ("pin" in r && r.pin === "soft") {
+      panelSoftPinned = true;
+    }
+    if (r.page === "workspaces-panel" && r.view !== "detail") {
+      panelSoftPinned = false;
     }
   });
 

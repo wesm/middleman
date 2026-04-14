@@ -278,6 +278,122 @@ test(
 );
 
 test(
+  "panel detail fallback fetches via single-PR endpoint",
+  async ({ page }) => {
+    // Mock a single-PR endpoint for a closed PR not in /pulls
+    await page.route(
+      "**/api/v1/repos/acme/widgets/pulls/100",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            merge_request: {
+              ID: 100,
+              Number: 100,
+              Title: "Closed feature",
+              Author: "alice",
+              State: "closed",
+              repo_owner: "acme",
+              repo_name: "widgets",
+              worktree_links: [],
+            },
+            repo_owner: "acme",
+            repo_name: "widgets",
+            detail_loaded: true,
+            detail_fetched_at: "2026-04-10T00:00:00Z",
+            worktree_links: [],
+          }),
+        });
+      },
+    );
+
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: () => ({ ok: true }),
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets/100",
+    );
+
+    // Should render the fallback-fetched PR detail
+    await expect(
+      page.getByText("Closed feature"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("#100"),
+    ).toBeVisible();
+  },
+);
+
+test(
+  "panel detail Refresh retries single-PR fetch after miss",
+  async ({ page }) => {
+    let fetchCount = 0;
+    await page.route(
+      "**/api/v1/repos/acme/widgets/pulls/200",
+      async (route) => {
+        fetchCount++;
+        if (fetchCount === 1) {
+          await route.fulfill({
+            status: 404,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "Not found" }),
+          });
+        } else {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              merge_request: {
+                ID: 200,
+                Number: 200,
+                Title: "Late-synced PR",
+                Author: "bob",
+                State: "open",
+                repo_owner: "acme",
+                repo_name: "widgets",
+                worktree_links: [],
+              },
+              repo_owner: "acme",
+              repo_name: "widgets",
+              detail_loaded: true,
+              detail_fetched_at: "2026-04-10T00:00:00Z",
+              worktree_links: [],
+            }),
+          });
+        }
+      },
+    );
+
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: () => ({ ok: true }),
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets/200",
+    );
+
+    // First fetch returns 404 — shows not-found
+    await expect(
+      page.getByTestId("detail-not-found"),
+    ).toBeVisible();
+
+    // Click Refresh — resets dedup guard and retries
+    await page.getByRole("button", { name: "Refresh" }).click();
+
+    // Second fetch returns PR — shows detail
+    await expect(
+      page.getByText("Late-synced PR"),
+    ).toBeVisible();
+  },
+);
+
+test(
   "panel select PR emits softPinPR and shows Unpin",
   async ({ page }) => {
     await page.addInitScript(() => {
