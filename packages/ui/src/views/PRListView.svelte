@@ -1,7 +1,9 @@
 <script lang="ts">
   import {
-    getNavigate,
+    getNavigate, getSidebar,
   } from "../context.js";
+
+  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail
     from "../components/detail/PullDetail.svelte";

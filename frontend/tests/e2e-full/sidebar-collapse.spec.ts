@@ -18,12 +18,12 @@ test.describe("collapsible sidebar", () => {
     await sidebar.locator(".sidebar-toggle").click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
-    // The expand button should now appear in the header.
-    const headerToggle = page.locator(".app-header .sidebar-toggle");
-    await expect(headerToggle).toBeVisible();
+    // The expand button should now appear in the collapsed strip.
+    const expandBtn = sidebar.locator(".expand-btn");
+    await expect(expandBtn).toBeVisible();
 
-    // Click the header expand button to restore the sidebar.
-    await headerToggle.click();
+    // Click the expand button to restore the sidebar.
+    await expandBtn.click();
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
   });
 

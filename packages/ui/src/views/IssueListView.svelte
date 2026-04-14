@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { getSidebar } from "../context.js";
   import IssueList
     from "../components/sidebar/IssueList.svelte";
   import IssueDetail
     from "../components/detail/IssueDetail.svelte";
+
+  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
 
   interface Props {
     selectedIssue?: {
