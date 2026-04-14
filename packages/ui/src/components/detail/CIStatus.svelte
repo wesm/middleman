@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { CICheck } from "../../api/types.js";
 
+  let rootEl = $state<HTMLDivElement | undefined>();
+
   interface Props {
     status: string;
     checksJSON: string;
@@ -58,74 +60,117 @@
     if (chipStatus === "pending") return "chip--amber";
     return "chip--muted";
   }
+
+  function close(): void {
+    expanded = false;
+  }
+
+  function handleDocumentClick(event: MouseEvent): void {
+    if (rootEl && !rootEl.contains(event.target as Node)) {
+      close();
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  }
+
+  $effect(() => {
+    if (!expanded) return;
+
+    const id = setTimeout(() => {
+      document.addEventListener("click", handleDocumentClick);
+    }, 0);
+    document.addEventListener("keydown", handleKeydown);
+
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener("click", handleDocumentClick);
+      document.removeEventListener("keydown", handleKeydown);
+    };
+  });
 </script>
 
 {#if hasCI}
-  <button
-    class="chip chip--clickable {chipColor(status)}"
-    onclick={() => { expanded = !expanded; }}
-    title={expanded ? "Collapse CI checks" : "Expand CI checks"}
-  >
-    CI: {status || "unknown"}
-    {#if checks.length > 0}
-      ({checks.length})
-    {/if}
-    <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
-  </button>
-
-  {#if expanded}
-    {#if !detailLoaded}
-      {#if detailSyncing}
-        <div class="loading-placeholder">
-          <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-          </svg>
-          Loading checks...
-        </div>
-      {:else}
-        <div class="loading-placeholder">Detail not yet loaded</div>
+  <div class="ci-status" bind:this={rootEl}>
+    <button
+      class="chip chip--clickable {chipColor(status)}"
+      onclick={() => { expanded = !expanded; }}
+      title={expanded ? "Collapse CI checks" : "Expand CI checks"}
+      aria-expanded={expanded}
+    >
+      CI: {status || "unknown"}
+      {#if checks.length > 0}
+        ({checks.length})
       {/if}
-    {:else if checks.length > 0}
-      <div class="ci-checks">
-        {#if failedChecks.length > 0}
-          <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
-          {#each failedChecks as check}
-            <a
-              class="ci-check"
-              href={check.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-              <span class="ci-name">{check.name}</span>
-              {#if check.app}
-                <span class="ci-app">{check.app}</span>
-              {/if}
-              <span class="ci-arrow">→</span>
-            </a>
-          {/each}
-        {/if}
-        {#each nonFailedChecks as check}
-          <a
-            class="ci-check"
-            href={check.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-            <span class="ci-name">{check.name}</span>
-            {#if check.app}
-              <span class="ci-app">{check.app}</span>
+      <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
+    </button>
+
+    {#if expanded}
+      <div class="ci-popover">
+        {#if !detailLoaded}
+          {#if detailSyncing}
+            <div class="loading-placeholder">
+              <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
+              </svg>
+              Loading checks...
+            </div>
+          {:else}
+            <div class="loading-placeholder">Detail not yet loaded</div>
+          {/if}
+        {:else if checks.length > 0}
+          <div class="ci-checks">
+            {#if failedChecks.length > 0}
+              <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
+              {#each failedChecks as check}
+                <a
+                  class="ci-check"
+                  href={check.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                  <span class="ci-name">{check.name}</span>
+                  {#if check.app}
+                    <span class="ci-app">{check.app}</span>
+                  {/if}
+                  <span class="ci-arrow">→</span>
+                </a>
+              {/each}
             {/if}
-            <span class="ci-arrow">→</span>
-          </a>
-        {/each}
+            {#each nonFailedChecks as check}
+              <a
+                class="ci-check"
+                href={check.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                <span class="ci-name">{check.name}</span>
+                {#if check.app}
+                  <span class="ci-app">{check.app}</span>
+                {/if}
+                <span class="ci-arrow">→</span>
+              </a>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
-  {/if}
+  </div>
 {/if}
 
 <style>
+  .ci-status {
+    position: relative;
+    display: inline-flex;
+    align-self: flex-start;
+  }
+
   .chip--clickable {
     cursor: pointer;
     display: inline-flex;
@@ -147,14 +192,25 @@
     transform: rotate(180deg);
   }
 
+  .ci-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 20;
+    min-width: min(360px, calc(100vw - 64px));
+    max-width: min(520px, calc(100vw - 64px));
+  }
+
   .ci-checks {
     display: flex;
     flex-direction: column;
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);
-    overflow: hidden;
+    overflow: auto;
     flex-shrink: 0;
+    box-shadow: var(--shadow-md);
+    max-height: min(320px, 50vh);
   }
 
   .ci-section-label {
@@ -223,6 +279,12 @@
     gap: 8px;
     color: var(--text-muted);
     font-size: 12px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: 10px 12px;
+    white-space: nowrap;
   }
 
   .sync-spinner {
