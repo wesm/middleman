@@ -241,15 +241,17 @@ export function initWorkspaceBridge(): void {
     const changingHost =
       "hostKey" in selection &&
       selection.hostKey !== config.workspace.selectedHostKey;
+    const updated = { ...config.workspace };
     if ("hostKey" in selection) {
-      config.workspace.selectedHostKey = selection.hostKey ?? null;
+      updated.selectedHostKey = selection.hostKey ?? null;
     }
     if ("worktreeKey" in selection) {
-      config.workspace.selectedWorktreeKey =
+      updated.selectedWorktreeKey =
         selection.worktreeKey ?? null;
     } else if (changingHost) {
-      config.workspace.selectedWorktreeKey = null;
+      updated.selectedWorktreeKey = null;
     }
+    config.workspace = updated;
     window.__middleman_notify_config_changed?.();
   };
   window.__middleman_update_host_state = (
@@ -260,16 +262,22 @@ export function initWorkspaceBridge(): void {
     },
   ) => {
     const config = window.__middleman_config;
-    const host = config?.workspace?.hosts.find(
+    if (!config?.workspace) return;
+    const hostIdx = config.workspace.hosts.findIndex(
       (h) => h.key === hostKey,
     );
-    if (!host) return;
+    if (hostIdx < 0) return;
+    const host = config.workspace.hosts[hostIdx]!;
+    const updated = { ...host };
     if ("connectionState" in patch) {
-      host.connectionState = patch.connectionState!;
+      updated.connectionState = patch.connectionState!;
     }
     if ("resources" in patch) {
-      host.resources = patch.resources ?? null;
+      updated.resources = patch.resources ?? null;
     }
+    const hosts = [...config.workspace.hosts];
+    hosts[hostIdx] = updated;
+    config.workspace = { ...config.workspace, hosts };
     window.__middleman_notify_config_changed?.();
   };
 }

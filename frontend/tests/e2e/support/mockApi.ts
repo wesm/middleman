@@ -63,6 +63,42 @@ const pulls = [
     platform_host: "example.com",
     worktree_links: [],
   },
+  {
+    ID: 3,
+    RepoID: 1,
+    GitHubID: 301,
+    Number: 55,
+    URL: "https://github.com/acme/widgets/pull/55",
+    Title: "Refactor theme system",
+    Author: "luisa",
+    State: "open",
+    IsDraft: false,
+    Body: "Consolidates theme tokens.",
+    HeadBranch: "refactor/theme",
+    BaseBranch: "main",
+    Additions: 80,
+    Deletions: 40,
+    CommentCount: 0,
+    ReviewDecision: "",
+    CIStatus: "pending",
+    CIChecksJSON: "[]",
+    CreatedAt: "2026-03-29T14:00:00Z",
+    UpdatedAt: "2026-03-30T14:00:00Z",
+    LastActivityAt: "2026-03-30T14:00:00Z",
+    MergedAt: null,
+    ClosedAt: null,
+    KanbanStatus: "new",
+    Starred: false,
+    repo_owner: "acme",
+    repo_name: "widgets",
+    platform_host: "github.com",
+    worktree_links: [
+      {
+        worktree_key: "projects/theme-rework",
+        worktree_branch: "refactor/theme",
+      },
+    ],
+  },
 ];
 
 const issues = [
@@ -151,6 +187,38 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/pulls") {
       await fulfillJson(route, pulls);
+      return;
+    }
+
+    const singlePrMatch = pathname.match(
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/,
+    );
+    if (method === "GET" && singlePrMatch) {
+      const prOwner = singlePrMatch[1];
+      const prName = singlePrMatch[2];
+      const prNumber = parseInt(singlePrMatch[3]!, 10);
+      const pr = pulls.find(
+        (p) =>
+          p.repo_owner === prOwner &&
+          p.repo_name === prName &&
+          p.Number === prNumber,
+      );
+      if (pr) {
+        await fulfillJson(route, {
+          merge_request: pr,
+          repo_owner: pr.repo_owner,
+          repo_name: pr.repo_name,
+          detail_loaded: true,
+          detail_fetched_at: "2026-03-30T14:00:00Z",
+          worktree_links: pr.worktree_links,
+        });
+      } else {
+        await fulfillJson(
+          route,
+          { error: "Not found" },
+          404,
+        );
+      }
       return;
     }
 

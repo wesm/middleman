@@ -1,5 +1,7 @@
 <script lang="ts">
   import { getStores } from "../context.js";
+  import type { PullRequest } from "../api/types.js";
+  import type { FetchPullResult } from "../stores/pulls.svelte.js";
   import WorkspacePanelPRItem
     from "../components/workspace/WorkspacePanelPRItem.svelte";
 
@@ -7,6 +9,7 @@
 
   interface Props {
     view: "list" | "detail" | "empty";
+    isPinned?: boolean | undefined;
     platformHost?: string | undefined;
     owner?: string | undefined;
     name?: string | undefined;
@@ -16,10 +19,15 @@
     onSelectPR: (number: number) => void;
     onBack: () => void;
     onCreateWorktree: (number: number) => void;
+    onNavigateWorktree: (worktreeKey: string) => void;
+    onUnpin?: (() => void) | undefined;
+    onRefresh?: () => void;
+    onRevealHostSettings?: () => void;
   }
 
   let {
     view,
+    isPinned = false,
     platformHost,
     owner,
     name,
@@ -29,6 +37,10 @@
     onSelectPR,
     onBack,
     onCreateWorktree,
+    onNavigateWorktree,
+    onUnpin,
+    onRefresh,
+    onRevealHostSettings,
   }: Props = $props();
 
   const filteredPulls = $derived.by(() => {
@@ -57,6 +69,52 @@
     platformHost !== undefined &&
     platformHost !== activePlatformHost,
   );
+
+  let fetchResult = $state<FetchPullResult | null>(null);
+  let fetchingPull = $state(false);
+  let lastFetchKey = $state<string | null>(null);
+
+  function fetchKey(): string | null {
+    if (!platformHost || !owner || !name || !number) {
+      return null;
+    }
+    return `${platformHost}/${owner}/${name}/${number}`;
+  }
+
+  $effect(() => {
+    const key = fetchKey();
+    if (view !== "detail" || !key || !number || !owner || !name) {
+      fetchResult = null;
+      lastFetchKey = null;
+      return;
+    }
+    if (selectedPull) return;
+    if (key === lastFetchKey) return;
+
+    lastFetchKey = key;
+    fetchingPull = true;
+    const capturedKey = key;
+    pulls.fetchSinglePull(owner, name, number).then((r) => {
+      if (capturedKey === fetchKey()) {
+        fetchResult = r;
+        fetchingPull = false;
+      }
+    });
+  });
+
+  const fetchedPull = $derived(
+    fetchResult?.status === "found" ? fetchResult.pull : null,
+  );
+  const fetchError = $derived(
+    fetchResult?.status === "error" ? fetchResult.message : null,
+  );
+  const resolvedPull = $derived(selectedPull ?? fetchedPull);
+
+  function handleDetailRefresh(): void {
+    lastFetchKey = null;
+    fetchResult = null;
+    onRefresh?.();
+  }
 </script>
 
 <div class="workspace-panel">
@@ -75,9 +133,20 @@
   {:else if isNonPrimary}
     <div class="panel-empty" data-testid="non-primary-state">
       <p>
-        This repository is on a different platform host
-        ({platformHost}).
+        This worktree's repository is on
+        <strong>{platformHost}</strong>.
       </p>
+      <p class="panel-muted">
+        Pull request data is only available for repositories
+        on the active host
+        ({activePlatformHost}).
+      </p>
+      {#if onRevealHostSettings}
+        <button
+          class="panel-action-btn"
+          onclick={onRevealHostSettings}
+        >Reveal in Host Settings</button>
+      {/if}
     </div>
   {:else if view === "detail"}
     <div class="panel-detail">
@@ -97,27 +166,53 @@
             />
           </svg>
         </button>
-        {#if selectedPull}
+        {#if isPinned}
+          <button
+            class="panel-unpin-btn"
+            onclick={onUnpin}
+            title="Unpin and follow selection"
+          >Unpin</button>
+        {/if}
+        {#if resolvedPull}
           <span class="detail-title">
-            #{selectedPull.Number} {selectedPull.Title}
+            #{resolvedPull.Number} {resolvedPull.Title}
           </span>
+        {:else if number}
+          <span class="detail-title">PR #{number}</span>
         {/if}
       </div>
       <div class="detail-body">
-        {#if selectedPull}
-          {#if selectedPull.Body}
-            <p class="body-text">{selectedPull.Body}</p>
+        {#if resolvedPull}
+          {#if resolvedPull.Body}
+            <p class="body-text">{resolvedPull.Body}</p>
           {:else}
             <p class="body-empty">No description provided.</p>
           {/if}
-        {:else if pulls.isLoading()}
-          <p class="body-empty" data-testid="detail-loading">
-            Loading...
-          </p>
+        {:else if fetchingPull}
+          <div class="detail-body-empty" data-testid="detail-loading">
+            <p>Loading PR #{number}...</p>
+          </div>
+        {:else if fetchError}
+          <div class="detail-body-empty" data-testid="detail-error">
+            <p>Failed to load PR #{number}.</p>
+            <p class="error-hint">{fetchError}</p>
+            {#if onRefresh}
+              <button
+                class="panel-action-btn"
+                onclick={handleDetailRefresh}
+              >Retry</button>
+            {/if}
+          </div>
         {:else}
-          <p class="body-empty" data-testid="detail-not-found">
-            Pull request #{number} not found.
-          </p>
+          <div class="detail-body-empty" data-testid="detail-not-found">
+            <p>PR #{number} was not found.</p>
+            {#if onRefresh}
+              <button
+                class="panel-action-btn"
+                onclick={handleDetailRefresh}
+              >Refresh</button>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>
@@ -131,17 +226,26 @@
       </div>
       <div class="list-body">
         {#if pulls.isLoading() && filteredPulls.length === 0}
-          <p class="panel-empty-text">Loading...</p>
-        {:else if filteredPulls.length === 0}
           <p class="panel-empty-text">
-            No pull requests found.
+            Loading pull requests...
           </p>
+        {:else if filteredPulls.length === 0}
+          <div class="panel-empty-state">
+            <p>No open pull requests for {owner}/{name}.</p>
+            {#if onRefresh}
+              <button
+                class="panel-action-btn"
+                onclick={onRefresh}
+              >Refresh</button>
+            {/if}
+          </div>
         {:else}
           {#each filteredPulls as pr (pr.ID)}
             <WorkspacePanelPRItem
               pull={pr}
               onSelect={onSelectPR}
               {onCreateWorktree}
+              {onNavigateWorktree}
             />
           {/each}
         {/if}
@@ -161,8 +265,10 @@
 
   .panel-empty {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 4px;
     flex: 1;
     padding: 16px;
     color: var(--text-muted);
@@ -205,6 +311,22 @@
     color: var(--text-primary);
   }
 
+  .panel-unpin-btn {
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--border-muted);
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .panel-unpin-btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
   .detail-title {
     font-size: 12px;
     font-weight: 600;
@@ -219,6 +341,20 @@
     flex: 1;
     overflow-y: auto;
     padding: 12px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .detail-body-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 1;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
   }
 
   .body-text {
@@ -233,6 +369,12 @@
     font-size: 13px;
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  .error-hint {
+    font-size: 11px;
+    color: var(--accent-red);
+    margin-top: 2px;
   }
 
   .panel-list {
@@ -283,5 +425,36 @@
     font-size: 13px;
     color: var(--text-muted);
     text-align: center;
+  }
+
+  .panel-empty-state {
+    padding: 24px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .panel-muted {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .panel-action-btn {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+  }
+
+  .panel-action-btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
 </style>

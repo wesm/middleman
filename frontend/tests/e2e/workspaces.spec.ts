@@ -7,6 +7,8 @@ const testWorkspaceData: WorkspaceData = {
     key: "local",
     label: "Local",
     connectionState: "connected",
+    transport: "local",
+    platform: "macOS",
     projects: [{
       key: "proj-1",
       name: "test-project",
@@ -72,6 +74,9 @@ test("workspaces route renders empty state", async ({ page }) => {
 });
 
 test("AppHeader shows Workspaces tab", async ({ page }) => {
+  await page.addInitScript((d) => {
+    window.__middleman_config = { workspace: d };
+  }, testWorkspaceData);
   await page.goto("/pulls");
   await expect(
     page.getByRole("button", { name: "Workspaces" }),
@@ -81,6 +86,9 @@ test("AppHeader shows Workspaces tab", async ({ page }) => {
 test(
   "Workspaces tab navigates to /workspaces",
   async ({ page }) => {
+    await page.addInitScript((d) => {
+      window.__middleman_config = { workspace: d };
+    }, testWorkspaceData);
     await page.goto("/pulls");
     await page
       .getByRole("button", { name: "Workspaces" })
@@ -114,7 +122,7 @@ test(
       page.locator(".project-name", { hasText: "test-project" }),
     ).toBeVisible();
     await expect(
-      page.getByText("feature-auth"),
+      page.getByText("Add auth middleware"),
     ).toBeVisible();
   },
 );
@@ -155,7 +163,7 @@ test(
       page.locator(".project-name", { hasText: "test-project" }),
     ).toBeVisible();
     await expect(
-      page.getByText("feature-auth"),
+      page.getByText("Add auth middleware"),
     ).toBeVisible();
   },
 );
@@ -255,7 +263,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "feature-auth" });
+      .filter({ hasText: "Add auth middleware" });
     await expect(row).toBeVisible();
     await row.click();
 
@@ -276,7 +284,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "feature-auth" });
+      .filter({ hasText: "Add auth middleware" });
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
 
@@ -301,7 +309,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "feature-auth" });
+      .filter({ hasText: "Add auth middleware" });
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
 
@@ -431,10 +439,10 @@ test(
     await expect(selectedRow).toBeVisible();
     await expect(selectedRow).toHaveClass(/selected/);
 
-    // wt-2 ("feature-auth") should NOT be selected
+    // wt-2 (renders as "Add auth middleware") should NOT be selected
     const otherRow = page
       .locator(".worktree-row")
-      .filter({ hasText: "feature-auth" });
+      .filter({ hasText: "Add auth middleware" });
     await expect(otherRow).toBeVisible();
     await expect(otherRow).not.toHaveClass(/selected/);
   },
@@ -448,7 +456,7 @@ test(
     }, testWorkspaceData);
     await page.goto("/workspaces");
 
-    const worktreeRow = page.getByText("feature-auth");
+    const worktreeRow = page.getByText("Add auth middleware");
     await expect(worktreeRow).toBeVisible();
 
     // Collapse by clicking project header
@@ -533,10 +541,10 @@ test(
       });
     });
 
-    // wt-2 ("feature-auth") should now be selected
+    // wt-2 (renders as "Add auth middleware") should now be selected
     const selectedRow = page
       .locator(".worktree-row")
-      .filter({ hasText: "feature-auth" });
+      .filter({ hasText: "Add auth middleware" });
     await expect(selectedRow).toHaveClass(/selected/);
   },
 );
@@ -704,7 +712,7 @@ test(
 
     const row = page
       .locator(".worktree-row")
-      .filter({ hasText: "feature-auth" });
+      .filter({ hasText: "Add auth middleware" });
     await expect(row).toBeVisible();
     await row.click();
 
