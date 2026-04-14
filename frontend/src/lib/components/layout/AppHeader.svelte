@@ -15,7 +15,8 @@
   } from "../../stores/sidebar.svelte.js";
 
   const hasSidebarStrip = $derived(
-    getPage() === "pulls" || getPage() === "issues",
+    getPage() === "issues"
+    || (getPage() === "pulls" && getView() === "list"),
   );
 
   const stores = getStores();
