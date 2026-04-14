@@ -79,28 +79,20 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    // Wait for syntax highlighting to finish.
-    await page.waitForTimeout(1000);
+    // Wait for syntax highlighting: token spans get style attributes with --dc/--lc.
+    await page.locator(".diff-line .code span[style]").first()
+      .waitFor({ state: "attached", timeout: 10_000 });
 
-    // Screenshot before scroll.
-    await page.screenshot({
-      path: "test-results/diff-highlight-before-scroll.png",
-      fullPage: false,
-    });
-
-    // Scroll the diff area to the right.
     const fileContent = page.locator(".file-content").first();
+
+    // Scroll the diff area to the right and wait for scroll to settle.
     await fileContent.evaluate((el) => { el.scrollLeft = 300; });
-    await page.waitForTimeout(300);
+    await expect.poll(
+      () => fileContent.evaluate((el) => el.scrollLeft),
+      { timeout: 2_000 },
+    ).toBeGreaterThan(0);
 
-    // Screenshot after scroll — backgrounds should be contiguous.
-    await page.screenshot({
-      path: "test-results/diff-highlight-after-scroll.png",
-      fullPage: false,
-    });
-
-    // Verify add/delete lines have backgrounds that extend to the scroll width.
-    // Check that the .file-rows wrapper is wider than .file-content's visible width.
+    // Verify .file-rows wrapper is wider than the visible container.
     const widths = await fileContent.evaluate((el) => {
       const rows = el.querySelector(".file-rows");
       return {
@@ -109,10 +101,28 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
         rowsWidth: rows ? rows.getBoundingClientRect().width : 0,
       };
     });
-
-    // file-rows should be at least as wide as the scroll area (allow sub-pixel rounding).
-    expect(widths.rowsWidth).toBeGreaterThanOrEqual(widths.scrollWidth - 1);
-    // Scroll width should exceed container (long lines).
     expect(widths.scrollWidth).toBeGreaterThan(widths.containerWidth);
+    expect(widths.rowsWidth).toBeGreaterThanOrEqual(widths.scrollWidth - 1);
+
+    // Verify individual add/delete rows match the file-rows width (backgrounds
+    // extend to the full scroll width, not just the viewport).
+    const rowWidths = await fileContent.evaluate((el) => {
+      const rows = el.querySelector(".file-rows");
+      if (!rows) return { rowsWidth: 0, addWidths: [] as number[], delWidths: [] as number[] };
+      const rw = rows.getBoundingClientRect().width;
+      const adds = [...el.querySelectorAll(".diff-line--add")].map(
+        (r) => r.getBoundingClientRect().width,
+      );
+      const dels = [...el.querySelectorAll(".diff-line--del")].map(
+        (r) => r.getBoundingClientRect().width,
+      );
+      return { rowsWidth: rw, addWidths: adds, delWidths: dels };
+    });
+
+    expect(rowWidths.addWidths.length).toBeGreaterThan(0);
+    expect(rowWidths.delWidths.length).toBeGreaterThan(0);
+    for (const w of [...rowWidths.addWidths, ...rowWidths.delWidths]) {
+      expect(w).toBeGreaterThanOrEqual(rowWidths.rowsWidth - 1);
+    }
   });
 });
