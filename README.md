@@ -209,10 +209,12 @@ make frontend-dev   # Vite on :5174, proxies /api to Go
 
 ### Docker Compose dev stack
 
-Use the `mise` task to start the compose stack with a token fetched from host GitHub CLI:
+Use the `mise` tasks to manage compose stack with a token fetched from host GitHub CLI:
 
 ```sh
-mise run dev-compose
+mise run dev-compose       # docker compose up
+mise run dev-compose-logs  # docker compose logs -f
+mise run dev-compose-down  # docker compose down
 ```
 
 Compose behavior:
