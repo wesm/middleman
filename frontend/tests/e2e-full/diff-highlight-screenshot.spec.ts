@@ -79,10 +79,11 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    // Wait for syntax highlighting on add/delete lines specifically — highlighting
-    // is incremental so a context line span appearing doesn't guarantee the
-    // add/delete rows this test asserts on are ready.
+    // Wait for syntax highlighting on both add and delete lines — highlighting
+    // is incremental so we need both row types ready before asserting widths.
     await page.locator(".diff-line--add .code span[style]").first()
+      .waitFor({ state: "attached", timeout: 10_000 });
+    await page.locator(".diff-line--del .code span[style]").first()
       .waitFor({ state: "attached", timeout: 10_000 });
 
     const fileContent = page.locator(".file-content").first();
