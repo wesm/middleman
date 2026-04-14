@@ -479,6 +479,33 @@ func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
 	assert.Empty(checks[1].Conclusion)
 }
 
+func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
+	assert := Assert.New(t)
+
+	buildName := "build"
+	zebraName := "Zebra"
+	alphaName := "alpha"
+	statusCompleted := "completed"
+	conclusionSuccess := "success"
+
+	raw := NormalizeCIChecks([]*gh.CheckRun{
+		{Name: &buildName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
+		{Name: &zebraName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
+		{Name: &alphaName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
+	}, nil)
+	require.NotEmpty(t, raw)
+
+	var checks []struct {
+		Name string `json:"name"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 3)
+
+	assert.Equal("alpha", checks[0].Name)
+	assert.Equal("build", checks[1].Name)
+	assert.Equal("Zebra", checks[2].Name)
+}
+
 func TestDeriveReviewDecision_Empty(t *testing.T) {
 	result := DeriveReviewDecision(nil)
 	Assert.Empty(t, result)

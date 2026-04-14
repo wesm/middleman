@@ -122,9 +122,9 @@ const defaultParallelism = 4
 // does not suppress a real retry for hours. The size bound is
 // well above any realistic author set for a fixed repo list.
 const (
-	displayNameCacheSize   = 1024
-	displayNameSuccessTTL  = 24 * time.Hour
-	displayNameFailureTTL  = 15 * time.Minute
+	displayNameCacheSize  = 1024
+	displayNameSuccessTTL = 24 * time.Hour
+	displayNameFailureTTL = 15 * time.Minute
 )
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
@@ -159,9 +159,9 @@ type Syncer struct {
 	// handles profile-name changes without an explicit flush.
 	displayNames     *displayNameCache
 	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
-	onMRSynced         func(owner, name string, mr *db.MergeRequest)
-	onSyncCompleted    func(results []RepoSyncResult)
-	onStatusChange     func(status *SyncStatus)
+	onMRSynced       func(owner, name string, mr *db.MergeRequest)
+	onSyncCompleted  func(results []RepoSyncResult)
+	onStatusChange   func(status *SyncStatus)
 	// statusMu serializes publishStatus so worker goroutines
 	// can't interleave updates and deliver out-of-order snapshots
 	// to SSE subscribers.
@@ -1984,6 +1984,7 @@ func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
 			App:        s.GetContext(),
 		})
 	}
+	sortCIChecksByName(checks)
 	return checks
 }
 

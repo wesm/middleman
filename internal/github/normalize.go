@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -263,6 +264,7 @@ func NormalizeCheckRuns(runs []*gh.CheckRun) string {
 			App:        appName(r),
 		})
 	}
+	sortCIChecksByName(checks)
 	b, err := json.Marshal(checks)
 	if err != nil {
 		return ""
@@ -309,11 +311,23 @@ func NormalizeCIChecks(
 	if len(checks) == 0 {
 		return ""
 	}
+	sortCIChecksByName(checks)
 	b, err := json.Marshal(checks)
 	if err != nil {
 		return ""
 	}
 	return string(b)
+}
+
+func sortCIChecksByName(checks []db.CICheck) {
+	sort.SliceStable(checks, func(i, j int) bool {
+		leftFolded := strings.ToLower(checks[i].Name)
+		rightFolded := strings.ToLower(checks[j].Name)
+		if leftFolded != rightFolded {
+			return leftFolded < rightFolded
+		}
+		return checks[i].Name < checks[j].Name
+	})
 }
 
 func shortSHA(sha string) string {
