@@ -29,19 +29,17 @@
     <aside class="sidebar">
       <IssueList />
     </aside>
-  {:else if !hideSidebar}
+  {:else if !hideSidebar && isSidebarToggleEnabled()}
     <aside class="sidebar sidebar--collapsed">
-      {#if isSidebarToggleEnabled()}
-        <button class="expand-btn" onclick={toggleSidebar} title="Expand sidebar">
-          <svg width="14" height="14" viewBox="0 0 16 16"
-            fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="1" y="1" width="14" height="14" rx="2" />
-            <line x1="6" y1="1" x2="6" y2="15" />
-            <polyline points="8,6 10,8 8,10"
-              stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-      {/if}
+      <button class="expand-btn" onclick={toggleSidebar} title="Expand sidebar">
+        <svg width="14" height="14" viewBox="0 0 16 16"
+          fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1" y="1" width="14" height="14" rx="2" />
+          <line x1="6" y1="1" x2="6" y2="15" />
+          <polyline points="8,6 10,8 8,10"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
     </aside>
   {/if}
   <section

@@ -8,6 +8,15 @@
   import {
     isDark, toggleTheme, isThemeToggleVisible,
   } from "../../stores/theme.svelte.js";
+  import {
+    isSidebarCollapsed,
+    toggleSidebar,
+    isSidebarToggleEnabled,
+  } from "../../stores/sidebar.svelte.js";
+
+  const hasSidebarStrip = $derived(
+    getPage() === "pulls" || getPage() === "issues",
+  );
 
   const stores = getStores();
   const { sync } = stores;
@@ -22,6 +31,21 @@
 
 <header class="app-header">
   <div class="header-left">
+    {#if isSidebarCollapsed() && isSidebarToggleEnabled() && !hasSidebarStrip}
+      <button
+        class="sidebar-toggle"
+        onclick={toggleSidebar}
+        title="Expand sidebar"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16"
+          fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1" y="1" width="14" height="14" rx="2" />
+          <line x1="6" y1="1" x2="6" y2="15" />
+          <polyline points="8,6 10,8 8,10"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    {/if}
     <span class="logo">middleman</span>
     {#if !getUIConfig().hideRepoSelector}
       <RepoTypeahead
@@ -221,6 +245,21 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
+    color: var(--text-primary);
+  }
+
+  .sidebar-toggle {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .sidebar-toggle:hover {
+    background: var(--bg-surface-hover);
     color: var(--text-primary);
   }
 
