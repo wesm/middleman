@@ -27,10 +27,7 @@ services:
       start_period: 5s
     command:
       - sh
-      - -c
-      - |
-        socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:18090 &
-        make dev
+      - /app/docker/backend-dev-entrypoint.sh
 
   frontend:
     build:
@@ -43,6 +40,8 @@ services:
       - /app/frontend/node_modules
     environment:
       MIDDLEMAN_API_URL: http://backend:18091
+      BUN_INSTALL_FLAGS: --frozen-lockfile
+      FRONTEND_DEV_ARGS: --host 0.0.0.0 --port 15173
     depends_on:
       backend:
         condition: service_healthy
@@ -58,8 +57,7 @@ services:
       start_period: 5s
     command:
       - sh
-      - -c
-      - make frontend-dev BUN_INSTALL_FLAGS=--frozen-lockfile ARGS="--host 0.0.0.0 --port 15173"
+      - /app/docker/frontend-dev-entrypoint.sh
 
 volumes:
   go-mod:
