@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -196,4 +198,35 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	assert.Equal("roborev-dev", settings.Repos[0].Owner)
 	assert.Equal("*", settings.Repos[0].Name)
 	assert.Equal(2, settings.Repos[0].MatchedRepoCount)
+}
+
+func TestRunCLIConfigReadPort(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte("port = 9123\n"), 0o644))
+
+	var stdout bytes.Buffer
+	err := runCLI([]string{"config", "read", "-config", cfgPath, "port"}, &stdout)
+	require.NoError(err)
+	assert.Equal("9123\n", stdout.String())
+}
+
+func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+
+	var stdout bytes.Buffer
+	err := runCLI([]string{"config", "read", "-config", cfgPath, "port"}, &stdout)
+	require.NoError(err)
+	assert.Equal("8091\n", stdout.String())
+
+	content, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	assert.Contains(string(content), "port = 8091")
 }

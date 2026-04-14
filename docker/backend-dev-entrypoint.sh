@@ -29,10 +29,20 @@ cleanup() {
 trap 'forward_term' INT TERM
 trap 'cleanup' EXIT
 
-socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:18090 &
+air_bin="${AIR_BIN:-/go/bin/air}"
+go_bin="${GO_BIN:-go}"
+config_path="${MIDDLEMAN_CONFIG_PATH:-/data/config.toml}"
+backend_port="$($go_bin run ./cmd/middleman config read -config "$config_path" port 2>/dev/null || true)"
+case "$backend_port" in
+  ''|*[!0-9]*)
+    backend_port=8091
+    ;;
+esac
+
+socat -d0 TCP-LISTEN:18091,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:${backend_port} &
 socat_pid=$!
 
-/go/bin/air -c .air.toml -- &
+"$air_bin" -c .air.toml -- &
 air_pid=$!
 
 set +e
