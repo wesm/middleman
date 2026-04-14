@@ -61,71 +61,80 @@
 </script>
 
 {#if hasCI}
-  <button
-    class="chip chip--clickable {chipColor(status)}"
-    onclick={() => { expanded = !expanded; }}
-    title={expanded ? "Collapse CI checks" : "Expand CI checks"}
-  >
-    CI: {status || "unknown"}
-    {#if checks.length > 0}
-      ({checks.length})
-    {/if}
-    <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
-  </button>
-
-  {#if expanded}
-    {#if !detailLoaded}
-      {#if detailSyncing}
-        <div class="loading-placeholder">
-          <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-          </svg>
-          Loading checks...
-        </div>
-      {:else}
-        <div class="loading-placeholder">Detail not yet loaded</div>
+  <div class="ci-status">
+    <button
+      class="chip chip--clickable {chipColor(status)}"
+      onclick={() => { expanded = !expanded; }}
+      title={expanded ? "Collapse CI checks" : "Expand CI checks"}
+      aria-expanded={expanded}
+    >
+      CI: {status || "unknown"}
+      {#if checks.length > 0}
+        ({checks.length})
       {/if}
-    {:else if checks.length > 0}
-      <div class="ci-checks">
-        {#if failedChecks.length > 0}
-          <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
-          {#each failedChecks as check}
-            <a
-              class="ci-check"
-              href={check.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-              <span class="ci-name">{check.name}</span>
-              {#if check.app}
-                <span class="ci-app">{check.app}</span>
-              {/if}
-              <span class="ci-arrow">→</span>
-            </a>
-          {/each}
-        {/if}
-        {#each nonFailedChecks as check}
-          <a
-            class="ci-check"
-            href={check.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
-            <span class="ci-name">{check.name}</span>
-            {#if check.app}
-              <span class="ci-app">{check.app}</span>
+      <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
+    </button>
+
+    {#if expanded}
+      <div class="ci-collapse">
+        {#if !detailLoaded}
+          {#if detailSyncing}
+            <div class="loading-placeholder">
+              <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
+              </svg>
+              Loading checks...
+            </div>
+          {:else}
+            <div class="loading-placeholder">Detail not yet loaded</div>
+          {/if}
+        {:else if checks.length > 0}
+          <div class="ci-checks">
+            {#if failedChecks.length > 0}
+              <div class="ci-section-label ci-section-label--red">Failed ({failedChecks.length})</div>
+              {#each failedChecks as check}
+                <a
+                  class="ci-check"
+                  href={check.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                  <span class="ci-name">{check.name}</span>
+                  {#if check.app}
+                    <span class="ci-app">{check.app}</span>
+                  {/if}
+                  <span class="ci-arrow">→</span>
+                </a>
+              {/each}
             {/if}
-            <span class="ci-arrow">→</span>
-          </a>
-        {/each}
+            {#each nonFailedChecks as check}
+              <a
+                class="ci-check"
+                href={check.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+                <span class="ci-name">{check.name}</span>
+                {#if check.app}
+                  <span class="ci-app">{check.app}</span>
+                {/if}
+                <span class="ci-arrow">→</span>
+              </a>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
-  {/if}
+  </div>
 {/if}
 
 <style>
+  .ci-status {
+    display: contents;
+  }
+
   .chip--clickable {
     cursor: pointer;
     display: inline-flex;
@@ -147,14 +156,22 @@
     transform: rotate(180deg);
   }
 
+  .ci-collapse {
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
+    margin-top: 6px;
+  }
+
   .ci-checks {
     display: flex;
     flex-direction: column;
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);
-    overflow: hidden;
+    overflow: auto;
     flex-shrink: 0;
+    max-height: min(320px, 50vh);
   }
 
   .ci-section-label {
@@ -223,6 +240,11 @@
     gap: 8px;
     color: var(--text-muted);
     font-size: 12px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    white-space: nowrap;
   }
 
   .sync-spinner {
