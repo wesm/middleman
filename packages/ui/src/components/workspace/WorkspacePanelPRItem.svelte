@@ -5,10 +5,15 @@
     pull: PullRequest;
     onSelect: (number: number) => void;
     onCreateWorktree: (number: number) => void;
+    onNavigateWorktree: (worktreeKey: string) => void;
   }
 
-  const { pull, onSelect, onCreateWorktree }: Props =
-    $props();
+  const {
+    pull,
+    onSelect,
+    onCreateWorktree,
+    onNavigateWorktree,
+  }: Props = $props();
 
   type PRState = "open" | "draft" | "closed" | "merged";
 
@@ -28,10 +33,6 @@
 
   const hasWorktree = $derived(
     (pull.worktree_links?.length ?? 0) > 0,
-  );
-
-  const linkedBranch = $derived(
-    pull.worktree_links?.[0]?.worktree_branch ?? null,
   );
 
   function handleCreateClick(e: MouseEvent): void {
@@ -62,11 +63,20 @@
     <span class="state-pill state-pill--{prState}">
       {stateLabel[prState]}
     </span>
-    {#if hasWorktree && linkedBranch}
-      <span class="linked-branch" title="Linked: {linkedBranch}">
-        {linkedBranch}
-      </span>
-    {:else if !hasWorktree && pull.State === "open"}
+    {#if hasWorktree}
+      {#each pull.worktree_links ?? [] as link (link.worktree_key)}
+        <button
+          class="wt-chip"
+          onclick={(e) => {
+            e.stopPropagation();
+            onNavigateWorktree(link.worktree_key);
+          }}
+          title="Open worktree: {link.worktree_key}"
+        >
+          {link.worktree_key.split("/").pop()}
+        </button>
+      {/each}
+    {:else if pull.State === "open"}
       <button
         class="create-wt-btn"
         onclick={handleCreateClick}
@@ -167,14 +177,25 @@
     color: var(--accent-purple);
   }
 
-  .linked-branch {
-    font-family: var(--font-mono, monospace);
+  .wt-chip {
     font-size: 10px;
-    color: var(--accent-teal, var(--accent-green));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
+    padding: 1px 5px;
+    border: 1px solid var(--border-muted);
+    border-radius: 3px;
+    background: var(--bg-inset);
+    color: var(--text-muted);
+    cursor: pointer;
+    visibility: hidden;
+  }
+
+  .panel-pr-item:hover .wt-chip,
+  .panel-pr-item:focus-within .wt-chip {
+    visibility: visible;
+  }
+
+  .wt-chip:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
 
   .create-wt-btn {

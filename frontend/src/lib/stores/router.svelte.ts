@@ -2,7 +2,15 @@ export type Route =
   | { page: "activity" }
   | { page: "workspaces" }
   | { page: "workspaces-panel"; view: "list"; platformHost: string; owner: string; name: string }
-  | { page: "workspaces-panel"; view: "detail"; platformHost: string; owner: string; name: string; number: number }
+  | {
+      page: "workspaces-panel";
+      view: "detail";
+      platformHost: string;
+      owner: string;
+      name: string;
+      number: number;
+      pin?: "soft" | "hard";
+    }
   | { page: "workspaces-panel"; view: "empty"; emptyReason: string }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
   | { page: "issues"; selected?: { owner: string; name: string; number: number } }
@@ -94,6 +102,8 @@ function parseRoute(fullPath: string): Route {
       /^\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
     );
     if (detail) {
+      const params = new URLSearchParams(search);
+      const pin = params.get("pin");
       return {
         page: "workspaces-panel",
         view: "detail",
@@ -101,6 +111,9 @@ function parseRoute(fullPath: string): Route {
         owner: detail[2]!,
         name: detail[3]!,
         number: parseInt(detail[4]!, 10),
+        ...(pin === "soft" || pin === "hard"
+          ? { pin }
+          : {}),
       };
     }
     const list = rest.match(

@@ -76,6 +76,20 @@
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
+  let panelSoftPinned = $state(false);
+  let panelHardPinned = $state(false);
+
+  // Detect hard-pin from URL; cleared only by explicit unpin.
+  $effect(() => {
+    const r = getRoute();
+    if (
+      r.page === "workspaces-panel" &&
+      "pin" in r &&
+      r.pin === "hard"
+    ) {
+      panelHardPinned = true;
+    }
+  });
 
   onMount(() => {
     initTheme();
@@ -556,8 +570,11 @@
       {:else if getPage() === "workspaces-panel"}
         {@const route = getRoute()}
         {#if route.page === "workspaces-panel"}
+          {@const isPinned =
+            panelHardPinned || panelSoftPinned}
           <WorkspacePanelView
             view={route.view}
+            {isPinned}
             platformHost={"platformHost" in route ? route.platformHost : undefined}
             owner={"owner" in route ? route.owner : undefined}
             name={"name" in route ? route.name : undefined}
@@ -566,12 +583,25 @@
             activePlatformHost={getEmbedActivePlatformHost()}
             onSelectPR={(n) => {
               if ("platformHost" in route) {
-                navigate(`/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`);
+                panelSoftPinned = true;
+                navigate(
+                  `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`,
+                );
+                emitWorkspaceCommand("softPinPR", {
+                  host: route.platformHost,
+                  owner: route.owner,
+                  name: route.name,
+                  number: n,
+                });
               }
             }}
             onBack={() => {
               if ("platformHost" in route) {
-                navigate(`/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}`);
+                panelSoftPinned = false;
+                navigate(
+                  `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}`,
+                );
+                emitWorkspaceCommand("clearSoftPin", {});
               }
             }}
             onCreateWorktree={(n) => {
@@ -583,6 +613,22 @@
                   platformHost: route.platformHost,
                 });
               }
+            }}
+            onNavigateWorktree={(key) => {
+              emitWorkspaceCommand("navigateWorktree", {
+                worktreeKey: key,
+              });
+            }}
+            onUnpin={() => {
+              panelSoftPinned = false;
+              panelHardPinned = false;
+              emitWorkspaceCommand("unpinPanelContext", {});
+            }}
+            onRefresh={() => {
+              emitWorkspaceCommand("refreshPulls", {});
+            }}
+            onRevealHostSettings={() => {
+              emitWorkspaceCommand("revealHostSettings", {});
             }}
           />
         {/if}

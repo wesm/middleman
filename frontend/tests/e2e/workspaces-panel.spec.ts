@@ -43,7 +43,7 @@ test(
       };
     });
     await page.goto(
-      "/workspaces/panel/example.com/wesm/ghosthub",
+      "/workspaces/panel/example.com/wesm/other-repo",
     );
     await expect(
       page.getByTestId("non-primary-state"),
@@ -60,7 +60,7 @@ test(
       };
     });
     await page.goto(
-      "/workspaces/panel/github.com/wesm/ghosthub",
+      "/workspaces/panel/github.com/wesm/other-repo",
     );
     await expect(
       page.getByText("starting up"),
@@ -250,14 +250,14 @@ test(
 );
 
 test(
-  "panel detail not-found when PR missing from store",
+  "panel detail not-found keeps Back button and shows Refresh",
   async ({ page }) => {
     await page.addInitScript(() => {
       window.__middleman_config = {
         embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: () => ({ ok: true }),
       };
     });
-    // PR #999 is not in the mock fixture
     await page.goto(
       "/workspaces/panel/github.com/acme/widgets/999",
     );
@@ -271,5 +271,265 @@ test(
     await expect(
       page.getByRole("button", { name: "Back to list" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Refresh" }),
+    ).toBeVisible();
+  },
+);
+
+test(
+  "panel select PR emits softPinPR and shows Unpin",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          (window as Record<string, unknown>).__workspace_commands ??= [];
+          (
+            (window as Record<string, unknown>).__workspace_commands as unknown[]
+          ).push({ cmd, payload });
+          return { ok: true };
+        },
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets",
+    );
+
+    const row = page
+      .locator(".panel-pr-item")
+      .filter({ hasText: "Add browser regression coverage" });
+    await row.click();
+
+    await expect(page).toHaveURL(
+      /\/workspaces\/panel\/github\.com\/acme\/widgets\/42$/,
+    );
+
+    // softPinPR command emitted
+    const cmds = await page.evaluate(
+      () => (window as Record<string, unknown>).__workspace_commands as
+        { cmd: string; payload: Record<string, unknown> }[],
+    );
+    const softPin = cmds.find((c) => c.cmd === "softPinPR");
+    expect(softPin).toBeTruthy();
+    expect(softPin!.payload).toMatchObject({
+      host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: 42,
+    });
+
+    // Unpin button visible
+    await expect(
+      page.locator("button.panel-unpin-btn"),
+    ).toBeVisible();
+  },
+);
+
+test(
+  "panel Unpin button emits unpinPanelContext",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          (window as Record<string, unknown>).__last_cmd = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    });
+    // Navigate to list first, then click a PR to get soft-pinned
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets",
+    );
+    const row = page
+      .locator(".panel-pr-item")
+      .filter({ hasText: "Add browser regression coverage" });
+    await row.click();
+
+    const unpin = page.locator("button.panel-unpin-btn");
+    await expect(unpin).toBeVisible();
+    await unpin.click();
+
+    const cmd = await page.evaluate(
+      () => (window as Record<string, unknown>).__last_cmd as
+        { cmd: string },
+    );
+    expect(cmd.cmd).toBe("unpinPanelContext");
+
+    // Unpin button should disappear
+    await expect(unpin).not.toBeVisible();
+  },
+);
+
+test(
+  "panel back emits clearSoftPin",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          (window as Record<string, unknown>).__last_cmd = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets",
+    );
+    await page
+      .locator(".panel-pr-item")
+      .filter({ hasText: "Add browser regression coverage" })
+      .click();
+
+    await page
+      .getByRole("button", { name: "Back to list" })
+      .click();
+
+    const cmd = await page.evaluate(
+      () => (window as Record<string, unknown>).__last_cmd as
+        { cmd: string },
+    );
+    expect(cmd.cmd).toBe("clearSoftPin");
+    await expect(page).toHaveURL(
+      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    );
+  },
+);
+
+test(
+  "panel hard-pin preserved across back navigation",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: () => ({ ok: true }),
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets/42?pin=hard",
+    );
+
+    // Unpin visible on hard-pinned detail
+    await expect(
+      page.locator("button.panel-unpin-btn"),
+    ).toBeVisible();
+
+    // Go back to list
+    await page
+      .getByRole("button", { name: "Back to list" })
+      .click();
+
+    // Click another PR — should still be pinned
+    const row = page
+      .locator(".panel-pr-item")
+      .filter({ hasText: "Refactor theme system" });
+    await row.click();
+
+    await expect(
+      page.locator("button.panel-unpin-btn"),
+    ).toBeVisible();
+  },
+);
+
+test(
+  "panel worktree chip emits navigateWorktree",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          (window as Record<string, unknown>).__last_cmd = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets",
+    );
+
+    const row = page
+      .locator(".panel-pr-item")
+      .filter({ hasText: "Refactor theme system" });
+    await row.hover();
+
+    const chip = row.locator("button.wt-chip");
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveText("theme-rework");
+    await chip.click();
+
+    const cmd = await page.evaluate(
+      () => (window as Record<string, unknown>).__last_cmd as
+        { cmd: string; payload: Record<string, unknown> },
+    );
+    expect(cmd.cmd).toBe("navigateWorktree");
+    expect(cmd.payload.worktreeKey).toBe(
+      "projects/theme-rework",
+    );
+
+    // Should stay on list (chip click stops propagation)
+    await expect(page).toHaveURL(
+      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    );
+  },
+);
+
+test(
+  "panel non-primary state shows both hosts and Reveal button",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+        ) => {
+          (window as Record<string, unknown>).__last_cmd = {
+            cmd,
+          };
+          return { ok: true };
+        },
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/example.com/wesm/other-repo",
+    );
+
+    const state = page.getByTestId("non-primary-state");
+    await expect(state).toBeVisible();
+    await expect(state).toContainText("example.com");
+    await expect(state).toContainText("github.com");
+
+    const reveal = page.getByRole("button", {
+      name: "Reveal in Host Settings",
+    });
+    await expect(reveal).toBeVisible();
+    await reveal.click();
+
+    const cmd = await page.evaluate(
+      () => (window as Record<string, unknown>).__last_cmd as
+        { cmd: string },
+    );
+    expect(cmd.cmd).toBe("revealHostSettings");
   },
 );

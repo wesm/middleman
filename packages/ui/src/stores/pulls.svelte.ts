@@ -286,6 +286,36 @@ export function createPullsStore(opts: PullsStoreOptions) {
     await loadPulls();
   }
 
+  async function fetchSinglePull(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<PullRequest | null> {
+    try {
+      const { data, error } = await apiClient.GET(
+        "/repos/{owner}/{name}/pulls/{number}",
+        {
+          params: {
+            path: { owner, name, number },
+          },
+        },
+      );
+      if (error || !data) return null;
+      const mr = data.merge_request;
+      return {
+        ...mr,
+        platform_host: "",
+        repo_owner: data.repo_owner,
+        repo_name: data.repo_name,
+        detail_loaded: data.detail_loaded,
+        detail_fetched_at: data.detail_fetched_at,
+        worktree_links: data.worktree_links,
+      } as PullRequest;
+    } catch {
+      return null;
+    }
+  }
+
   async function loadPulls(
     params?: PullsParams,
   ): Promise<void> {
@@ -343,6 +373,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     optimisticKanbanUpdate,
     togglePRStar,
     loadPulls,
+    fetchSinglePull,
   };
 }
 
