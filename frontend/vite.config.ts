@@ -9,7 +9,7 @@ import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
-const apiUrl = process.env.MIDDLEMAN_API_URL ?? "http://127.0.0.1:8090";
+const apiUrl = process.env.MIDDLEMAN_API_URL ?? "http://127.0.0.1:8091";
 const uiPkg = fileURLToPath(new URL("../packages/ui", import.meta.url));
 
 const config = {
@@ -27,6 +27,7 @@ const config = {
     exclude: ["@middleman/ui"],
   },
   server: {
+    port: 5174,
     fs: { allow: [".", uiPkg] },
     watch: { ignored: [`!${uiPkg}/**`, "!**/node_modules/@middleman/ui/**"] },
     proxy: {

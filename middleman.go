@@ -586,7 +586,7 @@ func buildConfig(opts Options) *config.Config {
 		SyncInterval:   interval.String(),
 		GitHubTokenEnv: "UNUSED",
 		Host:           "127.0.0.1",
-		Port:           8090,
+		Port:           8091,
 		BasePath:       basePath,
 		DataDir:        opts.DataDir,
 		Repos:          repos,

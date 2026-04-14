@@ -92,7 +92,7 @@ export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 
 If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically -- no env var needed.
 
-On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8090**. Add repositories from the Settings page, or edit the config file directly:
+On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8091**. Add repositories from the Settings page, or edit the config file directly:
 
 ```toml
 [[repos]]
@@ -119,7 +119,7 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `sync_interval` | `"5m"` | How often to pull from GitHub |
 | `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding your token |
 | `host` | `"127.0.0.1"` | Listen address |
-| `port` | `8090` | Listen port |
+| `port` | `8091` | Listen port |
 | `base_path` | `"/"` | URL prefix for reverse proxy deployments |
 | `data_dir` | `"~/.config/middleman"` | Directory for the SQLite database |
 | `activity.view_mode` | `"threaded"` | `"flat"` or `"threaded"` |
@@ -203,8 +203,8 @@ Run the Go backend and Vite dev server in parallel:
 
 ```sh
 make air-install    # one-time: install air for live reload
-make dev            # Go server on :8090 with live reload
-make frontend-dev   # Vite on :5173, proxies /api to Go
+make dev            # Go server on :8091 with live reload
+make frontend-dev   # Vite on :5174, proxies /api to Go
 ```
 
 Other targets:

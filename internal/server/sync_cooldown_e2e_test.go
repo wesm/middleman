@@ -27,7 +27,7 @@ func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"
@@ -62,7 +62,7 @@ func TestAddRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "acme"
@@ -115,7 +115,7 @@ func TestRefreshRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
-port = 8090
+port = 8091
 
 [[repos]]
 owner = "roborev-dev"
