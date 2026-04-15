@@ -1,12 +1,13 @@
 <script lang="ts">
-  import WorkspaceSidebar from "../components/workspace/WorkspaceSidebar.svelte";
+  import type { Snippet } from "svelte";
   import type {
     WorkspaceData,
     WorkspaceDetailContext,
     WorkspaceProject,
     WorkspaceWorktree,
   } from "../api/types.js";
-  import type { Snippet } from "svelte";
+  import CollapsibleResizableSidebar from "../components/shared/CollapsibleResizableSidebar.svelte";
+  import WorkspaceSidebar from "../components/workspace/WorkspaceSidebar.svelte";
 
   interface Props {
     workspaceData: WorkspaceData | undefined;
@@ -28,14 +29,6 @@
     sidebarWidth,
     onSidebarResize,
   }: Props = $props();
-
-  let currentWidth = $state(280);
-
-  $effect(() => {
-    if (sidebarWidth != null) {
-      currentWidth = sidebarWidth;
-    }
-  });
 
   const detailContext: WorkspaceDetailContext = $derived.by(
     () => {
@@ -72,85 +65,40 @@
       "/" +
       (detailContext.worktree?.key ?? ""),
   );
-
-  function startResize(e: MouseEvent): void {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = currentWidth;
-
-    function onMove(ev: MouseEvent): void {
-      currentWidth = Math.max(
-        200,
-        Math.min(600, startW + ev.clientX - startX),
-      );
-    }
-
-    function onUp(): void {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      onSidebarResize?.(currentWidth);
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }
 </script>
 
-<div class="workspaces-view">
-  {#if workspaceData}
-    <div
-      class="sidebar-pane"
-      style="width: {detailSnippet
-        ? currentWidth + 'px'
-        : '100%'}"
-    >
-      <WorkspaceSidebar {workspaceData} {hoverCardsEnabled} {onCommand} />
-    </div>
+{#if workspaceData}
+  {@const resolvedWorkspaceData = workspaceData}
+  <CollapsibleResizableSidebar
+    sidebarWidth={sidebarWidth ?? 280}
+    onSidebarResize={onSidebarResize}
+    sidebarOnly={detailSnippet == null}
+    hasMain={detailSnippet != null}
+    mainOverflow="hidden"
+  >
+    {#snippet sidebar()}
+      <WorkspaceSidebar
+        workspaceData={resolvedWorkspaceData}
+        {hoverCardsEnabled}
+        {onCommand}
+      />
+    {/snippet}
 
     {#if detailSnippet}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="resize-handle"
-        onmousedown={startResize}
-      ></div>
       <div class="detail-pane">
         {#key snippetKey}
           {@render detailSnippet(detailContext)}
         {/key}
       </div>
     {/if}
-  {:else}
-    <div class="workspaces-empty">
-      <p>No workspace data available.</p>
-    </div>
-  {/if}
-</div>
+  </CollapsibleResizableSidebar>
+{:else}
+  <div class="workspaces-empty">
+    <p>No workspace data available.</p>
+  </div>
+{/if}
 
 <style>
-  .workspaces-view {
-    flex: 1;
-    display: flex;
-    overflow: hidden;
-    background: var(--bg-primary);
-  }
-
-  .sidebar-pane {
-    flex-shrink: 0;
-    overflow: hidden;
-    display: flex;
-  }
-
-  .resize-handle {
-    width: 4px;
-    cursor: col-resize;
-    background: var(--border-muted);
-    flex-shrink: 0;
-  }
-
-  .resize-handle:hover {
-    background: var(--accent-blue);
-  }
-
   .detail-pane {
     flex: 1;
     min-width: 0;

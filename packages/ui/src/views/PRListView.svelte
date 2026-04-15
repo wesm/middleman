@@ -2,8 +2,7 @@
   import {
     getNavigate, getSidebar,
   } from "../context.js";
-
-  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+  import CollapsibleResizableSidebar from "../components/shared/CollapsibleResizableSidebar.svelte";
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail
     from "../components/detail/PullDetail.svelte";
@@ -11,6 +10,7 @@
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
 
+  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
 
   interface Props {
@@ -22,6 +22,8 @@
     detailTab?: "conversation" | "files";
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
+    sidebarWidth?: number;
+    onSidebarResize?: (width: number) => void;
   }
 
   let {
@@ -29,138 +31,88 @@
     detailTab = "conversation",
     isSidebarCollapsed = false,
     hideSidebar = false,
+    sidebarWidth = 340,
+    onSidebarResize,
   }: Props = $props();
 </script>
 
-<div class="list-layout">
-  {#if !isSidebarCollapsed}
-    <aside class="sidebar">
-      <PullList getDetailTab={() => detailTab} />
-    </aside>
-  {:else if !hideSidebar && isSidebarToggleEnabled()}
-    <aside class="sidebar sidebar--collapsed">
-      <button class="expand-btn" onclick={toggleSidebar} title="Expand sidebar">
-        <svg width="14" height="14" viewBox="0 0 16 16"
-          fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="1" y="1" width="14" height="14" rx="2" />
-          <line x1="6" y1="1" x2="6" y2="15" />
-          <polyline points="8,6 10,8 8,10"
-            stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+<CollapsibleResizableSidebar
+  isCollapsed={isSidebarCollapsed}
+  {hideSidebar}
+  {sidebarWidth}
+  {onSidebarResize}
+  showCollapsedStrip={isSidebarToggleEnabled()}
+  onExpand={toggleSidebar}
+  mainEmpty={selectedPR === null}
+>
+  {#snippet sidebar()}
+    <PullList getDetailTab={() => detailTab} />
+  {/snippet}
+
+  {#if selectedPR !== null}
+    <div class="detail-tabs">
+      <button
+        class="detail-tab"
+        class:detail-tab--active={detailTab === "conversation"}
+        onclick={() => navigate(
+          `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`,
+        )}
+      >
+        Conversation
       </button>
-    </aside>
-  {/if}
-  <section
-    class="detail-area"
-    class:detail-area--empty={selectedPR === null}
-  >
-    {#if selectedPR !== null}
-      <div class="detail-tabs">
-        <button
-          class="detail-tab"
-          class:detail-tab--active={detailTab === "conversation"}
-          onclick={() => navigate(
-            `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`,
-          )}
-        >
-          Conversation
-        </button>
-        <button
-          class="detail-tab"
-          class:detail-tab--active={detailTab === "files"}
-          onclick={() => navigate(
-            `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`,
-          )}
-        >
-          Files changed
-        </button>
-      </div>
-      {#if detailTab === "files"}
-        {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
-          <DiffView
-            owner={selectedPR.owner}
-            name={selectedPR.name}
-            number={selectedPR.number}
-          />
-        {/key}
-      {:else}
-        <PullDetail
+      <button
+        class="detail-tab"
+        class:detail-tab--active={detailTab === "files"}
+        onclick={() => navigate(
+          `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`,
+        )}
+      >
+        Files changed
+      </button>
+    </div>
+    {#if detailTab === "files"}
+      {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
+        <DiffView
           owner={selectedPR.owner}
           name={selectedPR.name}
           number={selectedPR.number}
-          hideTabs={true}
         />
-      {/if}
+      {/key}
     {:else}
-      <div class="placeholder-content">
-        <p class="placeholder-text">Select a PR</p>
-        <p class="placeholder-hint">
-          j/k to navigate &middot; 1/2 to switch views
-        </p>
-      </div>
+      <PullDetail
+        owner={selectedPR.owner}
+        name={selectedPR.name}
+        number={selectedPR.number}
+        hideTabs={true}
+      />
     {/if}
-  </section>
-  {#if selectedPR !== null}
-    <StackSidebar
-      owner={selectedPR.owner}
-      name={selectedPR.name}
-      number={selectedPR.number}
-    />
+  {:else}
+    <div class="placeholder-content">
+      <p class="placeholder-text">Select a PR</p>
+      <p class="placeholder-hint">
+        j/k to navigate &middot; 1/2 to switch views
+      </p>
+    </div>
   {/if}
-</div>
+
+  {#snippet trailing()}
+    {#if selectedPR !== null}
+      <StackSidebar
+        owner={selectedPR.owner}
+        name={selectedPR.name}
+        number={selectedPR.number}
+      />
+    {/if}
+  {/snippet}
+</CollapsibleResizableSidebar>
 
 <style>
-  .list-layout {
+  .detail-tabs {
     display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
-
-  .sidebar {
-    width: 340px;
-    flex-shrink: 0;
+    gap: 0;
+    border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
-    border-right: 1px solid var(--border-default);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .sidebar--collapsed {
-    width: 28px;
-    border-right: 1px solid var(--border-default);
-    align-items: center;
-    padding-top: 6px;
-  }
-
-  .expand-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .expand-btn:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .detail-area {
-    flex: 1;
-    overflow-y: auto;
-    background: var(--bg-primary);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .detail-area--empty {
-    align-items: center;
-    justify-content: center;
+    flex-shrink: 0;
   }
 
   .placeholder-content {
@@ -177,14 +129,6 @@
     font-size: 11px;
     margin-top: 8px;
     opacity: 0.7;
-  }
-
-  .detail-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    flex-shrink: 0;
   }
 
   .detail-tab {
