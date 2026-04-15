@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -187,12 +186,14 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) {
 	require := require.New(t)
 	call := 0
+	var methods []string
+	var contentTypes []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		call++
+		methods = append(methods, r.Method)
+		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
 		w.Header().Set("Content-Type", "application/json")
-		require.Equal("application/json", r.Header.Get("Content-Type"))
-		require.Equal(http.MethodPost, r.Method)
 		if call == 1 {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 			return
@@ -217,12 +218,15 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	require.ErrorContains(err, "Could not resolve to a PullRequest")
 
 	var statusErr interface{ StatusCode() int }
-	require.True(errors.As(err, &statusErr), "expected status-bearing error, got %T", err)
+	require.ErrorAs(err, &statusErr, "expected status-bearing error, got %T", err)
 	require.Equal(http.StatusNotFound, statusErr.StatusCode())
 
 	var staleErr interface{ IsStaleState() bool }
-	require.True(errors.As(err, &staleErr), "expected stale-state error, got %T", err)
+	require.ErrorAs(err, &staleErr, "expected stale-state error, got %T", err)
 	require.True(staleErr.IsStaleState())
+	require.Equal(2, call)
+	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
+	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
 
 // TestNewClientWiresETagTransport verifies that NewClient installs the
