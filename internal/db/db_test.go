@@ -265,14 +265,36 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			id, repo_id, platform_id, number, url, title, author, state,
 			created_at, updated_at, last_activity_at
 		) VALUES
-			(1, 2, 900, 9, 'https://github.com/org/foo/issues/9', 'Unique issue', 'octo', 'open',
+			(1, 1, 800, 8, 'https://github.com/Org/Foo/issues/8', 'Issue', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now')),
+			(2, 2, 800, 8, 'https://github.com/org/foo/issues/8', 'Issue', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now')),
+			(3, 2, 900, 9, 'https://github.com/org/foo/issues/9', 'Unique issue', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now'))`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_issue_events (
+			issue_id, event_type, author, created_at, dedupe_key
+		) VALUES
+			(2, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_labels (
 			id, repo_id, platform_id, name, updated_at
 		) VALUES
-			(1, 2, 700, 'enhancement', datetime('now'))`)
+			(1, 1, 700, 'enhancement-renamed', datetime('now')),
+			(2, 2, 700, 'enhancement', datetime('now')),
+			(3, 2, 701, 'triage', datetime('now'))`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_issue_labels (issue_id, label_id)
+		VALUES
+			(2, 3),
+			(3, 2)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
+		VALUES (3, 2)`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_starred_items (item_type, repo_id, number)
@@ -345,6 +367,27 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.NoError(err)
 	require.Equal("reviewing", mergedKanbanStatus)
 
+	var duplicateIssueEventCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_issue_events e
+		JOIN middleman_issues i ON i.id = e.issue_id
+		WHERE i.number = 8 AND e.dedupe_key = 'duplicate-issue-comment'`,
+	).Scan(&duplicateIssueEventCount)
+	require.NoError(err)
+	require.Equal(1, duplicateIssueEventCount)
+
+	var duplicateIssueLabelCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_issue_labels il
+		JOIN middleman_issues i ON i.id = il.issue_id
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE i.number = 8 AND l.name = 'triage'`,
+	).Scan(&duplicateIssueLabelCount)
+	require.NoError(err)
+	require.Equal(1, duplicateIssueLabelCount)
+
 	var issueRepoID int
 	err = d.ReadDB().QueryRow(
 		`SELECT repo_id FROM middleman_issues WHERE number = 9`,
@@ -354,10 +397,32 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 
 	var labelRepoID int
 	err = d.ReadDB().QueryRow(
-		`SELECT repo_id FROM middleman_labels WHERE name = 'enhancement'`,
+		`SELECT repo_id FROM middleman_labels WHERE platform_id = 700`,
 	).Scan(&labelRepoID)
 	require.NoError(err)
 	require.Equal(1, labelRepoID)
+
+	var issuePlatformLabelCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_issue_labels il
+		JOIN middleman_issues i ON i.id = il.issue_id
+		JOIN middleman_labels l ON l.id = il.label_id
+		WHERE i.number = 9 AND l.platform_id = 700`,
+	).Scan(&issuePlatformLabelCount)
+	require.NoError(err)
+	require.Equal(1, issuePlatformLabelCount)
+
+	var mrPlatformLabelCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_merge_request_labels mrl
+		JOIN middleman_merge_requests mr ON mr.id = mrl.merge_request_id
+		JOIN middleman_labels l ON l.id = mrl.label_id
+		WHERE mr.number = 2 AND l.platform_id = 700`,
+	).Scan(&mrPlatformLabelCount)
+	require.NoError(err)
+	require.Equal(1, mrPlatformLabelCount)
 
 	var starredRepoID int
 	err = d.ReadDB().QueryRow(

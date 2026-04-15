@@ -94,16 +94,23 @@ FROM (
 )
 WHERE rn > 1;
 
-INSERT OR IGNORE INTO middleman_issue_events (
-    issue_id, platform_id, event_type, author, summary,
-    body, metadata_json, created_at, dedupe_key
+UPDATE middleman_issue_events
+SET issue_id = (
+    SELECT keep_id
+    FROM issue_casefold_duplicates
+    WHERE duplicate_id = middleman_issue_events.issue_id
 )
-SELECT
-    d.keep_id, e.platform_id, e.event_type, e.author, e.summary,
-    e.body, e.metadata_json, e.created_at, e.dedupe_key
-FROM middleman_issue_events AS e
+WHERE issue_id IN (
+    SELECT duplicate_id FROM issue_casefold_duplicates
+);
+
+INSERT OR IGNORE INTO middleman_issue_labels (
+    issue_id, label_id
+)
+SELECT d.keep_id, il.label_id
+FROM middleman_issue_labels AS il
 JOIN issue_casefold_duplicates AS d
-    ON d.duplicate_id = e.issue_id;
+    ON d.duplicate_id = il.issue_id;
 
 DELETE FROM middleman_issue_events
 WHERE issue_id IN (
@@ -139,16 +146,15 @@ FROM (
 )
 WHERE rn > 1;
 
-INSERT OR IGNORE INTO middleman_mr_events (
-    merge_request_id, platform_id, event_type, author, summary,
-    body, metadata_json, created_at, dedupe_key
+UPDATE middleman_mr_events
+SET merge_request_id = (
+    SELECT keep_id
+    FROM mr_casefold_duplicates
+    WHERE duplicate_id = middleman_mr_events.merge_request_id
 )
-SELECT
-    d.keep_id, e.platform_id, e.event_type, e.author, e.summary,
-    e.body, e.metadata_json, e.created_at, e.dedupe_key
-FROM middleman_mr_events AS e
-JOIN mr_casefold_duplicates AS d
-    ON d.duplicate_id = e.merge_request_id;
+WHERE merge_request_id IN (
+    SELECT duplicate_id FROM mr_casefold_duplicates
+);
 
 CREATE TEMP TABLE mr_casefold_kanban_winners AS
 SELECT keep_id, status, updated_at
@@ -306,22 +312,53 @@ WHERE id IN (
     WHERE rn > 1
 );
 
+CREATE TEMP TABLE label_platform_casefold_duplicates AS
+SELECT id AS duplicate_id, keep_id
+FROM (
+    SELECT
+        l.id,
+        first_value(l.id) OVER (
+            PARTITION BY t.keep_id, l.platform_id
+            ORDER BY CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END, l.id
+        ) AS keep_id,
+        row_number() OVER (
+            PARTITION BY t.keep_id, l.platform_id
+            ORDER BY CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END, l.id
+        ) AS rn
+    FROM middleman_labels AS l
+    JOIN repo_casefold_targets AS t
+        ON t.repo_id = l.repo_id
+    WHERE l.platform_id IS NOT NULL
+)
+WHERE rn > 1;
+
+INSERT OR IGNORE INTO middleman_issue_labels (issue_id, label_id)
+SELECT il.issue_id, d.keep_id
+FROM middleman_issue_labels AS il
+JOIN label_platform_casefold_duplicates AS d
+    ON d.duplicate_id = il.label_id;
+
+INSERT OR IGNORE INTO middleman_merge_request_labels (
+    merge_request_id, label_id
+)
+SELECT mrl.merge_request_id, d.keep_id
+FROM middleman_merge_request_labels AS mrl
+JOIN label_platform_casefold_duplicates AS d
+    ON d.duplicate_id = mrl.label_id;
+
+DELETE FROM middleman_issue_labels
+WHERE label_id IN (
+    SELECT duplicate_id FROM label_platform_casefold_duplicates
+);
+
+DELETE FROM middleman_merge_request_labels
+WHERE label_id IN (
+    SELECT duplicate_id FROM label_platform_casefold_duplicates
+);
+
 DELETE FROM middleman_labels
 WHERE id IN (
-    SELECT id
-    FROM (
-        SELECT
-            l.id,
-            row_number() OVER (
-                PARTITION BY t.keep_id, l.platform_id
-                ORDER BY CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END, l.id
-            ) AS rn
-        FROM middleman_labels AS l
-        JOIN repo_casefold_targets AS t
-            ON t.repo_id = l.repo_id
-        WHERE l.platform_id IS NOT NULL
-    )
-    WHERE rn > 1
+    SELECT duplicate_id FROM label_platform_casefold_duplicates
 );
 
 DELETE FROM middleman_starred_items
