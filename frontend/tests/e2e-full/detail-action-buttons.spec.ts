@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("detail action buttons", () => {
   test("pull request actions use shared ActionButton component", async ({ page }) => {
@@ -65,5 +66,43 @@ test.describe("detail action buttons", () => {
         metrics[1] ? metrics[1].left - metrics[0]!.right : 0,
       ),
     );
+  });
+
+  test("ready for review updates API state and removes the draft action", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      await page.goto(`${isolatedServer.info.base_url}/pulls/acme/widgets/6`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      const readyResponsePromise = page.waitForResponse((response) => {
+        const url = response.url();
+        return response.request().method() === "POST"
+          && url === `${isolatedServer.info.base_url}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+      });
+
+      await page.locator(".btn--ready").click();
+
+      const readyResponse = await readyResponsePromise;
+      expect(readyResponse.status()).toBe(200);
+      expect((await readyResponse.json()).status).toBe("ready_for_review");
+
+      await expect(page.locator(".btn--ready")).toHaveCount(0);
+      await expect(page.locator(".btn--approve")).toBeVisible();
+
+      await expect.poll(async () => {
+        const response = await api.get("/api/v1/repos/acme/widgets/pulls/6");
+        const detail = await response.json();
+        return detail.merge_request.IsDraft;
+      }).toBe(false);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
   });
 });

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -12,6 +13,14 @@ import (
 )
 
 var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
+
+type fixtureReadyForReviewStaleStateError struct {
+	message string
+}
+
+func (e *fixtureReadyForReviewStaleStateError) Error() string      { return e.message }
+func (e *fixtureReadyForReviewStaleStateError) StatusCode() int    { return http.StatusNotFound }
+func (e *fixtureReadyForReviewStaleStateError) IsStaleState() bool { return true }
 
 // FixtureClient is a ghclient.Client implementation for E2E tests. It serves
 // seeded PRs and issues from the list methods and stubs out everything else.
@@ -126,6 +135,24 @@ func (c *FixtureClient) findPullRequest(owner, repo string, number int) *gh.Pull
 		}
 	}
 	return nil
+}
+
+func (c *FixtureClient) updatePullRequestDraft(owner, repo string, number int, draft bool) *gh.PullRequest {
+	var updated *gh.PullRequest
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() != number {
+				continue
+			}
+			pr.Draft = gh.Bool(draft)
+			pr.UpdatedAt = &now
+			if updated == nil {
+				updated = pr
+			}
+		}
+	}
+	return updated
 }
 
 // GetIssue looks up the issue by owner/repo and number from
@@ -249,11 +276,25 @@ func (c *FixtureClient) CreateReview(
 	return nil, errFixtureReadOnly
 }
 
-// MarkPullRequestReadyForReview returns an error (mutations not supported).
 func (c *FixtureClient) MarkPullRequestReadyForReview(
-	_ context.Context, _, _ string, _ int,
+	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
-	return nil, errFixtureReadOnly
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	pr := c.updatePullRequestDraft(owner, repo, number, false)
+	if pr == nil {
+		return nil, nil
+	}
+	if number == 6 {
+		return nil, &fixtureReadyForReviewStaleStateError{
+			message: fmt.Sprintf(
+				"marking %s/%s#%d ready for review: graphql errors: Could not resolve to a PullRequest with the global id of 'PR_fixture_%d'.",
+				owner, repo, number, number,
+			),
+		}
+	}
+	return pr, nil
 }
 
 // MergePullRequest returns an error (mutations not supported).
