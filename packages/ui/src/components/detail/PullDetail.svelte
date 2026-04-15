@@ -60,6 +60,24 @@
     });
   }
 
+  let copiedBranch = $state<string | null>(null);
+  let branchCopyTimeout: ReturnType<typeof setTimeout> | null
+    = null;
+
+  function copyBranch(text: string): void {
+    void copyToClipboard(text).then((ok) => {
+      if (!ok) return;
+      copiedBranch = text;
+      if (branchCopyTimeout !== null) {
+        clearTimeout(branchCopyTimeout);
+      }
+      branchCopyTimeout = setTimeout(() => {
+        copiedBranch = null;
+        branchCopyTimeout = null;
+      }, 1500);
+    });
+  }
+
   async function refreshPulls(): Promise<void> {
     if (onPullsRefresh) {
       await onPullsRefresh();
@@ -297,6 +315,27 @@
         <span class="meta-item">{pr.Author}</span>
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(pr.CreatedAt)}</span>
+        {#if pr.HeadBranch}
+          <span class="meta-sep">·</span>
+          <span class="meta-branch">
+            <svg class="branch-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6c0 .73-.593 1.322-1.325 1.322H9.457A4.377 4.377 0 006.5 8.579V11.128a2.251 2.251 0 11-1.5 0V4.872a2.251 2.251 0 111.5 0v1.836A5.877 5.877 0 0111.175 5.5h.075V5.372A2.25 2.25 0 019.5 3.25zM4.75 12a.75.75 0 100 1.5.75.75 0 000-1.5zM4 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/>
+            </svg>
+            <button
+              class="branch-name-btn"
+              class:branch-name-btn--copied={copiedBranch === pr.HeadBranch}
+              title={copiedBranch === pr.HeadBranch ? "Copied!" : "Click to copy"}
+              onclick={() => copyBranch(pr.HeadBranch)}
+            >{pr.HeadBranch}</button>
+            <span class="branch-arrow">&rarr;</span>
+            <button
+              class="branch-name-btn"
+              class:branch-name-btn--copied={copiedBranch === pr.BaseBranch}
+              title={copiedBranch === pr.BaseBranch ? "Copied!" : "Click to copy"}
+              onclick={() => copyBranch(pr.BaseBranch)}
+            >{pr.BaseBranch}</button>
+          </span>
+        {/if}
         {#if detailStore.isDetailSyncing()}
           <span class="meta-sep">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
@@ -770,6 +809,77 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  .meta-branch {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+  }
+
+  .branch-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .branch-name-btn {
+    position: relative;
+    color: var(--text-secondary);
+    font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+    font-size: 11.5px;
+    background: none;
+    border: none;
+    padding: 1px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .branch-name-btn:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .branch-name-btn--copied {
+    color: var(--accent-green);
+    background: color-mix(
+      in srgb, var(--accent-green) 10%, transparent
+    );
+  }
+
+  .branch-name-btn--copied::after {
+    content: "Copied!";
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: var(--accent-green);
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: copied-pop 0.2s ease-out;
+  }
+
+  @keyframes copied-pop {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  .branch-arrow {
+    color: var(--text-muted);
   }
 
   .chips-row {
