@@ -793,6 +793,7 @@
   }
 
   .branch-name-btn {
+    position: relative;
     color: var(--text-secondary);
     font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
     font-size: 11.5px;
@@ -801,7 +802,7 @@
     padding: 1px 4px;
     border-radius: 3px;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition: background 0.15s, color 0.15s;
   }
 
   .branch-name-btn:hover {
@@ -811,6 +812,39 @@
 
   .branch-name-btn--copied {
     color: var(--accent-green);
+    background: color-mix(
+      in srgb, var(--accent-green) 10%, transparent
+    );
+  }
+
+  .branch-name-btn--copied::after {
+    content: "Copied!";
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: var(--accent-green);
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: copied-pop 0.2s ease-out;
+  }
+
+  @keyframes copied-pop {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   }
 
   .branch-arrow {
