@@ -1473,3 +1473,290 @@ func TestWorktreeAndPurgeRespectCanceledContext(t *testing.T) {
 	_, err = d.GetAllWorktreeLinks(canceled)
 	require.ErrorIs(err, context.Canceled)
 }
+
+func TestGetRepoByHostOwnerName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	// Insert two repos with same owner/name but different hosts.
+	ghID := insertTestRepoWithHost(t, d, "acme", "widget", "github.com")
+	gheID := insertTestRepoWithHost(
+		t, d, "acme", "widget", "ghes.corp.com",
+	)
+
+	// Each found by its host.
+	gh, err := d.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(gh)
+	assert.Equal(ghID, gh.ID)
+	assert.Equal("github.com", gh.PlatformHost)
+
+	ghe, err := d.GetRepoByHostOwnerName(
+		ctx, "ghes.corp.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(ghe)
+	assert.Equal(gheID, ghe.ID)
+	assert.Equal("ghes.corp.com", ghe.PlatformHost)
+
+	// Missing host returns nil.
+	missing, err := d.GetRepoByHostOwnerName(
+		ctx, "gitlab.com", "acme", "widget",
+	)
+	require.NoError(err)
+	assert.Nil(missing)
+}
+
+func TestWorkspaceCRUD(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	ws := &Workspace{
+		ID:           "ws-abc-123",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     42,
+		MRHeadRef:    "feature/thing",
+		WorktreePath: "/tmp/ws-abc-123",
+		TmuxSession:  "ws-abc-123",
+		Status:       "creating",
+	}
+
+	// Insert
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	// Get by ID
+	got, err := d.GetWorkspace(ctx, "ws-abc-123")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ws-abc-123", got.ID)
+	assert.Equal("github.com", got.PlatformHost)
+	assert.Equal("acme", got.RepoOwner)
+	assert.Equal("widget", got.RepoName)
+	assert.Equal(42, got.MRNumber)
+	assert.Equal("feature/thing", got.MRHeadRef)
+	assert.Nil(got.MRHeadRepo)
+	assert.Equal("/tmp/ws-abc-123", got.WorktreePath)
+	assert.Equal("ws-abc-123", got.TmuxSession)
+	assert.Equal("creating", got.Status)
+	assert.Nil(got.ErrorMessage)
+	assert.False(got.CreatedAt.IsZero())
+
+	// Get by MR coordinates
+	byMR, err := d.GetWorkspaceByMR(
+		ctx, "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(byMR)
+	assert.Equal("ws-abc-123", byMR.ID)
+
+	// GetWorkspaceByMR miss
+	missMR, err := d.GetWorkspaceByMR(
+		ctx, "github.com", "acme", "widget", 999,
+	)
+	require.NoError(err)
+	assert.Nil(missMR)
+
+	// List (ordered by created_at DESC).
+	// Force ws2 to have a later created_at.
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     mr_number, mr_head_ref,
+		     worktree_path, tmux_session, status,
+		     created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+		        datetime('now', '+1 minute'))`,
+		"ws-def-456", "github.com", "acme", "gadget",
+		7, "fix/bug",
+		"/tmp/ws-def-456", "ws-def-456", "ready",
+	)
+	require.NoError(err)
+
+	list, err := d.ListWorkspaces(ctx)
+	require.NoError(err)
+	require.Len(list, 2)
+	// Newest first.
+	assert.Equal("ws-def-456", list[0].ID)
+	assert.Equal("ws-abc-123", list[1].ID)
+
+	// UpdateWorkspaceStatus
+	errMsg := "clone failed"
+	require.NoError(d.UpdateWorkspaceStatus(
+		ctx, "ws-abc-123", "error", &errMsg,
+	))
+	updated, err := d.GetWorkspace(ctx, "ws-abc-123")
+	require.NoError(err)
+	require.NotNil(updated)
+	assert.Equal("error", updated.Status)
+	require.NotNil(updated.ErrorMessage)
+	assert.Equal("clone failed", *updated.ErrorMessage)
+
+	// Clear error message
+	require.NoError(d.UpdateWorkspaceStatus(
+		ctx, "ws-abc-123", "ready", nil,
+	))
+	cleared, err := d.GetWorkspace(ctx, "ws-abc-123")
+	require.NoError(err)
+	assert.Equal("ready", cleared.Status)
+	assert.Nil(cleared.ErrorMessage)
+
+	// Delete
+	require.NoError(d.DeleteWorkspace(ctx, "ws-abc-123"))
+	gone, err := d.GetWorkspace(ctx, "ws-abc-123")
+	require.NoError(err)
+	assert.Nil(gone)
+
+	// Get missing ID returns nil
+	noSuch, err := d.GetWorkspace(ctx, "nonexistent")
+	require.NoError(err)
+	assert.Nil(noSuch)
+}
+
+func TestWorkspaceUniqueConstraint(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	ws := &Workspace{
+		ID:           "ws-1",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     42,
+		MRHeadRef:    "feat/a",
+		WorktreePath: "/tmp/ws-1",
+		TmuxSession:  "ws-1",
+		Status:       "creating",
+	}
+	require.NoError(t, d.InsertWorkspace(ctx, ws))
+
+	// Same MR coordinates, different ID -> unique constraint violation.
+	ws2 := &Workspace{
+		ID:           "ws-2",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     42,
+		MRHeadRef:    "feat/a",
+		WorktreePath: "/tmp/ws-2",
+		TmuxSession:  "ws-2",
+		Status:       "creating",
+	}
+	err := d.InsertWorkspace(ctx, ws2)
+	require.Error(t, err)
+}
+
+func TestWorkspaceSummaries(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	// Seed a repo and MR.
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     5001,
+		Number:         42,
+		URL:            "https://github.com/acme/widget/pull/42",
+		Title:          "Add workspace support",
+		Author:         "alice",
+		State:          "open",
+		IsDraft:        true,
+		CIStatus:       "pending",
+		ReviewDecision: "REVIEW_REQUIRED",
+		Additions:      100,
+		Deletions:      20,
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: base,
+	})
+	require.NoError(err)
+
+	// Workspace with matching MR (earlier created_at).
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     mr_number, mr_head_ref,
+		     worktree_path, tmux_session, status,
+		     created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-with-mr", "github.com", "acme", "widget",
+		42, "feat/workspace",
+		"/tmp/ws-with-mr", "ws-with-mr", "ready",
+		base,
+	)
+	require.NoError(err)
+
+	// Workspace without matching MR (later created_at, no repo).
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     mr_number, mr_head_ref,
+		     worktree_path, tmux_session, status,
+		     created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-no-mr", "github.com", "acme", "gadget",
+		99, "fix/thing",
+		"/tmp/ws-no-mr", "ws-no-mr", "creating",
+		base.Add(time.Hour),
+	)
+	require.NoError(err)
+
+	// ListWorkspaceSummaries
+	summaries, err := d.ListWorkspaceSummaries(ctx)
+	require.NoError(err)
+	require.Len(summaries, 2)
+
+	// Newest first: ws-no-mr has later created_at.
+	noMR := summaries[0]
+	withMR := summaries[1]
+	assert.Equal("ws-no-mr", noMR.ID)
+	assert.Equal("ws-with-mr", withMR.ID)
+
+	// MR fields nil when no match.
+	assert.Nil(noMR.MRTitle)
+	assert.Nil(noMR.MRState)
+	assert.Nil(noMR.MRIsDraft)
+	assert.Nil(noMR.MRCIStatus)
+	assert.Nil(noMR.MRReviewDecision)
+	assert.Nil(noMR.MRAdditions)
+	assert.Nil(noMR.MRDeletions)
+
+	// MR fields populated when match exists.
+	require.NotNil(withMR.MRTitle)
+	assert.Equal("Add workspace support", *withMR.MRTitle)
+	require.NotNil(withMR.MRState)
+	assert.Equal("open", *withMR.MRState)
+	require.NotNil(withMR.MRIsDraft)
+	assert.True(*withMR.MRIsDraft)
+	require.NotNil(withMR.MRCIStatus)
+	assert.Equal("pending", *withMR.MRCIStatus)
+	require.NotNil(withMR.MRReviewDecision)
+	assert.Equal("REVIEW_REQUIRED", *withMR.MRReviewDecision)
+	require.NotNil(withMR.MRAdditions)
+	assert.Equal(100, *withMR.MRAdditions)
+	require.NotNil(withMR.MRDeletions)
+	assert.Equal(20, *withMR.MRDeletions)
+
+	// GetWorkspaceSummary by ID
+	single, err := d.GetWorkspaceSummary(ctx, "ws-with-mr")
+	require.NoError(err)
+	require.NotNil(single)
+	assert.Equal("ws-with-mr", single.ID)
+	require.NotNil(single.MRTitle)
+	assert.Equal("Add workspace support", *single.MRTitle)
+
+	// GetWorkspaceSummary miss
+	missSum, err := d.GetWorkspaceSummary(ctx, "nonexistent")
+	require.NoError(err)
+	assert.Nil(missSum)
+}

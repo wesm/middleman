@@ -18,6 +18,8 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/terminal"
+	"github.com/wesm/middleman/internal/workspace"
 )
 
 type EmbedConfig struct {
@@ -49,6 +51,7 @@ type RepoRef struct {
 type ServerOptions struct {
 	EmbedConfig *EmbedConfig
 	Clones      *gitclone.Manager // optional clone manager for diff view
+	WorktreeDir string            // base dir for workspace worktrees
 }
 
 // Server holds the HTTP mux and its dependencies.
@@ -56,6 +59,7 @@ type Server struct {
 	db                *db.DB
 	syncer            *ghclient.Syncer
 	clones            *gitclone.Manager
+	workspaces        *workspace.Manager
 	cfg               *config.Config
 	cfgPath           string
 	cfgMu             sync.Mutex
@@ -281,6 +285,21 @@ func newServer(
 		hub:      NewEventHub(),
 		bgCtx:    bgCtx,
 		bgCancel: bgCancel,
+	}
+
+	if options.WorktreeDir != "" {
+		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		if clones != nil {
+			s.workspaces.SetClones(clones)
+		}
+	}
+
+	if s.workspaces != nil {
+		termHandler := &terminal.Handler{Workspaces: s.workspaces}
+		mux.Handle(
+			"GET /api/v1/workspaces/{id}/terminal",
+			termHandler,
+		)
 	}
 
 	healthAPI := humago.New(mux, healthAPIConfig())

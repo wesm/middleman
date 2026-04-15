@@ -2022,6 +2022,292 @@ func (d *DB) GetAllWorktreeLinks(
 	return scanWorktreeLinks(rows)
 }
 
+// GetRepoByHostOwnerName returns the repo for the given
+// host/owner/name triple, or nil if not found.
+func (d *DB) GetRepoByHostOwnerName(
+	ctx context.Context,
+	host, owner, name string,
+) (*Repo, error) {
+	var r Repo
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT id, platform, platform_host, owner, name,
+		        last_sync_started_at, last_sync_completed_at,
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge,
+		        backfill_pr_page, backfill_pr_complete,
+		        backfill_pr_completed_at,
+		        backfill_issue_page, backfill_issue_complete,
+		        backfill_issue_completed_at,
+		        created_at
+		 FROM middleman_repos
+		 WHERE platform_host = ? AND owner = ? AND name = ?`,
+		host, owner, name,
+	).Scan(
+		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
+		&r.LastSyncError,
+		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.BackfillPRPage, &r.BackfillPRComplete,
+		&r.BackfillPRCompletedAt,
+		&r.BackfillIssuePage, &r.BackfillIssueComplete,
+		&r.BackfillIssueCompletedAt,
+		&r.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get repo by host/owner/name: %w", err,
+		)
+	}
+	normalizeRepoTimestamps(&r)
+	return &r, nil
+}
+
+// --- Workspaces ---
+
+// InsertWorkspace inserts a new workspace row.
+func (d *DB) InsertWorkspace(
+	ctx context.Context, ws *Workspace,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     mr_number, mr_head_ref, mr_head_repo,
+		     worktree_path, tmux_session, status,
+		     error_message)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		ws.MRNumber, ws.MRHeadRef, ws.MRHeadRepo,
+		ws.WorktreePath, ws.TmuxSession, ws.Status,
+		ws.ErrorMessage,
+	)
+	if err != nil {
+		return fmt.Errorf("insert workspace: %w", err)
+	}
+	return nil
+}
+
+// GetWorkspace returns a workspace by ID, or nil if not found.
+func (d *DB) GetWorkspace(
+	ctx context.Context, id string,
+) (*Workspace, error) {
+	var ws Workspace
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT id, platform_host, repo_owner, repo_name,
+		       mr_number, mr_head_ref, mr_head_repo,
+		       worktree_path, tmux_session, status,
+		       error_message, created_at
+		FROM middleman_workspaces WHERE id = ?`, id,
+	).Scan(
+		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.MRNumber, &ws.MRHeadRef, &ws.MRHeadRepo,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
+		&ws.ErrorMessage, &ws.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get workspace: %w", err)
+	}
+	ws.CreatedAt = ws.CreatedAt.UTC()
+	return &ws, nil
+}
+
+// GetWorkspaceByMR returns the workspace for a specific MR,
+// or nil if not found.
+func (d *DB) GetWorkspaceByMR(
+	ctx context.Context,
+	platformHost, owner, name string,
+	mrNumber int,
+) (*Workspace, error) {
+	var ws Workspace
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT id, platform_host, repo_owner, repo_name,
+		       mr_number, mr_head_ref, mr_head_repo,
+		       worktree_path, tmux_session, status,
+		       error_message, created_at
+		FROM middleman_workspaces
+		WHERE platform_host = ? AND repo_owner = ?
+		  AND repo_name = ? AND mr_number = ?`,
+		platformHost, owner, name, mrNumber,
+	).Scan(
+		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.MRNumber, &ws.MRHeadRef, &ws.MRHeadRepo,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
+		&ws.ErrorMessage, &ws.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get workspace by MR: %w", err)
+	}
+	ws.CreatedAt = ws.CreatedAt.UTC()
+	return &ws, nil
+}
+
+// ListWorkspaces returns all workspaces ordered by
+// created_at DESC.
+func (d *DB) ListWorkspaces(
+	ctx context.Context,
+) ([]Workspace, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT id, platform_host, repo_owner, repo_name,
+		       mr_number, mr_head_ref, mr_head_repo,
+		       worktree_path, tmux_session, status,
+		       error_message, created_at
+		FROM middleman_workspaces
+		ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list workspaces: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Workspace
+	for rows.Next() {
+		var ws Workspace
+		if err := rows.Scan(
+			&ws.ID, &ws.PlatformHost, &ws.RepoOwner,
+			&ws.RepoName, &ws.MRNumber, &ws.MRHeadRef,
+			&ws.MRHeadRepo, &ws.WorktreePath, &ws.TmuxSession,
+			&ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan workspace: %w", err)
+		}
+		ws.CreatedAt = ws.CreatedAt.UTC()
+		out = append(out, ws)
+	}
+	return out, rows.Err()
+}
+
+// UpdateWorkspaceStatus sets the status and optional error
+// message for a workspace.
+func (d *DB) UpdateWorkspaceStatus(
+	ctx context.Context,
+	id, status string,
+	errMsg *string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET status = ?, error_message = ?
+		WHERE id = ?`,
+		status, errMsg, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update workspace status: %w", err)
+	}
+	return nil
+}
+
+// DeleteWorkspace removes a workspace by ID.
+func (d *DB) DeleteWorkspace(
+	ctx context.Context, id string,
+) error {
+	_, err := d.rw.ExecContext(ctx,
+		`DELETE FROM middleman_workspaces WHERE id = ?`, id,
+	)
+	if err != nil {
+		return fmt.Errorf("delete workspace: %w", err)
+	}
+	return nil
+}
+
+// workspaceSummaryColumns is the SELECT list shared by
+// ListWorkspaceSummaries and GetWorkspaceSummary.
+const workspaceSummaryColumns = `
+	w.id, w.platform_host, w.repo_owner, w.repo_name,
+	w.mr_number, w.mr_head_ref, w.mr_head_repo,
+	w.worktree_path, w.tmux_session, w.status,
+	w.error_message, w.created_at,
+	m.title, m.state, m.is_draft, m.ci_status,
+	m.review_decision, m.additions, m.deletions`
+
+// workspaceSummaryJoins is the FROM/JOIN clause shared by
+// ListWorkspaceSummaries and GetWorkspaceSummary.
+const workspaceSummaryJoins = `
+	FROM middleman_workspaces w
+	LEFT JOIN middleman_repos r
+	    ON r.platform_host = w.platform_host
+	   AND r.owner = w.repo_owner
+	   AND r.name = w.repo_name
+	LEFT JOIN middleman_merge_requests m
+	    ON m.repo_id = r.id
+	   AND m.number = w.mr_number`
+
+func scanWorkspaceSummary(
+	scanner interface{ Scan(...any) error },
+) (*WorkspaceSummary, error) {
+	var s WorkspaceSummary
+	err := scanner.Scan(
+		&s.ID, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
+		&s.MRNumber, &s.MRHeadRef, &s.MRHeadRepo,
+		&s.WorktreePath, &s.TmuxSession, &s.Status,
+		&s.ErrorMessage, &s.CreatedAt,
+		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
+		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
+	)
+	if err != nil {
+		return nil, err
+	}
+	s.CreatedAt = s.CreatedAt.UTC()
+	return &s, nil
+}
+
+// ListWorkspaceSummaries returns all workspaces with joined MR
+// metadata, ordered by created_at DESC.
+func (d *DB) ListWorkspaceSummaries(
+	ctx context.Context,
+) ([]WorkspaceSummary, error) {
+	query := "SELECT " + workspaceSummaryColumns +
+		workspaceSummaryJoins +
+		"\nORDER BY w.created_at DESC"
+	rows, err := d.ro.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list workspace summaries: %w", err,
+		)
+	}
+	defer rows.Close()
+
+	var out []WorkspaceSummary
+	for rows.Next() {
+		s, err := scanWorkspaceSummary(rows)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"scan workspace summary: %w", err,
+			)
+		}
+		out = append(out, *s)
+	}
+	return out, rows.Err()
+}
+
+// GetWorkspaceSummary returns a single workspace with joined
+// MR metadata, or nil if not found.
+func (d *DB) GetWorkspaceSummary(
+	ctx context.Context, id string,
+) (*WorkspaceSummary, error) {
+	query := "SELECT " + workspaceSummaryColumns +
+		workspaceSummaryJoins +
+		"\nWHERE w.id = ?"
+	s, err := scanWorkspaceSummary(
+		d.ro.QueryRowContext(ctx, query, id),
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get workspace summary: %w", err,
+		)
+	}
+	return s, nil
+}
+
 func scanWorktreeLinks(
 	rows *sql.Rows,
 ) ([]WorktreeLink, error) {

@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { KanbanStatus } from "../../api/types.js";
-  import { getStores, getClient, getActions, getUIConfig } from "../../context.js";
+  import {
+    getStores, getClient, getActions,
+    getUIConfig, getNavigate,
+  } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -19,6 +22,7 @@
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
+  const navigate = getNavigate();
 
   interface Props {
     owner: string;
@@ -163,6 +167,43 @@
     ),
   );
   const labels = $derived(detailStore.getDetail()?.merge_request?.labels ?? []);
+
+  const workspace = $derived(detailStore.getDetail()?.workspace);
+  let wsCreating = $state(false);
+  let wsError = $state<string | null>(null);
+
+  async function createWorkspace(): Promise<void> {
+    const detail = detailStore.getDetail();
+    if (!detail) return;
+
+    wsCreating = true;
+    wsError = null;
+    try {
+      const { data, error: reqError } = await client.POST(
+        "/workspaces",
+        {
+          body: {
+            platform_host: detail.platform_host,
+            owner: detail.repo_owner,
+            name: detail.repo_name,
+            mr_number: detail.merge_request.Number,
+          },
+        },
+      );
+      if (reqError) {
+        throw new Error(
+          reqError.detail ?? reqError.title ?? "failed to create workspace",
+        );
+      }
+      if (data?.id) {
+        navigate(`/terminal/${data.id}`);
+      }
+    } catch (err) {
+      wsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      wsCreating = false;
+    }
+  }
 </script>
 
 {#if detailStore.isDetailLoading()}
@@ -384,6 +425,29 @@
           {/if}
         </div>
       {/if}
+
+      <!-- Workspace actions -->
+      <div class="actions-row">
+        {#if workspace}
+          <button
+            class="btn--workspace"
+            onclick={() => navigate(`/terminal/${workspace.id}`)}
+          >
+            Open Workspace
+          </button>
+        {:else}
+          <button
+            class="btn--workspace"
+            disabled={wsCreating}
+            onclick={() => void createWorkspace()}
+          >
+            {wsCreating ? "Creating..." : "Create Workspace"}
+          </button>
+        {/if}
+        {#if wsError}
+          <span class="action-error">{wsError}</span>
+        {/if}
+      </div>
 
       {#if !hasWorktreeLinks && importAction}
         <div class="actions-row">
@@ -803,6 +867,24 @@
   }
   .btn--reopen:hover {
     filter: brightness(1.1);
+  }
+  .btn--workspace {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--accent-blue, #0969da);
+    background: var(--accent-blue, #0969da);
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.1s;
+  }
+  .btn--workspace:hover {
+    filter: brightness(1.1);
+  }
+  .btn--workspace:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
   .action-error {
     font-size: 11px;
