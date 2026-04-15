@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { load as loadToml } from "js-toml";
 
 const defaultHost = "127.0.0.1";
 const defaultPort = 8091;
@@ -10,6 +11,7 @@ export const defaultDevApiUrl = `http://${defaultHost}:${defaultPort}`;
 export interface DevEnv {
   HOME?: string;
   MIDDLEMAN_API_URL?: string;
+  MIDDLEMAN_CONFIG?: string;
   MIDDLEMAN_HOME?: string;
 }
 
@@ -34,6 +36,11 @@ export function resolveDevApiUrl(env: DevEnv = process.env): string {
 }
 
 function resolveConfigPath(env: DevEnv): string {
+  const explicitConfigPath = env.MIDDLEMAN_CONFIG?.trim();
+  if (explicitConfigPath) {
+    return explicitConfigPath;
+  }
+
   const middlemanHome = env.MIDDLEMAN_HOME?.trim();
   if (middlemanHome) {
     return path.join(middlemanHome, "config.toml");
@@ -89,90 +96,43 @@ function formatHostForUrl(host: string): string {
 }
 
 function parseConfig(configText: string): MiddlemanConfigFields {
-  const config: MiddlemanConfigFields = {};
+  const config = loadToml(configText) as Record<string, unknown>;
+  const parsed: MiddlemanConfigFields = {};
 
-  for (const rawLine of configText.split(/\r?\n/u)) {
-    const line = stripComments(rawLine).trim();
-    if (!line) {
-      continue;
-    }
-
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/u);
-    if (!match) {
-      continue;
-    }
-
-    const key = match[1];
-    const rawValue = match[2];
-    if (!key || !rawValue) {
-      continue;
-    }
-
-    switch (key) {
-      case "host": {
-        const host = parseTomlString(rawValue);
-        if (host !== undefined) {
-          config.host = host;
-        }
-        break;
-      }
-      case "base_path": {
-        const basePath = parseTomlString(rawValue);
-        if (basePath !== undefined) {
-          config.basePath = basePath;
-        }
-        break;
-      }
-      case "port": {
-        const port = parseTomlInteger(rawValue);
-        if (port !== undefined) {
-          config.port = port;
-        }
-        break;
-      }
-    }
+  const host = parseStringField(config.host);
+  if (host !== undefined) {
+    parsed.host = host;
   }
 
-  return config;
+  const basePath = parseStringField(config.base_path);
+  if (basePath !== undefined) {
+    parsed.basePath = basePath;
+  }
+
+  const port = parseIntegerField(config.port);
+  if (port !== undefined) {
+    parsed.port = port;
+  }
+
+  return parsed;
 }
 
-function stripComments(line: string): string {
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-
-    if (char === '"' && !escaped) {
-      inString = !inString;
-    } else if (char === "#" && !inString) {
-      return line.slice(0, i);
-    }
-
-    escaped = char === "\\" && !escaped;
-    if (char !== "\\") {
-      escaped = false;
-    }
-  }
-
-  return line;
+function parseStringField(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
-function parseTomlString(value: string): string | undefined {
-  const match = value.trim().match(/^"((?:[^"\\]|\\.)*)"$/u);
-  if (!match) {
-    return undefined;
+function parseIntegerField(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
   }
 
-  return JSON.parse(`"${match[1]}"`) as string;
-}
-
-function parseTomlInteger(value: string): number | undefined {
-  const match = value.trim().match(/^[+-]?\d+$/u);
-  if (!match) {
-    return undefined;
+  if (
+    typeof value === "bigint" &&
+    value >= BigInt(Number.MIN_SAFE_INTEGER) &&
+    value <= BigInt(Number.MAX_SAFE_INTEGER)
+  ) {
+    return Number(value);
   }
 
-  const parsed = Number.parseInt(match[0], 10);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  return undefined;
 }

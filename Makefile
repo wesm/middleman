@@ -112,7 +112,11 @@ air-install:
 
 # Run Go server in dev mode with live reload and API artifact refresh (use alongside `make frontend-dev`)
 dev: ensure-embed-dir check-air
-	"$(AIR_BIN)" -c .air.toml -- $(ARGS)
+	@if [ -n "$(MIDDLEMAN_CONFIG)" ]; then \
+		"$(AIR_BIN)" -c .air.toml -- -config "$(MIDDLEMAN_CONFIG)" $(ARGS); \
+	else \
+		"$(AIR_BIN)" -c .air.toml -- $(ARGS); \
+	fi
 
 # Run tests
 test: ensure-embed-dir
@@ -196,10 +200,10 @@ help:
 	@echo "  install        - Build and install to ~/.local/bin or GOPATH"
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
-	@echo "  dev            - Run Go server with air live reload and API artifact refresh"
+	@echo "  dev            - Run Go server with air live reload and API artifact refresh (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend       - Build frontend SPA"
-	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log"
-	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
+	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
+	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""
