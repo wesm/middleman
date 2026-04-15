@@ -36,11 +36,17 @@ FROM (
         l.id,
         first_value(l.id) OVER (
             PARTITION BY t.keep_id, l.name
-            ORDER BY CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END, l.id
+            ORDER BY
+                CASE WHEN l.platform_id IS NOT NULL THEN 0 ELSE 1 END,
+                CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END,
+                l.id
         ) AS keep_id,
         row_number() OVER (
             PARTITION BY t.keep_id, l.name
-            ORDER BY CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END, l.id
+            ORDER BY
+                CASE WHEN l.platform_id IS NOT NULL THEN 0 ELSE 1 END,
+                CASE WHEN l.repo_id = t.keep_id THEN 0 ELSE 1 END,
+                l.id
         ) AS rn
     FROM middleman_labels AS l
     JOIN repo_casefold_targets AS t
@@ -154,6 +160,14 @@ SET merge_request_id = (
 )
 WHERE merge_request_id IN (
     SELECT duplicate_id FROM mr_casefold_duplicates
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM middleman_mr_events AS existing
+    JOIN mr_casefold_duplicates AS d
+        ON d.duplicate_id = middleman_mr_events.merge_request_id
+    WHERE existing.merge_request_id = d.keep_id
+      AND existing.dedupe_key = middleman_mr_events.dedupe_key
 );
 
 CREATE TEMP TABLE mr_casefold_kanban_winners AS

@@ -251,6 +251,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 		INSERT INTO middleman_mr_events (
 			merge_request_id, event_type, author, created_at, dedupe_key
 		) VALUES
+			(1, 'comment', 'octo', datetime('now'), 'duplicate-pr-comment'),
+			(2, 'comment', 'octo', datetime('now'), 'duplicate-pr-comment'),
 			(3, 'comment', 'octo', datetime('now'), 'unique-comment')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
@@ -284,7 +286,9 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 		) VALUES
 			(1, 1, 700, 'enhancement-renamed', datetime('now')),
 			(2, 2, 700, 'enhancement', datetime('now')),
-			(3, 2, 701, 'triage', datetime('now'))`)
+			(3, 2, 701, 'triage', datetime('now')),
+			(4, 1, NULL, 'stale-label', datetime('now')),
+			(5, 2, 702, 'stale-label', datetime('now'))`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_issue_labels (issue_id, label_id)
@@ -346,6 +350,16 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	).Scan(&uniquePREventCount)
 	require.NoError(err)
 	require.Equal(1, uniquePREventCount)
+
+	var duplicatePREventCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_mr_events e
+		JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
+		WHERE mr.number = 1 AND e.dedupe_key = 'duplicate-pr-comment'`,
+	).Scan(&duplicatePREventCount)
+	require.NoError(err)
+	require.Equal(1, duplicatePREventCount)
 
 	var kanbanStatus string
 	err = d.ReadDB().QueryRow(`
@@ -412,6 +426,15 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	).Scan(&issuePlatformLabelCount)
 	require.NoError(err)
 	require.Equal(1, issuePlatformLabelCount)
+
+	var staleNamePlatformLabelCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_labels
+		WHERE repo_id = 1 AND name = 'stale-label' AND platform_id = 702`,
+	).Scan(&staleNamePlatformLabelCount)
+	require.NoError(err)
+	require.Equal(1, staleNamePlatformLabelCount)
 
 	var mrPlatformLabelCount int
 	err = d.ReadDB().QueryRow(`
