@@ -5,6 +5,12 @@ async function waitForPRList(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function sidebarWidth(page: Page): Promise<number> {
+  return Math.round(await page.locator(".sidebar").first().evaluate((node) =>
+    node.getBoundingClientRect().width
+  ));
+}
+
 test.describe("embedded config", () => {
   test("hides sync button when hideSync is true", async ({ page }) => {
     await page.addInitScript(() => {
@@ -54,6 +60,22 @@ test.describe("embedded config", () => {
     await expect(
       page.locator("button[title='Toggle theme']"),
     ).not.toBeAttached();
+  });
+
+  test("host sidebarWidth overrides persisted width on pulls", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("middleman-sidebar-width", "520");
+      window.__middleman_config = { embed: { sidebarWidth: 410 } };
+    });
+    await page.goto("/pulls");
+    await waitForPRList(page);
+
+    await expect.poll(async () => sidebarWidth(page)).toBe(410);
+
+    await page.reload();
+    await waitForPRList(page);
+
+    await expect.poll(async () => sidebarWidth(page)).toBe(410);
   });
 
   test("settings page is blocked in embedded mode", async ({ page }) => {

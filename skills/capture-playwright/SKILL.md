@@ -39,7 +39,7 @@ const videoPath = await page.video()?.path();
 
 5. **Stop here by default.** Report the local artifact path to the user. Only proceed to upload if the user explicitly requests it.
 
-6. **If the user approves upload**, confirm the target PR or issue number first. Never upload without attaching to a specific PR or issue. Upload the file with `gh image`, then immediately attach it to the PR or issue via a comment — `gh image` alone does not bind the upload to any target:
+6. **If the user approves upload**, confirm the target PR or issue number first. Never upload without attaching to a specific PR or issue. Upload the file with `gh image` (the command prints a markdown snippet whose links already point at the uploaded content), then immediately attach it to the PR or issue via a comment — `gh image` alone does not bind the upload to any target:
 
 ```bash
 # Upload and capture the markdown link
@@ -52,6 +52,10 @@ gh issue comment <number> --repo owner/repo --body "$IMAGE_MD"
 ```
 
 **`gh image --repo owner/repo <file>` alone is insufficient** — it uploads without binding to a PR or issue. Always follow up with a comment command to attach.
+
+For screenshots, the emitted markdown can usually be pasted as-is.
+
+For videos, `gh image` may still emit image-style markdown like `![demo.webm](...)`. GitHub PR descriptions and comments do not reliably inline `.webm` attachments from that syntax, so normalize it to a plain link such as `[demo.webm](...)` or `Video: https://...` before pasting into a PR description or comment.
 
 If video upload is rejected, keep the local video file, say that `gh image` appears image-only in this environment, and ask whether a screenshot link or a different upload path is preferred.
 
@@ -80,4 +84,5 @@ Tell the user to sign in to GitHub in Chrome, Brave, Edge, or Chromium on that m
 Return:
 - the local artifact path (always)
 - if uploaded: the markdown link(s) printed by `gh image` and the target PR/issue
+- for video uploads, the normalized plain-link form to paste into a PR description or comment
 - a brief note if video upload had to fall back to screenshots or another path

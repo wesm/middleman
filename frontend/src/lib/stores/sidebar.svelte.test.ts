@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   isSidebarCollapsed,
+  getSidebarWidth,
+  setSidebarWidth,
   toggleSidebar,
   isSidebarToggleEnabled,
   initSidebar,
@@ -12,6 +14,7 @@ const win = window as any;
 afterEach(() => {
   delete win.__middleman_config;
   try { localStorage.removeItem("middleman-sidebar"); } catch { /* noop */ }
+  try { localStorage.removeItem("middleman-sidebar-width"); } catch { /* noop */ }
 });
 
 describe("standalone mode", () => {
@@ -39,6 +42,20 @@ describe("standalone mode", () => {
     expect(
       localStorage.getItem("middleman-sidebar"),
     ).toBe("collapsed");
+  });
+
+  it("starts with the default width", () => {
+    initSidebar();
+    expect(getSidebarWidth()).toBe(340);
+  });
+
+  it("persists a resized width", () => {
+    initSidebar();
+    setSidebarWidth(420);
+    expect(getSidebarWidth()).toBe(420);
+    expect(
+      localStorage.getItem("middleman-sidebar-width"),
+    ).toBe("420");
   });
 });
 
@@ -68,6 +85,15 @@ describe("embedded mode — embedder owns sidebar", () => {
     win.__middleman_notify_config_changed?.();
     initSidebar();
     expect(isSidebarToggleEnabled()).toBe(false);
+  });
+
+  it("uses the embedded width when provided", () => {
+    win.__middleman_config = {
+      embed: { sidebarWidth: 410 },
+    };
+    win.__middleman_notify_config_changed?.();
+    initSidebar();
+    expect(getSidebarWidth()).toBe(410);
   });
 });
 

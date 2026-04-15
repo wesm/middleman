@@ -31,6 +31,8 @@
   } from "./lib/stores/theme.svelte.js";
   import {
     isSidebarCollapsed,
+    getSidebarWidth,
+    setSidebarWidth,
     toggleSidebar,
     isSidebarToggleEnabled,
     initSidebar,
@@ -68,7 +70,7 @@
     isHeaderHidden,
     isStatusBarHidden,
     getInitialRoute,
-    getSidebarWidth,
+    getSidebarWidth as getEmbeddedSidebarWidth,
     emitLayoutChanged,
     getEmbedActivePlatformHost,
     getEmbedHoverCardsEnabled,
@@ -292,6 +294,14 @@
   function closeDrawer(): void {
     drawerItem = null;
     updateDrawerURL(null);
+  }
+
+  function handleSidebarResize(width: number): void {
+    setSidebarWidth(width);
+    emitLayoutChanged({
+      sidebar: { width },
+      pinnedPanel: { width: 0, visible: false },
+    });
   }
 
   function navigateToSelectedPR(): void {
@@ -577,6 +587,8 @@
             {selectedPR}
             {detailTab}
             isSidebarCollapsed={isSidebarCollapsed()}
+            sidebarWidth={getSidebarWidth()}
+            onSidebarResize={handleSidebarResize}
           />
         {/if}
       {:else if getPage() === "issues"}
@@ -585,6 +597,8 @@
         <IssueListView
           {selectedIssue}
           isSidebarCollapsed={isSidebarCollapsed()}
+          sidebarWidth={getSidebarWidth()}
+          onSidebarResize={handleSidebarResize}
         />
       {:else if getPage() === "reviews"}
         {@const route = getRoute()}
@@ -670,7 +684,7 @@
             workspaceData={getWorkspaceData()}
             hoverCardsEnabled={getEmbedHoverCardsEnabled()}
             onCommand={emitWorkspaceCommand}
-            sidebarWidth={getSidebarWidth()}
+            sidebarWidth={getEmbeddedSidebarWidth()}
             onSidebarResize={(width) => emitLayoutChanged({
               sidebar: { width },
               pinnedPanel: { width: 0, visible: false },

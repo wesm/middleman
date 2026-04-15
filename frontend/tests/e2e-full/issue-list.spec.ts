@@ -56,7 +56,7 @@ test.describe("issue list view", () => {
       .first()
       .click();
 
-    // IssueListView renders IssueDetail into .detail-area, where
+    // IssueListView renders IssueDetail into .main-area, where
     // .issue-detail is the designated internal scroll container.
     const issueDetail = page.locator(".issue-detail");
     await expect(issueDetail).toBeVisible();
@@ -98,9 +98,9 @@ test.describe("issue list view", () => {
 
     // Centering check: .issue-detail has max-width 800px and
     // margin-inline: auto. Compare its horizontal center against the
-    // center of its parent .detail-area container (the PR list view
+    // center of its parent .main-area container (the PR list view
     // has a sidebar, so the viewport center is not relevant).
-    const detailArea = page.locator(".detail-area");
+    const detailArea = page.locator(".main-area");
     const areaBox = await detailArea.boundingBox();
     const detailBox = await issueDetail.boundingBox();
     expect(areaBox).not.toBeNull();

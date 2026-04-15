@@ -10,6 +10,58 @@ async function waitForIssueList(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function sidebarWidth(sidebar: ReturnType<Page["locator"]>): Promise<number> {
+  return Math.round(await sidebar.evaluate((node) =>
+    node.getBoundingClientRect().width
+  ));
+}
+
+async function dragResizeHandle(
+  page: Page,
+  handle: ReturnType<Page["locator"]>,
+  deltaX: number,
+): Promise<void> {
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) {
+    throw new Error("resize handle missing");
+  }
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box.x + box.width / 2 + deltaX,
+    box.y + box.height / 2,
+    { steps: 10 },
+  );
+  await page.mouse.up();
+}
+
+async function expectResizedSidebar(
+  page: Page,
+  path: string,
+  waitForList: (page: Page) => Promise<void>,
+): Promise<void> {
+  await page.goto(path);
+  await waitForList(page);
+
+  const sidebar = page.locator(".sidebar").first();
+  const handle = page.locator(".resize-handle");
+
+  expect(await sidebarWidth(sidebar)).toBe(340);
+
+  await dragResizeHandle(page, handle, 80);
+
+  await expect.poll(async () => sidebarWidth(sidebar)).toBe(420);
+
+  await page.reload();
+  await waitForList(page);
+
+  await expect.poll(async () =>
+    sidebarWidth(page.locator(".sidebar").first())
+  ).toBe(420);
+}
+
 test.describe("collapsible sidebar", () => {
   test("collapse and expand via strip on pulls", async ({ page }) => {
     await page.goto("/pulls");
@@ -92,5 +144,13 @@ test.describe("collapsible sidebar", () => {
     // Press again to expand.
     await page.keyboard.press(`${modifier}+[`);
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
+  });
+
+  test("sidebar can be resized on pulls and keeps the new width after reload", async ({ page }) => {
+    await expectResizedSidebar(page, "/pulls", waitForPRList);
+  });
+
+  test("sidebar can be resized on issues and keeps the new width after reload", async ({ page }) => {
+    await expectResizedSidebar(page, "/issues", waitForIssueList);
   });
 });
