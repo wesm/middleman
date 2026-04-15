@@ -21,9 +21,11 @@ test.describe("PR detail branch info", () => {
   });
 
   test("click branch shows copied feedback", async ({
-    page, context,
+    page, context, browserName,
   }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    if (browserName === "chromium") {
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    }
 
     const headBtn = page.locator(
       ".meta-branch .branch-name-btn",
