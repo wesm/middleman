@@ -2,7 +2,7 @@
 
 `internal/db/migrations/` is append-only history. Once a migration exists on `main`, do not edit it to add new behavior. Add a new numbered migration instead.
 
-The pre-commit hook `scripts/check-migration-history.sh` enforces this by rejecting staged edits to migration files that already exist on `origin/main`. If a checkout uses a different main-branch ref, set `MIDDLEMAN_MIGRATION_BASE_REF` before running the hook.
+The pre-commit hook `go run ./tools/migrationhistorycheck` enforces this by rejecting staged edits to migration files that already exist on `origin/main`. If a checkout uses a different main-branch ref, set `MIDDLEMAN_MIGRATION_BASE_REF` before running the hook.
 
 ## Rules
 
