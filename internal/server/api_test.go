@@ -709,6 +709,24 @@ func TestAPIGetPull(t *testing.T) {
 	require.Equal("widget", resp.JSON200.RepoName)
 }
 
+func TestAPIGetPullIncludesBranches(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	mr := resp.JSON200.MergeRequest
+	require.NotNil(mr)
+	require.Equal("feature", mr.HeadBranch)
+	require.Equal("main", mr.BaseBranch)
+}
+
 func TestAPIGetPullIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
