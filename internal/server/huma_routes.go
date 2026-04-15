@@ -1915,6 +1915,11 @@ func (s *Server) createWorkspace(
 			"get workspace summary: " + err.Error(),
 		)
 	}
+	if summary == nil {
+		return nil, huma.Error500InternalServerError(
+			"workspace summary missing after create",
+		)
+	}
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
 		Body:   toWorkspaceResponse(summary),
