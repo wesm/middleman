@@ -981,9 +981,11 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 
 	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if err == nil && repoObj != nil {
-		normalized := ghclient.NormalizePR(repoObj.ID, pr)
-		if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
-			_ = s.db.EnsureKanbanState(ctx, mrID)
+		normalized, normalizeErr := ghclient.NormalizePR(repoObj.ID, pr)
+		if normalizeErr == nil {
+			if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
+				_ = s.db.EnsureKanbanState(ctx, mrID)
+			}
 		}
 	}
 
@@ -1106,8 +1108,14 @@ func (s *Server) setPRGitHubState(
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
-				if fetchErr == nil && ghPR != nil {
-					normalized := ghclient.NormalizePR(repoID, ghPR)
+				if fetchErr == nil {
+					if ghPR == nil {
+						return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+					}
+					normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
+					if normalizeErr != nil {
+						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+					}
 					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
 					if ghPR.GetMerged() {
 						return nil, huma.Error409Conflict(
@@ -1196,8 +1204,14 @@ func (s *Server) setIssueGitHubState(
 				ghIssue, fetchErr := client.GetIssue(
 					ctx, input.Owner, input.Name, input.Number,
 				)
-				if fetchErr == nil && ghIssue != nil {
-					normalized := ghclient.NormalizeIssue(repoID, ghIssue)
+				if fetchErr == nil {
+					if ghIssue == nil {
+						return nil, huma.Error502BadGateway("GitHub API returned no issue")
+					}
+					normalized, normalizeErr := ghclient.NormalizeIssue(repoID, ghIssue)
+					if normalizeErr != nil {
+						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+					}
 					_, _ = s.db.UpsertIssue(ctx, normalized)
 					if ghIssue.GetState() == input.Body.State {
 						out := &githubStateOutput{}

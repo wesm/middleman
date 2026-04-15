@@ -1912,6 +1912,52 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 	assert.Equal(title, pr.Title)
 }
 
+func TestSyncMRReturnsErrorWhenClientReturnsNilPR(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := context.Background()
+
+	mc := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return nil, nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{{
+		Owner: "acme", Name: "widget", PlatformHost: "github.com",
+	}}, time.Minute, nil, nil)
+
+	err := syncer.SyncMR(ctx, "acme", "widget", 10)
+	require.Error(err)
+	require.ErrorContains(err, "client returned nil pull request")
+
+	stored, getErr := database.GetMergeRequest(ctx, "acme", "widget", 10)
+	require.NoError(getErr)
+	require.Nil(stored)
+}
+
+func TestSyncIssueReturnsErrorWhenClientReturnsNilIssue(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := context.Background()
+
+	mc := &mockClient{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return nil, nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{{
+		Owner: "acme", Name: "widget", PlatformHost: "github.com",
+	}}, time.Minute, nil, nil)
+
+	err := syncer.SyncIssue(ctx, "acme", "widget", 5)
+	require.Error(err)
+	require.ErrorContains(err, "client returned nil issue")
+
+	stored, getErr := database.GetIssue(ctx, "acme", "widget", 5)
+	require.NoError(getErr)
+	require.Nil(stored)
+}
+
 func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3312,7 +3358,9 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 	closedAt := makeTimestamp(now)
 	pr.ClosedAt = closedAt
 	pr.Labels = []*gh.Label{buildGitHubLabel(901, "bug", "Old bug", "d73a4a", true)}
-	_, err = d.UpsertMergeRequest(ctx, NormalizePR(repoID, pr))
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
 	require.NoError(err)
 	storedBefore, err := d.GetMergeRequest(ctx, "owner", "repo", 7)
 	require.NoError(err)
@@ -3354,7 +3402,9 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 	otherPR.State = new("closed")
 	otherPR.ClosedAt = makeTimestamp(now)
 	otherPR.Labels = []*gh.Label{buildGitHubLabel(990, "other-host", "Other host label", "333333", false)}
-	otherMRID, err := d.UpsertMergeRequest(ctx, NormalizePR(otherRepoID, otherPR))
+	otherNormalizedPR, err := NormalizePR(otherRepoID, otherPR)
+	require.NoError(err)
+	otherMRID, err := d.UpsertMergeRequest(ctx, otherNormalizedPR)
 	require.NoError(err)
 	require.NoError(d.ReplaceMergeRequestLabels(ctx, otherRepoID, otherMRID, []db.Label{{
 		PlatformID:  990,
@@ -3368,7 +3418,9 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 	pr.State = new("closed")
 	pr.ClosedAt = makeTimestamp(now)
 	pr.Labels = []*gh.Label{buildGitHubLabel(901, "bug", "Old bug", "d73a4a", true)}
-	targetMRID, err := d.UpsertMergeRequest(ctx, NormalizePR(repoID, pr))
+	targetNormalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	targetMRID, err := d.UpsertMergeRequest(ctx, targetNormalizedPR)
 	require.NoError(err)
 	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, targetMRID, []db.Label{{
 		PlatformID:  901,
@@ -3421,7 +3473,9 @@ func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 	issueBody := ""
 	issueID := int64(900009)
 	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1001, "bug", "Old bug", "d73a4a", true)}}
-	issueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(repoID, issue))
+	normalizedIssue, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	issueRowID, err := d.UpsertIssue(ctx, normalizedIssue)
 	require.NoError(err)
 	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueRowID, []db.Label{{PlatformID: 1001, Name: "bug", Description: "Old bug", Color: "d73a4a", IsDefault: true, UpdatedAt: now}}))
 
@@ -3461,7 +3515,9 @@ func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *te
 	otherBody := ""
 	otherID := int64(800009)
 	otherIssue := &gh.Issue{ID: &otherID, Number: &issueNumber, Title: &otherTitle, State: &otherState, HTMLURL: &otherURL, Body: &otherBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1901, "other-host", "Other host label", "333333", false)}}
-	otherIssueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(otherRepoID, otherIssue))
+	otherNormalizedIssue, err := NormalizeIssue(otherRepoID, otherIssue)
+	require.NoError(err)
+	otherIssueRowID, err := d.UpsertIssue(ctx, otherNormalizedIssue)
 	require.NoError(err)
 	require.NoError(d.ReplaceIssueLabels(ctx, otherRepoID, otherIssueRowID, []db.Label{{PlatformID: 1901, Name: "other-host", Description: "Other host label", Color: "333333", UpdatedAt: now}}))
 
@@ -3471,7 +3527,9 @@ func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *te
 	issueBody := ""
 	issueID := int64(900009)
 	issue := &gh.Issue{ID: &issueID, Number: &issueNumber, Title: &issueTitle, State: &issueState, HTMLURL: &issueURL, Body: &issueBody, CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now), Labels: []*gh.Label{buildGitHubLabel(1001, "bug", "Old bug", "d73a4a", true)}}
-	issueRowID, err := d.UpsertIssue(ctx, NormalizeIssue(repoID, issue))
+	normalizedIssue, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	issueRowID, err := d.UpsertIssue(ctx, normalizedIssue)
 	require.NoError(err)
 	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueRowID, []db.Label{{PlatformID: 1001, Name: "bug", Description: "Old bug", Color: "d73a4a", IsDefault: true, UpdatedAt: now}}))
 
@@ -4985,8 +5043,8 @@ func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {
 
 	// Nil fetcher entry and a fetcher with no tracker both skipped.
 	syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com":            nil,
-		"ghe.corp.example.com":  NewGraphQLFetcher("tok", "ghe.corp.example.com", nil, nil),
+		"github.com":           nil,
+		"ghe.corp.example.com": NewGraphQLFetcher("tok", "ghe.corp.example.com", nil, nil),
 	})
 
 	assert.Empty(syncer.GQLRateTrackers())
@@ -5008,9 +5066,9 @@ func TestSyncerGQLRateTrackersMixed(t *testing.T) {
 
 	// Mix of nil fetcher, fetcher-without-tracker, and valid fetcher.
 	syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"nil.example.com":       nil,
+		"nil.example.com":        nil,
 		"no-tracker.example.com": NewGraphQLFetcher("tok", "no-tracker.example.com", nil, nil),
-		"github.com":            NewGraphQLFetcher("tok", "github.com", validRT, nil),
+		"github.com":             NewGraphQLFetcher("tok", "github.com", validRT, nil),
 	})
 
 	got := syncer.GQLRateTrackers()

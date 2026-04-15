@@ -25,6 +25,20 @@ func githubLabel(id int64, name, description, color string, isDefault bool) *gh.
 	}
 }
 
+func TestNormalizePRNilInputReturnsError(t *testing.T) {
+	pr, err := NormalizePR(7, nil)
+	require.Error(t, err)
+	require.Nil(t, pr)
+	require.ErrorContains(t, err, "nil pull request")
+}
+
+func TestNormalizeIssueNilInputReturnsError(t *testing.T) {
+	issue, err := NormalizeIssue(10, nil)
+	require.Error(t, err)
+	require.Nil(t, issue)
+	require.ErrorContains(t, err, "nil issue")
+}
+
 func TestNormalizePR_OpenPR(t *testing.T) {
 	assert := Assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -50,7 +64,8 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 		Base: &gh.PullRequestBranch{Ref: new("main")},
 	}
 
-	pr := NormalizePR(7, ghPR)
+	pr, err := NormalizePR(7, ghPR)
+	require.NoError(t, err)
 
 	assert.Equal(int64(7), pr.RepoID)
 	assert.Equal(int64(1001), pr.PlatformID)
@@ -84,7 +99,8 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 		User:     &gh.User{Login: new("bob")},
 	}
 
-	pr := NormalizePR(3, ghPR)
+	pr, err := NormalizePR(3, ghPR)
+	require.NoError(t, err)
 
 	assert.Equal("merged", pr.State)
 	require.NotNil(t, pr.MergedAt)
@@ -103,7 +119,8 @@ func TestNormalizePR_Labels(t *testing.T) {
 		},
 	}
 
-	pr := NormalizePR(9, ghPR)
+	pr, err := NormalizePR(9, ghPR)
+	require.NoError(err)
 
 	require.Equal([]db.Label{{
 		PlatformID:  5001,
@@ -127,7 +144,8 @@ func TestNormalizeIssue_Labels(t *testing.T) {
 		},
 	}
 
-	issue := NormalizeIssue(10, ghIssue)
+	issue, err := NormalizeIssue(10, ghIssue)
+	require.NoError(err)
 
 	require.Equal([]db.Label{{
 		PlatformID:  6001,
@@ -154,7 +172,8 @@ func TestNormalizePR_LabelsSkipsMalformedLabels(t *testing.T) {
 		},
 	}
 
-	pr := NormalizePR(9, ghPR)
+	pr, err := NormalizePR(9, ghPR)
+	require.NoError(err)
 
 	require.Equal([]db.Label{{
 		PlatformID:  5002,
@@ -178,7 +197,8 @@ func TestNormalizeIssue_LabelsFallbackToCreatedAt(t *testing.T) {
 		},
 	}
 
-	issue := NormalizeIssue(10, ghIssue)
+	issue, err := NormalizeIssue(10, ghIssue)
+	require.NoError(err)
 
 	require.Equal([]db.Label{{
 		PlatformID:  6002,
@@ -308,7 +328,8 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 				State:          new("open"),
 				MergeableState: tt.state,
 			}
-			pr := NormalizePR(1, ghPR)
+			pr, err := NormalizePR(1, ghPR)
+			require.NoError(t, err)
 			Assert.Equal(t, tt.want, pr.MergeableState)
 		})
 	}
@@ -533,7 +554,8 @@ func TestNormalizePR_BotUserDisplayName(t *testing.T) {
 		},
 	}
 
-	pr := NormalizePR(1, ghPR)
+	pr, err := NormalizePR(1, ghPR)
+	require.NoError(t, err)
 
 	assert.Equal("renovate[bot]", pr.Author)
 	assert.Equal("renovate[bot]", pr.AuthorDisplayName,

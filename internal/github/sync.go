@@ -488,8 +488,8 @@ func (s *Syncer) TriggerRun(ctx context.Context) {
 	}()
 }
 
-// clientFor returns the Client for the given repo's host,
-// falling back to "github.com" if no match is found.
+// clientFor returns the Client for the given repo's host.
+// Repos with an empty host default to "github.com".
 func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
 	host := repo.PlatformHost
 	if host == "" {
@@ -497,11 +497,6 @@ func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
 	}
 	if c, ok := s.clients[host]; ok && c != nil {
 		return c, nil
-	}
-	if host != "github.com" {
-		if c, ok := s.clients["github.com"]; ok && c != nil {
-			return c, nil
-		}
 	}
 	return nil, fmt.Errorf("no client configured for host %s", host)
 }
@@ -1427,7 +1422,10 @@ func (s *Syncer) indexUpsertMR(
 	repoID int64,
 	ghPR *gh.PullRequest,
 ) error {
-	normalized := NormalizePR(repoID, ghPR)
+	normalized, err := NormalizePR(repoID, ghPR)
+	if err != nil {
+		return fmt.Errorf("normalize MR #%d: %w", ghPR.GetNumber(), err)
+	}
 
 	existing, err := s.db.GetMergeRequest(
 		ctx, repo.Owner, repo.Name, ghPR.GetNumber(),
@@ -1603,7 +1601,10 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	bulk *BulkIssue,
 ) error {
 	number := bulk.Issue.GetNumber()
-	normalized := NormalizeIssue(repoID, bulk.Issue)
+	normalized, err := NormalizeIssue(repoID, bulk.Issue)
+	if err != nil {
+		return fmt.Errorf("normalize issue #%d: %w", number, err)
+	}
 
 	// Preserve derived fields that NormalizeIssue doesn't populate
 	// from bulk data. Without this, upsert overwrites them with
@@ -1742,7 +1743,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 	cloneFetchOK bool,
 ) error {
 	number := bulk.PR.GetNumber()
-	normalized := NormalizePR(repoID, bulk.PR)
+	normalized, err := NormalizePR(repoID, bulk.PR)
+	if err != nil {
+		return fmt.Errorf("normalize MR #%d: %w", number, err)
+	}
 
 	// Preserve derived fields that NormalizePR doesn't populate.
 	// Without this, upsert overwrites them with zero values; if
@@ -2034,7 +2038,10 @@ func (s *Syncer) fetchMRDetail(
 		)
 	}
 
-	normalized := NormalizePR(repoID, fullPR)
+	normalized, err := NormalizePR(repoID, fullPR)
+	if err != nil {
+		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
+	}
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
@@ -2191,7 +2198,10 @@ func (s *Syncer) fetchIssueDetail(
 		)
 	}
 
-	normalized := NormalizeIssue(repoID, ghIssue)
+	normalized, err := NormalizeIssue(repoID, ghIssue)
+	if err != nil {
+		return calls, fmt.Errorf("normalize issue #%d: %w", number, err)
+	}
 	issueID, err := s.db.UpsertIssue(ctx, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -2515,7 +2525,10 @@ func (s *Syncer) syncOpenIssue(
 	ghIssue *gh.Issue,
 	forceRefresh bool,
 ) error {
-	normalized := NormalizeIssue(repoID, ghIssue)
+	normalized, err := NormalizeIssue(repoID, ghIssue)
+	if err != nil {
+		return fmt.Errorf("normalize issue #%d: %w", ghIssue.GetNumber(), err)
+	}
 
 	existing, err := s.db.GetIssue(
 		ctx, repo.Owner, repo.Name, ghIssue.GetNumber(),
@@ -2635,7 +2648,10 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		return fmt.Errorf("get closed issue #%d for labels: %w", number, err)
 	}
 	if issue != nil {
-		normalized := NormalizeIssue(repoID, ghIssue)
+		normalized, err := NormalizeIssue(repoID, ghIssue)
+		if err != nil {
+			return fmt.Errorf("normalize closed issue #%d: %w", number, err)
+		}
 		if err := s.replaceIssueLabels(ctx, repoID, issue.ID, normalized.Labels); err != nil {
 			return fmt.Errorf("persist labels for closed issue #%d: %w", number, err)
 		}
@@ -2957,7 +2973,16 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			for _, ghPR := range prs {
-				normalized := NormalizePR(repoID, ghPR)
+				normalized, err := NormalizePR(repoID, ghPR)
+				if err != nil {
+					slog.Warn("backfill normalize PR failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghPR.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
+				}
 				if mrID, uErr := s.db.UpsertMergeRequest(
 					ctx, normalized,
 				); uErr != nil {
@@ -3023,7 +3048,16 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			for _, ghIssue := range issues {
-				normalized := NormalizeIssue(repoID, ghIssue)
+				normalized, err := NormalizeIssue(repoID, ghIssue)
+				if err != nil {
+					slog.Warn("backfill normalize issue failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghIssue.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
+				}
 				if issueID, uErr := s.db.UpsertIssue(
 					ctx, normalized,
 				); uErr != nil {
@@ -3173,7 +3207,10 @@ func (s *Syncer) syncMRWithHost(
 		)
 	}
 
-	normalized := NormalizePR(repoID, ghPR)
+	normalized, err := NormalizePR(repoID, ghPR)
+	if err != nil {
+		return fmt.Errorf("normalize MR %s/%s#%d: %w", owner, name, number, err)
+	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
 		// Resolve directly instead of using s.resolveDisplayName to
@@ -3320,7 +3357,10 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 		return fmt.Errorf("get issue %s/%s#%d: client returned nil issue", owner, name, number)
 	}
 
-	normalized := NormalizeIssue(repoID, ghIssue)
+	normalized, err := NormalizeIssue(repoID, ghIssue)
+	if err != nil {
+		return fmt.Errorf("normalize issue %s/%s#%d: %w", owner, name, number, err)
+	}
 	issueID, err := s.db.UpsertIssue(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert issue #%d: %w", number, err)
@@ -3442,7 +3482,10 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		return fmt.Errorf("get closed MR #%d for labels: %w", number, err)
 	}
 	if mr != nil {
-		normalized := NormalizePR(repoID, ghPR)
+		normalized, err := NormalizePR(repoID, ghPR)
+		if err != nil {
+			return fmt.Errorf("normalize closed PR #%d: %w", number, err)
+		}
 		if err := s.replaceMergeRequestLabels(ctx, repoID, mr.ID, normalized.Labels); err != nil {
 			return fmt.Errorf("persist labels for closed MR #%d: %w", number, err)
 		}

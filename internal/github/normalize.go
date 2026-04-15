@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -27,15 +28,19 @@ func sanitizeURL(raw string) string {
 	return ""
 }
 
+var (
+	ErrNilPullRequest = errors.New("nil pull request")
+	ErrNilIssue       = errors.New("nil issue")
+)
+
 // NormalizePR converts a GitHub PullRequest to a db.MergeRequest.
 // If the PR is merged, State is set to "merged". LastActivityAt is
 // initialized to UpdatedAt.
-func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.MergeRequest {
-	mr := &db.MergeRequest{RepoID: repoID}
+func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 	if ghPR == nil {
-		return mr
+		return nil, ErrNilPullRequest
 	}
-	mr = &db.MergeRequest{
+	mr := &db.MergeRequest{
 		RepoID:            repoID,
 		PlatformID:        ghPR.GetID(),
 		Number:            ghPR.GetNumber(),
@@ -83,7 +88,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) *db.MergeRequest {
 	mr.MergeableState = ghPR.GetMergeableState()
 	mr.Labels = normalizeLabels(ghPR.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
 
-	return mr
+	return mr, nil
 }
 
 // NormalizeCommentEvent converts a GitHub IssueComment to a db.MREvent.
@@ -337,12 +342,11 @@ func appName(r *gh.CheckRun) string {
 // --- Issues ---
 
 // NormalizeIssue converts a GitHub Issue to a db.Issue.
-func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
-	issue := &db.Issue{RepoID: repoID}
+func NormalizeIssue(repoID int64, ghIssue *gh.Issue) (*db.Issue, error) {
 	if ghIssue == nil {
-		return issue
+		return nil, ErrNilIssue
 	}
-	issue = &db.Issue{
+	issue := &db.Issue{
 		RepoID:       repoID,
 		PlatformID:   ghIssue.GetID(),
 		Number:       ghIssue.GetNumber(),
@@ -365,7 +369,7 @@ func NormalizeIssue(repoID int64, ghIssue *gh.Issue) *db.Issue {
 		issue.ClosedAt = &t
 	}
 	issue.Labels = normalizeLabels(ghIssue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
-	return issue
+	return issue, nil
 }
 
 func itemLabelUpdatedAt(updatedAt, createdAt time.Time) time.Time {
