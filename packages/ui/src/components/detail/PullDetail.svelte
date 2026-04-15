@@ -389,15 +389,16 @@
         <div class="actions-row">
           {#if pr.State === "open"}
             {#if pr.IsDraft}
-              <ReadyForReviewButton {owner} {name} {number} />
+              <ReadyForReviewButton {owner} {name} {number} size="sm" />
             {/if}
-            <ApproveButton {owner} {name} {number} />
+            <ApproveButton {owner} {name} {number} size="sm" />
             {#if workflowApproval?.checked && workflowApproval.required}
               <ApproveWorkflowsButton
                 {owner}
                 {name}
                 {number}
                 count={workflowApproval.count ?? 0}
+                size="sm"
               />
             {/if}
             {#if repoSettings}
@@ -406,6 +407,7 @@
                 onclick={() => { showMergeModal = true; }}
                 tone="success"
                 surface="solid"
+                size="sm"
               >
                 {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
                   Squash and merge

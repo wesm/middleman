@@ -10,9 +10,10 @@
     name: string;
     number: number;
     count: number;
+    size?: "sm" | "md";
   }
 
-  const { owner, name, number, count }: Props = $props();
+  const { owner, name, number, count, size = "md" }: Props = $props();
 
   let submitting = $state(false);
   let error = $state<string | null>(null);
@@ -55,6 +56,7 @@
     disabled={submitting}
     tone="workflow"
     surface="soft"
+    {size}
   >
     {submitting ? "Approving workflows…" : label}
   </ActionButton>

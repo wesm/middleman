@@ -53,10 +53,12 @@
 
 <style>
   .action-button {
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+    min-height: 28px;
     font-size: 13px;
     font-weight: 500;
     padding: 6px 14px;
@@ -73,6 +75,7 @@
   }
 
   .action-button--sm {
+    min-height: 24px;
     padding: 4px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -109,10 +112,11 @@
   .action-button--solid.action-button--success {
     background: #1a7f37;
     color: #e6ffe6;
-    border: none;
+    border: 1px solid #1a7f37;
   }
   .action-button--solid.action-button--success:hover:not(:disabled) {
     background: #176b2e;
+    border-color: #176b2e;
   }
 
   /* Success soft — approve */

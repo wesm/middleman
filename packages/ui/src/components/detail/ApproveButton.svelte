@@ -9,9 +9,10 @@
     owner: string;
     name: string;
     number: number;
+    size?: "sm" | "md";
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, size = "md" }: Props = $props();
 
   let expanded = $state(false);
   let body = $state("");
@@ -78,6 +79,7 @@
       onclick={() => { expanded = true; }}
       tone="success"
       surface="soft"
+      {size}
     >
       <svg
         width="14"
