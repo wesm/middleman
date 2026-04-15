@@ -175,7 +175,16 @@
         </span>
       {/if}
       {#if pr.MergeableState === "dirty"}
-        <span class="conflict-dot" title="Has merge conflicts"></span>
+        <span class="conflict-icon" title="Has merge conflicts">
+          <!-- git-merge-conflict icon, ISC License, Copyright (c) Lucide Icons and Contributors -->
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 6h4a2 2 0 0 1 2 2v7" />
+            <path d="M6 12v9" />
+            <path d="M9 3 3 9" />
+            <path d="M9 9 3 3" />
+            <circle cx="18" cy="18" r="3" />
+          </svg>
+        </span>
       {/if}
       <span
         class="star-btn"
@@ -383,11 +392,10 @@
     color: var(--accent-blue);
   }
 
-  .conflict-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent-amber);
+  .conflict-icon {
+    display: flex;
+    align-items: center;
+    color: var(--accent-amber);
     flex-shrink: 0;
   }
 
