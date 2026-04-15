@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -355,6 +356,13 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
+
+type staleReadyForReviewError struct{ err error }
+
+func (e *staleReadyForReviewError) Error() string      { return e.err.Error() }
+func (e *staleReadyForReviewError) Unwrap() error      { return e.err }
+func (e *staleReadyForReviewError) StatusCode() int    { return http.StatusNotFound }
+func (e *staleReadyForReviewError) IsStaleState() bool { return true }
 
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64 {
@@ -3038,6 +3046,93 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
+}
+
+func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
+	require := require.New(t)
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			return nil, errors.New("marking acme/widget#1 ready for review: draft review threads still pending")
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
+	require.Equal(
+		"marking acme/widget#1 ready for review: draft review threads still pending",
+		*resp.ApplicationproblemJSONDefault.Detail,
+	)
+}
+
+func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
+	require := require.New(t)
+
+	staleErr := &staleReadyForReviewError{
+		err: errors.New(
+			"marking acme/widget#1 ready for review: graphql errors: Could not resolve to a PullRequest with the global id of 'PR_kwDOAAABc84'.",
+		),
+	}
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			return nil, staleErr
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			title := "Already ready"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "octocat"
+			draft := false
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				User:      &gh.User{Login: &author},
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	pr.IsDraft = true
+	_, err = database.UpsertMergeRequest(context.Background(), pr)
+	require.NoError(err)
+
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	pr, err = database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.False(pr.IsDraft)
 }
 
 func TestAPIClosePR422Merged(t *testing.T) {

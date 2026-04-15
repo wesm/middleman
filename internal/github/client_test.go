@@ -2,11 +2,13 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,6 +142,91 @@ func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
 			require.ErrorContains(err, tt.want)
 		})
 	}
+}
+
+func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
+	require := require.New(t)
+	var calls int
+	var methods []string
+	var contentTypes []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		methods = append(methods, r.Method)
+		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"markPullRequestReadyForReview":{"pullRequest":{"databaseId":1001,"number":141,"title":"Ready PR","state":"OPEN","isDraft":false,"body":"body","url":"https://github.com/wesm/middleman/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://github.com/wesm/middleman"},"labels":{"nodes":[]}}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	require.NoError(err)
+
+	c := &liveClient{
+		gh:              ghClient,
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	pr, err := c.MarkPullRequestReadyForReview(context.Background(), "wesm", "middleman", 141)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.Equal(141, pr.GetNumber())
+	require.Equal("Ready PR", pr.GetTitle())
+	require.False(pr.GetDraft())
+	require.Equal(2, calls)
+	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
+	require.Equal([]string{"application/json", "application/json"}, contentTypes)
+}
+
+func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) {
+	require := require.New(t)
+	call := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		call++
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("expected application/json content type, got %q", r.Header.Get("Content-Type"))
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if call == 1 {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"markPullRequestReadyForReview":null},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a PullRequest with the global id of 'PR_kwDOAAABc84'."}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	require.NoError(err)
+
+	c := &liveClient{
+		gh:              ghClient,
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	pr, err := c.MarkPullRequestReadyForReview(context.Background(), "wesm", "middleman", 141)
+	require.Nil(pr)
+	require.Error(err)
+	require.ErrorContains(err, "Could not resolve to a PullRequest")
+
+	var statusErr interface{ StatusCode() int }
+	require.True(errors.As(err, &statusErr), "expected status-bearing error, got %T", err)
+	require.Equal(http.StatusNotFound, statusErr.StatusCode())
+
+	var staleErr interface{ IsStaleState() bool }
+	require.True(errors.As(err, &staleErr), "expected stale-state error, got %T", err)
+	require.True(staleErr.IsStaleState())
 }
 
 // TestNewClientWiresETagTransport verifies that NewClient installs the

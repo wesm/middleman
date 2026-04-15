@@ -971,7 +971,38 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 
 	pr, err := client.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
-		return nil, huma.Error502BadGateway("GitHub API error")
+		type readyForReviewFailure interface {
+			StatusCode() int
+			IsStaleState() bool
+		}
+
+		var readyErr readyForReviewFailure
+		var ghErr *gh.ErrorResponse
+		staleState := errors.As(err, &readyErr) && readyErr.IsStaleState()
+		if !staleState {
+			staleState = errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound
+		}
+		if staleState {
+			if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
+				slog.Warn(
+					"sync after ready for review stale state failed",
+					"owner", input.Owner,
+					"repo", input.Name,
+					"number", input.Number,
+					"err", syncErr,
+				)
+			} else {
+				return &actionStatusOutput{Body: actionStatusBody{Status: "ready_for_review"}}, nil
+			}
+		}
+		slog.Warn(
+			"ready for review failed",
+			"owner", input.Owner,
+			"repo", input.Name,
+			"number", input.Number,
+			"err", err,
+		)
+		return nil, huma.Error502BadGateway(err.Error())
 	}
 	if pr == nil {
 		// No PR payload means we cannot verify GitHub accepted the

@@ -9,9 +9,10 @@
     owner: string;
     name: string;
     number: number;
+    size?: "sm" | "md";
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, size = "md" }: Props = $props();
 
   let submitting = $state(false);
   let error = $state<string | null>(null);
@@ -43,6 +44,7 @@
     disabled={submitting}
     tone="info"
     surface="soft"
+    {size}
   >
     {submitting ? "Publishing…" : "Ready for review"}
   </ActionButton>
