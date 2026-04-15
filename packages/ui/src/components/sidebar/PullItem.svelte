@@ -176,6 +176,7 @@
       {/if}
       {#if pr.MergeableState === "dirty"}
         <span class="conflict-icon" title="Has merge conflicts">
+          <!-- git-merge-conflict icon, ISC License, Copyright (c) Lucide Icons and Contributors -->
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 6h4a2 2 0 0 1 2 2v7" />
             <path d="M6 12v9" />
