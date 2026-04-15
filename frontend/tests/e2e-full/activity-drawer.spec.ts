@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { DiffResult, FilesResult } from "@middleman/ui/api/types";
 
 // Minimal diff fixture: one modified file.
@@ -111,6 +111,29 @@ async function mockDiffForAllPRs(
 async function waitForActivityTable(page: Page): Promise<void> {
   await page.locator(".activity-table tbody .activity-row").first()
     .waitFor({ state: "visible", timeout: 10_000 });
+}
+
+async function expectDiffFileVisibleInScrollArea(
+  diffArea: Locator,
+  filePath: string,
+): Promise<void> {
+  await expect.poll(async () => {
+    return await diffArea.evaluate((container, path) => {
+      const file = container.querySelector<HTMLElement>(
+        `[data-file-path="${CSS.escape(path)}"]`,
+      );
+      if (!file) {
+        return false;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      const fileRect = file.getBoundingClientRect();
+      return (
+        fileRect.bottom > containerRect.top &&
+        fileRect.top < containerRect.bottom
+      );
+    }, filePath);
+  }).toBe(true);
 }
 
 test.describe("activity drawer", () => {
@@ -285,7 +308,9 @@ test.describe("activity drawer", () => {
     await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
 
     const sidebar = drawer.locator(".files-layout > .files-sidebar");
-    const diffArea = drawer.locator(".files-layout > .files-main");
+    const diffArea = drawer.locator(".files-layout > .files-main .diff-area");
+
+    await expect(diffArea).toBeVisible();
 
     // Sidebar lists all 20 fixture files; the first one is active
     // by default.
@@ -305,9 +330,7 @@ test.describe("activity drawer", () => {
     await expect(
       sidebar.locator(".diff-file-row.diff-file-row--active .diff-file-name"),
     ).toHaveText("file_5.go");
-    await expect(
-      diffArea.locator(".diff-file[data-file-path=\"src/file_5.go\"]"),
-    ).toBeInViewport();
+    await expectDiffFileVisibleInScrollArea(diffArea, "src/file_5.go");
   });
 
   test("drawer Files tab stacks sidebar on narrow viewports", async ({ page }) => {
@@ -376,8 +399,9 @@ test.describe("activity drawer", () => {
     await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
 
     const sidebar = drawer.locator(".files-layout > .files-sidebar");
-    const diffArea = drawer.locator(".files-layout > .files-main");
+    const diffArea = drawer.locator(".files-layout > .files-main .diff-area");
 
+    await expect(diffArea).toBeVisible();
     await expect(sidebar.locator(".diff-file-row")).toHaveCount(20);
 
     // Click the 12th file (file_11.go) and verify navigation.
@@ -385,9 +409,7 @@ test.describe("activity drawer", () => {
     await expect(
       sidebar.locator(".diff-file-row.diff-file-row--active .diff-file-name"),
     ).toHaveText("file_11.go");
-    await expect(
-      diffArea.locator(".diff-file[data-file-path=\"src/file_11.go\"]"),
-    ).toBeInViewport();
+    await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
   });
 
   test("issue drawer scrolls internally to bottom of content", async ({ page }) => {
