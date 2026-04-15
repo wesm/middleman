@@ -107,6 +107,7 @@ make vet        # go vet
 - No emojis in code or output
 - Database schema changes must be added as numbered SQL migrations in `internal/db/migrations/`
 - `internal/db/migrations/` is the source of truth for schema evolution
+- Follow `context/db-migrations.md` for migration rules; migrations are append-only history, so add a new numbered migration instead of editing old ones unless explicitly instructed
 - Add both `.up.sql` and `.down.sql` files for schema changes
 - Validate schema changes through `db.Open()` and application-level tests rather than testing `golang-migrate` internals
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.

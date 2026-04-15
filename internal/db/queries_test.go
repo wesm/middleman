@@ -1591,6 +1591,26 @@ func TestGetRepoByHostOwnerName(t *testing.T) {
 	assert.Nil(missing)
 }
 
+func TestRepoIdentifierCasefoldTriggers(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_repos (platform, platform_host, owner, name)
+		VALUES ('github', 'github.com', 'Acme', 'widget')`)
+	require.Error(err)
+	require.Contains(err.Error(), "repo identifiers must be lowercase")
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_repos SET name = 'Widget' WHERE id = ?`,
+		repoID,
+	)
+	require.Error(err)
+	require.Contains(err.Error(), "repo identifiers must be lowercase")
+}
+
 func TestWorkspaceCRUD(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1698,6 +1718,38 @@ func TestWorkspaceCRUD(t *testing.T) {
 	noSuch, err := d.GetWorkspace(ctx, "nonexistent")
 	require.NoError(err)
 	assert.Nil(noSuch)
+}
+
+func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     mr_number, mr_head_ref, worktree_path, tmux_session)
+		VALUES ('mixed', 'github.com', 'Acme', 'widget', 1, 'feature',
+		        '/tmp/mixed', 'mixed')`)
+	require.Error(err)
+	require.Contains(err.Error(), "workspace repo identifiers must be lowercase")
+
+	ws := &Workspace{
+		ID:           "lower",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     1,
+		MRHeadRef:    "feature",
+		WorktreePath: "/tmp/lower",
+		TmuxSession:  "lower",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_workspaces SET repo_name = 'Widget' WHERE id = 'lower'`)
+	require.Error(err)
+	require.Contains(err.Error(), "workspace repo identifiers must be lowercase")
 }
 
 func TestWorkspaceUniqueConstraint(t *testing.T) {
