@@ -254,8 +254,11 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			(3, 'comment', 'octo', datetime('now'), 'unique-comment')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
-		INSERT INTO middleman_kanban_state (merge_request_id, status)
-		VALUES (3, 'reviewing')`)
+		INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
+		VALUES
+			(1, 'new', '2024-01-01T00:00:00Z'),
+			(2, 'reviewing', '2024-01-02T00:00:00Z'),
+			(3, 'reviewing', '2024-01-03T00:00:00Z')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_issues (
@@ -331,6 +334,16 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	).Scan(&kanbanStatus)
 	require.NoError(err)
 	require.Equal("reviewing", kanbanStatus)
+
+	var mergedKanbanStatus string
+	err = d.ReadDB().QueryRow(`
+		SELECT ks.status
+		FROM middleman_kanban_state ks
+		JOIN middleman_merge_requests mr ON mr.id = ks.merge_request_id
+		WHERE mr.number = 1`,
+	).Scan(&mergedKanbanStatus)
+	require.NoError(err)
+	require.Equal("reviewing", mergedKanbanStatus)
 
 	var issueRepoID int
 	err = d.ReadDB().QueryRow(

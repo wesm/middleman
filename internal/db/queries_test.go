@@ -475,6 +475,39 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	Assert.Equal(t, repo1, prs[0].RepoID)
 }
 
+func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	prID := insertTestMR(t, d, repoID, 7, "mixed case path", baseTime())
+	require.NoError(d.UpdateDiffSHAs(ctx, repoID, 7, "head", "base", "merge"))
+
+	got, err := d.GetMergeRequest(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(prID, got.ID)
+
+	filtered, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		RepoOwner: "Owner",
+		RepoName:  "Repo",
+	})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal(prID, filtered[0].ID)
+
+	gotID, err := d.GetMRIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	assert.Equal(prID, gotID)
+
+	shas, err := d.GetDiffSHAs(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal("head", shas.DiffHeadSHA)
+}
+
 func TestListPullRequestsFilterBySearch(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -1198,6 +1231,33 @@ func TestGetIssue_AttachesLabels(t *testing.T) {
 	require.Equal("0075ca", issue.Labels[0].Color)
 	require.False(issue.Labels[0].IsDefault)
 	require.True(issue.Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	issueID := insertTestIssue(t, d, repoID, 7, "mixed case issue", baseTime())
+
+	got, err := d.GetIssue(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(issueID, got.ID)
+
+	filtered, err := d.ListIssues(ctx, ListIssuesOpts{
+		RepoOwner: "Owner",
+		RepoName:  "Repo",
+	})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal(issueID, filtered[0].ID)
+
+	gotID, err := d.GetIssueIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	assert.Equal(issueID, gotID)
 }
 
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {

@@ -150,13 +150,54 @@ FROM middleman_mr_events AS e
 JOIN mr_casefold_duplicates AS d
     ON d.duplicate_id = e.merge_request_id;
 
+CREATE TEMP TABLE mr_casefold_kanban_winners AS
+SELECT keep_id, status, updated_at
+FROM (
+    SELECT
+        candidates.keep_id,
+        ks.status,
+        ks.updated_at,
+        row_number() OVER (
+            PARTITION BY candidates.keep_id
+            ORDER BY
+                CASE WHEN ks.status <> 'new' THEN 0 ELSE 1 END,
+                julianday(ks.updated_at) DESC,
+                ks.updated_at DESC,
+                ks.status ASC
+        ) AS rn
+    FROM (
+        SELECT keep_id, keep_id AS merge_request_id
+        FROM mr_casefold_duplicates
+        UNION
+        SELECT keep_id, duplicate_id AS merge_request_id
+        FROM mr_casefold_duplicates
+    ) AS candidates
+    JOIN middleman_kanban_state AS ks
+        ON ks.merge_request_id = candidates.merge_request_id
+)
+WHERE rn = 1;
+
+UPDATE middleman_kanban_state
+SET
+    status = (
+        SELECT status
+        FROM mr_casefold_kanban_winners
+        WHERE keep_id = middleman_kanban_state.merge_request_id
+    ),
+    updated_at = (
+        SELECT updated_at
+        FROM mr_casefold_kanban_winners
+        WHERE keep_id = middleman_kanban_state.merge_request_id
+    )
+WHERE merge_request_id IN (
+    SELECT keep_id FROM mr_casefold_kanban_winners
+);
+
 INSERT OR IGNORE INTO middleman_kanban_state (
     merge_request_id, status, updated_at
 )
-SELECT d.keep_id, ks.status, ks.updated_at
-FROM middleman_kanban_state AS ks
-JOIN mr_casefold_duplicates AS d
-    ON d.duplicate_id = ks.merge_request_id;
+SELECT keep_id, status, updated_at
+FROM mr_casefold_kanban_winners;
 
 INSERT OR IGNORE INTO middleman_merge_request_labels (
     merge_request_id, label_id

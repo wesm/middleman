@@ -112,6 +112,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		if owner == "" || name == "" {
 			return nil, nil, fmt.Errorf("invalid repo filter %q: expected owner/name", repoFilter)
 		}
+		_, owner, name = canonicalRepoIdentifier("", owner, name)
 		conds = append(conds, "r.owner = ? AND r.name = ?")
 		args = append(args, owner, name)
 	}
@@ -221,6 +222,7 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 
 // GetStackForPR returns the stack and members for a specific PR, or nil if not in a stack.
 func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) (*Stack, []StackMemberWithPR, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var stack Stack
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at
