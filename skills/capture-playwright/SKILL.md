@@ -1,11 +1,17 @@
 ---
 name: capture-playwright
-description: Use when a screenshot or short video needs to be captured with Playwright and shared through the `gh image` GitHub CLI extension, especially when the extension may need installing or fails because browser cookie stores are missing.
+description: Use when a screenshot or short video needs to be captured with Playwright and saved to local disk, with optional upload through `gh image` (upload requires explicit user approval and must target a PR or issue).
 ---
 
 # capture-playwright
 
-Generate the artifact with Playwright first, then upload the saved file with `gh image`.
+Generate the artifact with Playwright and save it to local disk. **Do not upload by default.**
+
+## Upload Policy
+
+- **Never upload screenshots or videos that are not attached to a specific PR or issue.** Standalone uploads with no PR/issue target are forbidden.
+- **Default is local-only.** Always save artifacts to disk first. Treat that as the finished output unless the user explicitly asks for an upload.
+- **Before uploading any image or video, prompt the user for confirmation.** Ask the user to approve the upload, stating the file path and the target PR/issue. No exceptions — even if the workflow calls for it, ask first.
 
 Reference session: `http://127.0.0.1:8080/sessions/opencode%3Ases_2826059aeffeEtdyCVsVwnKi6R`
 
@@ -31,13 +37,21 @@ await context.close();
 const videoPath = await page.video()?.path();
 ```
 
-5. Upload with `gh image` and use the emitted markdown in the final reply or PR body:
+5. **Stop here by default.** Report the local artifact path to the user. Only proceed to upload if the user explicitly requests it.
+
+6. **If the user approves upload**, confirm the target PR or issue number first. Never upload without attaching to a specific PR or issue. Upload the file with `gh image`, then immediately attach it to the PR or issue via a comment — `gh image` alone does not bind the upload to any target:
 
 ```bash
-gh image "tmp/capture.png"
-gh image --repo owner/repo "tmp/capture.png"
-gh image "tmp/video.webm"
+# Upload and capture the markdown link
+IMAGE_MD=$(gh image --repo owner/repo "tmp/capture.png")
+
+# Attach to a PR or issue so the image is not a standalone upload
+gh pr comment <number> --repo owner/repo --body "$IMAGE_MD"
+# or for issues:
+gh issue comment <number> --repo owner/repo --body "$IMAGE_MD"
 ```
+
+**`gh image --repo owner/repo <file>` alone is insufficient** — it uploads without binding to a PR or issue. Always follow up with a comment command to attach.
 
 If video upload is rejected, keep the local video file, say that `gh image` appears image-only in this environment, and ask whether a screenshot link or a different upload path is preferred.
 
@@ -64,6 +78,6 @@ Tell the user to sign in to GitHub in Chrome, Brave, Edge, or Chromium on that m
 ## Output
 
 Return:
-- the local artifact path
-- the markdown link(s) printed by `gh image`
+- the local artifact path (always)
+- if uploaded: the markdown link(s) printed by `gh image` and the target PR/issue
 - a brief note if video upload had to fall back to screenshots or another path

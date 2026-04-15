@@ -978,9 +978,9 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 
 		var readyErr readyForReviewFailure
 		var ghErr *gh.ErrorResponse
-		staleState := errors.As(err, &readyErr) && readyErr.IsStaleState()
+		staleState := errors.As(err, &readyErr) && readyErr != nil && readyErr.IsStaleState()
 		if !staleState {
-			staleState = errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound
+			staleState = errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound
 		}
 		if staleState {
 			if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
