@@ -37,8 +37,12 @@
     onExpand = undefined,
   }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
+  // eslint-disable-next-line svelte/prefer-writable-derived -- $derived.writable not in svelte 5.55
+  let committedWidth = $state(sidebarWidth);
+  $effect(() => { committedWidth = sidebarWidth; });
   let dragWidth: number | null = $state(null);
-  let currentWidth = $derived(dragWidth ?? sidebarWidth);
+  let currentWidth = $derived(dragWidth ?? committedWidth);
 
   function startResize(event: MouseEvent): void {
     event.preventDefault();
@@ -58,7 +62,9 @@
     function onUp(): void {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      onSidebarResize?.(currentWidth);
+      const finalWidth = currentWidth;
+      onSidebarResize?.(finalWidth);
+      committedWidth = finalWidth;
       dragWidth = null;
     }
 
@@ -97,8 +103,6 @@
         </svg>
       </button>
     </aside>
-  {:else if !hideSidebar && !sidebarOnly}
-    <aside class="sidebar sidebar--collapsed"></aside>
   {/if}
 
   {#if hasMain}
