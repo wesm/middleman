@@ -1,17 +1,18 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("PR detail branch info", () => {
-  test("shows head and base branch in meta-row", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     await page.goto("/pulls/acme/widgets/1");
     await page.locator(".pull-detail")
       .waitFor({ state: "visible", timeout: 10_000 });
+  });
 
+  test("shows head and base branch buttons", async ({ page }) => {
     const metaBranch = page.locator(".meta-branch");
     await expect(metaBranch).toBeVisible();
 
     const branchBtns = metaBranch.locator(".branch-name-btn");
     await expect(branchBtns).toHaveCount(2);
-
     await expect(branchBtns.first()).not.toBeEmpty();
     await expect(branchBtns.last()).not.toBeEmpty();
 
@@ -19,16 +20,21 @@ test.describe("PR detail branch info", () => {
     await expect(arrow).toBeVisible();
   });
 
-  test("branch names match seeded fixture data", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1");
-    await page.locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+  test("click branch shows copied feedback", async ({
+    page, context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
-    const branchBtns = page.locator(
+    const headBtn = page.locator(
       ".meta-branch .branch-name-btn",
+    ).first();
+    await expect(headBtn).toHaveAttribute(
+      "title", "Click to copy",
     );
-    await expect(branchBtns.first())
-      .toHaveText("feature/caching");
-    await expect(branchBtns.last()).toHaveText("main");
+
+    await headBtn.click();
+
+    await expect(headBtn).toHaveClass(/branch-name-btn--copied/);
+    await expect(headBtn).toHaveAttribute("title", "Copied!");
   });
 });
