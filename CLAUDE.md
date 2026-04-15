@@ -116,6 +116,7 @@ make vet        # go vet
 - **Commit every turn** — always commit your work at the end of each turn, no exceptions
 - **Never amend commits** — always create new commits for fixes, never use `--amend`
 - **Never change branches** — don't create, switch, or delete branches without explicit permission
+- **Never bypass pre-commit hooks** — all commits must go through a hook-enforced Git commit path. Do not use `jj` or any other workflow to create, rewrite, or finalize commits in a way that skips the repository's Git hooks
 - Use conventional commit messages
 - Run tests before committing when applicable
 - Never push or pull unless explicitly asked
