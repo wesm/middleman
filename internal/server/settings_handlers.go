@@ -317,7 +317,7 @@ func (s *Server) handleAddRepo(
 	// Pre-check (racy but gives a fast 400 before the GitHub call).
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
-		if rp.Owner == body.Owner && rp.Name == body.Name {
+		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
 			writeError(w, http.StatusBadRequest,
 				body.Owner+"/"+body.Name+" is already configured")
@@ -342,7 +342,7 @@ func (s *Server) handleAddRepo(
 	// so concurrent activity/settings changes are not lost.
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
-		if rp.Owner == body.Owner && rp.Name == body.Name {
+		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
 			writeError(w, http.StatusBadRequest,
 				body.Owner+"/"+body.Name+" is already configured")
@@ -388,7 +388,10 @@ func (s *Server) handleRefreshRepo(
 
 	var target *config.Repo
 	for i := range repos {
-		if repos[i].Owner == owner && repos[i].Name == name {
+		if sameConfiguredRepo(
+			repos[i],
+			config.Repo{Owner: owner, Name: name},
+		) {
 			target = &repos[i]
 			break
 		}
@@ -422,7 +425,10 @@ func (s *Server) handleRefreshRepo(
 	stillExists := false
 	currentRepos := append([]config.Repo(nil), s.cfg.Repos...)
 	for _, rp := range currentRepos {
-		if rp.Owner == owner && rp.Name == name {
+		if sameConfiguredRepo(
+			rp,
+			config.Repo{Owner: owner, Name: name},
+		) {
 			stillExists = true
 			break
 		}
@@ -455,7 +461,10 @@ func (s *Server) handleDeleteRepo(
 	s.cfgMu.Lock()
 	idx := -1
 	for i, rp := range s.cfg.Repos {
-		if rp.Owner == owner && rp.Name == name {
+		if sameConfiguredRepo(
+			rp,
+			config.Repo{Owner: owner, Name: name},
+		) {
 			idx = i
 			break
 		}

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"io/fs"
 	"os"
@@ -212,6 +213,69 @@ func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) 
 	require.Equal("00ff00", color)
 }
 
+func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 7))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (7, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, owner, name,
+			created_at, backfill_pr_page, backfill_pr_complete,
+			backfill_issue_page, backfill_issue_complete
+		) VALUES
+			(1, 'github', 'github.com', 'Org', 'Foo', datetime('now'), 0, 0, 0, 0),
+			(2, 'github', 'github.com', 'org', 'foo', datetime('now'), 0, 0, 0, 0)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_merge_requests (
+			id, repo_id, platform_id, number, url, title, author, state,
+			created_at, updated_at, last_activity_at
+		) VALUES
+			(1, 1, 100, 1, 'https://github.com/Org/Foo/pull/1', 'PR', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now')),
+			(2, 2, 100, 1, 'https://github.com/org/foo/pull/1', 'PR', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now'))`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_workspaces (
+			id, platform_host, repo_owner, repo_name, mr_number, mr_head_ref,
+			worktree_path, tmux_session
+		) VALUES
+			('one', 'github.com', 'Org', 'Foo', 1, 'feature', '/tmp/one', 'one'),
+			('two', 'github.com', 'org', 'foo', 1, 'feature', '/tmp/two', 'two')`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	repos, err := d.ListRepos(context.Background())
+	require.NoError(err)
+	require.Len(repos, 1)
+	require.Equal("org", repos[0].Owner)
+	require.Equal("foo", repos[0].Name)
+
+	var prCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_merge_requests`).Scan(&prCount)
+	require.NoError(err)
+	require.Equal(1, prCount)
+
+	var workspaceCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_workspaces`).Scan(&workspaceCount)
+	require.NoError(err)
+	require.Equal(1, workspaceCount)
+}
+
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -319,6 +383,12 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000003_add_backfill_and_detail_columns.up.sql"
 	case 4:
 		return "000004_drop_legacy_schema_version.up.sql"
+	case 5:
+		return "000005_graphql_sync_and_labels.up.sql"
+	case 6:
+		return "000006_add_stacks.up.sql"
+	case 7:
+		return "000007_add_workspaces.up.sql"
 	default:
 		return ""
 	}

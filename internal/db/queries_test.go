@@ -306,6 +306,26 @@ func TestUpsertAndListRepos(t *testing.T) {
 	assert.Equal("beta", repos[1].Name)
 }
 
+func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	id, err := d.UpsertRepo(ctx, "github.com", "Org", "Foo")
+	require.NoError(err)
+
+	sameID, err := d.UpsertRepo(ctx, "github.com", "org", "foo")
+	require.NoError(err)
+	assert.Equal(id, sameID)
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("org", repos[0].Owner)
+	assert.Equal("foo", repos[0].Name)
+}
+
 func TestGetRepoByOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)

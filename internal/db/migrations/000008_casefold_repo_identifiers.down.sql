@@ -1,0 +1,2 @@
+-- Repository identifier casefolding is a one-way data cleanup.
+-- The original mixed-case spellings cannot be reconstructed.

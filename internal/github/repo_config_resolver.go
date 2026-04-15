@@ -16,6 +16,25 @@ func canonicalRepoName(name string) string {
 	return strings.ToLower(name)
 }
 
+func canonicalRepoOwner(owner string) string {
+	return strings.ToLower(owner)
+}
+
+func canonicalRepoHost(host string) string {
+	if host == "" {
+		host = "github.com"
+	}
+	return strings.ToLower(host)
+}
+
+func canonicalRepoRef(repo RepoRef) RepoRef {
+	return RepoRef{
+		Owner:        canonicalRepoOwner(repo.Owner),
+		Name:         canonicalRepoName(repo.Name),
+		PlatformHost: canonicalRepoHost(repo.PlatformHost),
+	}
+}
+
 func canonicalRepoPattern(pattern string) string {
 	return strings.ToLower(pattern)
 }
@@ -47,9 +66,9 @@ func FallbackConfiguredRepoRefs(
 			}
 		}
 		return []RepoRef{{
-			Owner:        raw.Owner,
-			Name:         raw.Name,
-			PlatformHost: host,
+			Owner:        canonicalRepoOwner(raw.Owner),
+			Name:         canonicalRepoName(raw.Name),
+			PlatformHost: canonicalRepoHost(host),
 		}}
 	}
 
@@ -144,9 +163,9 @@ func resolveConfiguredRepo(
 		}
 		status.MatchedRepoCount = 1
 		return status, []RepoRef{{
-			Owner:        canonicalOwner,
-			Name:         repo.GetName(),
-			PlatformHost: host,
+			Owner:        canonicalRepoOwner(canonicalOwner),
+			Name:         canonicalRepoName(repo.GetName()),
+			PlatformHost: canonicalRepoHost(host),
 		}}, nil
 	}
 
@@ -181,9 +200,9 @@ func resolveConfiguredRepo(
 			canonicalOwner = raw.Owner
 		}
 		matches = append(matches, RepoRef{
-			Owner:        canonicalOwner,
-			Name:         repo.GetName(),
-			PlatformHost: host,
+			Owner:        canonicalRepoOwner(canonicalOwner),
+			Name:         canonicalRepoName(repo.GetName()),
+			PlatformHost: canonicalRepoHost(host),
 		})
 	}
 	status.MatchedRepoCount = len(matches)
@@ -195,9 +214,8 @@ func appendExpandedRepo(
 	seen map[string]struct{},
 	repo RepoRef,
 ) {
-	key := strings.ToLower(repo.PlatformHost) + "\x00" +
-		strings.ToLower(repo.Owner) + "\x00" +
-		strings.ToLower(repo.Name)
+	repo = canonicalRepoRef(repo)
+	key := repo.PlatformHost + "\x00" + repo.Owner + "\x00" + repo.Name
 	if _, ok := seen[key]; ok {
 		return
 	}

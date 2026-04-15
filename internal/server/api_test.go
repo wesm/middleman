@@ -2632,6 +2632,27 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 	require.Equal(http.StatusBadRequest, resp.StatusCode())
 }
 
+func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "org", Name: "foo", PlatformHost: "github.com"},
+	})
+	ctx := context.Background()
+
+	seedPR(t, database, "Org", "Foo", 1)
+	seedPR(t, database, "org", "foo", 1)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("org", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("foo", (*resp.JSON200)[0].RepoName)
+}
+
 func TestAPIListIssuesStateFilter(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

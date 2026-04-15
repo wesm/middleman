@@ -133,6 +133,33 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 	}}, result.Expanded)
 }
 
+func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
+	assert := Assert.New(t)
+	client := &mockClient{
+		getRepositoryFn: func(
+			_ context.Context, _, _ string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:     new("Foo"),
+				Owner:    &gh.User{Login: new("Org")},
+				Archived: new(false),
+			}, nil
+		},
+	}
+
+	result := ResolveConfiguredRepos(
+		context.Background(),
+		map[string]Client{"github.com": client},
+		[]config.Repo{{Owner: "org", Name: "foo"}},
+	)
+
+	assert.Equal([]RepoRef{{
+		Owner:        "org",
+		Name:         "foo",
+		PlatformHost: "github.com",
+	}}, result.Expanded)
+}
+
 func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
 	assert := Assert.New(t)
 	client := &mockClient{
@@ -180,7 +207,7 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
 		Owner:        "acme",
-		Name:         "Widget-API",
+		Name:         "widget-api",
 		PlatformHost: "github.com",
 	}}, result.Expanded)
 }

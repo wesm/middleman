@@ -17,6 +17,13 @@ func sqlPlaceholders(count int) string {
 	return strings.Join(parts, ",")
 }
 
+func canonicalRepoIdentifier(host, owner, name string) (string, string, string) {
+	if host == "" {
+		host = "github.com"
+	}
+	return strings.ToLower(host), strings.ToLower(owner), strings.ToLower(name)
+}
+
 func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx,
@@ -379,9 +386,7 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 // UpsertRepo inserts a repo if it does not exist, then returns its ID.
 // host is the platform hostname (e.g. "github.com" or a GHE hostname).
 func (d *DB) UpsertRepo(ctx context.Context, host, owner, name string) (int64, error) {
-	if host == "" {
-		host = "github.com"
-	}
+	host, owner, name = canonicalRepoIdentifier(host, owner, name)
 	_, err := d.rw.ExecContext(ctx,
 		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
 		 VALUES ('github', ?, ?, ?)
@@ -473,6 +478,7 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 // always be unambiguous. The ORDER BY provides deterministic results as a
 // safety net if stale data from a previous config exists in the database.
 func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT id, platform, platform_host, owner, name,
@@ -2051,6 +2057,7 @@ func (d *DB) GetRepoByHostOwnerName(
 	ctx context.Context,
 	host, owner, name string,
 ) (*Repo, error) {
+	host, owner, name = canonicalRepoIdentifier(host, owner, name)
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT id, platform, platform_host, owner, name,
