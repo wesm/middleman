@@ -243,7 +243,41 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			(1, 1, 100, 1, 'https://github.com/Org/Foo/pull/1', 'PR', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now')),
 			(2, 2, 100, 1, 'https://github.com/org/foo/pull/1', 'PR', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now')),
+			(3, 2, 200, 2, 'https://github.com/org/foo/pull/2', 'Unique PR', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now'))`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_mr_events (
+			merge_request_id, event_type, author, created_at, dedupe_key
+		) VALUES
+			(3, 'comment', 'octo', datetime('now'), 'unique-comment')`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_kanban_state (merge_request_id, status)
+		VALUES (3, 'reviewing')`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_issues (
+			id, repo_id, platform_id, number, url, title, author, state,
+			created_at, updated_at, last_activity_at
+		) VALUES
+			(1, 2, 900, 9, 'https://github.com/org/foo/issues/9', 'Unique issue', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now'))`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_labels (
+			id, repo_id, platform_id, name, updated_at
+		) VALUES
+			(1, 2, 700, 'enhancement', datetime('now'))`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_starred_items (item_type, repo_id, number)
+		VALUES ('issue', 2, 9)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_stacks (id, repo_id, base_number, name)
+		VALUES (1, 2, 2, 'Unique stack')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_workspaces (
@@ -251,7 +285,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			worktree_path, tmux_session
 		) VALUES
 			('one', 'github.com', 'Org', 'Foo', 1, 'feature', '/tmp/one', 'one'),
-			('two', 'github.com', 'org', 'foo', 1, 'feature', '/tmp/two', 'two')`)
+			('two', 'github.com', 'org', 'foo', 1, 'feature', '/tmp/two', 'two'),
+			('three', 'github.com', 'org', 'foo', 2, 'feature-2', '/tmp/three', 'three')`)
 	require.NoError(err)
 	require.NoError(raw.Close())
 
@@ -268,12 +303,67 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var prCount int
 	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_merge_requests`).Scan(&prCount)
 	require.NoError(err)
-	require.Equal(1, prCount)
+	require.Equal(2, prCount)
+
+	var uniquePRRepoID int
+	err = d.ReadDB().QueryRow(
+		`SELECT repo_id FROM middleman_merge_requests WHERE number = 2`,
+	).Scan(&uniquePRRepoID)
+	require.NoError(err)
+	require.Equal(1, uniquePRRepoID)
+
+	var uniquePREventCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_mr_events e
+		JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
+		WHERE mr.number = 2`,
+	).Scan(&uniquePREventCount)
+	require.NoError(err)
+	require.Equal(1, uniquePREventCount)
+
+	var kanbanStatus string
+	err = d.ReadDB().QueryRow(`
+		SELECT ks.status
+		FROM middleman_kanban_state ks
+		JOIN middleman_merge_requests mr ON mr.id = ks.merge_request_id
+		WHERE mr.number = 2`,
+	).Scan(&kanbanStatus)
+	require.NoError(err)
+	require.Equal("reviewing", kanbanStatus)
+
+	var issueRepoID int
+	err = d.ReadDB().QueryRow(
+		`SELECT repo_id FROM middleman_issues WHERE number = 9`,
+	).Scan(&issueRepoID)
+	require.NoError(err)
+	require.Equal(1, issueRepoID)
+
+	var labelRepoID int
+	err = d.ReadDB().QueryRow(
+		`SELECT repo_id FROM middleman_labels WHERE name = 'enhancement'`,
+	).Scan(&labelRepoID)
+	require.NoError(err)
+	require.Equal(1, labelRepoID)
+
+	var starredRepoID int
+	err = d.ReadDB().QueryRow(
+		`SELECT repo_id FROM middleman_starred_items WHERE item_type = 'issue' AND number = 9`,
+	).Scan(&starredRepoID)
+	require.NoError(err)
+	require.Equal(1, starredRepoID)
+
+	var stackRepoID int
+	err = d.ReadDB().QueryRow(
+		`SELECT repo_id FROM middleman_stacks WHERE base_number = 2`,
+	).Scan(&stackRepoID)
+	require.NoError(err)
+	require.Equal(1, stackRepoID)
 
 	var workspaceCount int
 	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_workspaces`).Scan(&workspaceCount)
 	require.NoError(err)
-	require.Equal(1, workspaceCount)
+	require.Equal(2, workspaceCount)
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
