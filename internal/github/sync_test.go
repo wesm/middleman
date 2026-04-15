@@ -252,10 +252,14 @@ func (m *mockClient) MergePullRequest(
 }
 
 func (m *mockClient) EditPullRequest(
-	_ context.Context, _, _ string, _ int, state string,
+	_ context.Context, _, _ string, _ int, opts EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
 	m.trackCall()
-	return &gh.PullRequest{State: &state}, nil
+	pr := &gh.PullRequest{}
+	if opts.State != nil {
+		pr.State = opts.State
+	}
+	return pr, nil
 }
 
 func (m *mockClient) EditIssue(

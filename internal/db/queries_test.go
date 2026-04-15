@@ -1760,3 +1760,123 @@ func TestWorkspaceSummaries(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(missSum)
 }
+
+func TestUpdateMRTitleBody(t *testing.T) {
+	assert := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	mr := &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     12345,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "original title",
+		Author:         "author",
+		State:          "open",
+		Body:           "original body",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CommentCount:   5,
+		CIStatus:       "success",
+		ReviewDecision: "APPROVED",
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: base,
+	}
+	id, err := d.UpsertMergeRequest(ctx, mr)
+	assert.NoError(err)
+
+	ghUpdatedAt := base.Add(10 * time.Minute)
+	assert.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", ghUpdatedAt))
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	assert.NoError(err)
+	assert.NotNil(got)
+	assert.Equal("new title", got.Title)
+	assert.Equal("new body", got.Body)
+	assert.True(got.UpdatedAt.Equal(ghUpdatedAt), "UpdatedAt should be ghUpdatedAt")
+	assert.True(got.LastActivityAt.Equal(ghUpdatedAt), "LastActivityAt should be ghUpdatedAt")
+	// Derived fields must be preserved.
+	assert.Equal(5, got.CommentCount)
+	assert.Equal("success", got.CIStatus)
+	assert.Equal("APPROVED", got.ReviewDecision)
+}
+
+func TestUpdateMRTitleBodyPreservesNewerActivity(t *testing.T) {
+	assert := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "owner2", "repo2")
+	futureActivity := base.Add(1 * time.Hour)
+	mr := &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     99999,
+		Number:         2,
+		URL:            "https://github.com/owner2/repo2/pull/2",
+		Title:          "initial title",
+		Author:         "author",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: futureActivity,
+	}
+	id, err := d.UpsertMergeRequest(ctx, mr)
+	assert.NoError(err)
+
+	// updatedAt is 30 min, newer than base so the update applies.
+	updatedAt := base.Add(30 * time.Minute)
+	assert.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", updatedAt))
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)
+	assert.NoError(err)
+	assert.NotNil(got)
+	// UpdatedAt gets the 30-min value.
+	assert.True(got.UpdatedAt.Equal(updatedAt), "UpdatedAt should be updatedAt")
+	// LastActivityAt keeps the newer 1-hour value.
+	assert.True(got.LastActivityAt.Equal(futureActivity), "LastActivityAt should keep newer value")
+}
+
+func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
+	assert := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "owner3", "repo3")
+	newerUpdatedAt := base.Add(1 * time.Hour)
+	mr := &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     77777,
+		Number:         3,
+		URL:            "https://github.com/owner3/repo3/pull/3",
+		Title:          "current title",
+		Author:         "author",
+		State:          "open",
+		Body:           "current body",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      base,
+		UpdatedAt:      newerUpdatedAt,
+		LastActivityAt: newerUpdatedAt,
+	}
+	id, err := d.UpsertMergeRequest(ctx, mr)
+	assert.NoError(err)
+
+	// Stale update: updatedAt is older than existing row.
+	staleAt := base.Add(30 * time.Minute)
+	assert.NoError(d.UpdateMRTitleBody(ctx, id, "stale title", "stale body", staleAt))
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 3)
+	assert.NoError(err)
+	assert.NotNil(got)
+	assert.Equal("current title", got.Title, "stale update should be ignored")
+	assert.Equal("current body", got.Body, "stale update should be ignored")
+	assert.True(got.UpdatedAt.Equal(newerUpdatedAt), "updated_at should not regress")
+}

@@ -1027,6 +1027,29 @@ type MRDerivedFields struct {
 	LastActivityAt time.Time
 }
 
+// UpdateMRTitleBody updates only the title, body, updated_at, and
+// last_activity_at fields. last_activity_at is set to
+// MAX(existing, updatedAt) to preserve correct list ordering.
+// Derived fields (CommentCount, CIStatus, etc.) are untouched.
+func (d *DB) UpdateMRTitleBody(
+	ctx context.Context,
+	id int64,
+	title, body string,
+	updatedAt time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET title = ?, body = ?, updated_at = ?,
+		    last_activity_at = MAX(last_activity_at, ?)
+		WHERE id = ? AND updated_at <= ?`,
+		title, body, updatedAt, updatedAt, id, updatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr title/body: %w", err)
+	}
+	return nil
+}
+
 // UpdateMRDerivedFields writes computed fields back to the merge_requests row.
 func (d *DB) UpdateMRDerivedFields(
 	ctx context.Context,

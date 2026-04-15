@@ -22,6 +22,14 @@ type ForcePushEvent struct {
 	CreatedAt time.Time
 }
 
+// EditPullRequestOpts holds optional fields for editing a pull request.
+// Nil pointer fields are omitted from the GitHub API call.
+type EditPullRequestOpts struct {
+	State *string
+	Title *string
+	Body  *string
+}
+
 // Client is the interface for interacting with the GitHub API.
 type Client interface {
 	ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error)
@@ -43,7 +51,7 @@ type Client interface {
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
-	EditPullRequest(ctx context.Context, owner, repo string, number int, state string) (*gh.PullRequest, error)
+	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
 	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
@@ -905,10 +913,20 @@ func (c *liveClient) MergePullRequest(
 }
 
 func (c *liveClient) EditPullRequest(
-	ctx context.Context, owner, repo string, number int, state string,
+	ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
+	edit := &gh.PullRequest{}
+	if opts.State != nil {
+		edit.State = opts.State
+	}
+	if opts.Title != nil {
+		edit.Title = opts.Title
+	}
+	if opts.Body != nil {
+		edit.Body = opts.Body
+	}
 	pr, resp, err := c.gh.PullRequests.Edit(
-		ctx, owner, repo, number, &gh.PullRequest{State: &state},
+		ctx, owner, repo, number, edit,
 	)
 	c.trackRate(resp)
 	if err != nil {

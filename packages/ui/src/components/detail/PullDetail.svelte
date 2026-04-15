@@ -89,6 +89,100 @@
   let stateSubmitting = $state(false);
   let stateError = $state<string | null>(null);
 
+  // Title editing
+  let editingTitle = $state(false);
+  let titleDraft = $state("");
+  let savingTitle = $state(false);
+
+  function currentPR() {
+    return detailStore.getDetail()?.merge_request;
+  }
+
+  function startEditTitle(): void {
+    const mr = currentPR();
+    if (!mr) return;
+    titleDraft = mr.Title;
+    editingTitle = true;
+  }
+
+  function cancelEditTitle(): void {
+    editingTitle = false;
+    titleDraft = "";
+  }
+
+  async function saveTitle(): Promise<void> {
+    const mr = currentPR();
+    const trimmed = titleDraft.trim();
+    if (!trimmed || trimmed === mr?.Title) {
+      cancelEditTitle();
+      return;
+    }
+    savingTitle = true;
+    try {
+      await detailStore.updatePRContent(
+        owner, name, number, { title: trimmed },
+      );
+      editingTitle = false;
+      titleDraft = "";
+    } catch {
+      // Store sets storeError; keep editor open with draft.
+    } finally {
+      savingTitle = false;
+    }
+  }
+
+  function onTitleKeydown(e: KeyboardEvent): void {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void saveTitle();
+    } else if (e.key === "Escape") {
+      cancelEditTitle();
+    }
+  }
+
+  // Body editing
+  let editingBody = $state(false);
+  let bodyDraft = $state("");
+  let savingBody = $state(false);
+
+  function startEditBody(): void {
+    const mr = currentPR();
+    if (!mr) return;
+    bodyDraft = mr.Body;
+    editingBody = true;
+  }
+
+  function cancelEditBody(): void {
+    editingBody = false;
+    bodyDraft = "";
+  }
+
+  async function saveBody(): Promise<void> {
+    const mr = currentPR();
+    if (bodyDraft === mr?.Body) {
+      cancelEditBody();
+      return;
+    }
+    savingBody = true;
+    try {
+      await detailStore.updatePRContent(
+        owner, name, number, { body: bodyDraft },
+      );
+      editingBody = false;
+      bodyDraft = "";
+    } catch {
+      // Store sets storeError; keep editor open with draft.
+    } finally {
+      savingBody = false;
+    }
+  }
+
+  function onBodyKeydown(e: KeyboardEvent): void {
+    if (e.key === "Escape") {
+      cancelEditBody();
+    }
+  }
+
   async function handleStateChange(
     newState: "open" | "closed",
   ): Promise<void> {
@@ -279,7 +373,36 @@
       {/if}
       <!-- Header -->
       <div class="detail-header">
-        <h2 class="detail-title">{pr.Title}</h2>
+        {#if editingTitle}
+          <div class="title-edit">
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              type="text"
+              class="title-edit-input"
+              bind:value={titleDraft}
+              onkeydown={onTitleKeydown}
+              disabled={savingTitle}
+              autofocus
+            />
+            <button
+              class="title-edit-save"
+              onclick={() => void saveTitle()}
+              disabled={savingTitle || !titleDraft.trim()}
+            >
+              {savingTitle ? "Saving..." : "Save"}
+            </button>
+            <button
+              class="title-edit-cancel"
+              onclick={cancelEditTitle}
+              disabled={savingTitle}
+            >
+              Cancel
+            </button>
+          </div>
+        {:else}
+          <h2 class="detail-title">{pr.Title}</h2>
+          <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
+        {/if}
         {#if !uiConfig.hideStar}
           <button
             class="star-btn"
@@ -586,11 +709,46 @@
       {/if}
 
       <!-- PR body -->
-      {#if pr.Body}
-        <div class="section body-section">
-          <div class="section-header">
-            <span class="section-title-inline">Description</span>
+      <div class="section body-section">
+        <div class="section-header">
+          <span class="section-title-inline">Description</span>
+          {#if !editingBody}
+            <button
+              class="edit-body-btn"
+              onclick={startEditBody}
+            >
+              Edit
+            </button>
+          {/if}
+        </div>
+        {#if editingBody}
+          <div class="body-edit">
+            <!-- svelte-ignore a11y_autofocus -->
+            <textarea
+              class="body-edit-textarea"
+              bind:value={bodyDraft}
+              onkeydown={onBodyKeydown}
+              disabled={savingBody}
+              autofocus
+            ></textarea>
+            <div class="body-edit-actions">
+              <button
+                class="title-edit-save"
+                onclick={() => void saveBody()}
+                disabled={savingBody}
+              >
+                {savingBody ? "Saving..." : "Save"}
+              </button>
+              <button
+                class="title-edit-cancel"
+                onclick={cancelEditBody}
+                disabled={savingBody}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
+        {:else if pr.Body}
           <div class="inset-box-wrap">
             <button
               class="copy-icon-btn"
@@ -611,8 +769,12 @@
             </button>
             <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { owner, name })}</div>
           </div>
-        </div>
-      {/if}
+        {:else}
+          <button class="add-description-btn" onclick={startEditBody}>
+            Add a description
+          </button>
+        {/if}
+      </div>
 
       <!-- Comment box -->
       <div class="section">
@@ -738,6 +900,71 @@
     line-height: 1.35;
     flex: 1;
     min-width: 0;
+  }
+
+  .edit-title-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .edit-title-btn:hover {
+    color: var(--accent-blue);
+  }
+
+  .title-edit {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .title-edit-input {
+    flex: 1;
+    font-size: 1.125rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    padding: 4px 8px;
+    background: var(--bg-inset);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .title-edit-save,
+  .title-edit-cancel {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .title-edit-save {
+    background: var(--accent-blue);
+    color: #fff;
+    border: none;
+  }
+
+  .title-edit-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .title-edit-cancel {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-default);
+  }
+
+  .title-edit-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .gh-link {
@@ -1190,5 +1417,61 @@
   .detail-tab--active {
     color: var(--text-primary);
     border-bottom-color: var(--accent-blue);
+  }
+
+  .edit-body-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.75rem;
+  }
+
+  .edit-body-btn:hover {
+    color: var(--accent-blue);
+  }
+
+  .body-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .body-edit-textarea {
+    width: 100%;
+    min-height: 120px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    padding: 10px;
+    background: var(--bg-inset);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    resize: vertical;
+    outline: none;
+  }
+
+  .body-edit-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .add-description-btn {
+    background: none;
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    padding: 12px;
+    width: 100%;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    text-align: center;
+  }
+
+  .add-description-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
   }
 </style>
