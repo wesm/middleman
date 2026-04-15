@@ -34,6 +34,10 @@ type etagTransport struct {
 }
 
 func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req == nil || req.URL == nil {
+		return nil, errors.New("nil request")
+	}
+
 	// Gate: only GET requests to allowlisted endpoints
 	if req.Method != http.MethodGet || !isETagEligible(req.URL.Path) {
 		return t.base.RoundTrip(req)
@@ -130,5 +134,8 @@ func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) 
 // response from the GitHub API.
 func IsNotModified(err error) bool {
 	var ghErr *gh.ErrorResponse
-	return errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotModified
+	if !errors.As(err, &ghErr) || ghErr == nil || ghErr.Response == nil {
+		return false
+	}
+	return ghErr.Response.StatusCode == http.StatusNotModified
 }

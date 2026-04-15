@@ -981,9 +981,11 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 
 	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if err == nil && repoObj != nil {
-		normalized := ghclient.NormalizePR(repoObj.ID, pr)
-		if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
-			_ = s.db.EnsureKanbanState(ctx, mrID)
+		normalized, normalizeErr := ghclient.NormalizePR(repoObj.ID, pr)
+		if normalizeErr == nil {
+			if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
+				_ = s.db.EnsureKanbanState(ctx, mrID)
+			}
 		}
 	}
 
@@ -1012,7 +1014,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	)
 	if err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) {
+		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
 			slog.Warn("github merge failed",
 				"owner", input.Owner, "repo", input.Name,
 				"number", input.Number, "method", input.Body.Method,
@@ -1096,7 +1098,7 @@ func (s *Server) setPRGitHubState(
 		input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) &&
+		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state and determine the real cause.
 			repoID, repoErr := s.lookupRepoID(
@@ -1107,7 +1109,13 @@ func (s *Server) setPRGitHubState(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
-					normalized := ghclient.NormalizePR(repoID, ghPR)
+					if ghPR == nil {
+						return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+					}
+					normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
+					if normalizeErr != nil {
+						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+					}
 					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
 					if ghPR.GetMerged() {
 						return nil, huma.Error409Conflict(
@@ -1185,7 +1193,7 @@ func (s *Server) setIssueGitHubState(
 		input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) &&
+		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state. If already in the
 			// requested state (concurrent edit), treat as success.
@@ -1197,7 +1205,13 @@ func (s *Server) setIssueGitHubState(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
-					normalized := ghclient.NormalizeIssue(repoID, ghIssue)
+					if ghIssue == nil {
+						return nil, huma.Error502BadGateway("GitHub API returned no issue")
+					}
+					normalized, normalizeErr := ghclient.NormalizeIssue(repoID, ghIssue)
+					if normalizeErr != nil {
+						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+					}
 					_, _ = s.db.UpsertIssue(ctx, normalized)
 					if ghIssue.GetState() == input.Body.State {
 						out := &githubStateOutput{}
@@ -1425,7 +1439,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 
 	if s.cfg != nil {
-		filtered := items[:0]
+		filtered := make([]db.ActivityItem, 0, len(items))
 		for _, it := range items {
 			if s.syncer.IsTrackedRepo(it.RepoOwner, it.RepoName) {
 				filtered = append(filtered, it)
@@ -1899,6 +1913,11 @@ func (s *Server) createWorkspace(
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"get workspace summary: " + err.Error(),
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error500InternalServerError(
+			"workspace summary missing after create",
 		)
 	}
 	return &createWorkspaceOutput{

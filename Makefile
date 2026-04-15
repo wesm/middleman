@@ -23,7 +23,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        dev test test-short test-e2e test-e2e-roborev vet lint testify-helper-check tidy svelte-skills clean install-hooks help
+        dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check tidy svelte-skills clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -153,6 +153,19 @@ lint: ensure-embed-dir
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" mise exec -- golangci-lint run --fix
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
 
+# Run NilAway against first-party Go packages
+nilaway: ensure-embed-dir
+	@if ! command -v nilaway >/dev/null 2>&1; then \
+		echo "nilaway not found. Install with:" >&2; \
+		echo "go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260318203545-ad240b12fb4c" >&2; \
+		exit 1; \
+	fi
+	@module_path="$$(go list -m)" || { \
+		echo "failed to determine module path" >&2; \
+		exit 1; \
+	}; \
+		nilaway -include-pkgs="$$module_path" -test=false ./...
+
 # Tidy dependencies
 tidy:
 	go mod tidy
@@ -161,7 +174,7 @@ tidy:
 svelte-skills:
 	python3 scripts/update-svelte-skills.py $(ARGS)
 
-# Install pre-commit hooks via prek
+# Install pre-commit and pre-push hooks via prek
 install-hooks:
 	@if ! command -v prek >/dev/null 2>&1; then \
 		echo "prek not found. Install with: brew install prek" >&2; \
@@ -196,9 +209,10 @@ help:
 	@echo "  test-e2e-roborev - Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF)"
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
+	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
 	@echo ""
-	@echo "  install-hooks  - Install pre-commit hooks (prek)"
+	@echo "  install-hooks  - Install pre-commit and pre-push hooks (prek)"
 	@echo "  clean          - Remove build artifacts"

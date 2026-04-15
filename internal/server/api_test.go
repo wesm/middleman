@@ -2982,6 +2982,103 @@ func make422Error() error {
 	}
 }
 
+func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
+	require := require.New(t)
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "ghe.corp.com"}}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, "ghe.corp.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     5000,
+		Number:         5,
+		URL:            "https://ghe.corp.com/acme/widget/issues/5",
+		Title:          "Issue",
+		Author:         "u",
+		State:          "open",
+		CreatedAt:      time.Now().UTC().Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Truncate(time.Second),
+	})
+	require.NoError(err)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+		ctx, "acme", "widget", 5,
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, resp.StatusCode())
+}
+
+func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.PullRequest, error) {
+			return nil, make422Error()
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	before, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(before)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.SetPrGithubStateWithResponse(
+		context.Background(), "acme", "widget", 1,
+		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	after, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(after)
+	assert.Equal(before.State, after.State)
+	assert.Equal(before.UpdatedAt, after.UpdatedAt)
+	assert.Nil(after.ClosedAt)
+}
+
+func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		editIssueFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.Issue, error) {
+			return nil, make422Error()
+		},
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	before, err := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.NoError(err)
+	require.NotNil(before)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
+		context.Background(), "acme", "widget", 5,
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	after, err := database.GetIssue(context.Background(), "acme", "widget", 5)
+	require.NoError(err)
+	require.NotNil(after)
+	assert.Equal(before.State, after.State)
+	assert.Equal(before.UpdatedAt, after.UpdatedAt)
+	assert.Nil(after.ClosedAt)
+}
+
 func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	require := require.New(t)
 	// EditPullRequest returns 422, but re-fetch shows PR is already closed.

@@ -122,9 +122,9 @@ const defaultParallelism = 4
 // does not suppress a real retry for hours. The size bound is
 // well above any realistic author set for a fixed repo list.
 const (
-	displayNameCacheSize   = 1024
-	displayNameSuccessTTL  = 24 * time.Hour
-	displayNameFailureTTL  = 15 * time.Minute
+	displayNameCacheSize  = 1024
+	displayNameSuccessTTL = 24 * time.Hour
+	displayNameFailureTTL = 15 * time.Minute
 )
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
@@ -159,9 +159,9 @@ type Syncer struct {
 	// handles profile-name changes without an explicit flush.
 	displayNames     *displayNameCache
 	displayNameGroup singleflight.Group // dedups concurrent GetUser calls
-	onMRSynced         func(owner, name string, mr *db.MergeRequest)
-	onSyncCompleted    func(results []RepoSyncResult)
-	onStatusChange     func(status *SyncStatus)
+	onMRSynced       func(owner, name string, mr *db.MergeRequest)
+	onSyncCompleted  func(results []RepoSyncResult)
+	onStatusChange   func(status *SyncStatus)
 	// statusMu serializes publishStatus so worker goroutines
 	// can't interleave updates and deliver out-of-order snapshots
 	// to SSE subscribers.
@@ -488,17 +488,17 @@ func (s *Syncer) TriggerRun(ctx context.Context) {
 	}()
 }
 
-// clientFor returns the Client for the given repo's host,
-// falling back to "github.com" if no match is found.
-func (s *Syncer) clientFor(repo RepoRef) Client {
+// clientFor returns the Client for the given repo's host.
+// Repos with an empty host default to "github.com".
+func (s *Syncer) clientFor(repo RepoRef) (Client, error) {
 	host := repo.PlatformHost
 	if host == "" {
 		host = "github.com"
 	}
-	if c, ok := s.clients[host]; ok {
-		return c
+	if c, ok := s.clients[host]; ok && c != nil {
+		return c, nil
 	}
-	return s.clients["github.com"]
+	return nil, fmt.Errorf("no client configured for host %s", host)
 }
 
 // ClientForRepo returns the Client for a tracked repo by
@@ -511,7 +511,7 @@ func (s *Syncer) ClientForRepo(
 	for _, r := range s.repos {
 		if strings.EqualFold(r.Owner, owner) &&
 			strings.EqualFold(r.Name, name) {
-			return s.clientFor(r), nil
+			return s.clientFor(r)
 		}
 	}
 	return nil, fmt.Errorf(
@@ -1166,7 +1166,10 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 
 	ghRepo, err := client.GetRepository(ctx, repo.Owner, repo.Name)
 	if err != nil {
@@ -1223,7 +1226,10 @@ func (s *Syncer) indexSyncRepo(
 	repoID int64,
 	cloneFetchOK bool,
 ) error {
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 
 	// If the previous sync of this repo partially failed after the
 	// ETag cache was populated by a 200 list response, a naive next
@@ -1416,7 +1422,10 @@ func (s *Syncer) indexUpsertMR(
 	repoID int64,
 	ghPR *gh.PullRequest,
 ) error {
-	normalized := NormalizePR(repoID, ghPR)
+	normalized, err := NormalizePR(repoID, ghPR)
+	if err != nil {
+		return fmt.Errorf("normalize MR #%d: %w", ghPR.GetNumber(), err)
+	}
 
 	existing, err := s.db.GetMergeRequest(
 		ctx, repo.Owner, repo.Name, ghPR.GetNumber(),
@@ -1440,11 +1449,16 @@ func (s *Syncer) indexUpsertMR(
 		if host == "" {
 			host = "github.com"
 		}
-		client := s.clientFor(repo)
-		if name, ok := s.resolveDisplayName(
-			ctx, client, host, normalized.Author,
-		); ok {
-			normalized.AuthorDisplayName = name
+		client, clientErr := s.clientFor(repo)
+		if clientErr == nil {
+			if name, ok := s.resolveDisplayName(
+				ctx, client, host, normalized.Author,
+			); ok {
+				normalized.AuthorDisplayName = name
+			} else if existing != nil {
+				normalized.AuthorDisplayName =
+					existing.AuthorDisplayName
+			}
 		} else if existing != nil {
 			normalized.AuthorDisplayName =
 				existing.AuthorDisplayName
@@ -1587,7 +1601,10 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	bulk *BulkIssue,
 ) error {
 	number := bulk.Issue.GetNumber()
-	normalized := NormalizeIssue(repoID, bulk.Issue)
+	normalized, err := NormalizeIssue(repoID, bulk.Issue)
+	if err != nil {
+		return fmt.Errorf("normalize issue #%d: %w", number, err)
+	}
 
 	// Preserve derived fields that NormalizeIssue doesn't populate
 	// from bulk data. Without this, upsert overwrites them with
@@ -1726,7 +1743,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 	cloneFetchOK bool,
 ) error {
 	number := bulk.PR.GetNumber()
-	normalized := NormalizePR(repoID, bulk.PR)
+	normalized, err := NormalizePR(repoID, bulk.PR)
+	if err != nil {
+		return fmt.Errorf("normalize MR #%d: %w", number, err)
+	}
 
 	// Preserve derived fields that NormalizePR doesn't populate.
 	// Without this, upsert overwrites them with zero values; if
@@ -1760,11 +1780,13 @@ func (s *Syncer) syncOpenMRFromBulk(
 		if host == "" {
 			host = "github.com"
 		}
-		client := s.clientFor(repo)
-		if name, ok := s.resolveDisplayName(
-			ctx, client, host, normalized.Author,
-		); ok {
-			normalized.AuthorDisplayName = name
+		client, clientErr := s.clientFor(repo)
+		if clientErr == nil {
+			if name, ok := s.resolveDisplayName(
+				ctx, client, host, normalized.Author,
+			); ok {
+				normalized.AuthorDisplayName = name
+			}
 		}
 	}
 
@@ -1998,7 +2020,10 @@ func (s *Syncer) fetchMRDetail(
 	cloneFetchOK bool,
 ) (int, error) {
 	calls := 0
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return calls, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 
 	fullPR, err := client.GetPullRequest(
 		ctx, repo.Owner, repo.Name, number,
@@ -2013,7 +2038,10 @@ func (s *Syncer) fetchMRDetail(
 		)
 	}
 
-	normalized := NormalizePR(repoID, fullPR)
+	normalized, err := NormalizePR(repoID, fullPR)
+	if err != nil {
+		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
+	}
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
@@ -2152,19 +2180,28 @@ func (s *Syncer) fetchIssueDetail(
 	number int,
 ) (int, error) {
 	calls := 0
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return calls, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 
 	ghIssue, err := client.GetIssue(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	calls++
+	if err == nil && ghIssue == nil {
+		err = fmt.Errorf("client returned nil issue")
+	}
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get issue #%d: %w", number, err,
 		)
 	}
 
-	normalized := NormalizeIssue(repoID, ghIssue)
+	normalized, err := NormalizeIssue(repoID, ghIssue)
+	if err != nil {
+		return calls, fmt.Errorf("normalize issue #%d: %w", number, err)
+	}
 	issueID, err := s.db.UpsertIssue(ctx, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -2207,8 +2244,14 @@ func (s *Syncer) refreshTimeline(
 	mrID int64,
 	ghPR *gh.PullRequest,
 ) error {
+	if ghPR == nil {
+		return fmt.Errorf("nil pull request")
+	}
 	number := ghPR.GetNumber()
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 
 	comments, err := client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
@@ -2281,7 +2324,10 @@ func (s *Syncer) refreshCIStatus(
 
 	// Fetch both sources. On failure, skip the DB write to preserve
 	// existing data rather than wiping it with empty values.
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		slog.Warn("list check runs failed",
@@ -2479,7 +2525,10 @@ func (s *Syncer) syncOpenIssue(
 	ghIssue *gh.Issue,
 	forceRefresh bool,
 ) error {
-	normalized := NormalizeIssue(repoID, ghIssue)
+	normalized, err := NormalizeIssue(repoID, ghIssue)
+	if err != nil {
+		return fmt.Errorf("normalize issue #%d: %w", ghIssue.GetNumber(), err)
+	}
 
 	existing, err := s.db.GetIssue(
 		ctx, repo.Owner, repo.Name, ghIssue.GetNumber(),
@@ -2516,8 +2565,14 @@ func (s *Syncer) refreshIssueTimeline(
 	issueID int64,
 	ghIssue *gh.Issue,
 ) error {
+	if ghIssue == nil {
+		return fmt.Errorf("nil issue")
+	}
 	number := ghIssue.GetNumber()
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 
 	comments, err := client.ListIssueComments(
 		ctx, repo.Owner, repo.Name, number,
@@ -2562,12 +2617,18 @@ func (s *Syncer) refreshIssueTimeline(
 func (s *Syncer) fetchAndUpdateClosedIssue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) error {
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 	ghIssue, err := client.GetIssue(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
+	}
+	if ghIssue == nil {
+		return fmt.Errorf("get closed issue #%d: client returned nil issue", number)
 	}
 
 	var closedAt *time.Time
@@ -2587,7 +2648,10 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		return fmt.Errorf("get closed issue #%d for labels: %w", number, err)
 	}
 	if issue != nil {
-		normalized := NormalizeIssue(repoID, ghIssue)
+		normalized, err := NormalizeIssue(repoID, ghIssue)
+		if err != nil {
+			return fmt.Errorf("normalize closed issue #%d: %w", number, err)
+		}
 		if err := s.replaceIssueLabels(ctx, repoID, issue.ID, normalized.Labels); err != nil {
 			return fmt.Errorf("persist labels for closed issue #%d: %w", number, err)
 		}
@@ -2865,7 +2929,14 @@ func (s *Syncer) backfillRepo(
 	repoRow *db.Repo,
 	budget *SyncBudget,
 ) {
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		slog.Warn("resolve client for backfill failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return
+	}
 	repoID := repoRow.ID
 	now := time.Now()
 
@@ -2902,7 +2973,16 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			for _, ghPR := range prs {
-				normalized := NormalizePR(repoID, ghPR)
+				normalized, err := NormalizePR(repoID, ghPR)
+				if err != nil {
+					slog.Warn("backfill normalize PR failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghPR.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
+				}
 				if mrID, uErr := s.db.UpsertMergeRequest(
 					ctx, normalized,
 				); uErr != nil {
@@ -2968,7 +3048,16 @@ func (s *Syncer) backfillRepo(
 				break
 			}
 			for _, ghIssue := range issues {
-				normalized := NormalizeIssue(repoID, ghIssue)
+				normalized, err := NormalizeIssue(repoID, ghIssue)
+				if err != nil {
+					slog.Warn("backfill normalize issue failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"number", ghIssue.GetNumber(),
+						"err", err,
+					)
+					pageFailed = true
+					break
+				}
 				if issueID, uErr := s.db.UpsertIssue(
 					ctx, normalized,
 				); uErr != nil {
@@ -3097,7 +3186,10 @@ func (s *Syncer) syncMRWithHost(
 	}
 
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", owner, name, err)
+	}
 
 	repoID, err := s.db.UpsertRepo(ctx, host, owner, name)
 	if err != nil {
@@ -3115,7 +3207,10 @@ func (s *Syncer) syncMRWithHost(
 		)
 	}
 
-	normalized := NormalizePR(repoID, ghPR)
+	normalized, err := NormalizePR(repoID, ghPR)
+	if err != nil {
+		return fmt.Errorf("normalize MR %s/%s#%d: %w", owner, name, number, err)
+	}
 
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
 		// Resolve directly instead of using s.resolveDisplayName to
@@ -3244,7 +3339,10 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 
 	host := s.hostFor(owner, name)
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", owner, name, err)
+	}
 
 	repoID, err := s.db.UpsertRepo(ctx, host, owner, name)
 	if err != nil {
@@ -3255,8 +3353,14 @@ func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) 
 	if err != nil {
 		return fmt.Errorf("get issue %s/%s#%d: %w", owner, name, number, err)
 	}
+	if ghIssue == nil {
+		return fmt.Errorf("get issue %s/%s#%d: client returned nil issue", owner, name, number)
+	}
 
-	normalized := NormalizeIssue(repoID, ghIssue)
+	normalized, err := NormalizeIssue(repoID, ghIssue)
+	if err != nil {
+		return fmt.Errorf("normalize issue %s/%s#%d: %w", owner, name, number, err)
+	}
 	issueID, err := s.db.UpsertIssue(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert issue #%d: %w", number, err)
@@ -3288,11 +3392,19 @@ func (s *Syncer) SyncItemByNumber(
 	// response has PullRequestLinks, it's a PR.
 	host := s.hostFor(owner, name)
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return "", fmt.Errorf("resolve client for %s/%s: %w", owner, name, err)
+	}
 	ghIssue, err := client.GetIssue(ctx, owner, name, number)
 	if err != nil {
 		return "", fmt.Errorf(
 			"get item %s/%s#%d: %w", owner, name, number, err,
+		)
+	}
+	if ghIssue == nil {
+		return "", fmt.Errorf(
+			"get item %s/%s#%d: client returned nil issue", owner, name, number,
 		)
 	}
 
@@ -3326,7 +3438,10 @@ func (s *Syncer) SyncItemByNumber(
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int, cloneFetchOK bool) error {
-	client := s.clientFor(repo)
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
 	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		return fmt.Errorf("get closed PR #%d: %w", number, err)
@@ -3367,7 +3482,10 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		return fmt.Errorf("get closed MR #%d for labels: %w", number, err)
 	}
 	if mr != nil {
-		normalized := NormalizePR(repoID, ghPR)
+		normalized, err := NormalizePR(repoID, ghPR)
+		if err != nil {
+			return fmt.Errorf("normalize closed PR #%d: %w", number, err)
+		}
 		if err := s.replaceMergeRequestLabels(ctx, repoID, mr.ID, normalized.Labels); err != nil {
 			return fmt.Errorf("persist labels for closed MR #%d: %w", number, err)
 		}
