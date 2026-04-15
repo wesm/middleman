@@ -5,6 +5,7 @@
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
+  import ActionButton from "../shared/ActionButton.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { issues, activity } = getStores();
@@ -193,21 +194,38 @@
       <!-- Actions -->
       <div class="actions-row">
         {#if issue.State === "open"}
-          <button class="btn--close" disabled={stateSubmitting} onclick={() => handleStateChange("closed")}>
+          <ActionButton
+            class="btn--close"
+            disabled={stateSubmitting}
+            onclick={() => handleStateChange("closed")}
+            tone="danger"
+            surface="outline"
+            size="sm"
+          >
             {stateSubmitting ? "Closing..." : "Close issue"}
-          </button>
+          </ActionButton>
         {:else}
-          <button class="btn--reopen" disabled={stateSubmitting} onclick={() => handleStateChange("open")}>
+          <ActionButton
+            class="btn--reopen"
+            disabled={stateSubmitting}
+            onclick={() => handleStateChange("open")}
+            tone="success"
+            surface="solid"
+            size="sm"
+          >
             {stateSubmitting ? "Reopening..." : "Reopen issue"}
-          </button>
+          </ActionButton>
         {/if}
         {#each actions.issue ?? [] as action (action.id)}
-          <button
+          <ActionButton
             class="btn--embedding-action"
             onclick={() => action.handler({ surface: "issue-detail", owner, name, number })}
+            tone="neutral"
+            surface="outline"
+            size="sm"
           >
             {action.label}
-          </button>
+          </ActionButton>
         {/each}
         {#if stateError}
           <span class="action-error">{stateError}</span>
@@ -465,34 +483,6 @@
     align-items: center;
     gap: 8px;
     padding: 8px 0;
-  }
-  .btn--close {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .btn--close:hover {
-    background: var(--accent-red, #d73a49);
-    color: #fff;
-    border-color: var(--accent-red, #d73a49);
-  }
-  .btn--reopen {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--accent-green, #2ea043);
-    background: var(--accent-green, #2ea043);
-    color: #fff;
-    cursor: pointer;
-  }
-  .btn--reopen:hover {
-    filter: brightness(1.1);
   }
   .action-error {
     font-size: 11px;

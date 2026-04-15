@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -37,6 +37,54 @@ type ManagedChildLike = {
 let serverPromise: Promise<E2EServerInfo> | null = null;
 let managedChild: ChildProcess | null = null;
 let cleanupInstalled = false;
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForExit(child: ChildProcess, description: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${description} exited with code ${code ?? "null"} signal ${signal ?? "null"}`));
+    });
+  });
+}
+
+export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promise<void> {
+  const embeddedDist = path.join(rootDir, "internal", "web", "dist");
+  const embeddedIndex = path.join(embeddedDist, "index.html");
+  if (await pathExists(embeddedIndex)) {
+    return;
+  }
+
+  const frontendDir = path.join(rootDir, "frontend");
+  const frontendDist = path.join(frontendDir, "dist");
+  const frontendIndex = path.join(frontendDist, "index.html");
+
+  if (!(await pathExists(frontendIndex))) {
+    const build = spawn("bun", ["run", "build"], {
+      cwd: frontendDir,
+      stdio: "inherit",
+      env: process.env,
+    });
+    await waitForExit(build, "frontend build");
+  }
+
+  await rm(embeddedDist, { recursive: true, force: true });
+  await mkdir(path.dirname(embeddedDist), { recursive: true });
+  await cp(frontendDist, embeddedDist, { recursive: true });
+  await writeFile(path.join(embeddedDist, "stub.html"), "ok\n");
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -124,6 +172,8 @@ async function spawnServer(infoFile: string): Promise<{
   child: ChildProcess;
   info: E2EServerInfo;
 }> {
+  await ensureEmbeddedFrontend();
+
   const args = [
     "run",
     "./cmd/e2e-server",

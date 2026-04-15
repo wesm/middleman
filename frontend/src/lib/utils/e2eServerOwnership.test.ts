@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
@@ -96,6 +96,38 @@ describe("waitForServerInfo", () => {
         resolve();
       });
     });
+  });
+});
+
+describe("ensureEmbeddedFrontend", () => {
+  it("copies frontend/dist into internal/web/dist when embedded assets are missing", async () => {
+    const ensureEmbeddedFrontend = (
+      e2eServerModule as {
+        ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
+      }
+    ).ensureEmbeddedFrontend;
+
+    expect(ensureEmbeddedFrontend).toBeTypeOf("function");
+    if (!ensureEmbeddedFrontend) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const frontendDist = path.join(dir, "frontend", "dist");
+    const embeddedDist = path.join(dir, "internal", "web", "dist");
+
+    mkdirSync(path.join(frontendDist, "assets"), { recursive: true });
+    mkdirSync(embeddedDist, { recursive: true });
+
+    writeFileSync(path.join(frontendDist, "index.html"), "<html><body>ok</body></html>", { flag: "wx" });
+    writeFileSync(path.join(frontendDist, "assets", "app.js"), "console.log('ok');", { flag: "wx" });
+    writeFileSync(path.join(embeddedDist, "stub.html"), "stub", { flag: "wx" });
+
+    await ensureEmbeddedFrontend(dir);
+
+    await expect(readFile(path.join(embeddedDist, "index.html"), "utf8")).resolves.toContain("<body>ok</body>");
+    await expect(readFile(path.join(embeddedDist, "assets", "app.js"), "utf8")).resolves.toContain("console.log");
+    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
   });
 });
 

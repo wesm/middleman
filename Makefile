@@ -63,7 +63,7 @@ frontend:
 
 # Run Vite dev server with dependencies installed (use alongside `make dev`)
 frontend-dev:
-	cd frontend && bun install $(BUN_INSTALL_FLAGS) && bun run dev -- $(ARGS)
+	./scripts/frontend-dev.sh $(ARGS)
 
 # Run Vite dev server with Bun (use alongside `make dev`)
 frontend-dev-bun:
@@ -198,7 +198,7 @@ help:
 	@echo ""
 	@echo "  dev            - Run Go server with air live reload and API artifact refresh"
 	@echo "  frontend       - Build frontend SPA"
-	@echo "  frontend-dev   - Install deps and run Vite dev server"
+	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server"
 	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"

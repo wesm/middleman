@@ -155,6 +155,111 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   }
 }`
 
+const readyForReviewIDQuery = `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      id
+    }
+  }
+}`
+
+const readyForReviewMutation = `
+mutation($pullRequestId: ID!) {
+  markPullRequestReadyForReview(input: {pullRequestId: $pullRequestId}) {
+    pullRequest {
+      databaseId
+      number
+      title
+      state
+      isDraft
+      body
+      url
+      author {
+        login
+      }
+      createdAt
+      updatedAt
+      mergedAt
+      closedAt
+      additions
+      deletions
+      mergeable
+      reviewDecision
+      headRefName
+      baseRefName
+      headRefOid
+      baseRefOid
+      headRepository {
+        url
+      }
+      labels(first: 100) {
+        nodes {
+          name
+          color
+          description
+          isDefault
+        }
+      }
+    }
+  }
+}`
+
+type graphQLRequest struct {
+	Query     string         `json:"query"`
+	Variables map[string]any `json:"variables"`
+}
+
+type graphQLError struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+}
+
+type readyForReviewError struct {
+	err        error
+	statusCode int
+	staleState bool
+}
+
+func (e *readyForReviewError) Error() string      { return e.err.Error() }
+func (e *readyForReviewError) Unwrap() error      { return e.err }
+func (e *readyForReviewError) StatusCode() int    { return e.statusCode }
+func (e *readyForReviewError) IsStaleState() bool { return e.staleState }
+
+func newReadyForReviewError(err error, statusCode int, staleState bool) error {
+	return &readyForReviewError{
+		err:        err,
+		statusCode: statusCode,
+		staleState: staleState,
+	}
+}
+
+func readyForReviewGraphQLErrorMeta(graphQLErrors []graphQLError) (int, bool) {
+	for _, graphQLError := range graphQLErrors {
+		if strings.EqualFold(graphQLError.Type, "NOT_FOUND") {
+			return http.StatusNotFound, true
+		}
+		if strings.Contains(graphQLError.Message, "Could not resolve to a PullRequest") ||
+			strings.Contains(graphQLError.Message, "Could not resolve to a node with the global id") {
+			return http.StatusNotFound, true
+		}
+	}
+	return 0, false
+}
+
+func joinGraphQLErrorMessages(graphQLErrors []graphQLError) string {
+	messages := make([]string, 0, len(graphQLErrors))
+	for _, graphQLError := range graphQLErrors {
+		if graphQLError.Message != "" {
+			messages = append(messages, graphQLError.Message)
+		}
+	}
+	if len(messages) == 0 {
+		return "unknown GraphQL error"
+	}
+	return strings.Join(messages, "; ")
+}
+
 // trackRate records the request and updates rate limit state
 // from the response. Safe to call with nil response or nil
 // tracker.
@@ -655,29 +760,128 @@ func (c *liveClient) CreateReview(
 func (c *liveClient) MarkPullRequestReadyForReview(
 	ctx context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
-	req, err := c.gh.NewRequest(
-		"POST",
-		fmt.Sprintf("repos/%s/%s/pulls/%d/ready_for_review", owner, repo, number),
-		nil,
-	)
-	if err != nil {
+	type readyForReviewIDResponse struct {
+		Errors []graphQLError `json:"errors"`
+		Data   struct {
+			Repository *struct {
+				PullRequest *struct {
+					ID string `json:"id"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	type readyForReviewMutationResponse struct {
+		Errors []graphQLError `json:"errors"`
+		Data   struct {
+			MarkPullRequestReadyForReview *struct {
+				PullRequest *gqlPR `json:"pullRequest"`
+			} `json:"markPullRequestReadyForReview"`
+		} `json:"data"`
+	}
+
+	postGraphQL := func(payload any, dest any) (*http.Response, error) {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			c.graphQLEndpoint,
+			bytes.NewReader(body),
+		)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		c.trackRateHeaders(resp)
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return resp, newReadyForReviewError(
+				fmt.Errorf("graphql status %s", resp.Status),
+				resp.StatusCode,
+				resp.StatusCode == http.StatusNotFound,
+			)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			_ = resp.Body.Close()
+			return resp, err
+		}
+		_ = resp.Body.Close()
+		return resp, nil
+	}
+
+	idPayload := graphQLRequest{
+		Query: readyForReviewIDQuery,
+		Variables: map[string]any{
+			"owner":  owner,
+			"repo":   repo,
+			"number": number,
+		},
+	}
+	var idResult readyForReviewIDResponse
+	if _, err := postGraphQL(idPayload, &idResult); err != nil {
 		return nil, fmt.Errorf(
-			"building ready-for-review request for %s/%s#%d: %w",
+			"marking %s/%s#%d ready for review: resolve pull request id: %w",
 			owner, repo, number, err,
 		)
 	}
+	if len(idResult.Errors) > 0 {
+		statusCode, staleState := readyForReviewGraphQLErrorMeta(idResult.Errors)
+		return nil, newReadyForReviewError(fmt.Errorf(
+			"marking %s/%s#%d ready for review: resolve pull request id: graphql errors: %s",
+			owner, repo, number, joinGraphQLErrorMessages(idResult.Errors),
+		), statusCode, staleState)
+	}
+	if idResult.Data.Repository == nil || idResult.Data.Repository.PullRequest == nil || idResult.Data.Repository.PullRequest.ID == "" {
+		return nil, newReadyForReviewError(
+			fmt.Errorf(
+				"marking %s/%s#%d ready for review: resolve pull request id: missing pull request in graphql response",
+				owner, repo, number,
+			),
+			http.StatusNotFound,
+			true,
+		)
+	}
 
-	pr := new(gh.PullRequest)
-	resp, err := c.gh.Do(ctx, req, pr)
-	c.trackRate(resp)
-	if err != nil {
+	mutationPayload := graphQLRequest{
+		Query: readyForReviewMutation,
+		Variables: map[string]any{
+			"pullRequestId": idResult.Data.Repository.PullRequest.ID,
+		},
+	}
+	var mutationResult readyForReviewMutationResponse
+	if _, err := postGraphQL(mutationPayload, &mutationResult); err != nil {
 		return nil, fmt.Errorf(
 			"marking %s/%s#%d ready for review: %w",
 			owner, repo, number, err,
 		)
 	}
+	if len(mutationResult.Errors) > 0 {
+		statusCode, staleState := readyForReviewGraphQLErrorMeta(mutationResult.Errors)
+		return nil, newReadyForReviewError(fmt.Errorf(
+			"marking %s/%s#%d ready for review: graphql errors: %s",
+			owner, repo, number, joinGraphQLErrorMessages(mutationResult.Errors),
+		), statusCode, staleState)
+	}
+	if mutationResult.Data.MarkPullRequestReadyForReview == nil || mutationResult.Data.MarkPullRequestReadyForReview.PullRequest == nil {
+		return nil, newReadyForReviewError(
+			fmt.Errorf(
+				"marking %s/%s#%d ready for review: missing pull request in graphql response",
+				owner, repo, number,
+			),
+			0,
+			false,
+		)
+	}
 
-	return pr, nil
+	return adaptPR(mutationResult.Data.MarkPullRequestReadyForReview.PullRequest), nil
 }
 
 func (c *liveClient) MergePullRequest(

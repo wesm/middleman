@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getClient } from "../../context.js";
+  import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
 
@@ -195,20 +196,24 @@
     </div>
 
     <div class="modal-footer">
-      <button
+      <ActionButton
         class="btn btn--secondary"
         onclick={onclose}
         disabled={merging}
+        tone="neutral"
+        surface="outline"
       >
         Cancel
-      </button>
-      <button
+      </ActionButton>
+      <ActionButton
         class="btn btn--primary btn--green"
         onclick={() => void handleMerge()}
         disabled={merging}
+        tone="success"
+        surface="solid"
       >
         {merging ? "Merging\u2026" : methodLabel()}
-      </button>
+      </ActionButton>
     </div>
   </div>
 </div>
@@ -371,41 +376,5 @@
     gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid var(--border-muted);
-  }
-
-  .btn {
-    font-size: 13px;
-    font-weight: 500;
-    padding: 6px 16px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: opacity 0.1s, background 0.1s;
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn--secondary {
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-default);
-  }
-  .btn--secondary:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .btn--primary {
-    color: #e6ffe6;
-    border: none;
-  }
-
-  .btn--green {
-    background: #1a7f37;
-    color: #e6ffe6;
-  }
-  .btn--green:hover:not(:disabled) {
-    background: #176b2e;
   }
 </style>

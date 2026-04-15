@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getClient, getStores } from "../../context.js";
+  import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -8,12 +9,17 @@
     owner: string;
     name: string;
     number: number;
+    size?: "sm" | "md";
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, size = "md" }: Props = $props();
 
   let submitting = $state(false);
   let error = $state<string | null>(null);
+
+  function shouldRefreshStaleDraftState(message: string): boolean {
+    return message.includes("ready for review") && message.includes("404 Not Found");
+  }
 
   async function handleReadyForReview(): Promise<void> {
     submitting = true;
@@ -28,7 +34,16 @@
       await detail.loadDetail(owner, name, number);
       await pulls.loadPulls();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (shouldRefreshStaleDraftState(message)) {
+        try {
+          await detail.loadDetail(owner, name, number);
+          await pulls.loadPulls();
+        } catch {
+          // Preserve the original mutation error if the stale-state refresh also fails.
+        }
+      }
+      error = message;
     } finally {
       submitting = false;
     }
@@ -36,13 +51,16 @@
 </script>
 
 <div class="ready-section">
-  <button
+  <ActionButton
     class="btn btn--ready"
     onclick={() => void handleReadyForReview()}
     disabled={submitting}
+    tone="info"
+    surface="soft"
+    {size}
   >
     {submitting ? "Publishing…" : "Ready for review"}
-  </button>
+  </ActionButton>
   {#if error}
     <p class="ready-error">{error}</p>
   {/if}
@@ -58,35 +76,5 @@
   .ready-error {
     font-size: 12px;
     color: var(--accent-red);
-  }
-
-  .btn {
-    font-size: 13px;
-    font-weight: 500;
-    padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: opacity 0.1s;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn--ready {
-    background: color-mix(
-      in srgb, var(--accent-blue) 10%, transparent
-    );
-    color: var(--accent-blue);
-    border: 1px solid color-mix(
-      in srgb, var(--accent-blue) 30%, transparent
-    );
-  }
-
-  .btn--ready:hover:not(:disabled) {
-    background: color-mix(
-      in srgb, var(--accent-blue) 18%, transparent
-    );
   }
 </style>

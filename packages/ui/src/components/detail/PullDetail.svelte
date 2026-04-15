@@ -13,6 +13,7 @@
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
+  import ActionButton from "../shared/ActionButton.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
@@ -388,19 +389,26 @@
         <div class="actions-row">
           {#if pr.State === "open"}
             {#if pr.IsDraft}
-              <ReadyForReviewButton {owner} {name} {number} />
+              <ReadyForReviewButton {owner} {name} {number} size="sm" />
             {/if}
-            <ApproveButton {owner} {name} {number} />
+            <ApproveButton {owner} {name} {number} size="sm" />
             {#if workflowApproval?.checked && workflowApproval.required}
               <ApproveWorkflowsButton
                 {owner}
                 {name}
                 {number}
                 count={workflowApproval.count ?? 0}
+                size="sm"
               />
             {/if}
             {#if repoSettings}
-              <button class="btn--merge" onclick={() => { showMergeModal = true; }}>
+              <ActionButton
+                class="btn--merge"
+                onclick={() => { showMergeModal = true; }}
+                tone="success"
+                surface="solid"
+                size="sm"
+              >
                 {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
                   Squash and merge
                 {:else if !repoSettings.allowSquash && repoSettings.allowMerge && !repoSettings.allowRebase}
@@ -410,15 +418,29 @@
                 {:else}
                   Merge &#9662;
                 {/if}
-              </button>
+              </ActionButton>
             {/if}
-            <button class="btn--close" disabled={stateSubmitting} onclick={() => handleStateChange("closed")}>
+            <ActionButton
+              class="btn--close"
+              disabled={stateSubmitting}
+              onclick={() => handleStateChange("closed")}
+              tone="danger"
+              surface="outline"
+              size="sm"
+            >
               {stateSubmitting ? "Closing..." : "Close"}
-            </button>
+            </ActionButton>
           {:else if pr.State === "closed"}
-            <button class="btn--reopen" disabled={stateSubmitting} onclick={() => handleStateChange("open")}>
+            <ActionButton
+              class="btn--reopen"
+              disabled={stateSubmitting}
+              onclick={() => handleStateChange("open")}
+              tone="success"
+              surface="solid"
+              size="sm"
+            >
               {stateSubmitting ? "Reopening..." : "Reopen"}
-            </button>
+            </ActionButton>
           {/if}
           {#if stateError}
             <span class="action-error">{stateError}</span>
@@ -451,42 +473,51 @@
 
       {#if !hasWorktreeLinks && importAction}
         <div class="actions-row">
-          <button
+          <ActionButton
             class="btn--embedding-action"
             onclick={() => importAction.handler({
               surface: "pull-detail", owner, name, number,
             })}
+            tone="neutral"
+            surface="outline"
+            size="sm"
           >
             {importAction.label}
-          </button>
+          </ActionButton>
         </div>
       {/if}
       {#if hasWorktreeLinks && navigateAction}
         <div class="actions-row">
           {#each worktreeLinks as link (link.worktree_key)}
-            <button
+            <ActionButton
               class="btn--embedding-action"
               onclick={() => navigateAction.handler({
                 surface: "pull-detail", owner, name, number,
                 meta: { worktree_key: link.worktree_key },
               })}
+              tone="neutral"
+              surface="outline"
+              size="sm"
             >
               {navigateAction.label}: {link.worktree_key}
-            </button>
+            </ActionButton>
           {/each}
         </div>
       {/if}
       {#if otherActions.length > 0}
         <div class="actions-row">
           {#each otherActions as action (action.id)}
-            <button
+            <ActionButton
               class="btn--embedding-action"
               onclick={() => action.handler({
                 surface: "pull-detail", owner, name, number,
               })}
+              tone="neutral"
+              surface="outline"
+              size="sm"
             >
               {action.label}
-            </button>
+            </ActionButton>
           {/each}
         </div>
       {/if}
@@ -825,49 +856,6 @@
     gap: 8px;
   }
 
-  .btn--merge {
-    font-size: 13px;
-    font-weight: 500;
-    padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    background: #1a7f37;
-    color: #e6ffe6;
-    border: none;
-    cursor: pointer;
-    transition: background 0.1s;
-  }
-  .btn--merge:hover {
-    background: #176b2e;
-  }
-
-  .btn--close {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .btn--close:hover {
-    background: var(--accent-red, #d73a49);
-    color: #fff;
-    border-color: var(--accent-red, #d73a49);
-  }
-  .btn--reopen {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--accent-green, #2ea043);
-    background: var(--accent-green, #2ea043);
-    color: #fff;
-    cursor: pointer;
-  }
-  .btn--reopen:hover {
-    filter: brightness(1.1);
-  }
   .btn--workspace {
     padding: 4px 12px;
     border-radius: 6px;
@@ -886,6 +874,7 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
+
   .action-error {
     font-size: 11px;
     color: var(--accent-red, #d73a49);
