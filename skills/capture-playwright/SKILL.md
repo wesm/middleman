@@ -39,12 +39,19 @@ const videoPath = await page.video()?.path();
 
 5. **Stop here by default.** Report the local artifact path to the user. Only proceed to upload if the user explicitly requests it.
 
-6. **If the user approves upload**, confirm the target PR or issue first. Never upload without a PR/issue target. Use `gh image` with `--repo`:
+6. **If the user approves upload**, confirm the target PR or issue number first. Never upload without attaching to a specific PR or issue. Upload the file with `gh image`, then immediately attach it to the PR or issue via a comment — `gh image` alone does not bind the upload to any target:
 
 ```bash
-gh image --repo owner/repo "tmp/capture.png"
-gh image --repo owner/repo "tmp/video.webm"
+# Upload and capture the markdown link
+IMAGE_MD=$(gh image --repo owner/repo "tmp/capture.png")
+
+# Attach to a PR or issue so the image is not a standalone upload
+gh pr comment <number> --repo owner/repo --body "$IMAGE_MD"
+# or for issues:
+gh issue comment <number> --repo owner/repo --body "$IMAGE_MD"
 ```
+
+**`gh image --repo owner/repo <file>` alone is insufficient** — it uploads without binding to a PR or issue. Always follow up with a comment command to attach.
 
 If video upload is rejected, keep the local video file, say that `gh image` appears image-only in this environment, and ask whether a screenshot link or a different upload path is preferred.
 
