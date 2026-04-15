@@ -804,24 +804,24 @@ test.describe("PR list tabs", () => {
 
     await page.goto("/pulls/acme/widgets/1");
 
-    // Wait for the PRListView tab bar (scoped to .detail-area) to
+    // Wait for the PRListView tab bar (scoped to .main-area) to
     // render.
-    await page.locator(".detail-area .detail-tabs").first()
+    await page.locator(".main-area .detail-tabs").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     // Exactly one tab bar is present inside the outer PRListView
     // container. If PullDetail ever stops respecting hideTabs, a
-    // second .detail-tabs element would show up inside .detail-area.
-    await expect(page.locator(".detail-area .detail-tabs")).toHaveCount(1);
+    // second .detail-tabs element would show up inside .main-area.
+    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
     await expect(
       page.locator(
-        ".detail-area .detail-tabs .detail-tab",
+        ".main-area .detail-tabs .detail-tab",
         { hasText: "Conversation" },
       ),
     ).toHaveCount(1);
     await expect(
       page.locator(
-        ".detail-area .detail-tabs .detail-tab",
+        ".main-area .detail-tabs .detail-tab",
         { hasText: "Files changed" },
       ),
     ).toHaveCount(1);
@@ -829,21 +829,21 @@ test.describe("PR list tabs", () => {
     // Clicking Files changed in the outer tab bar updates the URL to
     // the /files sub-route.
     await page.locator(
-      ".detail-area .detail-tabs .detail-tab",
+      ".main-area .detail-tabs .detail-tab",
       { hasText: "Files changed" },
     ).click();
     await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".diff-view")).toBeVisible();
-    await expect(page.locator(".detail-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
 
     // Clicking Conversation routes back and keeps the tab bar
     // singular.
     await page.locator(
-      ".detail-area .detail-tabs .detail-tab",
+      ".main-area .detail-tabs .detail-tab",
       { hasText: "Conversation" },
     ).click();
     await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
-    await expect(page.locator(".detail-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
   });
 
   test("direct load of /pulls/:owner/:name/:number/files renders the diff with a single tab bar", async ({ page }) => {
@@ -855,14 +855,14 @@ test.describe("PR list tabs", () => {
 
     await page.goto("/pulls/acme/widgets/1/files");
 
-    await page.locator(".detail-area .detail-tabs").first()
+    await page.locator(".main-area .detail-tabs").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".detail-area .detail-tabs")).toHaveCount(1);
+    await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
     await expect(page.locator(".diff-view")).toBeVisible();
     await expect(
       page.locator(
-        ".detail-area .detail-tabs .detail-tab--active",
+        ".main-area .detail-tabs .detail-tab--active",
         { hasText: "Files changed" },
       ),
     ).toHaveCount(1);
