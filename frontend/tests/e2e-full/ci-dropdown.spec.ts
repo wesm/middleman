@@ -23,9 +23,12 @@ test.describe("CI dropdown", () => {
     expect(checksBox!.y).toBeGreaterThan(chipBox!.y + chipBox!.height);
     expect(additionsChipBox!.height).toBeLessThan(40);
 
-    await expect(detail.locator(".ci-check").first()).toContainText("build");
-    await expect(detail.locator(".ci-check").nth(1)).toContainText("test");
-    await expect(detail.locator(".ci-check").nth(2)).toContainText("lint");
+    await expect(detail.locator(".ci-name")).toHaveText([
+      "build",
+      "lint",
+      "roborev",
+      "test",
+    ]);
     const roborevRow = detail.locator(".ci-check", { hasText: "roborev" });
     await expect(roborevRow).toHaveCount(1);
     expect(
