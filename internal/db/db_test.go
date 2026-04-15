@@ -275,9 +275,27 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			 datetime('now'), datetime('now'), datetime('now'))`)
 	require.NoError(err)
 	_, err = raw.Exec(`
+		DROP INDEX idx_issue_events_created;
+		ALTER TABLE middleman_issue_events RENAME TO middleman_issue_events_strict;
+		CREATE TABLE middleman_issue_events (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			issue_id     INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
+			event_type   TEXT NOT NULL,
+			author       TEXT NOT NULL,
+			body         TEXT,
+			created_at   TEXT NOT NULL,
+			dedupe_key   TEXT NOT NULL,
+			UNIQUE(issue_id, dedupe_key)
+		);
+		CREATE INDEX idx_issue_events_created
+			ON middleman_issue_events(issue_id, created_at DESC);
+		DROP TABLE middleman_issue_events_strict;`)
+	require.NoError(err)
+	_, err = raw.Exec(`
 		INSERT INTO middleman_issue_events (
 			issue_id, event_type, author, created_at, dedupe_key
 		) VALUES
+			(1, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment'),
 			(2, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
@@ -465,6 +483,16 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_workspaces`).Scan(&workspaceCount)
 	require.NoError(err)
 	require.Equal(2, workspaceCount)
+
+	var integrityCheck string
+	err = d.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrityCheck)
+	require.NoError(err)
+	require.Equal("ok", integrityCheck)
+
+	var foreignKeyViolations int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations)
+	require.NoError(err)
+	require.Zero(foreignKeyViolations)
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {

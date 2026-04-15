@@ -108,6 +108,14 @@ SET issue_id = (
 )
 WHERE issue_id IN (
     SELECT duplicate_id FROM issue_casefold_duplicates
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM middleman_issue_events AS existing
+    JOIN issue_casefold_duplicates AS d
+        ON d.duplicate_id = middleman_issue_events.issue_id
+    WHERE existing.issue_id = d.keep_id
+      AND existing.dedupe_key = middleman_issue_events.dedupe_key
 );
 
 INSERT OR IGNORE INTO middleman_issue_labels (
