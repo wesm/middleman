@@ -145,7 +145,7 @@ func (c *FixtureClient) updatePullRequestDraft(owner, repo string, number int, d
 			if pr.GetNumber() != number {
 				continue
 			}
-			pr.Draft = gh.Bool(draft)
+			pr.Draft = new(draft)
 			pr.UpdatedAt = &now
 			if updated == nil {
 				updated = pr
