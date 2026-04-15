@@ -20,6 +20,15 @@ hooks = [
 repo = "local"
 hooks = [
   {
+    id = "migration-history-check",
+    name = "prevent edits to main-branch migrations",
+    language = "system",
+    entry = "scripts/check-migration-history.sh",
+    files = "^internal/db/migrations/.*$",
+    pass_filenames = false,
+    priority = 0,
+  },
+  {
     id = "api-generate",
     name = "regenerate api clients",
     language = "system",
