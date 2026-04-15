@@ -128,6 +128,14 @@ type DiffResponse struct {
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
+// EditPRContentInputBody defines model for EditPRContentInputBody.
+type EditPRContentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   *string `json:"body,omitempty"`
+	Title  *string `json:"title,omitempty"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -682,6 +690,9 @@ type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
 // SetIssueGithubStateJSONRequestBody defines body for SetIssueGithubState for application/json ContentType.
 type SetIssueGithubStateJSONRequestBody = GithubStateInputBody
 
+// EditPrContentJSONRequestBody defines body for EditPrContent for application/json ContentType.
+type EditPrContentJSONRequestBody = EditPRContentInputBody
+
 // PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody defines body for PostReposByOwnerByNamePullsByNumberApprove for application/json ContentType.
 type PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody = ApprovePRInputBody
 
@@ -821,6 +832,11 @@ type ClientInterface interface {
 
 	// GetReposByOwnerByNamePullsByNumber request
 	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrContentWithBody request with any body
+	EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWithBody request with any body
 	PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1075,6 +1091,30 @@ func (c *Client) PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context,
 
 func (c *Client) GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetReposByOwnerByNamePullsByNumberRequest(c.Server, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentRequestWithBody(c.Server, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentRequest(c.Server, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2336,6 +2376,67 @@ func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, n
 	return req, nil
 }
 
+// NewEditPrContentRequest calls the generic EditPrContent builder with application/json body
+func NewEditPrContentRequest(server string, owner string, name string, number int64, body EditPrContentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrContentRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+}
+
+// NewEditPrContentRequestWithBody generates requests for EditPrContent with any type of body
+func NewEditPrContentRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewPostReposByOwnerByNamePullsByNumberApproveRequest calls the generic PostReposByOwnerByNamePullsByNumberApprove builder with application/json body
 func NewPostReposByOwnerByNamePullsByNumberApproveRequest(server string, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3521,6 +3622,11 @@ type ClientWithResponsesInterface interface {
 	// GetReposByOwnerByNamePullsByNumberWithResponse request
 	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
 
+	// EditPrContentWithBodyWithResponse request with any body
+	EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
+
+	EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
+
 	// PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with any body
 	PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
 
@@ -3897,6 +4003,29 @@ func (r GetReposByOwnerByNamePullsByNumberResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetReposByOwnerByNamePullsByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrContentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrContentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrContentResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4535,6 +4664,23 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberWithResponse(ctx
 		return nil, err
 	}
 	return ParseGetReposByOwnerByNamePullsByNumberResponse(rsp)
+}
+
+// EditPrContentWithBodyWithResponse request with arbitrary body returning *EditPrContentResponse
+func (c *ClientWithResponses) EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
+	rsp, err := c.EditPrContentWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrContentResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
+	rsp, err := c.EditPrContent(ctx, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrContentResponse(rsp)
 }
 
 // PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostReposByOwnerByNamePullsByNumberApproveResponse
@@ -5204,6 +5350,39 @@ func ParseGetReposByOwnerByNamePullsByNumberResponse(rsp *http.Response) (*GetRe
 	}
 
 	response := &GetReposByOwnerByNamePullsByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrContentResponse parses an HTTP response from a EditPrContentWithResponse call
+func ParseEditPrContentResponse(rsp *http.Response) (*EditPrContentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrContentResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

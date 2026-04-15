@@ -317,24 +317,33 @@ func (c *FixtureClient) MergePullRequest(
 	return &gh.PullRequestMergeResult{SHA: &sha, Merged: &merged, Message: &msg}, nil
 }
 
-// EditPullRequest updates the seeded PR state for E2E mutations.
+// EditPullRequest updates seeded PR fields for E2E mutations.
 func (c *FixtureClient) EditPullRequest(
-	_ context.Context, owner, repo string, number int, state string,
+	_ context.Context, owner, repo string, number int, opts ghclient.EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
 	pr := c.findPullRequest(owner, repo, number)
 	if pr == nil {
 		return nil, nil
 	}
 	now := gh.Timestamp{Time: time.Now().UTC()}
-	pr.State = &state
-	if state == "closed" {
-		pr.ClosedAt = &now
-	} else {
-		pr.ClosedAt = nil
-		pr.MergedAt = nil
-		merged := false
-		pr.Merged = &merged
+	if opts.State != nil {
+		pr.State = opts.State
+		if *opts.State == "closed" {
+			pr.ClosedAt = &now
+		} else {
+			pr.ClosedAt = nil
+			pr.MergedAt = nil
+			merged := false
+			pr.Merged = &merged
+		}
 	}
+	if opts.Title != nil {
+		pr.Title = opts.Title
+	}
+	if opts.Body != nil {
+		pr.Body = opts.Body
+	}
+	pr.UpdatedAt = &now
 	return pr, nil
 }
 

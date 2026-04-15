@@ -37,7 +37,7 @@ type mockGH struct {
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
 	getUserFn                 func(context.Context, string) (*gh.User, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
-	editPullRequestFn         func(context.Context, string, string, int, string) (*gh.PullRequest, error)
+	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
 	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
@@ -210,12 +210,25 @@ func (m *mockGH) MergePullRequest(
 }
 
 func (m *mockGH) EditPullRequest(
-	ctx context.Context, owner, repo string, number int, state string,
+	ctx context.Context, owner, repo string, number int, opts ghclient.EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
 	if m.editPullRequestFn != nil {
-		return m.editPullRequestFn(ctx, owner, repo, number, state)
+		return m.editPullRequestFn(ctx, owner, repo, number, opts)
 	}
-	return &gh.PullRequest{State: &state}, nil
+	pr := &gh.PullRequest{}
+	if opts.State != nil {
+		pr.State = opts.State
+	}
+	if opts.Title != nil {
+		pr.Title = opts.Title
+	}
+	if opts.Body != nil {
+		pr.Body = opts.Body
+	}
+	now := time.Now().UTC()
+	ghTime := gh.Timestamp{Time: now}
+	pr.UpdatedAt = &ghTime
+	return pr, nil
 }
 
 func (m *mockGH) EditIssue(
@@ -3043,7 +3056,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.PullRequest, error) {
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -3111,7 +3124,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	// Should succeed since the requested state matches.
 	state := "closed"
 	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.PullRequest, error) {
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -3308,7 +3321,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 	// Should return 409.
 	merged := "closed"
 	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.PullRequest, error) {
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
 			return nil, make422Error()
 		},
 		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
@@ -5271,4 +5284,132 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	get2, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws2ID)
 	require.NoError(err)
 	assert.Equal(http.StatusNotFound, get2.StatusCode())
+}
+
+// --- edit-pr-content (PATCH) tests ---
+
+func TestAPIEditPRTitleAndBody(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"title": "updated title", "body": "updated body"})
+	require.Equal(http.StatusOK, rr.Code)
+
+	mr, err := database.GetMergeRequest(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal("updated title", mr.Title)
+	require.Equal("updated body", mr.Body)
+}
+
+func TestAPIEditPRTitleOnly(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"title": "new title"})
+	require.Equal(http.StatusOK, rr.Code)
+
+	mr, err := database.GetMergeRequest(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal("new title", mr.Title)
+	require.Equal("test body", mr.Body)
+}
+
+func TestAPIEditPRBodyOnly(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"body": "new body"})
+	require.Equal(http.StatusOK, rr.Code)
+
+	mr, err := database.GetMergeRequest(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal("Test PR #1", mr.Title)
+	require.Equal("new body", mr.Body)
+}
+
+func TestAPIEditPRClearBody(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"body": ""})
+	require.Equal(http.StatusOK, rr.Code)
+
+	mr, err := database.GetMergeRequest(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal("Test PR #1", mr.Title)
+	require.Empty(mr.Body)
+}
+
+func TestAPIEditPRNoFields400(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]any{})
+	require.Equal(http.StatusBadRequest, rr.Code)
+}
+
+func TestAPIEditPRBlankTitle400(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"title": "   "})
+	require.Equal(http.StatusBadRequest, rr.Code)
+}
+
+func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	ctx := context.Background()
+
+	// Seed non-default derived fields so we can detect clobbering.
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(database.UpdateMRDerivedFields(ctx, repo.ID, 1, db.MRDerivedFields{
+		ReviewDecision: "APPROVED",
+		CommentCount:   7,
+		LastActivityAt: now,
+	}))
+	require.NoError(database.UpdateMRCIStatus(ctx, repo.ID, 1, "success", "[]"))
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"title": "changed title"})
+	require.Equal(http.StatusOK, rr.Code)
+
+	after, err := database.GetMergeRequest(ctx, "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal("changed title", after.Title)
+	require.Equal(7, after.CommentCount)
+	require.Equal("success", after.CIStatus)
+	require.Equal("APPROVED", after.ReviewDecision)
+	require.Equal("open", after.State)
 }

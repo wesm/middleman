@@ -367,6 +367,77 @@ export function createDetailStore(
     }
   }
 
+  async function updatePRContent(
+    owner: string,
+    name: string,
+    number: number,
+    fields: { title?: string; body?: string },
+  ): Promise<void> {
+    if (!detail || !isDetailShowing(owner, name, number))
+      return;
+
+    const prevTitle = detail.merge_request.Title;
+    const prevBody = detail.merge_request.Body;
+
+    // Optimistic update.
+    detail = {
+      ...detail,
+      merge_request: {
+        ...detail.merge_request,
+        ...(fields.title !== undefined && {
+          Title: fields.title,
+        }),
+        ...(fields.body !== undefined && {
+          Body: fields.body,
+        }),
+      },
+    };
+
+    try {
+      const { data, error: requestError } =
+        await apiClient.PATCH(
+          "/repos/{owner}/{name}/pulls/{number}",
+          {
+            params: { path: { owner, name, number } },
+            body: fields,
+          },
+        );
+      if (requestError) {
+        throw new Error(
+          apiErrorMessage(
+            requestError,
+            "failed to update PR",
+          ),
+        );
+      }
+      // Apply server-canonical response.
+      if (data && isDetailShowing(owner, name, number)) {
+        detail = data as PullDetail;
+      }
+    } catch (err) {
+      storeError =
+        err instanceof Error ? err.message : String(err);
+      // Revert optimistic update.
+      if (
+        isDetailShowing(owner, name, number) &&
+        detail
+      ) {
+        detail = {
+          ...detail,
+          merge_request: {
+            ...detail.merge_request,
+            Title: prevTitle,
+            Body: prevBody,
+          },
+        };
+      }
+      throw err;
+    }
+    // Refresh pulls list independently -- don't let a
+    // refresh failure revert a successful edit.
+    refreshPullsIfActive().catch(() => {});
+  }
+
   function startDetailPolling(
     owner: string,
     name: string,
@@ -517,6 +588,7 @@ export function createDetailStore(
     loadDetail,
     refreshDetailOnly,
     updateKanbanState,
+    updatePRContent,
     startDetailPolling,
     stopDetailPolling,
     toggleDetailPRStar,

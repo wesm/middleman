@@ -167,6 +167,20 @@ type mergePROutput struct {
 	Body mergePRBody
 }
 
+type editPRContentInput struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		Title *string `json:"title,omitempty"`
+		Body  *string `json:"body,omitempty"`
+	}
+}
+
+type editPRContentOutput struct {
+	Body mergeRequestDetailResponse
+}
+
 type githubStateInput struct {
 	Owner  string `path:"owner"`
 	Name   string `path:"name"`
@@ -289,6 +303,12 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/repos/{owner}/{name}/pulls/{number}/state",
 		DefaultStatus: http.StatusOK,
 	}, s.setKanbanState)
+	huma.Register(api, huma.Operation{
+		OperationID:   "edit-pr-content",
+		Method:        http.MethodPatch,
+		Path:          "/repos/{owner}/{name}/pulls/{number}",
+		DefaultStatus: http.StatusOK,
+	}, s.editPRContent)
 	huma.Register(api, huma.Operation{
 		OperationID:   "post-pr-comment",
 		Method:        http.MethodPost,
@@ -662,6 +682,96 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 	}
 
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
+}
+
+func (s *Server) editPRContent(
+	ctx context.Context, input *editPRContentInput,
+) (*editPRContentOutput, error) {
+	if input.Body.Title == nil && input.Body.Body == nil {
+		return nil, huma.Error400BadRequest(
+			"at least one of title or body must be provided",
+		)
+	}
+	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
+		return nil, huma.Error400BadRequest("title must not be blank")
+	}
+
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	mr, err := s.db.GetMergeRequest(
+		ctx, input.Owner, input.Name, input.Number,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get pull request failed",
+		)
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+
+	opts := ghclient.EditPullRequestOpts{
+		Title: input.Body.Title,
+		Body:  input.Body.Body,
+	}
+	ghPR, err := client.EditPullRequest(
+		ctx, input.Owner, input.Name, input.Number, opts,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway(
+			"GitHub API error: " + err.Error(),
+		)
+	}
+	if ghPR == nil {
+		return nil, huma.Error502BadGateway(
+			"GitHub API returned no pull request",
+		)
+	}
+
+	newTitle := mr.Title
+	if ghPR.Title != nil {
+		newTitle = ghPR.GetTitle()
+	} else if input.Body.Title != nil {
+		newTitle = *input.Body.Title
+	}
+	newBody := mr.Body
+	if ghPR.Body != nil {
+		newBody = ghPR.GetBody()
+	} else if input.Body.Body != nil {
+		newBody = *input.Body.Body
+	}
+	updatedAt := time.Now().UTC()
+	if ghPR.UpdatedAt != nil {
+		updatedAt = ghPR.UpdatedAt.UTC()
+	}
+	if err := s.db.UpdateMRTitleBody(
+		ctx, mr.ID, newTitle, newBody, updatedAt,
+	); err != nil {
+		return nil, huma.Error500InternalServerError(
+			"update title/body failed",
+		)
+	}
+
+	mr, err = s.db.GetMergeRequest(
+		ctx, input.Owner, input.Name, input.Number,
+	)
+	if err != nil || mr == nil {
+		return nil, huma.Error500InternalServerError(
+			"re-read pull request failed",
+		)
+	}
+
+	body, err := s.buildPullDetailResponse(
+		ctx, input.Owner, input.Name, mr, workflowDBOnly,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &editPRContentOutput{Body: body}, nil
 }
 
 func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*postCommentOutput, error) {
@@ -1126,7 +1236,7 @@ func (s *Server) setPRGitHubState(
 
 	if _, err := client.EditPullRequest(
 		ctx, input.Owner, input.Name,
-		input.Number, input.Body.State,
+		input.Number, ghclient.EditPullRequestOpts{State: &input.Body.State},
 	); err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&

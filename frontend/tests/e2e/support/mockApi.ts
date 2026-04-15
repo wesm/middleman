@@ -180,13 +180,16 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
 }
 
 export async function mockApi(page: Page): Promise<void> {
+  // Deep-clone so mutations (e.g. PATCH) don't leak between tests.
+  const localPulls: typeof pulls = JSON.parse(JSON.stringify(pulls));
+
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const { pathname } = url;
     const method = route.request().method();
 
     if (method === "GET" && pathname === "/api/v1/pulls") {
-      await fulfillJson(route, pulls);
+      await fulfillJson(route, localPulls);
       return;
     }
 
@@ -197,7 +200,7 @@ export async function mockApi(page: Page): Promise<void> {
       const prOwner = singlePrMatch[1];
       const prName = singlePrMatch[2];
       const prNumber = parseInt(singlePrMatch[3]!, 10);
-      const pr = pulls.find(
+      const pr = localPulls.find(
         (p) =>
           p.repo_owner === prOwner &&
           p.repo_name === prName &&
@@ -244,6 +247,39 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "POST" && pathname === "/api/v1/sync") {
       await fulfillJson(route, undefined, 202);
+      return;
+    }
+
+    const patchPrMatch = pathname.match(
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/,
+    );
+    if (method === "PATCH" && patchPrMatch) {
+      const prOwner = patchPrMatch[1];
+      const prName = patchPrMatch[2];
+      const prNumber = parseInt(patchPrMatch[3]!, 10);
+      const pr = localPulls.find(
+        (p) =>
+          p.repo_owner === prOwner &&
+          p.repo_name === prName &&
+          p.Number === prNumber,
+      );
+      if (!pr) {
+        await fulfillJson(route, { title: "Not found" }, 404);
+        return;
+      }
+      const reqBody = JSON.parse(
+        (await route.request().postData()) ?? "{}",
+      );
+      if (reqBody.title !== undefined) pr.Title = reqBody.title;
+      if (reqBody.body !== undefined) pr.Body = reqBody.body;
+      await fulfillJson(route, {
+        merge_request: pr,
+        repo_owner: pr.repo_owner,
+        repo_name: pr.repo_name,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+        worktree_links: pr.worktree_links,
+      });
       return;
     }
 
