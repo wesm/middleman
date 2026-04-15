@@ -1,7 +1,9 @@
 <script lang="ts">
   import {
-    getNavigate,
+    getNavigate, getSidebar,
   } from "../context.js";
+
+  const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail
     from "../components/detail/PullDetail.svelte";
@@ -35,8 +37,18 @@
     <aside class="sidebar">
       <PullList getDetailTab={() => detailTab} />
     </aside>
-  {:else if !hideSidebar}
-    <aside class="sidebar sidebar--collapsed"></aside>
+  {:else if !hideSidebar && isSidebarToggleEnabled()}
+    <aside class="sidebar sidebar--collapsed">
+      <button class="expand-btn" onclick={toggleSidebar} title="Expand sidebar">
+        <svg width="14" height="14" viewBox="0 0 16 16"
+          fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1" y="1" width="14" height="14" rx="2" />
+          <line x1="6" y1="1" x2="6" y2="15" />
+          <polyline points="8,6 10,8 8,10"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </aside>
   {/if}
   <section
     class="detail-area"
@@ -115,9 +127,27 @@
   }
 
   .sidebar--collapsed {
-    width: 0;
-    overflow: hidden;
-    border-right: none;
+    width: 28px;
+    border-right: 1px solid var(--border-default);
+    align-items: center;
+    padding-top: 6px;
+  }
+
+  .expand-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .expand-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
   }
 
   .detail-area {

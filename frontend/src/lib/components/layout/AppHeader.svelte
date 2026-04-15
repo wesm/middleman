@@ -14,6 +14,11 @@
     isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
 
+  const hasSidebarStrip = $derived(
+    getPage() === "issues"
+    || (getPage() === "pulls" && getView() === "list"),
+  );
+
   const stores = getStores();
   const { sync } = stores;
 
@@ -27,7 +32,7 @@
 
 <header class="app-header">
   <div class="header-left">
-    {#if isSidebarCollapsed() && isSidebarToggleEnabled()}
+    {#if isSidebarCollapsed() && isSidebarToggleEnabled() && !hasSidebarStrip}
       <button
         class="sidebar-toggle"
         onclick={toggleSidebar}
@@ -244,17 +249,6 @@
     color: var(--text-primary);
   }
 
-  .daemon-indicator {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    margin-left: 4px;
-    vertical-align: middle;
-    opacity: 0.6;
-  }
-
   .sidebar-toggle {
     width: 26px;
     height: 26px;
@@ -268,5 +262,16 @@
   .sidebar-toggle:hover {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
+  }
+
+  .daemon-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    margin-left: 4px;
+    vertical-align: middle;
+    opacity: 0.6;
   }
 </style>

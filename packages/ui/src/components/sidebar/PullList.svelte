@@ -328,8 +328,23 @@
     background: var(--bg-surface);
   }
 
-  .filter-bar :global(.sidebar-toggle) {
+  .sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
     margin-left: auto;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .sidebar-toggle:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
   }
 
   .search-bar {
@@ -594,7 +609,6 @@
     background: var(--bg-inset);
     border-radius: 6px;
     padding: 2px;
-    margin-left: auto;
   }
   .group-btn {
     font-size: 11px;
