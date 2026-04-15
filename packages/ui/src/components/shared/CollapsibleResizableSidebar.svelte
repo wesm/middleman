@@ -37,7 +37,8 @@
     onExpand = undefined,
   }: Props = $props();
 
-  let currentWidth = $derived(sidebarWidth);
+  let dragWidth: number | null = $state(null);
+  let currentWidth = $derived(dragWidth ?? sidebarWidth);
 
   function startResize(event: MouseEvent): void {
     event.preventDefault();
@@ -45,7 +46,7 @@
     const startWidth = currentWidth;
 
     function onMove(moveEvent: MouseEvent): void {
-      currentWidth = Math.max(
+      dragWidth = Math.max(
         minSidebarWidth,
         Math.min(
           maxSidebarWidth,
@@ -58,6 +59,7 @@
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       onSidebarResize?.(currentWidth);
+      dragWidth = null;
     }
 
     window.addEventListener("mousemove", onMove);
