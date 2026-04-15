@@ -51,13 +51,6 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			App:        "GitHub Actions",
 		},
 		{
-			Name:       "test",
-			Status:     "completed",
-			Conclusion: "success",
-			URL:        "https://github.com/acme/widgets/actions/runs/1/job/2",
-			App:        "GitHub Actions",
-		},
-		{
 			Name:       "lint",
 			Status:     "completed",
 			Conclusion: "success",
@@ -70,6 +63,13 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Conclusion: "",
 			URL:        "",
 			App:        "roborev",
+		},
+		{
+			Name:       "test",
+			Status:     "completed",
+			Conclusion: "success",
+			URL:        "https://github.com/acme/widgets/actions/runs/1/job/2",
+			App:        "GitHub Actions",
 		},
 	})
 	if err != nil {
