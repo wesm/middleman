@@ -21,6 +21,9 @@ func TestComposeDevServicesUseEntrypointScripts(t *testing.T) {
 	compose := string(content)
 	assert.Contains(compose, "/app/docker/backend-dev-entrypoint.sh")
 	assert.Contains(compose, "/app/docker/frontend-dev-entrypoint.sh")
+	assert.Contains(compose, "MIDDLEMAN_CONFIG_PATH: /app/docker/dev-config.toml")
+	assert.NotContains(compose, "${HOME}/.config/middleman/config.toml")
+	assert.NotContains(compose, "MIDDLEMAN_HOME: /data")
 	assert.NotContains(compose, "make dev")
 	assert.NotContains(compose, "make frontend-dev BUN_INSTALL_FLAGS=--frozen-lockfile ARGS=\"--host 0.0.0.0 --port 15173\"")
 }
@@ -59,8 +62,9 @@ func TestBackendDevEntrypointForwardsToConfiguredPort(t *testing.T) {
 			fakeSocat := filepath.Join(dir, "socat")
 			req.NoError(os.WriteFile(fakeSocat, []byte("#!/bin/sh\nprintf '%s\n' \"$*\" > \"$SOCAT_ARGS_LOG\"\ntouch \"$SOCAT_READY_FILE\"\ntrap 'exit 0' INT TERM\nwhile :; do sleep 1; done\n"), 0o755))
 
+			airArgsLog := filepath.Join(dir, "air-args.log")
 			fakeAir := filepath.Join(dir, "air")
-			req.NoError(os.WriteFile(fakeAir, []byte("#!/bin/sh\nwhile [ ! -f \"$SOCAT_READY_FILE\" ]; do\n  sleep 0.01\ndone\nexit 0\n"), 0o755))
+			req.NoError(os.WriteFile(fakeAir, []byte("#!/bin/sh\nprintf '%s\n' \"$*\" > \"$AIR_ARGS_LOG\"\nwhile [ ! -f \"$SOCAT_READY_FILE\" ]; do\n  sleep 0.01\ndone\nexit 0\n"), 0o755))
 
 			goArgsLog := filepath.Join(dir, "go-args.log")
 			fakeGo := filepath.Join(dir, "go")
@@ -70,6 +74,7 @@ func TestBackendDevEntrypointForwardsToConfiguredPort(t *testing.T) {
 			cmd.Dir = "."
 			cmd.Env = append(
 				os.Environ(),
+				"AIR_ARGS_LOG="+airArgsLog,
 				"AIR_BIN="+fakeAir,
 				"GO_BIN="+fakeGo,
 				"GO_ARGS_LOG="+goArgsLog,
@@ -88,6 +93,11 @@ func TestBackendDevEntrypointForwardsToConfiguredPort(t *testing.T) {
 			req.NoError(err, string(output))
 			goArgs := strings.TrimSpace(string(goArgsContent))
 			assert.Contains(goArgs, "run ./cmd/middleman config read -config "+configPath+" port")
+
+			airArgsContent, err := os.ReadFile(airArgsLog)
+			req.NoError(err, string(output))
+			airArgs := strings.TrimSpace(string(airArgsContent))
+			assert.Contains(airArgs, "-c .air.toml -- -config "+configPath)
 
 			argsContent, err := os.ReadFile(argsLog)
 			req.NoError(err, string(output))

@@ -218,11 +218,9 @@ mise run dev-compose-down  # docker compose down
 ```
 
 Compose behavior:
-- Reads host config from `~/.config/middleman/config.toml`, mounted read-only at `/data/config.toml`
-- Stores SQLite state in Docker volume as `/data/middleman.db`
+- Uses repo-local `docker/dev-config.toml` so compose config stays isolated from native runs
+- Stores SQLite state in Docker volume as `/data/middleman.db` via `data_dir = "/data"`
 - Exposes backend on `http://127.0.0.1:18090` and frontend dev server on `http://127.0.0.1:15173`
-
-For compose usage, keep `data_dir` unset in host config or set it to `/data`, otherwise the container may store SQLite outside the mounted volume.
 
 Other targets:
 

@@ -10,10 +10,9 @@ services:
       - go-mod:/go/pkg/mod
       - go-cache:/go/cache
       - middleman-data:/data
-      - ${HOME}/.config/middleman/config.toml:/data/config.toml:ro
     environment:
+      MIDDLEMAN_CONFIG_PATH: /app/docker/dev-config.toml
       MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
-      MIDDLEMAN_HOME: /data
       GOCACHE: /go/cache
     healthcheck:
       test:
