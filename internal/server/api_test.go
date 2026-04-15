@@ -3135,6 +3135,59 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 	require.False(pr.IsDraft)
 }
 
+func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
+	require := require.New(t)
+	notFound := &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusNotFound, Status: "404 Not Found"},
+		Message:  "Not Found",
+	}
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			return nil, fmt.Errorf("marking acme/widget#1 ready for review: %w", notFound)
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			title := "Already ready"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "octocat"
+			draft := false
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				User:      &gh.User{Login: &author},
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	require.False(pr.IsDraft)
+}
+
 func TestAPIClosePR422Merged(t *testing.T) {
 	// EditPullRequest returns 422, re-fetch shows PR is merged.
 	// Should return 409.

@@ -191,12 +191,8 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		call++
 		w.Header().Set("Content-Type", "application/json")
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Fatalf("expected application/json content type, got %q", r.Header.Get("Content-Type"))
-		}
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
+		require.Equal("application/json", r.Header.Get("Content-Type"))
+		require.Equal(http.MethodPost, r.Method)
 		if call == 1 {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 			return

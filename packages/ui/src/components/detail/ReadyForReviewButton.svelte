@@ -17,6 +17,10 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
+  function shouldRefreshStaleDraftState(message: string): boolean {
+    return message.includes("ready for review") && message.includes("404 Not Found");
+  }
+
   async function handleReadyForReview(): Promise<void> {
     submitting = true;
     error = null;
@@ -30,7 +34,16 @@
       await detail.loadDetail(owner, name, number);
       await pulls.loadPulls();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (shouldRefreshStaleDraftState(message)) {
+        try {
+          await detail.loadDetail(owner, name, number);
+          await pulls.loadPulls();
+        } catch {
+          // Preserve the original mutation error if the stale-state refresh also fails.
+        }
+      }
+      error = message;
     } finally {
       submitting = false;
     }

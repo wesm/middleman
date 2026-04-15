@@ -48,4 +48,24 @@ describe("ReadyForReviewButton", () => {
     expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141);
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
+
+  it("refreshes stale draft state after a GitHub 404", async () => {
+    mockPost.mockResolvedValue({
+      error: {
+        detail:
+          "marking wesm/middleman#141 ready for review: POST https://api.github.com/repos/wesm/middleman/pulls/141/ready_for_review: 404 Not Found []",
+      },
+    });
+
+    render(ReadyForReviewButton, {
+      props: { owner: "wesm", name: "middleman", number: 141, size: "sm" },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /ready for review/i }),
+    );
+
+    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141);
+    expect(mockLoadPulls).toHaveBeenCalledTimes(1);
+  });
 });
