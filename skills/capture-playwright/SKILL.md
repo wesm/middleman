@@ -11,7 +11,7 @@ Generate the artifact with Playwright and save it to local disk. **Do not upload
 
 - **Never upload screenshots or videos that are not attached to a specific PR or issue.** Standalone uploads with no PR/issue target are forbidden.
 - **Default is local-only.** Always save artifacts to disk first. Treat that as the finished output unless the user explicitly asks for an upload.
-- **Before uploading any image or video, prompt the user for confirmation.** Use AskUserQuestion to confirm, stating the file path and the target PR/issue. No exceptions — even if the workflow calls for it, ask first.
+- **Before uploading any image or video, prompt the user for confirmation.** Ask the user to approve the upload, stating the file path and the target PR/issue. No exceptions — even if the workflow calls for it, ask first.
 
 Reference session: `http://127.0.0.1:8080/sessions/opencode%3Ases_2826059aeffeEtdyCVsVwnKi6R`
 
