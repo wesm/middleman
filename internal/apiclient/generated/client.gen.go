@@ -97,6 +97,16 @@ type CommitsResponse struct {
 	Commits *[]CommitResponse `json:"commits"`
 }
 
+// CreateWorkspaceInputBody defines model for CreateWorkspaceInputBody.
+type CreateWorkspaceInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	MrNumber     int64   `json:"mr_number"`
+	Name         string  `json:"name"`
+	Owner        string  `json:"owner"`
+	PlatformHost string  `json:"platform_host"`
+}
+
 // DiffFile defines model for DiffFile.
 type DiffFile struct {
 	Additions        int64   `json:"additions"`
@@ -276,6 +286,13 @@ type Line struct {
 	Type      string `json:"type"`
 }
 
+// ListWorkspacesOutputBody defines model for ListWorkspacesOutputBody.
+type ListWorkspacesOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string              `json:"$schema,omitempty"`
+	Workspaces *[]WorkspaceResponse `json:"workspaces"`
+}
+
 // MREvent defines model for MREvent.
 type MREvent struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -353,10 +370,12 @@ type MergeRequestDetailResponse struct {
 	DetailLoaded     bool                     `json:"detail_loaded"`
 	Events           *[]MREvent               `json:"events"`
 	MergeRequest     MergeRequest             `json:"merge_request"`
+	PlatformHost     string                   `json:"platform_host"`
 	RepoName         string                   `json:"repo_name"`
 	RepoOwner        string                   `json:"repo_owner"`
 	Warnings         *[]string                `json:"warnings,omitempty"`
 	WorkflowApproval WorkflowApprovalResponse `json:"workflow_approval"`
+	Workspace        *WorkspaceMRRef          `json:"workspace,omitempty"`
 	WorktreeLinks    *[]WorktreeLinkResponse  `json:"worktree_links"`
 }
 
@@ -559,6 +578,36 @@ type WorkflowApprovalResponse struct {
 	Required bool  `json:"required"`
 }
 
+// WorkspaceMRRef defines model for WorkspaceMRRef.
+type WorkspaceMRRef struct {
+	Id     string `json:"id"`
+	Status string `json:"status"`
+}
+
+// WorkspaceResponse defines model for WorkspaceResponse.
+type WorkspaceResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string `json:"$schema,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	ErrorMessage     *string `json:"error_message,omitempty"`
+	Id               string  `json:"id"`
+	MrAdditions      *int64  `json:"mr_additions,omitempty"`
+	MrCiStatus       *string `json:"mr_ci_status,omitempty"`
+	MrDeletions      *int64  `json:"mr_deletions,omitempty"`
+	MrHeadRef        string  `json:"mr_head_ref"`
+	MrIsDraft        *bool   `json:"mr_is_draft,omitempty"`
+	MrNumber         int64   `json:"mr_number"`
+	MrReviewDecision *string `json:"mr_review_decision,omitempty"`
+	MrState          *string `json:"mr_state,omitempty"`
+	MrTitle          *string `json:"mr_title,omitempty"`
+	PlatformHost     string  `json:"platform_host"`
+	RepoName         string  `json:"repo_name"`
+	RepoOwner        string  `json:"repo_owner"`
+	Status           string  `json:"status"`
+	TmuxSession      string  `json:"tmux_session"`
+	WorktreePath     string  `json:"worktree_path"`
+}
+
 // WorktreeLinkResponse defines model for WorktreeLinkResponse.
 type WorktreeLinkResponse struct {
 	WorktreeBranch *string `json:"worktree_branch,omitempty"`
@@ -622,6 +671,11 @@ type ListStacksParams struct {
 	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
 }
 
+// DeleteWorkspaceParams defines parameters for DeleteWorkspace.
+type DeleteWorkspaceParams struct {
+	Force *bool `form:"force,omitempty" json:"force,omitempty"`
+}
+
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
 type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
 
@@ -648,6 +702,9 @@ type UnsetStarredJSONRequestBody = StarredRequest
 
 // SetStarredJSONRequestBody defines body for SetStarred for application/json ContentType.
 type SetStarredJSONRequestBody = StarredRequest
+
+// CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
+type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -832,6 +889,20 @@ type ClientInterface interface {
 
 	// GetSyncStatus request
 	GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspaces request
+	GetWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWorkspaceWithBody request with any body
+	CreateWorkspaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateWorkspace(ctx context.Context, body CreateWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWorkspace request
+	DeleteWorkspace(ctx context.Context, id string, params *DeleteWorkspaceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesById request
+	GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1304,6 +1375,66 @@ func (c *Client) TriggerSync(ctx context.Context, reqEditors ...RequestEditorFn)
 
 func (c *Client) GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSyncStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkspaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkspaceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkspace(ctx context.Context, body CreateWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkspaceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteWorkspace(ctx context.Context, id string, params *DeleteWorkspaceParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWorkspaceRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesByIdRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3147,6 +3278,163 @@ func NewGetSyncStatusRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetWorkspacesRequest generates requests for GetWorkspaces
+func NewGetWorkspacesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateWorkspaceRequest calls the generic CreateWorkspace builder with application/json body
+func NewCreateWorkspaceRequest(server string, body CreateWorkspaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateWorkspaceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateWorkspaceRequestWithBody generates requests for CreateWorkspace with any type of body
+func NewCreateWorkspaceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteWorkspaceRequest generates requests for DeleteWorkspace
+func NewDeleteWorkspaceRequest(server string, id string, params *DeleteWorkspaceParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Force != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "force", *params.Force, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesByIdRequest generates requests for GetWorkspacesById
+func NewGetWorkspacesByIdRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3300,6 +3588,20 @@ type ClientWithResponsesInterface interface {
 
 	// GetSyncStatusWithResponse request
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncStatusResponse, error)
+
+	// GetWorkspacesWithResponse request
+	GetWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWorkspacesResponse, error)
+
+	// CreateWorkspaceWithBodyWithResponse request with any body
+	CreateWorkspaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkspaceResponse, error)
+
+	CreateWorkspaceWithResponse(ctx context.Context, body CreateWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkspaceResponse, error)
+
+	// DeleteWorkspaceWithResponse request
+	DeleteWorkspaceWithResponse(ctx context.Context, id string, params *DeleteWorkspaceParams, reqEditors ...RequestEditorFn) (*DeleteWorkspaceResponse, error)
+
+	// GetWorkspacesByIdWithResponse request
+	GetWorkspacesByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdResponse, error)
 }
 
 type GetActivityResponse struct {
@@ -4011,6 +4313,97 @@ func (r GetSyncStatusResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkspacesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListWorkspacesOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWorkspacesByIdResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesByIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesByIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetActivityWithResponse request returning *GetActivityResponse
 func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
 	rsp, err := c.GetActivity(ctx, params, reqEditors...)
@@ -4360,6 +4753,50 @@ func (c *ClientWithResponses) GetSyncStatusWithResponse(ctx context.Context, req
 		return nil, err
 	}
 	return ParseGetSyncStatusResponse(rsp)
+}
+
+// GetWorkspacesWithResponse request returning *GetWorkspacesResponse
+func (c *ClientWithResponses) GetWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWorkspacesResponse, error) {
+	rsp, err := c.GetWorkspaces(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesResponse(rsp)
+}
+
+// CreateWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateWorkspaceResponse
+func (c *ClientWithResponses) CreateWorkspaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkspaceResponse, error) {
+	rsp, err := c.CreateWorkspaceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkspaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateWorkspaceWithResponse(ctx context.Context, body CreateWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkspaceResponse, error) {
+	rsp, err := c.CreateWorkspace(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkspaceResponse(rsp)
+}
+
+// DeleteWorkspaceWithResponse request returning *DeleteWorkspaceResponse
+func (c *ClientWithResponses) DeleteWorkspaceWithResponse(ctx context.Context, id string, params *DeleteWorkspaceParams, reqEditors ...RequestEditorFn) (*DeleteWorkspaceResponse, error) {
+	rsp, err := c.DeleteWorkspace(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWorkspaceResponse(rsp)
+}
+
+// GetWorkspacesByIdWithResponse request returning *GetWorkspacesByIdResponse
+func (c *ClientWithResponses) GetWorkspacesByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdResponse, error) {
+	rsp, err := c.GetWorkspacesById(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesByIdResponse(rsp)
 }
 
 // ParseGetActivityResponse parses an HTTP response from a GetActivityWithResponse call
@@ -5340,6 +5777,131 @@ func ParseGetSyncStatusResponse(rsp *http.Response) (*GetSyncStatusResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest SyncStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesResponse parses an HTTP response from a GetWorkspacesWithResponse call
+func ParseGetWorkspacesResponse(rsp *http.Response) (*GetWorkspacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListWorkspacesOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateWorkspaceResponse parses an HTTP response from a CreateWorkspaceWithResponse call
+func ParseCreateWorkspaceResponse(rsp *http.Response) (*CreateWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteWorkspaceResponse parses an HTTP response from a DeleteWorkspaceWithResponse call
+func ParseDeleteWorkspaceResponse(rsp *http.Response) (*DeleteWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesByIdResponse parses an HTTP response from a GetWorkspacesByIdWithResponse call
+func ParseGetWorkspacesByIdResponse(rsp *http.Response) (*GetWorkspacesByIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesByIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

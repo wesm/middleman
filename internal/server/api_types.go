@@ -35,11 +35,13 @@ type mergeRequestDetailResponse struct {
 	Events           []db.MREvent             `json:"events"`
 	RepoOwner        string                   `json:"repo_owner"`
 	RepoName         string                   `json:"repo_name"`
+	PlatformHost     string                   `json:"platform_host"`
 	WorktreeLinks    []worktreeLinkResponse   `json:"worktree_links"`
 	WorkflowApproval workflowApprovalResponse `json:"workflow_approval"`
 	Warnings         []string                 `json:"warnings,omitempty"`
 	DetailLoaded     bool                     `json:"detail_loaded"`
 	DetailFetchedAt  string                   `json:"detail_fetched_at,omitempty"`
+	Workspace        *workspaceMRRef          `json:"workspace,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{
@@ -130,6 +132,57 @@ type commitResponse struct {
 
 type commitsResponse struct {
 	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
+}
+
+type workspaceResponse struct {
+	ID               string  `json:"id"`
+	PlatformHost     string  `json:"platform_host"`
+	RepoOwner        string  `json:"repo_owner"`
+	RepoName         string  `json:"repo_name"`
+	MRNumber         int     `json:"mr_number"`
+	MRHeadRef        string  `json:"mr_head_ref"`
+	WorktreePath     string  `json:"worktree_path"`
+	TmuxSession      string  `json:"tmux_session"`
+	Status           string  `json:"status"`
+	ErrorMessage     *string `json:"error_message,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	MRTitle          *string `json:"mr_title,omitempty"`
+	MRState          *string `json:"mr_state,omitempty"`
+	MRIsDraft        *bool   `json:"mr_is_draft,omitempty"`
+	MRCIStatus       *string `json:"mr_ci_status,omitempty"`
+	MRReviewDecision *string `json:"mr_review_decision,omitempty"`
+	MRAdditions      *int    `json:"mr_additions,omitempty"`
+	MRDeletions      *int    `json:"mr_deletions,omitempty"`
+}
+
+type workspaceMRRef struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+func toWorkspaceResponse(
+	s *db.WorkspaceSummary,
+) workspaceResponse {
+	return workspaceResponse{
+		ID:               s.ID,
+		PlatformHost:     s.PlatformHost,
+		RepoOwner:        s.RepoOwner,
+		RepoName:         s.RepoName,
+		MRNumber:         s.MRNumber,
+		MRHeadRef:        s.MRHeadRef,
+		WorktreePath:     s.WorktreePath,
+		TmuxSession:      s.TmuxSession,
+		Status:           s.Status,
+		ErrorMessage:     s.ErrorMessage,
+		CreatedAt:        s.CreatedAt.UTC().Format(time.RFC3339),
+		MRTitle:          s.MRTitle,
+		MRState:          s.MRState,
+		MRIsDraft:        s.MRIsDraft,
+		MRCIStatus:       s.MRCIStatus,
+		MRReviewDecision: s.MRReviewDecision,
+		MRAdditions:      s.MRAdditions,
+		MRDeletions:      s.MRDeletions,
+	}
 }
 
 const activitySafetyCap = 5000

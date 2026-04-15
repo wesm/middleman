@@ -18,7 +18,8 @@ export type Route =
   | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
-  | { page: "reviews"; jobId?: number };
+  | { page: "reviews"; jobId?: number }
+  | { page: "terminal"; workspaceId: string };
 
 import {
   isEmbedded,
@@ -176,6 +177,13 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "reviews" };
   }
+  const terminalMatch = path.match(/^\/terminal\/([^/]+)$/);
+  if (terminalMatch) {
+    return {
+      page: "terminal",
+      workspaceId: terminalMatch[1]!,
+    };
+  }
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
     return { page: "workspaces" };
   }
@@ -197,7 +205,7 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" | "workspaces-panel" {
+  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" | "workspaces-panel" | "terminal" {
   return route.page;
 }
 
@@ -244,7 +252,11 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "issue";
   } else if (r.page === "reviews") {
     navType = "reviews";
-  } else if (r.page === "workspaces" || r.page === "workspaces-panel") {
+  } else if (
+    r.page === "workspaces" ||
+    r.page === "workspaces-panel" ||
+    r.page === "terminal"
+  ) {
     navType = "workspaces";
   } else {
     navType = r.page as "activity";

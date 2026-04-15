@@ -222,6 +222,39 @@ type getStackForPROutput struct {
 	Body stackContextResponse
 }
 
+type createWorkspaceInput struct {
+	Body struct {
+		PlatformHost string `json:"platform_host"`
+		Owner        string `json:"owner"`
+		Name         string `json:"name"`
+		MRNumber     int    `json:"mr_number"`
+	}
+}
+
+type getWorkspaceInput struct {
+	ID string `path:"id"`
+}
+
+type deleteWorkspaceInput struct {
+	ID    string `path:"id"`
+	Force bool   `query:"force"`
+}
+
+type listWorkspacesOutput struct {
+	Body struct {
+		Workspaces []workspaceResponse `json:"workspaces"`
+	}
+}
+
+type getWorkspaceOutput struct {
+	Body workspaceResponse
+}
+
+type createWorkspaceOutput struct {
+	Status int `status:"202"`
+	Body   workspaceResponse
+}
+
 type listActivityInput struct {
 	Repo   string   `query:"repo"`
 	Types  []string `query:"types"`
@@ -321,6 +354,21 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
 	huma.Get(api, "/stacks", s.listStacks)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/stack", s.getStackForPR)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-workspace",
+		Method:        http.MethodPost,
+		Path:          "/workspaces",
+		DefaultStatus: http.StatusAccepted,
+	}, s.createWorkspace)
+	huma.Get(api, "/workspaces", s.listWorkspaces)
+	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-workspace",
+		Method:        http.MethodDelete,
+		Path:          "/workspaces/{id}",
+		DefaultStatus: http.StatusNoContent,
+	}, s.deleteWorkspace)
 }
 
 func NewOpenAPI() *huma.OpenAPI {
@@ -441,11 +489,19 @@ func (s *Server) buildPullDetailResponse(
 		)
 	}
 
+	repo, err := s.db.GetRepoByID(ctx, mr.RepoID)
+	if err != nil || repo == nil {
+		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
+			"load repo failed",
+		)
+	}
+
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
 		Events:           events,
 		RepoOwner:        owner,
 		RepoName:         name,
+		PlatformHost:     repo.PlatformHost,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
 		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, wfMode),
 		Warnings:         s.diffWarnings(mr),
@@ -454,6 +510,19 @@ func (s *Server) buildPullDetailResponse(
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
 	}
+
+	if s.workspaces != nil {
+		wsRef, wsErr := s.workspaces.GetByMR(
+			ctx, repo.PlatformHost, owner, name, mr.Number,
+		)
+		if wsErr == nil && wsRef != nil {
+			resp.Workspace = &workspaceMRRef{
+				ID:     wsRef.ID,
+				Status: wsRef.Status,
+			}
+		}
+	}
+
 	return resp, nil
 }
 
@@ -1763,4 +1832,157 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 			Members:   toStackMemberResponses(members),
 		},
 	}, nil
+}
+
+// --- Workspaces ---
+
+func (s *Server) createWorkspace(
+	ctx context.Context, input *createWorkspaceInput,
+) (*createWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	ws, err := s.workspaces.Create(
+		ctx,
+		input.Body.PlatformHost,
+		input.Body.Owner,
+		input.Body.Name,
+		input.Body.MRNumber,
+	)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "not tracked") {
+			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "not synced") {
+			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "UNIQUE constraint") {
+			return nil, huma.Error409Conflict(
+				"workspace already exists for this MR")
+		}
+		return nil, huma.Error500InternalServerError(
+			"create workspace: " + msg,
+		)
+	}
+
+	s.runBackground(func(bgCtx context.Context) {
+		setupErr := s.workspaces.Setup(bgCtx, ws)
+		summary, getErr := s.workspaces.GetSummary(
+			bgCtx, ws.ID,
+		)
+		if getErr != nil {
+			slog.Warn("get workspace summary after setup",
+				"id", ws.ID, "err", getErr,
+			)
+			return
+		}
+		if summary == nil {
+			return
+		}
+		resp := toWorkspaceResponse(summary)
+		if setupErr != nil {
+			slog.Warn("workspace setup failed",
+				"id", ws.ID, "err", setupErr,
+			)
+		}
+		s.hub.Broadcast(Event{
+			Type: "workspace_status",
+			Data: resp,
+		})
+	})
+
+	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace summary: " + err.Error(),
+		)
+	}
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   toWorkspaceResponse(summary),
+	}, nil
+}
+
+func (s *Server) listWorkspaces(
+	ctx context.Context, _ *struct{},
+) (*listWorkspacesOutput, error) {
+	if s.workspaces == nil {
+		out := &listWorkspacesOutput{}
+		out.Body.Workspaces = []workspaceResponse{}
+		return out, nil
+	}
+
+	summaries, err := s.workspaces.ListSummaries(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"list workspaces failed",
+		)
+	}
+
+	list := make([]workspaceResponse, len(summaries))
+	for i := range summaries {
+		list[i] = toWorkspaceResponse(&summaries[i])
+	}
+
+	out := &listWorkspacesOutput{}
+	out.Body.Workspaces = list
+	return out, nil
+}
+
+func (s *Server) getWorkspace(
+	ctx context.Context, input *getWorkspaceInput,
+) (*getWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace failed",
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error404NotFound("workspace not found")
+	}
+
+	return &getWorkspaceOutput{
+		Body: toWorkspaceResponse(summary),
+	}, nil
+}
+
+func (s *Server) deleteWorkspace(
+	ctx context.Context, input *deleteWorkspaceInput,
+) (*struct{}, error) {
+	if s.workspaces == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	dirty, err := s.workspaces.Delete(
+		ctx, input.ID, input.Force,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(
+			"delete workspace: " + err.Error(),
+		)
+	}
+	if len(dirty) > 0 {
+		return nil, huma.Error409Conflict(
+			"workspace has uncommitted changes: " +
+				strings.Join(dirty, ", "),
+		)
+	}
+
+	return nil, nil
 }

@@ -4457,3 +4457,555 @@ func TestDisplayNameCacheE2E(t *testing.T) {
 	require.Equal(http.StatusOK, rr2.Code)
 	require.Contains(rr2.Body.String(), `"AuthorDisplayName":"Alice Smith"`)
 }
+
+// setupTestServerWithWorkspaces creates a test server wired with
+// both a gitclone.Manager and a workspace.Manager backed by a
+// bare repo that has a "pr" branch. It seeds a PR in the DB
+// and returns the API client and database.
+func setupTestServerWithWorkspaces(
+	t *testing.T,
+) (*apiclient.Client, *db.DB) {
+	t.Helper()
+
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	if testing.Short() {
+		t.Skip("workspace e2e tests skipped in short mode")
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	bareDir := filepath.Join(dir, "clones")
+	require.NoError(t, os.MkdirAll(bareDir, 0o755))
+	bare := filepath.Join(
+		bareDir, "github.com", "acme", "widget.git",
+	)
+
+	tmpWork := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, tmpWork)
+	runGit(t, tmpWork, "config", "user.email", "test@test.com")
+	runGit(t, tmpWork, "config", "user.name", "Test")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tmpWork, "base.txt"),
+		[]byte("base\n"), 0o644,
+	))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "base commit")
+	runGit(t, tmpWork, "push", "origin", "main")
+
+	runGit(t, tmpWork, "checkout", "-b", "feature")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tmpWork, "new.txt"),
+		[]byte("new\n"), 0o644,
+	))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "feature commit")
+	runGit(t, tmpWork, "push", "origin", "feature")
+
+	clones := gitclone.New(bareDir, nil)
+	worktreeDir := filepath.Join(dir, "worktrees")
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+		Clones:      clones,
+		WorktreeDir: worktreeDir,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
+
+	seedPR(t, database, "acme", "widget", 1)
+
+	client := setupTestClient(t, srv)
+	return client, database
+}
+
+func TestWorkspaceCRUDE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	// 1. List workspaces -- initially empty.
+	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Workspaces)
+	assert.Empty(*listResp.JSON200.Workspaces)
+
+	// 2. Create workspace.
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+	assert.NotEmpty(wsID)
+	assert.Equal("github.com", createResp.JSON202.PlatformHost)
+	assert.Equal("acme", createResp.JSON202.RepoOwner)
+	assert.Equal("widget", createResp.JSON202.RepoName)
+	assert.Equal(int64(1), createResp.JSON202.MrNumber)
+
+	// 3. Get workspace by ID.
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+		ctx, wsID,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	assert.Equal(wsID, getResp.JSON200.Id)
+
+	// 4. List workspaces -- now has one.
+	listResp2, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp2.StatusCode())
+	require.NotNil(listResp2.JSON200)
+	require.NotNil(listResp2.JSON200.Workspaces)
+	assert.Len(*listResp2.JSON200.Workspaces, 1)
+
+	// 5. Delete workspace (force).
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	// 6. Verify deleted -- GET returns 404.
+	getResp2, err := client.HTTP.GetWorkspacesByIdWithResponse(
+		ctx, wsID,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, getResp2.StatusCode())
+}
+
+func TestWorkspaceCreateNotFound(t *testing.T) {
+	require := require.New(t)
+
+	client, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	// Non-existent repo.
+	resp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "nope",
+			Name:         "missing",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, resp.StatusCode())
+
+	// Existing repo, non-existent MR.
+	resp2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     999,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, resp2.StatusCode())
+}
+
+func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	// Create a workspace for PR #1.
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	// MR detail should include the workspace reference.
+	mrResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, mrResp.StatusCode())
+	require.NotNil(mrResp.JSON200)
+	require.NotNil(mrResp.JSON200.Workspace)
+	assert.Equal(wsID, mrResp.JSON200.Workspace.Id)
+	assert.NotEmpty(mrResp.JSON200.Workspace.Status)
+
+	// Clean up: delete the workspace.
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+}
+
+func TestWorkspaceCreateDuplicate(t *testing.T) {
+	require := require.New(t)
+
+	client, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	body := generated.CreateWorkspaceInputBody{
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		MrNumber:     1,
+	}
+
+	// First create succeeds.
+	resp1, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp1.StatusCode())
+
+	// Duplicate create returns 409.
+	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp2.StatusCode())
+}
+
+func TestWorkspacePRDetailPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	database, err := db.Open(
+		filepath.Join(t.TempDir(), "test.db"),
+	)
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	// Seed same owner/name on different hosts to test ambiguity.
+	seedPROnHost(
+		t, database,
+		"github.com", "acme", "widget", 10,
+	)
+	seedPROnHost(
+		t, database,
+		"ghe.example.com", "acme", "widget", 20,
+	)
+
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{
+		{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		},
+		{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "ghe.example.com",
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      mock,
+			"ghe.example.com": mock,
+		},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(
+		database, syncer, nil, "/", nil, ServerOptions{},
+	)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// PR on github.com
+	r1, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", 10,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, r1.StatusCode())
+	require.NotNil(r1.JSON200)
+	assert.Equal("github.com", r1.JSON200.PlatformHost)
+
+	// PR on ghe.example.com (same owner/name, different number)
+	r2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", 20,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, r2.StatusCode())
+	require.NotNil(r2.JSON200)
+	assert.Equal("ghe.example.com", r2.JSON200.PlatformHost)
+}
+
+// seedPROnHost seeds a repo on a specific platform host and
+// inserts a PR for it.
+func seedPROnHost(
+	t *testing.T, database *db.DB,
+	host, owner, name string, number int,
+) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, host, owner, name)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	pr := &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     int64(number) * 1000,
+		Number:         number,
+		URL:            fmt.Sprintf("https://%s/%s/%s/pull/%d", host, owner, name, number),
+		Title:          fmt.Sprintf("Test PR #%d", number),
+		Author:         "testuser",
+		State:          "open",
+		IsDraft:        false,
+		Body:           "test body",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		Additions:      5,
+		Deletions:      2,
+		CommentCount:   0,
+		ReviewDecision: "",
+		CIStatus:       "",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+
+	prID, err := database.UpsertMergeRequest(ctx, pr)
+	require.NoError(t, err)
+	require.NoError(t, database.EnsureKanbanState(ctx, prID))
+
+	return prID
+}
+
+func TestWorkspaceDeleteDirty(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	if testing.Short() {
+		t.Skip("workspace e2e tests skipped in short mode")
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	bareDir := filepath.Join(dir, "clones")
+	require.NoError(os.MkdirAll(bareDir, 0o755))
+	bare := filepath.Join(
+		bareDir, "github.com", "acme", "widget.git",
+	)
+
+	tmpWork := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, tmpWork)
+	runGit(t, tmpWork, "config", "user.email", "test@test.com")
+	runGit(t, tmpWork, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(tmpWork, "base.txt"),
+		[]byte("base\n"), 0o644,
+	))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "base commit")
+	runGit(t, tmpWork, "push", "origin", "main")
+
+	runGit(t, tmpWork, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(tmpWork, "new.txt"),
+		[]byte("new\n"), 0o644,
+	))
+	runGit(t, tmpWork, "add", ".")
+	runGit(t, tmpWork, "commit", "-m", "feature commit")
+	runGit(t, tmpWork, "push", "origin", "feature")
+
+	// Point bare origin at itself so EnsureClone fetch works.
+	runGit(t, bare, "remote", "add", "origin", bare)
+
+	clones := gitclone.New(bareDir, nil)
+	worktreeDir := filepath.Join(dir, "worktrees")
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+		Clones:      clones,
+		WorktreeDir: worktreeDir,
+	})
+	t.Cleanup(func() {
+		shutCtx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	})
+
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+	ctx := context.Background()
+
+	// Create workspace.
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	// Poll until workspace is ready.
+	var wsPath string
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		getResp, gErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			ctx, wsID,
+		)
+		require.NoError(gErr)
+		if getResp.StatusCode() != http.StatusOK {
+			continue
+		}
+		if getResp.JSON200 != nil &&
+			getResp.JSON200.Status == "ready" {
+			wsPath = getResp.JSON200.WorktreePath
+			break
+		}
+	}
+	require.NotEmpty(wsPath, "workspace never became ready")
+
+	// Write a dirty file into the worktree.
+	require.NoError(os.WriteFile(
+		filepath.Join(wsPath, "dirty.txt"),
+		[]byte("uncommitted\n"), 0o644,
+	))
+
+	// DELETE without force -> 409.
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID, &generated.DeleteWorkspaceParams{},
+	)
+	require.NoError(err)
+	assert.Equal(http.StatusConflict, delResp.StatusCode())
+
+	// DELETE with force -> 204.
+	force := true
+	delResp2, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	assert.Equal(http.StatusNoContent, delResp2.StatusCode())
+
+	// Verify deleted.
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+		ctx, wsID,
+	)
+	require.NoError(err)
+	assert.Equal(http.StatusNotFound, getResp.StatusCode())
+
+	// --- Second scenario: corrupt/missing worktree ---
+	// Seed a second PR and create a workspace for it.
+	seedPR(t, database, "acme", "widget", 2)
+	create2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, create2.StatusCode())
+	ws2ID := create2.JSON202.Id
+
+	// Poll until ready.
+	var ws2Path string
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		g, gErr := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws2ID)
+		require.NoError(gErr)
+		if g.JSON200 != nil && g.JSON200.Status == "ready" {
+			ws2Path = g.JSON200.WorktreePath
+			break
+		}
+	}
+	require.NotEmpty(ws2Path, "workspace 2 never became ready")
+
+	// Nuke the worktree directory to simulate corruption.
+	require.NoError(os.RemoveAll(ws2Path))
+
+	// DELETE without force → 409 (dirty check fails on missing dir).
+	del3, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws2ID, &generated.DeleteWorkspaceParams{},
+	)
+	require.NoError(err)
+	assert.Equal(http.StatusConflict, del3.StatusCode())
+
+	// DELETE with force → 204.
+	del4, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws2ID,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	assert.Equal(http.StatusNoContent, del4.StatusCode())
+
+	// Verify deleted.
+	get2, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws2ID)
+	require.NoError(err)
+	assert.Equal(http.StatusNotFound, get2.StatusCode())
+}

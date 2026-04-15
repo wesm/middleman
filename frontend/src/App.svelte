@@ -18,6 +18,7 @@
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
+  import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
@@ -664,16 +665,27 @@
           />
         {/if}
       {:else if getPage() === "workspaces"}
-        <WorkspacesView
-          workspaceData={getWorkspaceData()}
-          hoverCardsEnabled={getEmbedHoverCardsEnabled()}
-          onCommand={emitWorkspaceCommand}
-          sidebarWidth={getSidebarWidth()}
-          onSidebarResize={(width) => emitLayoutChanged({
-            sidebar: { width },
-            pinnedPanel: { width: 0, visible: false },
-          })}
-        />
+        {#if getWorkspaceData()}
+          <WorkspacesView
+            workspaceData={getWorkspaceData()}
+            hoverCardsEnabled={getEmbedHoverCardsEnabled()}
+            onCommand={emitWorkspaceCommand}
+            sidebarWidth={getSidebarWidth()}
+            onSidebarResize={(width) => emitLayoutChanged({
+              sidebar: { width },
+              pinnedPanel: { width: 0, visible: false },
+            })}
+          />
+        {:else}
+          <WorkspaceTerminalView workspaceId="" />
+        {/if}
+      {:else if getPage() === "terminal"}
+        {@const r = getRoute()}
+        {#if r.page === "terminal"}
+          {#key r.workspaceId}
+            <WorkspaceTerminalView workspaceId={r.workspaceId} />
+          {/key}
+        {/if}
       {/if}
     </main>
 

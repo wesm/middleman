@@ -170,7 +170,9 @@ func run(configPath string) error {
 
 	srv := server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
-		cfg, configPath, server.ServerOptions{},
+		cfg, configPath, server.ServerOptions{
+			WorktreeDir: filepath.Join(cfg.DataDir, "worktrees"),
+		},
 	)
 
 	// Wire status callback and prime the SSE event hub so clients

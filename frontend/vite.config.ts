@@ -49,7 +49,7 @@ const config = {
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 1500,
   },
 } satisfies UserConfig & { test: InlineConfig };
 

@@ -252,6 +252,34 @@ type StackMemberWithPR struct {
 	BaseBranch     string
 }
 
+// Workspace represents a middleman-managed git worktree linked to an MR.
+type Workspace struct {
+	ID           string
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	MRNumber     int
+	MRHeadRef    string
+	MRHeadRepo   *string // nil for same-repo PRs
+	WorktreePath string
+	TmuxSession  string
+	Status       string // "creating", "ready", "error"
+	ErrorMessage *string
+	CreatedAt    time.Time
+}
+
+// WorkspaceSummary extends Workspace with joined MR metadata.
+type WorkspaceSummary struct {
+	Workspace
+	MRTitle          *string
+	MRState          *string
+	MRIsDraft        *bool
+	MRCIStatus       *string
+	MRReviewDecision *string
+	MRAdditions      *int
+	MRDeletions      *int
+}
+
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
 	Repo   string     // "owner/name" filter

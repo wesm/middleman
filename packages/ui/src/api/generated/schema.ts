@@ -507,6 +507,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspaces */
+        get: operations["get-workspaces"];
+        put?: never;
+        post: operations["create-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspaces by ID */
+        get: operations["get-workspaces-by-id"];
+        put?: never;
+        post?: never;
+        delete: operations["delete-workspace"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -596,6 +630,19 @@ export interface components {
             readonly $schema?: string;
             /** @description Commits in newest-first order */
             commits: components["schemas"]["CommitResponse"][] | null;
+        };
+        CreateWorkspaceInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateWorkspaceInputBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            mr_number: number;
+            name: string;
+            owner: string;
+            platform_host: string;
         };
         DiffFile: {
             /** Format: int64 */
@@ -819,6 +866,15 @@ export interface components {
             old_num?: number;
             type: string;
         };
+        ListWorkspacesOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListWorkspacesOutputBody.json
+             */
+            readonly $schema?: string;
+            workspaces: components["schemas"]["WorkspaceResponse"][] | null;
+        };
         MREvent: {
             /**
              * Format: uri
@@ -920,10 +976,12 @@ export interface components {
             detail_loaded: boolean;
             events: components["schemas"]["MREvent"][] | null;
             merge_request: components["schemas"]["MergeRequest"];
+            platform_host: string;
             repo_name: string;
             repo_owner: string;
             warnings?: string[] | null;
             workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
+            workspace?: components["schemas"]["WorkspaceMRRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestResponse: {
@@ -1177,6 +1235,39 @@ export interface components {
             /** Format: int64 */
             count: number;
             required: boolean;
+        };
+        WorkspaceMRRef: {
+            id: string;
+            status: string;
+        };
+        WorkspaceResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceResponse.json
+             */
+            readonly $schema?: string;
+            created_at: string;
+            error_message?: string;
+            id: string;
+            /** Format: int64 */
+            mr_additions?: number;
+            mr_ci_status?: string;
+            /** Format: int64 */
+            mr_deletions?: number;
+            mr_head_ref: string;
+            mr_is_draft?: boolean;
+            /** Format: int64 */
+            mr_number: number;
+            mr_review_decision?: string;
+            mr_state?: string;
+            mr_title?: string;
+            platform_host: string;
+            repo_name: string;
+            repo_owner: string;
+            status: string;
+            tmux_session: string;
+            worktree_path: string;
         };
         WorktreeLinkResponse: {
             worktree_branch?: string;
@@ -2224,6 +2315,130 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SyncStatus"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListWorkspacesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspaceInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-workspaces-by-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-workspace": {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
