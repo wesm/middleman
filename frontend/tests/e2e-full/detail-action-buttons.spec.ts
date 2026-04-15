@@ -77,13 +77,16 @@ test.describe("detail action buttons", () => {
         baseURL: isolatedServer.info.base_url,
       });
 
-      await page.goto(`${isolatedServer.info.base_url}/pulls/acme/widgets/6`);
+      const server = isolatedServer;
+      const apiContext = api;
+
+      await page.goto(`${server.info.base_url}/pulls/acme/widgets/6`);
       await expect(page.locator(".pull-detail")).toBeVisible();
 
       const readyResponsePromise = page.waitForResponse((response) => {
         const url = response.url();
         return response.request().method() === "POST"
-          && url === `${isolatedServer.info.base_url}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+          && url === `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
       });
 
       await page.locator(".btn--ready").click();
@@ -96,7 +99,7 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".btn--approve")).toBeVisible();
 
       await expect.poll(async () => {
-        const response = await api.get("/api/v1/repos/acme/widgets/pulls/6");
+        const response = await apiContext.get("/api/v1/repos/acme/widgets/pulls/6");
         const detail = await response.json();
         return detail.merge_request.IsDraft;
       }).toBe(false);
