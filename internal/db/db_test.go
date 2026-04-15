@@ -233,7 +233,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			backfill_issue_page, backfill_issue_complete
 		) VALUES
 			(1, 'github', 'github.com', 'Org', 'Foo', datetime('now'), 0, 0, 0, 0),
-			(2, 'github', 'github.com', 'org', 'foo', datetime('now'), 0, 0, 0, 0)`)
+			(2, 'github', 'github.com', 'org', 'foo', datetime('now'), 0, 0, 0, 0),
+			(3, 'github', 'github.com', 'ORG', 'FOO', datetime('now'), 0, 0, 0, 0)`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_merge_requests (
@@ -244,6 +245,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			 datetime('now'), datetime('now'), datetime('now')),
 			(2, 2, 100, 1, 'https://github.com/org/foo/pull/1', 'PR', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now')),
+			(4, 3, 100, 1, 'https://github.com/ORG/FOO/pull/1', 'PR', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now')),
 			(3, 2, 200, 2, 'https://github.com/org/foo/pull/2', 'Unique PR', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now'))`)
 	require.NoError(err)
@@ -251,8 +254,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 		INSERT INTO middleman_mr_events (
 			merge_request_id, event_type, author, created_at, dedupe_key
 		) VALUES
-			(1, 'comment', 'octo', datetime('now'), 'duplicate-pr-comment'),
 			(2, 'comment', 'octo', datetime('now'), 'duplicate-pr-comment'),
+			(4, 'comment', 'octo', datetime('now'), 'duplicate-pr-comment'),
 			(3, 'comment', 'octo', datetime('now'), 'unique-comment')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
@@ -270,6 +273,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 			(1, 1, 800, 8, 'https://github.com/Org/Foo/issues/8', 'Issue', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now')),
 			(2, 2, 800, 8, 'https://github.com/org/foo/issues/8', 'Issue', 'octo', 'open',
+			 datetime('now'), datetime('now'), datetime('now')),
+			(4, 3, 800, 8, 'https://github.com/ORG/FOO/issues/8', 'Issue', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now')),
 			(3, 2, 900, 9, 'https://github.com/org/foo/issues/9', 'Unique issue', 'octo', 'open',
 			 datetime('now'), datetime('now'), datetime('now'))`)
@@ -295,8 +300,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 		INSERT INTO middleman_issue_events (
 			issue_id, event_type, author, created_at, dedupe_key
 		) VALUES
-			(1, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment'),
-			(2, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment')`)
+			(2, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment'),
+			(4, 'comment', 'octo', datetime('now'), 'duplicate-issue-comment')`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_labels (

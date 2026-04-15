@@ -763,7 +763,7 @@ func (s *Server) editPRContent(
 	}
 
 	body, err := s.buildPullDetailResponse(
-		ctx, input.Owner, input.Name, mr, workflowDBOnly,
+		ctx, mr, workflowDBOnly,
 	)
 	if err != nil {
 		return nil, err
