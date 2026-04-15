@@ -45,7 +45,7 @@ jobs:
 
       - name: Install NilAway
         run: |
-          go install go.uber.org/nilaway/cmd/nilaway@latest
+          go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260318203545-ad240b12fb4c
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run NilAway
