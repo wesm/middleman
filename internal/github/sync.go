@@ -2006,6 +2006,7 @@ func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
 			App:        s.GetContext(),
 		})
 	}
+	sortCIChecksByName(checks)
 	return checks
 }
 

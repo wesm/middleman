@@ -287,9 +287,9 @@ func TestNormalizeBulkCI(t *testing.T) {
 
 	checks := normalizeBulkCI(bulk)
 	require.Len(t, checks, 2)
-	assert.Equal("test", checks[0].Name)
+	assert.Equal("ci/lint", checks[0].Name)
 	assert.Equal("completed", checks[0].Status)
-	assert.Equal("ci/lint", checks[1].Name)
+	assert.Equal("test", checks[1].Name)
 	assert.Equal("completed", checks[1].Status)
 }
 
@@ -452,4 +452,30 @@ func TestNormalizeBulkCIPendingStatus(t *testing.T) {
 	assert.Equal("ci/deploy", checks[0].Name)
 	assert.Equal("in_progress", checks[0].Status)
 	assert.Empty(checks[0].Conclusion)
+}
+
+func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
+	assert := Assert.New(t)
+
+	buildName := "build"
+	zebraName := "Zebra"
+	alphaContext := "alpha"
+	statusCompleted := "completed"
+	conclusionSuccess := "success"
+	stateSuccess := "success"
+
+	checks := normalizeBulkCI(&BulkPR{
+		CheckRuns: []*gh.CheckRun{
+			{Name: &buildName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
+			{Name: &zebraName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
+		},
+		Statuses: []*gh.RepoStatus{
+			{Context: &alphaContext, State: &stateSuccess},
+		},
+	})
+	require.Len(t, checks, 3)
+
+	assert.Equal("alpha", checks[0].Name)
+	assert.Equal("build", checks[1].Name)
+	assert.Equal("Zebra", checks[2].Name)
 }
