@@ -4,6 +4,7 @@
   import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import FilterDropdown from "./shared/FilterDropdown.svelte";
   import {
     collapseActivityCommitRuns,
     isCollapsedActivityRow,
@@ -25,9 +26,6 @@
 
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let showFilterDropdown = $state(false);
-  let filterBtnRef = $state<HTMLButtonElement>();
-  let filterDropRef = $state<HTMLDivElement>();
 
   const EVENT_TYPES = [
     "comment",
@@ -35,15 +33,16 @@
     "commit",
     "force_push",
   ] as const;
+  type EventType = (typeof EVENT_TYPES)[number];
 
-  const EVENT_LABELS: Record<string, string> = {
+  const EVENT_LABELS: Record<EventType, string> = {
     comment: "Comments",
     review: "Reviews",
     commit: "Commits",
     force_push: "Force pushes",
   };
 
-  const EVENT_COLORS: Record<string, string> = {
+  const EVENT_COLORS: Record<EventType, string> = {
     comment: "var(--accent-amber)",
     review: "var(--accent-green)",
     commit: "var(--accent-teal)",
@@ -79,19 +78,6 @@
     if (debounceTimer) clearTimeout(debounceTimer);
   });
 
-  // Close filter dropdown on outside click.
-  $effect(() => {
-    if (!showFilterDropdown) return;
-    function handleClick(e: MouseEvent) {
-      if (filterDropRef && !filterDropRef.contains(e.target as Node)
-          && filterBtnRef && !filterBtnRef.contains(e.target as Node)) {
-        showFilterDropdown = false;
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  });
-
   function applyFilters(): void {
     const types: string[] = [];
     const filter = activity.getItemFilter();
@@ -111,7 +97,7 @@
     applyFilters();
   }
 
-  function toggleEvent(evt: string): void {
+  function toggleEvent(evt: EventType): void {
     const current = activity.getEnabledEvents();
     const next = new Set(current);
     if (next.has(evt)) { if (next.size > 1) next.delete(evt); }
@@ -204,6 +190,44 @@
     applyFilters();
   }
 
+  const activityFilterSections = $derived.by(() => [
+    {
+      title: "Event types",
+      items: EVENT_TYPES.map((evt) => ({
+        id: evt,
+        label: EVENT_LABELS[evt],
+        active: activity.getEnabledEvents().has(evt),
+        color: EVENT_COLORS[evt],
+        onSelect: () => toggleEvent(evt),
+      })),
+    },
+    {
+      title: "Visibility",
+      items: [
+        {
+          id: "hide-closed-merged",
+          label: "Hide closed/merged",
+          active: activity.getHideClosedMerged(),
+          color: "var(--accent-red)",
+          onSelect: () => {
+            activity.setHideClosedMerged(
+              !activity.getHideClosedMerged(),
+            );
+          },
+        },
+        {
+          id: "hide-bots",
+          label: "Hide bots",
+          active: activity.getHideBots(),
+          color: "var(--accent-purple)",
+          onSelect: () => {
+            activity.setHideBots(!activity.getHideBots());
+          },
+        },
+      ],
+    },
+  ]);
+
   function eventClass(type: string): string {
     switch (type) {
       case "comment": return "evt-comment";
@@ -264,85 +288,19 @@
       </div>
     </div>
 
-    <div class="filter-wrap">
-      <button
-        class="filter-btn"
-        class:filter-active={hiddenFilterCount > 0}
-        bind:this={filterBtnRef}
-        onclick={() => (showFilterDropdown = !showFilterDropdown)}
-        title="Filter activity types"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-        </svg>
-        Filters
-        {#if hiddenFilterCount > 0}
-          <span class="filter-badge">{hiddenFilterCount}</span>
-        {/if}
-      </button>
-
-      {#if showFilterDropdown}
-        <div class="filter-dropdown" bind:this={filterDropRef}>
-          <div class="filter-section-title">Event types</div>
-          {#each EVENT_TYPES as evt}
-            {@const visible = activity.getEnabledEvents().has(evt)}
-            <button
-              class="filter-item"
-              class:active={visible}
-              onclick={() => toggleEvent(evt)}
-            >
-              <span
-                class="filter-dot"
-                style:background={visible ? EVENT_COLORS[evt] : "var(--border-muted)"}
-              ></span>
-              <span class="filter-label">{EVENT_LABELS[evt]}</span>
-              <span class="filter-check" class:on={visible}>
-                {#if visible}
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-                  </svg>
-                {/if}
-              </span>
-            </button>
-          {/each}
-          <div class="filter-divider"></div>
-          <div class="filter-section-title">Visibility</div>
-          <button
-            class="filter-item"
-            class:active={activity.getHideClosedMerged()}
-            onclick={() => { activity.setHideClosedMerged(!activity.getHideClosedMerged()); }}
-          >
-            <span class="filter-dot" style:background={activity.getHideClosedMerged() ? "var(--accent-red)" : "var(--border-muted)"}></span>
-            <span class="filter-label">Hide closed/merged</span>
-            <span class="filter-check" class:on={activity.getHideClosedMerged()}>
-              {#if activity.getHideClosedMerged()}
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-                </svg>
-              {/if}
-            </span>
-          </button>
-          <button
-            class="filter-item"
-            class:active={activity.getHideBots()}
-            onclick={() => { activity.setHideBots(!activity.getHideBots()); }}
-          >
-            <span class="filter-dot" style:background={activity.getHideBots() ? "var(--accent-purple)" : "var(--border-muted)"}></span>
-            <span class="filter-label">Hide bots</span>
-            <span class="filter-check" class:on={activity.getHideBots()}>
-              {#if activity.getHideBots()}
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-                </svg>
-              {/if}
-            </span>
-          </button>
-          {#if hiddenFilterCount > 0}
-            <button class="filter-reset" onclick={resetFilters}>Show all</button>
-          {/if}
-        </div>
-      {/if}
-    </div>
+    <FilterDropdown
+      label="Filters"
+      active={hiddenFilterCount > 0}
+      badgeCount={hiddenFilterCount}
+      title="Filter activity types"
+      sections={activityFilterSections}
+      {...hiddenFilterCount > 0
+        ? {
+            resetLabel: "Show all",
+            onReset: resetFilters,
+          }
+        : {}}
+    />
 
     <input
       class="search-input"
@@ -503,138 +461,6 @@
 
   .seg-btn:hover:not(.active) {
     color: var(--text-secondary);
-  }
-
-  .filter-wrap {
-    position: relative;
-  }
-
-  .filter-btn {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-muted);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: border-color 0.12s, color 0.12s;
-    position: relative;
-  }
-
-  .filter-btn:hover {
-    border-color: var(--border-default);
-    color: var(--text-secondary);
-  }
-
-  .filter-btn.filter-active {
-    color: var(--accent-blue);
-    border-color: var(--accent-blue);
-  }
-
-  .filter-badge {
-    font-size: 9px;
-    font-weight: 700;
-    background: var(--accent-blue);
-    color: white;
-    border-radius: 6px;
-    padding: 0 4px;
-    min-width: 14px;
-    text-align: center;
-    line-height: 14px;
-  }
-
-  .filter-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    margin-top: 4px;
-    min-width: 200px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-md);
-    z-index: 50;
-    padding: 4px 0;
-  }
-
-  .filter-section-title {
-    padding: 4px 12px 4px;
-    font-size: 9px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .filter-divider {
-    height: 1px;
-    background: var(--border-muted);
-    margin: 4px 8px;
-  }
-
-  .filter-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 4px 12px;
-    font-size: 11px;
-    color: var(--text-secondary);
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.08s;
-  }
-
-  .filter-item:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .filter-item:not(.active) {
-    opacity: 0.5;
-  }
-
-  .filter-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    transition: background 0.1s;
-  }
-
-  .filter-label {
-    flex: 1;
-  }
-
-  .filter-check {
-    width: 14px;
-    height: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--accent-green);
-    flex-shrink: 0;
-  }
-
-  .filter-reset {
-    display: block;
-    width: calc(100% - 16px);
-    margin: 4px 8px 2px;
-    padding: 4px 8px;
-    font-size: 10px;
-    color: var(--text-muted);
-    text-align: center;
-    border-top: 1px solid var(--border-muted);
-    padding-top: 8px;
-    cursor: pointer;
-    transition: color 0.1s;
-  }
-
-  .filter-reset:hover {
-    color: var(--text-primary);
   }
 
   .search-input {

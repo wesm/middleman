@@ -1,0 +1,320 @@
+<script lang="ts">
+  interface FilterDropdownItem {
+    id: string;
+    label: string;
+    active: boolean;
+    color?: string;
+    disabled?: boolean;
+    closeOnSelect?: boolean;
+    onSelect: () => void;
+  }
+
+  interface FilterDropdownSection {
+    title?: string;
+    items: FilterDropdownItem[];
+  }
+
+  interface Props {
+    label: string;
+    detail?: string;
+    title?: string;
+    active?: boolean;
+    badgeCount?: number;
+    showBadge?: boolean;
+    disabled?: boolean;
+    sections: FilterDropdownSection[];
+    resetLabel?: string;
+    onReset?: () => void;
+    minWidth?: string;
+  }
+
+  let {
+    label,
+    detail,
+    title,
+    active = false,
+    badgeCount = 0,
+    showBadge = true,
+    disabled = false,
+    sections,
+    resetLabel,
+    onReset,
+    minWidth = "200px",
+  }: Props = $props();
+
+  let isOpen = $state(false);
+  let buttonRef = $state<HTMLButtonElement>();
+  let dropdownRef = $state<HTMLDivElement>();
+
+  const isActive = $derived(active || badgeCount > 0);
+  const hasReset = $derived(
+    resetLabel !== undefined && onReset !== undefined,
+  );
+
+  $effect(() => {
+    if (!isOpen) return;
+
+    function handleMousedown(event: MouseEvent): void {
+      const target = event.target as Node;
+      if (dropdownRef?.contains(target)) return;
+      if (buttonRef?.contains(target)) return;
+      isOpen = false;
+    }
+
+    function handleKeydown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        isOpen = false;
+      }
+    }
+
+    document.addEventListener("mousedown", handleMousedown);
+    document.addEventListener("keydown", handleKeydown);
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleMousedown,
+      );
+      document.removeEventListener(
+        "keydown",
+        handleKeydown,
+      );
+    };
+  });
+
+  function toggleOpen(): void {
+    if (disabled) return;
+    isOpen = !isOpen;
+  }
+
+  function handleSelect(item: FilterDropdownItem): void {
+    if (item.disabled) return;
+    item.onSelect();
+    if (item.closeOnSelect) {
+      isOpen = false;
+    }
+  }
+</script>
+
+<div class="filter-wrap">
+  <button
+    class="filter-btn"
+    class:filter-active={isActive}
+    bind:this={buttonRef}
+    onclick={toggleOpen}
+    {title}
+    {disabled}
+    type="button"
+  >
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+    </svg>
+    <span class="filter-trigger-label">{label}</span>
+    {#if detail}
+      <span class="filter-trigger-detail">{detail}</span>
+    {/if}
+    {#if showBadge && badgeCount > 0}
+      <span class="filter-badge">{badgeCount}</span>
+    {/if}
+  </button>
+
+  {#if isOpen}
+    <div
+      class="filter-dropdown"
+      bind:this={dropdownRef}
+      style:min-width={minWidth}
+    >
+      {#each sections as section, index (section.title ?? `section-${index}`)}
+        {#if index > 0}
+          <div class="filter-divider"></div>
+        {/if}
+        {#if section.title}
+          <div class="filter-section-title">{section.title}</div>
+        {/if}
+        {#each section.items as item (item.id)}
+          <button
+            class="filter-item"
+            class:active={item.active}
+            onclick={() => handleSelect(item)}
+            disabled={item.disabled}
+            type="button"
+          >
+            <span
+              class="filter-dot"
+              style:background={item.active
+                ? (item.color ?? "var(--accent-blue)")
+                : "var(--border-muted)"}
+            ></span>
+            <span class="filter-label">{item.label}</span>
+            <span class="filter-check" class:on={item.active}>
+              {#if item.active}
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+              {/if}
+            </span>
+          </button>
+        {/each}
+      {/each}
+      {#if hasReset}
+        <button
+          class="filter-reset"
+          onclick={() => onReset?.()}
+          type="button"
+        >
+          {resetLabel}
+        </button>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .filter-wrap {
+    position: relative;
+  }
+
+  .filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+    position: relative;
+    min-height: 24px;
+  }
+
+  .filter-btn:hover:not(:disabled) {
+    border-color: var(--border-default);
+    color: var(--text-secondary);
+  }
+
+  .filter-btn:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .filter-btn.filter-active {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+  }
+
+  .filter-trigger-detail {
+    color: var(--text-secondary);
+  }
+
+  .filter-badge {
+    font-size: 9px;
+    font-weight: 700;
+    background: var(--accent-blue);
+    color: white;
+    border-radius: 6px;
+    padding: 0 4px;
+    min-width: 14px;
+    text-align: center;
+    line-height: 14px;
+  }
+
+  .filter-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    padding: 4px 0;
+  }
+
+  .filter-section-title {
+    padding: 4px 12px 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .filter-divider {
+    height: 1px;
+    background: var(--border-muted);
+    margin: 4px 8px;
+  }
+
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.08s;
+    background: transparent;
+    border: 0;
+  }
+
+  .filter-item:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+  }
+
+  .filter-item:not(.active) {
+    opacity: 0.5;
+  }
+
+  .filter-item:disabled {
+    cursor: default;
+  }
+
+  .filter-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.1s;
+  }
+
+  .filter-label {
+    flex: 1;
+  }
+
+  .filter-check {
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-green);
+    flex-shrink: 0;
+  }
+
+  .filter-reset {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 4px 8px 2px;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    border: 0;
+    border-top: 1px solid var(--border-muted);
+    background: transparent;
+    padding-top: 8px;
+    cursor: pointer;
+    transition: color 0.1s;
+  }
+
+  .filter-reset:hover {
+    color: var(--text-primary);
+  }
+</style>

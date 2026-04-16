@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
   assertSeededRoborevDaemon,
   stopDaemon,
@@ -18,6 +18,14 @@ test.describe.serial("Roborev", () => {
   test.beforeAll(async () => {
     await assertSeededRoborevDaemon();
   });
+
+  async function selectStatusFilter(
+    page: Page,
+    label: string,
+  ): Promise<void> {
+    await page.locator(".filter-btn", { hasText: "Status" }).click();
+    await page.locator(".filter-item", { hasText: label }).click();
+  }
 
   // -------------------------------------------------------
   // Group 1: Table and Data Display
@@ -237,7 +245,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      await page.locator(".status-select").selectOption("failed");
+      await selectStatusFilter(page, "Failed");
 
       // Wait atomically for the filter to settle: at least one failed
       // badge must be visible AND no non-failed badges may remain.
@@ -258,7 +266,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      await page.locator(".status-select").selectOption("done");
+      await selectStatusFilter(page, "Done");
 
       await expect(
         page.locator(".status-badge.status-done").first(),
@@ -387,7 +395,7 @@ test.describe.serial("Roborev", () => {
       const baselineCount = await page.locator(".job-row").count();
 
       // Apply a filter and wait for it to take effect.
-      await page.locator(".status-select").selectOption("failed");
+      await selectStatusFilter(page, "Failed");
       await expect(
         page.locator(".status-badge.status-failed").first(),
       ).toBeVisible({ timeout: 5_000 });
@@ -399,7 +407,7 @@ test.describe.serial("Roborev", () => {
 
       // Reset the filter and wait for the unfiltered list to reload
       // back to the baseline count exactly.
-      await page.locator(".status-select").selectOption("");
+      await selectStatusFilter(page, "All statuses");
       await expect(async () => {
         const resetCount = await page.locator(".job-row").count();
         expect(resetCount).toBe(baselineCount);
@@ -481,7 +489,7 @@ test.describe.serial("Roborev", () => {
       await page.waitForTimeout(300);
 
       // Apply a status filter
-      await page.locator(".status-select").selectOption("done");
+      await selectStatusFilter(page, "Done");
       await page.waitForTimeout(500);
       await waitForJobRows(page, 1);
 
