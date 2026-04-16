@@ -51,19 +51,19 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      // Job 73 is the highest ID (first row in desc order):
-      // agent=codex, status=failed
+      // Job 74 is the highest ID (first row in desc order):
+      // agent=claude, status=done (zero-duration fixture).
       const firstRow = page.locator(".job-row").first();
       await expect(firstRow).toBeVisible();
       await expect(
         firstRow.locator(".col-id"),
-      ).toContainText("73");
+      ).toContainText("74");
       await expect(
         firstRow.locator(".col-agent"),
-      ).toContainText("codex");
+      ).toContainText("claude");
       await expect(
         firstRow.locator(".status-badge"),
-      ).toContainText("failed");
+      ).toContainText("done");
     });
 
     test("status badges show correct classes for each status", async ({
@@ -209,7 +209,7 @@ test.describe.serial("Roborev", () => {
       }
 
       const totalCount = await page.locator(".job-row").count();
-      // Seed has 73 jobs total
+      // Seed has 74 jobs total
       expect(totalCount).toBeGreaterThanOrEqual(70);
     });
 
@@ -348,7 +348,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      // Use exact ref for job 73 (first row in desc order)
+      // Use exact ref for job 73 (aa000049 = hex 0x49)
       await page
         .locator(".filter-bar .search-input")
         .fill("aa000049");
