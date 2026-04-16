@@ -85,7 +85,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   function getElapsedSeconds(job: ReviewJob): number {
-    if (!job.started_at) return 0;
+    if (!job.started_at) return -1;
     const start = new Date(job.started_at).getTime();
     const end = job.finished_at
       ? new Date(job.finished_at).getTime()

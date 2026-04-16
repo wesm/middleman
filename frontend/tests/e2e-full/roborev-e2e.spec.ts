@@ -11,7 +11,7 @@ import {
 
 function parseElapsed(text: string): number {
   const value = text.trim();
-  if (value === "--") return 0;
+  if (value === "--") return -1;
 
   const hours = value.match(/(\d+)h/);
   const minutes = value.match(/(\d+)m/);

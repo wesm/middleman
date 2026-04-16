@@ -36,10 +36,11 @@ describe("createJobsStore elapsed sorting", () => {
     vi.useRealTimers();
   });
 
-  it("sorts jobs by numeric elapsed duration", async () => {
+  it("sorts missing elapsed before zero-second durations", async () => {
     const jobs: ReviewJob[] = [
       makeJob(8, "2026-04-11T11:45:00Z"),
       makeJob(2, "2026-04-11T11:00:00Z", "2026-04-11T11:05:00Z"),
+      makeJob(6, "2026-04-11T11:30:00Z", "2026-04-11T11:30:00Z"),
       makeJob(5),
     ];
     const client = {
@@ -63,11 +64,11 @@ describe("createJobsStore elapsed sorting", () => {
 
     expect(store.getSortColumn()).toBe("elapsed");
     expect(store.getSortDirection()).toBe("asc");
-    expect(store.getJobs().map((job) => job.id)).toEqual([5, 2, 8]);
+    expect(store.getJobs().map((job) => job.id)).toEqual([5, 6, 2, 8]);
 
     store.setSortColumn("elapsed");
 
     expect(store.getSortDirection()).toBe("desc");
-    expect(store.getJobs().map((job) => job.id)).toEqual([8, 2, 5]);
+    expect(store.getJobs().map((job) => job.id)).toEqual([8, 2, 6, 5]);
   });
 });
