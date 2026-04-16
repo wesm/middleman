@@ -9,6 +9,19 @@ import {
   openDrawer,
 } from "./support/roborev-helpers.js";
 
+function parseElapsed(text: string): number {
+  const value = text.trim();
+  if (value === "--") return 0;
+
+  const hours = value.match(/(\d+)h/);
+  const minutes = value.match(/(\d+)m/);
+  const seconds = value.match(/(\d+)s/);
+
+  return (hours ? Number(hours[1]) * 3600 : 0) +
+    (minutes ? Number(minutes[1]) * 60 : 0) +
+    (seconds ? Number(seconds[1]) : 0);
+}
+
 test.describe.serial("Roborev", () => {
   // Refuse to run if the e2e server is not proxying to the
   // script-managed seeded daemon. This catches the failure mode
@@ -465,6 +478,30 @@ test.describe.serial("Roborev", () => {
       // Check that statuses are sorted ascending
       const sorted = [...statuses].sort();
       expect(statuses).toEqual(sorted);
+    });
+
+    test("click Elapsed header sorts by elapsed duration", async ({
+      page,
+    }) => {
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      const elapsedHeader = page
+        .locator("th.sortable")
+        .filter({ hasText: "Elapsed" });
+      await elapsedHeader.click();
+      await page.waitForTimeout(300);
+
+      const elapsedValues: number[] = [];
+      const elapsedCells = page.locator(".col-elapsed");
+      const count = await elapsedCells.count();
+      for (let i = 0; i < count; i++) {
+        const text = await elapsedCells.nth(i).textContent();
+        if (text) elapsedValues.push(parseElapsed(text));
+      }
+
+      const sorted = [...elapsedValues].sort((a, b) => a - b);
+      expect(elapsedValues).toEqual(sorted);
     });
 
     test("sort persists across filter changes", async ({

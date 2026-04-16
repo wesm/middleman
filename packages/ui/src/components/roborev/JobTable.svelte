@@ -10,6 +10,7 @@
     | "status"
     | "verdict"
     | "agent"
+    | "elapsed"
     | "job_type"
     | "enqueued_at";
 
@@ -30,9 +31,9 @@
     { key: "status", label: "Status", sortable: true },
     { key: "verdict", label: "Verdict", sortable: true },
     {
-      key: "id",
+      key: "elapsed",
       label: "Elapsed",
-      sortable: false,
+      sortable: true,
     },
     {
       key: "job_type",
