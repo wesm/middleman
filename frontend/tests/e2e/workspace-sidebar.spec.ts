@@ -190,7 +190,7 @@ test.describe("sidebar toggle behavior", () => {
   });
 
   test(
-    "workspace list uses shared resizable sidebar behavior",
+    "workspace list resize reclamps the right sidebar",
     async ({ page }) => {
       await page.goto("/terminal/ws-123");
 
@@ -199,9 +199,20 @@ test.describe("sidebar toggle behavior", () => {
       );
       await expect(listSidebar).toBeVisible();
 
-      const initialWidth = await listSidebar.evaluate(
+      const prBtn = page.locator(".seg-btn", {
+        hasText: "PR",
+      });
+      await prBtn.click();
+      const rightSidebar = page.locator(".right-sidebar");
+      await expect(rightSidebar).toBeVisible();
+
+      const initialListWidth = await listSidebar.evaluate(
         (el) => el.getBoundingClientRect().width,
       );
+      const initialRightSidebarWidth =
+        await rightSidebar.evaluate(
+          (el) => el.getBoundingClientRect().width,
+        );
 
       const handle = page.getByRole("separator", {
         name: "Resize sidebar",
@@ -218,17 +229,32 @@ test.describe("sidebar toggle behavior", () => {
         );
         await page.mouse.down();
         await page.mouse.move(
-          box.x + 80,
+          box.x + 180,
           box.y + box.height / 2,
         );
         await page.mouse.up();
       }
 
-      const resizedWidth = await listSidebar.evaluate(
+      await expect
+        .poll(async () =>
+          rightSidebar.evaluate(
+            (el) => el.getBoundingClientRect().width,
+          ),
+        )
+        .toBeLessThan(initialRightSidebarWidth - 20);
+
+      const resizedListWidth = await listSidebar.evaluate(
         (el) => el.getBoundingClientRect().width,
       );
-      expect(resizedWidth).toBeGreaterThan(
-        initialWidth + 40,
+      expect(resizedListWidth).toBeGreaterThan(
+        initialListWidth + 100,
+      );
+
+      const terminalWidth = await page
+        .locator(".terminal-area")
+        .evaluate((el) => el.getBoundingClientRect().width);
+      expect(terminalWidth).toBeGreaterThanOrEqual(
+        300,
       );
     },
   );

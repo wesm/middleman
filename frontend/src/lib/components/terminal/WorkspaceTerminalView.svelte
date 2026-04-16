@@ -86,6 +86,7 @@
   const MIN_SIDEBAR_WIDTH = 280;
   const MIN_TERMINAL_WIDTH = 300;
   const DEFAULT_SIDEBAR_WIDTH = 640;
+  const RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH = 4;
 
   function loadSidebarWidth(): number {
     const v = parseInt(
@@ -139,15 +140,42 @@
 
   let containerEl = $state<HTMLElement | null>(null);
 
-  // Clamp sidebar width to fit container when it
-  // becomes available or when the sidebar opens
-  $effect(() => {
-    if (!containerEl || !sidebarOpen) return;
-    const maxW =
-      containerEl.clientWidth - MIN_TERMINAL_WIDTH;
-    if (sidebarWidth > maxW && maxW > MIN_SIDEBAR_WIDTH) {
+  function clampRightSidebarWidth(
+    containerWidth: number,
+  ): void {
+    const maxW = Math.max(
+      0,
+      containerWidth -
+        MIN_TERMINAL_WIDTH -
+        RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
+    );
+    if (sidebarWidth > maxW) {
       sidebarWidth = maxW;
     }
+  }
+
+  // Keep the terminal usable when the main layout
+  // shrinks, including when the left workspace list
+  // is resized after the right sidebar is already open.
+  $effect(() => {
+    if (!containerEl || !sidebarOpen) return;
+
+    clampRightSidebarWidth(containerEl.clientWidth);
+  });
+
+  $effect(() => {
+    if (!sidebarOpen) return;
+
+    function onResize(): void {
+      if (containerEl) {
+        clampRightSidebarWidth(containerEl.clientWidth);
+      }
+    }
+
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
   });
 
   function startSidebarResize(e: MouseEvent): void {
@@ -155,12 +183,18 @@
     const startX = e.clientX;
     const startW = sidebarWidth;
     const maxW = containerEl
-      ? containerEl.clientWidth - MIN_TERMINAL_WIDTH
+      ? Math.max(
+          0,
+          containerEl.clientWidth -
+            MIN_TERMINAL_WIDTH -
+            RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
+        )
       : 9999;
+    const minW = Math.min(MIN_SIDEBAR_WIDTH, maxW);
 
     function onMove(ev: MouseEvent): void {
       sidebarWidth = Math.max(
-        MIN_SIDEBAR_WIDTH,
+        minW,
         Math.min(maxW, startW - (ev.clientX - startX)),
       );
     }
@@ -316,6 +350,11 @@
     maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
     onSidebarResize={(width) => {
       workspaceListWidth = clampWorkspaceListWidth(width);
+      requestAnimationFrame(() => {
+        if (containerEl) {
+          clampRightSidebarWidth(containerEl.clientWidth);
+        }
+      });
     }}
     mainOverflow="hidden"
   >
