@@ -118,3 +118,6 @@ export {
 export {
   default as ActionButton,
 } from "./components/shared/ActionButton.svelte";
+export {
+  default as WorkspaceRightSidebar,
+} from "./components/workspace/WorkspaceRightSidebar.svelte";

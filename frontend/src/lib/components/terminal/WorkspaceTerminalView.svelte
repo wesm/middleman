@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import {
-    navigate,
-    buildItemRoute,
-  } from "../../stores/router.svelte.ts";
+  import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import { WorkspaceRightSidebar } from "@middleman/ui";
 
   interface Workspace {
     id: string;
@@ -38,6 +36,121 @@
     typeof setInterval
   > | null>(null);
   let eventSource = $state<EventSource | null>(null);
+
+  const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
+  const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
+  const SIDEBAR_WIDTH_KEY = "middleman-workspace-sidebar-width";
+
+  type SidebarTab = "pr" | "reviews";
+
+  function loadSidebarTab(): SidebarTab {
+    const v = localStorage.getItem(SIDEBAR_TAB_KEY);
+    return v === "reviews" ? "reviews" : "pr";
+  }
+
+  function loadSidebarOpen(): boolean {
+    return localStorage.getItem(SIDEBAR_OPEN_KEY) === "true";
+  }
+
+  const MIN_SIDEBAR_WIDTH = 280;
+  const MIN_TERMINAL_WIDTH = 300;
+  const DEFAULT_SIDEBAR_WIDTH = 640;
+
+  function loadSidebarWidth(): number {
+    const v = parseInt(
+      localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "",
+      10,
+    );
+    return Number.isFinite(v)
+      ? Math.max(MIN_SIDEBAR_WIDTH, v)
+      : DEFAULT_SIDEBAR_WIDTH;
+  }
+
+  let sidebarTab = $state<SidebarTab>(loadSidebarTab());
+  let sidebarOpen = $state(loadSidebarOpen());
+  let sidebarWidth = $state(loadSidebarWidth());
+
+  $effect(() => {
+    localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
+  });
+  $effect(() => {
+    localStorage.setItem(
+      SIDEBAR_OPEN_KEY,
+      String(sidebarOpen),
+    );
+  });
+  $effect(() => {
+    localStorage.setItem(
+      SIDEBAR_WIDTH_KEY,
+      String(sidebarWidth),
+    );
+  });
+
+  function handleSegmentClick(tab: SidebarTab): void {
+    if (sidebarOpen && sidebarTab === tab) {
+      sidebarOpen = false;
+    } else {
+      sidebarTab = tab;
+      sidebarOpen = true;
+    }
+  }
+
+  function toggleSidebar(): void {
+    sidebarOpen = !sidebarOpen;
+  }
+
+  let containerEl = $state<HTMLElement | null>(null);
+
+  // Clamp sidebar width to fit container when it
+  // becomes available or when the sidebar opens
+  $effect(() => {
+    if (!containerEl || !sidebarOpen) return;
+    const maxW =
+      containerEl.clientWidth - MIN_TERMINAL_WIDTH;
+    if (sidebarWidth > maxW && maxW > MIN_SIDEBAR_WIDTH) {
+      sidebarWidth = maxW;
+    }
+  });
+
+  function startSidebarResize(e: MouseEvent): void {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const maxW = containerEl
+      ? containerEl.clientWidth - MIN_TERMINAL_WIDTH
+      : 9999;
+
+    function onMove(ev: MouseEvent): void {
+      sidebarWidth = Math.max(
+        MIN_SIDEBAR_WIDTH,
+        Math.min(maxW, startW - (ev.clientX - startX)),
+      );
+    }
+
+    function onUp(): void {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  $effect(() => {
+    function onKeydown(e: KeyboardEvent): void {
+      if (
+        e.key === "]" &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.defaultPrevented
+      ) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    }
+    window.addEventListener("keydown", onKeydown);
+    return () =>
+      window.removeEventListener("keydown", onKeydown);
+  });
 
   function displayName(ws: Workspace): string {
     return ws.mr_title ?? ws.mr_head_ref;
@@ -114,18 +227,6 @@
       return;
     }
     navigate("/pulls");
-  }
-
-  function navigateToPR(): void {
-    if (!workspace) return;
-    navigate(
-      buildItemRoute(
-        "pr",
-        workspace.repo_owner,
-        workspace.repo_name,
-        workspace.mr_number,
-      ),
-    );
   }
 
   onMount(() => {
@@ -243,12 +344,22 @@
           </code>
         </div>
         <div class="header-right">
-          <button
-            class="header-btn"
-            onclick={navigateToPR}
-          >
-            View PR
-          </button>
+          <div class="seg-control">
+            <button
+              class="seg-btn"
+              class:active={sidebarOpen && sidebarTab === "pr"}
+              onclick={() => handleSegmentClick("pr")}
+            >
+              PR
+            </button>
+            <button
+              class="seg-btn"
+              class:active={sidebarOpen && sidebarTab === "reviews"}
+              onclick={() => handleSegmentClick("reviews")}
+            >
+              Reviews
+            </button>
+          </div>
           <button
             class="header-btn danger"
             onclick={() => void handleDelete()}
@@ -257,8 +368,30 @@
           </button>
         </div>
       </div>
-      <div class="terminal-area">
-        <TerminalPane {workspaceId} />
+      <div class="terminal-and-sidebar" bind:this={containerEl}>
+        <div class="terminal-area">
+          <TerminalPane {workspaceId} />
+        </div>
+        {#if sidebarOpen && workspace}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="sidebar-resize-handle"
+            onmousedown={startSidebarResize}
+          ></div>
+          <div
+            class="right-sidebar"
+            style="width: {sidebarWidth}px"
+          >
+            <WorkspaceRightSidebar
+              activeTab={sidebarTab}
+              repoOwner={workspace.repo_owner}
+              repoName={workspace.repo_name}
+              mrNumber={workspace.mr_number}
+              branch={workspace.mr_head_ref}
+              roborevBaseUrl={basePath + "/api/roborev"}
+            />
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -401,6 +534,60 @@
 
   .terminal-area {
     flex: 1;
+    overflow: hidden;
+  }
+
+  .seg-control {
+    display: flex;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .seg-btn {
+    padding: 3px 10px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .seg-btn:first-child {
+    border-right: 1px solid var(--border-default);
+  }
+
+  .seg-btn:hover {
+    color: var(--text-secondary);
+    background: var(--bg-surface-hover);
+  }
+
+  .seg-btn.active {
+    background: var(--accent-blue);
+    color: #fff;
+  }
+
+  .terminal-and-sidebar {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .sidebar-resize-handle {
+    width: 4px;
+    cursor: col-resize;
+    background: var(--border-muted);
+    flex-shrink: 0;
+  }
+
+  .sidebar-resize-handle:hover {
+    background: var(--accent-blue);
+  }
+
+  .right-sidebar {
+    flex-shrink: 0;
     overflow: hidden;
   }
 </style>
