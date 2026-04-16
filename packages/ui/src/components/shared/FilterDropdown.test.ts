@@ -12,6 +12,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { tick } from "svelte";
 import FilterDropdown from "./FilterDropdown.svelte";
 
 describe("FilterDropdown", () => {
@@ -104,5 +105,60 @@ describe("FilterDropdown", () => {
 
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(document.querySelector(".filter-dropdown")).toBeNull();
+  });
+
+  it("closes and blocks selection when disabled flips true while open", async () => {
+    const onSelect = vi.fn();
+    const onReset = vi.fn();
+
+    const { rerender } = render(FilterDropdown, {
+      props: {
+        label: "Status",
+        disabled: false,
+        resetLabel: "Show all",
+        onReset,
+        sections: [
+          {
+            items: [
+              {
+                id: "done",
+                label: "Done",
+                active: false,
+                onSelect,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /status/i }),
+    );
+    expect(document.querySelector(".filter-dropdown")).toBeTruthy();
+
+    await rerender({
+      label: "Status",
+      disabled: true,
+      resetLabel: "Show all",
+      onReset,
+      sections: [
+        {
+          items: [
+            {
+              id: "done",
+              label: "Done",
+              active: false,
+              onSelect,
+            },
+          ],
+        },
+      ],
+    });
+    await tick();
+
+    expect(document.querySelector(".filter-dropdown")).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onReset).not.toHaveBeenCalled();
   });
 });

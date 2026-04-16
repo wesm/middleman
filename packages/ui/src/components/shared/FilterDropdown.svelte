@@ -52,6 +52,10 @@
   );
 
   $effect(() => {
+    if (disabled && isOpen) isOpen = false;
+  });
+
+  $effect(() => {
     if (!isOpen) return;
 
     function handleMousedown(event: MouseEvent): void {
@@ -87,11 +91,16 @@
   }
 
   function handleSelect(item: FilterDropdownItem): void {
-    if (item.disabled) return;
+    if (disabled || item.disabled) return;
     item.onSelect();
     if (item.closeOnSelect) {
       isOpen = false;
     }
+  }
+
+  function handleReset(): void {
+    if (disabled) return;
+    onReset?.();
   }
 </script>
 
@@ -135,7 +144,7 @@
             class="filter-item"
             class:active={item.active}
             onclick={() => handleSelect(item)}
-            disabled={item.disabled}
+            disabled={disabled || item.disabled}
             type="button"
           >
             <span
@@ -158,7 +167,8 @@
       {#if hasReset}
         <button
           class="filter-reset"
-          onclick={() => onReset?.()}
+          onclick={handleReset}
+          {disabled}
           type="button"
         >
           {resetLabel}
