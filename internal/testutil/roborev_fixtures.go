@@ -227,11 +227,10 @@ func seedRoborevCommits(tx *sql.Tx) error {
 	return nil
 }
 
-// Bulk jobs: IDs 1-71
-// IDs 1-45 in test-repo-alpha, IDs 46-71 in test-repo-beta.
-// Mutation fixtures (70-73) are inserted separately; they replace
-// any conflicting bulk IDs via INSERT OR REPLACE semantics below.
-// We skip IDs 70-73 in the bulk insert to avoid conflicts.
+// Bulk jobs: IDs 1-69
+// IDs 1-45 in test-repo-alpha, IDs 46-69 in test-repo-beta.
+// Mutation fixtures (70-74) are inserted separately; we skip
+// IDs 70+ in the bulk insert to avoid conflicts.
 func seedRoborevBulkJobs(tx *sql.Tx) error {
 	type agentSpec struct {
 		name  string
@@ -455,6 +454,28 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert mutation job 73: %w", err)
+	}
+
+	// ID 74: done, zero-duration (started_at == finished_at) so
+	// elapsed displays as "0s". Ensures e2e coverage for the
+	// "--" before "0s" sort boundary.
+	enq74 := jobTime(74)
+	started74 := enq74.Add(2 * time.Minute)
+	_, err = tx.Exec(
+		`INSERT INTO review_jobs
+		 (id, repo_id, commit_id, git_ref, branch,
+		  agent, model, status,
+		  enqueued_at, started_at, finished_at, job_type)
+		 VALUES (74, 2, 74, ?, 'feat/api', 'claude',
+		         'claude-sonnet-4-6', 'done', ?, ?, ?,
+		         'review')`,
+		fmt.Sprintf("%08x", 0xaa000000+74),
+		enq74.Format(roborevTimeFmt),
+		started74.Format(roborevTimeFmt),
+		started74.Format(roborevTimeFmt),
+	)
+	if err != nil {
+		return fmt.Errorf("insert mutation job 74: %w", err)
 	}
 
 	// Reviews for mutation jobs 71 and 72 (fail, open)

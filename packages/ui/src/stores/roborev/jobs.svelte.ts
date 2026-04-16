@@ -23,6 +23,7 @@ type SortColumn =
   | "status"
   | "verdict"
   | "agent"
+  | "elapsed"
   | "job_type"
   | "enqueued_at";
 type SortDirection = "asc" | "desc";
@@ -83,6 +84,15 @@ export function createJobsStore(opts: JobsStoreOptions) {
     return q;
   }
 
+  function getElapsedSeconds(job: ReviewJob): number {
+    if (!job.started_at) return -1;
+    const start = new Date(job.started_at).getTime();
+    const end = job.finished_at
+      ? new Date(job.finished_at).getTime()
+      : Date.now();
+    return Math.max(0, Math.floor((end - start) / 1000));
+  }
+
   function getSortValue(
     job: ReviewJob,
     col: SortColumn,
@@ -92,6 +102,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       case "status": return job.status;
       case "verdict": return job.verdict ?? "";
       case "agent": return job.agent;
+      case "elapsed": return getElapsedSeconds(job);
       case "job_type": return job.job_type;
       case "enqueued_at": return job.enqueued_at;
       default: return job.id;

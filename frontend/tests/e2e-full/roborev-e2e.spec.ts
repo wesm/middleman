@@ -9,6 +9,19 @@ import {
   openDrawer,
 } from "./support/roborev-helpers.js";
 
+function parseElapsed(text: string): number {
+  const value = text.trim();
+  if (value === "--") return -1;
+
+  const hours = value.match(/(\d+)h/);
+  const minutes = value.match(/(\d+)m/);
+  const seconds = value.match(/(\d+)s/);
+
+  return (hours ? Number(hours[1]) * 3600 : 0) +
+    (minutes ? Number(minutes[1]) * 60 : 0) +
+    (seconds ? Number(seconds[1]) : 0);
+}
+
 test.describe.serial("Roborev", () => {
   // Refuse to run if the e2e server is not proxying to the
   // script-managed seeded daemon. This catches the failure mode
@@ -46,19 +59,19 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      // Job 73 is the highest ID (first row in desc order):
-      // agent=codex, status=failed
+      // Job 74 is the highest ID (first row in desc order):
+      // agent=claude, status=done (zero-duration fixture).
       const firstRow = page.locator(".job-row").first();
       await expect(firstRow).toBeVisible();
       await expect(
         firstRow.locator(".col-id"),
-      ).toContainText("73");
+      ).toContainText("74");
       await expect(
         firstRow.locator(".col-agent"),
-      ).toContainText("codex");
+      ).toContainText("claude");
       await expect(
         firstRow.locator(".status-badge"),
-      ).toContainText("failed");
+      ).toContainText("done");
     });
 
     test("status badges show correct classes for each status", async ({
@@ -204,7 +217,7 @@ test.describe.serial("Roborev", () => {
       }
 
       const totalCount = await page.locator(".job-row").count();
-      // Seed has 73 jobs total
+      // Seed has 74 jobs total
       expect(totalCount).toBeGreaterThanOrEqual(70);
     });
 
@@ -343,7 +356,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      // Use exact ref for job 73 (first row in desc order)
+      // Use exact ref for job 73 (aa000049 = hex 0x49)
       await page
         .locator(".filter-bar .search-input")
         .fill("aa000049");
@@ -473,6 +486,43 @@ test.describe.serial("Roborev", () => {
       // Check that statuses are sorted ascending
       const sorted = [...statuses].sort();
       expect(statuses).toEqual(sorted);
+    });
+
+    test("click Elapsed header sorts by elapsed duration", async ({
+      page,
+    }) => {
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      const elapsedHeader = page
+        .locator("th.sortable")
+        .filter({ hasText: "Elapsed" });
+      await elapsedHeader.click();
+      await page.waitForTimeout(300);
+
+      const elapsedTexts: string[] = [];
+      const elapsedValues: number[] = [];
+      const elapsedCells = page.locator(".col-elapsed");
+      const count = await elapsedCells.count();
+      for (let i = 0; i < count; i++) {
+        const text = await elapsedCells.nth(i).textContent();
+        if (text) {
+          elapsedTexts.push(text.trim());
+          elapsedValues.push(parseElapsed(text));
+        }
+      }
+
+      const sorted = [...elapsedValues].sort((a, b) => a - b);
+      expect(elapsedValues).toEqual(sorted);
+
+      // The seeded data includes both missing-elapsed ("--") and
+      // zero-duration ("0s") rows. Verify the boundary: "--" must
+      // appear before "0s" in ascending order.
+      const lastDash = elapsedTexts.lastIndexOf("--");
+      const firstZero = elapsedTexts.indexOf("0s");
+      expect(lastDash).toBeGreaterThanOrEqual(0);
+      expect(firstZero).toBeGreaterThanOrEqual(0);
+      expect(lastDash).toBeLessThan(firstZero);
     });
 
     test("sort persists across filter changes", async ({
