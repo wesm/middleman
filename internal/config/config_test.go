@@ -43,6 +43,37 @@ name = "ibis"
 	assert.Equal(9000, cfg.Port)
 }
 
+func TestLoadCasefoldsRepoOwnerAndName(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "Org"
+name = "Foo"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("org", cfg.Repos[0].Owner)
+	assert.Equal("foo", cfg.Repos[0].Name)
+}
+
+func TestLoadRejectsDuplicateReposAfterCasefolding(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "Org"
+name = "Foo"
+
+[[repos]]
+owner = "org"
+name = "foo"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `duplicate repo "org/foo"`)
+}
+
 func TestLoadDefaults(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `

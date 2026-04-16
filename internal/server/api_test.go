@@ -730,6 +730,40 @@ func TestAPIGetPull(t *testing.T) {
 	require.Equal("widget", resp.JSON200.RepoName)
 }
 
+func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		context.Background(), "Acme", "Widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("acme", resp.JSON200.RepoOwner)
+	require.Equal("widget", resp.JSON200.RepoName)
+}
+
+func TestAPIListPullsAcceptsMixedCaseRepoFilter(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	repo := "Acme/Widget"
+	resp, err := client.HTTP.ListPullsWithResponse(
+		context.Background(), &generated.ListPullsParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	require.Equal("widget", (*resp.JSON200)[0].RepoName)
+}
+
 func TestAPIGetPullIncludesBranches(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -2632,6 +2666,27 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 	require.Equal(http.StatusBadRequest, resp.StatusCode())
 }
 
+func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "org", Name: "foo", PlatformHost: "github.com"},
+	})
+	ctx := context.Background()
+
+	seedPR(t, database, "Org", "Foo", 1)
+	seedPR(t, database, "org", "foo", 1)
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("org", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("foo", (*resp.JSON200)[0].RepoName)
+}
+
 func TestAPIListIssuesStateFilter(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -2708,6 +2763,40 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 		Color:       "d73a4a",
 		IsDefault:   true,
 	}}, *resp.JSON200.Issue.Labels)
+}
+
+func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		context.Background(), "Acme", "Widget", 5,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("acme", resp.JSON200.RepoOwner)
+	require.Equal("widget", resp.JSON200.RepoName)
+}
+
+func TestAPIListIssuesAcceptsMixedCaseRepoFilter(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	repo := "Acme/Widget"
+	resp, err := client.HTTP.ListIssuesWithResponse(
+		context.Background(), &generated.ListIssuesParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	require.Equal("widget", (*resp.JSON200)[0].RepoName)
 }
 
 // TestAPIIssueDataFromGraphQLSync verifies the API correctly serves

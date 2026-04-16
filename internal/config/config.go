@@ -77,7 +77,7 @@ func (r *Repo) normalize() error {
 		if owner != "" {
 			r.Owner = owner
 			r.Name = name
-			return nil
+			break
 		}
 	}
 
@@ -85,6 +85,9 @@ func (r *Repo) normalize() error {
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
+	r.Owner = strings.ToLower(r.Owner)
+	r.Name = strings.ToLower(r.Name)
+	r.PlatformHost = strings.ToLower(r.PlatformHost)
 	return nil
 }
 

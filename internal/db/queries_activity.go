@@ -25,6 +25,11 @@ func (d *DB) ListActivity(
 	var args []any
 
 	if opts.Repo != "" {
+		owner, name, ok := strings.Cut(opts.Repo, "/")
+		if ok {
+			_, owner, name = canonicalRepoIdentifier("", owner, name)
+			opts.Repo = owner + "/" + name
+		}
 		whereClauses = append(whereClauses,
 			"repo_owner || '/' || repo_name = ?")
 		args = append(args, opts.Repo)

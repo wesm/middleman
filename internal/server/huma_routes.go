@@ -480,7 +480,7 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, workflowDBOnly)
+	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +490,6 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 
 func (s *Server) buildPullDetailResponse(
 	ctx context.Context,
-	owner, name string,
 	mr *db.MergeRequest,
 	wfMode workflowMode,
 ) (mergeRequestDetailResponse, error) {
@@ -515,15 +514,14 @@ func (s *Server) buildPullDetailResponse(
 			"load repo failed",
 		)
 	}
-
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
 		Events:           events,
-		RepoOwner:        owner,
-		RepoName:         name,
+		RepoOwner:        repo.Owner,
+		RepoName:         repo.Name,
 		PlatformHost:     repo.PlatformHost,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
-		WorkflowApproval: s.workflowApprovalState(ctx, owner, name, mr, wfMode),
+		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr, wfMode),
 		Warnings:         s.diffWarnings(mr),
 		DetailLoaded:     mr.DetailFetchedAt != nil,
 	}
@@ -533,7 +531,7 @@ func (s *Server) buildPullDetailResponse(
 
 	if s.workspaces != nil {
 		wsRef, wsErr := s.workspaces.GetByMR(
-			ctx, repo.PlatformHost, owner, name, mr.Number,
+			ctx, repo.PlatformHost, repo.Owner, repo.Name, mr.Number,
 		)
 		if wsErr == nil && wsRef != nil {
 			resp.Workspace = &workspaceMRRef{
@@ -765,7 +763,7 @@ func (s *Server) editPRContent(
 	}
 
 	body, err := s.buildPullDetailResponse(
-		ctx, input.Owner, input.Name, mr, workflowDBOnly,
+		ctx, mr, workflowDBOnly,
 	)
 	if err != nil {
 		return nil, err
@@ -875,11 +873,16 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 		events = []db.IssueEvent{}
 	}
 
+	repo, err := s.db.GetRepoByID(ctx, issue.RepoID)
+	if err != nil || repo == nil {
+		return nil, huma.Error500InternalServerError("load repo failed")
+	}
+
 	issueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
-		RepoOwner:    input.Owner,
-		RepoName:     input.Name,
+		RepoOwner:    repo.Owner,
+		RepoName:     repo.Name,
 		DetailLoaded: issue.DetailFetchedAt != nil,
 	}
 	if issue.DetailFetchedAt != nil {
@@ -1485,7 +1488,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error404NotFound("pull request not found after sync")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, input.Owner, input.Name, mr, workflowCheckRuns)
+	body, err := s.buildPullDetailResponse(ctx, mr, workflowCheckRuns)
 	if err != nil {
 		return nil, err
 	}

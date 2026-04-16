@@ -105,10 +105,7 @@ make vet        # go vet
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
 - Tests should be fast and isolated
 - No emojis in code or output
-- Database schema changes must be added as numbered SQL migrations in `internal/db/migrations/`
-- `internal/db/migrations/` is the source of truth for schema evolution
-- Add both `.up.sql` and `.down.sql` files for schema changes
-- Validate schema changes through `db.Open()` and application-level tests rather than testing `golang-migrate` internals
+- For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Git Workflow

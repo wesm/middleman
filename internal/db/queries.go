@@ -17,6 +17,13 @@ func sqlPlaceholders(count int) string {
 	return strings.Join(parts, ",")
 }
 
+func canonicalRepoIdentifier(host, owner, name string) (string, string, string) {
+	if host == "" {
+		host = "github.com"
+	}
+	return strings.ToLower(host), strings.ToLower(owner), strings.ToLower(name)
+}
+
 func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx,
@@ -379,9 +386,7 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 // UpsertRepo inserts a repo if it does not exist, then returns its ID.
 // host is the platform hostname (e.g. "github.com" or a GHE hostname).
 func (d *DB) UpsertRepo(ctx context.Context, host, owner, name string) (int64, error) {
-	if host == "" {
-		host = "github.com"
-	}
+	host, owner, name = canonicalRepoIdentifier(host, owner, name)
 	_, err := d.rw.ExecContext(ctx,
 		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
 		 VALUES ('github', ?, ?, ?)
@@ -473,6 +478,7 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 // always be unambiguous. The ORDER BY provides deterministic results as a
 // safety net if stale data from a previous config exists in the database.
 func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT id, platform, platform_host, owner, name,
@@ -650,6 +656,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 
 // GetMergeRequest returns a merge request by repo owner/name and MR number, or nil if not found.
 func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int) (*MergeRequest, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var mr MergeRequest
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
@@ -772,8 +779,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
+		_, owner, name := canonicalRepoIdentifier("", opts.RepoOwner, opts.RepoName)
 		conds = append(conds, "r.owner = ? AND r.name = ?")
-		args = append(args, opts.RepoOwner, opts.RepoName)
+		args = append(args, owner, name)
 	}
 	if opts.KanbanState != "" {
 		conds = append(conds, "COALESCE(k.status, '') = ?")
@@ -975,6 +983,7 @@ func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, erro
 
 // GetMRIDByRepoAndNumber returns the internal MR ID for a given repo+number.
 func (d *DB) GetMRIDByRepoAndNumber(ctx context.Context, owner, name string, number int) (int64, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var id int64
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id FROM middleman_merge_requests p
@@ -1176,6 +1185,7 @@ func (s *DiffSHAs) Stale() bool {
 
 // GetDiffSHAs returns the diff-related SHAs for a merge request.
 func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var s DiffSHAs
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.platform_head_sha, p.platform_base_sha,
@@ -1268,6 +1278,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 func (d *DB) GetIssue(
 	ctx context.Context, owner, name string, number int,
 ) (*Issue, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
@@ -1361,8 +1372,9 @@ func (d *DB) ListIssues(
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
+		_, owner, name := canonicalRepoIdentifier("", opts.RepoOwner, opts.RepoName)
 		conds = append(conds, "r.owner = ? AND r.name = ?")
-		args = append(args, opts.RepoOwner, opts.RepoName)
+		args = append(args, owner, name)
 	}
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
@@ -1431,6 +1443,7 @@ func (d *DB) ListIssues(
 func (d *DB) GetIssueIDByRepoAndNumber(
 	ctx context.Context, owner, name string, number int,
 ) (int64, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var id int64
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id FROM middleman_issues i
@@ -1538,6 +1551,9 @@ func (d *DB) UpdateMRDetailFetched(
 	platformHost, repoOwner, repoName string,
 	number int, ciHadPending bool,
 ) error {
+	platformHost, repoOwner, repoName = canonicalRepoIdentifier(
+		platformHost, repoOwner, repoName,
+	)
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_merge_requests
 		SET detail_fetched_at = datetime('now'),
@@ -1560,6 +1576,9 @@ func (d *DB) UpdateIssueDetailFetched(
 	ctx context.Context,
 	platformHost, repoOwner, repoName string, number int,
 ) error {
+	platformHost, repoOwner, repoName = canonicalRepoIdentifier(
+		platformHost, repoOwner, repoName,
+	)
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_issues
 		SET detail_fetched_at = datetime('now')
@@ -1676,6 +1695,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 	platformHost, owner, name, query string,
 	limit int,
 ) ([]string, error) {
+	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
 	if limit <= 0 {
 		limit = 10
 	}
@@ -1750,6 +1770,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 	platformHost, owner, name, query string,
 	limit int,
 ) ([]CommentAutocompleteReference, error) {
+	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
 	if limit <= 0 {
 		limit = 10
 	}
@@ -2051,6 +2072,7 @@ func (d *DB) GetRepoByHostOwnerName(
 	ctx context.Context,
 	host, owner, name string,
 ) (*Repo, error) {
+	host, owner, name = canonicalRepoIdentifier(host, owner, name)
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT id, platform, platform_host, owner, name,
@@ -2094,6 +2116,9 @@ func (d *DB) GetRepoByHostOwnerName(
 func (d *DB) InsertWorkspace(
 	ctx context.Context, ws *Workspace,
 ) error {
+	ws.PlatformHost, ws.RepoOwner, ws.RepoName = canonicalRepoIdentifier(
+		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
@@ -2146,6 +2171,7 @@ func (d *DB) GetWorkspaceByMR(
 	platformHost, owner, name string,
 	mrNumber int,
 ) (*Workspace, error) {
+	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,

@@ -306,6 +306,26 @@ func TestUpsertAndListRepos(t *testing.T) {
 	assert.Equal("beta", repos[1].Name)
 }
 
+func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	id, err := d.UpsertRepo(ctx, "github.com", "Org", "Foo")
+	require.NoError(err)
+
+	sameID, err := d.UpsertRepo(ctx, "github.com", "org", "foo")
+	require.NoError(err)
+	assert.Equal(id, sameID)
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("org", repos[0].Owner)
+	assert.Equal("foo", repos[0].Name)
+}
+
 func TestGetRepoByOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
@@ -453,6 +473,39 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, repo1, prs[0].RepoID)
+}
+
+func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	prID := insertTestMR(t, d, repoID, 7, "mixed case path", baseTime())
+	require.NoError(d.UpdateDiffSHAs(ctx, repoID, 7, "head", "base", "merge"))
+
+	got, err := d.GetMergeRequest(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(prID, got.ID)
+
+	filtered, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		RepoOwner: "Owner",
+		RepoName:  "Repo",
+	})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal(prID, filtered[0].ID)
+
+	gotID, err := d.GetMRIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	assert.Equal(prID, gotID)
+
+	shas, err := d.GetDiffSHAs(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal("head", shas.DiffHeadSHA)
 }
 
 func TestListPullRequestsFilterBySearch(t *testing.T) {
@@ -1180,6 +1233,33 @@ func TestGetIssue_AttachesLabels(t *testing.T) {
 	require.True(issue.Labels[0].UpdatedAt.Equal(now))
 }
 
+func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	issueID := insertTestIssue(t, d, repoID, 7, "mixed case issue", baseTime())
+
+	got, err := d.GetIssue(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(issueID, got.ID)
+
+	filtered, err := d.ListIssues(ctx, ListIssuesOpts{
+		RepoOwner: "Owner",
+		RepoName:  "Repo",
+	})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal(issueID, filtered[0].ID)
+
+	gotID, err := d.GetIssueIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
+	require.NoError(err)
+	assert.Equal(issueID, gotID)
+}
+
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1511,6 +1591,26 @@ func TestGetRepoByHostOwnerName(t *testing.T) {
 	assert.Nil(missing)
 }
 
+func TestRepoIdentifierCasefoldTriggers(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_repos (platform, platform_host, owner, name)
+		VALUES ('github', 'github.com', 'Acme', 'widget')`)
+	require.Error(err)
+	require.Contains(err.Error(), "repo identifiers must be lowercase")
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_repos SET name = 'Widget' WHERE id = ?`,
+		repoID,
+	)
+	require.Error(err)
+	require.Contains(err.Error(), "repo identifiers must be lowercase")
+}
+
 func TestWorkspaceCRUD(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1618,6 +1718,38 @@ func TestWorkspaceCRUD(t *testing.T) {
 	noSuch, err := d.GetWorkspace(ctx, "nonexistent")
 	require.NoError(err)
 	assert.Nil(noSuch)
+}
+
+func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     mr_number, mr_head_ref, worktree_path, tmux_session)
+		VALUES ('mixed', 'github.com', 'Acme', 'widget', 1, 'feature',
+		        '/tmp/mixed', 'mixed')`)
+	require.Error(err)
+	require.Contains(err.Error(), "workspace repo identifiers must be lowercase")
+
+	ws := &Workspace{
+		ID:           "lower",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     1,
+		MRHeadRef:    "feature",
+		WorktreePath: "/tmp/lower",
+		TmuxSession:  "lower",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	_, err = d.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_workspaces SET repo_name = 'Widget' WHERE id = 'lower'`)
+	require.Error(err)
+	require.Contains(err.Error(), "workspace repo identifiers must be lowercase")
 }
 
 func TestWorkspaceUniqueConstraint(t *testing.T) {
