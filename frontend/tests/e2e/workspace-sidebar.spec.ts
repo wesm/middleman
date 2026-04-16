@@ -174,6 +174,9 @@ test.describe("sidebar toggle behavior", () => {
     // Clear any persisted sidebar state before each test.
     await page.addInitScript(() => {
       localStorage.removeItem(
+        "middleman-workspace-list-sidebar-width",
+      );
+      localStorage.removeItem(
         "middleman-workspace-sidebar-tab",
       );
       localStorage.removeItem(
@@ -185,6 +188,50 @@ test.describe("sidebar toggle behavior", () => {
     });
     await setupTerminalMocks(page);
   });
+
+  test(
+    "workspace list uses shared resizable sidebar behavior",
+    async ({ page }) => {
+      await page.goto("/terminal/ws-123");
+
+      const listSidebar = page.locator(
+        ".workspace-list-sidebar",
+      );
+      await expect(listSidebar).toBeVisible();
+
+      const initialWidth = await listSidebar.evaluate(
+        (el) => el.getBoundingClientRect().width,
+      );
+
+      const handle = page.getByRole("separator", {
+        name: "Resize sidebar",
+      });
+      await expect(handle).toBeVisible();
+
+      const box = await handle.boundingBox();
+      expect(box).toBeTruthy();
+
+      if (box) {
+        await page.mouse.move(
+          box.x + box.width / 2,
+          box.y + box.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          box.x + 80,
+          box.y + box.height / 2,
+        );
+        await page.mouse.up();
+      }
+
+      const resizedWidth = await listSidebar.evaluate(
+        (el) => el.getBoundingClientRect().width,
+      );
+      expect(resizedWidth).toBeGreaterThan(
+        initialWidth + 40,
+      );
+    },
+  );
 
   test(
     "segmented control visible in terminal header",
