@@ -229,7 +229,10 @@
     position: absolute;
     top: 100%;
     left: 0;
-    right: 0;
+    right: auto;
+    min-width: 100%;
+    width: max-content;
+    max-width: min(520px, 90vw);
     margin-top: 2px;
     max-height: 50vh;
     overflow-y: auto;
