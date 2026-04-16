@@ -14,6 +14,7 @@
   let fitAddon: FitAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1000;
   let resizeObserver: ResizeObserver | null = null;
   let disposed = false;
@@ -62,8 +63,9 @@
           if (msg.type === "exited") {
             exited = true;
             terminal.write(
-              "\r\n\x1b[90m[Process exited]\x1b[0m\r\n",
+              "\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n",
             );
+            scheduleSessionRestart();
           }
         } catch {
           // Non-JSON text frame; ignore.
@@ -78,6 +80,27 @@
     socket.onerror = () => {
       socket.close();
     };
+  }
+
+  function scheduleSessionRestart(): void {
+    if (disposed) return;
+    if (restartTimer) clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => {
+      restartTimer = null;
+      if (disposed) return;
+      // Close stale socket so its onclose handler
+      // cannot schedule a duplicate reconnect.
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+        ws.close();
+        ws = null;
+      }
+      exited = false;
+      reconnectDelay = 1000;
+      connect();
+    }, 2000);
   }
 
   function scheduleReconnect(): void {
@@ -101,6 +124,10 @@
     if (reconnectTimer !== null) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
+    }
+    if (restartTimer !== null) {
+      clearTimeout(restartTimer);
+      restartTimer = null;
     }
     if (ws) {
       ws.onclose = null;

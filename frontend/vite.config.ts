@@ -105,6 +105,7 @@ const config = {
       "/api": {
         target: apiUrl,
         changeOrigin: true,
+        ws: true,
       },
     },
   },
