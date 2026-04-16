@@ -222,6 +222,15 @@ Compose behavior:
 - Stores SQLite state in Docker volume as `/data/middleman.db` via `data_dir = "/data"`
 - Exposes backend on `http://127.0.0.1:18090` and frontend dev server on `http://127.0.0.1:15173`
 
+### Custom config file
+
+Use custom config file for both processes with shared env override:
+
+```sh
+MIDDLEMAN_CONFIG=/path/to/config.toml make dev
+MIDDLEMAN_CONFIG=/path/to/config.toml make frontend-dev
+```
+
 Other targets:
 
 ```sh
