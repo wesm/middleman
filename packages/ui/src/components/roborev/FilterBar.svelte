@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
+  import FilterDropdown from "../shared/FilterDropdown.svelte";
   import RepoTreePicker from "./RepoTreePicker.svelte";
 
   interface Props {
@@ -25,12 +26,42 @@
   );
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  function onStatusChange(
-    e: Event & { currentTarget: HTMLSelectElement },
-  ): void {
-    const val = e.currentTarget.value || undefined;
-    jobsStore?.setFilter("status", val);
+  function setStatusFilter(value: string): void {
+    jobsStore?.setFilter("status", value || undefined);
   }
+
+  const statusDetail = $derived.by(() => {
+    const current = jobsStore?.getFilterStatus() ?? "";
+    if (current === "") return undefined;
+    return statusOptions.find(
+      (opt) => opt.value === current,
+    )?.label;
+  });
+
+  const statusSections = $derived.by(() => [
+    {
+      items: statusOptions.map((opt) => ({
+        id: opt.value || "all-statuses",
+        label: opt.label,
+        active:
+          (jobsStore?.getFilterStatus() ?? "") === opt.value,
+        color:
+          opt.value === "queued"
+            ? "var(--accent-amber)"
+            : opt.value === "running"
+              ? "var(--accent-blue)"
+              : opt.value === "done"
+                ? "var(--accent-green)"
+                : opt.value === "failed"
+                  ? "var(--accent-red)"
+                  : opt.value === "canceled"
+                    ? "var(--text-muted)"
+                    : "var(--accent-blue)",
+        closeOnSelect: true,
+        onSelect: () => setStatusFilter(opt.value),
+      })),
+    },
+  ]);
 
   function onSearchInput(
     e: Event & { currentTarget: HTMLInputElement },
@@ -60,16 +91,16 @@
     <RepoTreePicker />
   </div>
 
-  <select
-    class="status-select"
-    value={jobsStore?.getFilterStatus() ?? ""}
-    onchange={onStatusChange}
+  <FilterDropdown
+    label="Status"
+    active={(jobsStore?.getFilterStatus() ?? "") !== ""}
+    showBadge={false}
+    sections={statusSections}
+    title="Filter reviews by status"
+    minWidth="170px"
     {disabled}
-  >
-    {#each statusOptions as opt (opt.value)}
-      <option value={opt.value}>{opt.label}</option>
-    {/each}
-  </select>
+    {...statusDetail ? { detail: statusDetail } : {}}
+  />
 
   <input
     class="search-input"
@@ -109,21 +140,6 @@
     background: var(--bg-surface);
     flex-shrink: 0;
     flex-wrap: wrap;
-  }
-
-  .status-select {
-    padding: 4px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-size: 12px;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .status-select:hover {
-    background: var(--bg-surface-hover);
   }
 
   .search-input {
