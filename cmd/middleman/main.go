@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -31,23 +32,80 @@ var (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf(
-			"middleman %s (%s) built %s\n",
-			version, commit, buildDate,
-		)
-		os.Exit(0)
+	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func runCLI(args []string, stdout io.Writer) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "version":
+			_, err := fmt.Fprintf(
+				stdout,
+				"middleman %s (%s) built %s\n",
+				version, commit, buildDate,
+			)
+			return err
+		case "config":
+			return runConfigCLI(args[1:], stdout)
+		}
 	}
 
-	configPath := flag.String(
+	fs := flag.NewFlagSet("middleman", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String(
 		"config", config.DefaultConfigPath(),
 		"path to config file",
 	)
-	flag.Parse()
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return run(*configPath)
+}
 
-	if err := run(*configPath); err != nil {
-		slog.Error("fatal", "err", err)
-		os.Exit(1)
+func runConfigCLI(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("config command requires subcommand")
+	}
+
+	switch args[0] {
+	case "read":
+		return runConfigRead(args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown config subcommand %q", args[0])
+	}
+}
+
+func runConfigRead(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("middleman config read", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String(
+		"config", config.DefaultConfigPath(),
+		"path to config file",
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("config read requires exactly one key")
+	}
+
+	if err := config.EnsureDefault(*configPath); err != nil {
+		return fmt.Errorf("ensure config: %w", err)
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	switch fs.Arg(0) {
+	case "port":
+		_, err := fmt.Fprintf(stdout, "%d\n", cfg.Port)
+		return err
+	default:
+		return fmt.Errorf("unsupported config key %q", fs.Arg(0))
 	}
 }
 

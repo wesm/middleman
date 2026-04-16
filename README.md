@@ -207,6 +207,21 @@ make dev            # Go server on :8091 with live reload
 make frontend-dev   # Vite on :5174, proxies /api to Go
 ```
 
+### Docker Compose dev stack
+
+Use the `mise` tasks to manage compose stack with a token fetched from host GitHub CLI:
+
+```sh
+mise run dev-compose       # docker compose up
+mise run dev-compose-logs  # docker compose logs -f
+mise run dev-compose-down  # docker compose down
+```
+
+Compose behavior:
+- Uses repo-local `docker/dev-config.toml` so compose config stays isolated from native runs
+- Stores SQLite state in Docker volume as `/data/middleman.db` via `data_dir = "/data"`
+- Exposes backend on `http://127.0.0.1:18090` and frontend dev server on `http://127.0.0.1:15173`
+
 Other targets:
 
 ```sh
