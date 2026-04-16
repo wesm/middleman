@@ -492,16 +492,29 @@ test.describe.serial("Roborev", () => {
       await elapsedHeader.click();
       await page.waitForTimeout(300);
 
+      const elapsedTexts: string[] = [];
       const elapsedValues: number[] = [];
       const elapsedCells = page.locator(".col-elapsed");
       const count = await elapsedCells.count();
       for (let i = 0; i < count; i++) {
         const text = await elapsedCells.nth(i).textContent();
-        if (text) elapsedValues.push(parseElapsed(text));
+        if (text) {
+          elapsedTexts.push(text.trim());
+          elapsedValues.push(parseElapsed(text));
+        }
       }
 
       const sorted = [...elapsedValues].sort((a, b) => a - b);
       expect(elapsedValues).toEqual(sorted);
+
+      // The seeded data includes both missing-elapsed ("--") and
+      // zero-duration ("0s") rows. Verify the boundary: "--" must
+      // appear before "0s" in ascending order.
+      const lastDash = elapsedTexts.lastIndexOf("--");
+      const firstZero = elapsedTexts.indexOf("0s");
+      expect(lastDash).toBeGreaterThanOrEqual(0);
+      expect(firstZero).toBeGreaterThanOrEqual(0);
+      expect(lastDash).toBeLessThan(firstZero);
     });
 
     test("sort persists across filter changes", async ({

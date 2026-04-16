@@ -134,9 +134,9 @@ export async function assertSeededRoborevDaemon(): Promise<void> {
     (sum, k) => sum + (counters[k] ?? 0),
     0,
   );
-  // The seed creates exactly 73 jobs (bulk IDs 1-69 + mutation
-  // fixtures 70-73). The rerun test re-enqueues job 73 in place
-  // (no new ID), so total stays at 73 throughout. Allow a little
+  // The seed creates exactly 74 jobs (bulk IDs 1-69 + mutation
+  // fixtures 70-74). The rerun test re-enqueues job 73 in place
+  // (no new ID), so total stays at 74 throughout. Allow a little
   // headroom but reject anything outside the tight seeded band so
   // unmanaged daemons cannot slip through.
   const minSeededJobs = 70;
