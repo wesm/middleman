@@ -1093,6 +1093,123 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 	assert.Equal("abc123", pr.PlatformHeadSHA)
 }
 
+// TestAPISyncPRIncludesWorkflowApprovalForForkPR covers the regression where
+// runs from fork-based PRs have an empty pull_requests array in GitHub's API.
+// The sync path must still flag workflow approval as required, otherwise the
+// UI never shows the approve button for the exact case it was built for.
+func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(2001)
+			sha := "forkhead"
+			state := "open"
+			title := "Fork PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("forkhead", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(55)),
+					HeadSHA:      new("forkhead"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{},
+				},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.WorkflowApproval)
+	assert.True(resp.JSON200.WorkflowApproval.Checked)
+	assert.True(resp.JSON200.WorkflowApproval.Required)
+	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
+}
+
+// TestAPIApproveWorkflowsForForkPR verifies the approve endpoint also ignores
+// the pull_requests association, so a user clicking the button on a fork PR
+// actually reaches the underlying ApproveWorkflowRun call.
+func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	approvedRunIDs := []int64{}
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(2002)
+			sha := "forkhead"
+			state := "open"
+			title := "Fork PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("forkhead", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:      new(int64(71)),
+					HeadSHA: new("forkhead"),
+					Event:   new("pull_request"),
+				},
+			}, nil
+		},
+		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+			approvedRunIDs = append(approvedRunIDs, runID)
+			return nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.ApprovedCount)
+	assert.Equal("approved_workflows", resp.JSON200.Status)
+	assert.EqualValues(1, *resp.JSON200.ApprovedCount)
+	assert.Equal([]int64{71}, approvedRunIDs)
+}
+
 func TestAPIGetPullNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
