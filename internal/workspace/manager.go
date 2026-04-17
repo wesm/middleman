@@ -158,28 +158,14 @@ func (m *Manager) Setup(
 		return fmt.Errorf("ensure clone: %w", err)
 	}
 
-	branch := fmt.Sprintf("middleman/pr-%d", ws.MRNumber)
-	var startRef string
-	if ws.MRHeadRepo != nil {
-		startRef = fmt.Sprintf(
-			"refs/pull/%d/head", ws.MRNumber,
-		)
-	} else {
-		startRef = "refs/heads/" + ws.MRHeadRef
-	}
-
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 
-	err := runGit(
-		ctx, cloneDir,
-		"worktree", "add", ws.WorktreePath,
-		"-b", branch, startRef,
-	)
+	err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
 		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("git worktree add: %w", err)
+		return fmt.Errorf("add git worktree: %w", err)
 	}
 
 	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
@@ -195,6 +181,88 @@ func (m *Manager) Setup(
 		return fmt.Errorf("update status to ready: %w", err)
 	}
 	return nil
+}
+
+func (m *Manager) addWorktree(
+	ctx context.Context, cloneDir string, ws *Workspace,
+) error {
+	if err := m.addPreferredWorktree(ctx, cloneDir, ws); err == nil {
+		return nil
+	} else {
+		fallbackBranch := syntheticWorktreeBranch(ws.MRNumber)
+		startRef := workspaceStartRef(ws)
+		fallbackErr := runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath,
+			"-b", fallbackBranch, startRef,
+		)
+		if fallbackErr == nil {
+			return nil
+		}
+		return fmt.Errorf(
+			"preferred branch %q failed: %w; fallback branch %q failed: %w",
+			ws.MRHeadRef, err, fallbackBranch, fallbackErr,
+		)
+	}
+}
+
+func (m *Manager) addPreferredWorktree(
+	ctx context.Context, cloneDir string, ws *Workspace,
+) error {
+	if ws.MRHeadRepo != nil {
+		return runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath,
+			"-b", ws.MRHeadRef, workspaceStartRef(ws),
+		)
+	}
+
+	if err := runGit(
+		ctx, cloneDir,
+		"worktree", "add", ws.WorktreePath, ws.MRHeadRef,
+	); err != nil {
+		return err
+	}
+
+	if err := setBranchUpstream(
+		ctx, ws.WorktreePath, ws.MRHeadRef,
+		"origin", "refs/heads/"+ws.MRHeadRef,
+	); err != nil {
+		_ = runGit(
+			ctx, cloneDir,
+			"worktree", "remove", "--force", ws.WorktreePath,
+		)
+		return fmt.Errorf("configure branch upstream: %w", err)
+	}
+
+	return nil
+}
+
+func workspaceStartRef(ws *Workspace) string {
+	if ws.MRHeadRepo != nil {
+		return fmt.Sprintf("refs/pull/%d/head", ws.MRNumber)
+	}
+	return "refs/heads/" + ws.MRHeadRef
+}
+
+func syntheticWorktreeBranch(mrNumber int) string {
+	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+}
+
+func setBranchUpstream(
+	ctx context.Context,
+	worktreePath, branch, remote, mergeRef string,
+) error {
+	if err := runGit(
+		ctx, worktreePath,
+		"config", "branch."+branch+".remote", remote,
+	); err != nil {
+		return err
+	}
+	return runGit(
+		ctx, worktreePath,
+		"config", "branch."+branch+".merge", mergeRef,
+	)
 }
 
 // Delete tears down a workspace: kills tmux, removes the git
@@ -236,7 +304,7 @@ func (m *Manager) Delete(
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	branch := fmt.Sprintf("middleman/pr-%d", ws.MRNumber)
+	branch := syntheticWorktreeBranch(ws.MRNumber)
 
 	// Remove worktree.
 	_ = runGit(
@@ -506,7 +574,7 @@ func (m *Manager) setError(
 func (m *Manager) rollbackWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 ) {
-	branch := fmt.Sprintf("middleman/pr-%d", ws.MRNumber)
+	branch := syntheticWorktreeBranch(ws.MRNumber)
 	if err := runGit(
 		ctx, cloneDir,
 		"worktree", "remove", "--force", ws.WorktreePath,

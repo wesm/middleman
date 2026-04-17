@@ -5332,6 +5332,7 @@ func setupTestServerWithWorkspaces(
 	runGit(t, tmpWork, "add", ".")
 	runGit(t, tmpWork, "commit", "-m", "feature commit")
 	runGit(t, tmpWork, "push", "origin", "feature")
+	runGit(t, bare, "remote", "add", "origin", bare)
 
 	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -5360,6 +5361,48 @@ func setupTestServerWithWorkspaces(
 
 	client := setupTestClient(t, srv)
 	return client, database
+}
+
+func waitForWorkspaceReady(
+	t *testing.T,
+	ctx context.Context,
+	client *apiclient.Client,
+	wsID string,
+) *generated.WorkspaceResponse {
+	t.Helper()
+
+	var ready *generated.WorkspaceResponse
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+			ctx, wsID,
+		)
+		require.NoError(t, err)
+		if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			continue
+		}
+		if getResp.JSON200.Status == "ready" {
+			ready = getResp.JSON200
+			break
+		}
+	}
+
+	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
+	return ready
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(
+		gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
+	return strings.TrimSpace(string(out))
 }
 
 func TestWorkspaceCRUDE2E(t *testing.T) {
@@ -5528,6 +5571,72 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp2.StatusCode())
+}
+
+func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, database := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	seedPR(t, database, "acme", "widget", 2)
+
+	createResp1, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp1.StatusCode())
+	require.NotNil(createResp1.JSON202)
+
+	ws1 := waitForWorkspaceReady(t, ctx, client, createResp1.JSON202.Id)
+	assert.Equal(
+		"feature",
+		gitOutput(t, ws1.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(
+		"origin",
+		gitOutput(
+			t, ws1.WorktreePath,
+			"config", "--get", "branch.feature.remote",
+		),
+	)
+	assert.Equal(
+		"refs/heads/feature",
+		gitOutput(
+			t, ws1.WorktreePath,
+			"config", "--get", "branch.feature.merge",
+		),
+	)
+
+	createResp2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp2.StatusCode())
+	require.NotNil(createResp2.JSON202)
+
+	ws2 := waitForWorkspaceReady(t, ctx, client, createResp2.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-2",
+		gitOutput(t, ws2.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(
+		testGitSHA(t, ws1.WorktreePath, "HEAD"),
+		testGitSHA(t, ws2.WorktreePath, "HEAD"),
+	)
 }
 
 func TestWorkspacePRDetailPlatformHost(t *testing.T) {
