@@ -430,3 +430,139 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	assert.Equal("-t", kill[2])
 	assert.NotEmpty(kill[3])
 }
+
+// TestTmuxWrapperAttachSurfacesWrapperFailure exercises the
+// error-propagation path end-to-end. Workspace setup uses a wrapper
+// that succeeds for new-session (so the workspace reaches "ready")
+// but fails has-session with exit code 127 — the kind of exit a
+// broken wrapper like systemd-run would produce. Under the old
+// boolean-only tmuxSessionExists, this silently passed through as
+// "session absent" and the bug hid behind a confusing new-session
+// failure. With the bool/error split plus the exit-code-1 carve-out,
+// the terminal handler sees the error and closes the WebSocket with
+// StatusInternalError.
+func TestTmuxWrapperAttachSurfacesWrapperFailure(t *testing.T) {
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then exit 127; fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	attachWebsocketAndExpectInternalError(t, body)
+}
+
+// attachWebsocketAndExpectInternalError drives the end-to-end
+// attach path with a custom fake-tmux script, asserting the
+// WebSocket is closed by the handler with StatusInternalError
+// rather than attaching to a session. Callers provide the script
+// body; the helper handles server setup, workspace creation,
+// ready-polling, dial, and close-status assertion.
+func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
+	t.Helper()
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	require.NoError(t, os.WriteFile(script, []byte(scriptBody), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, baseURL := setupWrapperServerWithScript(t, script)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(t, createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		t,
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			if getErr != nil || getResp.JSON200 == nil {
+				return false
+			}
+			return getResp.JSON200.Status == "ready"
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+
+	wsURL := strings.Replace(baseURL, "http://", "ws://", 1) +
+		"/api/v1/workspaces/" + wsID + "/terminal"
+	dialCtx, dialCancel := context.WithTimeout(
+		ctx, 3*time.Second,
+	)
+	defer dialCancel()
+	u, err := url.Parse(wsURL)
+	require.NoError(t, err)
+	conn, httpResp, err := websocket.Dial(
+		dialCtx, u.String(), nil,
+	)
+	require.NoError(t, err)
+	if httpResp != nil && httpResp.Body != nil {
+		httpResp.Body.Close()
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	readCtx, readCancel := context.WithTimeout(
+		ctx, 3*time.Second,
+	)
+	defer readCancel()
+	_, _, readErr := conn.Read(readCtx)
+	require.Error(t, readErr)
+	assert.Equal(
+		websocket.StatusInternalError,
+		websocket.CloseStatus(readErr),
+	)
+}
+
+// TestTmuxWrapperAttachSurfacesExit1Failure covers the second half
+// of the session-absent heuristic at the HTTP layer: exit code 1
+// without tmux's "can't find session" or "no server running"
+// stderr must be treated as a real wrapper failure, not as
+// "session absent, please create one." This is the common case the
+// reviewer flagged — shell wrappers often exit 1 for their own
+// generic errors.
+func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "wrapper failed" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	attachWebsocketAndExpectInternalError(t, body)
+}
+
+// TestTmuxWrapperAttachIgnoresAbsencePhraseOnStdout verifies that
+// the absent-session heuristic is stderr-only at the HTTP layer:
+// a wrapper that exits 1 with the tmux phrase on stdout (and an
+// unrelated stderr message) must surface as an error, not as
+// "session absent." Pairs with the unit-level
+// TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout.
+func TestTmuxWrapperAttachIgnoresAbsencePhraseOnStdout(t *testing.T) {
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim"` + "\n" + // stdout only
+		`    echo "real failure" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	attachWebsocketAndExpectInternalError(t, body)
+}
