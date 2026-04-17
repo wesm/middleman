@@ -114,6 +114,20 @@ type postIssueCommentOutput struct {
 	Body   db.IssueEvent
 }
 
+type createIssueInput struct {
+	Owner string `path:"owner"`
+	Name  string `path:"name"`
+	Body  struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+}
+
+type createIssueOutput struct {
+	Status int `status:"201"`
+	Body   issueResponse
+}
+
 type starredInput struct {
 	Body starredRequest
 }
@@ -210,6 +224,10 @@ type githubStateOutput struct {
 
 type listReposOutput struct {
 	Body []db.Repo
+}
+
+type listRepoSummariesOutput struct {
+	Body []repoSummaryResponse
 }
 
 type acceptedOutput struct {
@@ -370,6 +388,12 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.postComment)
 
 	huma.Get(api, "/issues", s.listIssues)
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-issue",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/issues",
+		DefaultStatus: http.StatusCreated,
+	}, s.createIssue)
 	huma.Get(api, "/repos/{owner}/{name}/issues/{number}", s.getIssue)
 	huma.Register(api, huma.Operation{
 		OperationID:   "post-issue-comment",
@@ -380,6 +404,12 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Post(api, "/repos/{owner}/{name}/items/{number}/resolve", s.resolveItem)
 
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-repo-summaries",
+		Method:        http.MethodGet,
+		Path:          "/repos/summary",
+		DefaultStatus: http.StatusOK,
+	}, s.listRepoSummaries)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-starred",
 		Method:        http.MethodPut,
@@ -968,6 +998,81 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 	return &listIssuesOutput{Body: out}, nil
 }
 
+func (s *Server) createIssue(
+	ctx context.Context, input *createIssueInput,
+) (*createIssueOutput, error) {
+	title := strings.TrimSpace(input.Body.Title)
+	if title == "" {
+		return nil, huma.Error400BadRequest("issue title must not be empty")
+	}
+
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, "")
+	if err != nil {
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+
+	ghIssue, err := client.CreateIssue(
+		ctx, input.Owner, input.Name, title, input.Body.Body,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway(
+			"GitHub API error: " + err.Error(),
+		)
+	}
+	if ghIssue == nil {
+		return nil, huma.Error502BadGateway(
+			"GitHub API returned no issue",
+		)
+	}
+
+	issue, err := ghclient.NormalizeIssue(repo.ID, ghIssue)
+	if err != nil {
+		return nil, huma.Error502BadGateway(
+			"normalize issue failed: " + err.Error(),
+		)
+	}
+	issueID, err := s.db.UpsertIssue(ctx, issue)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"save issue failed",
+		)
+	}
+
+	savedIssue, err := s.db.GetIssueByRepoIDAndNumber(
+		ctx, repo.ID, issue.Number,
+	)
+	if err != nil || savedIssue == nil {
+		return nil, huma.Error500InternalServerError(
+			"re-read issue failed",
+		)
+	}
+	savedIssue.ID = issueID
+
+	out := issueResponse{
+		Issue:        *savedIssue,
+		PlatformHost: repo.PlatformHost,
+		RepoOwner:    repo.Owner,
+		RepoName:     repo.Name,
+		DetailLoaded: savedIssue.DetailFetchedAt != nil,
+	}
+	if savedIssue.DetailFetchedAt != nil {
+		out.DetailFetchedAt = formatUTCRFC3339(*savedIssue.DetailFetchedAt)
+	}
+
+	return &createIssueOutput{
+		Status: http.StatusCreated,
+		Body:   out,
+	}, nil
+}
+
 func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
 	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
 		owner:        input.Owner,
@@ -1548,6 +1653,27 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 	}
 
 	return &listReposOutput{Body: repos}, nil
+}
+
+func (s *Server) listRepoSummaries(
+	ctx context.Context, _ *struct{},
+) (*listRepoSummariesOutput, error) {
+	summaries, err := s.db.ListRepoSummaries(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"list repo summaries failed",
+		)
+	}
+	if s.cfg != nil {
+		summaries = s.filterConfiguredRepoSummaries(summaries)
+	}
+
+	out := make([]repoSummaryResponse, 0, len(summaries))
+	for _, summary := range summaries {
+		out = append(out, toRepoSummaryResponse(summary))
+	}
+
+	return &listRepoSummariesOutput{Body: out}, nil
 }
 
 func (s *Server) triggerSync(ctx context.Context, _ *struct{}) (*acceptedOutput, error) {

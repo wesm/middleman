@@ -87,6 +87,19 @@ func (s *Server) lookupRepo(
 	return repo, nil
 }
 
+func (s *Server) filterConfiguredRepoSummaries(
+	summaries []db.RepoSummary,
+) []db.RepoSummary {
+	filtered := make([]db.RepoSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		repo := summary.Repo
+		if s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repo.PlatformHost) {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered
+}
+
 // lookupRepoID resolves a repository from owner/name inputs and returns a
 // stable not-found error for handlers that need repo identity only.
 func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, error) {
@@ -191,6 +204,48 @@ func validateStarredRequest(body starredRequest) bool {
 // constructed the original time.Time.
 func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
+}
+
+func toRepoSummaryResponse(summary db.RepoSummary) repoSummaryResponse {
+	resp := repoSummaryResponse{
+		PlatformHost:     summary.Repo.PlatformHost,
+		Owner:            summary.Repo.Owner,
+		Name:             summary.Repo.Name,
+		LastSyncError:    summary.Repo.LastSyncError,
+		CachedPRCount:    summary.CachedPRCount,
+		OpenPRCount:      summary.OpenPRCount,
+		DraftPRCount:     summary.DraftPRCount,
+		CachedIssueCount: summary.CachedIssueCount,
+		OpenIssueCount:   summary.OpenIssueCount,
+		ActiveAuthors:    make([]repoSummaryAuthorResponse, 0, len(summary.ActiveAuthors)),
+		RecentIssues:     make([]repoSummaryIssueResponse, 0, len(summary.RecentIssues)),
+	}
+	if summary.Repo.LastSyncStartedAt != nil {
+		resp.LastSyncStartedAt = formatUTCRFC3339(*summary.Repo.LastSyncStartedAt)
+	}
+	if summary.Repo.LastSyncCompletedAt != nil {
+		resp.LastSyncCompletedAt = formatUTCRFC3339(*summary.Repo.LastSyncCompletedAt)
+	}
+	if summary.MostRecentActivityAt != nil {
+		resp.MostRecentActivityAt = formatUTCRFC3339(*summary.MostRecentActivityAt)
+	}
+	for _, author := range summary.ActiveAuthors {
+		resp.ActiveAuthors = append(resp.ActiveAuthors, repoSummaryAuthorResponse{
+			Login:     author.Login,
+			ItemCount: author.ItemCount,
+		})
+	}
+	for _, issue := range summary.RecentIssues {
+		resp.RecentIssues = append(resp.RecentIssues, repoSummaryIssueResponse{
+			Number:         issue.Number,
+			Title:          issue.Title,
+			Author:         issue.Author,
+			State:          issue.State,
+			URL:            issue.URL,
+			LastActivityAt: formatUTCRFC3339(issue.LastActivityAt),
+		})
+	}
+	return resp
 }
 
 // toWorktreeLinkResponses converts DB links to API responses.

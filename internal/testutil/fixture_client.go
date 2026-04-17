@@ -168,6 +168,48 @@ func (c *FixtureClient) GetIssue(
 	return nil, nil
 }
 
+func (c *FixtureClient) CreateIssue(
+	_ context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	issuesKey := repoKey(owner, repo)
+	maxNumber := 0
+	for _, issue := range c.Issues[issuesKey] {
+		if n := issue.GetNumber(); n > maxNumber {
+			maxNumber = n
+		}
+	}
+
+	number := maxNumber + 1
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	state := "open"
+	id := c.nextID
+	c.nextID++
+	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+	login := "fixture-bot"
+	comments := 0
+
+	issue := &gh.Issue{
+		ID:               &id,
+		Number:           &number,
+		Title:            &title,
+		Body:             &body,
+		State:            &state,
+		HTMLURL:          &htmlURL,
+		User:             &gh.User{Login: &login},
+		Comments:         &comments,
+		CreatedAt:        &now,
+		UpdatedAt:        &now,
+		ClosedAt:         nil,
+		PullRequestLinks: nil,
+	}
+	c.Issues[issuesKey] = append([]*gh.Issue{issue}, c.Issues[issuesKey]...)
+	c.OpenIssues[issuesKey] = append([]*gh.Issue{issue}, c.OpenIssues[issuesKey]...)
+	return issue, nil
+}
+
 func (c *FixtureClient) findIssue(owner, repo string, number int) *gh.Issue {
 	for _, issue := range c.OpenIssues[repoKey(owner, repo)] {
 		if issue.GetNumber() == number {

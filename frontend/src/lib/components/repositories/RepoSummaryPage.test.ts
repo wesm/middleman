@@ -1,0 +1,185 @@
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+const mockGet = vi.fn();
+const mockPost = vi.fn();
+const mockNavigate = vi.fn();
+const mockSetGlobalRepo = vi.fn();
+
+vi.mock("../../api/runtime.js", () => ({
+  client: {
+    GET: (...args: unknown[]) => mockGet(...args),
+    POST: (...args: unknown[]) => mockPost(...args),
+  },
+  apiErrorMessage: (
+    error: { detail?: string; title?: string } | undefined,
+    fallback: string,
+  ) => error?.detail ?? error?.title ?? fallback,
+}));
+
+vi.mock("../../stores/router.svelte.js", () => ({
+  navigate: (path: string) => mockNavigate(path),
+}));
+
+vi.mock("../../stores/filter.svelte.js", () => ({
+  setGlobalRepo: (repo: string | undefined) =>
+    mockSetGlobalRepo(repo),
+}));
+
+vi.mock("@middleman/ui", () => ({
+  getStores: () => ({
+    sync: {
+      subscribeSyncComplete: () => () => {},
+    },
+    settings: {
+      isSettingsLoaded: () => true,
+      hasConfiguredRepos: () => true,
+    },
+  }),
+}));
+
+import RepoSummaryPage from "./RepoSummaryPage.svelte";
+
+describe("RepoSummaryPage", () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+    mockPost.mockReset();
+    mockNavigate.mockReset();
+    mockSetGlobalRepo.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders repository summaries from the API", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 6,
+        open_pr_count: 3,
+        draft_pr_count: 1,
+        cached_issue_count: 4,
+        open_issue_count: 2,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [
+          { login: "alice", item_count: 3 },
+          { login: "bob", item_count: 2 },
+        ],
+        recent_issues: [{
+          number: 12,
+          title: "Investigate repo summary card",
+          author: "alice",
+          state: "open",
+          url: "https://github.com/acme/widgets/issues/12",
+          last_activity_at: "2026-04-17T14:55:00Z",
+        }],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    expect(await screen.findByText("acme/widgets")).toBeTruthy();
+    expect(screen.getAllByText("Open PRs")).toHaveLength(2);
+    expect(
+      screen.getByText("Investigate repo summary card"),
+    ).toBeTruthy();
+    expect(screen.getByText("alice")).toBeTruthy();
+  });
+
+  it("creates an issue from a repo card and navigates to it", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 2,
+        open_pr_count: 1,
+        draft_pr_count: 0,
+        cached_issue_count: 1,
+        open_issue_count: 1,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+    mockPost.mockResolvedValue({
+      data: {
+        Number: 27,
+        repo_owner: "acme",
+        repo_name: "widgets",
+        detail_loaded: false,
+      },
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByText("acme/widgets");
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      {
+        target: { value: "Ship repo summaries" },
+      },
+    );
+    await fireEvent.input(
+      screen.getByPlaceholderText(
+        "Describe the problem, context, or follow-up work",
+      ),
+      {
+        target: { value: "Need a compact repo dashboard." },
+      },
+    );
+    await fireEvent.submit(
+      screen.getByRole("button", { name: "Create issue" }),
+    );
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repos/{owner}/{name}/issues",
+        expect.objectContaining({
+          params: {
+            path: { owner: "acme", name: "widgets" },
+          },
+          body: {
+            title: "Ship repo summaries",
+            body: "Need a compact repo dashboard.",
+          },
+        }),
+      );
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+        "acme/widgets",
+      );
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/issues/acme/widgets/27",
+      );
+    });
+  });
+});

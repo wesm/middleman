@@ -111,6 +111,11 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "activity" });
   });
 
+  it("parses /repos", () => {
+    navigate("/repos");
+    expect(getRoute()).toEqual({ page: "repos" });
+  });
+
   it("parses /issues/:owner/:name/:number", () => {
     navigate("/issues/org/repo/3");
     expect(getRoute()).toEqual({

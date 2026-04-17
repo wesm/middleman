@@ -38,6 +38,32 @@ func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
+type RepoSummary struct {
+	Repo                 Repo
+	CachedPRCount        int
+	OpenPRCount          int
+	DraftPRCount         int
+	CachedIssueCount     int
+	OpenIssueCount       int
+	MostRecentActivityAt *time.Time
+	ActiveAuthors        []RepoActivityAuthor
+	RecentIssues         []RepoIssueHeadline
+}
+
+type RepoActivityAuthor struct {
+	Login     string
+	ItemCount int
+}
+
+type RepoIssueHeadline struct {
+	Number         int
+	Title          string
+	Author         string
+	State          string
+	URL            string
+	LastActivityAt time.Time
+}
+
 type MergeRequest struct {
 	ID                int64
 	RepoID            int64
