@@ -63,7 +63,7 @@ function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
   const search = qIdx >= 0 ? fullPath.slice(qIdx + 1) : "";
-  const path = stripBase(pathname);
+  const path = stripBase(pathname).replace(/\/+$/, "") || "/";
   if (path.startsWith("/focus/")) {
     if (path === "/focus/mrs") {
       const sp = new URLSearchParams(search);
