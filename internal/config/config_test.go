@@ -893,3 +893,110 @@ func TestRoborevEndpointDefault(t *testing.T) {
 		t, "http://127.0.0.1:7373", cfg.RoborevEndpoint(),
 	)
 }
+
+func TestLoadTmuxCommand(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[tmux]
+command = ["systemd-run", "--user", "--scope", "tmux"]
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "tmux"},
+		cfg.Tmux.Command,
+	)
+}
+
+func TestLoadTmuxCommandOmitted(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, ``)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Empty(cfg.Tmux.Command)
+	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+}
+
+func TestLoadTmuxCommandEmptyArray(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[tmux]
+command = []
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+}
+
+func TestTmuxCommandDefensiveCopy(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{Tmux: Tmux{
+		Command: []string{"tmux"},
+	}}
+	first := cfg.TmuxCommand()
+	first[0] = "hacked"
+	second := cfg.TmuxCommand()
+	assert.Equal([]string{"tmux"}, second)
+}
+
+func TestTmuxCommandNilReceiver(t *testing.T) {
+	assert := Assert.New(t)
+	var cfg *Config
+	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+}
+
+func TestLoadTmuxCommandRejectsEmptyFirstElement(t *testing.T) {
+	path := writeConfig(t, `
+[tmux]
+command = ["", "extra"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		`config: invalid tmux.command`,
+	)
+}
+
+// TestLoadTmuxCommandRejectsWhitespaceFirstElement covers the
+// whitespace-only case: "   " would sneak past a plain == "" check
+// and exec("   ") fails with a confusing shell-level error rather
+// than the config-load validation message operators actually want.
+func TestLoadTmuxCommandRejectsWhitespaceFirstElement(t *testing.T) {
+	path := writeConfig(t, `
+[tmux]
+command = ["   ", "extra"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		`config: invalid tmux.command`,
+	)
+}
+
+func TestSavePreservesTmuxCommand(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		DataDir:        dir,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+		Tmux: Tmux{
+			Command: []string{"systemd-run", "--user", "--scope", "tmux"},
+		},
+	}
+	require.NoError(t, cfg.Save(path))
+
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "tmux"},
+		reloaded.Tmux.Command,
+	)
+}

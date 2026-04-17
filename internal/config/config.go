@@ -169,6 +169,10 @@ type Roborev struct {
 	Endpoint string `toml:"endpoint,omitempty"`
 }
 
+type Tmux struct {
+	Command []string `toml:"command,omitempty"`
+}
+
 type Config struct {
 	SyncInterval      string   `toml:"sync_interval"`
 	GitHubTokenEnv    string   `toml:"github_token_env"`
@@ -180,6 +184,7 @@ type Config struct {
 	Repos             []Repo   `toml:"repos"`
 	Activity          Activity `toml:"activity"`
 	Roborev           Roborev  `toml:"roborev"`
+	Tmux              Tmux     `toml:"tmux"`
 }
 
 func DefaultConfigPath() string {
@@ -440,6 +445,13 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if len(c.Tmux.Command) > 0 &&
+		strings.TrimSpace(c.Tmux.Command[0]) == "" {
+		return fmt.Errorf(
+			"config: invalid tmux.command: first element must be non-empty",
+		)
+	}
+
 	return nil
 }
 
@@ -497,6 +509,16 @@ func (c *Config) RoborevEndpoint() string {
 	return "http://127.0.0.1:7373"
 }
 
+// TmuxCommand returns the command + argv prefix used to invoke
+// tmux. Defaults to ["tmux"] when c is nil or the setting is
+// unconfigured. The returned slice is a copy, safe to append to.
+func (c *Config) TmuxCommand() []string {
+	if c == nil || len(c.Tmux.Command) == 0 {
+		return []string{"tmux"}
+	}
+	return append([]string(nil), c.Tmux.Command...)
+}
+
 // configFile is the subset of Config written to disk.
 type configFile struct {
 	SyncInterval      string   `toml:"sync_interval"`
@@ -509,6 +531,7 @@ type configFile struct {
 	Repos             []Repo   `toml:"repos"`
 	Activity          Activity `toml:"activity"`
 	Roborev           Roborev  `toml:"roborev,omitempty"`
+	Tmux              Tmux     `toml:"tmux,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -521,6 +544,7 @@ func (c *Config) Save(path string) error {
 		Repos:          c.Repos,
 		Activity:       c.Activity,
 		Roborev:        c.Roborev,
+		Tmux:           c.Tmux,
 	}
 	if c.SyncBudgetPerHour != defaultSyncBudgetPerHour {
 		f.SyncBudgetPerHour = c.SyncBudgetPerHour
