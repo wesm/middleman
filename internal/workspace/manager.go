@@ -315,7 +315,6 @@ func (m *Manager) Delete(
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	branch := currentWorktreeBranch(ctx, ws.WorktreePath)
 
 	// Remove worktree.
 	_ = runGit(
@@ -323,7 +322,7 @@ func (m *Manager) Delete(
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
 
-	m.deleteWorkspaceBranches(ctx, cloneDir, ws, branch)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, "")
 
 	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
@@ -597,9 +596,9 @@ func (m *Manager) rollbackWorktree(
 
 func (m *Manager) deleteWorkspaceBranches(
 	ctx context.Context, cloneDir string, ws *Workspace,
-	activeBranch string,
+	managedBranch string,
 ) {
-	for _, branch := range workspaceBranchCandidates(ws, activeBranch) {
+	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
 		if err := runGit(
 			ctx, cloneDir, "branch", "-D", branch,
 		); err != nil {
@@ -609,24 +608,11 @@ func (m *Manager) deleteWorkspaceBranches(
 	}
 }
 
-func currentWorktreeBranch(
-	ctx context.Context, worktreePath string,
-) string {
-	cmd := exec.CommandContext(
-		ctx, "git", "-C", worktreePath, "branch", "--show-current",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
 func workspaceBranchCandidates(
-	ws *Workspace, activeBranch string,
+	ws *Workspace, managedBranch string,
 ) []string {
 	candidates := []string{
-		activeBranch,
+		managedBranch,
 		syntheticWorktreeBranch(ws.MRNumber),
 	}
 	if ws.MRHeadRef != "" {

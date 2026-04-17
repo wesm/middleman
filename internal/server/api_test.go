@@ -5734,6 +5734,44 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 	)
 }
 
+func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, _, clonePath, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	runGit(t, ws.WorktreePath, "checkout", "-b", "user-scratch")
+	scratchSHA := testGitSHA(t, ws.WorktreePath, "HEAD")
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, createResp.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	assert.Equal(
+		scratchSHA,
+		testGitSHA(t, clonePath, "refs/heads/user-scratch"),
+	)
+}
+
 func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
