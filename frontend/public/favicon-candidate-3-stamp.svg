@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+  <!-- Rubber approval stamp on parchment -->
+  <rect width="52" height="52" rx="8" fill="#F2E7D3"/>
+  <!-- Parchment speckle -->
+  <circle cx="8" cy="12" r="0.6" fill="#D6C4A0" opacity="0.7"/>
+  <circle cx="44" cy="10" r="0.5" fill="#D6C4A0" opacity="0.6"/>
+  <circle cx="42" cy="42" r="0.6" fill="#D6C4A0" opacity="0.7"/>
+  <circle cx="10" cy="44" r="0.4" fill="#D6C4A0" opacity="0.6"/>
+  <g transform="rotate(-11 26 26)" stroke="#B3372C" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer ring (slightly broken for distress) -->
+    <path d="M26 5 A21 21 0 0 1 47 26" stroke-width="2.2"/>
+    <path d="M47 26 A21 21 0 0 1 26 47" stroke-width="2.2"/>
+    <path d="M26 47 A21 21 0 0 1 5 26" stroke-width="2.2"/>
+    <path d="M5 26 A21 21 0 0 1 26 5" stroke-width="2.2" stroke-dasharray="16 2"/>
+    <!-- Inner ring -->
+    <circle cx="26" cy="26" r="16" stroke-width="1.2" stroke-dasharray="40 3 18 3"/>
+    <!-- Checkmark -->
+    <path d="M16 27 L23 34 L37 18" stroke-width="4.2"/>
+    <!-- Tiny chevron marks around ring to suggest micro-text -->
+    <circle cx="26" cy="9" r="0.9" fill="#B3372C" stroke="none"/>
+    <circle cx="26" cy="43" r="0.9" fill="#B3372C" stroke="none"/>
+  </g>
+</svg>

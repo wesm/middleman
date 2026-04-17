@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+  <!-- Camera aperture: precision hub that focuses many inputs -->
+  <rect width="52" height="52" rx="8" fill="#141627"/>
+  <!-- outer ring -->
+  <circle cx="26" cy="26" r="19" fill="none" stroke="#2B2F4A" stroke-width="1.2"/>
+  <!-- 6 aperture blades, each a slim slanted triangle -->
+  <g fill="#F3B24A">
+    <g transform="rotate(0 26 26)"><path d="M26 8 L32 24 L20 24 Z"/></g>
+    <g transform="rotate(60 26 26)"><path d="M26 8 L32 24 L20 24 Z"/></g>
+    <g transform="rotate(120 26 26)"><path d="M26 8 L32 24 L20 24 Z"/></g>
+    <g transform="rotate(180 26 26)"><path d="M26 8 L32 24 L20 24 Z"/></g>
+    <g transform="rotate(240 26 26)"><path d="M26 8 L32 24 L20 24 Z"/></g>
+    <g transform="rotate(300 26 26)"><path d="M26 8 L32 24 L20 24 Z"/></g>
+  </g>
+  <!-- inner dark well -->
+  <circle cx="26" cy="26" r="6" fill="#141627"/>
+  <!-- bright pupil -->
+  <circle cx="26" cy="26" r="3.2" fill="#FFE9B8"/>
+</svg>

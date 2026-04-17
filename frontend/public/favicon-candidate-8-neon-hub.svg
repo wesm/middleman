@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+  <!-- Synthwave neon hub: glowing traces converge on a bright core -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#1B1033"/>
+      <stop offset="100%" stop-color="#07060F"/>
+    </radialGradient>
+    <filter id="neon" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.4"/>
+    </filter>
+  </defs>
+  <rect width="52" height="52" rx="8" fill="url(#bg)"/>
+  <!-- glow layer (wider, blurred) -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#neon)" opacity="0.9">
+    <path d="M8 8 L18 18 L18 26 L26 26" stroke="#3DE0FF" stroke-width="3"/>
+    <path d="M46 10 L34 22 L26 22 L26 26" stroke="#FF3CCB" stroke-width="3"/>
+    <path d="M10 44 L22 34 L26 34 L26 26" stroke="#9B7BFF" stroke-width="3"/>
+    <path d="M44 46 L38 38 L30 30 L26 26" stroke="#FFE15A" stroke-width="3"/>
+  </g>
+  <!-- crisp trace lines on top -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6">
+    <path d="M8 8 L18 18 L18 26 L26 26" stroke="#B6F4FF"/>
+    <path d="M46 10 L34 22 L26 22 L26 26" stroke="#FFBDEE"/>
+    <path d="M10 44 L22 34 L26 34 L26 26" stroke="#D6CBFF"/>
+    <path d="M44 46 L38 38 L30 30 L26 26" stroke="#FFF3B8"/>
+  </g>
+  <!-- node dots at trace origins -->
+  <circle cx="8" cy="8" r="1.8" fill="#B6F4FF"/>
+  <circle cx="46" cy="10" r="1.8" fill="#FFBDEE"/>
+  <circle cx="10" cy="44" r="1.8" fill="#D6CBFF"/>
+  <circle cx="44" cy="46" r="1.8" fill="#FFF3B8"/>
+  <!-- core -->
+  <circle cx="26" cy="26" r="5" fill="#FFE15A" filter="url(#neon)"/>
+  <circle cx="26" cy="26" r="2.6" fill="#FFFDF0"/>
+</svg>

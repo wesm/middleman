@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+  <!-- Brutalist slab monogram: concrete tile, ink M, lone red dot -->
+  <rect width="52" height="52" fill="#D6D1C3"/>
+  <path d="M6 46 V6 H15 L26 23 L37 6 H46 V46 H37 V22 L26 36 L15 22 V46 Z" fill="#15130E"/>
+  <rect x="24" y="40" width="4" height="4" fill="#C2453E"/>
+</svg>
