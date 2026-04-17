@@ -162,7 +162,7 @@ func (m *Manager) Setup(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 
-	err := m.addWorktree(ctx, cloneDir, ws)
+	branch, err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
 		m.setError(ctx, ws.ID, err)
 		return fmt.Errorf("add git worktree: %w", err)
@@ -170,7 +170,7 @@ func (m *Manager) Setup(
 
 	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
 	if err != nil {
-		m.rollbackWorktree(ctx, cloneDir, ws)
+		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		m.setError(ctx, ws.ID, err)
 		return fmt.Errorf("tmux new-session: %w", err)
 	}
@@ -185,9 +185,9 @@ func (m *Manager) Setup(
 
 func (m *Manager) addWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
-) error {
-	if err := m.addPreferredWorktree(ctx, cloneDir, ws); err == nil {
-		return nil
+) (string, error) {
+	if branch, err := m.addPreferredWorktree(ctx, cloneDir, ws); err == nil {
+		return branch, nil
 	} else {
 		fallbackBranch := syntheticWorktreeBranch(ws.MRNumber)
 		startRef := workspaceStartRef(ws)
@@ -197,9 +197,9 @@ func (m *Manager) addWorktree(
 			"-b", fallbackBranch, startRef,
 		)
 		if fallbackErr == nil {
-			return nil
+			return fallbackBranch, nil
 		}
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"preferred branch %q failed: %w; fallback branch %q failed: %w",
 			ws.MRHeadRef, err, fallbackBranch, fallbackErr,
 		)
@@ -208,20 +208,31 @@ func (m *Manager) addWorktree(
 
 func (m *Manager) addPreferredWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
-) error {
+) (string, error) {
 	if ws.MRHeadRepo != nil {
-		return runGit(
+		err := runGit(
 			ctx, cloneDir,
 			"worktree", "add", ws.WorktreePath,
 			"-b", ws.MRHeadRef, workspaceStartRef(ws),
 		)
+		if err != nil {
+			return "", err
+		}
+		return ws.MRHeadRef, nil
+	}
+
+	if err := runGit(
+		ctx, cloneDir,
+		"branch", "-f", ws.MRHeadRef, workspaceStartRef(ws),
+	); err != nil {
+		return "", err
 	}
 
 	if err := runGit(
 		ctx, cloneDir,
 		"worktree", "add", ws.WorktreePath, ws.MRHeadRef,
 	); err != nil {
-		return err
+		return "", err
 	}
 
 	if err := setBranchUpstream(
@@ -232,17 +243,17 @@ func (m *Manager) addPreferredWorktree(
 			ctx, cloneDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		)
-		return fmt.Errorf("configure branch upstream: %w", err)
+		return "", fmt.Errorf("configure branch upstream: %w", err)
 	}
 
-	return nil
+	return ws.MRHeadRef, nil
 }
 
 func workspaceStartRef(ws *Workspace) string {
 	if ws.MRHeadRepo != nil {
 		return fmt.Sprintf("refs/pull/%d/head", ws.MRNumber)
 	}
-	return "refs/heads/" + ws.MRHeadRef
+	return "origin/" + ws.MRHeadRef
 }
 
 func syntheticWorktreeBranch(mrNumber int) string {
@@ -304,7 +315,7 @@ func (m *Manager) Delete(
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	branch := syntheticWorktreeBranch(ws.MRNumber)
+	branch := currentWorktreeBranch(ctx, ws.WorktreePath)
 
 	// Remove worktree.
 	_ = runGit(
@@ -312,8 +323,7 @@ func (m *Manager) Delete(
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
 
-	// Delete the tracking branch.
-	_ = runGit(ctx, cloneDir, "branch", "-D", branch)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, branch)
 
 	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
@@ -573,8 +583,8 @@ func (m *Manager) setError(
 // branch.
 func (m *Manager) rollbackWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
+	branch string,
 ) {
-	branch := syntheticWorktreeBranch(ws.MRNumber)
 	if err := runGit(
 		ctx, cloneDir,
 		"worktree", "remove", "--force", ws.WorktreePath,
@@ -582,10 +592,55 @@ func (m *Manager) rollbackWorktree(
 		slog.Warn("rollback: worktree remove failed",
 			"path", ws.WorktreePath, "err", err)
 	}
-	if err := runGit(
-		ctx, cloneDir, "branch", "-D", branch,
-	); err != nil {
-		slog.Warn("rollback: branch delete failed",
-			"branch", branch, "err", err)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, branch)
+}
+
+func (m *Manager) deleteWorkspaceBranches(
+	ctx context.Context, cloneDir string, ws *Workspace,
+	activeBranch string,
+) {
+	for _, branch := range workspaceBranchCandidates(ws, activeBranch) {
+		if err := runGit(
+			ctx, cloneDir, "branch", "-D", branch,
+		); err != nil {
+			slog.Warn("workspace branch delete failed",
+				"branch", branch, "err", err)
+		}
 	}
+}
+
+func currentWorktreeBranch(
+	ctx context.Context, worktreePath string,
+) string {
+	cmd := exec.CommandContext(
+		ctx, "git", "-C", worktreePath, "branch", "--show-current",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func workspaceBranchCandidates(
+	ws *Workspace, activeBranch string,
+) []string {
+	candidates := []string{
+		activeBranch,
+		syntheticWorktreeBranch(ws.MRNumber),
+	}
+	if ws.MRHeadRef != "" {
+		candidates = append(candidates, ws.MRHeadRef)
+	}
+
+	seen := make(map[string]bool, len(candidates))
+	out := make([]string, 0, len(candidates))
+	for _, branch := range candidates {
+		if branch == "" || seen[branch] {
+			continue
+		}
+		seen[branch] = true
+		out = append(out, branch)
+	}
+	return out
 }

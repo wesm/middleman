@@ -85,9 +85,9 @@ func TestEnsureClone(t *testing.T) {
 }
 
 // TestEnsureCloneInstallsBothRefspecs verifies that a fresh clone gets both
-// the branch and pull refspecs configured. Without the branch refspec,
-// git fetch never updates refs/heads/* and merge commits of merged PRs
-// never reach the clone.
+// the remote-tracking and pull refspecs configured. Without the remote-
+// tracking refspec, git fetch never updates origin/* and branch tips
+// drift stale in the bare clone.
 func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -102,8 +102,9 @@ func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
 
 	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
 	refspecs := getFetchRefspecs(t, clonePath)
-	assert.Contains(refspecs, "+refs/heads/*:refs/heads/*")
-	assert.Contains(refspecs, "+refs/pull/*/head:refs/pull/*/head")
+	assert.Contains(refspecs, remoteTrackingRefspec)
+	assert.Contains(refspecs, pullRefspec)
+	assert.NotContains(refspecs, legacyBranchRefspec)
 }
 
 // TestEnsureCloneFetchesNewBranchCommits is the regression test for the bug
@@ -134,8 +135,9 @@ func TestEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 }
 
 // TestEnsureCloneMigratesBrokenClone simulates a clone created by the
-// previous version of cloneBare (only pull refspec, no branch refspec) and
-// verifies ensureRefspecs migrates it so branch fetches work again.
+// previous version of cloneBare (only pull refspec, no remote-tracking
+// refspec) and verifies ensureRefspecs migrates it so branch fetches
+// work again.
 func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -156,23 +158,56 @@ func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 	run(t, clonePath, "git", "config", "--add",
 		"remote.origin.fetch", "+refs/pull/*/head:refs/pull/*/head")
 	refspecs := getFetchRefspecs(t, clonePath)
-	require.NotContains(refspecs, "+refs/heads/*:refs/heads/*")
-	require.Contains(refspecs, "+refs/pull/*/head:refs/pull/*/head")
+	require.NotContains(refspecs, remoteTrackingRefspec)
+	require.Contains(refspecs, pullRefspec)
 
-	// Push a new commit that would be invisible without the branch refspec.
+	// Push a new commit that would be invisible without the remote-tracking
+	// refspec.
 	newSHA := commitAndPush(t, work, "third.go", "package main\n", "third")
 
-	// Next EnsureClone should re-add the branch refspec and fetch the commit.
+	// Next EnsureClone should re-add the remote-tracking refspec and fetch
+	// the commit.
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
 	refspecs = getFetchRefspecs(t, clonePath)
-	assert.Contains(refspecs, "+refs/heads/*:refs/heads/*")
-	assert.Contains(refspecs, "+refs/pull/*/head:refs/pull/*/head")
+	assert.Contains(refspecs, remoteTrackingRefspec)
+	assert.Contains(refspecs, pullRefspec)
+	assert.NotContains(refspecs, legacyBranchRefspec)
 
 	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
 	require.NoError(err)
 	assert.Equal(newSHA, got)
+}
+
+// TestEnsureCloneRemovesLegacyBranchRefspec verifies that legacy clones stop
+// fetching origin branches into refs/heads/*, which would collide with a
+// workspace checking out the PR branch name locally.
+func TestEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx := context.Background()
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	run(t, clonePath, "git", "config", "--add",
+		"remote.origin.fetch", legacyBranchRefspec)
+	refspecs := getFetchRefspecs(t, clonePath)
+	require.Contains(refspecs, legacyBranchRefspec)
+
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	refspecs = getFetchRefspecs(t, clonePath)
+	assert.Contains(refspecs, remoteTrackingRefspec)
+	assert.Contains(refspecs, pullRefspec)
+	assert.NotContains(refspecs, legacyBranchRefspec)
 }
 
 // TestEnsureCloneMigratesCloneWithNoRefspec covers a clone that has no
@@ -200,7 +235,8 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	refspecs := getFetchRefspecs(t, clonePath)
 	require.Empty(refspecs)
 
-	// Push a new commit that would be invisible without the branch refspec.
+	// Push a new commit that would be invisible without the remote-tracking
+	// refspec.
 	newSHA := commitAndPush(t, work, "fourth.go", "package main\n", "fourth")
 
 	// Next EnsureClone should install both refspecs and fetch the commit.
@@ -208,8 +244,9 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 		ctx, "github.com", "testowner", "testrepo", remote))
 
 	refspecs = getFetchRefspecs(t, clonePath)
-	assert.Contains(refspecs, "+refs/heads/*:refs/heads/*")
-	assert.Contains(refspecs, "+refs/pull/*/head:refs/pull/*/head")
+	assert.Contains(refspecs, remoteTrackingRefspec)
+	assert.Contains(refspecs, pullRefspec)
+	assert.NotContains(refspecs, legacyBranchRefspec)
 
 	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
 	require.NoError(err)
