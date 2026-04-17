@@ -30,6 +30,7 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/stacks"
+	"github.com/wesm/middleman/internal/testutil"
 )
 
 func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
@@ -49,6 +50,7 @@ type mockGH struct {
 	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
+	createIssueFn             func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getUserFn                 func(context.Context, string) (*gh.User, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
@@ -88,6 +90,29 @@ func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (
 		return m.getIssueFn(ctx, owner, repo, number)
 	}
 	return nil, nil
+}
+
+func (m *mockGH) CreateIssue(
+	ctx context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	if m.createIssueFn != nil {
+		return m.createIssueFn(ctx, owner, repo, title, body)
+	}
+	number := 1
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	state := "open"
+	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+	login := "fixture-bot"
+	return &gh.Issue{
+		Number:    &number,
+		Title:     &title,
+		Body:      &body,
+		State:     &state,
+		HTMLURL:   &htmlURL,
+		User:      &gh.User{Login: &login},
+		CreatedAt: &now,
+		UpdatedAt: &now,
+	}, nil
 }
 
 func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
@@ -2024,6 +2049,120 @@ func TestAPIListRepos(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].Owner)
 	require.Equal("widget", (*resp.JSON200)[0].Name)
+}
+
+func TestAPIListRepoSummaries(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "archived", PlatformHost: "github.com"},
+	}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	client := setupTestClient(t, srv)
+
+	_, err := testutil.SeedFixtures(context.Background(), database)
+	require.NoError(err)
+
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(context.Background())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 3)
+
+	var widgets *generated.RepoSummaryResponse
+	for i := range *resp.JSON200 {
+		summary := &(*resp.JSON200)[i]
+		if summary.Name == "widgets" {
+			widgets = summary
+			break
+		}
+	}
+	require.NotNil(widgets)
+	require.NotNil(widgets.ActiveAuthors)
+	require.NotNil(widgets.RecentIssues)
+
+	assert.Equal("acme", widgets.Owner)
+	assert.Equal(int64(4), widgets.OpenPrCount)
+	assert.Equal(int64(1), widgets.DraftPrCount)
+	assert.Equal(int64(3), widgets.OpenIssueCount)
+	assert.Equal(int64(7), widgets.CachedPrCount)
+	assert.Equal(int64(4), widgets.CachedIssueCount)
+	assert.NotNil(widgets.MostRecentActivityAt)
+	assert.Len(*widgets.ActiveAuthors, 3)
+	assert.Equal("alice", (*widgets.ActiveAuthors)[0].Login)
+	assert.Equal(int64(3), (*widgets.ActiveAuthors)[0].ItemCount)
+	assert.NotEmpty((*widgets.RecentIssues)[0].Title)
+}
+
+func TestAPICreateIssue(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	createdAt := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	mock := &mockGH{
+		createIssueFn: func(_ context.Context, owner, repo, title, body string) (*gh.Issue, error) {
+			id := int64(9876)
+			number := 27
+			state := "open"
+			url := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+			login := "issue-bot"
+			ts := gh.Timestamp{Time: createdAt}
+			comments := 0
+			return &gh.Issue{
+				ID:        &id,
+				Number:    &number,
+				Title:     &title,
+				Body:      &body,
+				State:     &state,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &login},
+				Comments:  &comments,
+				CreatedAt: &ts,
+				UpdatedAt: &ts,
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithRepos(
+		t,
+		mock,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		},
+	)
+	client := setupTestClient(t, srv)
+
+	_, err := database.UpsertRepo(context.Background(), "github.com", "acme", "widgets")
+	require.NoError(err)
+
+	resp, err := client.HTTP.CreateIssueWithResponse(
+		context.Background(),
+		"acme",
+		"widgets",
+		generated.CreateIssueJSONRequestBody{
+			Title: "Ship repo summaries",
+			Body:  "Add a top-level repository overview page.",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusCreated, resp.StatusCode())
+	require.NotNil(resp.JSON201)
+
+	assert.Equal(int64(27), resp.JSON201.Number)
+	assert.Equal("acme", resp.JSON201.RepoOwner)
+	assert.Equal("widgets", resp.JSON201.RepoName)
+	assert.Equal("Ship repo summaries", resp.JSON201.Title)
+
+	issue, err := database.GetIssue(context.Background(), "acme", "widgets", 27)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("Ship repo summaries", issue.Title)
+	assert.Equal("Add a top-level repository overview page.", issue.Body)
+	assert.Equal("open", issue.State)
+	assert.Equal(createdAt, issue.CreatedAt.UTC())
 }
 
 func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {

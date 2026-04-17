@@ -38,6 +38,7 @@ type Client interface {
 	ListRepositoriesByOwner(ctx context.Context, owner string) ([]*gh.Repository, error)
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
+	CreateIssue(ctx context.Context, owner, repo, title, body string) (*gh.Issue, error)
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListIssueCommentsIfChanged(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
@@ -138,6 +139,22 @@ func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ..
 		return
 	}
 	c.etag.invalidateRepo(owner, repo, endpoints...)
+}
+
+func (c *liveClient) CreateIssue(
+	ctx context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	req := &gh.IssueRequest{
+		Title: &title,
+	}
+	if body != "" {
+		req.Body = &body
+	}
+	issue, _, err := c.gh.Issues.Create(ctx, owner, repo, req)
+	if err != nil {
+		return nil, err
+	}
+	return issue, nil
 }
 
 const forcePushTimelineQuery = `

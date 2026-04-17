@@ -1,6 +1,12 @@
 import type { components, operations } from "./generated/schema.js";
 
 export type Repo = components["schemas"]["Repo"];
+export type RepoSummary =
+  components["schemas"]["RepoSummaryResponse"];
+export type RepoSummaryAuthor =
+  components["schemas"]["RepoSummaryAuthorResponse"];
+export type RepoSummaryIssue =
+  components["schemas"]["RepoSummaryIssueResponse"];
 export type PullRequest =
   components["schemas"]["MergeRequestResponse"];
 export type Issue =

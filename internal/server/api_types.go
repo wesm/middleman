@@ -71,6 +71,37 @@ type issueDetailResponse struct {
 	Workspace       *workspaceRef   `json:"workspace,omitempty"`
 }
 
+type repoSummaryAuthorResponse struct {
+	Login     string `json:"login"`
+	ItemCount int    `json:"item_count"`
+}
+
+type repoSummaryIssueResponse struct {
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	Author         string `json:"author"`
+	State          string `json:"state"`
+	URL            string `json:"url"`
+	LastActivityAt string `json:"last_activity_at"`
+}
+
+type repoSummaryResponse struct {
+	PlatformHost         string                      `json:"platform_host"`
+	Owner                string                      `json:"owner"`
+	Name                 string                      `json:"name"`
+	LastSyncStartedAt    string                      `json:"last_sync_started_at,omitempty"`
+	LastSyncCompletedAt  string                      `json:"last_sync_completed_at,omitempty"`
+	LastSyncError        string                      `json:"last_sync_error,omitempty"`
+	CachedPRCount        int                         `json:"cached_pr_count"`
+	OpenPRCount          int                         `json:"open_pr_count"`
+	DraftPRCount         int                         `json:"draft_pr_count"`
+	CachedIssueCount     int                         `json:"cached_issue_count"`
+	OpenIssueCount       int                         `json:"open_issue_count"`
+	MostRecentActivityAt string                      `json:"most_recent_activity_at,omitempty"`
+	ActiveAuthors        []repoSummaryAuthorResponse `json:"active_authors"`
+	RecentIssues         []repoSummaryIssueResponse  `json:"recent_issues"`
+}
+
 type commentAutocompleteResponse struct {
 	Users      []string                          `json:"users,omitempty"`
 	References []db.CommentAutocompleteReference `json:"references,omitempty"`

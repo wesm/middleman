@@ -68,6 +68,7 @@
         onchange={(e) => {
           const v = (e.target as HTMLSelectElement).value;
           if (v === "activity") navigate("/");
+          else if (v === "repos") navigate("/repos");
           else if (v === "pulls") navigate("/pulls");
           else if (v === "issues") navigate("/issues");
           else if (v === "board") navigate("/pulls/board");
@@ -78,6 +79,7 @@
         }}
       >
         <option value="activity">Activity</option>
+        <option value="repos">Repos</option>
         <option value="pulls">PRs</option>
         <option value="issues">Issues</option>
         <option value="board">Board</option>
@@ -97,6 +99,9 @@
       <div class="tab-group">
         <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigate("/"); }}>
           Activity
+        </button>
+        <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigate("/repos")}>
+          Repos
         </button>
         <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigate("/pulls")}>
           PRs

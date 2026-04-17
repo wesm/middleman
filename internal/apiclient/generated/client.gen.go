@@ -98,6 +98,14 @@ type CommitsResponse struct {
 	Commits *[]CommitResponse `json:"commits"`
 }
 
+// CreateIssueInputBody defines model for CreateIssueInputBody.
+type CreateIssueInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+	Title  string  `json:"title"`
+}
+
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
 type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -268,6 +276,8 @@ type IssueEvent struct {
 
 // IssueResponse defines model for IssueResponse.
 type IssueResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string    `json:"$schema,omitempty"`
 	Author          string     `json:"Author"`
 	Body            string     `json:"Body"`
 	ClosedAt        *time.Time `json:"ClosedAt"`
@@ -520,6 +530,40 @@ type Repo struct {
 	PlatformHost             string     `json:"PlatformHost"`
 }
 
+// RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
+type RepoSummaryAuthorResponse struct {
+	ItemCount int64  `json:"item_count"`
+	Login     string `json:"login"`
+}
+
+// RepoSummaryIssueResponse defines model for RepoSummaryIssueResponse.
+type RepoSummaryIssueResponse struct {
+	Author         string `json:"author"`
+	LastActivityAt string `json:"last_activity_at"`
+	Number         int64  `json:"number"`
+	State          string `json:"state"`
+	Title          string `json:"title"`
+	Url            string `json:"url"`
+}
+
+// RepoSummaryResponse defines model for RepoSummaryResponse.
+type RepoSummaryResponse struct {
+	ActiveAuthors        *[]RepoSummaryAuthorResponse `json:"active_authors"`
+	CachedIssueCount     int64                        `json:"cached_issue_count"`
+	CachedPrCount        int64                        `json:"cached_pr_count"`
+	DraftPrCount         int64                        `json:"draft_pr_count"`
+	LastSyncCompletedAt  *string                      `json:"last_sync_completed_at,omitempty"`
+	LastSyncError        *string                      `json:"last_sync_error,omitempty"`
+	LastSyncStartedAt    *string                      `json:"last_sync_started_at,omitempty"`
+	MostRecentActivityAt *string                      `json:"most_recent_activity_at,omitempty"`
+	Name                 string                       `json:"name"`
+	OpenIssueCount       int64                        `json:"open_issue_count"`
+	OpenPrCount          int64                        `json:"open_pr_count"`
+	Owner                string                       `json:"owner"`
+	PlatformHost         string                       `json:"platform_host"`
+	RecentIssues         *[]RepoSummaryIssueResponse  `json:"recent_issues"`
+}
+
 // ResolveItemResponse defines model for ResolveItemResponse.
 type ResolveItemResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -715,6 +759,9 @@ type DeleteWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
 }
 
+// CreateIssueJSONRequestBody defines body for CreateIssue for application/json ContentType.
+type CreateIssueJSONRequestBody = CreateIssueInputBody
+
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
 type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
 
@@ -839,11 +886,19 @@ type ClientInterface interface {
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListRepoSummaries request
+	ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetReposByOwnerByName request
 	GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNameCommentAutocomplete request
 	GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueWithBody request with any body
+	CreateIssueWithBody(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssue(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNameIssuesByNumber request
 	GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1023,6 +1078,18 @@ func (c *Client) ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRepoSummariesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetReposByOwnerByNameRequest(c.Server, owner, name)
 	if err != nil {
@@ -1037,6 +1104,30 @@ func (c *Client) GetReposByOwnerByName(ctx context.Context, owner string, name s
 
 func (c *Client) GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetReposByOwnerByNameCommentAutocompleteRequest(c.Server, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWithBody(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueRequestWithBody(c.Server, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssue(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueRequest(c.Server, owner, name, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2004,6 +2095,33 @@ func NewListReposRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListRepoSummariesRequest generates requests for ListRepoSummaries
+func NewListRepoSummariesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/summary")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetReposByOwnerByNameRequest generates requests for GetReposByOwnerByName
 func NewGetReposByOwnerByNameRequest(server string, owner string, name string) (*http.Request, error) {
 	var err error
@@ -2136,6 +2254,60 @@ func NewGetReposByOwnerByNameCommentAutocompleteRequest(server string, owner str
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewCreateIssueRequest calls the generic CreateIssue builder with application/json body
+func NewCreateIssueRequest(server string, owner string, name string, body CreateIssueJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueRequestWithBody(server, owner, name, "application/json", bodyReader)
+}
+
+// NewCreateIssueRequestWithBody generates requests for CreateIssue with any type of body
+func NewCreateIssueRequestWithBody(server string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/issues", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3811,11 +3983,19 @@ type ClientWithResponsesInterface interface {
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
 
+	// ListRepoSummariesWithResponse request
+	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error)
+
 	// GetReposByOwnerByNameWithResponse request
 	GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error)
 
 	// GetReposByOwnerByNameCommentAutocompleteWithResponse request
 	GetReposByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameCommentAutocompleteResponse, error)
+
+	// CreateIssueWithBodyWithResponse request with any body
+	CreateIssueWithBodyWithResponse(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
+
+	CreateIssueWithResponse(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
 
 	// GetReposByOwnerByNameIssuesByNumberWithResponse request
 	GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error)
@@ -4050,6 +4230,29 @@ func (r ListReposResponse) StatusCode() int {
 	return 0
 }
 
+type ListRepoSummariesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]RepoSummaryResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRepoSummariesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRepoSummariesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetReposByOwnerByNameResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -4090,6 +4293,29 @@ func (r GetReposByOwnerByNameCommentAutocompleteResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetReposByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *IssueResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4849,6 +5075,15 @@ func (c *ClientWithResponses) ListReposWithResponse(ctx context.Context, reqEdit
 	return ParseListReposResponse(rsp)
 }
 
+// ListRepoSummariesWithResponse request returning *ListRepoSummariesResponse
+func (c *ClientWithResponses) ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error) {
+	rsp, err := c.ListRepoSummaries(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRepoSummariesResponse(rsp)
+}
+
 // GetReposByOwnerByNameWithResponse request returning *GetReposByOwnerByNameResponse
 func (c *ClientWithResponses) GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error) {
 	rsp, err := c.GetReposByOwnerByName(ctx, owner, name, reqEditors...)
@@ -4865,6 +5100,23 @@ func (c *ClientWithResponses) GetReposByOwnerByNameCommentAutocompleteWithRespon
 		return nil, err
 	}
 	return ParseGetReposByOwnerByNameCommentAutocompleteResponse(rsp)
+}
+
+// CreateIssueWithBodyWithResponse request with arbitrary body returning *CreateIssueResponse
+func (c *ClientWithResponses) CreateIssueWithBodyWithResponse(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error) {
+	rsp, err := c.CreateIssueWithBody(ctx, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueWithResponse(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error) {
+	rsp, err := c.CreateIssue(ctx, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueResponse(rsp)
 }
 
 // GetReposByOwnerByNameIssuesByNumberWithResponse request returning *GetReposByOwnerByNameIssuesByNumberResponse
@@ -5407,6 +5659,39 @@ func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 	return response, nil
 }
 
+// ParseListRepoSummariesResponse parses an HTTP response from a ListRepoSummariesWithResponse call
+func ParseListRepoSummariesResponse(rsp *http.Response) (*ListRepoSummariesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRepoSummariesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RepoSummaryResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetReposByOwnerByNameResponse parses an HTTP response from a GetReposByOwnerByNameWithResponse call
 func ParseGetReposByOwnerByNameResponse(rsp *http.Response) (*GetReposByOwnerByNameResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5460,6 +5745,39 @@ func ParseGetReposByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueResponse parses an HTTP response from a CreateIssueWithResponse call
+func ParseCreateIssueResponse(rsp *http.Response) (*CreateIssueResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IssueResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
