@@ -457,66 +457,6 @@ func runBuiltCmd(cmd *exec.Cmd) error {
 	return nil
 }
 
-// runCmd executes an arbitrary command. If dir is non-empty it
-// sets the working directory. Retained only for the package-level
-// tmux functions below, which exist so internal/terminal/handler.go
-// still compiles before Task 3 migrates it to the method form.
-func runCmd(
-	ctx context.Context, dir string, name string, args ...string,
-) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
-	}
-	return nil
-}
-
-// EnsureTmux creates a tmux session if it does not already exist.
-// Package-level retained until Task 3 migrates terminal.Handler to
-// the method form; deleted at that point.
-func EnsureTmux(
-	ctx context.Context, session, cwd string,
-) error {
-	if TmuxSessionExists(ctx, session) {
-		return nil
-	}
-	return packageNewTmuxSession(ctx, session, cwd)
-}
-
-// TmuxSessionExists checks whether a tmux session exists.
-// Package-level retained until Task 3.
-func TmuxSessionExists(
-	ctx context.Context, session string,
-) bool {
-	err := runCmd(
-		ctx, "",
-		"tmux", "has-session", "-t", session,
-	)
-	return err == nil
-}
-
-// packageNewTmuxSession is the pre-refactor new-session exec
-// kept only for the package-level EnsureTmux above. Task 3 deletes
-// both along with the terminal-handler migration.
-func packageNewTmuxSession(
-	ctx context.Context, session, cwd string,
-) error {
-	shell := userLoginShell()
-	return runCmd(
-		ctx, "",
-		"tmux", "new-session", "-d",
-		"-s", session,
-		"-c", cwd,
-		shell, "-l",
-	)
-}
-
 // dirtyFiles returns the list of uncommitted files in a worktree.
 func dirtyFiles(
 	ctx context.Context, worktreePath string,
