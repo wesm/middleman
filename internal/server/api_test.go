@@ -1107,6 +1107,7 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 			state := "open"
 			title := "Fork PR"
 			url := "https://github.com/acme/widget/pull/1"
+			cloneURL := "https://github.com/fork/widget.git"
 			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
 			createdAt := gh.Timestamp{Time: time.Now().UTC()}
 			return &gh.PullRequest{
@@ -1117,18 +1118,24 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 				HTMLURL:   &url,
 				UpdatedAt: &updatedAt,
 				CreatedAt: &createdAt,
-				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base:      &gh.PullRequestBranch{Ref: new("main")},
+				Head: &gh.PullRequestBranch{
+					SHA:  &sha,
+					Ref:  new("feature"),
+					Repo: &gh.Repository{CloneURL: &cloneURL, FullName: new("fork/widget")},
+				},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
 		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("forkhead", headSHA)
 			return []*gh.WorkflowRun{
 				{
-					ID:           new(int64(55)),
-					HeadSHA:      new("forkhead"),
-					Event:        new("pull_request"),
-					PullRequests: []*gh.PullRequest{},
+					ID:             new(int64(55)),
+					HeadSHA:        new("forkhead"),
+					Event:          new("pull_request"),
+					HeadBranch:     new("feature"),
+					HeadRepository: &gh.Repository{FullName: new("fork/widget")},
+					PullRequests:   []*gh.PullRequest{},
 				},
 			}, nil
 		},
@@ -1150,9 +1157,9 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
 }
 
-// TestAPIApproveWorkflowsForForkPR verifies the approve endpoint also ignores
-// the pull_requests association, so a user clicking the button on a fork PR
-// actually reaches the underlying ApproveWorkflowRun call.
+// TestAPIApproveWorkflowsForForkPR verifies the approve endpoint reaches
+// ApproveWorkflowRun for a fork-triggered run when the run's head repo and
+// branch match the PR.
 func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -1164,6 +1171,7 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 			state := "open"
 			title := "Fork PR"
 			url := "https://github.com/acme/widget/pull/1"
+			cloneURL := "https://github.com/fork/widget.git"
 			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
 			createdAt := gh.Timestamp{Time: time.Now().UTC()}
 			return &gh.PullRequest{
@@ -1174,17 +1182,23 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 				HTMLURL:   &url,
 				UpdatedAt: &updatedAt,
 				CreatedAt: &createdAt,
-				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base:      &gh.PullRequestBranch{Ref: new("main")},
+				Head: &gh.PullRequestBranch{
+					SHA:  &sha,
+					Ref:  new("feature"),
+					Repo: &gh.Repository{CloneURL: &cloneURL, FullName: new("fork/widget")},
+				},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
 		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("forkhead", headSHA)
 			return []*gh.WorkflowRun{
 				{
-					ID:      new(int64(71)),
-					HeadSHA: new("forkhead"),
-					Event:   new("pull_request"),
+					ID:             new(int64(71)),
+					HeadSHA:        new("forkhead"),
+					Event:          new("pull_request"),
+					HeadBranch:     new("feature"),
+					HeadRepository: &gh.Repository{FullName: new("fork/widget")},
 				},
 			}, nil
 		},
@@ -1331,6 +1345,71 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 	require.NotNil(resp.JSON200.ApprovedCount)
 	assert.EqualValues(1, *resp.JSON200.ApprovedCount)
 	assert.Equal([]int64{89}, approvedRunIDs)
+}
+
+// TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA exercises the
+// safety guarantee that two distinct forks sharing a head SHA do not
+// cross-approve. The PR's head repo is alice/widget; the run's head repo is
+// bob/widget. ApproveWorkflowRun must not be called.
+func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	approvedRunIDs := []int64{}
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(4001)
+			sha := "sharedsha"
+			state := "open"
+			title := "Alice Fork PR"
+			url := "https://github.com/acme/widget/pull/1"
+			cloneURL := "https://github.com/alice/widget.git"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head: &gh.PullRequestBranch{
+					SHA:  &sha,
+					Ref:  new("feature"),
+					Repo: &gh.Repository{CloneURL: &cloneURL, FullName: new("alice/widget")},
+				},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("sharedsha", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:             new(int64(123)),
+					HeadSHA:        new("sharedsha"),
+					Event:          new("pull_request"),
+					HeadBranch:     new("feature"),
+					HeadRepository: &gh.Repository{FullName: new("bob/widget")},
+				},
+			}, nil
+		},
+		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+			approvedRunIDs = append(approvedRunIDs, runID)
+			return nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
+		context.Background(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.Empty(approvedRunIDs)
 }
 
 func TestAPIGetPullNotFound(t *testing.T) {

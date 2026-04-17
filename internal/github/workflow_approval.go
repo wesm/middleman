@@ -1,6 +1,11 @@
 package github
 
-import gh "github.com/google/go-github/v84/github"
+import (
+	"regexp"
+	"strings"
+
+	gh "github.com/google/go-github/v84/github"
+)
 
 // WorkflowApprovalState describes whether workflow approval is needed for a PR.
 type WorkflowApprovalState struct {
@@ -10,24 +15,38 @@ type WorkflowApprovalState struct {
 	RunIDs   []int64
 }
 
-// FilterWorkflowRunsAwaitingApproval narrows action-required workflow runs down
-// to those that target the given PR. An empty run.PullRequests array is
-// treated as "association unavailable" rather than "not this PR": GitHub
-// returns an empty array for fork-triggered runs, which is precisely when
-// workflow approval is required. When the array is populated, the PR number
-// must match so we don't mis-attribute runs across two PRs that happen to
-// share a head SHA.
+// PRSource identifies a pull request's head for matching workflow runs.
+// HeadSHA is required. HeadRepoFullName ("owner/repo") and HeadRef (branch
+// name) are required to disambiguate fork-triggered runs whose pull_requests
+// array is empty; without them the filter fails closed.
+type PRSource struct {
+	Number           int
+	HeadSHA          string
+	HeadRepoFullName string
+	HeadRef          string
+}
+
+// FilterWorkflowRunsAwaitingApproval narrows action-required workflow runs to
+// those that target the given PR.
+//
+// Matching rules:
+//   - Run must be at PRSource.HeadSHA.
+//   - If the run's pull_requests array is populated (same-repo PRs), it must
+//     contain PRSource.Number.
+//   - If pull_requests is empty (fork-triggered runs), the run's head
+//     repository full name and head branch must match PRSource. Two distinct
+//     fork PRs can share a head SHA, so head SHA alone is unsafe in the
+//     approval path. If HeadRepoFullName or HeadRef is empty we fail closed.
 func FilterWorkflowRunsAwaitingApproval(
 	runs []*gh.WorkflowRun,
-	number int,
-	headSHA string,
+	pr PRSource,
 ) []*gh.WorkflowRun {
 	var filtered []*gh.WorkflowRun
 	for _, run := range runs {
-		if run.GetHeadSHA() != headSHA {
+		if run.GetHeadSHA() != pr.HeadSHA {
 			continue
 		}
-		if !workflowRunMayTargetPR(run, number) {
+		if !workflowRunMatchesPR(run, pr) {
 			continue
 		}
 		filtered = append(filtered, run)
@@ -35,16 +54,25 @@ func FilterWorkflowRunsAwaitingApproval(
 	return filtered
 }
 
-func workflowRunMayTargetPR(run *gh.WorkflowRun, number int) bool {
-	if len(run.PullRequests) == 0 {
-		return true
-	}
-	for _, pr := range run.PullRequests {
-		if pr.GetNumber() == number {
-			return true
+func workflowRunMatchesPR(run *gh.WorkflowRun, pr PRSource) bool {
+	if len(run.PullRequests) > 0 {
+		for _, runPR := range run.PullRequests {
+			if runPR.GetNumber() == pr.Number {
+				return true
+			}
 		}
+		return false
 	}
-	return false
+	if pr.HeadRepoFullName == "" || pr.HeadRef == "" {
+		return false
+	}
+	if run.GetHeadRepository().GetFullName() != pr.HeadRepoFullName {
+		return false
+	}
+	if run.GetHeadBranch() != pr.HeadRef {
+		return false
+	}
+	return true
 }
 
 // WorkflowApprovalStateFromRuns converts matched workflow runs into state.
@@ -56,4 +84,22 @@ func WorkflowApprovalStateFromRuns(runs []*gh.WorkflowRun) WorkflowApprovalState
 	state.Count = len(state.RunIDs)
 	state.Required = state.Count > 0
 	return state
+}
+
+var cloneURLPattern = regexp.MustCompile(`[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$`)
+
+// ParseHeadRepoFullName extracts "owner/repo" from a GitHub clone URL.
+// Accepts both HTTPS (https://host/owner/repo[.git]) and SSH
+// (git@host:owner/repo[.git]) forms. Returns empty string if the URL does
+// not match a recognized form.
+func ParseHeadRepoFullName(cloneURL string) string {
+	cloneURL = strings.TrimSpace(cloneURL)
+	if cloneURL == "" {
+		return ""
+	}
+	m := cloneURLPattern.FindStringSubmatch(cloneURL)
+	if len(m) != 3 {
+		return ""
+	}
+	return m[1] + "/" + m[2]
 }
