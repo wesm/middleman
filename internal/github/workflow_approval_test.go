@@ -11,11 +11,13 @@ func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
 	tests := []struct {
 		name    string
 		runs    []*gh.WorkflowRun
+		number  int
 		headSHA string
 		wantIDs []int64
 	}{
 		{
-			name:    "matches runs at head sha",
+			name:    "matches pull request event head sha and number",
+			number:  42,
 			headSHA: "abc123",
 			runs: []*gh.WorkflowRun{
 				{
@@ -34,6 +36,7 @@ func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
 		},
 		{
 			name:    "includes fork PR runs with empty PullRequests",
+			number:  7,
 			headSHA: "abc123",
 			runs: []*gh.WorkflowRun{
 				{
@@ -50,11 +53,31 @@ func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
 			},
 			wantIDs: []int64{201, 202},
 		},
+		{
+			name:    "rejects populated PullRequests pointing at another PR at same SHA",
+			number:  42,
+			headSHA: "abc123",
+			runs: []*gh.WorkflowRun{
+				{
+					ID:           new(int64(301)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(42)}},
+				},
+				{
+					ID:           new(int64(302)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(99)}},
+				},
+			},
+			wantIDs: []int64{301},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FilterWorkflowRunsAwaitingApproval(tt.runs, tt.headSHA)
+			got := FilterWorkflowRunsAwaitingApproval(tt.runs, tt.number, tt.headSHA)
 			gotIDs := make([]int64, 0, len(got))
 			for _, run := range got {
 				gotIDs = append(gotIDs, run.GetID())

@@ -11,11 +11,15 @@ type WorkflowApprovalState struct {
 }
 
 // FilterWorkflowRunsAwaitingApproval narrows action-required workflow runs down
-// to those at the given PR head SHA. The run.PullRequests association is not
-// checked because GitHub returns an empty pull_requests array for fork-based
-// PRs — which is precisely when workflow approval is required.
+// to those that target the given PR. An empty run.PullRequests array is
+// treated as "association unavailable" rather than "not this PR": GitHub
+// returns an empty array for fork-triggered runs, which is precisely when
+// workflow approval is required. When the array is populated, the PR number
+// must match so we don't mis-attribute runs across two PRs that happen to
+// share a head SHA.
 func FilterWorkflowRunsAwaitingApproval(
 	runs []*gh.WorkflowRun,
+	number int,
 	headSHA string,
 ) []*gh.WorkflowRun {
 	var filtered []*gh.WorkflowRun
@@ -23,9 +27,24 @@ func FilterWorkflowRunsAwaitingApproval(
 		if run.GetHeadSHA() != headSHA {
 			continue
 		}
+		if !workflowRunMayTargetPR(run, number) {
+			continue
+		}
 		filtered = append(filtered, run)
 	}
 	return filtered
+}
+
+func workflowRunMayTargetPR(run *gh.WorkflowRun, number int) bool {
+	if len(run.PullRequests) == 0 {
+		return true
+	}
+	for _, pr := range run.PullRequests {
+		if pr.GetNumber() == number {
+			return true
+		}
+	}
+	return false
 }
 
 // WorkflowApprovalStateFromRuns converts matched workflow runs into state.

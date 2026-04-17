@@ -631,7 +631,7 @@ func (s *Server) workflowApprovalState(
 	}
 
 	state := ghclient.WorkflowApprovalStateFromRuns(
-		ghclient.FilterWorkflowRunsAwaitingApproval(runs, headSHA),
+		ghclient.FilterWorkflowRunsAwaitingApproval(runs, mr.Number, headSHA),
 	)
 	return workflowApprovalResponse{
 		Checked:  state.Checked,
@@ -1051,7 +1051,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
-	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, headSHA)
+	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, input.Number, headSHA)
 
 	approvedCount := 0
 	for _, run := range pending {
