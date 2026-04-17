@@ -623,10 +623,11 @@
             number={"number" in route ? route.number : undefined}
             emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
             activePlatformHost={
-              getEmbedActivePlatformHost()
-              ?? ("platformHost" in route
-                ? route.platformHost
-                : null)
+              isEmbedded()
+                ? getEmbedActivePlatformHost()
+                : ("platformHost" in route
+                  ? route.platformHost
+                  : null)
             }
             onSelectPR={(n) => {
               if ("platformHost" in route) {
