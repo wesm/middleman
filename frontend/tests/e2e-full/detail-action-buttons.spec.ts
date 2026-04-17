@@ -2,6 +2,19 @@ import { expect, request as playwrightRequest, test, type APIRequestContext } fr
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("detail action buttons", () => {
+  test("issue detail opens the workspace panel for the issue repo", async ({ page }) => {
+    await page.goto("/issues/acme/widgets/10");
+    await expect(page.locator(".issue-detail")).toBeVisible();
+
+    await page.locator(".btn--workspace").click();
+
+    await expect(page).toHaveURL(
+      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    );
+    await expect(page.locator(".workspace-panel")).toBeVisible();
+    await expect(page.locator(".repo-label")).toHaveText("acme/widgets");
+  });
+
   test("pull request actions use shared ActionButton component", async ({ page }) => {
     await page.goto("/pulls");
     await page.locator(".pull-item").first()

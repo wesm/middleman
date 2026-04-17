@@ -622,7 +622,12 @@
             name={"name" in route ? route.name : undefined}
             number={"number" in route ? route.number : undefined}
             emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
-            activePlatformHost={getEmbedActivePlatformHost()}
+            activePlatformHost={
+              getEmbedActivePlatformHost()
+              ?? ("platformHost" in route
+                ? route.platformHost
+                : null)
+            }
             onSelectPR={(n) => {
               if ("platformHost" in route) {
                 navigate(

@@ -53,6 +53,7 @@ var validKanbanStates = map[string]bool{
 
 type issueResponse struct {
 	db.Issue
+	PlatformHost    string `json:"platform_host"`
 	RepoOwner       string `json:"repo_owner"`
 	RepoName        string `json:"repo_name"`
 	DetailLoaded    bool   `json:"detail_loaded"`
@@ -62,6 +63,7 @@ type issueResponse struct {
 type issueDetailResponse struct {
 	Issue           *db.Issue       `json:"issue"`
 	Events          []db.IssueEvent `json:"events"`
+	PlatformHost    string          `json:"platform_host"`
 	RepoOwner       string          `json:"repo_owner"`
 	RepoName        string          `json:"repo_name"`
 	DetailLoaded    bool            `json:"detail_loaded"`

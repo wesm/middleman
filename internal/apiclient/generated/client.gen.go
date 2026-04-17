@@ -233,6 +233,7 @@ type IssueDetailResponse struct {
 	DetailLoaded    bool          `json:"detail_loaded"`
 	Events          *[]IssueEvent `json:"events"`
 	Issue           Issue         `json:"issue"`
+	PlatformHost    string        `json:"platform_host"`
 	RepoName        string        `json:"repo_name"`
 	RepoOwner       string        `json:"repo_owner"`
 }
@@ -273,6 +274,7 @@ type IssueResponse struct {
 	DetailFetchedAt *string    `json:"detail_fetched_at,omitempty"`
 	DetailLoaded    bool       `json:"detail_loaded"`
 	Labels          *[]Label   `json:"labels,omitempty"`
+	PlatformHost    string     `json:"platform_host"`
 	RepoName        string     `json:"repo_name"`
 	RepoOwner       string     `json:"repo_owner"`
 }
