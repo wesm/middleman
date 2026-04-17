@@ -2141,15 +2141,23 @@ func TestAPICreateIssue(t *testing.T) {
 			login := "issue-bot"
 			ts := gh.Timestamp{Time: createdAt}
 			comments := 0
+			labelID := int64(42)
+			labelName := "enhancement"
+			labelColor := "a2eeef"
 			return &gh.Issue{
-				ID:        &id,
-				Number:    &number,
-				Title:     &title,
-				Body:      &body,
-				State:     &state,
-				HTMLURL:   &url,
-				User:      &gh.User{Login: &login},
-				Comments:  &comments,
+				ID:       &id,
+				Number:   &number,
+				Title:    &title,
+				Body:     &body,
+				State:    &state,
+				HTMLURL:  &url,
+				User:     &gh.User{Login: &login},
+				Comments: &comments,
+				Labels: []*gh.Label{{
+					ID:    &labelID,
+					Name:  &labelName,
+					Color: &labelColor,
+				}},
 				CreatedAt: &ts,
 				UpdatedAt: &ts,
 			}, nil
@@ -2185,6 +2193,12 @@ func TestAPICreateIssue(t *testing.T) {
 	assert.Equal("acme", resp.JSON201.RepoOwner)
 	assert.Equal("widgets", resp.JSON201.RepoName)
 	assert.Equal("Ship repo summaries", resp.JSON201.Title)
+	require.NotNil(resp.JSON201.Labels)
+	assert.Equal([]generated.Label{{
+		Name:      "enhancement",
+		Color:     "a2eeef",
+		IsDefault: false,
+	}}, *resp.JSON201.Labels)
 
 	issue, err := database.GetIssue(context.Background(), "acme", "widgets", 27)
 	require.NoError(err)
@@ -2193,6 +2207,9 @@ func TestAPICreateIssue(t *testing.T) {
 	assert.Equal("Add a top-level repository overview page.", issue.Body)
 	assert.Equal("open", issue.State)
 	assert.Equal(createdAt, issue.CreatedAt.UTC())
+	require.Len(issue.Labels, 1)
+	assert.Equal("enhancement", issue.Labels[0].Name)
+	assert.Equal("a2eeef", issue.Labels[0].Color)
 }
 
 func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
