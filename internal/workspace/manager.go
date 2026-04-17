@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,6 +23,7 @@ type Manager struct {
 	db          *db.DB
 	worktreeDir string
 	clones      *gitclone.Manager
+	tmuxCmd     []string
 }
 
 // NewManager creates a Manager that stores worktrees under
@@ -39,6 +41,32 @@ func NewManager(
 // operations. Called after the clone manager is initialized.
 func (m *Manager) SetClones(clones *gitclone.Manager) {
 	m.clones = clones
+}
+
+// SetTmuxCommand sets the command + argv prefix for every tmux
+// invocation the manager issues. When nil/empty, the manager uses
+// ["tmux"] — preserving today's behavior.
+func (m *Manager) SetTmuxCommand(cmd []string) {
+	m.tmuxCmd = append([]string(nil), cmd...)
+}
+
+// tmuxExec builds an *exec.Cmd for a tmux invocation: the
+// configured prefix + extra args. Defaults to ["tmux"] when
+// unconfigured. Returning the *exec.Cmd directly (rather than a
+// []string that callers index) keeps the first-element access
+// inside this function where the branch structure makes it
+// statically safe — NilAway cannot prove safety through an indexed
+// slice return.
+func (m *Manager) tmuxExec(
+	ctx context.Context, extra ...string,
+) *exec.Cmd {
+	if len(m.tmuxCmd) == 0 {
+		return exec.CommandContext(ctx, "tmux", extra...)
+	}
+	args := make([]string, 0, len(m.tmuxCmd)-1+len(extra))
+	args = append(args, m.tmuxCmd[1:]...)
+	args = append(args, extra...)
+	return exec.CommandContext(ctx, m.tmuxCmd[0], args...)
 }
 
 // Create validates inputs, inserts a workspace row with status
@@ -154,7 +182,7 @@ func (m *Manager) Setup(
 		return fmt.Errorf("git worktree add: %w", err)
 	}
 
-	err = newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
+	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
 	if err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws)
 		m.setError(ctx, ws.ID, err)
@@ -199,10 +227,7 @@ func (m *Manager) Delete(
 	}
 
 	// Kill tmux session (ignore errors -- session may not exist).
-	_ = runCmd(
-		ctx, "",
-		"tmux", "kill-session", "-t", ws.TmuxSession,
-	)
+	_ = m.killTmuxSession(ctx, ws.TmuxSession)
 
 	if m.clones == nil {
 		return nil, m.db.DeleteWorkspace(ctx, ws.ID)
@@ -263,31 +288,94 @@ func (m *Manager) ListSummaries(
 	return m.db.ListWorkspaceSummaries(ctx)
 }
 
-// EnsureTmux creates a tmux session if it does not already exist.
-func EnsureTmux(
+// EnsureTmux creates a tmux session if it does not already exist,
+// using the manager's configured tmux command prefix.
+func (m *Manager) EnsureTmux(
 	ctx context.Context, session, cwd string,
 ) error {
-	if TmuxSessionExists(ctx, session) {
+	exists, err := m.tmuxSessionExists(ctx, session)
+	if err != nil {
+		return fmt.Errorf("tmux has-session: %w", err)
+	}
+	if exists {
 		return nil
 	}
-	return newTmuxSession(ctx, session, cwd)
+	return m.newTmuxSession(ctx, session, cwd)
 }
 
-// newTmuxSession creates a detached tmux session that runs
-// the user's default login shell. Without an explicit shell
-// command, tmux uses its default-shell which may not source
-// the user's shell profile (.zshrc, .bashrc, etc.).
-func newTmuxSession(
+func (m *Manager) newTmuxSession(
 	ctx context.Context, session, cwd string,
 ) error {
 	shell := userLoginShell()
-	return runCmd(
-		ctx, "",
-		"tmux", "new-session", "-d",
+	cmd := m.tmuxExec(
+		ctx,
+		"new-session", "-d",
 		"-s", session,
 		"-c", cwd,
 		shell, "-l",
 	)
+	return runBuiltCmd(cmd)
+}
+
+// tmuxSessionExists runs `tmux has-session` and distinguishes a
+// genuine "session absent" signal from a wrapper/binary failure.
+// tmux reports session-absent by exiting 1 with one of two
+// well-known stderr messages:
+//
+//	can't find session: <name>
+//	no server running on <socket>
+//
+// Stdout and stderr are captured separately so a wrapper that
+// happens to emit those phrases on stdout for unrelated reasons
+// cannot masquerade as session-absent. Any other failure — missing
+// binary (non-ExitError), wrapper exit codes other than 1, or
+// exit-1 without the canonical stderr — propagates so
+// misconfiguration surfaces instead of silently falling through to
+// new-session through the same broken wrapper.
+func (m *Manager) tmuxSessionExists(
+	ctx context.Context, session string,
+) (bool, error) {
+	cmd := m.tmuxExec(ctx, "has-session", "-t", session)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	if isTmuxSessionAbsent(stderr.Bytes(), err) {
+		return false, nil
+	}
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		msg = strings.TrimSpace(stdout.String())
+	}
+	return false, fmt.Errorf("%w: %s", err, msg)
+}
+
+// isTmuxSessionAbsent reports whether a has-session failure is
+// tmux's documented "session does not exist" signal. Must be both
+// exit code 1 AND one of tmux's specific stderr phrases. Plain
+// exit 1 is a common generic wrapper/shell failure code, and
+// stdout content is not load-bearing — a wrapper could emit
+// anything there for unrelated reasons.
+func isTmuxSessionAbsent(stderr []byte, err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		return false
+	}
+	msg := string(stderr)
+	return strings.Contains(msg, "can't find session") ||
+		strings.Contains(msg, "no server running")
+}
+
+// killTmuxSession kills a tmux session via the manager's prefix.
+// Errors are returned rather than logged — callers decide whether
+// to ignore them (Delete ignores; tests assert).
+func (m *Manager) killTmuxSession(
+	ctx context.Context, session string,
+) error {
+	return runBuiltCmd(m.tmuxExec(ctx, "kill-session", "-t", session))
 }
 
 // userLoginShell resolves the current user's login shell from
@@ -340,17 +428,6 @@ func shellFromPasswdLine(line string) string {
 	return shell
 }
 
-// TmuxSessionExists checks whether a tmux session exists.
-func TmuxSessionExists(
-	ctx context.Context, session string,
-) bool {
-	err := runCmd(
-		ctx, "",
-		"tmux", "has-session", "-t", session,
-	)
-	return err == nil
-}
-
 // runGit executes a git command in dir and returns combined
 // output on error.
 func runGit(ctx context.Context, dir string, args ...string) error {
@@ -367,15 +444,10 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// runCmd executes an arbitrary command. If dir is non-empty it
-// sets the working directory.
-func runCmd(
-	ctx context.Context, dir string, name string, args ...string,
-) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+// runBuiltCmd runs a pre-built exec.Cmd and wraps any failure with
+// the combined output. Used for tmux invocations whose *exec.Cmd is
+// assembled by tmuxExec so argv[0] access stays inside that helper.
+func runBuiltCmd(cmd *exec.Cmd) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf(

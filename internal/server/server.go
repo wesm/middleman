@@ -289,13 +289,17 @@ func newServer(
 
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		s.workspaces.SetTmuxCommand(cfg.TmuxCommand())
 		if clones != nil {
 			s.workspaces.SetClones(clones)
 		}
 	}
 
 	if s.workspaces != nil {
-		termHandler := &terminal.Handler{Workspaces: s.workspaces}
+		termHandler := &terminal.Handler{
+			Workspaces:  s.workspaces,
+			TmuxCommand: cfg.TmuxCommand(),
+		}
 		mux.Handle(
 			"GET /api/v1/workspaces/{id}/terminal",
 			termHandler,

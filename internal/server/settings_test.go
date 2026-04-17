@@ -812,3 +812,44 @@ name = "*"
 	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"),
 		"deleted repo resurrected by concurrent refresh")
 }
+
+// TestHandleUpdateSettingsPreservesTmuxCommand drives a real
+// settings-mutation HTTP call against a config that has a [tmux]
+// section on disk, then reloads the config and asserts the Tmux
+// command array survived the Save round-trip. This pins down the
+// operator-visible contract: mutating activity settings (or any
+// other field the UI touches) must not silently erase tmux.command.
+func TestHandleUpdateSettingsPreservesTmuxCommand(t *testing.T) {
+	assert := Assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[tmux]
+command = ["systemd-run", "--user", "--scope", "tmux"]
+`, &mockGH{})
+
+	body := updateSettingsRequest{
+		Activity: config.Activity{
+			ViewMode:  "threaded",
+			TimeRange: "30d",
+		},
+	}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", body)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "tmux"},
+		reloaded.Tmux.Command,
+	)
+	// Sanity: the mutation actually took effect, so Save did write.
+	assert.Equal("30d", reloaded.Activity.TimeRange)
+}

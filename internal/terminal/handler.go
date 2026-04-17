@@ -21,7 +21,8 @@ import (
 // Handler serves WebSocket connections that bridge a
 // PTY-attached tmux session to the browser.
 type Handler struct {
-	Workspaces *workspace.Manager
+	Workspaces  *workspace.Manager
+	TmuxCommand []string
 }
 
 type controlMsg struct {
@@ -74,7 +75,7 @@ func (h *Handler) ServeHTTP(
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	if tmuxErr := workspace.EnsureTmux(
+	if tmuxErr := h.Workspaces.EnsureTmux(
 		ctx, ws.TmuxSession, ws.WorktreePath,
 	); tmuxErr != nil {
 		slog.Error("ensure tmux", "err", tmuxErr)
@@ -85,9 +86,14 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 
-	cmd := exec.CommandContext(
-		ctx, "tmux", "attach-session", "-t", ws.TmuxSession,
-	)
+	prefix := h.TmuxCommand
+	if len(prefix) == 0 {
+		prefix = []string{"tmux"}
+	}
+	argv := make([]string, 0, len(prefix)+3)
+	argv = append(argv, prefix...)
+	argv = append(argv, "attach-session", "-t", ws.TmuxSession)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	winSize := &pty.Winsize{
