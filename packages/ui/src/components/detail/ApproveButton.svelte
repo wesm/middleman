@@ -79,6 +79,7 @@
       onclick={() => { expanded = true; }}
       tone="success"
       surface="soft"
+      title="Submit an approving code review on this pull request"
       {size}
     >
       <svg

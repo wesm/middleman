@@ -21,6 +21,8 @@
   const label = $derived(
     count > 1 ? `Approve workflows (${count})` : "Approve workflows",
   );
+  const tooltip =
+    "Approve pending GitHub Actions runs waiting on outside contributor approval";
 
   async function handleApproveWorkflows(): Promise<void> {
     submitting = true;
@@ -56,6 +58,7 @@
     disabled={submitting}
     tone="workflow"
     surface="soft"
+    title={tooltip}
     {size}
   >
     {submitting ? "Approving workflows…" : label}
