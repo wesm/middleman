@@ -5772,6 +5772,64 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 	)
 }
 
+func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, _, clonePath, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	privateClone := filepath.Join(t.TempDir(), "private-clone")
+	runGit(t, filepath.Dir(privateClone), "clone", clonePath, privateClone)
+	runGit(t, privateClone, "config", "user.email", "test@test.com")
+	runGit(t, privateClone, "config", "user.name", "Test")
+	runGit(t, privateClone, "checkout", "feature")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(privateClone, "private.txt"),
+		[]byte("private\n"), 0o644,
+	))
+	runGit(t, privateClone, "add", "private.txt")
+	runGit(t, privateClone, "commit", "-m", "private commit")
+	privateSHA := testGitSHA(t, privateClone, "HEAD")
+	runGit(t, privateClone, "push", clonePath, "HEAD:feature")
+
+	originSHA := testGitSHA(t, remotePath, "refs/heads/feature")
+	assert.NotEqual(originSHA, privateSHA)
+	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-1",
+		gitOutput(t, ws.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(originSHA, testGitSHA(t, ws.WorktreePath, "HEAD"))
+	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, createResp.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+}
+
 func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

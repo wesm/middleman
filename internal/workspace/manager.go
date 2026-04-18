@@ -183,6 +183,15 @@ func (m *Manager) Setup(
 			ctx, ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
+	ws.WorkspaceBranch = branch
+	if err := m.db.UpdateWorkspaceBranch(
+		ctx, ws.ID, branch,
+	); err != nil {
+		m.rollbackWorktree(ctx, cloneDir, ws, branch)
+		return m.failSetup(
+			ctx, ws.ID, workspaceSetupStageWorktree, err,
+		)
+	}
 
 	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
 	if err != nil {
@@ -242,11 +251,49 @@ func (m *Manager) addPreferredWorktree(
 		return ws.MRHeadRef, nil
 	}
 
-	if err := runGit(
-		ctx, cloneDir,
-		"branch", "-f", ws.MRHeadRef, workspaceStartRef(ws),
-	); err != nil {
+	startRef := workspaceStartRef(ws)
+	startSHA, ok, err := gitRefSHA(ctx, cloneDir, startRef)
+	if err != nil {
 		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("start ref %q not found", startRef)
+	}
+
+	branchRef := "refs/heads/" + ws.MRHeadRef
+	branchSHA, exists, err := gitRefSHA(ctx, cloneDir, branchRef)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		if err := runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath,
+			"-b", ws.MRHeadRef, startRef,
+		); err != nil {
+			return "", err
+		}
+		if err := setBranchUpstream(
+			ctx, ws.WorktreePath, ws.MRHeadRef,
+			"origin", "refs/heads/"+ws.MRHeadRef,
+		); err != nil {
+			_ = runGit(
+				ctx, cloneDir,
+				"worktree", "remove", "--force", ws.WorktreePath,
+			)
+			_ = runGit(
+				ctx, cloneDir,
+				"branch", "-D", ws.MRHeadRef,
+			)
+			return "", fmt.Errorf("configure branch upstream: %w", err)
+		}
+		return ws.MRHeadRef, nil
+	}
+	if branchSHA != startSHA {
+		return "", fmt.Errorf(
+			"preferred branch %q points at %s, not %s",
+			ws.MRHeadRef, branchSHA, startSHA,
+		)
 	}
 
 	if err := runGit(
@@ -267,7 +314,7 @@ func (m *Manager) addPreferredWorktree(
 		return "", fmt.Errorf("configure branch upstream: %w", err)
 	}
 
-	return ws.MRHeadRef, nil
+	return "", nil
 }
 
 func workspaceStartRef(ws *Workspace) string {
@@ -343,7 +390,7 @@ func (m *Manager) Delete(
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
 
-	m.deleteWorkspaceBranches(ctx, cloneDir, ws, "")
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws.WorkspaceBranch)
 
 	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
@@ -664,14 +711,13 @@ func (m *Manager) rollbackWorktree(
 		slog.Warn("rollback: worktree remove failed",
 			"path", ws.WorktreePath, "err", err)
 	}
-	m.deleteWorkspaceBranches(ctx, cloneDir, ws, branch)
+	m.deleteWorkspaceBranches(ctx, cloneDir, branch)
 }
 
 func (m *Manager) deleteWorkspaceBranches(
-	ctx context.Context, cloneDir string, ws *Workspace,
-	managedBranch string,
+	ctx context.Context, cloneDir, managedBranch string,
 ) {
-	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
+	for _, branch := range workspaceBranchCandidates(managedBranch) {
 		if err := runGit(
 			ctx, cloneDir, "branch", "-D", branch,
 		); err != nil {
@@ -682,24 +728,33 @@ func (m *Manager) deleteWorkspaceBranches(
 }
 
 func workspaceBranchCandidates(
-	ws *Workspace, managedBranch string,
+	managedBranch string,
 ) []string {
-	candidates := []string{
-		managedBranch,
-		syntheticWorktreeBranch(ws.MRNumber),
+	if managedBranch == "" {
+		return nil
 	}
-	if ws.MRHeadRef != "" {
-		candidates = append(candidates, ws.MRHeadRef)
-	}
+	return []string{managedBranch}
+}
 
-	seen := make(map[string]bool, len(candidates))
-	out := make([]string, 0, len(candidates))
-	for _, branch := range candidates {
-		if branch == "" || seen[branch] {
-			continue
-		}
-		seen[branch] = true
-		out = append(out, branch)
+func gitRefSHA(
+	ctx context.Context, dir, ref string,
+) (string, bool, error) {
+	cmd := exec.CommandContext(
+		ctx, "git", "rev-parse", "--verify", "--quiet",
+		ref+"^{commit}",
+	)
+	if dir != "" {
+		cmd.Dir = dir
 	}
-	return out
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return strings.TrimSpace(string(out)), true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf(
+		"%w: %s", err, strings.TrimSpace(string(out)),
+	)
 }
