@@ -5830,6 +5830,87 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
 }
 
+func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, database, clonePath, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	privateClone := filepath.Join(t.TempDir(), "legacy-private-clone")
+	runGit(t, filepath.Dir(privateClone), "clone", clonePath, privateClone)
+	runGit(t, privateClone, "config", "user.email", "test@test.com")
+	runGit(t, privateClone, "config", "user.name", "Test")
+	runGit(t, privateClone, "checkout", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(privateClone, "legacy-private.txt"),
+		[]byte("legacy private\n"), 0o644,
+	))
+	runGit(t, privateClone, "add", "legacy-private.txt")
+	runGit(t, privateClone, "commit", "-m", "legacy private commit")
+	privateSHA := testGitSHA(t, privateClone, "HEAD")
+	runGit(t, privateClone, "push", clonePath, "HEAD:feature")
+	originSHA := testGitSHA(t, remotePath, "refs/heads/feature")
+	assert.NotEqual(originSHA, privateSHA)
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-1",
+		gitOutput(t, ws.WorktreePath, "branch", "--show-current"),
+	)
+
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET workspace_branch = '__middleman_unknown__'
+		WHERE id = ?`,
+		createResp.JSON202.Id,
+	)
+	require.NoError(err)
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, createResp.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	runGit(t, clonePath, "fetch", "--prune", "origin")
+
+	recreateResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, recreateResp.StatusCode())
+	require.NotNil(recreateResp.JSON202)
+
+	recreated := waitForWorkspaceReady(t, ctx, client, recreateResp.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-1",
+		gitOutput(t, recreated.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(originSHA, testGitSHA(t, recreated.WorktreePath, "HEAD"))
+}
+
 func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

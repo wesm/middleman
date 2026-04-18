@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
@@ -31,6 +32,8 @@ const (
 	workspaceSetupStageClone       = "clone"
 	workspaceSetupStageWorktree    = "worktree"
 	workspaceSetupStageTmuxSession = "tmux_session"
+	workspaceBranchUnknown         = "__middleman_unknown__"
+	workspacePersistTimeout        = 5 * time.Second
 )
 
 // NewManager creates a Manager that stores worktrees under
@@ -124,16 +127,17 @@ func (m *Manager) Create(
 	}
 
 	ws := &Workspace{
-		ID:           id,
-		PlatformHost: platformHost,
-		RepoOwner:    owner,
-		RepoName:     name,
-		MRNumber:     mrNumber,
-		MRHeadRef:    mr.HeadBranch,
-		MRHeadRepo:   headRepo,
-		WorktreePath: wtPath,
-		TmuxSession:  "middleman-" + id,
-		Status:       "creating",
+		ID:              id,
+		PlatformHost:    platformHost,
+		RepoOwner:       owner,
+		RepoName:        name,
+		MRNumber:        mrNumber,
+		MRHeadRef:       mr.HeadBranch,
+		MRHeadRepo:      headRepo,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    wtPath,
+		TmuxSession:     "middleman-" + id,
+		Status:          "creating",
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
@@ -149,12 +153,12 @@ func (m *Manager) Setup(
 	ctx context.Context, ws *Workspace,
 ) error {
 	m.recordSetupEvent(
-		ctx, ws.ID, workspaceSetupStageSetup, "started",
+		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
 	if m.clones == nil {
 		return m.failSetup(
-			ctx, ws.ID, workspaceSetupStageClone,
+			ws.ID, workspaceSetupStageClone,
 			fmt.Errorf("clone manager not set"),
 		)
 	}
@@ -169,7 +173,7 @@ func (m *Manager) Setup(
 		ws.RepoName, remoteURL,
 	); err != nil {
 		return m.failSetup(
-			ctx, ws.ID, workspaceSetupStageClone, err,
+			ws.ID, workspaceSetupStageClone, err,
 		)
 	}
 
@@ -180,16 +184,16 @@ func (m *Manager) Setup(
 	branch, err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
 		return m.failSetup(
-			ctx, ws.ID, workspaceSetupStageWorktree, err,
+			ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
 	ws.WorkspaceBranch = branch
-	if err := m.db.UpdateWorkspaceBranch(
-		ctx, ws.ID, branch,
+	if err := m.updateWorkspaceBranch(
+		ws.ID, branch,
 	); err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		return m.failSetup(
-			ctx, ws.ID, workspaceSetupStageWorktree, err,
+			ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
 
@@ -197,17 +201,20 @@ func (m *Manager) Setup(
 	if err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		return m.failSetup(
-			ctx, ws.ID, workspaceSetupStageTmuxSession, err,
+			ws.ID, workspaceSetupStageTmuxSession, err,
 		)
 	}
 
-	if err := m.db.UpdateWorkspaceStatus(
-		ctx, ws.ID, "ready", nil,
+	if err := m.updateWorkspaceStatus(
+		ws.ID, "ready", nil,
 	); err != nil {
-		return fmt.Errorf("update status to ready: %w", err)
+		return m.failSetup(
+			ws.ID, workspaceSetupStageSetup,
+			fmt.Errorf("update status to ready: %w", err),
+		)
 	}
 	m.recordSetupEvent(
-		ctx, ws.ID, workspaceSetupStageSetup, "ready",
+		ws.ID, workspaceSetupStageSetup, "ready",
 		"workspace ready",
 	)
 	return nil
@@ -390,7 +397,7 @@ func (m *Manager) Delete(
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
 
-	m.deleteWorkspaceBranches(ctx, cloneDir, ws.WorkspaceBranch)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
 
 	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
@@ -635,11 +642,11 @@ func dirtyFiles(
 
 // setError marks a workspace as errored in the DB.
 func (m *Manager) setError(
-	ctx context.Context, id string, origErr error,
+	id string, origErr error,
 ) {
 	msg := origErr.Error()
-	if err := m.db.UpdateWorkspaceStatus(
-		ctx, id, "error", &msg,
+	if err := m.updateWorkspaceStatus(
+		id, "error", &msg,
 	); err != nil {
 		slog.Error("failed to set workspace error status",
 			"workspace_id", id, "err", err)
@@ -647,11 +654,13 @@ func (m *Manager) setError(
 }
 
 func (m *Manager) recordSetupEvent(
-	ctx context.Context,
 	workspaceID, stage, outcome, message string,
 ) {
+	persistCtx, cancel := m.persistenceContext()
+	defer cancel()
+
 	err := m.db.InsertWorkspaceSetupEvent(
-		ctx,
+		persistCtx,
 		&db.WorkspaceSetupEvent{
 			WorkspaceID: workspaceID,
 			Stage:       stage,
@@ -670,18 +679,18 @@ func (m *Manager) recordSetupEvent(
 }
 
 func (m *Manager) failSetup(
-	ctx context.Context, workspaceID, stage string, origErr error,
+	workspaceID, stage string, origErr error,
 ) error {
 	wrapped := wrapWorkspaceSetupError(stage, origErr)
 	m.recordSetupEvent(
-		ctx, workspaceID, stage, "failure", wrapped.Error(),
+		workspaceID, stage, "failure", wrapped.Error(),
 	)
 	slog.Error("workspace setup failed",
 		"workspace_id", workspaceID,
 		"stage", stage,
 		"err", wrapped,
 	)
-	m.setError(ctx, workspaceID, wrapped)
+	m.setError(workspaceID, wrapped)
 	return wrapped
 }
 
@@ -711,13 +720,14 @@ func (m *Manager) rollbackWorktree(
 		slog.Warn("rollback: worktree remove failed",
 			"path", ws.WorktreePath, "err", err)
 	}
-	m.deleteWorkspaceBranches(ctx, cloneDir, branch)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, branch)
 }
 
 func (m *Manager) deleteWorkspaceBranches(
-	ctx context.Context, cloneDir, managedBranch string,
+	ctx context.Context, cloneDir string, ws *Workspace,
+	managedBranch string,
 ) {
-	for _, branch := range workspaceBranchCandidates(managedBranch) {
+	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
 		if err := runGit(
 			ctx, cloneDir, "branch", "-D", branch,
 		); err != nil {
@@ -728,12 +738,41 @@ func (m *Manager) deleteWorkspaceBranches(
 }
 
 func workspaceBranchCandidates(
-	managedBranch string,
+	ws *Workspace, managedBranch string,
 ) []string {
+	if managedBranch == workspaceBranchUnknown {
+		return []string{syntheticWorktreeBranch(ws.MRNumber)}
+	}
 	if managedBranch == "" {
 		return nil
 	}
 	return []string{managedBranch}
+}
+
+func (m *Manager) persistenceContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(
+		context.Background(), workspacePersistTimeout,
+	)
+}
+
+func (m *Manager) updateWorkspaceStatus(
+	id, status string, errMsg *string,
+) error {
+	persistCtx, cancel := m.persistenceContext()
+	defer cancel()
+	return m.db.UpdateWorkspaceStatus(
+		persistCtx, id, status, errMsg,
+	)
+}
+
+func (m *Manager) updateWorkspaceBranch(
+	id, branch string,
+) error {
+	persistCtx, cancel := m.persistenceContext()
+	defer cancel()
+	return m.db.UpdateWorkspaceBranch(
+		persistCtx, id, branch,
+	)
 }
 
 func gitRefSHA(

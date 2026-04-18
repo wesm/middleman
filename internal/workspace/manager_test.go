@@ -207,6 +207,50 @@ func TestCreateMRNotSynced(t *testing.T) {
 	require.Contains(t, err.Error(), "not synced yet")
 }
 
+func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	ws, err := mgr.Create(
+		context.Background(), "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = mgr.Setup(ctx, ws)
+	require.Error(err)
+	require.Contains(err.Error(), "clone manager not set")
+
+	got, err := d.GetWorkspace(context.Background(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "clone manager not set")
+
+	events, err := d.ListWorkspaceSetupEvents(
+		context.Background(), ws.ID,
+	)
+	require.NoError(err)
+	require.Len(events, 2)
+	assert.Equal("setup", events[0].Stage)
+	assert.Equal("started", events[0].Outcome)
+	assert.Equal("clone", events[1].Stage)
+	assert.Equal("failure", events[1].Outcome)
+	assert.Contains(events[1].Message, "clone manager not set")
+}
+
 func TestShellFromPasswdLine(t *testing.T) {
 	tests := []struct {
 		name string
