@@ -26,6 +26,13 @@ type Manager struct {
 	tmuxCmd     []string
 }
 
+const (
+	workspaceSetupStageSetup       = "setup"
+	workspaceSetupStageClone       = "clone"
+	workspaceSetupStageWorktree    = "worktree"
+	workspaceSetupStageTmuxSession = "tmux_session"
+)
+
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
 func NewManager(
@@ -141,8 +148,15 @@ func (m *Manager) Create(
 func (m *Manager) Setup(
 	ctx context.Context, ws *Workspace,
 ) error {
+	m.recordSetupEvent(
+		ctx, ws.ID, workspaceSetupStageSetup, "started",
+		"starting workspace setup",
+	)
 	if m.clones == nil {
-		return fmt.Errorf("clone manager not set")
+		return m.failSetup(
+			ctx, ws.ID, workspaceSetupStageClone,
+			fmt.Errorf("clone manager not set"),
+		)
 	}
 
 	remoteURL := fmt.Sprintf(
@@ -154,8 +168,9 @@ func (m *Manager) Setup(
 		ctx, ws.PlatformHost, ws.RepoOwner,
 		ws.RepoName, remoteURL,
 	); err != nil {
-		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("ensure clone: %w", err)
+		return m.failSetup(
+			ctx, ws.ID, workspaceSetupStageClone, err,
+		)
 	}
 
 	cloneDir := m.clones.ClonePath(
@@ -164,15 +179,17 @@ func (m *Manager) Setup(
 
 	branch, err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
-		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("add git worktree: %w", err)
+		return m.failSetup(
+			ctx, ws.ID, workspaceSetupStageWorktree, err,
+		)
 	}
 
 	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
 	if err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws, branch)
-		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("tmux new-session: %w", err)
+		return m.failSetup(
+			ctx, ws.ID, workspaceSetupStageTmuxSession, err,
+		)
 	}
 
 	if err := m.db.UpdateWorkspaceStatus(
@@ -180,6 +197,10 @@ func (m *Manager) Setup(
 	); err != nil {
 		return fmt.Errorf("update status to ready: %w", err)
 	}
+	m.recordSetupEvent(
+		ctx, ws.ID, workspaceSetupStageSetup, "ready",
+		"workspace ready",
+	)
 	return nil
 }
 
@@ -575,6 +596,58 @@ func (m *Manager) setError(
 	); err != nil {
 		slog.Error("failed to set workspace error status",
 			"workspace_id", id, "err", err)
+	}
+}
+
+func (m *Manager) recordSetupEvent(
+	ctx context.Context,
+	workspaceID, stage, outcome, message string,
+) {
+	err := m.db.InsertWorkspaceSetupEvent(
+		ctx,
+		&db.WorkspaceSetupEvent{
+			WorkspaceID: workspaceID,
+			Stage:       stage,
+			Outcome:     outcome,
+			Message:     message,
+		},
+	)
+	if err != nil {
+		slog.Warn("workspace setup audit insert failed",
+			"workspace_id", workspaceID,
+			"stage", stage,
+			"outcome", outcome,
+			"err", err,
+		)
+	}
+}
+
+func (m *Manager) failSetup(
+	ctx context.Context, workspaceID, stage string, origErr error,
+) error {
+	wrapped := wrapWorkspaceSetupError(stage, origErr)
+	m.recordSetupEvent(
+		ctx, workspaceID, stage, "failure", wrapped.Error(),
+	)
+	slog.Error("workspace setup failed",
+		"workspace_id", workspaceID,
+		"stage", stage,
+		"err", wrapped,
+	)
+	m.setError(ctx, workspaceID, wrapped)
+	return wrapped
+}
+
+func wrapWorkspaceSetupError(stage string, err error) error {
+	switch stage {
+	case workspaceSetupStageClone:
+		return fmt.Errorf("ensure clone: %w", err)
+	case workspaceSetupStageWorktree:
+		return fmt.Errorf("add git worktree: %w", err)
+	case workspaceSetupStageTmuxSession:
+		return fmt.Errorf("tmux new-session: %w", err)
+	default:
+		return err
 	}
 }
 

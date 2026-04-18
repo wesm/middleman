@@ -280,6 +280,15 @@ type WorkspaceSummary struct {
 	MRDeletions      *int
 }
 
+type WorkspaceSetupEvent struct {
+	ID          int64
+	WorkspaceID string
+	Stage       string
+	Outcome     string
+	Message     string
+	CreatedAt   time.Time
+}
+
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
 	Repo   string     // "owner/name" filter

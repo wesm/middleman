@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
+DROP TABLE IF EXISTS middleman_workspace_setup_events;

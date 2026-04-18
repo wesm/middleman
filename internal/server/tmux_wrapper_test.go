@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -109,12 +111,23 @@ func setupWrapperServerWithScript(
 	t *testing.T, script string,
 ) (client *apiclient.Client, baseURL string) {
 	t.Helper()
+	client, baseURL, _ = setupWrapperServerWithScriptAndDB(
+		t, script,
+	)
+	return client, baseURL
+}
+
+func setupWrapperServerWithScriptAndDB(
+	t *testing.T, script string,
+) (client *apiclient.Client, baseURL string, database *db.DB) {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("e2e tests skipped in short mode")
 	}
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
+	var err error
+	database, err = db.Open(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
@@ -203,7 +216,7 @@ func setupWrapperServerWithScript(
 	client, err = apiclient.NewWithHTTPClient(ts.URL, httpClient)
 	require.NoError(t, err)
 
-	return client, ts.URL
+	return client, ts.URL, database
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
@@ -261,6 +274,104 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	assert.NotEmpty(newSession[6])
 	assert.NotEmpty(newSession[7])
 	assert.Equal("-l", newSession[8])
+}
+
+func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    echo "wrapper failed" >&2` + "\n" +
+		`    exit 42` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	var logBuf bytes.Buffer
+	orig := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	client, _, database := setupWrapperServerWithScriptAndDB(
+		t, script,
+	)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	var failed *generated.WorkspaceResponse
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			ctx, wsID,
+		)
+		require.NoError(getErr)
+		if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			continue
+		}
+		if getResp.JSON200.Status == "error" {
+			failed = getResp.JSON200
+			break
+		}
+	}
+	require.NotNil(failed, "workspace never entered error status")
+	require.NotNil(failed.ErrorMessage)
+	assert.Contains(*failed.ErrorMessage, "tmux new-session")
+	assert.Contains(*failed.ErrorMessage, "wrapper failed")
+
+	rows, err := database.ReadDB().QueryContext(ctx, `
+		SELECT stage, outcome, message
+		FROM middleman_workspace_setup_events
+		WHERE workspace_id = ?
+		ORDER BY id`, wsID,
+	)
+	require.NoError(err)
+	defer rows.Close()
+
+	type auditEvent struct {
+		stage   string
+		outcome string
+		message string
+	}
+
+	var events []auditEvent
+	for rows.Next() {
+		var ev auditEvent
+		require.NoError(rows.Scan(&ev.stage, &ev.outcome, &ev.message))
+		events = append(events, ev)
+	}
+	require.NoError(rows.Err())
+	require.NotEmpty(events)
+	last := events[len(events)-1]
+	assert.Equal("tmux_session", last.stage)
+	assert.Equal("failure", last.outcome)
+	assert.Contains(last.message, "wrapper failed")
+
+	logs := logBuf.String()
+	assert.Contains(logs, "workspace setup failed")
+	assert.Contains(logs, wsID)
+	assert.Contains(logs, "tmux_session")
 }
 
 func TestTmuxWrapperAttachSession(t *testing.T) {

@@ -2286,6 +2286,62 @@ func (d *DB) UpdateWorkspaceStatus(
 	return nil
 }
 
+// InsertWorkspaceSetupEvent appends an audit event for workspace
+// setup activity.
+func (d *DB) InsertWorkspaceSetupEvent(
+	ctx context.Context, event *WorkspaceSetupEvent,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO middleman_workspace_setup_events
+		    (workspace_id, stage, outcome, message)
+		VALUES (?, ?, ?, ?)`,
+		event.WorkspaceID, event.Stage, event.Outcome,
+		event.Message,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"insert workspace setup event: %w", err,
+		)
+	}
+	return nil
+}
+
+// ListWorkspaceSetupEvents returns the audit trail for a single
+// workspace setup, ordered by insertion.
+func (d *DB) ListWorkspaceSetupEvents(
+	ctx context.Context, workspaceID string,
+) ([]WorkspaceSetupEvent, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT id, workspace_id, stage, outcome, message,
+		       created_at
+		FROM middleman_workspace_setup_events
+		WHERE workspace_id = ?
+		ORDER BY id`, workspaceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list workspace setup events: %w", err,
+		)
+	}
+	defer rows.Close()
+
+	var out []WorkspaceSetupEvent
+	for rows.Next() {
+		var event WorkspaceSetupEvent
+		if err := rows.Scan(
+			&event.ID, &event.WorkspaceID, &event.Stage,
+			&event.Outcome, &event.Message, &event.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"scan workspace setup event: %w", err,
+			)
+		}
+		event.CreatedAt = event.CreatedAt.UTC()
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}
+
 // DeleteWorkspace removes a workspace by ID.
 func (d *DB) DeleteWorkspace(
 	ctx context.Context, id string,

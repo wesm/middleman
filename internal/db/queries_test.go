@@ -1699,6 +1699,26 @@ func TestWorkspaceCRUD(t *testing.T) {
 	require.NotNil(updated.ErrorMessage)
 	assert.Equal("clone failed", *updated.ErrorMessage)
 
+	require.NoError(d.InsertWorkspaceSetupEvent(
+		ctx,
+		&WorkspaceSetupEvent{
+			WorkspaceID: "ws-abc-123",
+			Stage:       "clone",
+			Outcome:     "failure",
+			Message:     "ensure clone: clone failed",
+		},
+	))
+	events, err := d.ListWorkspaceSetupEvents(
+		ctx, "ws-abc-123",
+	)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("ws-abc-123", events[0].WorkspaceID)
+	assert.Equal("clone", events[0].Stage)
+	assert.Equal("failure", events[0].Outcome)
+	assert.Equal("ensure clone: clone failed", events[0].Message)
+	assert.False(events[0].CreatedAt.IsZero())
+
 	// Clear error message
 	require.NoError(d.UpdateWorkspaceStatus(
 		ctx, "ws-abc-123", "ready", nil,
