@@ -15,6 +15,34 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".repo-label")).toHaveText("acme/widgets");
   });
 
+  test("issue workspace button still works after detail sync refresh", async ({ page }) => {
+    const syncResponsePromise = page.waitForResponse((response) => {
+      const url = response.url();
+      return response.request().method() === "POST"
+        && url.endsWith("/api/v1/repos/acme/widgets/issues/10/sync");
+    });
+
+    await page.goto("/issues/acme/widgets/10");
+    await expect(page.locator(".issue-detail")).toBeVisible();
+
+    const syncResponse = await syncResponsePromise;
+    expect(syncResponse.status()).toBe(200);
+    await expect
+      .poll(async () => {
+        const body = await syncResponse.json();
+        return body.platform_host;
+      })
+      .toBe("github.com");
+
+    await page.locator(".btn--workspace").click();
+
+    await expect(page).toHaveURL(
+      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    );
+    await expect(page.locator(".workspace-panel")).toBeVisible();
+    await expect(page.locator(".repo-label")).toHaveText("acme/widgets");
+  });
+
   test("pull request actions use shared ActionButton component", async ({ page }) => {
     await page.goto("/pulls");
     await page.locator(".pull-item").first()
