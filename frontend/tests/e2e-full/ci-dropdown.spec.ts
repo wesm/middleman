@@ -11,6 +11,14 @@ test.describe("CI dropdown", () => {
     });
     const statusRow = detail.locator(".kanban-row");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
+    const chipStylesBefore = await chip.evaluate((node) => {
+      const styles = getComputedStyle(node);
+      return {
+        backgroundColor: styles.backgroundColor,
+        paddingTop: styles.paddingTop,
+        paddingRight: styles.paddingRight,
+      };
+    });
     const chipBox = await chip.boundingBox();
     const diffStatsBox = await diffStatsChip.boundingBox();
     const statusRowBox = await statusRow.boundingBox();
@@ -30,7 +38,12 @@ test.describe("CI dropdown", () => {
     expect(checksBox).not.toBeNull();
     expect(expandedDiffStatsBox).not.toBeNull();
     expect(expandedStatusRowBox).not.toBeNull();
-    expect(checksBox!.y).toBeGreaterThan(chipBox!.y + chipBox!.height);
+    expect(chipStylesBefore.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(chipStylesBefore.paddingTop).not.toBe("0px");
+    expect(chipStylesBefore.paddingRight).not.toBe("0px");
+    const ciGap = checksBox!.y - (chipBox!.y + chipBox!.height);
+    expect(ciGap).toBeGreaterThan(0);
+    expect(ciGap).toBeLessThan(11);
     expect(expandedDiffStatsBox!.height).toBeLessThan(40);
     expect(expandedDiffStatsBox!.y).toBe(diffStatsBox!.y);
     expect(expandedStatusRowBox!.y).toBeGreaterThan(statusRowBox!.y);
