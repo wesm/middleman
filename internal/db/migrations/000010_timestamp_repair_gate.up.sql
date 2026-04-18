@@ -1,0 +1,2 @@
+-- Version gate for the one-time legacy timestamp repair that runs from Go
+-- immediately after upgrading databases from schema versions below 10.

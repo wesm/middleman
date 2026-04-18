@@ -452,6 +452,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 
 // UpdateRepoSyncStarted records the time a sync began.
 func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) error {
+	t = canonicalUTCTime(t)
 	_, err := d.rw.ExecContext(ctx,
 		`UPDATE middleman_repos SET last_sync_started_at = ? WHERE id = ?`, t, id,
 	)
@@ -463,6 +464,7 @@ func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) e
 
 // UpdateRepoSyncCompleted records the time and optional error a sync finished.
 func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time, syncErr string) error {
+	t = canonicalUTCTime(t)
 	_, err := d.rw.ExecContext(ctx,
 		`UPDATE middleman_repos SET last_sync_completed_at = ?, last_sync_error = ? WHERE id = ?`,
 		t, syncErr, id,
@@ -1617,6 +1619,11 @@ func (d *DB) UpdateBackfillCursor(
 	issuePage int, issueComplete bool,
 	issueCompletedAt *time.Time,
 ) error {
+	repo := &Repo{
+		BackfillPRCompletedAt:    prCompletedAt,
+		BackfillIssueCompletedAt: issueCompletedAt,
+	}
+	canonicalizeRepoTimestamps(repo)
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_repos
 		SET backfill_pr_page = ?,
@@ -1626,8 +1633,8 @@ func (d *DB) UpdateBackfillCursor(
 		    backfill_issue_complete = ?,
 		    backfill_issue_completed_at = ?
 		WHERE id = ?`,
-		prPage, prComplete, prCompletedAt,
-		issuePage, issueComplete, issueCompletedAt,
+		prPage, prComplete, repo.BackfillPRCompletedAt,
+		issuePage, issueComplete, repo.BackfillIssueCompletedAt,
 		repoID,
 	)
 	if err != nil {

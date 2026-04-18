@@ -26,31 +26,32 @@ const (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-func runMigrations(rw *sql.DB) error {
+func runMigrations(rw *sql.DB) (int, error) {
 	sourceDriver, err := iofs.New(migrationFiles, "migrations")
 	if err != nil {
-		return fmt.Errorf("load embedded migrations: %w", err)
+		return migratedb.NilVersion, fmt.Errorf("load embedded migrations: %w", err)
 	}
 
 	databaseDriver, err := migratesqlite.WithInstance(rw, &migratesqlite.Config{
 		MigrationsTable: migrationTableName,
 	})
 	if err != nil {
-		return wrapMigrationError(fmt.Errorf("open migration driver: %w", err))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("open migration driver: %w", err))
 	}
 
 	version, dirty, err := databaseDriver.Version()
 	if err != nil {
-		return wrapMigrationError(fmt.Errorf("read migration version: %w", err))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("read migration version: %w", err))
 	}
+	startVersion := version
 
 	latest, err := latestMigrationVersion()
 	if err != nil {
-		return fmt.Errorf("read embedded migration versions: %w", err)
+		return migratedb.NilVersion, fmt.Errorf("read embedded migration versions: %w", err)
 	}
 
 	if version > latest {
-		return fmt.Errorf(
+		return migratedb.NilVersion, fmt.Errorf(
 			"middleman schema version %d is newer than this binary "+
 				"(expects %d); upgrade middleman",
 			version, latest,
@@ -58,40 +59,41 @@ func runMigrations(rw *sql.DB) error {
 	}
 
 	if dirty {
-		return wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
 	}
 
 	if version == migratedb.NilVersion {
 		legacyVersion, hasLegacyVersion, err := readLegacySchemaVersion(rw)
 		if err != nil {
-			return wrapMigrationError(fmt.Errorf("read legacy schema version: %w", err))
+			return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("read legacy schema version: %w", err))
 		}
 
 		switch {
 		case hasLegacyVersion:
 			if !hasMiddlemanTables(rw) {
-				return wrapMigrationError(
+				return migratedb.NilVersion, wrapMigrationError(
 					fmt.Errorf("legacy database schema version metadata exists without middleman tables"),
 				)
 			}
 			if legacyVersion > latestLegacySchemaVersion {
-				return fmt.Errorf(
+				return migratedb.NilVersion, fmt.Errorf(
 					"middleman schema version %d is newer than this binary "+
 						"(expects %d); upgrade middleman",
 					legacyVersion, latestLegacySchemaVersion,
 				)
 			}
 			if legacyVersion < firstLegacySchemaVersion {
-				return wrapMigrationError(
+				return migratedb.NilVersion, wrapMigrationError(
 					fmt.Errorf("legacy database schema version %d is invalid", legacyVersion),
 				)
 			}
 			if err := databaseDriver.SetVersion(legacyVersion, false); err != nil {
-				return wrapMigrationError(fmt.Errorf("seed legacy migration version: %w", err))
+				return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("seed legacy migration version: %w", err))
 			}
+			startVersion = legacyVersion
 
 		case hasMiddlemanTables(rw):
-			return wrapMigrationError(
+			return migratedb.NilVersion, wrapMigrationError(
 				fmt.Errorf("legacy database is missing schema version metadata"),
 			)
 		}
@@ -99,27 +101,27 @@ func runMigrations(rw *sql.DB) error {
 
 	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
 	if err != nil {
-		return wrapMigrationError(fmt.Errorf("create migrator: %w", err))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("create migrator: %w", err))
 	}
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return wrapMigrationError(fmt.Errorf("apply migrations: %w", err))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("apply migrations: %w", err))
 	}
 
 	version, dirty, err = databaseDriver.Version()
 	if err != nil {
-		return wrapMigrationError(fmt.Errorf("read migration version after update: %w", err))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("read migration version after update: %w", err))
 	}
 	if dirty {
-		return wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
 	}
 	if version != latest {
-		return wrapMigrationError(
+		return migratedb.NilVersion, wrapMigrationError(
 			fmt.Errorf("database ended at migration version %d, expected %d", version, latest),
 		)
 	}
 
-	return nil
+	return startVersion, nil
 }
 
 func latestMigrationVersion() (int, error) {

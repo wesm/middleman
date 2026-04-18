@@ -595,6 +595,23 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 		"issue-comment-1",
 	)
 	require.NoError(err)
+	_, err = raw.ExecContext(ctx, `
+		UPDATE middleman_repos
+		SET last_sync_started_at = ?, last_sync_completed_at = ?,
+		    backfill_pr_completed_at = ?, backfill_issue_completed_at = ?
+		WHERE id = ?`,
+		"2026-04-11 07:00:00 -0400 EDT",
+		"2026-04-11 07:30:00 -0400 EDT",
+		"2026-04-11 08:00:00 -0400 EDT",
+		"2026-04-11 08:30:00 -0400 EDT",
+		repoID,
+	)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx,
+		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
+		9,
+	)
+	require.NoError(err)
 	require.NoError(raw.Close())
 
 	reopened, err := Open(path)
@@ -602,6 +619,14 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	t.Cleanup(func() { require.NoError(reopened.Close()) })
 
 	rows, err := reopened.ReadDB().QueryContext(ctx, `
+		SELECT last_sync_started_at FROM middleman_repos
+		UNION ALL
+		SELECT last_sync_completed_at FROM middleman_repos
+		UNION ALL
+		SELECT backfill_pr_completed_at FROM middleman_repos
+		UNION ALL
+		SELECT backfill_issue_completed_at FROM middleman_repos
+		UNION ALL
 		SELECT created_at FROM middleman_merge_requests
 		UNION ALL
 		SELECT updated_at FROM middleman_merge_requests
@@ -627,6 +652,109 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 		require.NotContains(value, "-0400")
 	}
 	require.NoError(rows.Err())
+
+	var firstPass []string
+	rows, err = reopened.ReadDB().QueryContext(ctx, `
+		SELECT last_sync_started_at FROM middleman_repos
+		UNION ALL
+		SELECT last_sync_completed_at FROM middleman_repos
+		UNION ALL
+		SELECT backfill_pr_completed_at FROM middleman_repos
+		UNION ALL
+		SELECT backfill_issue_completed_at FROM middleman_repos`)
+	require.NoError(err)
+	defer rows.Close()
+	for rows.Next() {
+		var value string
+		require.NoError(rows.Scan(&value))
+		firstPass = append(firstPass, value)
+	}
+	require.NoError(rows.Err())
+
+	require.NoError(reopened.Close())
+	reopened, err = Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	var secondPass []string
+	rows, err = reopened.ReadDB().QueryContext(ctx, `
+		SELECT last_sync_started_at FROM middleman_repos
+		UNION ALL
+		SELECT last_sync_completed_at FROM middleman_repos
+		UNION ALL
+		SELECT backfill_pr_completed_at FROM middleman_repos
+		UNION ALL
+		SELECT backfill_issue_completed_at FROM middleman_repos`)
+	require.NoError(err)
+	defer rows.Close()
+	for rows.Next() {
+		var value string
+		require.NoError(rows.Scan(&value))
+		secondPass = append(secondPass, value)
+	}
+	require.NoError(rows.Err())
+	require.Equal(firstPass, secondPass)
+}
+
+func TestRepoTimestampWritesStoreUTC(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+
+	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.
+	edt := time.FixedZone("EDT", -4*60*60)
+	startedAt := time.Date(2026, 4, 11, 8, 0, 0, 0, edt)
+	completedAt := time.Date(2026, 4, 11, 8, 30, 0, 0, edt)
+	backfillPRCompletedAt := time.Date(2026, 4, 11, 9, 0, 0, 0, edt)
+	backfillIssueCompletedAt := time.Date(2026, 4, 11, 9, 30, 0, 0, edt)
+
+	require.NoError(d.UpdateRepoSyncStarted(ctx, repoID, startedAt))
+	require.NoError(d.UpdateRepoSyncCompleted(ctx, repoID, completedAt, ""))
+	require.NoError(d.UpdateBackfillCursor(
+		ctx,
+		repoID,
+		1, true, &backfillPRCompletedAt,
+		2, true, &backfillIssueCompletedAt,
+	))
+
+	rows, err := d.ReadDB().QueryContext(ctx, `
+		SELECT last_sync_started_at FROM middleman_repos WHERE id = ?
+		UNION ALL
+		SELECT last_sync_completed_at FROM middleman_repos WHERE id = ?
+		UNION ALL
+		SELECT backfill_pr_completed_at FROM middleman_repos WHERE id = ?
+		UNION ALL
+		SELECT backfill_issue_completed_at FROM middleman_repos WHERE id = ?`,
+		repoID, repoID, repoID, repoID,
+	)
+	require.NoError(err)
+	defer rows.Close()
+	for rows.Next() {
+		var value string
+		require.NoError(rows.Scan(&value))
+		require.NotContains(value, "EDT")
+		require.NotContains(value, "-0400")
+	}
+	require.NoError(rows.Err())
+
+	repo, err := d.GetRepoByID(ctx, repoID)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NotNil(repo.LastSyncStartedAt)
+	require.NotNil(repo.LastSyncCompletedAt)
+	require.NotNil(repo.BackfillPRCompletedAt)
+	require.NotNil(repo.BackfillIssueCompletedAt)
+	require.Equal(time.UTC, repo.LastSyncStartedAt.Location())
+	require.Equal(time.UTC, repo.LastSyncCompletedAt.Location())
+	require.Equal(time.UTC, repo.BackfillPRCompletedAt.Location())
+	require.Equal(time.UTC, repo.BackfillIssueCompletedAt.Location())
+	require.Equal(startedAt.UTC(), *repo.LastSyncStartedAt)
+	require.Equal(completedAt.UTC(), *repo.LastSyncCompletedAt)
+	require.Equal(backfillPRCompletedAt.UTC(), *repo.BackfillPRCompletedAt)
+	require.Equal(backfillIssueCompletedAt.UTC(), *repo.BackfillIssueCompletedAt)
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {

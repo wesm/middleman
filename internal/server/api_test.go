@@ -4596,6 +4596,11 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 		"comment-issue-legacy",
 	)
 	require.NoError(err)
+	_, err = raw.ExecContext(ctx,
+		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
+		9,
+	)
+	require.NoError(err)
 	require.NoError(raw.Close())
 
 	reopened, err := db.Open(path)
