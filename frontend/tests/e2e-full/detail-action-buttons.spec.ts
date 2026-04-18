@@ -27,12 +27,8 @@ test.describe("detail action buttons", () => {
 
     const syncResponse = await syncResponsePromise;
     expect(syncResponse.status()).toBe(200);
-    await expect
-      .poll(async () => {
-        const body = await syncResponse.json();
-        return body.platform_host;
-      })
-      .toBe("github.com");
+    const syncBody = await syncResponse.json();
+    expect(syncBody.platform_host).toBe("github.com");
 
     await page.locator(".btn--workspace").click();
 
