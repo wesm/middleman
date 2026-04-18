@@ -6,6 +6,9 @@
     checksJSON: string;
     detailLoaded: boolean;
     detailSyncing: boolean;
+    expanded?: boolean;
+    showButton?: boolean;
+    showPanel?: boolean;
   }
 
   let {
@@ -13,9 +16,10 @@
     checksJSON,
     detailLoaded,
     detailSyncing,
+    expanded = $bindable(false),
+    showButton = true,
+    showPanel = true,
   }: Props = $props();
-
-  let expanded = $state(false);
 
   const checks = $derived(parseCIChecks(checksJSON));
   const failedChecks = $derived(
@@ -62,20 +66,22 @@
 
 {#if hasCI}
   <div class="ci-status">
-    <button
-      class="chip chip--clickable {chipColor(status)}"
-      onclick={() => { expanded = !expanded; }}
-      title={expanded ? "Collapse CI checks" : "Expand CI checks"}
-      aria-expanded={expanded}
-    >
-      CI: {status || "unknown"}
-      {#if checks.length > 0}
-        ({checks.length})
-      {/if}
-      <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
-    </button>
+    {#if showButton}
+      <button
+        class="chip chip--clickable {chipColor(status)}"
+        onclick={() => { expanded = !expanded; }}
+        title={expanded ? "Collapse CI checks" : "Expand CI checks"}
+        aria-expanded={expanded}
+      >
+        CI: {status || "unknown"}
+        {#if checks.length > 0}
+          ({checks.length})
+        {/if}
+        <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
+      </button>
+    {/if}
 
-    {#if expanded}
+    {#if showPanel && expanded}
       <div class="ci-collapse">
         {#if !detailLoaded}
           {#if detailSyncing}
@@ -152,9 +158,7 @@
 
 <style>
   .ci-status {
-    position: relative;
-    display: inline-flex;
-    align-items: flex-start;
+    display: contents;
   }
 
   .chip--clickable {
@@ -179,12 +183,10 @@
   }
 
   .ci-collapse {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 1;
-    width: min(420px, calc(100vw - 48px));
-    min-width: min(280px, calc(100vw - 48px));
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
+    margin-top: 6px;
   }
 
   .ci-checks {

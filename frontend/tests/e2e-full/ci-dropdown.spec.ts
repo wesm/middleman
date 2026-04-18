@@ -9,9 +9,11 @@ test.describe("CI dropdown", () => {
     const diffStatsChip = detail.locator(".chip--muted", {
       hasText: /^\+\d+\/-\d+$/,
     });
+    const statusRow = detail.locator(".kanban-row");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
     const chipBox = await chip.boundingBox();
     const diffStatsBox = await diffStatsChip.boundingBox();
+    const statusRowBox = await statusRow.boundingBox();
     await chip.click();
 
     const checks = detail.locator(".ci-checks");
@@ -20,14 +22,18 @@ test.describe("CI dropdown", () => {
 
     const checksBox = await checks.boundingBox();
     const expandedDiffStatsBox = await diffStatsChip.boundingBox();
+    const expandedStatusRowBox = await statusRow.boundingBox();
 
     expect(chipBox).not.toBeNull();
     expect(diffStatsBox).not.toBeNull();
+    expect(statusRowBox).not.toBeNull();
     expect(checksBox).not.toBeNull();
     expect(expandedDiffStatsBox).not.toBeNull();
+    expect(expandedStatusRowBox).not.toBeNull();
     expect(checksBox!.y).toBeGreaterThan(chipBox!.y + chipBox!.height);
     expect(expandedDiffStatsBox!.height).toBeLessThan(40);
     expect(expandedDiffStatsBox!.y).toBe(diffStatsBox!.y);
+    expect(expandedStatusRowBox!.y).toBeGreaterThan(statusRowBox!.y);
 
     await expect(detail.locator(".ci-name")).toHaveText([
       "build",
