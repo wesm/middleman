@@ -608,7 +608,7 @@ func (s *Server) workflowApprovalState(
 		return workflowApprovalResponse{}
 	}
 
-	var currentState, headSHA string
+	var currentState, headSHA, headRepoFullName, headRef string
 	if mode == workflowFull {
 		pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
 		if prErr != nil || pr == nil {
@@ -616,9 +616,13 @@ func (s *Server) workflowApprovalState(
 		}
 		currentState = pr.GetState()
 		headSHA = pr.GetHead().GetSHA()
+		headRepoFullName = pr.GetHead().GetRepo().GetFullName()
+		headRef = pr.GetHead().GetRef()
 	} else {
 		currentState = mr.State
 		headSHA = mr.PlatformHeadSHA
+		headRepoFullName = ghclient.ParseHeadRepoFullName(mr.HeadRepoCloneURL)
+		headRef = mr.HeadBranch
 	}
 
 	if currentState != "open" || headSHA == "" {
@@ -631,7 +635,12 @@ func (s *Server) workflowApprovalState(
 	}
 
 	state := ghclient.WorkflowApprovalStateFromRuns(
-		ghclient.FilterWorkflowRunsAwaitingApproval(runs, mr.Number, headSHA),
+		ghclient.FilterWorkflowRunsAwaitingApproval(runs, ghclient.PRSource{
+			Number:           mr.Number,
+			HeadSHA:          headSHA,
+			HeadRepoFullName: headRepoFullName,
+			HeadRef:          headRef,
+		}),
 	)
 	return workflowApprovalResponse{
 		Checked:  state.Checked,
@@ -1051,7 +1060,12 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	if err != nil {
 		return nil, huma.Error502BadGateway("GitHub API error")
 	}
-	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, input.Number, headSHA)
+	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, ghclient.PRSource{
+		Number:           input.Number,
+		HeadSHA:          headSHA,
+		HeadRepoFullName: pr.GetHead().GetRepo().GetFullName(),
+		HeadRef:          pr.GetHead().GetRef(),
+	})
 
 	approvedCount := 0
 	for _, run := range pending {

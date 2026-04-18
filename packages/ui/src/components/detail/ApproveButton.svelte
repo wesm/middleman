@@ -69,6 +69,7 @@
         disabled={submitting}
         tone="success"
         surface="solid"
+        title="Submit an approving code review on this pull request"
       >
         {submitting ? "Approving\u2026" : "Approve"}
       </ActionButton>
@@ -79,6 +80,7 @@
       onclick={() => { expanded = true; }}
       tone="success"
       surface="soft"
+      title="Open the approval form to submit a code review on this pull request"
       {size}
     >
       <svg
