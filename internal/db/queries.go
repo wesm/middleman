@@ -573,6 +573,13 @@ func normalizeRepoTimestamps(r *Repo) {
 	}
 }
 
+func normalizeUTCTime(t *time.Time) {
+	if t == nil {
+		return
+	}
+	*t = t.UTC()
+}
+
 // UpdateRepoSettings updates the merge method settings for a repo.
 func (d *DB) UpdateRepoSettings(
 	ctx context.Context,
