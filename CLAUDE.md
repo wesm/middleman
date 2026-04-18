@@ -100,6 +100,7 @@ make vet        # go vet
 ## Conventions
 
 - Prefer stdlib over external dependencies
+- Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile
