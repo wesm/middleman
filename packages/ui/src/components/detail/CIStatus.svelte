@@ -6,6 +6,9 @@
     checksJSON: string;
     detailLoaded: boolean;
     detailSyncing: boolean;
+    expanded?: boolean;
+    showButton?: boolean;
+    showPanel?: boolean;
   }
 
   let {
@@ -13,9 +16,10 @@
     checksJSON,
     detailLoaded,
     detailSyncing,
+    expanded = $bindable(false),
+    showButton = true,
+    showPanel = true,
   }: Props = $props();
-
-  let expanded = $state(false);
 
   const checks = $derived(parseCIChecks(checksJSON));
   const failedChecks = $derived(
@@ -62,20 +66,22 @@
 
 {#if hasCI}
   <div class="ci-status">
-    <button
-      class="chip chip--clickable {chipColor(status)}"
-      onclick={() => { expanded = !expanded; }}
-      title={expanded ? "Collapse CI checks" : "Expand CI checks"}
-      aria-expanded={expanded}
-    >
-      CI: {status || "unknown"}
-      {#if checks.length > 0}
-        ({checks.length})
-      {/if}
-      <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
-    </button>
+    {#if showButton}
+      <button
+        class="chip chip--clickable {chipColor(status)}"
+        onclick={() => { expanded = !expanded; }}
+        title={expanded ? "Collapse CI checks" : "Expand CI checks"}
+        aria-expanded={expanded}
+      >
+        CI: {status || "unknown"}
+        {#if checks.length > 0}
+          ({checks.length})
+        {/if}
+        <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
+      </button>
+    {/if}
 
-    {#if expanded}
+    {#if showPanel && expanded}
       <div class="ci-collapse">
         {#if !detailLoaded}
           {#if detailSyncing}
@@ -155,11 +161,45 @@
     display: contents;
   }
 
+  .chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .chip--green {
+    background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+    color: var(--accent-green);
+  }
+
+  .chip--red {
+    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+    color: var(--accent-red);
+  }
+
+  .chip--amber {
+    background: color-mix(in srgb, var(--accent-amber) 15%, transparent);
+    color: var(--accent-amber);
+  }
+
+  .chip--muted {
+    background: var(--bg-inset);
+    color: var(--text-muted);
+  }
+
   .chip--clickable {
+    appearance: none;
+    border: none;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    font: inherit;
+    line-height: inherit;
     transition: opacity 0.1s;
   }
 
@@ -180,12 +220,13 @@
     flex-basis: 100%;
     width: 100%;
     min-width: 0;
-    margin-top: 6px;
+    margin-top: 4px;
   }
 
   .ci-checks {
     display: flex;
     flex-direction: column;
+    width: 100%;
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);

@@ -38,6 +38,7 @@
   }: Props = $props();
 
   let activeTab = $state<"conversation" | "files">("conversation");
+  let ciExpanded = $state(false);
 
   $effect(() => {
     void detailStore.loadDetail(owner, name, number);
@@ -486,6 +487,8 @@
           checksJSON={pr.CIChecksJSON}
           detailLoaded={detailStore.getDetailLoaded()}
           detailSyncing={detailStore.isDetailSyncing()}
+          bind:expanded={ciExpanded}
+          showPanel={false}
         />
         {#if pr.ReviewDecision}
           <span class="chip {reviewColor(pr.ReviewDecision)}">{pr.ReviewDecision.replace(/_/g, " ")}</span>
@@ -496,6 +499,14 @@
         {#if hasWorktreeLinks}
           <span class="chip chip--teal">Worktree</span>
         {/if}
+        <CIStatus
+          status={pr.CIStatus}
+          checksJSON={pr.CIChecksJSON}
+          detailLoaded={detailStore.getDetailLoaded()}
+          detailSyncing={detailStore.isDetailSyncing()}
+          bind:expanded={ciExpanded}
+          showButton={false}
+        />
       </div>
 
       {#if labels.length > 0}
