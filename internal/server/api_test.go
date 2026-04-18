@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -260,6 +261,25 @@ func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
 	return setupTestServerWithMock(t, &mockGH{})
+}
+
+func setupTestServerWithDatabase(
+	t *testing.T, database *db.DB, repos []ghclient.RepoRef,
+) *Server {
+	t.Helper()
+
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": &mockGH{}}, database, nil, repos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(
+		database, syncer, nil, "/",
+		nil, ServerOptions{},
+	)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
+	return srv
 }
 
 func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
@@ -4500,6 +4520,121 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	assertRFC3339UTC(t, commentItem.CreatedAt, createdAt)
 	assert.Equal("reviewer", commentItem.Author)
 	assert.Equal("comment", commentItem.ActivityType)
+}
+
+func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	setTestLocalEDT(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+
+	database, err := db.Open(path)
+	require.NoError(err)
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	prID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:            repoID,
+		PlatformID:        101,
+		Number:            1,
+		URL:               "https://github.com/acme/widget/pull/1",
+		Title:             "Legacy PR",
+		Author:            "octocat",
+		AuthorDisplayName: "octocat",
+		State:             "open",
+		HeadBranch:        "feature",
+		BaseBranch:        "main",
+		CreatedAt:         time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		UpdatedAt:         time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		LastActivityAt:    time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(err)
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     201,
+		Number:         2,
+		URL:            "https://github.com/acme/widget/issues/2",
+		Title:          "Legacy issue",
+		Author:         "octocat",
+		State:          "open",
+		CreatedAt:      time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		UpdatedAt:      time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		LastActivityAt: time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "pr-reviewer",
+		Body:           "PR comment",
+		CreatedAt:      time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		DedupeKey:      "comment-pr-legacy",
+	}}))
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "issue-reporter",
+		Body:      "Issue comment",
+		CreatedAt: time.Date(2026, 4, 11, 13, 0, 0, 0, time.UTC),
+		DedupeKey: "comment-issue-legacy",
+	}}))
+	require.NoError(database.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx,
+		`UPDATE middleman_mr_events SET created_at = ? WHERE dedupe_key = ?`,
+		"2026-04-11 08:00:00 -0400 EDT",
+		"comment-pr-legacy",
+	)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx,
+		`UPDATE middleman_issue_events SET created_at = ? WHERE dedupe_key = ?`,
+		"2026-04-11 09:00:00 -0400 EDT",
+		"comment-issue-legacy",
+	)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := db.Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	srv := setupTestServerWithDatabase(t, reopened, defaultTestRepos)
+	client := setupTestClient(t, srv)
+
+	since := "2026-04-11T11:30:00Z"
+	resp, err := client.HTTP.GetActivityWithResponse(
+		ctx, &generated.GetActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	commentItems := make([]generated.ActivityItemResponse, 0, 2)
+	for _, item := range *resp.JSON200.Items {
+		if item.ActivityType == "comment" {
+			commentItems = append(commentItems, item)
+		}
+	}
+	require.Len(commentItems, 2)
+	assert.Equal("issue-reporter", commentItems[0].Author)
+	assert.Equal("pr-reviewer", commentItems[1].Author)
+	assertRFC3339UTC(t, commentItems[0].CreatedAt, time.Date(2026, 4, 11, 13, 0, 0, 0, time.UTC))
+	assertRFC3339UTC(t, commentItems[1].CreatedAt, time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC))
+
+	since = "2026-04-11T12:30:00Z"
+	resp, err = client.HTTP.GetActivityWithResponse(
+		ctx, &generated.GetActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 1)
+	assert.Equal("issue-reporter", (*resp.JSON200.Items)[0].Author)
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

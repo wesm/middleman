@@ -375,6 +375,7 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 
 func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 
 	// Script: "has-session" emits tmux's canonical "can't find
 	// session" stderr and exits 1 (so isTmuxSessionAbsent classifies
@@ -392,7 +393,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
-	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
 	d := openTestDB(t)
@@ -400,10 +401,10 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	mgr.SetTmuxCommand([]string{script})
 
 	ctx := context.Background()
-	require.NoError(t, mgr.EnsureTmux(ctx, "sess-B", "/tmp/cwd"))
+	require.NoError(mgr.EnsureTmux(ctx, "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(t, argvs, 2)
+	require.Len(argvs, 2)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -411,7 +412,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	// new-session argv: "new-session -d -s sess-B -c /tmp/cwd <shell> -l"
 	// We check the prefix up to the shell; the shell resolves per
 	// runtime so just assert it is non-empty and ends with "-l".
-	require.GreaterOrEqual(t, len(argvs[1]), 8)
+	require.GreaterOrEqual(len(argvs[1]), 8)
 	assert.Equal("new-session", argvs[1][0])
 	assert.Equal("-d", argvs[1][1])
 	assert.Equal("-s", argvs[1][2])
@@ -429,15 +430,16 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 // collapsing them.
 func TestReadRecorderArgvPreservesEmptyArgs(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "record")
 
 	// First record: 3 args with an interior empty ("a", "", "b").
 	// Second record: 2 args with a trailing empty ("x", "").
 	body := "3\x00a\x00\x00b\x00" + "2\x00x\x00\x00"
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	require.NoError(os.WriteFile(path, []byte(body), 0o644))
 
 	argvs := readRecorderArgv(t, path)
-	require.Len(t, argvs, 2)
+	require.Len(argvs, 2)
 	assert.Equal([]string{"a", "", "b"}, argvs[0])
 	assert.Equal([]string{"x", ""}, argvs[1])
 }
@@ -450,6 +452,7 @@ func TestReadRecorderArgvPreservesEmptyArgs(t *testing.T) {
 // same broken wrapper and the error would only surface on the second
 // exec, masking the real cause.
 func TestManagerEnsureTmuxPropagatesBinaryError(t *testing.T) {
+	require := require.New(t)
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	// Path that cannot possibly exist — exec returns a non-exit
@@ -459,8 +462,8 @@ func TestManagerEnsureTmuxPropagatesBinaryError(t *testing.T) {
 	)
 
 	err := mgr.EnsureTmux(context.Background(), "sess-X", "/tmp")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "tmux has-session")
+	require.Error(err)
+	require.Contains(err.Error(), "tmux has-session")
 }
 
 // TestManagerEnsureTmuxPropagatesNon1ExitCode pins down the
@@ -472,20 +475,21 @@ func TestManagerEnsureTmuxPropagatesBinaryError(t *testing.T) {
 // because the old check matched any *exec.ExitError. Now it must
 // propagate to the caller so misconfiguration surfaces cleanly.
 func TestManagerEnsureTmuxPropagatesNon1ExitCode(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "fake-tmux")
 	// exit 127 mimics "command not found" — a common wrapper failure
 	// signal that is NOT tmux's own "session missing" response.
 	body := "#!/bin/sh\nexit 127\n"
-	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(context.Background(), "sess-Y", "/tmp")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "tmux has-session")
+	require.Error(err)
+	require.Contains(err.Error(), "tmux has-session")
 }
 
 // TestManagerEnsureTmuxPropagatesExit1NonTmuxError covers the
@@ -496,19 +500,20 @@ func TestManagerEnsureTmuxPropagatesNon1ExitCode(t *testing.T) {
 // absent" would mask the wrapper bug by immediately trying
 // new-session through the same broken wrapper.
 func TestManagerEnsureTmuxPropagatesExit1NonTmuxError(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\necho 'wrapper blew up' >&2\nexit 1\n"
-	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(context.Background(), "sess-Q", "/tmp")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "tmux has-session")
-	require.Contains(t, err.Error(), "wrapper blew up")
+	require.Error(err)
+	require.Contains(err.Error(), "tmux has-session")
+	require.Contains(err.Error(), "wrapper blew up")
 }
 
 // TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout pins down the
@@ -518,20 +523,21 @@ func TestManagerEnsureTmuxPropagatesExit1NonTmuxError(t *testing.T) {
 // unrelated reasons) must NOT be treated as session-absent — only
 // stderr carries the authoritative tmux signal.
 func TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout(t *testing.T) {
+	require := require.New(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
 		`echo "can't find session: sim"` + "\n" + // stdout only
 		`echo "real failure" >&2` + "\n" +
 		"exit 1\n"
-	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(context.Background(), "sess-R", "/tmp")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "tmux has-session")
-	require.Contains(t, err.Error(), "real failure")
+	require.Error(err)
+	require.Contains(err.Error(), "tmux has-session")
+	require.Contains(err.Error(), "real failure")
 }

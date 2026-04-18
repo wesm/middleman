@@ -43,7 +43,13 @@ func (d *DB) init() error {
 		return fmt.Errorf("enable WAL: %w", err)
 	}
 
-	return runMigrations(d.rw)
+	if err := runMigrations(d.rw); err != nil {
+		return err
+	}
+	if err := d.repairLegacyTimestampStorage(context.Background()); err != nil {
+		return fmt.Errorf("repair legacy timestamp storage: %w", err)
+	}
+	return nil
 }
 
 // Close closes both database connections.

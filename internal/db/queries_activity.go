@@ -174,8 +174,11 @@ func (d *DB) ListActivity(
 	return items, rows.Err()
 }
 
-// dbTimeLayouts lists formats the modernc.org/sqlite driver may
-// produce for DATETIME columns, ordered by likelihood.
+// dbTimeLayouts lists timestamp encodings that may already exist in SQLite.
+// Middleman now writes UTC timestamps consistently, but older databases may
+// still contain local-offset strings from earlier builds or SQLite-built
+// values from migrations/defaults. The parser accepts both so read paths and
+// startup repair can recover the original instant before normalizing to UTC.
 var dbTimeLayouts = []string{
 	"2006-01-02 15:04:05 +0000 UTC",
 	"2006-01-02 15:04:05 -0700 -0700",

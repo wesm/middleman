@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -498,6 +499,134 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations)
 	require.NoError(err)
 	require.Zero(foreignKeyViolations)
+}
+
+func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+	ctx := context.Background()
+
+	d, err := Open(path)
+	require.NoError(err)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:            repoID,
+		PlatformID:        101,
+		Number:            1,
+		URL:               "https://github.com/acme/widget/pull/1",
+		Title:             "Legacy PR",
+		Author:            "octocat",
+		AuthorDisplayName: "octocat",
+		State:             "open",
+		HeadBranch:        "feature",
+		BaseBranch:        "main",
+		CreatedAt:         time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		UpdatedAt:         time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		LastActivityAt:    time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(err)
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     201,
+		Number:         2,
+		URL:            "https://github.com/acme/widget/issues/2",
+		Title:          "Legacy issue",
+		Author:         "octocat",
+		State:          "open",
+		CreatedAt:      time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		UpdatedAt:      time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		LastActivityAt: time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "legacy comment",
+		CreatedAt:      time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC),
+		DedupeKey:      "comment-1",
+	}}))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "reporter",
+		Body:      "legacy issue comment",
+		CreatedAt: time.Date(2026, 4, 11, 13, 0, 0, 0, time.UTC),
+		DedupeKey: "issue-comment-1",
+	}}))
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET created_at = ?, updated_at = ?, last_activity_at = ?
+		WHERE repo_id = ? AND number = ?`,
+		"2026-04-11 08:00:00 -0400 EDT",
+		"2026-04-11 08:00:00 -0400 EDT",
+		"2026-04-11 09:00:00 -0400 EDT",
+		repoID,
+		1,
+	)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET created_at = ?, updated_at = ?, last_activity_at = ?
+		WHERE repo_id = ? AND number = ?`,
+		"2026-04-11 08:30:00 -0400 EDT",
+		"2026-04-11 08:30:00 -0400 EDT",
+		"2026-04-11 09:30:00 -0400 EDT",
+		repoID,
+		2,
+	)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx,
+		`UPDATE middleman_mr_events SET created_at = ? WHERE dedupe_key = ?`,
+		"2026-04-11 08:00:00 -0400 EDT",
+		"comment-1",
+	)
+	require.NoError(err)
+	_, err = raw.ExecContext(ctx,
+		`UPDATE middleman_issue_events SET created_at = ? WHERE dedupe_key = ?`,
+		"2026-04-11 09:00:00 -0400 EDT",
+		"issue-comment-1",
+	)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	rows, err := reopened.ReadDB().QueryContext(ctx, `
+		SELECT created_at FROM middleman_merge_requests
+		UNION ALL
+		SELECT updated_at FROM middleman_merge_requests
+		UNION ALL
+		SELECT last_activity_at FROM middleman_merge_requests
+		UNION ALL
+		SELECT created_at FROM middleman_issues
+		UNION ALL
+		SELECT updated_at FROM middleman_issues
+		UNION ALL
+		SELECT last_activity_at FROM middleman_issues
+		UNION ALL
+		SELECT created_at FROM middleman_mr_events
+		UNION ALL
+		SELECT created_at FROM middleman_issue_events`)
+	require.NoError(err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var value string
+		require.NoError(rows.Scan(&value))
+		require.NotContains(value, "EDT")
+		require.NotContains(value, "-0400")
+	}
+	require.NoError(rows.Err())
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {

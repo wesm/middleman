@@ -308,3 +308,107 @@ func TestParseDBTime(t *testing.T) {
 		assert.Error(err)
 	})
 }
+
+func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	prID := insertTestMR(t, d, repoID, 1, "Rewrite timestamps", base)
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_mr_events
+		    (merge_request_id, platform_id, event_type, author, summary, body,
+		     metadata_json, created_at, dedupe_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		prID,
+		101,
+		"issue_comment",
+		"reviewer",
+		"",
+		"legacy row",
+		"",
+		"2026-04-11 08:00:00 -0400 EDT",
+		"comment-legacy",
+	)
+	require.NoError(err)
+
+	canonical := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+	err = d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "rewritten",
+		CreatedAt:      canonical,
+		DedupeKey:      "comment-legacy",
+	}})
+	require.NoError(err)
+
+	var raw string
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT created_at FROM middleman_mr_events WHERE merge_request_id = ? AND dedupe_key = ?`,
+		prID,
+		"comment-legacy",
+	).Scan(&raw)
+	require.NoError(err)
+	require.NotContains(raw, "EDT")
+	require.NotContains(raw, "-0400")
+
+	events, err := d.ListMREvents(ctx, prID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal(canonical, events[0].CreatedAt)
+}
+
+func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	issueID := insertTestIssue(t, d, repoID, 7, "Rewrite timestamps", base)
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_issue_events
+		    (issue_id, platform_id, event_type, author, summary, body,
+		     metadata_json, created_at, dedupe_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		issueID,
+		202,
+		"issue_comment",
+		"reporter",
+		"",
+		"legacy row",
+		"",
+		"2026-04-11 09:00:00 -0400 EDT",
+		"issue-comment-legacy",
+	)
+	require.NoError(err)
+
+	canonical := time.Date(2026, 4, 11, 13, 0, 0, 0, time.UTC)
+	err = d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "reporter",
+		Body:      "rewritten",
+		CreatedAt: canonical,
+		DedupeKey: "issue-comment-legacy",
+	}})
+	require.NoError(err)
+
+	var raw string
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT created_at FROM middleman_issue_events WHERE issue_id = ? AND dedupe_key = ?`,
+		issueID,
+		"issue-comment-legacy",
+	).Scan(&raw)
+	require.NoError(err)
+	require.NotContains(raw, "EDT")
+	require.NotContains(raw, "-0400")
+
+	events, err := d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal(canonical, events[0].CreatedAt)
+}

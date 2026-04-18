@@ -586,9 +586,12 @@ func (d *DB) UpdateRepoSettings(
 
 // --- Merge Requests ---
 
-// UpsertMergeRequest inserts or updates a merge request, returning its internal ID.
+// UpsertMergeRequest inserts or updates a merge request, returning its internal
+// ID. Before writing, all timestamp fields are normalized to UTC so the raw
+// SQLite DATETIME text stays comparable in SQL.
 // On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
+	canonicalizeMergeRequestTimestamps(mr)
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_merge_requests
 		    (repo_id, platform_id, number, url, title, author, author_display_name,
@@ -867,7 +870,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 
 // --- Events ---
 
-// UpsertMREvents bulk-inserts events, ignoring duplicates per merge request.
+// UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC. When a
+// duplicate dedupe key is seen again, the conflict path refreshes created_at so
+// legacy local-offset rows are repaired during normal sync.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -878,7 +883,14 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			    (merge_request_id, platform_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(merge_request_id, dedupe_key) DO NOTHING`)
+			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
+			    platform_id   = excluded.platform_id,
+			    event_type    = excluded.event_type,
+			    author        = excluded.author,
+			    summary       = excluded.summary,
+			    body          = excluded.body,
+			    metadata_json = excluded.metadata_json,
+			    created_at    = excluded.created_at`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert mr events: %w", err)
 		}
@@ -886,6 +898,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 
 		for i := range events {
 			e := &events[i]
+			canonicalizeMREventTimestamps(e)
 			if _, err := stmt.ExecContext(ctx,
 				e.MergeRequestID, e.PlatformID, e.EventType, e.Author, e.Summary, e.Body,
 				e.MetadataJSON, e.CreatedAt, e.DedupeKey,
@@ -1231,9 +1244,12 @@ func (d *DB) UpdateMRState(
 
 // --- Issues ---
 
-// UpsertIssue inserts or updates an issue, returning its internal ID.
+// UpsertIssue inserts or updates an issue, returning its internal ID. Before
+// writing, all timestamp fields are normalized to UTC so SQL ordering/filtering
+// operates on a consistent storage representation.
 // On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
+	canonicalizeIssueTimestamps(issue)
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
 		    (repo_id, platform_id, number, url, title, author, state,
@@ -1622,7 +1638,9 @@ func (d *DB) UpdateBackfillCursor(
 
 // --- Issue Events ---
 
-// UpsertIssueEvents bulk-inserts issue events, ignoring duplicates by dedupe_key.
+// UpsertIssueEvents bulk-inserts issue events after normalizing CreatedAt to
+// UTC. Duplicate keys rewrite created_at so repeat syncs repair older local
+// timestamp encodings instead of preserving them forever.
 func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1633,7 +1651,15 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			    (issue_id, platform_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(dedupe_key) DO NOTHING`)
+			ON CONFLICT(dedupe_key) DO UPDATE SET
+			    issue_id      = excluded.issue_id,
+			    platform_id   = excluded.platform_id,
+			    event_type    = excluded.event_type,
+			    author        = excluded.author,
+			    summary       = excluded.summary,
+			    body          = excluded.body,
+			    metadata_json = excluded.metadata_json,
+			    created_at    = excluded.created_at`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert issue events: %w", err)
 		}
@@ -1641,6 +1667,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 
 		for i := range events {
 			e := &events[i]
+			canonicalizeIssueEventTimestamps(e)
 			if _, err := stmt.ExecContext(ctx,
 				e.IssueID, e.PlatformID, e.EventType, e.Author,
 				e.Summary, e.Body, e.MetadataJSON, e.CreatedAt,

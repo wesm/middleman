@@ -20,8 +20,8 @@ import (
 	"github.com/wesm/middleman/internal/apiclient/generated"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/gitclone"
+	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 // writeTmuxRecorder creates an executable fake-tmux script at a
@@ -208,6 +208,7 @@ func setupWrapperServerWithScript(
 
 func TestTmuxWrapperNewSession(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	client, _, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -220,15 +221,14 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 			MrNumber:     1,
 		},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
-	require.NotNil(t, createResp.JSON202)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
 
 	// Workspace setup runs asynchronously. Poll the record file
 	// until the new-session invocation shows up, up to ~5s.
 	var argvs [][]string
 	require.Eventually(
-		t,
 		func() bool {
 			argvs = readTmuxRecord(t, record)
 			for _, argv := range argvs {
@@ -251,7 +251,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	}
 
 	// "wrap" prefix, then "new-session -d -s <id> -c <path> <shell> -l"
-	require.GreaterOrEqual(t, len(newSession), 9)
+	require.GreaterOrEqual(len(newSession), 9)
 	assert.Equal("wrap", newSession[0])
 	assert.Equal("new-session", newSession[1])
 	assert.Equal("-d", newSession[2])
@@ -265,6 +265,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 
 func TestTmuxWrapperAttachSession(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	client, baseURL, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -277,14 +278,13 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 			MrNumber:     1,
 		},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
-	require.NotNil(t, createResp.JSON202)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
 	// Poll for status == "ready".
 	require.Eventually(
-		t,
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
 				ctx, wsID,
@@ -307,11 +307,11 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	)
 	defer dialCancel()
 	u, err := url.Parse(wsURL)
-	require.NoError(t, err)
+	require.NoError(err)
 	conn, httpResp, err := websocket.Dial(
 		dialCtx, u.String(), nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	if httpResp != nil && httpResp.Body != nil {
 		httpResp.Body.Close()
 	}
@@ -340,8 +340,8 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 			break
 		}
 	}
-	require.NotNil(t, attach, "attach-session argv not recorded")
-	require.Len(t, attach, 4)
+	require.NotNil(attach, "attach-session argv not recorded")
+	require.Len(attach, 4)
 	assert.Equal("wrap", attach[0])
 	assert.Equal("attach-session", attach[1])
 	assert.Equal("-t", attach[2])
@@ -355,15 +355,16 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 // collapsing them.
 func TestReadTmuxRecordPreservesEmptyArgs(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "record")
 
 	// First record: 3 args with an interior empty ("a", "", "b").
 	// Second record: 2 args with a trailing empty ("x", "").
 	body := "3\x00a\x00\x00b\x00" + "2\x00x\x00\x00"
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	require.NoError(os.WriteFile(path, []byte(body), 0o644))
 
 	argvs := readTmuxRecord(t, path)
-	require.Len(t, argvs, 2)
+	require.Len(argvs, 2)
 	assert.Equal([]string{"a", "", "b"}, argvs[0])
 	assert.Equal([]string{"x", ""}, argvs[1])
 }
@@ -374,6 +375,7 @@ func TestReadTmuxRecordPreservesEmptyArgs(t *testing.T) {
 // together they cover all three tmux verbs that cross the HTTP boundary.
 func TestTmuxWrapperKillSession(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	client, _, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -386,15 +388,14 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 			MrNumber:     1,
 		},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
-	require.NotNil(t, createResp.JSON202)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
 	// Poll for status == "ready" before deleting so the tmux
 	// session is known to exist from the manager's perspective.
 	require.Eventually(
-		t,
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
 				ctx, wsID,
@@ -411,8 +412,8 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
 		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusNoContent, delResp.StatusCode())
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
 
 	// The recorded argv should contain a kill-session invocation
 	// with our "wrap" prefix.
@@ -423,8 +424,8 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 			break
 		}
 	}
-	require.NotNil(t, kill, "kill-session argv not recorded")
-	require.Len(t, kill, 4)
+	require.NotNil(kill, "kill-session argv not recorded")
+	require.Len(kill, 4)
 	assert.Equal("wrap", kill[0])
 	assert.Equal("kill-session", kill[1])
 	assert.Equal("-t", kill[2])

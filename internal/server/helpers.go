@@ -97,6 +97,10 @@ func validateStarredRequest(body starredRequest) bool {
 	return body.ItemType == "pr" || body.ItemType == "issue"
 }
 
+// formatUTCRFC3339 is the server's API boundary formatter for timestamps.
+// Handlers pass absolute instants through this helper so JSON always leaves
+// middleman as explicit UTC RFC3339, regardless of how a test or caller
+// constructed the original time.Time.
 func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
