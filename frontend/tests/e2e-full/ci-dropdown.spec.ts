@@ -6,8 +6,12 @@ test.describe("CI dropdown", () => {
 
     const detail = page.locator(".pull-detail");
     const chip = detail.getByRole("button", { name: /CI:\s*(success|pending)/i });
+    const diffStatsChip = detail.locator(".chip--muted", {
+      hasText: /^\+\d+\/-\d+$/,
+    });
     await chip.waitFor({ state: "visible", timeout: 10_000 });
     const chipBox = await chip.boundingBox();
+    const diffStatsBox = await diffStatsChip.boundingBox();
     await chip.click();
 
     const checks = detail.locator(".ci-checks");
@@ -15,13 +19,15 @@ test.describe("CI dropdown", () => {
     await expect(detail.locator(".ci-check")).toHaveCount(4);
 
     const checksBox = await checks.boundingBox();
-    const additionsChipBox = await detail.locator(".chip--muted").boundingBox();
+    const expandedDiffStatsBox = await diffStatsChip.boundingBox();
 
     expect(chipBox).not.toBeNull();
+    expect(diffStatsBox).not.toBeNull();
     expect(checksBox).not.toBeNull();
-    expect(additionsChipBox).not.toBeNull();
+    expect(expandedDiffStatsBox).not.toBeNull();
     expect(checksBox!.y).toBeGreaterThan(chipBox!.y + chipBox!.height);
-    expect(additionsChipBox!.height).toBeLessThan(40);
+    expect(expandedDiffStatsBox!.height).toBeLessThan(40);
+    expect(expandedDiffStatsBox!.y).toBe(diffStatsBox!.y);
 
     await expect(detail.locator(".ci-name")).toHaveText([
       "build",

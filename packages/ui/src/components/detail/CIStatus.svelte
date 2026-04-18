@@ -152,7 +152,9 @@
 
 <style>
   .ci-status {
-    display: contents;
+    position: relative;
+    display: inline-flex;
+    align-items: flex-start;
   }
 
   .chip--clickable {
@@ -177,15 +179,18 @@
   }
 
   .ci-collapse {
-    flex-basis: 100%;
-    width: 100%;
-    min-width: 0;
-    margin-top: 6px;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 1;
+    width: min(420px, calc(100vw - 48px));
+    min-width: min(280px, calc(100vw - 48px));
   }
 
   .ci-checks {
     display: flex;
     flex-direction: column;
+    width: 100%;
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);
