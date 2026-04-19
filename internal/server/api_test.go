@@ -3706,6 +3706,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(*firstResp.JSON200.Events, 1)
 	assert.Equal("body to remove", (*firstResp.JSON200.Events)[0].Body)
@@ -3721,6 +3722,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(now.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
 	require.Empty(*secondResp.JSON200.Events)
 }
@@ -3944,6 +3946,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	require.Equal(http.StatusOK, firstResp.StatusCode())
 	require.NotNil(firstResp.JSON200)
 	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
+	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(firstResp.JSON200.Events)
 	require.Len(*firstResp.JSON200.Events, 1)
 	assert.Equal("issue body to remove", (*firstResp.JSON200.Events)[0].Body)
@@ -3959,6 +3962,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	require.Equal(http.StatusOK, secondResp.StatusCode())
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
+	require.Equal(now.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
 	require.Empty(*secondResp.JSON200.Events)
 }

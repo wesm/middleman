@@ -1667,36 +1667,19 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	}
 
 	if bulk.CommentsComplete {
-		// Events from bulk data — skip REST ListIssueComments.
-		var events []db.IssueEvent
-		for _, c := range bulk.Comments {
-			events = append(events, NormalizeIssueCommentEvent(issueID, c))
-		}
-		if len(events) > 0 {
-			if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
-				return fmt.Errorf(
-					"upsert issue events for #%d: %w", number, err,
-				)
-			}
-		}
-		// Update last activity from bulk comment timestamps.
-		// comment_count was already written by UpsertIssue using
-		// normalized.CommentCount (GraphQL's authoritative
-		// Comments.TotalCount), so don't overwrite it here.
-		lastActivity := normalized.UpdatedAt
-		for _, c := range bulk.Comments {
-			if c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity) {
-				lastActivity = c.UpdatedAt.Time
-			}
-		}
-		_, err = s.db.WriteDB().ExecContext(ctx,
-			`UPDATE middleman_issues SET last_activity_at = ?
-			 WHERE id = ?`,
-			lastActivity, issueID,
-		)
-		if err != nil {
+		if err := s.replaceIssueCommentEvents(ctx, issueID, bulk.Comments); err != nil {
 			return fmt.Errorf(
-				"update issue #%d last_activity_at: %w", number, err,
+				"replace issue comment events for #%d: %w", number, err,
+			)
+		}
+		if err := s.db.UpdateIssueDerivedFields(
+			ctx, repoID, number, db.IssueDerivedFields{
+				CommentCount:   normalized.CommentCount,
+				LastActivityAt: computeIssueCommentLastActivity(bulk.Issue, bulk.Comments),
+			},
+		); err != nil {
+			return fmt.Errorf(
+				"update issue #%d derived fields: %w", number, err,
 			)
 		}
 
@@ -1862,12 +1845,17 @@ func (s *Syncer) syncOpenMRFromBulk(
 	for _, c := range bulk.Commits {
 		events = append(events, NormalizeCommitEvent(mrID, c))
 	}
-	if len(events) > 0 {
-		if err := s.db.UpsertMREvents(ctx, events); err != nil {
+	if bulk.CommentsComplete {
+		if err := s.replacePRCommentEvents(ctx, mrID, bulk.Comments); err != nil {
 			return fmt.Errorf(
-				"upsert events for MR #%d: %w", number, err,
+				"replace comment events for MR #%d: %w", number, err,
 			)
 		}
+	}
+	if err := s.db.UpsertMREvents(ctx, events); err != nil {
+		return fmt.Errorf(
+			"upsert events for MR #%d: %w", number, err,
+		)
 	}
 
 	// CI status — only write if complete (don't write
@@ -2302,6 +2290,9 @@ func (s *Syncer) refreshTimeline(
 		events = append(events, NormalizeForcePushEvent(mrID, fp))
 	}
 
+	if err := s.replacePRCommentEvents(ctx, mrID, comments); err != nil {
+		return fmt.Errorf("replace comment events for MR #%d: %w", number, err)
+	}
 	if err := s.db.UpsertMREvents(ctx, events); err != nil {
 		return fmt.Errorf("upsert events for MR #%d: %w", number, err)
 	}
@@ -2412,6 +2403,101 @@ func computeLastActivity(
 		}
 	}
 	return latest
+}
+
+func computePRCommentRefreshLastActivity(
+	pr *db.MergeRequest,
+	comments []*gh.IssueComment,
+) time.Time {
+	latest := pr.UpdatedAt
+	if latest.IsZero() || pr.CreatedAt.After(latest) {
+		latest = pr.CreatedAt
+	}
+	for _, c := range comments {
+		switch {
+		case c.UpdatedAt != nil && c.UpdatedAt.After(latest):
+			latest = c.UpdatedAt.Time
+		case c.CreatedAt != nil && c.CreatedAt.After(latest):
+			latest = c.CreatedAt.Time
+		}
+	}
+	return latest
+}
+
+func computeIssueCommentLastActivity(
+	ghIssue *gh.Issue,
+	comments []*gh.IssueComment,
+) time.Time {
+	var latest time.Time
+	if ghIssue != nil {
+		if ghIssue.UpdatedAt != nil {
+			latest = ghIssue.UpdatedAt.Time
+		}
+		if latest.IsZero() && ghIssue.CreatedAt != nil {
+			latest = ghIssue.CreatedAt.Time
+		}
+	}
+	for _, c := range comments {
+		switch {
+		case c.UpdatedAt != nil && c.UpdatedAt.After(latest):
+			latest = c.UpdatedAt.Time
+		case c.CreatedAt != nil && c.CreatedAt.After(latest):
+			latest = c.CreatedAt.Time
+		}
+	}
+	return latest
+}
+
+func computeIssueCommentRefreshLastActivity(
+	issue *db.Issue,
+	comments []*gh.IssueComment,
+) time.Time {
+	return computeIssueCommentLastActivity(&gh.Issue{
+		CreatedAt: &gh.Timestamp{Time: issue.CreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: issue.UpdatedAt},
+	}, comments)
+}
+
+func (s *Syncer) replacePRCommentEvents(
+	ctx context.Context,
+	mrID int64,
+	comments []*gh.IssueComment,
+) error {
+	events := make([]db.MREvent, 0, len(comments))
+	dedupeKeys := make([]string, 0, len(comments))
+	for _, c := range comments {
+		event := NormalizeCommentEvent(mrID, c)
+		events = append(events, event)
+		dedupeKeys = append(dedupeKeys, event.DedupeKey)
+	}
+	if err := s.db.DeleteMissingMRCommentEvents(ctx, mrID, dedupeKeys); err != nil {
+		return fmt.Errorf("delete missing mr comment events: %w", err)
+	}
+	if err := s.db.UpsertMREvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert mr comment events: %w", err)
+	}
+	return nil
+}
+
+func (s *Syncer) replaceIssueCommentEvents(
+	ctx context.Context,
+	issueID int64,
+	comments []*gh.IssueComment,
+) error {
+	events := make([]db.IssueEvent, 0, len(comments))
+	dedupeKeys := make([]string, 0, len(comments))
+	for _, c := range comments {
+		event := NormalizeIssueCommentEvent(issueID, c)
+		events = append(events, event)
+		dedupeKeys = append(dedupeKeys, event.DedupeKey)
+	}
+	if err := s.db.DeleteMissingIssueCommentEvents(ctx, issueID, dedupeKeys); err != nil {
+		return fmt.Errorf("delete missing issue comment events: %w", err)
+	}
+	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert issue comment events: %w", err)
+	}
+	return nil
 }
 
 // resolveDisplayName returns the GitHub display name for a
@@ -2593,28 +2679,13 @@ func (s *Syncer) refreshIssueTimeline(
 		)
 	}
 
-	var events []db.IssueEvent
-	for _, c := range comments {
-		events = append(events, NormalizeIssueCommentEvent(issueID, c))
-	}
-
-	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+	if err := s.replaceIssueCommentEvents(ctx, issueID, comments); err != nil {
 		return fmt.Errorf(
-			"upsert issue events for #%d: %w", number, err,
+			"replace issue events for #%d: %w", number, err,
 		)
 	}
 
-	var lastActivity time.Time
-	if ghIssue.UpdatedAt != nil {
-		lastActivity = ghIssue.UpdatedAt.Time
-	} else if ghIssue.CreatedAt != nil {
-		lastActivity = ghIssue.CreatedAt.Time
-	}
-	for _, c := range comments {
-		if c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity) {
-			lastActivity = c.UpdatedAt.Time
-		}
-	}
+	lastActivity := computeIssueCommentLastActivity(ghIssue, comments)
 
 	_, err = s.db.WriteDB().ExecContext(ctx,
 		`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
@@ -2762,37 +2833,14 @@ func (s *Syncer) persistPRComments(
 	pr *db.MergeRequest,
 	comments []*gh.IssueComment,
 ) error {
-	var events []db.MREvent
-	var dedupeKeys []string
-	for _, c := range comments {
-		event := NormalizeCommentEvent(pr.ID, c)
-		events = append(events, event)
-		dedupeKeys = append(dedupeKeys, event.DedupeKey)
-	}
-	if err := s.db.DeleteMissingMRCommentEvents(ctx, pr.ID, dedupeKeys); err != nil {
-		return fmt.Errorf("delete missing mr comment events: %w", err)
-	}
-	if err := s.db.UpsertMREvents(ctx, events); err != nil {
-		return fmt.Errorf("upsert events: %w", err)
-	}
-
-	lastActivity := pr.LastActivityAt
-	if pr.UpdatedAt.After(lastActivity) {
-		lastActivity = pr.UpdatedAt
-	}
-	for _, c := range comments {
-		switch {
-		case c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity):
-			lastActivity = c.UpdatedAt.Time
-		case c.CreatedAt != nil && c.CreatedAt.After(lastActivity):
-			lastActivity = c.CreatedAt.Time
-		}
+	if err := s.replacePRCommentEvents(ctx, pr.ID, comments); err != nil {
+		return fmt.Errorf("replace PR comment events: %w", err)
 	}
 
 	return s.db.UpdateMRDerivedFields(ctx, pr.RepoID, pr.Number, db.MRDerivedFields{
 		ReviewDecision: pr.ReviewDecision,
 		CommentCount:   len(comments),
-		LastActivityAt: lastActivity,
+		LastActivityAt: computePRCommentRefreshLastActivity(pr, comments),
 	})
 }
 
@@ -2801,36 +2849,13 @@ func (s *Syncer) persistIssueComments(
 	issue *db.Issue,
 	comments []*gh.IssueComment,
 ) error {
-	var events []db.IssueEvent
-	var dedupeKeys []string
-	for _, c := range comments {
-		event := NormalizeIssueCommentEvent(issue.ID, c)
-		events = append(events, event)
-		dedupeKeys = append(dedupeKeys, event.DedupeKey)
-	}
-	if err := s.db.DeleteMissingIssueCommentEvents(ctx, issue.ID, dedupeKeys); err != nil {
-		return fmt.Errorf("delete missing issue comment events: %w", err)
-	}
-	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
-		return fmt.Errorf("upsert issue events: %w", err)
-	}
-
-	lastActivity := issue.LastActivityAt
-	if issue.UpdatedAt.After(lastActivity) {
-		lastActivity = issue.UpdatedAt
-	}
-	for _, c := range comments {
-		switch {
-		case c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity):
-			lastActivity = c.UpdatedAt.Time
-		case c.CreatedAt != nil && c.CreatedAt.After(lastActivity):
-			lastActivity = c.CreatedAt.Time
-		}
+	if err := s.replaceIssueCommentEvents(ctx, issue.ID, comments); err != nil {
+		return fmt.Errorf("replace issue comment events: %w", err)
 	}
 
 	return s.db.UpdateIssueDerivedFields(ctx, issue.RepoID, issue.Number, db.IssueDerivedFields{
 		CommentCount:   len(comments),
-		LastActivityAt: lastActivity,
+		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
 	})
 }
 
