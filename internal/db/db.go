@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/wesm/middleman/internal/db/dbupgrade"
 	_ "modernc.org/sqlite"
 )
 
@@ -43,7 +44,19 @@ func (d *DB) init() error {
 		return fmt.Errorf("enable WAL: %w", err)
 	}
 
-	return runMigrations(d.rw)
+	startVersion, err := runMigrations(d.rw)
+	if err != nil {
+		return err
+	}
+	if !dbupgrade.NeedsLegacyTimestampRepair(startVersion) {
+		return nil
+	}
+	if err := d.Tx(context.Background(), func(tx *sql.Tx) error {
+		return dbupgrade.RepairLegacyTimestamps(context.Background(), tx)
+	}); err != nil {
+		return fmt.Errorf("repair legacy timestamp storage: %w", err)
+	}
+	return nil
 }
 
 // Close closes both database connections.
