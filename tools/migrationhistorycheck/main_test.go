@@ -26,6 +26,31 @@ func TestAllowsNewMigration(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+func TestBlocksNewMigrationWhenNumberAlreadyExistsOnMain(t *testing.T) {
+	assert := assert.New(t)
+	isolateGitEnvironment(t)
+	repo := initRepoWithMainMigration(t)
+	t.Chdir(repo)
+	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "checkout", "main")
+	writeFile(t, repo, "internal/db/migrations/000002_main_name.up.sql", "main up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_main_name.down.sql", "main down\n")
+	gitCommand(t, "add", "internal/db/migrations/000002_main_name.up.sql", "internal/db/migrations/000002_main_name.down.sql")
+	gitCommand(t, "commit", "-qm", "add main migration")
+	gitCommand(t, "checkout", "feature")
+	writeFile(t, repo, "internal/db/migrations/000002_branch_name.up.sql", "new up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_branch_name.down.sql", "new down\n")
+	gitCommand(t, "add", "internal/db/migrations/000002_branch_name.up.sql", "internal/db/migrations/000002_branch_name.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(1, run(&stderr))
+	assert.Contains(stderr.String(), "duplicate migration number")
+	assert.Contains(stderr.String(), "000002")
+	assert.Contains(stderr.String(), "000002_branch_name")
+	assert.Contains(stderr.String(), "000002_main_name")
+}
+
 func TestBlocksMainBranchMigrationEdit(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
@@ -37,7 +62,7 @@ func TestBlocksMainBranchMigrationEdit(t *testing.T) {
 
 	var stderr bytes.Buffer
 	assert.Equal(t, 1, run(&stderr))
-	assert.Contains(t, stderr.String(), "Refusing to commit edits to migrations")
+	assert.Contains(t, stderr.String(), "Refusing to commit staged migration history changes")
 	assert.Contains(t, stderr.String(), "internal/db/migrations/000001_init.up.sql")
 }
 
