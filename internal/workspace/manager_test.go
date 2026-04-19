@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -249,6 +250,47 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 	assert.Equal("clone", events[1].Stage)
 	assert.Equal("failure", events[1].Outcome)
 	assert.Contains(events[1].Message, "clone manager not set")
+}
+
+func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	ws, err := mgr.Create(
+		context.Background(), "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	origTimeout := workspacePersistTimeout
+	workspacePersistTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { workspacePersistTimeout = origTimeout })
+
+	tx, err := d.WriteDB().BeginTx(context.Background(), nil)
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+
+	start := time.Now()
+	err = mgr.failSetup(
+		ws.ID, workspaceSetupStageClone,
+		errors.New("forced persistence timeout"),
+	)
+	elapsed := time.Since(start)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "forced persistence timeout")
+	assert.Less(
+		elapsed,
+		workspacePersistTimeout+(workspacePersistTimeout/2),
+	)
 }
 
 func TestShellFromPasswdLine(t *testing.T) {

@@ -712,6 +712,56 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	require.Equal(firstPass, secondPass)
 }
 
+func TestOpenRepairsBrokenWorkspaceMigrationVersion10(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken-v10.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		UPDATE schema_migrations
+		SET version = 10, dirty = FALSE
+	`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	version := latestMigrationVersionForTest(t)
+	var actualVersion int
+	var dirty bool
+	err = reopened.ReadDB().QueryRow(
+		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
+	).Scan(&actualVersion, &dirty)
+	require.NoError(err)
+	require.Equal(version, actualVersion)
+	require.False(dirty)
+
+	var workspaceBranchColumn string
+	err = reopened.ReadDB().QueryRow(
+		`SELECT name
+		 FROM pragma_table_info('middleman_workspaces')
+		 WHERE name = ?`,
+		"workspace_branch",
+	).Scan(&workspaceBranchColumn)
+	require.NoError(err)
+	require.Equal("workspace_branch", workspaceBranchColumn)
+
+	require.True(
+		tableExistsForTest(
+			t, reopened.ReadDB(),
+			"middleman_workspace_setup_events",
+		),
+	)
+}
+
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()

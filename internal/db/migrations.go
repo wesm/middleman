@@ -17,10 +17,12 @@ import (
 )
 
 const (
-	firstLegacySchemaVersion    = 1
-	latestLegacySchemaVersion   = 3
-	migrationTableName          = "schema_migrations"
-	recreateDatabaseInstruction = "delete the database file and let middleman recreate it"
+	firstLegacySchemaVersion       = 1
+	latestLegacySchemaVersion      = 3
+	migrationTableName             = "schema_migrations"
+	recreateDatabaseInstruction    = "delete the database file and let middleman recreate it"
+	timestampRepairGateVersion     = 10
+	workspaceSetupMigrationVersion = 11
 )
 
 //go:embed migrations/*.sql
@@ -99,6 +101,17 @@ func runMigrations(rw *sql.DB) (int, error) {
 		}
 	}
 
+	if version == timestampRepairGateVersion {
+		_, err := reconcileWorkspaceSetupMigrationVersion10(
+			rw, databaseDriver,
+		)
+		if err != nil {
+			return migratedb.NilVersion, wrapMigrationError(
+				fmt.Errorf("repair workspace migration state: %w", err),
+			)
+		}
+	}
+
 	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
 	if err != nil {
 		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("create migrator: %w", err))
@@ -172,6 +185,107 @@ func hasTable(db *sql.DB, name string) bool {
 		name,
 	).Scan(&count)
 	return err == nil && count > 0
+}
+
+func hasIndex(db *sql.DB, name string) bool {
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		name,
+	).Scan(&count)
+	return err == nil && count > 0
+}
+
+func hasColumn(
+	db *sql.DB, tableName, columnName string,
+) (bool, error) {
+	rows, err := db.Query(
+		fmt.Sprintf(`PRAGMA table_info(%s)`, tableName),
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(
+			&cid, &name, &columnType, &notNull, &defaultVal, &pk,
+		); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+
+	return false, rows.Err()
+}
+
+func reconcileWorkspaceSetupMigrationVersion10(
+	rw *sql.DB, driver migratedb.Driver,
+) (bool, error) {
+	hasEventsTable := hasTable(rw, "middleman_workspace_setup_events")
+	hasEventsIndex := hasIndex(
+		rw, "middleman_workspace_setup_events_workspace_id_idx",
+	)
+	hasWorkspaceBranch, err := hasColumn(
+		rw, "middleman_workspaces", "workspace_branch",
+	)
+	if err != nil {
+		return false, err
+	}
+	if !hasEventsTable && !hasEventsIndex && !hasWorkspaceBranch {
+		return false, nil
+	}
+
+	if !hasEventsTable {
+		if _, err := rw.Exec(`
+			CREATE TABLE IF NOT EXISTS middleman_workspace_setup_events (
+			    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			    workspace_id TEXT NOT NULL REFERENCES middleman_workspaces(id) ON DELETE CASCADE,
+			    stage       TEXT NOT NULL,
+			    outcome     TEXT NOT NULL,
+			    message     TEXT NOT NULL,
+			    created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+			)
+		`); err != nil {
+			return false, err
+		}
+	}
+
+	if !hasEventsIndex {
+		if _, err := rw.Exec(`
+			CREATE INDEX IF NOT EXISTS middleman_workspace_setup_events_workspace_id_idx
+			    ON middleman_workspace_setup_events (workspace_id, id)
+		`); err != nil {
+			return false, err
+		}
+	}
+
+	if !hasWorkspaceBranch {
+		if _, err := rw.Exec(`
+			ALTER TABLE middleman_workspaces
+			    ADD COLUMN workspace_branch TEXT NOT NULL DEFAULT '__middleman_unknown__'
+		`); err != nil {
+			return false, err
+		}
+	}
+
+	if err := driver.SetVersion(
+		workspaceSetupMigrationVersion, false,
+	); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func readLegacySchemaVersion(db *sql.DB) (int, bool, error) {

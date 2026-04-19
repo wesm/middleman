@@ -33,8 +33,9 @@ const (
 	workspaceSetupStageWorktree    = "worktree"
 	workspaceSetupStageTmuxSession = "tmux_session"
 	workspaceBranchUnknown         = "__middleman_unknown__"
-	workspacePersistTimeout        = 5 * time.Second
 )
+
+var workspacePersistTimeout = 5 * time.Second
 
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
@@ -640,13 +641,12 @@ func dirtyFiles(
 	return files, nil
 }
 
-// setError marks a workspace as errored in the DB.
-func (m *Manager) setError(
-	id string, origErr error,
+func (m *Manager) setErrorWithContext(
+	ctx context.Context, id string, origErr error,
 ) {
 	msg := origErr.Error()
-	if err := m.updateWorkspaceStatus(
-		id, "error", &msg,
+	if err := m.updateWorkspaceStatusWithContext(
+		ctx, id, "error", &msg,
 	); err != nil {
 		slog.Error("failed to set workspace error status",
 			"workspace_id", id, "err", err)
@@ -658,9 +658,17 @@ func (m *Manager) recordSetupEvent(
 ) {
 	persistCtx, cancel := m.persistenceContext()
 	defer cancel()
+	m.recordSetupEventWithContext(
+		persistCtx, workspaceID, stage, outcome, message,
+	)
+}
 
+func (m *Manager) recordSetupEventWithContext(
+	ctx context.Context,
+	workspaceID, stage, outcome, message string,
+) {
 	err := m.db.InsertWorkspaceSetupEvent(
-		persistCtx,
+		ctx,
 		&db.WorkspaceSetupEvent{
 			WorkspaceID: workspaceID,
 			Stage:       stage,
@@ -682,15 +690,17 @@ func (m *Manager) failSetup(
 	workspaceID, stage string, origErr error,
 ) error {
 	wrapped := wrapWorkspaceSetupError(stage, origErr)
-	m.recordSetupEvent(
-		workspaceID, stage, "failure", wrapped.Error(),
+	persistCtx, cancel := m.persistenceContext()
+	defer cancel()
+	m.recordSetupEventWithContext(
+		persistCtx, workspaceID, stage, "failure", wrapped.Error(),
 	)
 	slog.Error("workspace setup failed",
 		"workspace_id", workspaceID,
 		"stage", stage,
 		"err", wrapped,
 	)
-	m.setError(workspaceID, wrapped)
+	m.setErrorWithContext(persistCtx, workspaceID, wrapped)
 	return wrapped
 }
 
@@ -760,8 +770,16 @@ func (m *Manager) updateWorkspaceStatus(
 ) error {
 	persistCtx, cancel := m.persistenceContext()
 	defer cancel()
-	return m.db.UpdateWorkspaceStatus(
+	return m.updateWorkspaceStatusWithContext(
 		persistCtx, id, status, errMsg,
+	)
+}
+
+func (m *Manager) updateWorkspaceStatusWithContext(
+	ctx context.Context, id, status string, errMsg *string,
+) error {
+	return m.db.UpdateWorkspaceStatus(
+		ctx, id, status, errMsg,
 	)
 }
 
