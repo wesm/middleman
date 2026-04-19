@@ -4705,6 +4705,77 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	_ = commentTotal
 }
 
+func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 13, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now
+	secondUpdatedAt := now.Add(time.Minute)
+	commentID := int64(9301)
+	commentAuthor := "reviewer"
+	commentBody := "partial bulk PR comment"
+	commentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR: buildOpenPR(1, firstUpdatedAt),
+		Comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &commentTime,
+			UpdatedAt: &commentTime,
+		}},
+		CommentsComplete: true,
+		ReviewsComplete:  false,
+		CommitsComplete:  false,
+		CIComplete:       false,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(1, mr.CommentCount)
+	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               buildOpenPR(1, secondUpdatedAt),
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  false,
+		CommitsComplete:  false,
+		CIComplete:       false,
+	}, false)
+	require.NoError(err)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(0, mr.CommentCount)
+	assert.Equal(secondUpdatedAt.UTC(), mr.LastActivityAt.UTC())
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
 func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

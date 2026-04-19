@@ -1885,6 +1885,21 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// DetailFetchedAt stale so the detail drain picks them up for
 	// a full REST fetch. Derived fields from truncated data would
 	// overwrite correct values with partial counts.
+	if bulk.CommentsComplete {
+		if err := s.db.UpdateMRDerivedFields(
+			ctx, repoID, number, db.MRDerivedFields{
+				ReviewDecision: normalized.ReviewDecision,
+				CommentCount:   len(bulk.Comments),
+				LastActivityAt: computeLastActivity(bulk.PR, bulk.Comments, nil, nil),
+			},
+		); err != nil {
+			slog.Warn("update comment-derived fields failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
+
 	allComplete := bulk.CommentsComplete &&
 		bulk.ReviewsComplete &&
 		bulk.CommitsComplete &&
