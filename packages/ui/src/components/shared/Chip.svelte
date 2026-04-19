@@ -29,21 +29,20 @@
     children,
   }: Props = $props();
 
-  const classes = $derived(
-    [
-      "chip",
-      `chip--${size}`,
-      interactive ? "chip--interactive" : "",
-      uppercase ? "" : "chip--plain-case",
-      className,
-    ].filter(Boolean).join(" "),
-  );
 </script>
 
 {#if interactive}
   <button
     type="button"
-    class={classes}
+    class={[
+      "chip",
+      `chip--${size}`,
+      {
+        "chip--interactive": interactive,
+        "chip--plain-case": !uppercase,
+      },
+      className,
+    ]}
     {title}
     {style}
     aria-expanded={expanded}
@@ -55,7 +54,18 @@
     {/if}
   </button>
 {:else}
-  <span class={classes} {title} {style}>
+  <span
+    class={[
+      "chip",
+      `chip--${size}`,
+      {
+        "chip--plain-case": !uppercase,
+      },
+      className,
+    ]}
+    {title}
+    {style}
+  >
     {#if children}
       {@render children()}
     {/if}
