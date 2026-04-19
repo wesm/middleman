@@ -23,7 +23,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check tidy svelte-skills clean install-hooks help
+        dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -174,9 +174,12 @@ nilaway: ensure-embed-dir
 tidy:
 	go mod tidy
 
-# Install or update repo-local Svelte AI skills for Codex and Claude
+# Install or update repo-local Svelte AI skills and per-agent symlinks
 svelte-skills:
 	python3 scripts/update-svelte-skills.py $(ARGS)
+
+# Alias for explicit sync wording
+svelte-skills-sync: svelte-skills
 
 # Install pre-commit and pre-push hooks via prek
 install-hooks:
@@ -216,7 +219,8 @@ help:
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  tidy           - Tidy go.mod"
-	@echo "  svelte-skills  - Install/update repo-local Svelte AI skills"
+	@echo "  svelte-skills  - Sync repo-local Svelte AI skills and per-agent symlinks"
+	@echo "  svelte-skills-sync - Alias for svelte-skills"
 	@echo ""
 	@echo "  install-hooks  - Install pre-commit and pre-push hooks (prek)"
 	@echo "  clean          - Remove build artifacts"
