@@ -20,6 +20,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 - Tokens: `frontend/src/app.css`
 - Shared primitives: `packages/ui/src/components/shared/`
+- Svelte guidance: `svelte-core-bestpractices` and `svelte-code-writer`
 - This guidance: `context/ui-design-system.md`
 
 ## Shared primitives
@@ -83,6 +84,8 @@ Default color intent:
 - teal: workspace/worktree-linked state
 
 ## Implementation guidance
+
+When editing Svelte components, use the Svelte skills `svelte-core-bestpractices` and `svelte-code-writer` alongside this document.
 
 Before adding UI styling:
 
