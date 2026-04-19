@@ -5,7 +5,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 ## Purpose
 
 - Keep the app visually coherent.
-- Prefer shared primitives over one-off styling.
+- Reuse shared primitives by default; one-off styling is a last resort.
 - Extend semantic tokens and components instead of duplicating UI geometry.
 
 ## Design intent
