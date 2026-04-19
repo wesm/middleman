@@ -73,6 +73,7 @@
     getSidebarWidth as getEmbeddedSidebarWidth,
     emitLayoutChanged,
     getEmbedActivePlatformHost,
+    getEmbedPanelMode,
     getEmbedHoverCardsEnabled,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
@@ -623,7 +624,7 @@
             number={"number" in route ? route.number : undefined}
             emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
             activePlatformHost={
-              isEmbedded()
+              getEmbedPanelMode()
                 ? getEmbedActivePlatformHost()
                 : ("platformHost" in route
                   ? route.platformHost

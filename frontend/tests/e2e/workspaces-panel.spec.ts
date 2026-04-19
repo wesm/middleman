@@ -55,7 +55,10 @@ test(
   async ({ page }) => {
     await page.addInitScript(() => {
       window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
+        embed: {
+          activePlatformHost: "github.com",
+          panelMode: true,
+        },
       };
     });
     await page.goto(
@@ -72,7 +75,10 @@ test(
   async ({ page }) => {
     await page.addInitScript(() => {
       window.__middleman_config = {
-        embed: { activePlatformHost: null },
+        embed: {
+          activePlatformHost: null,
+          panelMode: true,
+        },
       };
     });
     await page.goto(
@@ -81,6 +87,27 @@ test(
     await expect(
       page.getByText("starting up"),
     ).toBeVisible();
+  },
+);
+
+test(
+  "panel embedded non-workspace config falls back to route host",
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        ui: { hideSync: true },
+      };
+    });
+    await page.goto(
+      "/workspaces/panel/github.com/acme/widgets",
+    );
+
+    await expect(
+      page.getByText("acme/widgets"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("starting up"),
+    ).toHaveCount(0);
   },
 );
 
@@ -709,7 +736,10 @@ test(
   async ({ page }) => {
     await page.addInitScript(() => {
       window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
+        embed: {
+          activePlatformHost: "github.com",
+          panelMode: true,
+        },
         onWorkspaceCommand: (
           cmd: string,
         ) => {
