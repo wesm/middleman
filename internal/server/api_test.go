@@ -4486,8 +4486,9 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	client := setupTestClient(t, srv)
 	prID := seedPR(t, database, "acme", "widget", 1)
 	ctx := context.Background()
+	createdAtUTC := time.Now().UTC().Add(-2 * time.Hour).Round(time.Second)
 	//nolint:forbidigo // Test fixture intentionally uses a non-UTC timestamp to verify UTC normalization.
-	createdAt := time.Date(2026, 4, 11, 12, 0, 0, 0, time.FixedZone("EDT", -4*60*60))
+	createdAt := createdAtUTC.In(time.FixedZone("EDT", -4*60*60))
 
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: prID,
@@ -4498,7 +4499,7 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 		DedupeKey:      "comment-utc-created-at",
 	}}))
 
-	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	since := createdAtUTC.Add(-time.Hour).Format(time.RFC3339)
 	resp, err := client.HTTP.GetActivityWithResponse(
 		ctx, &generated.GetActivityParams{Since: &since},
 	)
