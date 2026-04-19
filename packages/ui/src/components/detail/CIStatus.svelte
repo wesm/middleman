@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CICheck } from "../../api/types.js";
+  import Chip from "../shared/Chip.svelte";
 
   interface Props {
     status: string;
@@ -67,18 +68,19 @@
 {#if hasCI}
   <div class="ci-status">
     {#if showButton}
-      <button
-        class="chip chip--clickable {chipColor(status)}"
+      <Chip
+        interactive={true}
+        class={chipColor(status)}
         onclick={() => { expanded = !expanded; }}
         title={expanded ? "Collapse CI checks" : "Expand CI checks"}
-        aria-expanded={expanded}
+        {expanded}
       >
         CI: {status || "unknown"}
         {#if checks.length > 0}
           ({checks.length})
         {/if}
         <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
-      </button>
+      </Chip>
     {/if}
 
     {#if showPanel && expanded}
@@ -159,52 +161,6 @@
 <style>
   .ci-status {
     display: contents;
-  }
-
-  .chip {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-  }
-
-  .chip--green {
-    background: color-mix(in srgb, var(--accent-green) 15%, transparent);
-    color: var(--accent-green);
-  }
-
-  .chip--red {
-    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
-    color: var(--accent-red);
-  }
-
-  .chip--amber {
-    background: color-mix(in srgb, var(--accent-amber) 15%, transparent);
-    color: var(--accent-amber);
-  }
-
-  .chip--muted {
-    background: var(--bg-inset);
-    color: var(--text-muted);
-  }
-
-  .chip--clickable {
-    appearance: none;
-    border: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font: inherit;
-    line-height: inherit;
-    transition: opacity 0.1s;
-  }
-
-  .chip--clickable:hover {
-    opacity: 0.8;
   }
 
   .chip-chevron {
