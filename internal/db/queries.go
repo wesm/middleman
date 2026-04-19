@@ -913,6 +913,28 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	})
 }
 
+// DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
+// dedupe keys are absent from the latest GitHub comment list.
+func (d *DB) DeleteMissingMRCommentEvents(
+	ctx context.Context,
+	mrID int64,
+	dedupeKeys []string,
+) error {
+	query := `DELETE FROM middleman_mr_events
+		WHERE merge_request_id = ? AND event_type = 'issue_comment'`
+	args := []any{mrID}
+	if len(dedupeKeys) > 0 {
+		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(dedupeKeys)) + `)`
+		for _, key := range dedupeKeys {
+			args = append(args, key)
+		}
+	}
+	if _, err := d.rw.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete missing mr comment events: %w", err)
+	}
+	return nil
+}
+
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
 func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
@@ -1686,6 +1708,28 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		}
 		return nil
 	})
+}
+
+// DeleteMissingIssueCommentEvents removes issue_comment rows for an issue whose
+// dedupe keys are absent from the latest GitHub comment list.
+func (d *DB) DeleteMissingIssueCommentEvents(
+	ctx context.Context,
+	issueID int64,
+	dedupeKeys []string,
+) error {
+	query := `DELETE FROM middleman_issue_events
+		WHERE issue_id = ? AND event_type = 'issue_comment'`
+	args := []any{issueID}
+	if len(dedupeKeys) > 0 {
+		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(dedupeKeys)) + `)`
+		for _, key := range dedupeKeys {
+			args = append(args, key)
+		}
+	}
+	if _, err := d.rw.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete missing issue comment events: %w", err)
+	}
+	return nil
 }
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.

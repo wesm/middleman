@@ -3594,6 +3594,128 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 	assert.Equal("edited body", (*secondResp.JSON200.Events)[0].Body)
 }
 
+func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	issueNumber := 161
+	issueID := int64(161000)
+	issueTitle := "Edited issue comment refresh"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/161"
+	commentID := int64(9011)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "original issue body"
+
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}, nil
+		},
+	}
+	issueListCalls := 0
+	mock.listOpenIssuesFn = func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+		issueListCalls++
+		if issueListCalls == 1 {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	mockComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+		return mockComments, nil
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("original issue body", (*firstResp.JSON200.Events)[0].Body)
+
+	editedBody := "edited issue body"
+	mockComments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &editedBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: now.Add(4 * time.Minute)},
+	}}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Len(*secondResp.JSON200.Events, 1)
+	assert.Equal("edited issue body", (*secondResp.JSON200.Events)[0].Body)
+}
+
 func make422Error() error {
 	return &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},

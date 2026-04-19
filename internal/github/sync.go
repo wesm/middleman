@@ -2763,8 +2763,14 @@ func (s *Syncer) persistPRComments(
 	comments []*gh.IssueComment,
 ) error {
 	var events []db.MREvent
+	var dedupeKeys []string
 	for _, c := range comments {
-		events = append(events, NormalizeCommentEvent(pr.ID, c))
+		event := NormalizeCommentEvent(pr.ID, c)
+		events = append(events, event)
+		dedupeKeys = append(dedupeKeys, event.DedupeKey)
+	}
+	if err := s.db.DeleteMissingMRCommentEvents(ctx, pr.ID, dedupeKeys); err != nil {
+		return fmt.Errorf("delete missing mr comment events: %w", err)
 	}
 	if err := s.db.UpsertMREvents(ctx, events); err != nil {
 		return fmt.Errorf("upsert events: %w", err)
@@ -2796,8 +2802,14 @@ func (s *Syncer) persistIssueComments(
 	comments []*gh.IssueComment,
 ) error {
 	var events []db.IssueEvent
+	var dedupeKeys []string
 	for _, c := range comments {
-		events = append(events, NormalizeIssueCommentEvent(issue.ID, c))
+		event := NormalizeIssueCommentEvent(issue.ID, c)
+		events = append(events, event)
+		dedupeKeys = append(dedupeKeys, event.DedupeKey)
+	}
+	if err := s.db.DeleteMissingIssueCommentEvents(ctx, issue.ID, dedupeKeys); err != nil {
+		return fmt.Errorf("delete missing issue comment events: %w", err)
 	}
 	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
 		return fmt.Errorf("upsert issue events: %w", err)

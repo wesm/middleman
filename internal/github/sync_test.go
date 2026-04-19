@@ -4319,6 +4319,151 @@ func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 	assert.Equal("edited body", events[0].Body)
 }
 
+func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	commentID := int64(7002)
+	commentUser := "reviewer"
+	commentBody := "to be deleted"
+	commentTime := now.Add(2 * time.Minute)
+
+	mc := &mockClient{
+		openIssues: []*gh.Issue{},
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentUser},
+			CreatedAt: makeTimestamp(commentTime),
+			UpdatedAt: makeTimestamp(commentTime),
+		}},
+	}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		require.Equal(1, number)
+		return buildOpenPR(1, now), nil
+	}
+	prListCalls := 0
+	mc.listOpenPRsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{buildOpenPR(1, now)}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+
+	syncer.RunOnce(ctx)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Equal(1, mr.CommentCount)
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	mc.comments = []*gh.IssueComment{}
+
+	syncer.RunOnce(ctx)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(0, mr.CommentCount)
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
+func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueID := int64(801)
+	issueNumber := 8
+	issueTitle := "edited issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/8"
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	commentID := int64(810)
+	commentUser := "reviewer"
+	commentBody := "issue comment"
+	commentTime := now.Add(2 * time.Minute)
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{}
+	mc.openIssues = []*gh.Issue{openIssue}
+	mc.comments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentUser},
+		CreatedAt: makeTimestamp(commentTime),
+		UpdatedAt: makeTimestamp(commentTime),
+	}}
+	mc.listOpenPRsErr = notModifiedErr()
+	mc.getIssueFn = func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+		require.Equal(issueNumber, number)
+		return openIssue, nil
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal(1, issue.CommentCount)
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	mc.comments = []*gh.IssueComment{}
+	mc.issuesCached = true
+
+	syncer.RunOnce(ctx)
+
+	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal(0, issue.CommentCount)
+
+	events, err = d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
 func TestSyncRepoGraphQLIssues(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
