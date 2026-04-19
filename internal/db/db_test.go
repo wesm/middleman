@@ -617,6 +617,12 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 		repoID,
 	)
 	require.NoError(err)
+	_, err = raw.ExecContext(ctx, `
+		DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
+		DROP TABLE IF EXISTS middleman_workspace_setup_events;
+		ALTER TABLE middleman_workspaces DROP COLUMN workspace_branch;
+	`)
+	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
 		9,
