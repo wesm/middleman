@@ -6,7 +6,9 @@
   interface Props {
     size?: Size;
     interactive?: boolean;
+    uppercase?: boolean;
     title?: string;
+    style?: string;
     expanded?: boolean;
     disabled?: boolean;
     class?: string;
@@ -17,7 +19,9 @@
   let {
     size = "md",
     interactive = false,
+    uppercase = true,
     title = undefined,
+    style = undefined,
     expanded = undefined,
     disabled = false,
     class: className = "",
@@ -30,6 +34,7 @@
       "chip",
       `chip--${size}`,
       interactive ? "chip--interactive" : "",
+      uppercase ? "" : "chip--plain-case",
       className,
     ].filter(Boolean).join(" "),
   );
@@ -40,6 +45,7 @@
     type="button"
     class={classes}
     {title}
+    {style}
     aria-expanded={expanded}
     {disabled}
     onclick={onclick}
@@ -49,7 +55,7 @@
     {/if}
   </button>
 {:else}
-  <span class={classes} {title}>
+  <span class={classes} {title} {style}>
     {#if children}
       {@render children()}
     {/if}
@@ -97,6 +103,11 @@
   .chip--interactive:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .chip--plain-case {
+    text-transform: none;
+    letter-spacing: normal;
   }
 
   .chip--green,

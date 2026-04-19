@@ -3,6 +3,7 @@
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import PullItem from "./PullItem.svelte";
+  import Chip from "../shared/Chip.svelte";
 
   const { pulls, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
@@ -116,7 +117,9 @@
 
 <div class="pull-list">
   <div class="filter-bar">
-    <span class="count-badge">{pulls.getPulls().length} PRs</span>
+    <Chip size="sm" uppercase={false} class="chip--muted list-count-chip">
+      {pulls.getPulls().length} PRs
+    </Chip>
     <div class="state-toggle">
       {#each ["open", "closed", "all"] as s (s)}
         <button
@@ -410,14 +413,7 @@
     color: var(--accent-amber);
   }
 
-  .count-badge {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: 10px;
-    padding: 2px 7px;
+  :global(.list-count-chip) {
     flex-shrink: 0;
   }
 

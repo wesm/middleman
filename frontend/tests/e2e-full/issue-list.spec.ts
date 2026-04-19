@@ -19,14 +19,24 @@ test.describe("issue list view", () => {
   });
 
   test("renders open issues by default", async ({ page }) => {
-    const countBadge = page.locator(".count-badge");
+    const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^4 issues$/);
+  });
+
+  test("sidebar issue pills use the shared chip component", async ({ page }) => {
+    await expect(page.locator(".count-badge")).toHaveCount(0);
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^4 issues$/);
+
+    const firstItem = page.locator(".issue-item").first();
+    await expect(firstItem.locator(".repo-badge")).toHaveCount(0);
+    await expect(firstItem.locator(".badge")).toHaveCount(0);
+    await expect(firstItem.locator(".chip").first()).toBeVisible();
   });
 
   test("closed state shows closed issues", async ({ page }) => {
     await page.locator(".state-btn", { hasText: "Closed" }).click();
 
-    const countBadge = page.locator(".count-badge");
+    const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^1 issues?$/, { timeout: 5_000 });
   });
 
@@ -35,7 +45,7 @@ test.describe("issue list view", () => {
     await input.fill("Safari");
 
     // Wait for the filtered result to appear (replaces fixed sleep).
-    await expect(page.locator(".count-badge"))
+    await expect(page.locator(".filter-bar .list-count-chip"))
       .toHaveText(/^1 issues?$/, { timeout: 5_000 });
 
     const items = page.locator(".issue-item");
