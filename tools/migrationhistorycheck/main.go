@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -40,16 +42,31 @@ func run(stderr io.Writer) int {
 		return 1
 	}
 
-	violations := changedMainBranchMigrations(baseRef, migrationDir, diff)
-	if len(violations) == 0 {
+	changedViolations := changedMainBranchMigrations(baseRef, migrationDir, diff)
+	duplicateViolations, err := duplicateMigrationNumberViolations(baseRef, migrationDir, diff)
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to verify migration numbers: %v\n", err)
+		return 1
+	}
+
+	if len(changedViolations) == 0 && len(duplicateViolations) == 0 {
 		return 0
 	}
 
-	fmt.Fprintf(stderr, "Refusing to commit edits to migrations that already exist on %s.\n\n", baseRef)
-	fmt.Fprintln(stderr, "Migrations are append-only once they land on main. Add a new numbered migration instead.")
-	fmt.Fprintln(stderr, "\nBlocked files:")
-	for _, path := range violations {
-		fmt.Fprintf(stderr, "  %s\n", path)
+	fmt.Fprintln(stderr, "Refusing to commit staged migration history changes.")
+	if len(changedViolations) > 0 {
+		fmt.Fprintf(stderr, "\nEdits to migrations that already exist on %s are not allowed.\n", baseRef)
+		fmt.Fprintln(stderr, "Migrations are append-only once they land on main. Add a new numbered migration instead.")
+		fmt.Fprintln(stderr, "\nBlocked files:")
+		for _, path := range changedViolations {
+			fmt.Fprintf(stderr, "  %s\n", path)
+		}
+	}
+	if len(duplicateViolations) > 0 {
+		fmt.Fprintln(stderr, "\nEach migration number may identify only one migration. Found duplicate migration number assignments:")
+		for _, violation := range duplicateViolations {
+			fmt.Fprintf(stderr, "  %s: %s\n", violation.number, strings.Join(violation.names, ", "))
+		}
 	}
 	return 1
 }
@@ -91,6 +108,135 @@ func changedPaths(fields []string) []string {
 		return paths[1:]
 	}
 	return paths[:1]
+}
+
+type duplicateNumberViolation struct {
+	number string
+	names  []string
+}
+
+func duplicateMigrationNumberViolations(baseRef, migrationDir, diff string) ([]duplicateNumberViolation, error) {
+	baseByNumber, err := migrationNamesByNumberOnRef(baseRef, migrationDir)
+	if err != nil {
+		return nil, err
+	}
+
+	stagedByNumber := map[string]map[string]struct{}{}
+	for _, path := range stagedMigrationPaths(diff, migrationDir) {
+		number, name, ok := migrationIdentityFromPath(path)
+		if !ok {
+			continue
+		}
+		if _, exists := stagedByNumber[number]; !exists {
+			stagedByNumber[number] = map[string]struct{}{}
+		}
+		stagedByNumber[number][name] = struct{}{}
+	}
+
+	var violations []duplicateNumberViolation
+	for number, stagedNames := range stagedByNumber {
+		allNames := map[string]struct{}{}
+		for name := range baseByNumber[number] {
+			allNames[name] = struct{}{}
+		}
+		for name := range stagedNames {
+			allNames[name] = struct{}{}
+		}
+		if len(allNames) <= 1 {
+			continue
+		}
+
+		names := sortedKeys(allNames)
+		violations = append(violations, duplicateNumberViolation{
+			number: number,
+			names:  names,
+		})
+	}
+
+	slices.SortFunc(violations, func(a, b duplicateNumberViolation) int {
+		return strings.Compare(a.number, b.number)
+	})
+	return violations, nil
+}
+
+func migrationNamesByNumberOnRef(ref, migrationDir string) (map[string]map[string]struct{}, error) {
+	output, err := git("ls-tree", "-r", "--name-only", ref, "--", migrationDir)
+	if err != nil {
+		return nil, err
+	}
+
+	byNumber := map[string]map[string]struct{}{}
+	for line := range strings.SplitSeq(output, "\n") {
+		number, name, ok := migrationIdentityFromPath(line)
+		if !ok {
+			continue
+		}
+		if _, exists := byNumber[number]; !exists {
+			byNumber[number] = map[string]struct{}{}
+		}
+		byNumber[number][name] = struct{}{}
+	}
+	return byNumber, nil
+}
+
+func stagedMigrationPaths(diff, migrationDir string) []string {
+	var paths []string
+	for line := range strings.SplitSeq(diff, "\n") {
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
+			continue
+		}
+
+		path, ok := stagedPath(fields)
+		if !ok || !strings.HasPrefix(path, migrationDir+"/") {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func stagedPath(fields []string) (string, bool) {
+	status := fields[0]
+	paths := fields[1:]
+	if len(paths) == 0 || strings.HasPrefix(status, "D") {
+		return "", false
+	}
+	if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
+		return paths[len(paths)-1], true
+	}
+	return paths[0], true
+}
+
+func migrationIdentityFromPath(path string) (string, string, bool) {
+	base := filepath.Base(path)
+	switch {
+	case strings.HasSuffix(base, ".up.sql"):
+		base = strings.TrimSuffix(base, ".up.sql")
+	case strings.HasSuffix(base, ".down.sql"):
+		base = strings.TrimSuffix(base, ".down.sql")
+	default:
+		return "", "", false
+	}
+
+	number, _, ok := strings.Cut(base, "_")
+	if !ok || number == "" {
+		return "", "", false
+	}
+	return number, base, true
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 func getenvDefault(key, fallback string) string {
