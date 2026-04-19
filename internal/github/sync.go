@@ -2828,15 +2828,10 @@ func (s *Syncer) persistIssueComments(
 		}
 	}
 
-	_, err := s.db.WriteDB().ExecContext(ctx,
-		`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
-		 WHERE id = ?`,
-		len(comments), lastActivity, issue.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update issue comment fields: %w", err)
-	}
-	return nil
+	return s.db.UpdateIssueDerivedFields(ctx, issue.RepoID, issue.Number, db.IssueDerivedFields{
+		CommentCount:   len(comments),
+		LastActivityAt: lastActivity,
+	})
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(

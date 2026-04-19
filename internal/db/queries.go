@@ -1074,6 +1074,12 @@ type MRDerivedFields struct {
 	LastActivityAt time.Time
 }
 
+// IssueDerivedFields holds computed fields that are refreshed after fetching issue events.
+type IssueDerivedFields struct {
+	CommentCount   int
+	LastActivityAt time.Time
+}
+
 // UpdateMRTitleBody updates only the title, body, updated_at, and
 // last_activity_at fields. last_activity_at is set to
 // MAX(existing, updatedAt) to preserve correct list ordering.
@@ -1113,6 +1119,26 @@ func (d *DB) UpdateMRDerivedFields(
 	)
 	if err != nil {
 		return fmt.Errorf("update mr derived fields: %w", err)
+	}
+	return nil
+}
+
+// UpdateIssueDerivedFields writes computed fields back to the issues row.
+func (d *DB) UpdateIssueDerivedFields(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	fields IssueDerivedFields,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET comment_count = ?, last_activity_at = ?
+		WHERE repo_id = ? AND number = ?`,
+		fields.CommentCount, fields.LastActivityAt,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue derived fields: %w", err)
 	}
 	return nil
 }
