@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 // The e2e server seeds the Activity config with view_mode: "flat"
 // and time_range: "7d", so the flat table renders by default.
@@ -181,17 +182,27 @@ test.describe("activity feed filters", () => {
 });
 
 test.describe("activity UTC timestamp presentation", () => {
+  let isolatedServer: IsolatedE2EServer;
+
+  test.beforeAll(async () => {
+    isolatedServer = await startIsolatedE2EServer();
+  });
+
+  test.afterAll(async () => {
+    await isolatedServer.stop();
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((offsetMs) => {
       const originalNow = Date.now.bind(Date);
       Date.now = () => originalNow() + offsetMs;
     }, 2 * 24 * 60 * 60 * 1000);
-    await page.goto("/");
+    await page.goto(isolatedServer.info.base_url);
     await waitForTable(page);
   });
 
   test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(isolatedServer.info.base_url);
     await waitForTable(page);
     await page.locator(".seg-btn", { hasText: "30d" }).click();
     await expect(page.locator(".activity-row").first()).toBeVisible();
