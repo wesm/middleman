@@ -33,7 +33,7 @@ test.describe("grouping toggle", () => {
   test("PR list defaults to grouped with repo headers", async ({ page }) => {
     await expect(page.locator(".repo-header").first()).toBeVisible();
     // No repo badges visible in grouped mode.
-    await expect(page.locator(".repo-badge")).toHaveCount(0);
+    await expect(page.locator(".repo-chip")).toHaveCount(0);
   });
 
   test("PR list ungrouped shows repo badges and no headers", async ({ page }) => {
@@ -44,7 +44,7 @@ test.describe("grouping toggle", () => {
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
     // Repo badges should appear on each item.
-    const badges = page.locator(".repo-badge");
+    const badges = page.locator(".repo-chip");
     await expect(badges.first()).toBeVisible();
 
     // Should have a badge for each PR.
@@ -65,7 +65,7 @@ test.describe("grouping toggle", () => {
 
     // Should still be ungrouped.
     await expect(refreshedPage.locator(".repo-header")).toHaveCount(0);
-    await expect(refreshedPage.locator(".repo-badge").first()).toBeVisible();
+    await expect(refreshedPage.locator(".repo-chip").first()).toBeVisible();
 
     await refreshedPage.close();
   });
@@ -81,7 +81,7 @@ test.describe("grouping toggle", () => {
 
     // Issues should also be ungrouped.
     await expect(page.locator(".repo-header")).toHaveCount(0);
-    await expect(page.locator(".repo-badge").first()).toBeVisible();
+    await expect(page.locator(".repo-chip").first()).toBeVisible();
   });
 
   test("toggle syncs to activity threaded view", async ({ page }) => {
