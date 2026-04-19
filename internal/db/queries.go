@@ -872,9 +872,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 
 // --- Events ---
 
-// UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC. When a
-// duplicate dedupe key is seen again, the conflict path refreshes created_at so
-// legacy local-offset rows are repaired during normal sync.
+// UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC.
+// When a duplicate dedupe key is seen again, the conflict path refreshes
+// mutable fields so edited events and legacy local-offset timestamps are
+// repaired during normal sync.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1646,8 +1647,8 @@ func (d *DB) UpdateBackfillCursor(
 // --- Issue Events ---
 
 // UpsertIssueEvents bulk-inserts issue events after normalizing CreatedAt to
-// UTC. Duplicate keys rewrite created_at so repeat syncs repair older local
-// timestamp encodings instead of preserving them forever.
+// UTC. Duplicate keys refresh mutable fields so edited events and older local
+// timestamp encodings are repaired during normal sync.
 func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1659,14 +1660,14 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			     metadata_json, created_at, dedupe_key)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(dedupe_key) DO UPDATE SET
-			    issue_id      = excluded.issue_id,
-			    platform_id   = excluded.platform_id,
-			    event_type    = excluded.event_type,
-			    author        = excluded.author,
-			    summary       = excluded.summary,
-			    body          = excluded.body,
-			    metadata_json = excluded.metadata_json,
-			    created_at    = excluded.created_at`)
+			    issue_id       = excluded.issue_id,
+			    platform_id    = excluded.platform_id,
+			    event_type     = excluded.event_type,
+			    author         = excluded.author,
+			    summary        = excluded.summary,
+			    body           = excluded.body,
+			    metadata_json  = excluded.metadata_json,
+			    created_at     = excluded.created_at`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert issue events: %w", err)
 		}

@@ -1352,9 +1352,11 @@ func (s *Syncer) indexSyncRepo(
 	ghIssues, issueListErr := client.ListOpenIssues(
 		ctx, repo.Owner, repo.Name,
 	)
+	issueListUnchanged := false
 	if issueListErr != nil {
 		if IsNotModified(issueListErr) {
 			// 304: open issue list unchanged, skip.
+			issueListUnchanged = true
 		} else {
 			slog.Error("list open issues failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -1407,6 +1409,13 @@ func (s *Syncer) indexSyncRepo(
 	} else {
 		// Clean pass — drop any leftover flag from a prior cycle.
 		s.clearRepoFailed(repo)
+	}
+
+	if prListUnchanged && failedScope&failMR == 0 {
+		s.refreshRepoPRComments(ctx, repo)
+	}
+	if issueListUnchanged && failedScope&failIssues == 0 {
+		s.refreshRepoIssueComments(ctx, repo)
 	}
 
 	return nil
@@ -2613,6 +2622,209 @@ func (s *Syncer) refreshIssueTimeline(
 		len(comments), lastActivity, issueID,
 	)
 	return err
+}
+
+func (s *Syncer) refreshRepoPRComments(
+	ctx context.Context,
+	repo RepoRef,
+) {
+	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
+		RepoOwner: repo.Owner,
+		RepoName:  repo.Name,
+		State:     "open",
+	})
+	if err != nil {
+		slog.Warn("comment refresh: list open PRs failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return
+	}
+
+	client, err := s.clientFor(repo)
+	if err != nil {
+		slog.Warn("comment refresh: resolve client failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return
+	}
+
+	for i := range prs {
+		if ctx.Err() != nil {
+			return
+		}
+		pr := &prs[i]
+		if pr.DetailFetchedAt == nil {
+			continue
+		}
+		if !s.canSpendCommentRefresh(repo.PlatformHost) {
+			return
+		}
+		comments, err := client.ListIssueCommentsIfChanged(
+			ctx, repo.Owner, repo.Name, pr.Number,
+		)
+		if err != nil {
+			if IsNotModified(err) {
+				continue
+			}
+			slog.Warn("comment refresh: list PR comments failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", pr.Number,
+				"err", err,
+			)
+			continue
+		}
+		if err := s.persistPRComments(ctx, pr, comments); err != nil {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			slog.Warn("comment refresh: persist PR comments failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", pr.Number,
+				"err", err,
+			)
+		}
+	}
+}
+
+func (s *Syncer) refreshRepoIssueComments(
+	ctx context.Context,
+	repo RepoRef,
+) {
+	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
+		RepoOwner: repo.Owner,
+		RepoName:  repo.Name,
+		State:     "open",
+	})
+	if err != nil {
+		slog.Warn("comment refresh: list open issues failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return
+	}
+
+	client, err := s.clientFor(repo)
+	if err != nil {
+		slog.Warn("comment refresh: resolve client failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return
+	}
+
+	for i := range issues {
+		if ctx.Err() != nil {
+			return
+		}
+		issue := &issues[i]
+		if issue.DetailFetchedAt == nil {
+			continue
+		}
+		if !s.canSpendCommentRefresh(repo.PlatformHost) {
+			return
+		}
+		comments, err := client.ListIssueCommentsIfChanged(
+			ctx, repo.Owner, repo.Name, issue.Number,
+		)
+		if err != nil {
+			if IsNotModified(err) {
+				continue
+			}
+			slog.Warn("comment refresh: list issue comments failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", issue.Number,
+				"err", err,
+			)
+			continue
+		}
+		if err := s.persistIssueComments(ctx, issue, comments); err != nil {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			slog.Warn("comment refresh: persist issue comments failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", issue.Number,
+				"err", err,
+			)
+		}
+	}
+}
+
+func (s *Syncer) canSpendCommentRefresh(platformHost string) bool {
+	host := platformHost
+	if host == "" {
+		host = "github.com"
+	}
+	budget := s.budgets[host]
+	return budget == nil || budget.CanSpend(1)
+}
+
+func (s *Syncer) persistPRComments(
+	ctx context.Context,
+	pr *db.MergeRequest,
+	comments []*gh.IssueComment,
+) error {
+	var events []db.MREvent
+	for _, c := range comments {
+		events = append(events, NormalizeCommentEvent(pr.ID, c))
+	}
+	if err := s.db.UpsertMREvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert events: %w", err)
+	}
+
+	lastActivity := pr.LastActivityAt
+	if pr.UpdatedAt.After(lastActivity) {
+		lastActivity = pr.UpdatedAt
+	}
+	for _, c := range comments {
+		switch {
+		case c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity):
+			lastActivity = c.UpdatedAt.Time
+		case c.CreatedAt != nil && c.CreatedAt.After(lastActivity):
+			lastActivity = c.CreatedAt.Time
+		}
+	}
+
+	return s.db.UpdateMRDerivedFields(ctx, pr.RepoID, pr.Number, db.MRDerivedFields{
+		ReviewDecision: pr.ReviewDecision,
+		CommentCount:   len(comments),
+		LastActivityAt: lastActivity,
+	})
+}
+
+func (s *Syncer) persistIssueComments(
+	ctx context.Context,
+	issue *db.Issue,
+	comments []*gh.IssueComment,
+) error {
+	var events []db.IssueEvent
+	for _, c := range comments {
+		events = append(events, NormalizeIssueCommentEvent(issue.ID, c))
+	}
+	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert issue events: %w", err)
+	}
+
+	lastActivity := issue.LastActivityAt
+	if issue.UpdatedAt.After(lastActivity) {
+		lastActivity = issue.UpdatedAt
+	}
+	for _, c := range comments {
+		switch {
+		case c.UpdatedAt != nil && c.UpdatedAt.After(lastActivity):
+			lastActivity = c.UpdatedAt.Time
+		case c.CreatedAt != nil && c.CreatedAt.After(lastActivity):
+			lastActivity = c.CreatedAt.Time
+		}
+	}
+
+	_, err := s.db.WriteDB().ExecContext(ctx,
+		`UPDATE middleman_issues SET comment_count = ?, last_activity_at = ?
+		 WHERE id = ?`,
+		len(comments), lastActivity, issue.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue comment fields: %w", err)
+	}
+	return nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(

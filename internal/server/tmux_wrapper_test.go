@@ -461,11 +461,12 @@ func TestTmuxWrapperAttachSurfacesWrapperFailure(t *testing.T) {
 func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	t.Helper()
 	assert := Assert.New(t)
+	require := require.New(t)
 
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "fake-tmux")
-	require.NoError(t, os.WriteFile(script, []byte(scriptBody), 0o755))
+	require.NoError(os.WriteFile(script, []byte(scriptBody), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
 	client, baseURL := setupWrapperServerWithScript(t, script)
@@ -480,13 +481,12 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 			MrNumber:     1,
 		},
 	)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
-	require.NotNil(t, createResp.JSON202)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
 	require.Eventually(
-		t,
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
 				ctx, wsID,
@@ -506,11 +506,11 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	)
 	defer dialCancel()
 	u, err := url.Parse(wsURL)
-	require.NoError(t, err)
+	require.NoError(err)
 	conn, httpResp, err := websocket.Dial(
 		dialCtx, u.String(), nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	if httpResp != nil && httpResp.Body != nil {
 		httpResp.Body.Close()
 	}
@@ -521,7 +521,7 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	)
 	defer readCancel()
 	_, _, readErr := conn.Read(readCtx)
-	require.Error(t, readErr)
+	require.Error(readErr)
 	assert.Equal(
 		websocket.StatusInternalError,
 		websocket.CloseStatus(readErr),

@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	urlpkg "net/url"
@@ -15,12 +16,16 @@ import (
 
 const etagTTL = 30 * time.Minute
 
-// etagEligiblePath matches list endpoints that return a collection
+// etagEligibleListPath matches list endpoints that return a collection
 // ETag. Supports both github.com (`/repos/{owner}/{name}/{pulls,issues}`)
 // and GitHub Enterprise (`/api/v3/repos/...`), since GHE clients route
 // through the same RoundTripper.
-var etagEligiblePath = regexp.MustCompile(
+var etagEligibleListPath = regexp.MustCompile(
 	`^(?:/api/v3)?/repos/[^/]+/[^/]+/(pulls|issues)$`,
+)
+
+var etagEligibleCommentPath = regexp.MustCompile(
+	`^(?:/api/v3)?/repos/[^/]+/[^/]+/issues/[0-9]+/comments$`,
 )
 
 type etagEntry struct {
@@ -33,6 +38,12 @@ type etagTransport struct {
 	cache sync.Map // URL string -> etagEntry
 }
 
+type bypassETagKey struct{}
+
+func withBypassETag(ctx context.Context) context.Context {
+	return context.WithValue(ctx, bypassETagKey{}, true)
+}
+
 func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req == nil || req.URL == nil {
 		return nil, errors.New("nil request")
@@ -40,6 +51,9 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Gate: only GET requests to allowlisted endpoints
 	if req.Method != http.MethodGet || !isETagEligible(req.URL.Path) {
+		return t.base.RoundTrip(req)
+	}
+	if bypass, _ := req.Context().Value(bypassETagKey{}).(bool); bypass {
 		return t.base.RoundTrip(req)
 	}
 
@@ -90,7 +104,8 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func isETagEligible(path string) bool {
-	return etagEligiblePath.MatchString(path)
+	return etagEligibleListPath.MatchString(path) ||
+		etagEligibleCommentPath.MatchString(path)
 }
 
 func hasLinkNext(resp *http.Response) bool {
@@ -110,10 +125,6 @@ func hasLinkNext(resp *http.Response) bool {
 func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) {
 	base := "/repos/" + owner + "/" + name + "/"
 	gheBase := "/api/v3/repos/" + owner + "/" + name + "/"
-	var prefixes []string
-	for _, ep := range endpoints {
-		prefixes = append(prefixes, base+ep, gheBase+ep)
-	}
 	t.cache.Range(func(k, _ any) bool {
 		urlStr, ok := k.(string)
 		if !ok {
@@ -123,11 +134,35 @@ func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) 
 		if err != nil {
 			return true
 		}
-		if slices.Contains(prefixes, parsed.Path) {
+		if matchesInvalidateEndpoint(parsed.Path, base, gheBase, endpoints) {
 			t.cache.Delete(k)
 		}
 		return true
 	})
+}
+
+func matchesInvalidateEndpoint(path, base, gheBase string, endpoints []string) bool {
+	var exactPrefixes []string
+	for _, ep := range endpoints {
+		switch ep {
+		case "comments":
+			if isCommentListPath(path, base, gheBase) {
+				return true
+			}
+		default:
+			exactPrefixes = append(exactPrefixes, base+ep, gheBase+ep)
+		}
+	}
+	return slices.Contains(exactPrefixes, path)
+}
+
+func isCommentListPath(path, base, gheBase string) bool {
+	for _, prefix := range []string{base + "issues/", gheBase + "issues/"} {
+		if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, "/comments") {
+			return true
+		}
+	}
+	return false
 }
 
 // IsNotModified returns true if the error represents a 304 Not Modified

@@ -279,6 +279,92 @@ func TestCascadeDeleteRepo(t *testing.T) {
 	assert.Equal(0, count)
 }
 
+func TestUpsertMREventsUpdatesExistingEventBody(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "edited comment", base)
+	platformID := int64(101)
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "alice",
+		Body:           "original body",
+		CreatedAt:      base,
+		DedupeKey:      "comment-101",
+	}}))
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "alice",
+		Body:           "edited body",
+		CreatedAt:      base,
+		DedupeKey:      "comment-101",
+	}}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
+}
+
+func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     201,
+		Number:         1,
+		URL:            "https://github.com/acme/widget/issues/1",
+		Title:          "edited issue comment",
+		Author:         "alice",
+		State:          "open",
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: base,
+	})
+	require.NoError(err)
+	platformID := int64(202)
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &platformID,
+		EventType:  "issue_comment",
+		Author:     "alice",
+		Body:       "original body",
+		CreatedAt:  base,
+		DedupeKey:  "issue-comment-202",
+	}}))
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &platformID,
+		EventType:  "issue_comment",
+		Author:     "alice",
+		Body:       "edited body",
+		CreatedAt:  base,
+		DedupeKey:  "issue-comment-202",
+	}}))
+
+	events, err := d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
+}
+
 func TestUpsertAndListRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

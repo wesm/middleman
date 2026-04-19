@@ -39,6 +39,7 @@ type Client interface {
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
+	ListIssueCommentsIfChanged(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
 	ListForcePushEvents(ctx context.Context, owner, repo string, number int) ([]ForcePushEvent, error)
@@ -58,7 +59,8 @@ type Client interface {
 	// InvalidateListETagsForRepo drops cached conditional-GET
 	// validators for the given repo's list endpoints so the next
 	// list call issues an unconditional fetch. The endpoints
-	// parameter selects which caches to clear ("pulls", "issues").
+	// parameter selects which caches to clear ("pulls", "issues",
+	// "comments").
 	// If empty, both are cleared. Used to recover from a
 	// partial-failure sync.
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
@@ -432,6 +434,18 @@ func (c *liveClient) GetUser(ctx context.Context, login string) (*gh.User, error
 }
 
 func (c *liveClient) ListIssueComments(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	return c.listIssueComments(withBypassETag(ctx), owner, repo, number)
+}
+
+func (c *liveClient) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	return c.listIssueComments(ctx, owner, repo, number)
+}
+
+func (c *liveClient) listIssueComments(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
 	opts := &gh.IssueListCommentsOptions{

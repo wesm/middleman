@@ -47,6 +47,7 @@ type mockGH struct {
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listOpenPRsErr            error
 	listOpenIssuesFn          func(context.Context, string, string) ([]*gh.Issue, error)
+	listIssueCommentsFn       func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 	listIssueCommentsErr      error
 }
 
@@ -98,12 +99,26 @@ func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number 
 }
 
 func (m *mockGH) ListIssueComments(
-	_ context.Context, _, _ string, _ int,
+	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsFn != nil {
+		return m.listIssueCommentsFn(ctx, owner, repo, number)
+	}
 	if m.listIssueCommentsErr != nil {
 		return nil, m.listIssueCommentsErr
 	}
 	return nil, nil
+}
+
+func (m *mockGH) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsFn == nil && m.listIssueCommentsErr == nil {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	return m.ListIssueComments(ctx, owner, repo, number)
 }
 
 func (m *mockGH) ListReviews(
@@ -3440,6 +3455,143 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	require.Equal(200, detailResp.StatusCode())
 	require.NotNil(detailResp.JSON200)
 	assert.Equal(int64(42), detailResp.JSON200.Issue.CommentCount)
+}
+
+func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	prNumber := 160
+	prID := int64(160000)
+	prTitle := "Edited comment refresh"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/160"
+	headRef := "feature/edited-comment"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	commentID := int64(9001)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "original body"
+
+	mock := &mockGH{
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(prNumber, number)
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}, nil
+		},
+	}
+	prListCalls := 0
+	mock.listOpenPullRequestsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	mockComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+		return mockComments, nil
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("original body", (*firstResp.JSON200.Events)[0].Body)
+
+	editedBody := "edited body"
+	mockComments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &editedBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: now.Add(4 * time.Minute)},
+	}}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Len(*secondResp.JSON200.Events, 1)
+	assert.Equal("edited body", (*secondResp.JSON200.Events)[0].Body)
 }
 
 func make422Error() error {

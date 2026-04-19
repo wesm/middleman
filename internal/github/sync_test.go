@@ -162,6 +162,18 @@ func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([
 	return m.comments, nil
 }
 
+func (m *mockClient) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
+	if m.comments == nil {
+		return nil, notModifiedErr()
+	}
+	return m.ListIssueComments(ctx, owner, repo, number)
+}
+
 func (m *mockClient) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
 	m.trackCall()
 	return m.reviews, nil
@@ -3828,6 +3840,18 @@ func (m *partialFailureMock) ListIssueComments(_ context.Context, _, _ string, _
 	return m.comments, nil
 }
 
+func (m *partialFailureMock) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
+	if m.comments == nil {
+		return nil, notModifiedErr()
+	}
+	return m.ListIssueComments(ctx, owner, repo, number)
+}
+
 func (m *partialFailureMock) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
 	if m.listReviewsErr != nil {
 		return nil, m.listReviewsErr
@@ -4216,6 +4240,83 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.NotEmpty(events, "review event should be persisted after detail retry")
+}
+
+func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	commentID := int64(7001)
+	commentUser := "reviewer"
+	commentBody := "original body"
+	commentUpdatedAt := now.Add(2 * time.Minute)
+
+	mc := &mockClient{
+		openIssues: []*gh.Issue{},
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentUser},
+			CreatedAt: makeTimestamp(commentUpdatedAt),
+			UpdatedAt: makeTimestamp(commentUpdatedAt),
+		}},
+	}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		require.Equal(1, number)
+		return buildOpenPR(1, now), nil
+	}
+	prListCalls := 0
+	mc.listOpenPRsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{buildOpenPR(1, now)}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+
+	syncer.RunOnce(ctx)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("original body", events[0].Body)
+
+	editedBody := "edited body"
+	editedAt := now.Add(4 * time.Minute)
+	mc.comments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &editedBody,
+		User:      &gh.User{Login: &commentUser},
+		CreatedAt: makeTimestamp(commentUpdatedAt),
+		UpdatedAt: makeTimestamp(editedAt),
+	}}
+
+	syncer.RunOnce(ctx)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
 }
 
 func TestSyncRepoGraphQLIssues(t *testing.T) {

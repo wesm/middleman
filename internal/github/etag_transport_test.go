@@ -358,7 +358,6 @@ func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
 		"https://api.github.com/repos/o/n/pulls/123",
 		"https://api.github.com/repos/o/n/pulls/123/files",
 		"https://api.github.com/repos/o/n/issues/456",
-		"https://api.github.com/repos/o/n/issues/456/comments",
 	} {
 		req, _ := http.NewRequest("GET", url, nil)
 		_, err := et.RoundTrip(req)
@@ -366,6 +365,34 @@ func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
 		_, ok := et.cache.Load(url)
 		assert.False(t, ok, "%s should not be cached", url)
 	}
+}
+
+func TestETagTransport_IssueCommentsUseCache(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	url := "https://api.github.com/repos/o/n/issues/456/comments"
+	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		assert.Empty(r.Header.Get("If-None-Match"))
+		rec := httptest.NewRecorder()
+		rec.Header().Set("ETag", `"comment-etag"`)
+		rec.WriteHeader(200)
+		return rec.Result(), nil
+	})}
+
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	_, err := et.RoundTrip(req)
+	require.NoError(err)
+
+	et.base = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(`"comment-etag"`, r.Header.Get("If-None-Match"))
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(http.StatusNotModified)
+		return rec.Result(), nil
+	})
+	req2, _ := http.NewRequest(http.MethodGet, url, nil)
+	_, err = et.RoundTrip(req2)
+	require.NoError(err)
 }
 
 // TestETagTransport_304DoesNotExtendCacheLifetime verifies that
