@@ -43,6 +43,16 @@ func TestOpenAndSchema(t *testing.T) {
 		).Scan(&name)
 		require.NoErrorf(t, err, "table %s should exist", tbl)
 	}
+
+	var workspaceBranchColumn string
+	err := d.ReadDB().QueryRow(
+		`SELECT name
+		 FROM pragma_table_info('middleman_workspaces')
+		 WHERE name = ?`,
+		"workspace_branch",
+	).Scan(&workspaceBranchColumn)
+	require.NoError(t, err)
+	require.Equal(t, "workspace_branch", workspaceBranchColumn)
 }
 
 func TestOpenCreatesFile(t *testing.T) {

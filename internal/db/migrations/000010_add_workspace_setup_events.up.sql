@@ -9,3 +9,6 @@ CREATE TABLE IF NOT EXISTS middleman_workspace_setup_events (
 
 CREATE INDEX IF NOT EXISTS middleman_workspace_setup_events_workspace_id_idx
     ON middleman_workspace_setup_events (workspace_id, id);
+
+ALTER TABLE middleman_workspaces
+    ADD COLUMN workspace_branch TEXT NOT NULL DEFAULT '__middleman_unknown__';
