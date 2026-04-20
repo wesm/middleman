@@ -18,6 +18,7 @@ from pathlib import Path
 REPO_API_ROOT = "https://api.github.com/repos/sveltejs/ai-tools/contents"
 DEFAULT_REF = "main"
 SKILLS_API_PATH = "tools/skills"
+MANIFEST_NAME = ".svelte-managed.json"
 
 TARGETS = {
     "codex": Path(".agents/skills"),
@@ -184,12 +185,51 @@ def install_directory(source_dir: Path, target_dir: Path, dry_run: bool) -> None
             raise
 
 
-def prune_shared_skills(shared_root: Path, skill_names: set[str], dry_run: bool) -> None:
-    if not shared_root.exists():
+def manifest_path(shared_root: Path) -> Path:
+    return shared_root / MANIFEST_NAME
+
+
+def read_managed_skills(shared_root: Path) -> set[str]:
+    path = manifest_path(shared_root)
+    if not path.is_file():
+        return set()
+
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Malformed managed skills manifest: {path}")
+
+    skills = payload.get("skills")
+    if not isinstance(skills, list) or not all(isinstance(skill, str) for skill in skills):
+        raise RuntimeError(f"Malformed managed skills manifest: {path}")
+
+    return set(skills)
+
+
+def write_managed_skills(shared_root: Path, skill_names: set[str], dry_run: bool) -> None:
+    path = manifest_path(shared_root)
+    print(f"write manifest: {path}")
+    if dry_run:
         return
 
-    for entry in sorted(shared_root.iterdir(), key=lambda path: path.name):
-        if entry.name in skill_names:
+    shared_root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"skills": sorted(skill_names)}, indent=2) + "\n"
+    with tempfile.NamedTemporaryFile(
+        dir=str(shared_root),
+        prefix=f".{MANIFEST_NAME}.",
+        delete=False,
+        mode="w",
+        encoding="utf-8",
+    ) as temp_file:
+        temp_file.write(payload)
+        temp_path = Path(temp_file.name)
+
+    temp_path.replace(path)
+
+
+def prune_shared_skills(shared_root: Path, previous_managed: set[str], current_managed: set[str], dry_run: bool) -> None:
+    for skill_name in sorted(previous_managed - current_managed):
+        entry = shared_root / skill_name
+        if not entry.exists() and not entry.is_symlink():
             continue
 
         print(f"prune shared: {entry}")
@@ -202,20 +242,18 @@ def prune_shared_skills(shared_root: Path, skill_names: set[str], dry_run: bool)
             shutil.rmtree(entry)
 
 
-def prune_target_links(target_root: Path, shared_root: Path, skill_names: set[str], dry_run: bool) -> None:
+def prune_target_links(target_root: Path, shared_root: Path, previous_managed: set[str], current_managed: set[str], dry_run: bool) -> None:
     if not target_root.exists():
         return
 
-    for entry in sorted(target_root.iterdir(), key=lambda path: path.name):
-        if entry.name in skill_names:
-            continue
+    for skill_name in sorted(previous_managed - current_managed):
+        entry = target_root / skill_name
         if not entry.is_symlink():
             continue
 
         resolved = (entry.parent / entry.readlink()).resolve()
-        try:
-            resolved.relative_to(shared_root.resolve())
-        except ValueError:
+        expected_target = (shared_root / skill_name).resolve()
+        if resolved != expected_target:
             continue
 
         print(f"prune link: {entry}")
@@ -280,11 +318,7 @@ def main() -> int:
         workspace = Path(temp_dir)
         extracted: dict[str, Path] = {}
         skill_name_set = set(skill_names)
-
-        prune_shared_skills(shared_root, skill_name_set, args.dry_run)
-
-        for target_rel_path in targets.values():
-            prune_target_links(root / target_rel_path, shared_root, skill_name_set, args.dry_run)
+        previous_managed = read_managed_skills(shared_root)
 
         for skill in upstream_skills:
             print(f"fetch: {skill.name}")
@@ -308,6 +342,17 @@ def main() -> int:
                     shared_root / skill_name,
                     args.dry_run,
                 )
+
+            prune_target_links(
+                target_root,
+                shared_root,
+                previous_managed,
+                skill_name_set,
+                args.dry_run,
+            )
+
+        prune_shared_skills(shared_root, previous_managed, skill_name_set, args.dry_run)
+        write_managed_skills(shared_root, skill_name_set, args.dry_run)
 
     print("done")
     return 0
