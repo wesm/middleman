@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -291,6 +293,94 @@ func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 		elapsed,
 		workspacePersistTimeout+(workspacePersistTimeout/2),
 	)
+}
+
+func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		MRNumber:     42,
+		MRHeadRef:    "-unsafe",
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+
+	_, err := mgr.addPreferredWorktree(
+		context.Background(), cloneDir, ws,
+	)
+	require.Error(err)
+	require.Contains(err.Error(), "invalid branch name")
+}
+
+func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	branch := syntheticWorktreeBranch(42)
+	require.NoError(runGit(
+		context.Background(), cloneDir,
+		"branch", branch, "main",
+	))
+
+	ws := &Workspace{
+		MRNumber:     42,
+		WorktreePath: filepath.Join(t.TempDir(), "missing-worktree"),
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mgr.rollbackWorktree(ctx, cloneDir, ws, workspaceBranchUnknown)
+
+	_, exists, err := gitRefSHA(
+		context.Background(), cloneDir, "refs/heads/"+branch,
+	)
+	require.NoError(err)
+	assert.False(exists)
+}
+
+func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+	cloneDir := filepath.Join(dir, "clone.git")
+
+	runWorkspaceTestGit(
+		t, dir, "init", "--bare", "--initial-branch=main", remote,
+	)
+	runWorkspaceTestGit(t, dir, "clone", remote, work)
+	runWorkspaceTestGit(
+		t, work, "config", "user.email", "test@test.com",
+	)
+	runWorkspaceTestGit(
+		t, work, "config", "user.name", "Test",
+	)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
+	runWorkspaceTestGit(t, work, "push", "origin", "main")
+	runWorkspaceTestGit(t, dir, "clone", "--bare", remote, cloneDir)
+
+	return cloneDir
+}
+
+func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(
+		gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
 }
 
 func TestShellFromPasswdLine(t *testing.T) {

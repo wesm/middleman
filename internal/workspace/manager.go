@@ -36,6 +36,7 @@ const (
 )
 
 var workspacePersistTimeout = 5 * time.Second
+var workspaceCleanupTimeout = 5 * time.Second
 
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
@@ -247,6 +248,12 @@ func (m *Manager) addWorktree(
 func (m *Manager) addPreferredWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 ) (string, error) {
+	if err := validateLocalBranchName(
+		ctx, cloneDir, ws.MRHeadRef,
+	); err != nil {
+		return "", err
+	}
+
 	if ws.MRHeadRepo != nil {
 		err := runGit(
 			ctx, cloneDir,
@@ -285,13 +292,15 @@ func (m *Manager) addPreferredWorktree(
 			ctx, ws.WorktreePath, ws.MRHeadRef,
 			"origin", "refs/heads/"+ws.MRHeadRef,
 		); err != nil {
+			cleanupCtx, cancel := cleanupContext(ctx)
+			defer cancel()
 			_ = runGit(
-				ctx, cloneDir,
+				cleanupCtx, cloneDir,
 				"worktree", "remove", "--force", ws.WorktreePath,
 			)
 			_ = runGit(
-				ctx, cloneDir,
-				"branch", "-D", ws.MRHeadRef,
+				cleanupCtx, cloneDir,
+				"branch", "-D", "--", ws.MRHeadRef,
 			)
 			return "", fmt.Errorf("configure branch upstream: %w", err)
 		}
@@ -315,8 +324,10 @@ func (m *Manager) addPreferredWorktree(
 		ctx, ws.WorktreePath, ws.MRHeadRef,
 		"origin", "refs/heads/"+ws.MRHeadRef,
 	); err != nil {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
 		_ = runGit(
-			ctx, cloneDir,
+			cleanupCtx, cloneDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		)
 		return "", fmt.Errorf("configure branch upstream: %w", err)
@@ -350,6 +361,27 @@ func setBranchUpstream(
 		ctx, worktreePath,
 		"config", "branch."+branch+".merge", mergeRef,
 	)
+}
+
+func validateLocalBranchName(
+	ctx context.Context, dir, branch string,
+) error {
+	cmd := exec.CommandContext(
+		ctx, "git", "check-ref-format", "--branch", branch,
+	)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+
+	msg := strings.TrimSpace(string(out))
+	if msg == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("invalid branch name %q: %s", branch, msg)
 }
 
 // Delete tears down a workspace: kills tmux, removes the git
@@ -723,14 +755,16 @@ func (m *Manager) rollbackWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 	branch string,
 ) {
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
 	if err := runGit(
-		ctx, cloneDir,
+		cleanupCtx, cloneDir,
 		"worktree", "remove", "--force", ws.WorktreePath,
 	); err != nil {
 		slog.Warn("rollback: worktree remove failed",
 			"path", ws.WorktreePath, "err", err)
 	}
-	m.deleteWorkspaceBranches(ctx, cloneDir, ws, branch)
+	m.deleteWorkspaceBranches(cleanupCtx, cloneDir, ws, branch)
 }
 
 func (m *Manager) deleteWorkspaceBranches(
@@ -738,8 +772,15 @@ func (m *Manager) deleteWorkspaceBranches(
 	managedBranch string,
 ) {
 	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
+		if err := validateLocalBranchName(
+			ctx, cloneDir, branch,
+		); err != nil {
+			slog.Warn("workspace branch delete skipped",
+				"branch", branch, "err", err)
+			continue
+		}
 		if err := runGit(
-			ctx, cloneDir, "branch", "-D", branch,
+			ctx, cloneDir, "branch", "-D", "--", branch,
 		); err != nil {
 			slog.Warn("workspace branch delete failed",
 				"branch", branch, "err", err)
@@ -762,6 +803,12 @@ func workspaceBranchCandidates(
 func (m *Manager) persistenceContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(
 		context.Background(), workspacePersistTimeout,
+	)
+}
+
+func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(
+		context.WithoutCancel(ctx), workspaceCleanupTimeout,
 	)
 }
 
