@@ -192,6 +192,17 @@ func (c *FixtureClient) ListIssueComments(
 	return out, nil
 }
 
+func (c *FixtureClient) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	if len(c.Comments[issueKey(owner, repo, number)]) == 0 {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	return c.ListIssueComments(ctx, owner, repo, number)
+}
+
 // ListReviews returns nil (read-only stub).
 func (c *FixtureClient) ListReviews(
 	_ context.Context, _, _ string, _ int,

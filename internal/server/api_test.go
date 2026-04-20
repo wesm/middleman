@@ -47,6 +47,7 @@ type mockGH struct {
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listOpenPRsErr            error
 	listOpenIssuesFn          func(context.Context, string, string) ([]*gh.Issue, error)
+	listIssueCommentsFn       func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 	listIssueCommentsErr      error
 }
 
@@ -98,12 +99,26 @@ func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number 
 }
 
 func (m *mockGH) ListIssueComments(
-	_ context.Context, _, _ string, _ int,
+	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsFn != nil {
+		return m.listIssueCommentsFn(ctx, owner, repo, number)
+	}
 	if m.listIssueCommentsErr != nil {
 		return nil, m.listIssueCommentsErr
 	}
 	return nil, nil
+}
+
+func (m *mockGH) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsFn == nil && m.listIssueCommentsErr == nil {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	return m.ListIssueComments(ctx, owner, repo, number)
 }
 
 func (m *mockGH) ListReviews(
@@ -3440,6 +3455,1281 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	require.Equal(200, detailResp.StatusCode())
 	require.NotNil(detailResp.JSON200)
 	assert.Equal(int64(42), detailResp.JSON200.Issue.CommentCount)
+}
+
+func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	prNumber := 160
+	prID := int64(160000)
+	prTitle := "Edited comment refresh"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/160"
+	headRef := "feature/edited-comment"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	commentID := int64(9001)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "original body"
+
+	mock := &mockGH{
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(prNumber, number)
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}, nil
+		},
+	}
+	prListCalls := 0
+	mock.listOpenPullRequestsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	mockComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+		return mockComments, nil
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("original body", (*firstResp.JSON200.Events)[0].Body)
+
+	editedBody := "edited body"
+	mockComments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &editedBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: now.Add(4 * time.Minute)},
+	}}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Len(*secondResp.JSON200.Events, 1)
+	assert.Equal("edited body", (*secondResp.JSON200.Events)[0].Body)
+}
+
+func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	prNumber := 160
+	prID := int64(160000)
+	prTitle := "Deleted comment refresh"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/160"
+	headRef := "feature/deleted-comment"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	commentID := int64(9001)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "body to remove"
+
+	mock := &mockGH{
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(prNumber, number)
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}, nil
+		},
+	}
+	prListCalls := 0
+	mock.listOpenPullRequestsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	mockComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+		return mockComments, nil
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("body to remove", (*firstResp.JSON200.Events)[0].Body)
+
+	mockComments = []*gh.IssueComment{}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(now.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 15, 0, 0, 0, time.UTC)
+	targetNumber := 160
+	targetID := int64(160000)
+	targetTitle := "Target PR keeps stale comment"
+	targetURL := "https://github.com/acme/widget/pull/160"
+	otherNumber := 161
+	otherID := int64(161000)
+	otherTitle := "Other PR changes"
+	otherURL := "https://github.com/acme/widget/pull/161"
+	prState := "open"
+	headRef := "feature/comments"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	commentID := int64(9050)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	targetCommentBody := "target comment"
+	targetComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &targetCommentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	otherUpdatedAt := now
+
+	prListCalls := 0
+	mock := &mockGH{
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, nil
+		},
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			prListCalls++
+			if prListCalls > 1 {
+				otherUpdatedAt = now.Add(5 * time.Minute)
+			}
+			return []*gh.PullRequest{
+				{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					HTMLURL:   &targetURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				},
+				{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					HTMLURL:   &otherURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				},
+			}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			switch number {
+			case targetNumber:
+				return &gh.PullRequest{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					HTMLURL:   &targetURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				}, nil
+			case otherNumber:
+				return &gh.PullRequest{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					HTMLURL:   &otherURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				}, nil
+			default:
+				return nil, fmt.Errorf("unexpected pull request %d", number)
+			}
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			if number == targetNumber {
+				return targetComments, nil
+			}
+			return []*gh.IssueComment{}, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("target comment", (*firstResp.JSON200.Events)[0].Body)
+
+	targetComments = []*gh.IssueComment{}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	issueNumber := 161
+	issueID := int64(161000)
+	issueTitle := "Edited issue comment refresh"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/161"
+	commentID := int64(9011)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "original issue body"
+
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}, nil
+		},
+	}
+	issueListCalls := 0
+	mock.listOpenIssuesFn = func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+		issueListCalls++
+		if issueListCalls == 1 {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	mockComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+		return mockComments, nil
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("original issue body", (*firstResp.JSON200.Events)[0].Body)
+
+	editedBody := "edited issue body"
+	mockComments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &editedBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: now.Add(4 * time.Minute)},
+	}}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Len(*secondResp.JSON200.Events, 1)
+	assert.Equal("edited issue body", (*secondResp.JSON200.Events)[0].Body)
+}
+
+func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	issueNumber := 161
+	issueID := int64(161000)
+	issueTitle := "Deleted issue comment refresh"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/161"
+	commentID := int64(9011)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "issue body to remove"
+
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}, nil
+		},
+	}
+	issueListCalls := 0
+	mock.listOpenIssuesFn = func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+		issueListCalls++
+		if issueListCalls == 1 {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: now},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+	mockComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	mock.listIssueCommentsFn = func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+		return mockComments, nil
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
+	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("issue body to remove", (*firstResp.JSON200.Events)[0].Body)
+
+	mockComments = []*gh.IssueComment{}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
+	require.Equal(now.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 16, 0, 0, 0, time.UTC)
+	targetNumber := 161
+	targetID := int64(161000)
+	targetTitle := "Target issue keeps stale comment"
+	targetURL := "https://github.com/acme/widget/issues/161"
+	otherNumber := 162
+	otherID := int64(162000)
+	otherTitle := "Other issue changes"
+	otherURL := "https://github.com/acme/widget/issues/162"
+	issueState := "open"
+	commentID := int64(9060)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	targetCommentBody := "target issue comment"
+	targetComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &targetCommentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	otherUpdatedAt := now
+
+	issueListCalls := 0
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			issueListCalls++
+			if issueListCalls > 1 {
+				otherUpdatedAt = now.Add(5 * time.Minute)
+			}
+			return []*gh.Issue{
+				{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					State:     &issueState,
+					HTMLURL:   &targetURL,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+				},
+				{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					State:     &issueState,
+					HTMLURL:   &otherURL,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+				},
+			}, nil
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			switch number {
+			case targetNumber:
+				return &gh.Issue{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					State:     &issueState,
+					HTMLURL:   &targetURL,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+				}, nil
+			case otherNumber:
+				return &gh.Issue{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					State:     &issueState,
+					HTMLURL:   &otherURL,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+				}, nil
+			default:
+				return nil, fmt.Errorf("unexpected issue %d", number)
+			}
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			if number == targetNumber {
+				return targetComments, nil
+			}
+			return []*gh.IssueComment{}, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("target issue comment", (*firstResp.JSON200.Events)[0].Body)
+
+	targetComments = []*gh.IssueComment{}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC)
+	prNumber := 170
+	prID := int64(170000)
+	prTitle := "Full refresh deleted comment"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/170"
+	headRef := "feature/full-refresh-delete"
+	headSHA := "feedface"
+	baseRef := "main"
+	commentID := int64(9101)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "comment removed on full refresh"
+	currentUpdatedAt := now
+	currentComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+
+	mock := &mockGH{
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(prNumber, number)
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				HTMLURL:   &prURL,
+				State:     &prState,
+				UpdatedAt: &gh.Timestamp{Time: currentUpdatedAt},
+				CreatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+				},
+			}, nil
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(prNumber, number)
+			return currentComments, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("comment removed on full refresh", (*firstResp.JSON200.Events)[0].Body)
+
+	currentUpdatedAt = now.Add(time.Minute)
+	currentComments = []*gh.IssueComment{}
+
+	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(currentUpdatedAt.UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 13, 10, 0, 0, 0, time.UTC)
+	issueNumber := 171
+	issueID := int64(171000)
+	issueTitle := "Full refresh deleted issue comment"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/171"
+	commentID := int64(9111)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	commentBody := "issue comment removed on full refresh"
+	currentUpdatedAt := now
+	currentComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				UpdatedAt: &gh.Timestamp{Time: currentUpdatedAt},
+				CreatedAt: &gh.Timestamp{Time: now},
+			}, nil
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(issueNumber, number)
+			return currentComments, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
+	require.Equal(commentCreatedAt.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("issue comment removed on full refresh", (*firstResp.JSON200.Events)[0].Body)
+
+	currentUpdatedAt = now.Add(time.Minute)
+	currentComments = []*gh.IssueComment{}
+
+	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
+	require.Equal(currentUpdatedAt.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 13, 11, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now.Format(time.RFC3339)
+	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	currentUpdatedAt := firstUpdatedAt
+	currentCommentJSON := `{"totalCount":1,"nodes":[{"databaseId":9122,"author":{"login":"commenter"},"body":"bulk comment removed","createdAt":"` + firstUpdatedAt + `","updatedAt":"` + firstUpdatedAt + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		resp := `{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":171100,
+			"number":172,
+			"title":"Bulk deleted comment issue",
+			"state":"OPEN",
+			"body":"GraphQL bulk issue",
+			"url":"https://github.com/acme/widget/issues/172",
+			"author":{"login":"heidi"},
+			"createdAt":"` + firstUpdatedAt + `",
+			"updatedAt":"` + currentUpdatedAt + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":` + currentCommentJSON + `
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	issueID := int64(171100)
+	issueNumber := 172
+	issueTitle := "Bulk deleted comment issue"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/172"
+	issueAuthor := "heidi"
+	issueTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &issueAuthor},
+				CreatedAt: &issueTime,
+				UpdatedAt: &issueTime,
+			}}, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
+	require.Equal(now.UTC(), firstResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("bulk comment removed", (*firstResp.JSON200.Events)[0].Body)
+
+	currentUpdatedAt = secondUpdatedAt
+	currentCommentJSON = `{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
+	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 13, 11, 30, 0, 0, time.UTC)
+	firstUpdatedAt := now.Format(time.RFC3339)
+	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	commentCreatedAt := now.Add(2 * time.Minute).Format(time.RFC3339)
+	currentUpdatedAt := firstUpdatedAt
+	currentCommentsJSON := `{"nodes":[{"databaseId":9222,"author":{"login":"commenter"},"body":"bulk PR comment removed","createdAt":"` + commentCreatedAt + `","updatedAt":"` + commentCreatedAt + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":172100,
+				"number":173,
+				"title":"Bulk deleted comment PR",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"GraphQL bulk PR",
+				"url":"https://github.com/acme/widget/pull/173",
+				"author":{"login":"heidi"},
+				"createdAt":"` + firstUpdatedAt + `",
+				"updatedAt":"` + currentUpdatedAt + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"feature/bulk-pr",
+				"baseRefName":"main",
+				"headRefOid":"deadbeef",
+				"baseRefOid":"feedface",
+				"headRepository":{"url":"https://github.com/acme/widget"},
+				"labels":{"nodes":[]},
+				"comments":` + currentCommentsJSON + `,
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"review-cursor"}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"commit-cursor"}},
+				"lastCommit":{"nodes":[]}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prID := int64(172100)
+	prNumber := 173
+	prTitle := "Bulk deleted comment PR"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/173"
+	headRef := "feature/bulk-pr"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	prTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			updatedAt, parseErr := time.Parse(time.RFC3339, currentUpdatedAt)
+			require.NoError(parseErr)
+			updatedStamp := gh.Timestamp{Time: updatedAt}
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: new("heidi")},
+				CreatedAt: &prTime,
+				UpdatedAt: &updatedStamp,
+				Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: &baseRef},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(now.Add(2*time.Minute).UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("bulk PR comment removed", (*firstResp.JSON200.Events)[0].Body)
+
+	currentUpdatedAt = secondUpdatedAt
+	currentCommentsJSON = `{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
 }
 
 func make422Error() error {

@@ -39,6 +39,7 @@ type Client interface {
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
+	ListIssueCommentsIfChanged(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
 	ListForcePushEvents(ctx context.Context, owner, repo string, number int) ([]ForcePushEvent, error)
@@ -58,9 +59,10 @@ type Client interface {
 	// InvalidateListETagsForRepo drops cached conditional-GET
 	// validators for the given repo's list endpoints so the next
 	// list call issues an unconditional fetch. The endpoints
-	// parameter selects which caches to clear ("pulls", "issues").
-	// If empty, both are cleared. Used to recover from a
-	// partial-failure sync.
+	// parameter selects which caches to clear ("pulls", "issues",
+	// "comments"); passing no endpoints clears every supported
+	// repo-scoped list path. Used to recover from a partial-failure
+	// sync.
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
@@ -127,15 +129,13 @@ type liveClient struct {
 }
 
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
-// list endpoints. Pass "pulls" and/or "issues" to scope the
-// invalidation; if no endpoints are given, both are cleared.
-// Safe to call when the transport is nil (tests).
+// list endpoints. Pass any combination of "pulls", "issues", and
+// "comments" to scope the invalidation; omitting endpoints clears
+// every supported repo-scoped list path. Safe to call when the
+// transport is nil (tests).
 func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ...string) {
 	if c.etag == nil {
 		return
-	}
-	if len(endpoints) == 0 {
-		endpoints = []string{"pulls", "issues"}
 	}
 	c.etag.invalidateRepo(owner, repo, endpoints...)
 }
@@ -432,6 +432,18 @@ func (c *liveClient) GetUser(ctx context.Context, login string) (*gh.User, error
 }
 
 func (c *liveClient) ListIssueComments(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	return c.listIssueComments(withBypassETag(ctx), owner, repo, number)
+}
+
+func (c *liveClient) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	return c.listIssueComments(ctx, owner, repo, number)
+}
+
+func (c *liveClient) listIssueComments(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
 	opts := &gh.IssueListCommentsOptions{

@@ -43,35 +43,38 @@ func testBudget(limit int) map[string]*SyncBudget {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	budget                  *SyncBudget // optional: simulates transport counting
-	openPRs                 []*gh.PullRequest
-	openIssues              []*gh.Issue
-	listOpenPRsErr          error
-	listOpenIssuesErr       error
-	singlePR                *gh.PullRequest
-	getRepositoryFn         func(context.Context, string, string) (*gh.Repository, error)
-	getPullRequestFn        func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn              func(context.Context, string, string, int) (*gh.Issue, error)
-	getUserFn               func(context.Context, string) (*gh.User, error)
-	listReposByOwnerFn      func(context.Context, string) ([]*gh.Repository, error)
-	listOpenPRsFn           func(context.Context, string, string) ([]*gh.PullRequest, error)
-	listPullRequestsPageFn  func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	listIssuesPageFn        func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	comments                []*gh.IssueComment
-	reviews                 []*gh.PullRequestReview
-	commits                 []*gh.RepositoryCommit
-	forcePushEvents         []ForcePushEvent
-	forcePushEventsErr      error
-	ciStatus                *gh.CombinedStatus
-	checkRuns               []*gh.CheckRun
-	workflowRuns            []*gh.WorkflowRun
-	approveWorkflowRunFn    func(context.Context, string, string, int64) error
-	listOpenPRsCalled       bool
-	getUserCalls            atomic.Int32
-	getCombinedCalls        atomic.Int32
-	invalidateCalls         atomic.Int32
-	listIssueCommentsCalled atomic.Int32
-	listIssueCommentsErr    error
+	budget                          *SyncBudget // optional: simulates transport counting
+	openPRs                         []*gh.PullRequest
+	openIssues                      []*gh.Issue
+	listOpenPRsErr                  error
+	listOpenIssuesErr               error
+	singlePR                        *gh.PullRequest
+	getRepositoryFn                 func(context.Context, string, string) (*gh.Repository, error)
+	getPullRequestFn                func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn                      func(context.Context, string, string, int) (*gh.Issue, error)
+	getUserFn                       func(context.Context, string) (*gh.User, error)
+	listReposByOwnerFn              func(context.Context, string) ([]*gh.Repository, error)
+	listOpenPRsFn                   func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listPullRequestsPageFn          func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
+	comments                        []*gh.IssueComment
+	reviews                         []*gh.PullRequestReview
+	commits                         []*gh.RepositoryCommit
+	forcePushEvents                 []ForcePushEvent
+	forcePushEventsErr              error
+	ciStatus                        *gh.CombinedStatus
+	checkRuns                       []*gh.CheckRun
+	workflowRuns                    []*gh.WorkflowRun
+	approveWorkflowRunFn            func(context.Context, string, string, int64) error
+	listOpenPRsCalled               bool
+	getUserCalls                    atomic.Int32
+	getCombinedCalls                atomic.Int32
+	invalidateCalls                 atomic.Int32
+	listIssueCommentsCalled         atomic.Int32
+	listIssueCommentsIfChangedCalls atomic.Int32
+	listIssueCommentsErr            error
+	listIssueCommentsFn             func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listIssueCommentsIfChangedFn    func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 }
 
 func (m *mockClient) trackCall() {
@@ -153,13 +156,32 @@ func (m *mockClient) GetPullRequest(
 	return nil, nil
 }
 
-func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+func (m *mockClient) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error) {
 	m.trackCall()
 	m.listIssueCommentsCalled.Add(1)
+	if m.listIssueCommentsFn != nil {
+		return m.listIssueCommentsFn(ctx, owner, repo, number)
+	}
 	if m.listIssueCommentsErr != nil {
 		return nil, m.listIssueCommentsErr
 	}
 	return m.comments, nil
+}
+
+func (m *mockClient) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	m.listIssueCommentsIfChangedCalls.Add(1)
+	if m.listIssueCommentsIfChangedFn != nil {
+		return m.listIssueCommentsIfChangedFn(ctx, owner, repo, number)
+	}
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
+	if m.comments == nil {
+		return nil, notModifiedErr()
+	}
+	return m.ListIssueComments(ctx, owner, repo, number)
 }
 
 func (m *mockClient) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
@@ -3828,6 +3850,18 @@ func (m *partialFailureMock) ListIssueComments(_ context.Context, _, _ string, _
 	return m.comments, nil
 }
 
+func (m *partialFailureMock) ListIssueCommentsIfChanged(
+	ctx context.Context, owner, repo string, number int,
+) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsErr != nil {
+		return nil, m.listIssueCommentsErr
+	}
+	if m.comments == nil {
+		return nil, notModifiedErr()
+	}
+	return m.ListIssueComments(ctx, owner, repo, number)
+}
+
 func (m *partialFailureMock) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
 	if m.listReviewsErr != nil {
 		return nil, m.listReviewsErr
@@ -4216,6 +4250,633 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.NotEmpty(events, "review event should be persisted after detail retry")
+}
+
+func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	commentID := int64(7001)
+	commentUser := "reviewer"
+	commentBody := "original body"
+	commentUpdatedAt := now.Add(2 * time.Minute)
+
+	mc := &mockClient{
+		openIssues: []*gh.Issue{},
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentUser},
+			CreatedAt: makeTimestamp(commentUpdatedAt),
+			UpdatedAt: makeTimestamp(commentUpdatedAt),
+		}},
+	}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		require.Equal(1, number)
+		return buildOpenPR(1, now), nil
+	}
+	prListCalls := 0
+	mc.listOpenPRsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{buildOpenPR(1, now)}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+
+	syncer.RunOnce(ctx)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("original body", events[0].Body)
+
+	editedBody := "edited body"
+	editedAt := now.Add(4 * time.Minute)
+	mc.comments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &editedBody,
+		User:      &gh.User{Login: &commentUser},
+		CreatedAt: makeTimestamp(commentUpdatedAt),
+		UpdatedAt: makeTimestamp(editedAt),
+	}}
+
+	syncer.RunOnce(ctx)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
+}
+
+func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	commentID := int64(7002)
+	commentUser := "reviewer"
+	commentBody := "to be deleted"
+	commentTime := now.Add(2 * time.Minute)
+
+	mc := &mockClient{
+		openIssues: []*gh.Issue{},
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentUser},
+			CreatedAt: makeTimestamp(commentTime),
+			UpdatedAt: makeTimestamp(commentTime),
+		}},
+	}
+	mc.getPullRequestFn = func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		require.Equal(1, number)
+		return buildOpenPR(1, now), nil
+	}
+	prListCalls := 0
+	mc.listOpenPRsFn = func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListCalls++
+		if prListCalls == 1 {
+			return []*gh.PullRequest{buildOpenPR(1, now)}, nil
+		}
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotModified},
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+
+	syncer.RunOnce(ctx)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Equal(1, mr.CommentCount)
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	mc.comments = []*gh.IssueComment{}
+
+	syncer.RunOnce(ctx)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(0, mr.CommentCount)
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+	assert.Equal(now.UTC(), mr.LastActivityAt.UTC())
+}
+
+func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueID := int64(801)
+	issueNumber := 8
+	issueTitle := "edited issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/8"
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	commentID := int64(810)
+	commentUser := "reviewer"
+	commentBody := "issue comment"
+	commentTime := now.Add(2 * time.Minute)
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{}
+	mc.openIssues = []*gh.Issue{openIssue}
+	mc.comments = []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &commentBody,
+		User:      &gh.User{Login: &commentUser},
+		CreatedAt: makeTimestamp(commentTime),
+		UpdatedAt: makeTimestamp(commentTime),
+	}}
+	mc.listOpenPRsErr = notModifiedErr()
+	mc.getIssueFn = func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+		require.Equal(issueNumber, number)
+		return openIssue, nil
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal(1, issue.CommentCount)
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	mc.comments = []*gh.IssueComment{}
+	mc.issuesCached = true
+
+	syncer.RunOnce(ctx)
+
+	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal(0, issue.CommentCount)
+
+	events, err = d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	assert.Empty(events)
+	assert.Equal(now.UTC(), issue.LastActivityAt.UTC())
+}
+
+func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now
+	secondUpdatedAt := now.Add(time.Minute)
+	commentID := int64(7101)
+	commentAuthor := "reviewer"
+	commentBody := "full refresh comment"
+	commentTime := now.Add(2 * time.Minute)
+
+	fetches := 0
+	mc := &mockClient{
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: makeTimestamp(commentTime),
+			UpdatedAt: makeTimestamp(commentTime),
+		}},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(1, number)
+			fetches++
+			if fetches == 1 {
+				return buildOpenPR(1, firstUpdatedAt), nil
+			}
+			return buildOpenPR(1, secondUpdatedAt), nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	_, err = syncer.fetchMRDetail(
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, 1, false,
+	)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Equal(1, mr.CommentCount)
+	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	mc.comments = []*gh.IssueComment{}
+
+	_, err = syncer.fetchMRDetail(
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, 1, false,
+	)
+	require.NoError(err)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(0, mr.CommentCount)
+	assert.Equal(secondUpdatedAt.UTC(), mr.LastActivityAt.UTC())
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
+func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now
+	secondUpdatedAt := now.Add(time.Minute)
+	issueID := int64(820)
+	issueNumber := 8
+	issueTitle := "full refresh issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/8"
+	commentID := int64(821)
+	commentAuthor := "reviewer"
+	commentBody := "full refresh issue comment"
+	commentTime := now.Add(2 * time.Minute)
+
+	fetches := 0
+	mc := &mockClient{
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: makeTimestamp(commentTime),
+			UpdatedAt: makeTimestamp(commentTime),
+		}},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			fetches++
+			updatedAt := firstUpdatedAt
+			if fetches > 1 {
+				updatedAt = secondUpdatedAt
+			}
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				CreatedAt: makeTimestamp(now),
+				UpdatedAt: makeTimestamp(updatedAt),
+			}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	_, err = syncer.fetchIssueDetail(
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, issueNumber,
+	)
+	require.NoError(err)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal(1, issue.CommentCount)
+	assert.Equal(commentTime.UTC(), issue.LastActivityAt.UTC())
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	mc.comments = []*gh.IssueComment{}
+
+	_, err = syncer.fetchIssueDetail(
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID, issueNumber,
+	)
+	require.NoError(err)
+
+	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal(0, issue.CommentCount)
+	assert.Equal(secondUpdatedAt.UTC(), issue.LastActivityAt.UTC())
+
+	events, err = d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
+func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now
+	secondUpdatedAt := now.Add(time.Minute)
+	commentID := int64(9101)
+	commentAuthor := "reviewer"
+	commentBody := "bulk PR comment"
+	commentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+
+	commentTotal := 1
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR: buildOpenPR(1, firstUpdatedAt),
+		Comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &commentTime,
+			UpdatedAt: &commentTime,
+		}},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		CIComplete:       true,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Equal(1, mr.CommentCount)
+	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               buildOpenPR(1, secondUpdatedAt),
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		CIComplete:       true,
+	}, false)
+	require.NoError(err)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(0, mr.CommentCount)
+	assert.Equal(secondUpdatedAt.UTC(), mr.LastActivityAt.UTC())
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+	_ = commentTotal
+}
+
+func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 13, 0, 0, 0, time.UTC)
+	firstUpdatedAt := now
+	secondUpdatedAt := now.Add(time.Minute)
+	commentID := int64(9301)
+	commentAuthor := "reviewer"
+	commentBody := "partial bulk PR comment"
+	commentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR: buildOpenPR(1, firstUpdatedAt),
+		Comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &commentTime,
+			UpdatedAt: &commentTime,
+		}},
+		CommentsComplete: true,
+		ReviewsComplete:  false,
+		CommitsComplete:  false,
+		CIComplete:       false,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(1, mr.CommentCount)
+	assert.Equal(commentTime.UTC(), mr.LastActivityAt.UTC())
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               buildOpenPR(1, secondUpdatedAt),
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  false,
+		CommitsComplete:  false,
+		CIComplete:       false,
+	}, false)
+	require.NoError(err)
+
+	mr, err = d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(0, mr.CommentCount)
+	assert.Equal(secondUpdatedAt.UTC(), mr.LastActivityAt.UTC())
+
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
+}
+
+func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
+	firstUpdatedAt := gh.Timestamp{Time: now}
+	secondUpdatedAt := gh.Timestamp{Time: now.Add(time.Minute)}
+	issueID := int64(9201)
+	issueNumber := 9
+	issueTitle := "bulk issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/9"
+	issueAuthor := "alice"
+	commentID := int64(9202)
+	commentAuthor := "reviewer"
+	commentBody := "bulk issue comment"
+	commentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+	commentTotal := 1
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
+		Issue: &gh.Issue{
+			ID:        &issueID,
+			Number:    &issueNumber,
+			Title:     &issueTitle,
+			State:     &issueState,
+			HTMLURL:   &issueURL,
+			Comments:  &commentTotal,
+			User:      &gh.User{Login: &issueAuthor},
+			CreatedAt: &firstUpdatedAt,
+			UpdatedAt: &firstUpdatedAt,
+		},
+		Comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			Body:      &commentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &commentTime,
+			UpdatedAt: &commentTime,
+		}},
+		CommentsComplete: true,
+	})
+	require.NoError(err)
+
+	issue, err := d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal(1, issue.CommentCount)
+	assert.Equal(commentTime.UTC(), issue.LastActivityAt.UTC())
+
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+
+	zeroComments := 0
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
+		Issue: &gh.Issue{
+			ID:        &issueID,
+			Number:    &issueNumber,
+			Title:     &issueTitle,
+			State:     &issueState,
+			HTMLURL:   &issueURL,
+			Comments:  &zeroComments,
+			User:      &gh.User{Login: &issueAuthor},
+			CreatedAt: &firstUpdatedAt,
+			UpdatedAt: &secondUpdatedAt,
+		},
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+	})
+	require.NoError(err)
+
+	issue, err = d.GetIssue(ctx, "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal(0, issue.CommentCount)
+	assert.Equal(secondUpdatedAt.UTC(), issue.LastActivityAt.UTC())
+
+	events, err = d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	assert.Empty(events)
 }
 
 func TestSyncRepoGraphQLIssues(t *testing.T) {
@@ -5007,6 +5668,240 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 
 	// GraphQL path skipped REST ListIssueComments.
 	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
+}
+
+// TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents
+// guards the comment-only refresh path against regressing a PR whose
+// latest activity came from a review, commit, or force push — data
+// the comment list can't see. The non-comment timestamp is supplied
+// by the caller from the DB's stored events.
+func TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents(t *testing.T) {
+	assert := Assert.New(t)
+
+	created := time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC)
+	updated := created.Add(1 * time.Hour)
+	commentAt := created.Add(2 * time.Hour)
+	reviewAt := created.Add(3 * time.Hour)
+
+	pr := &db.MergeRequest{CreatedAt: created, UpdatedAt: updated}
+	comments := []*gh.IssueComment{{
+		CreatedAt: &gh.Timestamp{Time: commentAt},
+		UpdatedAt: &gh.Timestamp{Time: commentAt},
+	}}
+
+	assert.Equal(reviewAt, computePRCommentRefreshLastActivity(pr, comments, reviewAt),
+		"stored non-comment event activity must win over comment timestamp")
+
+	newerComment := reviewAt.Add(30 * time.Minute)
+	comments[0].UpdatedAt = &gh.Timestamp{Time: newerComment}
+	assert.Equal(newerComment, computePRCommentRefreshLastActivity(pr, comments, reviewAt),
+		"a strictly newer comment should advance activity past stored events")
+
+	assert.Equal(updated, computePRCommentRefreshLastActivity(pr, nil, time.Time{}),
+		"no comments and no stored events should fall back to PR UpdatedAt")
+}
+
+func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	detailFetchedAt := now.Add(time.Minute)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      101,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "Large thread",
+		Author:          "alice",
+		State:           "open",
+		CommentCount:    100,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+
+	mock := &mockClient{
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(1, number)
+			return []*gh.IssueComment{}, nil
+		},
+		listIssueCommentsIfChangedFn: func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+			require.FailNow("conditional comment refresh should not be used for 100+ comment PRs")
+			return nil, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	syncer.refreshRepoPRComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+
+	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
+	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
+}
+
+func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	detailFetchedAt := now.Add(time.Minute)
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      201,
+		Number:          2,
+		URL:             "https://github.com/owner/repo/issues/2",
+		Title:           "Large thread issue",
+		Author:          "bob",
+		State:           "open",
+		CommentCount:    100,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+
+	mock := &mockClient{
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(2, number)
+			return []*gh.IssueComment{}, nil
+		},
+		listIssueCommentsIfChangedFn: func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+			require.FailNow("conditional comment refresh should not be used for 100+ comment issues")
+			return nil, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	syncer.refreshRepoIssueComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+
+	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
+	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
+}
+
+func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	budget := testBudget(11)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	pr1UpdatedAt := now.Add(-10 * time.Minute)
+	detailFetchedAt := now.Add(-5 * time.Minute)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "Large unchanged thread",
+		Author:          "alice",
+		State:           "open",
+		CommentCount:    100,
+		HeadBranch:      "feature/large-thread",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "1111111",
+		PlatformBaseSHA: "aaaaaaa",
+		CreatedAt:       pr1UpdatedAt,
+		UpdatedAt:       pr1UpdatedAt,
+		LastActivityAt:  pr1UpdatedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	pr2ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1002,
+		Number:          2,
+		URL:             "https://github.com/owner/repo/pull/2",
+		Title:           "Needs detail drain",
+		Author:          "alice",
+		State:           "open",
+		CommentCount:    0,
+		HeadBranch:      "feature/detail-drain",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "2222222",
+		PlatformBaseSHA: "aaaaaaa",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+	require.NoError(d.EnsureKanbanState(ctx, pr2ID))
+
+	var commentCalls []int
+	mc := &mockClient{
+		budget: budget["github.com"],
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(2, number)
+			return &gh.PullRequest{
+				ID:        new(int64(1002)),
+				Number:    new(2),
+				Title:     new("Needs detail drain"),
+				State:     new("open"),
+				HTMLURL:   new("https://github.com/owner/repo/pull/2"),
+				User:      &gh.User{Login: new("alice")},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head:      &gh.PullRequestBranch{Ref: new("feature/detail-drain"), SHA: new("2222222")},
+				Base:      &gh.PullRequestBranch{Ref: new("main"), SHA: new("aaaaaaa")},
+			}, nil
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			commentCalls = append(commentCalls, number)
+			return []*gh.IssueComment{}, nil
+		},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		ciStatus: &gh.CombinedStatus{State: new("success")},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, budget,
+	)
+
+	syncer.queuePRCommentSync(repo, 1)
+	budget["github.com"].Spend(3)
+	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true})
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.NotNil(pr.DetailFetchedAt,
+		"detail drain should win before unchanged large-thread refresh")
+	assert.Equal([]int{2}, commentCalls,
+		"only the detail-drain PR should spend the remaining budget")
 }
 
 func TestSyncerGQLRateTrackers(t *testing.T) {

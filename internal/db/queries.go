@@ -872,9 +872,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 
 // --- Events ---
 
-// UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC. When a
-// duplicate dedupe key is seen again, the conflict path refreshes created_at so
-// legacy local-offset rows are repaired during normal sync.
+// UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC.
+// When a duplicate dedupe key is seen again, the conflict path refreshes
+// mutable fields so edited events and legacy local-offset timestamps are
+// repaired during normal sync.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -910,6 +911,53 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 		}
 		return nil
 	})
+}
+
+// DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
+// dedupe keys are absent from the latest GitHub comment list.
+func (d *DB) DeleteMissingMRCommentEvents(
+	ctx context.Context,
+	mrID int64,
+	dedupeKeys []string,
+) error {
+	query := `DELETE FROM middleman_mr_events
+		WHERE merge_request_id = ? AND event_type = 'issue_comment'`
+	args := []any{mrID}
+	if len(dedupeKeys) > 0 {
+		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(dedupeKeys)) + `)`
+		for _, key := range dedupeKeys {
+			args = append(args, key)
+		}
+	}
+	if _, err := d.rw.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete missing mr comment events: %w", err)
+	}
+	return nil
+}
+
+// GetMRLatestNonCommentEventTime returns the most recent created_at across
+// non-comment events (reviews, commits, force pushes) for a merge request.
+// Returns zero time when no such events exist. The comment-only refresh
+// paths use this to avoid regressing last_activity_at to a comment-derived
+// value when reviews or commits with a newer timestamp are already stored.
+func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (time.Time, error) {
+	var createdAt sql.NullString
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT MAX(created_at) FROM middleman_mr_events
+		WHERE merge_request_id = ? AND event_type != 'issue_comment'`,
+		mrID,
+	).Scan(&createdAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("query latest non-comment mr event: %w", err)
+	}
+	if !createdAt.Valid {
+		return time.Time{}, nil
+	}
+	t, err := parseDBTime(createdAt.String)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse latest non-comment mr event time %q: %w", createdAt.String, err)
+	}
+	return t, nil
 }
 
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
@@ -1051,6 +1099,12 @@ type MRDerivedFields struct {
 	LastActivityAt time.Time
 }
 
+// IssueDerivedFields holds computed fields that are refreshed after fetching issue events.
+type IssueDerivedFields struct {
+	CommentCount   int
+	LastActivityAt time.Time
+}
+
 // UpdateMRTitleBody updates only the title, body, updated_at, and
 // last_activity_at fields. last_activity_at is set to
 // MAX(existing, updatedAt) to preserve correct list ordering.
@@ -1090,6 +1144,26 @@ func (d *DB) UpdateMRDerivedFields(
 	)
 	if err != nil {
 		return fmt.Errorf("update mr derived fields: %w", err)
+	}
+	return nil
+}
+
+// UpdateIssueDerivedFields writes computed fields back to the issues row.
+func (d *DB) UpdateIssueDerivedFields(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	fields IssueDerivedFields,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET comment_count = ?, last_activity_at = ?
+		WHERE repo_id = ? AND number = ?`,
+		fields.CommentCount, fields.LastActivityAt,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue derived fields: %w", err)
 	}
 	return nil
 }
@@ -1646,8 +1720,8 @@ func (d *DB) UpdateBackfillCursor(
 // --- Issue Events ---
 
 // UpsertIssueEvents bulk-inserts issue events after normalizing CreatedAt to
-// UTC. Duplicate keys rewrite created_at so repeat syncs repair older local
-// timestamp encodings instead of preserving them forever.
+// UTC. Duplicate keys refresh mutable fields so edited events and older local
+// timestamp encodings are repaired during normal sync.
 func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1659,14 +1733,14 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			     metadata_json, created_at, dedupe_key)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(dedupe_key) DO UPDATE SET
-			    issue_id      = excluded.issue_id,
-			    platform_id   = excluded.platform_id,
-			    event_type    = excluded.event_type,
-			    author        = excluded.author,
-			    summary       = excluded.summary,
-			    body          = excluded.body,
-			    metadata_json = excluded.metadata_json,
-			    created_at    = excluded.created_at`)
+			    issue_id       = excluded.issue_id,
+			    platform_id    = excluded.platform_id,
+			    event_type     = excluded.event_type,
+			    author         = excluded.author,
+			    summary        = excluded.summary,
+			    body           = excluded.body,
+			    metadata_json  = excluded.metadata_json,
+			    created_at     = excluded.created_at`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert issue events: %w", err)
 		}
@@ -1685,6 +1759,28 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		}
 		return nil
 	})
+}
+
+// DeleteMissingIssueCommentEvents removes issue_comment rows for an issue whose
+// dedupe keys are absent from the latest GitHub comment list.
+func (d *DB) DeleteMissingIssueCommentEvents(
+	ctx context.Context,
+	issueID int64,
+	dedupeKeys []string,
+) error {
+	query := `DELETE FROM middleman_issue_events
+		WHERE issue_id = ? AND event_type = 'issue_comment'`
+	args := []any{issueID}
+	if len(dedupeKeys) > 0 {
+		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(dedupeKeys)) + `)`
+		for _, key := range dedupeKeys {
+			args = append(args, key)
+		}
+	}
+	if _, err := d.rw.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete missing issue comment events: %w", err)
+	}
+	return nil
 }
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.
