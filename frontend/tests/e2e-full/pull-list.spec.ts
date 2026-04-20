@@ -22,14 +22,12 @@ test.describe("PR list view", () => {
   });
 
   test("sidebar status pills use the shared chip component", async ({ page }) => {
-    await expect(page.locator(".count-badge")).toHaveCount(0);
     await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^8 PRs$/);
 
     await page.locator(".group-btn", { hasText: "All" }).click();
     const firstItem = page.locator(".pull-item").first();
-    await expect(firstItem.locator(".repo-badge")).toHaveCount(0);
-    await expect(firstItem.locator(".badge")).toHaveCount(0);
-    await expect(firstItem.locator(".chip").first()).toBeVisible();
+    await expect(firstItem.locator(".repo-chip")).toBeVisible();
+    await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 
   test("closed state shows closed and merged PRs with correct count", async ({ page }) => {

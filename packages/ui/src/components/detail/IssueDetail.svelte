@@ -144,7 +144,7 @@
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(issue.CreatedAt)}</span>
         <span class="meta-sep">·</span>
-        <Chip size="sm" class={`meta-item chip--${issue.State}`}>
+        <Chip size="sm" class={`issue-state-chip chip--${issue.State}`}>
           {issue.State === "open" ? "Open" : "Closed"}
         </Chip>
         {#if issues.isIssueDetailSyncing()}
@@ -349,6 +349,11 @@
   }
 
   .meta-item {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  :global(.issue-state-chip.chip) {
     font-size: 12px;
     color: var(--text-secondary);
   }

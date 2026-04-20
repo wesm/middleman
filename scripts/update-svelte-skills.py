@@ -176,6 +176,45 @@ def install_directory(source_dir: Path, target_dir: Path, dry_run: bool) -> None
             raise
 
 
+def prune_shared_skills(shared_root: Path, skill_names: set[str], dry_run: bool) -> None:
+    if not shared_root.exists():
+        return
+
+    for entry in sorted(shared_root.iterdir(), key=lambda path: path.name):
+        if entry.name in skill_names:
+            continue
+
+        print(f"prune shared: {entry}")
+        if dry_run:
+            continue
+
+        if entry.is_symlink() or entry.is_file():
+            entry.unlink()
+        else:
+            shutil.rmtree(entry)
+
+
+def prune_target_links(target_root: Path, shared_root: Path, skill_names: set[str], dry_run: bool) -> None:
+    if not target_root.exists():
+        return
+
+    for entry in sorted(target_root.iterdir(), key=lambda path: path.name):
+        if entry.name in skill_names:
+            continue
+        if not entry.is_symlink():
+            continue
+
+        resolved = (entry.parent / entry.readlink()).resolve()
+        try:
+            resolved.relative_to(shared_root.resolve())
+        except ValueError:
+            continue
+
+        print(f"prune link: {entry}")
+        if not dry_run:
+            entry.unlink()
+
+
 def ensure_symlink(link_path: Path, target_path: Path, dry_run: bool) -> None:
     link_parent = link_path.parent
     relative_target = Path(
@@ -232,6 +271,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="svelte-skills-") as temp_dir:
         workspace = Path(temp_dir)
         extracted: dict[str, Path] = {}
+        skill_name_set = set(skill_names)
+
+        prune_shared_skills(shared_root, skill_name_set, args.dry_run)
+
+        for target_rel_path in targets.values():
+            prune_target_links(root / target_rel_path, shared_root, skill_name_set, args.dry_run)
 
         for skill in upstream_skills:
             print(f"fetch: {skill.name}")

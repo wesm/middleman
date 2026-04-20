@@ -262,8 +262,10 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     r.page === "terminal"
   ) {
     navType = "workspaces";
+  } else if (r.page === "design-system") {
+    navType = "activity";
   } else {
-    navType = r.page as "activity";
+    navType = "activity";
   }
 
   const event: MiddlemanNavigateEvent = {

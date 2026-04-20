@@ -219,7 +219,7 @@ help:
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  tidy           - Tidy go.mod"
-	@echo "  svelte-skills  - Sync repo-local Svelte AI skills and per-agent symlinks"
+	@echo "  svelte-skills  - Sync repo-local Svelte AI skills and per-agent symlinks (see docs/svelte-skills-migration.md)"
 	@echo "  svelte-skills-sync - Alias for svelte-skills"
 	@echo ""
 	@echo "  install-hooks  - Install pre-commit and pre-push hooks (prek)"

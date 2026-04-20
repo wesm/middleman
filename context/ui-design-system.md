@@ -20,7 +20,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 - Tokens: `frontend/src/app.css`
 - Shared primitives: `packages/ui/src/components/shared/`
-- Svelte guidance: `svelte-core-bestpractices` and `svelte-code-writer`
+- Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
 - This guidance: `context/ui-design-system.md`
 
 ## Shared primitives
@@ -85,7 +85,7 @@ Default color intent:
 
 ## Implementation guidance
 
-When editing Svelte components, use the Svelte skills `svelte-core-bestpractices` and `svelte-code-writer` alongside this document.
+When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
 
 Before adding UI styling:
 

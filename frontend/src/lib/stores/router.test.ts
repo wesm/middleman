@@ -176,4 +176,15 @@ describe("router navigation events", () => {
     expect(payload.owner).toBeUndefined();
     expect(payload.number).toBeUndefined();
   });
+
+  it("maps /design-system to activity navigation events", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/design-system");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("activity");
+    expect(payload.view).toBe("/design-system");
+  });
 });

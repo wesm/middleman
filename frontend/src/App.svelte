@@ -357,6 +357,7 @@
 
     const page = getPage();
     if (page === "settings") return;
+    if (page === "design-system") return;
     if (page === "reviews") return;
     if (page === "workspaces") return;
     if (page === "workspaces-panel") return;

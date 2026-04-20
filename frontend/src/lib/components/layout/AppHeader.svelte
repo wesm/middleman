@@ -70,6 +70,7 @@
           else if (v === "reviews") navigate("/reviews");
           else if (v === "workspaces" || v === "terminal") navigate("/workspaces");
           else if (v === "settings") navigate("/settings");
+          else if (v === "design-system") navigate("/design-system");
         }}
       >
         <option value="activity">Activity</option>
@@ -78,6 +79,9 @@
         <option value="board">Board</option>
         <option value="reviews">Reviews</option>
         <option value="workspaces">Workspaces</option>
+        {#if getPage() === "design-system"}
+          <option value="design-system">Design system</option>
+        {/if}
         {#if getPage() === "terminal"}
           <option value="terminal">Workspaces</option>
         {/if}

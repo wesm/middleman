@@ -86,3 +86,14 @@ test("design system page renders chip matrix with shared styles", async ({ page 
   expect(styles[3].letterSpacing).toBe("normal");
   expect(styles[4].cursor).toBe("pointer");
 });
+
+test("design system page ignores list keyboard navigation shortcuts", async ({ page }) => {
+  await page.goto("/design-system");
+  await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
+
+  await page.keyboard.press("j");
+  await expect(page).toHaveURL(/\/design-system$/);
+
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/\/design-system$/);
+});
