@@ -526,6 +526,212 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	assert.Contains(events[1].message, "tmux new-session")
 }
 
+func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    echo "wrapper failed" >&2` + "\n" +
+		`    exit 42` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	clonePath := srv.clones.ClonePath("github.com", "acme", "widget")
+	featureSHA := testGitSHA(t, clonePath, "refs/heads/feature")
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	var failed *generated.WorkspaceResponse
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			require.NoError(getErr)
+			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+				return false
+			}
+			if getResp.JSON200.Status != "error" {
+				return false
+			}
+			failed = getResp.JSON200
+			return true
+		},
+		5*time.Second,
+		50*time.Millisecond,
+	)
+
+	require.NotNil(failed)
+	assert.Equal(featureSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+	assert.Eventually(
+		func() bool {
+			_, err := os.Stat(failed.WorktreePath)
+			return os.IsNotExist(err)
+		},
+		5*time.Second,
+		50*time.Millisecond,
+	)
+
+	stored, err := database.GetWorkspace(ctx, wsID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
+	assert.Empty(stored.WorkspaceBranch)
+}
+
+func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    while :; do sleep 1; done` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, baseURL, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		func() bool {
+			argvs := readTmuxRecord(t, record)
+			for _, argv := range argvs {
+				if len(argv) >= 2 && argv[1] == "new-session" {
+					return true
+				}
+			}
+			return false
+		},
+		5*time.Second,
+		50*time.Millisecond,
+	)
+
+	tx, err := database.WriteDB().BeginTx(context.Background(), nil)
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+
+	origHandler := srv.handler
+	blockStarted := make(chan struct{}, 1)
+	blockRelease := make(chan struct{})
+	srv.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/block" {
+			select {
+			case blockStarted <- struct{}{}:
+			default:
+			}
+			<-blockRelease
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		origHandler.ServeHTTP(w, r)
+	})
+
+	blockErrCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Get(baseURL + "/block")
+		if err == nil && resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		blockErrCh <- err
+	}()
+
+	select {
+	case <-blockStarted:
+	case <-time.After(2 * time.Second):
+		require.FailNow("blocking request never started")
+	}
+
+	time.AfterFunc(250*time.Millisecond, func() {
+		close(blockRelease)
+	})
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(), 400*time.Millisecond,
+	)
+	defer cancel()
+	err = srv.Shutdown(shutdownCtx)
+	require.ErrorIs(err, context.DeadlineExceeded)
+
+	require.NoError(tx.Rollback())
+
+	time.Sleep(300 * time.Millisecond)
+
+	ws, err := database.GetWorkspace(context.Background(), wsID)
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Equal("creating", ws.Status)
+	assert.Nil(ws.ErrorMessage)
+
+	events, err := database.ListWorkspaceSetupEvents(
+		context.Background(), wsID,
+	)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("setup", events[0].Stage)
+	assert.Equal("started", events[0].Outcome)
+
+	longCtx, longCancel := context.WithTimeout(
+		context.Background(), 2*time.Second,
+	)
+	defer longCancel()
+	require.NoError(srv.Shutdown(longCtx))
+	require.NoError(<-blockErrCh)
+}
+
 func TestTmuxWrapperAttachSession(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

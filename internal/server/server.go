@@ -54,6 +54,56 @@ type ServerOptions struct {
 	WorktreeDir string            // base dir for workspace worktrees
 }
 
+type shutdownDeadline struct {
+	mu       sync.RWMutex
+	deadline time.Time
+	set      bool
+}
+
+func (d *shutdownDeadline) tighten(deadline time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.set || deadline.Before(d.deadline) {
+		d.deadline = deadline
+		d.set = true
+	}
+}
+
+func (d *shutdownDeadline) get() (time.Time, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.deadline, d.set
+}
+
+type shutdownAwareContext struct {
+	parent   context.Context
+	deadline *shutdownDeadline
+}
+
+func (c shutdownAwareContext) Deadline() (time.Time, bool) {
+	deadline, ok := c.deadline.get()
+	if !ok {
+		return c.parent.Deadline()
+	}
+	if parentDeadline, parentOK := c.parent.Deadline(); parentOK &&
+		parentDeadline.Before(deadline) {
+		return parentDeadline, true
+	}
+	return deadline, true
+}
+
+func (c shutdownAwareContext) Done() <-chan struct{} {
+	return c.parent.Done()
+}
+
+func (c shutdownAwareContext) Err() error {
+	return c.parent.Err()
+}
+
+func (c shutdownAwareContext) Value(key any) any {
+	return c.parent.Value(key)
+}
+
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
 	db                *db.DB
@@ -85,6 +135,7 @@ type Server struct {
 	bg           sync.WaitGroup
 	bgCtx        context.Context
 	bgCancel     context.CancelFunc
+	bgDeadline   *shutdownDeadline
 	shuttingDown bool
 	// drainDone is created the first time Shutdown is called and
 	// closed when bg.Wait returns. Every caller waits on it
@@ -153,6 +204,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if first {
 		s.shuttingDown = true
 		s.drainDone = make(chan struct{})
+		if deadline, ok := ctx.Deadline(); ok {
+			s.bgDeadline.tighten(deadline)
+		}
 	}
 	drainDone := s.drainDone
 	httpSrv := s.httpSrv
@@ -273,7 +327,8 @@ func newServer(
 ) *Server {
 	mux := http.NewServeMux()
 
-	bgCtx, bgCancel := context.WithCancel(context.Background())
+	bgBaseCtx, bgCancel := context.WithCancel(context.Background())
+	bgDeadline := &shutdownDeadline{}
 	s := &Server{
 		db:       database,
 		basePath: basePath,
@@ -283,8 +338,12 @@ func newServer(
 		cfgPath:  cfgPath,
 		options:  options,
 		hub:      NewEventHub(),
-		bgCtx:    bgCtx,
-		bgCancel: bgCancel,
+		bgCtx: shutdownAwareContext{
+			parent:   bgBaseCtx,
+			deadline: bgDeadline,
+		},
+		bgCancel:   bgCancel,
+		bgDeadline: bgDeadline,
 	}
 
 	if options.WorktreeDir != "" {

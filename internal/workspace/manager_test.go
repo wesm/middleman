@@ -282,6 +282,7 @@ func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 
 	start := time.Now()
 	err = mgr.failSetup(
+		context.Background(),
 		ws.ID, workspaceSetupStageClone,
 		errors.New("forced persistence timeout"),
 	)
@@ -293,6 +294,50 @@ func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 		elapsed,
 		workspacePersistTimeout+(workspacePersistTimeout/2),
 	)
+}
+
+func TestFailSetupRespectsParentDeadline(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	ws, err := mgr.Create(
+		context.Background(), "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	origTimeout := workspacePersistTimeout
+	workspacePersistTimeout = time.Second
+	t.Cleanup(func() { workspacePersistTimeout = origTimeout })
+
+	tx, err := d.WriteDB().BeginTx(context.Background(), nil)
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+
+	parent, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	start := time.Now()
+	err = mgr.failSetup(
+		parent,
+		ws.ID, workspaceSetupStageClone,
+		errors.New("forced persistence timeout"),
+	)
+	elapsed := time.Since(start)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "forced persistence timeout")
+	assert.Less(elapsed, 300*time.Millisecond)
 }
 
 func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
@@ -340,6 +385,25 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	)
 	require.NoError(err)
 	assert.False(exists)
+}
+
+func TestCleanupContextRespectsParentDeadline(t *testing.T) {
+	require := require.New(t)
+
+	parent, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	cleanupCtx, cleanupCancel := cleanupContext(parent)
+	defer cleanupCancel()
+
+	deadline, ok := cleanupCtx.Deadline()
+	require.True(ok)
+
+	remaining := time.Until(deadline)
+	require.LessOrEqual(remaining, 100*time.Millisecond)
+	require.Greater(remaining, 0*time.Millisecond)
 }
 
 func setupBareCloneForWorkspaceGitTest(t *testing.T) string {

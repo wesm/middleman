@@ -155,11 +155,13 @@ func (m *Manager) Setup(
 	ctx context.Context, ws *Workspace,
 ) error {
 	m.recordSetupEvent(
+		ctx,
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
 	if m.clones == nil {
 		return m.failSetup(
+			ctx,
 			ws.ID, workspaceSetupStageClone,
 			fmt.Errorf("clone manager not set"),
 		)
@@ -175,6 +177,7 @@ func (m *Manager) Setup(
 		ws.RepoName, remoteURL,
 	); err != nil {
 		return m.failSetup(
+			ctx,
 			ws.ID, workspaceSetupStageClone, err,
 		)
 	}
@@ -186,15 +189,17 @@ func (m *Manager) Setup(
 	branch, err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
 		return m.failSetup(
+			ctx,
 			ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
 	ws.WorkspaceBranch = branch
 	if err := m.updateWorkspaceBranch(
-		ws.ID, branch,
+		ctx, ws.ID, branch,
 	); err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		return m.failSetup(
+			ctx,
 			ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
@@ -203,19 +208,22 @@ func (m *Manager) Setup(
 	if err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		return m.failSetup(
+			ctx,
 			ws.ID, workspaceSetupStageTmuxSession, err,
 		)
 	}
 
 	if err := m.updateWorkspaceStatus(
-		ws.ID, "ready", nil,
+		ctx, ws.ID, "ready", nil,
 	); err != nil {
 		return m.failSetup(
+			ctx,
 			ws.ID, workspaceSetupStageSetup,
 			fmt.Errorf("update status to ready: %w", err),
 		)
 	}
 	m.recordSetupEvent(
+		ctx,
 		ws.ID, workspaceSetupStageSetup, "ready",
 		"workspace ready",
 	)
@@ -686,9 +694,10 @@ func (m *Manager) setErrorWithContext(
 }
 
 func (m *Manager) recordSetupEvent(
+	ctx context.Context,
 	workspaceID, stage, outcome, message string,
 ) {
-	persistCtx, cancel := m.persistenceContext()
+	persistCtx, cancel := m.persistenceContext(ctx)
 	defer cancel()
 	m.recordSetupEventWithContext(
 		persistCtx, workspaceID, stage, outcome, message,
@@ -719,10 +728,11 @@ func (m *Manager) recordSetupEventWithContext(
 }
 
 func (m *Manager) failSetup(
+	ctx context.Context,
 	workspaceID, stage string, origErr error,
 ) error {
 	wrapped := wrapWorkspaceSetupError(stage, origErr)
-	persistCtx, cancel := m.persistenceContext()
+	persistCtx, cancel := m.persistenceContext(ctx)
 	defer cancel()
 	m.recordSetupEventWithContext(
 		persistCtx, workspaceID, stage, "failure", wrapped.Error(),
@@ -800,22 +810,32 @@ func workspaceBranchCandidates(
 	return []string{managedBranch}
 }
 
-func (m *Manager) persistenceContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(
-		context.Background(), workspacePersistTimeout,
-	)
+func (m *Manager) persistenceContext(
+	ctx context.Context,
+) (context.Context, context.CancelFunc) {
+	return boundedDetachedContext(ctx, workspacePersistTimeout)
 }
 
 func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(
-		context.WithoutCancel(ctx), workspaceCleanupTimeout,
-	)
+	return boundedDetachedContext(ctx, workspaceCleanupTimeout)
+}
+
+func boundedDetachedContext(
+	ctx context.Context, timeout time.Duration,
+) (context.Context, context.CancelFunc) {
+	base := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		if time.Until(deadline) <= timeout {
+			return context.WithDeadline(base, deadline)
+		}
+	}
+	return context.WithTimeout(base, timeout)
 }
 
 func (m *Manager) updateWorkspaceStatus(
-	id, status string, errMsg *string,
+	ctx context.Context, id, status string, errMsg *string,
 ) error {
-	persistCtx, cancel := m.persistenceContext()
+	persistCtx, cancel := m.persistenceContext(ctx)
 	defer cancel()
 	return m.updateWorkspaceStatusWithContext(
 		persistCtx, id, status, errMsg,
@@ -831,9 +851,9 @@ func (m *Manager) updateWorkspaceStatusWithContext(
 }
 
 func (m *Manager) updateWorkspaceBranch(
-	id, branch string,
+	ctx context.Context, id, branch string,
 ) error {
-	persistCtx, cancel := m.persistenceContext()
+	persistCtx, cancel := m.persistenceContext(ctx)
 	defer cancel()
 	return m.db.UpdateWorkspaceBranch(
 		persistCtx, id, branch,
