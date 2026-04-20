@@ -130,21 +130,9 @@ func (m *Manager) Create(
 		)
 	}
 
-	idBytes := make([]byte, 8)
-	if _, err := rand.Read(idBytes); err != nil {
-		return nil, fmt.Errorf("generate workspace id: %w", err)
-	}
-	id := hex.EncodeToString(idBytes)
-
-	wtPath := filepath.Join(
-		m.worktreeDir, platformHost, owner, name,
-		fmt.Sprintf("pr-%d", mrNumber),
-	)
-
-	var headRepo *string
-	if mr.HeadRepoCloneURL != "" {
-		s := mr.HeadRepoCloneURL
-		headRepo = &s
+	id, err := newWorkspaceID()
+	if err != nil {
+		return nil, err
 	}
 
 	ws := &Workspace{
@@ -152,13 +140,17 @@ func (m *Manager) Create(
 		PlatformHost:    platformHost,
 		RepoOwner:       owner,
 		RepoName:        name,
-		MRNumber:        mrNumber,
-		MRHeadRef:       mr.HeadBranch,
-		MRHeadRepo:      headRepo,
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      mrNumber,
+		GitHeadRef:      mr.HeadBranch,
+		MRHeadRepo:      workspaceHeadRepo(mr.HeadRepoCloneURL),
 		WorkspaceBranch: workspaceBranchUnknown,
-		WorktreePath:    wtPath,
-		TmuxSession:     "middleman-" + id,
-		Status:          "creating",
+		WorktreePath: filepath.Join(
+			m.worktreeDir, platformHost, owner, name,
+			fmt.Sprintf("pr-%d", mrNumber),
+		),
+		TmuxSession: "middleman-" + id,
+		Status:      "creating",
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
@@ -168,6 +160,80 @@ func (m *Manager) Create(
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
 	return ws, nil
+}
+
+// CreateIssue validates inputs, inserts an issue-backed workspace row
+// with status "creating", and returns it. The caller runs Setup in
+// the background.
+func (m *Manager) CreateIssue(
+	ctx context.Context,
+	platformHost, owner, name string,
+	issueNumber int,
+) (*Workspace, error) {
+	repo, err := m.db.GetRepoByHostOwnerName(
+		ctx, platformHost, owner, name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("look up repo: %w", err)
+	}
+	if repo == nil {
+		return nil, fmt.Errorf("repository not tracked")
+	}
+
+	issue, err := m.db.GetIssueByRepoIDAndNumber(
+		ctx, repo.ID, issueNumber,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("look up issue: %w", err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf(
+			"issue %d not synced yet", issueNumber,
+		)
+	}
+
+	id, err := newWorkspaceID()
+	if err != nil {
+		return nil, err
+	}
+
+	ws := &Workspace{
+		ID:              id,
+		PlatformHost:    platformHost,
+		RepoOwner:       owner,
+		RepoName:        name,
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      issueNumber,
+		GitHeadRef:      issueWorkspaceBranch(issueNumber),
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath: filepath.Join(
+			m.worktreeDir, platformHost, owner, name,
+			fmt.Sprintf("issue-%d", issueNumber),
+		),
+		TmuxSession: "middleman-" + id,
+		Status:      "creating",
+	}
+
+	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+		return nil, fmt.Errorf("insert workspace: %w", err)
+	}
+	return ws, nil
+}
+
+func newWorkspaceID() (string, error) {
+	idBytes := make([]byte, 8)
+	if _, err := rand.Read(idBytes); err != nil {
+		return "", fmt.Errorf("generate workspace id: %w", err)
+	}
+	return hex.EncodeToString(idBytes), nil
+}
+
+func workspaceHeadRepo(cloneURL string) *string {
+	if cloneURL == "" {
+		return nil
+	}
+	s := cloneURL
+	return &s
 }
 
 // Setup clones/fetches the repo, creates the git worktree, starts
@@ -260,10 +326,13 @@ func (m *Manager) Setup(
 func (m *Manager) addWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 ) (string, error) {
+	if ws.ItemType == db.WorkspaceItemTypeIssue {
+		return m.addIssueWorktree(ctx, cloneDir, ws)
+	}
 	if branch, err := m.addPreferredWorktree(ctx, cloneDir, ws); err == nil {
 		return branch, nil
 	} else {
-		fallbackBranch := syntheticWorktreeBranch(ws.MRNumber)
+		fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
 		startRef := workspaceStartRef(ws)
 		fallbackErr := runGit(
 			ctx, cloneDir,
@@ -275,16 +344,30 @@ func (m *Manager) addWorktree(
 		}
 		return "", fmt.Errorf(
 			"preferred branch %q failed: %w; fallback branch %q failed: %w",
-			ws.MRHeadRef, err, fallbackBranch, fallbackErr,
+			ws.GitHeadRef, err, fallbackBranch, fallbackErr,
 		)
 	}
+}
+
+func (m *Manager) addIssueWorktree(
+	ctx context.Context, cloneDir string, ws *Workspace,
+) (string, error) {
+	startRef := workspaceStartRef(ws)
+	if err := runGit(
+		ctx, cloneDir,
+		"worktree", "add", ws.WorktreePath,
+		"-b", ws.GitHeadRef, startRef,
+	); err != nil {
+		return "", err
+	}
+	return ws.GitHeadRef, nil
 }
 
 func (m *Manager) addPreferredWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 ) (string, error) {
 	if err := validateLocalBranchName(
-		ctx, cloneDir, ws.MRHeadRef,
+		ctx, cloneDir, ws.GitHeadRef,
 	); err != nil {
 		return "", err
 	}
@@ -293,12 +376,12 @@ func (m *Manager) addPreferredWorktree(
 		err := runGit(
 			ctx, cloneDir,
 			"worktree", "add", ws.WorktreePath,
-			"-b", ws.MRHeadRef, workspaceStartRef(ws),
+			"-b", ws.GitHeadRef, workspaceStartRef(ws),
 		)
 		if err != nil {
 			return "", err
 		}
-		return ws.MRHeadRef, nil
+		return ws.GitHeadRef, nil
 	}
 
 	startRef := workspaceStartRef(ws)
@@ -310,7 +393,7 @@ func (m *Manager) addPreferredWorktree(
 		return "", fmt.Errorf("start ref %q not found", startRef)
 	}
 
-	branchRef := "refs/heads/" + ws.MRHeadRef
+	branchRef := "refs/heads/" + ws.GitHeadRef
 	branchSHA, exists, err := gitRefSHA(ctx, cloneDir, branchRef)
 	if err != nil {
 		return "", err
@@ -319,13 +402,13 @@ func (m *Manager) addPreferredWorktree(
 		if err := runGit(
 			ctx, cloneDir,
 			"worktree", "add", ws.WorktreePath,
-			"-b", ws.MRHeadRef, startRef,
+			"-b", ws.GitHeadRef, startRef,
 		); err != nil {
 			return "", err
 		}
 		if err := setBranchUpstream(
-			ctx, ws.WorktreePath, ws.MRHeadRef,
-			"origin", "refs/heads/"+ws.MRHeadRef,
+			ctx, ws.WorktreePath, ws.GitHeadRef,
+			"origin", "refs/heads/"+ws.GitHeadRef,
 		); err != nil {
 			cleanupCtx, cancel := cleanupContext(ctx)
 			defer cancel()
@@ -335,29 +418,29 @@ func (m *Manager) addPreferredWorktree(
 			)
 			_ = runGit(
 				cleanupCtx, cloneDir,
-				"branch", "-D", "--", ws.MRHeadRef,
+				"branch", "-D", "--", ws.GitHeadRef,
 			)
 			return "", fmt.Errorf("configure branch upstream: %w", err)
 		}
-		return ws.MRHeadRef, nil
+		return ws.GitHeadRef, nil
 	}
 	if branchSHA != startSHA {
 		return "", fmt.Errorf(
 			"preferred branch %q points at %s, not %s",
-			ws.MRHeadRef, branchSHA, startSHA,
+			ws.GitHeadRef, branchSHA, startSHA,
 		)
 	}
 
 	if err := runGit(
 		ctx, cloneDir,
-		"worktree", "add", ws.WorktreePath, ws.MRHeadRef,
+		"worktree", "add", ws.WorktreePath, ws.GitHeadRef,
 	); err != nil {
 		return "", err
 	}
 
 	if err := setBranchUpstream(
-		ctx, ws.WorktreePath, ws.MRHeadRef,
-		"origin", "refs/heads/"+ws.MRHeadRef,
+		ctx, ws.WorktreePath, ws.GitHeadRef,
+		"origin", "refs/heads/"+ws.GitHeadRef,
 	); err != nil {
 		cleanupCtx, cancel := cleanupContext(ctx)
 		defer cancel()
@@ -372,14 +455,21 @@ func (m *Manager) addPreferredWorktree(
 }
 
 func workspaceStartRef(ws *Workspace) string {
-	if ws.MRHeadRepo != nil {
-		return fmt.Sprintf("refs/pull/%d/head", ws.MRNumber)
+	if ws.ItemType == db.WorkspaceItemTypeIssue {
+		return "origin/HEAD"
 	}
-	return "origin/" + ws.MRHeadRef
+	if ws.MRHeadRepo != nil {
+		return fmt.Sprintf("refs/pull/%d/head", ws.ItemNumber)
+	}
+	return "origin/" + ws.GitHeadRef
 }
 
-func syntheticWorktreeBranch(mrNumber int) string {
+func syntheticPRWorktreeBranch(mrNumber int) string {
 	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+}
+
+func issueWorkspaceBranch(issueNumber int) string {
+	return fmt.Sprintf("middleman/issue-%d", issueNumber)
 }
 
 func setBranchUpstream(
@@ -717,6 +807,17 @@ func (m *Manager) GetByMR(
 ) (*Workspace, error) {
 	return m.db.GetWorkspaceByMR(
 		ctx, platformHost, owner, name, mrNumber,
+	)
+}
+
+// GetByIssue returns the workspace for a specific issue, or nil.
+func (m *Manager) GetByIssue(
+	ctx context.Context,
+	platformHost, owner, name string,
+	issueNumber int,
+) (*Workspace, error) {
+	return m.db.GetWorkspaceByIssue(
+		ctx, platformHost, owner, name, issueNumber,
 	)
 }
 
@@ -1378,7 +1479,10 @@ func workspaceBranchCandidates(
 	ws *Workspace, managedBranch string,
 ) []string {
 	if managedBranch == workspaceBranchUnknown {
-		return []string{syntheticWorktreeBranch(ws.MRNumber)}
+		if ws.ItemType == db.WorkspaceItemTypeIssue {
+			return []string{issueWorkspaceBranch(ws.ItemNumber)}
+		}
+		return []string{syntheticPRWorktreeBranch(ws.ItemNumber)}
 	}
 	if managedBranch == "" {
 		return nil

@@ -113,8 +113,9 @@ func TestCreate(t *testing.T) {
 	assert.Equal("github.com", ws.PlatformHost)
 	assert.Equal("acme", ws.RepoOwner)
 	assert.Equal("widget", ws.RepoName)
-	assert.Equal(42, ws.MRNumber)
-	assert.Equal("feature/thing", ws.MRHeadRef)
+	assert.Equal(db.WorkspaceItemTypePullRequest, ws.ItemType)
+	assert.Equal(42, ws.ItemNumber)
+	assert.Equal("feature/thing", ws.GitHeadRef)
 	assert.Nil(ws.MRHeadRepo)
 	assert.Contains(ws.WorktreePath, "pr-42")
 	assert.Equal("middleman-"+ws.ID, ws.TmuxSession)
@@ -344,8 +345,9 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	ws := &Workspace{
-		MRNumber:     42,
-		MRHeadRef:    "-unsafe",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "-unsafe",
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
@@ -361,14 +363,15 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	require := require.New(t)
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
-	branch := syntheticWorktreeBranch(42)
+	branch := syntheticPRWorktreeBranch(42)
 	require.NoError(runGit(
 		t.Context(), cloneDir,
 		"branch", branch, "main",
 	))
 
 	ws := &Workspace{
-		MRNumber:     42,
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
 		WorktreePath: filepath.Join(t.TempDir(), "missing-worktree"),
 	}
 	mgr := NewManager(openTestDB(t), t.TempDir())

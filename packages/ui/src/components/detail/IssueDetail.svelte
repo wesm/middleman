@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     getStores, getClient, getActions,
-    getUIConfig, getWorkspaceCommand,
+    getUIConfig, getNavigate,
   } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -16,7 +16,7 @@
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
-  const workspaceCommand = getWorkspaceCommand();
+  const navigate = getNavigate();
 
   interface Props {
     owner: string;
@@ -94,27 +94,41 @@
 
   let workspaceCreating = $state(false);
   let workspaceError = $state<string | null>(null);
+  const workspace = $derived(
+    issues.getIssueDetail()?.workspace,
+  );
 
   async function createWorkspace(): Promise<void> {
     const detail = issues.getIssueDetail();
-    if (!detail || workspaceCommand === null) return;
+    if (!detail) return;
 
     workspaceCreating = true;
     workspaceError = null;
     try {
-      const result = await workspaceCommand(
-        "createWorktreeFromIssue",
+      const { data, error: requestError } = await client.POST(
+        "/repos/{owner}/{name}/issues/{number}/workspace",
         {
-          platformHost: detail.platform_host,
-          owner: detail.repo_owner,
-          name: detail.repo_name,
-          number: detail.issue.Number,
+          params: {
+            path: {
+              owner,
+              name,
+              number,
+            },
+          },
+          body: {
+            platform_host: detail.platform_host,
+          },
         },
       );
-      if (!result.ok) {
+      if (requestError) {
         throw new Error(
-          result.message ?? "failed to create workspace",
+          requestError.detail
+            ?? requestError.title
+            ?? "failed to create workspace",
         );
+      }
+      if (data?.id) {
+        navigate(`/terminal/${data.id}`);
       }
     } catch (err) {
       workspaceError =
@@ -230,7 +244,17 @@
 
       <!-- Actions -->
       <div class="actions-row">
-        {#if workspaceCommand !== null}
+        {#if workspace}
+          <ActionButton
+            class="btn--workspace"
+            onclick={() => navigate(`/terminal/${workspace.id}`)}
+            tone="success"
+            surface="solid"
+            size="sm"
+          >
+            Open Workspace
+          </ActionButton>
+        {:else}
           <button
             class="btn--workspace"
             disabled={workspaceCreating}

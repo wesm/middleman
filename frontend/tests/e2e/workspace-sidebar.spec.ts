@@ -7,8 +7,9 @@ const testWorkspace = {
   platform_host: "github.com",
   repo_owner: "acme",
   repo_name: "widgets",
-  mr_number: 42,
-  mr_head_ref: "feature/auth",
+  item_type: "pull_request",
+  item_number: 42,
+  git_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-123",
   tmux_session: "middleman-ws-123",
   tmux_pane_title: null,
@@ -18,6 +19,22 @@ const testWorkspace = {
   mr_title: "Add auth middleware",
   mr_state: "open",
   mr_is_draft: false,
+};
+
+const testIssueWorkspace = {
+  id: "ws-issue-7",
+  platform_host: "github.com",
+  repo_owner: "acme",
+  repo_name: "widgets",
+  item_type: "issue",
+  item_number: 7,
+  git_head_ref: "middleman/issue-7",
+  worktree_path: "/tmp/worktrees/ws-issue-7",
+  tmux_session: "middleman-ws-issue-7",
+  status: "ready",
+  created_at: "2026-04-10T12:00:00Z",
+  mr_title: "Theme toggle does not stick",
+  mr_state: "open",
 };
 
 const roborevRepos = {
@@ -901,11 +918,11 @@ test.describe("sidebar PR tab", () => {
   );
 
   test(
-    "PR tab shows empty state when mr_number is 0",
+    "PR tab shows empty state when item_number is 0",
     async ({ page }) => {
       const noLinkedPR = {
         ...testWorkspace,
-        mr_number: 0,
+        item_number: 0,
       };
       // Re-setup with modified workspace
       await setupTerminalMocks(page, {
@@ -930,7 +947,65 @@ test.describe("sidebar PR tab", () => {
 });
 
 // -------------------------------------------------------
-// Group 4: Reviews Tab
+// Group 4: Issue Workspace Sidebar
+// -------------------------------------------------------
+
+test.describe("issue workspace sidebar", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+    await setupTerminalMocks(page, {
+      workspace: testIssueWorkspace,
+    });
+  });
+
+  test(
+    "issue workspaces show an Issue segment instead of PR and Reviews",
+    async ({ page }) => {
+      await page.goto("/terminal/ws-issue-7");
+
+      await expect(
+        page.locator(".seg-btn", { hasText: "Issue" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveCount(0);
+      await expect(
+        page.locator(".seg-btn", { hasText: "Reviews" }),
+      ).toHaveCount(0);
+    },
+  );
+
+  test(
+    "issue segment opens issue detail for issue-backed workspaces",
+    async ({ page }) => {
+      await page.goto("/terminal/ws-issue-7");
+
+      await page
+        .locator(".seg-btn", { hasText: "Issue" })
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".right-sidebar .detail-title"),
+      ).toContainText("Theme toggle does not stick");
+    },
+  );
+});
+
+// -------------------------------------------------------
+// Group 5: Reviews Tab
 // -------------------------------------------------------
 
 test.describe("sidebar Reviews tab", () => {

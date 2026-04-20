@@ -1777,8 +1777,9 @@ func TestWorkspaceCRUD(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/thing",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-abc-123",
 		TmuxSession:     "ws-abc-123",
@@ -1796,8 +1797,9 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Equal("github.com", got.PlatformHost)
 	assert.Equal("acme", got.RepoOwner)
 	assert.Equal("widget", got.RepoName)
-	assert.Equal(42, got.MRNumber)
-	assert.Equal("feature/thing", got.MRHeadRef)
+	assert.Equal(WorkspaceItemTypePullRequest, got.ItemType)
+	assert.Equal(42, got.ItemNumber)
+	assert.Equal("feature/thing", got.GitHeadRef)
 	assert.Nil(got.MRHeadRepo)
 	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
 	assert.Equal("/tmp/ws-abc-123", got.WorktreePath)
@@ -1827,13 +1829,13 @@ func TestWorkspaceCRUD(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        datetime('now', '+1 minute'))`,
 		"ws-def-456", "github.com", "acme", "gadget",
-		7, "fix/bug",
+		WorkspaceItemTypePullRequest, 7, "fix/bug",
 		"/tmp/ws-def-456", "ws-def-456", "ready",
 	)
 	require.NoError(err)
@@ -1914,8 +1916,8 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref, worktree_path, tmux_session)
-		VALUES ('mixed', 'github.com', 'Acme', 'widget', 1, 'feature',
+		     item_type, item_number, git_head_ref, worktree_path, tmux_session)
+		VALUES ('mixed', 'github.com', 'Acme', 'widget', 'pull_request', 1, 'feature',
 		        '/tmp/mixed', 'mixed')`)
 	require.Error(err)
 	require.Contains(err.Error(), "workspace repo identifiers must be lowercase")
@@ -1925,8 +1927,9 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
 		RepoName:     "widget",
-		MRNumber:     1,
-		MRHeadRef:    "feature",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature",
 		WorktreePath: "/tmp/lower",
 		TmuxSession:  "lower",
 	}
@@ -1947,8 +1950,9 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
 		RepoName:     "widget",
-		MRNumber:     42,
-		MRHeadRef:    "feat/a",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feat/a",
 		WorktreePath: "/tmp/ws-1",
 		TmuxSession:  "ws-1",
 		Status:       "creating",
@@ -1961,8 +1965,9 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
 		RepoName:     "widget",
-		MRNumber:     42,
-		MRHeadRef:    "feat/a",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feat/a",
 		WorktreePath: "/tmp/ws-2",
 		TmuxSession:  "ws-2",
 		Status:       "creating",
@@ -2003,12 +2008,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-with-mr", "github.com", "acme", "widget",
-		42, "feat/workspace",
+		WorkspaceItemTypePullRequest, 42, "feat/workspace",
 		"/tmp/ws-with-mr", "ws-with-mr", "ready",
 		base,
 	)
@@ -2018,12 +2023,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-no-mr", "github.com", "acme", "gadget",
-		99, "fix/thing",
+		WorkspaceItemTypePullRequest, 99, "fix/thing",
 		"/tmp/ws-no-mr", "ws-no-mr", "creating",
 		base.Add(time.Hour),
 	)

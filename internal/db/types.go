@@ -252,14 +252,21 @@ type StackMemberWithPR struct {
 	BaseBranch     string
 }
 
-// Workspace represents a middleman-managed git worktree linked to an MR.
+const (
+	WorkspaceItemTypePullRequest = "pull_request"
+	WorkspaceItemTypeIssue       = "issue"
+)
+
+// Workspace represents a middleman-managed git worktree linked to a
+// pull request or issue.
 type Workspace struct {
 	ID           string
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
-	MRNumber     int
-	MRHeadRef    string
+	ItemType     string
+	ItemNumber   int
+	GitHeadRef   string
 	MRHeadRepo   *string // nil for same-repo PRs
 	// WorkspaceBranch is the exact branch name middleman created
 	// for this workspace. It stays empty when setup reused an

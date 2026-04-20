@@ -620,6 +620,9 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 		DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
 		DROP TABLE IF EXISTS middleman_workspace_setup_events;
 		ALTER TABLE middleman_workspaces DROP COLUMN workspace_branch;
+		ALTER TABLE middleman_workspaces DROP COLUMN item_type;
+		ALTER TABLE middleman_workspaces RENAME COLUMN git_head_ref TO mr_head_ref;
+		ALTER TABLE middleman_workspaces RENAME COLUMN item_number TO mr_number;
 	`)
 	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
@@ -711,10 +714,10 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	require.Equal(firstPass, secondPass)
 }
 
-func TestOpenRepairsBrokenWorkspaceMigrationVersion10(t *testing.T) {
+func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, "broken-v10.db")
+	path := filepath.Join(dir, "broken-v11.db")
 
 	d, err := Open(path)
 	require.NoError(err)
@@ -723,8 +726,11 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion10(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	_, err = raw.Exec(`
+		ALTER TABLE middleman_workspaces DROP COLUMN item_type;
+		ALTER TABLE middleman_workspaces RENAME COLUMN git_head_ref TO mr_head_ref;
+		ALTER TABLE middleman_workspaces RENAME COLUMN item_number TO mr_number;
 		UPDATE schema_migrations
-		SET version = 10, dirty = FALSE
+		SET version = 11, dirty = FALSE
 	`)
 	require.NoError(err)
 	require.NoError(raw.Close())

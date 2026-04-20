@@ -2252,13 +2252,13 @@ func (d *DB) InsertWorkspace(
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref, mr_head_repo,
+		     item_type, item_number, git_head_ref, mr_head_repo,
 		     workspace_branch,
 		     worktree_path, tmux_session, status,
 		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		ws.MRNumber, ws.MRHeadRef, ws.MRHeadRepo,
+		ws.ItemType, ws.ItemNumber, ws.GitHeadRef, ws.MRHeadRepo,
 		ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.Status,
 		ws.ErrorMessage,
@@ -2276,14 +2276,14 @@ func (d *DB) GetWorkspace(
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       mr_number, mr_head_ref, mr_head_repo,
+		       item_type, item_number, git_head_ref, mr_head_repo,
 		       workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces WHERE id = ?`, id,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.MRNumber, &ws.MRHeadRef, &ws.MRHeadRepo,
+		&ws.ItemType, &ws.ItemNumber, &ws.GitHeadRef, &ws.MRHeadRepo,
 		&ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
@@ -2309,17 +2309,17 @@ func (d *DB) GetWorkspaceByMR(
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       mr_number, mr_head_ref, mr_head_repo,
+		       item_type, item_number, git_head_ref, mr_head_repo,
 		       workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner = ?
-		  AND repo_name = ? AND mr_number = ?`,
-		platformHost, owner, name, mrNumber,
+		  AND repo_name = ? AND item_type = ? AND item_number = ?`,
+		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.MRNumber, &ws.MRHeadRef, &ws.MRHeadRepo,
+		&ws.ItemType, &ws.ItemNumber, &ws.GitHeadRef, &ws.MRHeadRepo,
 		&ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
@@ -2334,6 +2334,42 @@ func (d *DB) GetWorkspaceByMR(
 	return &ws, nil
 }
 
+// GetWorkspaceByIssue returns the workspace for a specific issue,
+// or nil if not found.
+func (d *DB) GetWorkspaceByIssue(
+	ctx context.Context,
+	platformHost, owner, name string,
+	issueNumber int,
+) (*Workspace, error) {
+	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
+	var ws Workspace
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT id, platform_host, repo_owner, repo_name,
+		       item_type, item_number, git_head_ref, mr_head_repo,
+		       workspace_branch,
+		       worktree_path, tmux_session, status,
+		       error_message, created_at
+		FROM middleman_workspaces
+		WHERE platform_host = ? AND repo_owner = ?
+		  AND repo_name = ? AND item_type = ? AND item_number = ?`,
+		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
+	).Scan(
+		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ItemType, &ws.ItemNumber, &ws.GitHeadRef, &ws.MRHeadRepo,
+		&ws.WorkspaceBranch,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
+		&ws.ErrorMessage, &ws.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get workspace by issue: %w", err)
+	}
+	ws.CreatedAt = ws.CreatedAt.UTC()
+	return &ws, nil
+}
+
 // ListWorkspaces returns all workspaces ordered by
 // created_at DESC.
 func (d *DB) ListWorkspaces(
@@ -2341,7 +2377,7 @@ func (d *DB) ListWorkspaces(
 ) ([]Workspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       mr_number, mr_head_ref, mr_head_repo,
+		       item_type, item_number, git_head_ref, mr_head_repo,
 		       workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
@@ -2358,8 +2394,9 @@ func (d *DB) ListWorkspaces(
 		var ws Workspace
 		if err := rows.Scan(
 			&ws.ID, &ws.PlatformHost, &ws.RepoOwner,
-			&ws.RepoName, &ws.MRNumber, &ws.MRHeadRef,
-			&ws.MRHeadRepo, &ws.WorkspaceBranch,
+			&ws.RepoName, &ws.ItemType, &ws.ItemNumber,
+			&ws.GitHeadRef, &ws.MRHeadRepo,
+			&ws.WorkspaceBranch,
 			&ws.WorktreePath, &ws.TmuxSession,
 			&ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
 		); err != nil {
@@ -2505,11 +2542,19 @@ func (d *DB) DeleteWorkspace(
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
 	w.id, w.platform_host, w.repo_owner, w.repo_name,
-	w.mr_number, w.mr_head_ref, w.mr_head_repo,
+	w.item_type, w.item_number, w.git_head_ref, w.mr_head_repo,
 	w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.status,
 	w.error_message, w.created_at,
-	m.title, m.state, m.is_draft, m.ci_status,
+	CASE
+	    WHEN w.item_type = 'issue' THEN i.title
+	    ELSE m.title
+	END,
+	CASE
+	    WHEN w.item_type = 'issue' THEN i.state
+	    ELSE m.state
+	END,
+	m.is_draft, m.ci_status,
 	m.review_decision, m.additions, m.deletions`
 
 // workspaceSummaryJoins is the FROM/JOIN clause shared by
@@ -2522,7 +2567,12 @@ const workspaceSummaryJoins = `
 	   AND r.name = w.repo_name
 	LEFT JOIN middleman_merge_requests m
 	    ON m.repo_id = r.id
-	   AND m.number = w.mr_number`
+	   AND m.number = w.item_number
+	   AND w.item_type = 'pull_request'
+	LEFT JOIN middleman_issues i
+	    ON i.repo_id = r.id
+	   AND i.number = w.item_number
+	   AND w.item_type = 'issue'`
 
 func scanWorkspaceSummary(
 	scanner interface{ Scan(...any) error },
@@ -2530,7 +2580,7 @@ func scanWorkspaceSummary(
 	var s WorkspaceSummary
 	err := scanner.Scan(
 		&s.ID, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
-		&s.MRNumber, &s.MRHeadRef, &s.MRHeadRepo,
+		&s.ItemType, &s.ItemNumber, &s.GitHeadRef, &s.MRHeadRepo,
 		&s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt,

@@ -2,64 +2,155 @@ import { expect, request as playwrightRequest, test, type APIRequestContext } fr
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("detail action buttons", () => {
-  test("issue detail emits direct worktree creation for the issue", async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
-          (window as Record<string, any>).__last_workspace_command = {
-            cmd,
-            payload,
-          };
-          return { ok: true };
-        },
-      };
-    });
+  test("issue detail creates a middleman workspace and opens its terminal", async ({ page }) => {
+    const createdWorkspace = {
+      id: "ws-issue-10",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "issue",
+      item_number: 10,
+      git_head_ref: "middleman/issue-10",
+      worktree_path: "/tmp/workspaces/issue-10",
+      tmux_session: "middleman-ws-issue-10",
+      status: "ready",
+      created_at: "2026-04-20T12:00:00Z",
+      mr_title: "Add keyboard shortcut docs",
+      mr_state: "open",
+    };
+
+    let createPayload: Record<string, unknown> | null = null;
+    await page.route(
+      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      async (route) => {
+        createPayload = JSON.parse(
+          route.request().postData() ?? "{}",
+        ) as Record<string, unknown>;
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces/ws-issue-10",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces",
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [createdWorkspace] }),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/events",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      },
+    );
 
     await page.goto("/issues/acme/widgets/10");
     await expect(page.locator(".issue-detail")).toBeVisible();
 
     await page.locator(".btn--workspace").click();
 
-    const command = await page.evaluate(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
-      () => (window as Record<string, any>).__last_workspace_command,
-    );
-    expect(command).toBeTruthy();
-    expect(command.cmd).toBe("createWorktreeFromIssue");
-    expect(command.payload.number).toBe(10);
-    expect(command.payload.owner).toBe("acme");
-    expect(command.payload.name).toBe("widgets");
-    expect(command.payload.platformHost).toBe("github.com");
-    await expect(page).toHaveURL(/\/issues\/acme\/widgets\/10$/);
+    expect(createPayload).toEqual({
+      platform_host: "github.com",
+    });
+    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
-  test("issue workspace button still emits worktree creation after detail sync refresh", async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
-          (window as Record<string, any>).__last_workspace_command = {
-            cmd,
-            payload,
-          };
-          return { ok: true };
-        },
-      };
-    });
+  test("issue workspace button still creates a middleman workspace after detail sync refresh", async ({ page }) => {
+    const createdWorkspace = {
+      id: "ws-issue-10",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "issue",
+      item_number: 10,
+      git_head_ref: "middleman/issue-10",
+      worktree_path: "/tmp/workspaces/issue-10",
+      tmux_session: "middleman-ws-issue-10",
+      status: "ready",
+      created_at: "2026-04-20T12:00:00Z",
+      mr_title: "Add keyboard shortcut docs",
+      mr_state: "open",
+    };
+    let createCalls = 0;
+    await page.route(
+      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      async (route) => {
+        createCalls += 1;
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces/ws-issue-10",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces",
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [createdWorkspace] }),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/events",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      },
+    );
 
     const syncResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
       return response.request().method() === "POST"
         && url.endsWith("/api/v1/repos/acme/widgets/issues/10/sync");
+    });
+    const createResponsePromise = page.waitForResponse((response) => {
+      const url = response.url();
+      return response.request().method() === "POST"
+        && url.endsWith("/api/v1/repos/acme/widgets/issues/10/workspace");
     });
 
     await page.goto("/issues/acme/widgets/10");
@@ -71,16 +162,10 @@ test.describe("detail action buttons", () => {
     expect(syncBody.platform_host).toBe("github.com");
 
     await page.locator(".btn--workspace").click();
-
-    const command = await page.evaluate(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
-      () => (window as Record<string, any>).__last_workspace_command,
-    );
-    expect(command).toBeTruthy();
-    expect(command.cmd).toBe("createWorktreeFromIssue");
-    expect(command.payload.number).toBe(10);
-    expect(command.payload.platformHost).toBe("github.com");
-    await expect(page).toHaveURL(/\/issues\/acme\/widgets\/10$/);
+    const createResponse = await createResponsePromise;
+    expect(createResponse.status()).toBe(202);
+    expect(createCalls).toBe(1);
+    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
   test("pull request actions use shared ActionButton component", async ({ page }) => {

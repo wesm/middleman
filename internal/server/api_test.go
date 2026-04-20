@@ -5960,6 +5960,9 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 		DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
 		DROP TABLE IF EXISTS middleman_workspace_setup_events;
 		ALTER TABLE middleman_workspaces DROP COLUMN workspace_branch;
+		ALTER TABLE middleman_workspaces DROP COLUMN item_type;
+		ALTER TABLE middleman_workspaces RENAME COLUMN git_head_ref TO mr_head_ref;
+		ALTER TABLE middleman_workspaces RENAME COLUMN item_number TO mr_number;
 	`)
 	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
@@ -6770,6 +6773,22 @@ func setupTestServerWithWorkspaces(
 	t *testing.T,
 ) (*apiclient.Client, *db.DB, string, string) {
 	t.Helper()
+	fixture := setupWorkspaceServerFixture(t)
+	return fixture.client, fixture.database, fixture.bare, fixture.remote
+}
+
+type workspaceServerFixture struct {
+	server   *Server
+	client   *apiclient.Client
+	database *db.DB
+	bare     string
+	remote   string
+}
+
+func setupWorkspaceServerFixture(
+	t *testing.T,
+) workspaceServerFixture {
+	t.Helper()
 
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
@@ -6839,7 +6858,13 @@ func setupTestServerWithWorkspaces(
 	seedPR(t, database, "acme", "widget", 1)
 
 	client := setupTestClient(t, srv)
-	return client, database, bare, remote
+	return workspaceServerFixture{
+		server:   srv,
+		client:   client,
+		database: database,
+		bare:     bare,
+		remote:   remote,
+	}
 }
 
 func waitForWorkspaceReady(
@@ -6884,6 +6909,32 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+type rawWorkspaceStatusResponse struct {
+	ID           string  `json:"id"`
+	PlatformHost string  `json:"platform_host"`
+	RepoOwner    string  `json:"repo_owner"`
+	RepoName     string  `json:"repo_name"`
+	ItemType     string  `json:"item_type"`
+	ItemNumber   int     `json:"item_number"`
+	GitHeadRef   string  `json:"git_head_ref"`
+	WorktreePath string  `json:"worktree_path"`
+	TmuxSession  string  `json:"tmux_session"`
+	Status       string  `json:"status"`
+	ErrorMessage *string `json:"error_message"`
+}
+
+type rawIssueWorkspaceRef struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type rawIssueDetailResponse struct {
+	PlatformHost string                `json:"platform_host"`
+	RepoOwner    string                `json:"repo_owner"`
+	RepoName     string                `json:"repo_name"`
+	Workspace    *rawIssueWorkspaceRef `json:"workspace"`
+}
+
 func TestWorkspaceCRUDE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -6917,7 +6968,8 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	assert.Equal("github.com", createResp.JSON202.PlatformHost)
 	assert.Equal("acme", createResp.JSON202.RepoOwner)
 	assert.Equal("widget", createResp.JSON202.RepoName)
-	assert.Equal(int64(1), createResp.JSON202.MrNumber)
+	assert.Equal(db.WorkspaceItemTypePullRequest, createResp.JSON202.ItemType)
+	assert.Equal(int64(1), createResp.JSON202.ItemNumber)
 
 	// 3. Get workspace by ID.
 	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
@@ -7138,6 +7190,88 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp2.StatusCode())
+}
+
+func TestWorkspaceCreateIssueE2E(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t)
+	ctx := context.Background()
+
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/workspace",
+		map[string]string{"platform_host": "github.com"},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	require.NotEmpty(created.ID)
+	assert.Equal("issue", created.ItemType)
+	assert.Equal(7, created.ItemNumber)
+	assert.Equal("middleman/issue-7", created.GitHeadRef)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	assert.Equal(
+		"middleman/issue-7",
+		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(
+		testGitSHA(t, fixture.remote, "refs/heads/main"),
+		testGitSHA(t, ready.WorktreePath, "HEAD"),
+	)
+
+	getIssueRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodGet,
+		"/api/v1/repos/acme/widget/issues/7",
+		nil,
+	)
+	require.Equal(http.StatusOK, getIssueRR.Code, getIssueRR.Body.String())
+
+	var issueDetail rawIssueDetailResponse
+	require.NoError(json.NewDecoder(getIssueRR.Body).Decode(&issueDetail))
+	require.NotNil(issueDetail.Workspace)
+	assert.Equal(created.ID, issueDetail.Workspace.ID)
+	assert.NotEmpty(issueDetail.Workspace.Status)
+}
+
+func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t)
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+
+	path := "/api/v1/repos/acme/widget/issues/7/workspace"
+	body := map[string]string{"platform_host": "github.com"}
+
+	firstRR := doJSON(
+		t, fixture.server, http.MethodPost, path, body,
+	)
+	require.Equal(http.StatusAccepted, firstRR.Code, firstRR.Body.String())
+
+	var first rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(firstRR.Body).Decode(&first))
+	require.NotEmpty(first.ID)
+
+	secondRR := doJSON(
+		t, fixture.server, http.MethodPost, path, body,
+	)
+	require.Equal(http.StatusAccepted, secondRR.Code, secondRR.Body.String())
+
+	var second rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(secondRR.Body).Decode(&second))
+	assert.Equal(first.ID, second.ID)
+	assert.Equal("issue", second.ItemType)
+	assert.Equal(7, second.ItemNumber)
 }
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {

@@ -118,6 +118,12 @@ describe("router basic routes", () => {
       selected: { owner: "org", name: "repo", number: 3 },
     });
   });
+
+  it("treats legacy /workspaces/panel routes as the workspaces page", () => {
+    navigate("/workspaces/panel/github.com/acme/widgets/42");
+    expect(getRoute()).toEqual({ page: "workspaces" });
+    expect(getPage()).toBe("workspaces");
+  });
 });
 
 describe("router navigation events", () => {

@@ -8,9 +8,6 @@
     KanbanBoardView,
     ReviewsView,
     FocusListView,
-    WorkspacesView,
-    WorkspacePanelView,
-    WorkspaceSidebarView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -67,16 +64,11 @@
     getIssueActions,
     getActiveWorktreeKey,
     invokeAction,
-    getWorkspaceData,
     emitWorkspaceCommand,
-    initWorkspaceBridge,
     isHeaderHidden,
     isStatusBarHidden,
     getInitialRoute,
-    getSidebarWidth as getEmbeddedSidebarWidth,
     emitLayoutChanged,
-    getEmbedActivePlatformHost,
-    getEmbedHoverCardsEnabled,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
 
@@ -86,7 +78,6 @@
   onMount(() => {
     initTheme();
     initSidebar();
-    initWorkspaceBridge();
     const initialRoute = getInitialRoute();
     if (initialRoute) {
       replaceUrl(initialRoute);
@@ -323,8 +314,6 @@
     if (page === "design-system") return;
     if (page === "reviews") return;
     if (page === "workspaces") return;
-    if (page === "workspaces-panel") return;
-    if (page === "workspaces-sidebar") return;
 
     if (page === "activity") {
       if (
@@ -499,25 +488,6 @@
         {/if}
       </main>
     {/if}
-  {:else if getPage() === "workspaces-sidebar"}
-    {@const r = getRoute()}
-    {#if r.page === "workspaces-sidebar"}
-      <FlashBanner />
-      <main class="focus-layout">
-        <WorkspaceSidebarView
-          platformHost={r.platformHost}
-          owner={r.owner}
-          name={r.name}
-          number={r.number}
-          branch={r.branch}
-          tab={r.tab}
-          basePath={getBasePath()}
-          activePlatformHost={getEmbedActivePlatformHost()}
-          navigate={(path) => navigate(path)}
-          onWorkspaceCommand={emitWorkspaceCommand}
-        />
-      </main>
-    {/if}
   {:else}
     {#if !isHeaderHidden()}
       <AppHeader />
@@ -579,69 +549,8 @@
         {:else}
           <ReviewsView />
         {/if}
-      {:else if getPage() === "workspaces-panel"}
-        {@const route = getRoute()}
-        {#if route.page === "workspaces-panel"}
-          <WorkspacePanelView
-            view={route.view}
-            platformHost={"platformHost" in route ? route.platformHost : undefined}
-            owner={"owner" in route ? route.owner : undefined}
-            name={"name" in route ? route.name : undefined}
-            number={"number" in route ? route.number : undefined}
-            emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
-            activePlatformHost={getEmbedActivePlatformHost()}
-            onSelectPR={(n) => {
-              if ("platformHost" in route) {
-                navigate(
-                  `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`,
-                );
-              }
-            }}
-            onBack={() => {
-              if ("platformHost" in route) {
-                navigate(
-                  `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}`,
-                );
-              }
-            }}
-            onCreateWorktree={(n) => {
-              if ("owner" in route) {
-                emitWorkspaceCommand("createWorktreeFromPR", {
-                  number: n,
-                  owner: route.owner,
-                  name: route.name,
-                  platformHost: route.platformHost,
-                });
-              }
-            }}
-            onNavigateWorktree={(key) => {
-              emitWorkspaceCommand("navigateWorktree", {
-                worktreeKey: key,
-              });
-            }}
-            onRefresh={() => {
-              emitWorkspaceCommand("refreshPulls", {});
-            }}
-            onRevealHostSettings={() => {
-              emitWorkspaceCommand("revealHostSettings", {});
-            }}
-          />
-        {/if}
       {:else if getPage() === "workspaces"}
-        {#if getWorkspaceData()}
-          <WorkspacesView
-            workspaceData={getWorkspaceData()}
-            hoverCardsEnabled={getEmbedHoverCardsEnabled()}
-            onCommand={emitWorkspaceCommand}
-            sidebarWidth={getEmbeddedSidebarWidth()}
-            onSidebarResize={(width) => emitLayoutChanged({
-              sidebar: { width },
-              pinnedPanel: { width: 0, visible: false },
-            })}
-          />
-        {:else}
-          <WorkspaceTerminalView workspaceId="" />
-        {/if}
+        <WorkspaceTerminalView workspaceId="" />
       {:else if getPage() === "terminal"}
         {@const r = getRoute()}
         {#if r.page === "terminal"}

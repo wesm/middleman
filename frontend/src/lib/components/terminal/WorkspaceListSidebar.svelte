@@ -10,8 +10,9 @@
     platform_host: string;
     repo_owner: string;
     repo_name: string;
-    mr_number: number;
-    mr_head_ref: string;
+    item_type: "pull_request" | "issue";
+    item_number: number;
+    git_head_ref: string;
     worktree_path: string;
     tmux_session: string;
     tmux_pane_title?: string | null;
@@ -88,7 +89,7 @@
   }
 
   function displayName(ws: Workspace): string {
-    return ws.mr_title ?? ws.mr_head_ref;
+    return ws.mr_title ?? ws.git_head_ref;
   }
 
   function statusColor(ws: Workspace): string {
@@ -109,7 +110,12 @@
     return title || "Working";
   }
 
-  function prBadgeColor(ws: Workspace): string {
+  function itemBadgeColor(ws: Workspace): string {
+    if (ws.item_type === "issue") {
+      return ws.mr_state === "closed"
+        ? "var(--accent-red)"
+        : "var(--accent-green)";
+    }
     if (ws.mr_is_draft) return "var(--text-muted)";
     if (ws.mr_state === "merged") {
       return "var(--accent-purple)";
@@ -120,17 +126,17 @@
     return "var(--accent-green)";
   }
 
-  function handlePRClick(
+  function handleItemClick(
     e: MouseEvent,
     ws: Workspace,
   ): void {
     e.stopPropagation();
     navigate(
       buildItemRoute(
-        "pr",
+        ws.item_type === "issue" ? "issue" : "pr",
         ws.repo_owner,
         ws.repo_name,
-        ws.mr_number,
+        ws.item_number,
       ),
     );
   }
@@ -214,13 +220,17 @@
             <div class="ws-row-bottom">
               <button
                 class="pr-badge"
-                style:color={prBadgeColor(ws)}
-                style:border-color={prBadgeColor(ws)}
-                onclick={(e) => handlePRClick(e, ws)}
+                style:color={itemBadgeColor(ws)}
+                style:border-color={itemBadgeColor(ws)}
+                onclick={(e) => handleItemClick(e, ws)}
               >
-                #{ws.mr_number}
+                #{ws.item_number}
               </button>
-              {#if ws.mr_additions != null || ws.mr_deletions != null}
+              {#if ws.item_type === "issue"}
+                <span class="branch-pill">
+                  {ws.git_head_ref}
+                </span>
+              {:else if ws.mr_additions != null || ws.mr_deletions != null}
                 <span class="diff-stats">
                   {#if ws.mr_additions != null}
                     <span class="additions"
@@ -402,6 +412,15 @@
 
   .pr-badge:hover {
     opacity: 0.8;
+  }
+
+  .branch-pill {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .diff-stats {

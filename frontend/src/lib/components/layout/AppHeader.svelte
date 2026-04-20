@@ -10,7 +10,7 @@
     SunIcon,
   } from "../../icons.ts";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
-  import { isEmbedded, getUIConfig, getWorkspaceData } from "../../stores/embed-config.svelte.js";
+  import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
   import { isNarrow } from "../../stores/container.svelte.js";
   import {
     isDark, toggleTheme, isThemeToggleVisible,

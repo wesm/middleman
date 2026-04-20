@@ -247,6 +247,15 @@ type createWorkspaceInput struct {
 	}
 }
 
+type createIssueWorkspaceInput struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		PlatformHost string `json:"platform_host"`
+	}
+}
+
 type getWorkspaceInput struct {
 	ID string `path:"id"`
 }
@@ -387,6 +396,12 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces",
 		DefaultStatus: http.StatusAccepted,
 	}, s.createWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-issue-workspace",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/issues/{number}/workspace",
+		DefaultStatus: http.StatusAccepted,
+	}, s.createIssueWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces)
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
 	huma.Register(api, huma.Operation{
@@ -546,7 +561,7 @@ func (s *Server) buildPullDetailResponse(
 			ctx, repo.PlatformHost, repo.Owner, repo.Name, mr.Number,
 		)
 		if wsErr == nil && wsRef != nil {
-			resp.Workspace = &workspaceMRRef{
+			resp.Workspace = &workspaceRef{
 				ID:     wsRef.ID,
 				Status: wsRef.Status,
 			}
@@ -910,6 +925,17 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 	}
 	if issue.DetailFetchedAt != nil {
 		issueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
+	}
+	if s.workspaces != nil {
+		wsRef, wsErr := s.workspaces.GetByIssue(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
+		)
+		if wsErr == nil && wsRef != nil {
+			issueResp.Workspace = &workspaceRef{
+				ID:     wsRef.ID,
+				Status: wsRef.Status,
+			}
+		}
 	}
 	return &getIssueOutput{Body: issueResp}, nil
 }
@@ -1577,6 +1603,17 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 	if issue.DetailFetchedAt != nil {
 		syncIssueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
 	}
+	if s.workspaces != nil {
+		wsRef, wsErr := s.workspaces.GetByIssue(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
+		)
+		if wsErr == nil && wsRef != nil {
+			syncIssueResp.Workspace = &workspaceRef{
+				ID:     wsRef.ID,
+				Status: wsRef.Status,
+			}
+		}
+	}
 	return &syncIssueOutput{Body: syncIssueResp}, nil
 }
 
@@ -2095,7 +2132,7 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 			if summary == nil {
 				return
 			}
-			resp := toWorkspaceResponse(summary)
+			resp := s.toWorkspaceResponse(bgCtx, summary)
 			if setupErr != nil {
 				slog.Warn("workspace setup failed",
 					"id", ws.ID, "err", setupErr,
@@ -2147,10 +2184,107 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 			}
 			s.hub.Broadcast(Event{
 				Type: "workspace_status",
-				Data: toWorkspaceResponse(summary),
+				Data: s.toWorkspaceResponse(bgCtx, summary),
 			})
 		}
 	})
+}
+
+func (s *Server) createIssueWorkspace(
+	ctx context.Context, input *createIssueWorkspaceInput,
+) (*createWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	existing, err := s.workspaces.GetByIssue(
+		ctx,
+		input.Body.PlatformHost,
+		input.Owner,
+		input.Name,
+		input.Number,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"lookup existing issue workspace: " + err.Error(),
+		)
+	}
+	if existing != nil {
+		summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
+		if getErr != nil {
+			return nil, huma.Error500InternalServerError(
+				"get workspace summary: " + getErr.Error(),
+			)
+		}
+		if summary == nil {
+			return nil, huma.Error500InternalServerError(
+				"workspace summary missing for existing workspace",
+			)
+		}
+		return &createWorkspaceOutput{
+			Status: http.StatusAccepted,
+			Body:   s.toWorkspaceResponse(ctx, summary),
+		}, nil
+	}
+
+	ws, err := s.workspaces.CreateIssue(
+		ctx,
+		input.Body.PlatformHost,
+		input.Owner,
+		input.Name,
+		input.Number,
+	)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "not tracked") {
+			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "not synced") {
+			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "UNIQUE constraint") {
+			existing, getErr := s.workspaces.GetByIssue(
+				ctx,
+				input.Body.PlatformHost,
+				input.Owner,
+				input.Name,
+				input.Number,
+			)
+			if getErr == nil && existing != nil {
+				summary, summaryErr := s.workspaces.GetSummary(ctx, existing.ID)
+				if summaryErr == nil && summary != nil {
+					return &createWorkspaceOutput{
+						Status: http.StatusAccepted,
+						Body:   s.toWorkspaceResponse(ctx, summary),
+					}, nil
+				}
+			}
+		}
+		return nil, huma.Error500InternalServerError(
+			"create issue workspace: " + msg,
+		)
+	}
+
+	s.runWorkspaceSetup(ws)
+
+	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace summary: " + err.Error(),
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error500InternalServerError(
+			"workspace summary missing after create",
+		)
+	}
+
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   s.toWorkspaceResponse(ctx, summary),
+	}, nil
 }
 
 func (s *Server) listWorkspaces(
