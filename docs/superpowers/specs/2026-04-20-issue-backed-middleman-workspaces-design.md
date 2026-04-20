@@ -11,7 +11,8 @@ The new issue workspace flow should:
 - persist a row in `middleman_workspaces`
 - create a real git worktree under middleman's worktree directory
 - create a tmux session like PR-backed workspaces do today
-- start from the repository's current `origin/HEAD`
+- create a new managed branch from the repository's current
+  `origin/HEAD`
 - use an issue-specific right sidebar panel instead of the PR panel
 
 This keeps the issue action inside middleman's existing workspace and
@@ -145,16 +146,22 @@ Issue workspaces should be created on a synthetic branch:
 - branch name: `middleman/issue-<number>`
 - start ref: `origin/HEAD`
 
-The user requirement is explicit that issue workspaces should start
-from the current `origin/HEAD`, not from a PR branch and not from an
-embed-host concept of the current worktree.
+The user requirement is explicit that issue workspaces should create a
+new branch from the current `origin/HEAD`, not attach directly to
+`origin/HEAD`, not reuse a PR branch, and not depend on an embed-host
+concept of the current worktree.
 
 Setup flow for issue workspaces:
 
 1. ensure/fetch the bare clone
-2. run `git worktree add <path> -b middleman/issue-N origin/HEAD`
-3. create the tmux session
-4. mark the workspace ready
+2. create `middleman/issue-N` as a new local branch from `origin/HEAD`
+3. run `git worktree add <path> middleman/issue-N`
+4. create the tmux session
+5. mark the workspace ready
+
+Equivalent git invocation is acceptable so long as the result is the
+same: a fresh managed branch whose initial commit matches the current
+`origin/HEAD`.
 
 ### API Shape
 
@@ -256,7 +263,7 @@ workspace manager, API, router, and terminal UI layers.
 Required coverage:
 
 - API/e2e test for creating an issue-backed workspace row and managed
-  worktree from `origin/HEAD`
+  worktree on a new managed branch created from `origin/HEAD`
 - API/e2e test proving the create endpoint is idempotent for an
   existing issue workspace
 - frontend e2e test for the issue detail button creating a workspace
@@ -282,7 +289,7 @@ Required coverage:
 - Add `CreateIssue(...)`
 - Add `GetByIssue(...)`
 - Teach setup to branch from `origin/HEAD` when `item_type = issue`
-- Use `middleman/issue-<number>` as the managed branch name
+- Use `middleman/issue-<number>` as the new managed branch name
 
 ### Server
 
