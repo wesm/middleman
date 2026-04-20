@@ -38,7 +38,15 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Sync Svelte AI skills from sveltejs/ai-tools into repo-local skills/"
             " and manage per-skill symlinks for Codex and Claude."
-        )
+        ),
+        epilog=(
+            "Notes:\n"
+            "- skills/ is checked-in source of truth.\n"
+            "- .agents/skills/ and .claude/skills/ entries are managed as symlinks.\n"
+            "- Existing non-symlink paths at target locations are preserved as local overrides.\n"
+            "- If an older clone still has generated directories where tracked symlinks should land, remove those directories once and rerun this command."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--ref",
