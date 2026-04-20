@@ -261,11 +261,15 @@ type Workspace struct {
 	MRNumber     int
 	MRHeadRef    string
 	MRHeadRepo   *string // nil for same-repo PRs
-	WorktreePath string
-	TmuxSession  string
-	Status       string // "creating", "ready", "error"
-	ErrorMessage *string
-	CreatedAt    time.Time
+	// WorkspaceBranch is the exact branch name middleman created
+	// for this workspace. It stays empty when setup reused an
+	// existing local branch and therefore does not own it.
+	WorkspaceBranch string
+	WorktreePath    string
+	TmuxSession     string
+	Status          string // "creating", "ready", "error"
+	ErrorMessage    *string
+	CreatedAt       time.Time
 }
 
 // WorkspaceSummary extends Workspace with joined MR metadata.
@@ -278,6 +282,15 @@ type WorkspaceSummary struct {
 	MRReviewDecision *string
 	MRAdditions      *int
 	MRDeletions      *int
+}
+
+type WorkspaceSetupEvent struct {
+	ID          int64
+	WorkspaceID string
+	Stage       string
+	Outcome     string
+	Message     string
+	CreatedAt   time.Time
 }
 
 // ListActivityOpts holds filters and pagination for the activity feed.

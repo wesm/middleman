@@ -2157,11 +2157,13 @@ func (d *DB) InsertWorkspace(
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     mr_number, mr_head_ref, mr_head_repo,
+		     workspace_branch,
 		     worktree_path, tmux_session, status,
 		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		ws.MRNumber, ws.MRHeadRef, ws.MRHeadRepo,
+		ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.Status,
 		ws.ErrorMessage,
 	)
@@ -2179,12 +2181,14 @@ func (d *DB) GetWorkspace(
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
 		       mr_number, mr_head_ref, mr_head_repo,
+		       workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces WHERE id = ?`, id,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.MRNumber, &ws.MRHeadRef, &ws.MRHeadRepo,
+		&ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
@@ -2210,6 +2214,7 @@ func (d *DB) GetWorkspaceByMR(
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
 		       mr_number, mr_head_ref, mr_head_repo,
+		       workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
@@ -2219,6 +2224,7 @@ func (d *DB) GetWorkspaceByMR(
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.MRNumber, &ws.MRHeadRef, &ws.MRHeadRepo,
+		&ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
@@ -2240,6 +2246,7 @@ func (d *DB) ListWorkspaces(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
 		       mr_number, mr_head_ref, mr_head_repo,
+		       workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
@@ -2256,7 +2263,8 @@ func (d *DB) ListWorkspaces(
 		if err := rows.Scan(
 			&ws.ID, &ws.PlatformHost, &ws.RepoOwner,
 			&ws.RepoName, &ws.MRNumber, &ws.MRHeadRef,
-			&ws.MRHeadRepo, &ws.WorktreePath, &ws.TmuxSession,
+			&ws.MRHeadRepo, &ws.WorkspaceBranch,
+			&ws.WorktreePath, &ws.TmuxSession,
 			&ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan workspace: %w", err)
@@ -2286,6 +2294,80 @@ func (d *DB) UpdateWorkspaceStatus(
 	return nil
 }
 
+// UpdateWorkspaceBranch stores the exact branch middleman created
+// for a workspace. Empty means setup reused a pre-existing local
+// branch and therefore does not own it.
+func (d *DB) UpdateWorkspaceBranch(
+	ctx context.Context, id, branch string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET workspace_branch = ?
+		WHERE id = ?`,
+		branch, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update workspace branch: %w", err)
+	}
+	return nil
+}
+
+// InsertWorkspaceSetupEvent appends an audit event for workspace
+// setup activity.
+func (d *DB) InsertWorkspaceSetupEvent(
+	ctx context.Context, event *WorkspaceSetupEvent,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO middleman_workspace_setup_events
+		    (workspace_id, stage, outcome, message)
+		VALUES (?, ?, ?, ?)`,
+		event.WorkspaceID, event.Stage, event.Outcome,
+		event.Message,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"insert workspace setup event: %w", err,
+		)
+	}
+	return nil
+}
+
+// ListWorkspaceSetupEvents returns the audit trail for a single
+// workspace setup, ordered by insertion.
+func (d *DB) ListWorkspaceSetupEvents(
+	ctx context.Context, workspaceID string,
+) ([]WorkspaceSetupEvent, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT id, workspace_id, stage, outcome, message,
+		       created_at
+		FROM middleman_workspace_setup_events
+		WHERE workspace_id = ?
+		ORDER BY id`, workspaceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list workspace setup events: %w", err,
+		)
+	}
+	defer rows.Close()
+
+	var out []WorkspaceSetupEvent
+	for rows.Next() {
+		var event WorkspaceSetupEvent
+		if err := rows.Scan(
+			&event.ID, &event.WorkspaceID, &event.Stage,
+			&event.Outcome, &event.Message, &event.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"scan workspace setup event: %w", err,
+			)
+		}
+		event.CreatedAt = event.CreatedAt.UTC()
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}
+
 // DeleteWorkspace removes a workspace by ID.
 func (d *DB) DeleteWorkspace(
 	ctx context.Context, id string,
@@ -2304,6 +2386,7 @@ func (d *DB) DeleteWorkspace(
 const workspaceSummaryColumns = `
 	w.id, w.platform_host, w.repo_owner, w.repo_name,
 	w.mr_number, w.mr_head_ref, w.mr_head_repo,
+	w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.status,
 	w.error_message, w.created_at,
 	m.title, m.state, m.is_draft, m.ci_status,
@@ -2328,6 +2411,7 @@ func scanWorkspaceSummary(
 	err := scanner.Scan(
 		&s.ID, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.MRNumber, &s.MRHeadRef, &s.MRHeadRepo,
+		&s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt,
 		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,

@@ -54,21 +54,21 @@ func (m *Manager) EnsureClone(
 
 // Fetch refspecs configured on every bare clone.
 //
-//   - branchRefspec is required so `git fetch` updates local refs/heads/*.
-//     git clone --bare does NOT install a default fetch refspec, so without
-//     this, branch refs stay frozen at initial-clone time and the merge
-//     commits of merged PRs never reach the clone.
-//   - pullRefspec makes `refs/pull/<N>/head` available, which is how we
-//     resolve PR heads that live on forks.
+//   - remoteTrackingRefspec stores origin branches under
+//     refs/remotes/origin/* so bare-clone fetches never try to update a local
+//     branch that a workspace has checked out.
+//   - pullRefspec makes refs/pull/<N>/head available, which is how we resolve
+//     PR heads that live on forks.
 const (
-	branchRefspec = "+refs/heads/*:refs/heads/*"
-	pullRefspec   = "+refs/pull/*/head:refs/pull/*/head"
+	legacyBranchRefspec   = "+refs/heads/*:refs/heads/*"
+	remoteTrackingRefspec = "+refs/heads/*:refs/remotes/origin/*"
+	pullRefspec           = "+refs/pull/*/head:refs/pull/*/head"
 )
 
 // defaultRefspecs returns the full list of fetch refspecs every clone should
 // have. Used by both cloneBare (fresh clones) and ensureRefspecs (migration).
 func defaultRefspecs() []string {
-	return []string{branchRefspec, pullRefspec}
+	return []string{remoteTrackingRefspec, pullRefspec}
 }
 
 // ensureRefspecs idempotently adds any missing fetch refspecs to an
@@ -88,6 +88,18 @@ func (m *Manager) ensureRefspecs(
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			existing[line] = true
+		}
+	}
+	if existing[legacyBranchRefspec] {
+		if _, err := m.git(
+			ctx, host, clonePath,
+			"config", "--fixed-value", "--unset-all",
+			"remote.origin.fetch", legacyBranchRefspec,
+		); err != nil {
+			slog.Warn("failed to remove legacy refspec from existing clone",
+				"path", clonePath, "refspec", legacyBranchRefspec, "err", err)
+		} else {
+			delete(existing, legacyBranchRefspec)
 		}
 	}
 	for _, refspec := range defaultRefspecs() {

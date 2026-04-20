@@ -4597,6 +4597,12 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 		"comment-issue-legacy",
 	)
 	require.NoError(err)
+	_, err = raw.ExecContext(ctx, `
+		DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
+		DROP TABLE IF EXISTS middleman_workspace_setup_events;
+		ALTER TABLE middleman_workspaces DROP COLUMN workspace_branch;
+	`)
+	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
 		9,
@@ -5289,7 +5295,7 @@ func TestDisplayNameCacheE2E(t *testing.T) {
 // and returns the API client and database.
 func setupTestServerWithWorkspaces(
 	t *testing.T,
-) (*apiclient.Client, *db.DB) {
+) (*apiclient.Client, *db.DB, string, string) {
 	t.Helper()
 
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -5304,15 +5310,15 @@ func setupTestServerWithWorkspaces(
 	require.NoError(t, err)
 	t.Cleanup(func() { database.Close() })
 
-	bareDir := filepath.Join(dir, "clones")
-	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(
-		bareDir, "github.com", "acme", "widget.git",
+	remoteDir := filepath.Join(dir, "remote")
+	require.NoError(t, os.MkdirAll(remoteDir, 0o755))
+	remote := filepath.Join(remoteDir, "widget.git")
+	runGit(
+		t, dir, "init", "--bare", "--initial-branch=main", remote,
 	)
 
 	tmpWork := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, tmpWork)
+	runGit(t, dir, "clone", remote, tmpWork)
 	runGit(t, tmpWork, "config", "user.email", "test@test.com")
 	runGit(t, tmpWork, "config", "user.name", "Test")
 
@@ -5332,6 +5338,13 @@ func setupTestServerWithWorkspaces(
 	runGit(t, tmpWork, "add", ".")
 	runGit(t, tmpWork, "commit", "-m", "feature commit")
 	runGit(t, tmpWork, "push", "origin", "feature")
+
+	bareDir := filepath.Join(dir, "clones")
+	require.NoError(t, os.MkdirAll(bareDir, 0o755))
+	bare := filepath.Join(
+		bareDir, "github.com", "acme", "widget.git",
+	)
+	runGit(t, dir, "clone", "--bare", remote, bare)
 
 	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -5359,14 +5372,56 @@ func setupTestServerWithWorkspaces(
 	seedPR(t, database, "acme", "widget", 1)
 
 	client := setupTestClient(t, srv)
-	return client, database
+	return client, database, bare, remote
+}
+
+func waitForWorkspaceReady(
+	t *testing.T,
+	ctx context.Context,
+	client *apiclient.Client,
+	wsID string,
+) *generated.WorkspaceResponse {
+	t.Helper()
+
+	var ready *generated.WorkspaceResponse
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
+			ctx, wsID,
+		)
+		require.NoError(t, err)
+		if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+			continue
+		}
+		if getResp.JSON200.Status == "ready" {
+			ready = getResp.JSON200
+			break
+		}
+	}
+
+	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
+	return ready
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(
+		gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
+	return strings.TrimSpace(string(out))
 }
 
 func TestWorkspaceCRUDE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	client, _ := setupTestServerWithWorkspaces(t)
+	client, _, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := context.Background()
 
 	// 1. List workspaces -- initially empty.
@@ -5433,7 +5488,7 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 func TestWorkspaceCreateNotFound(t *testing.T) {
 	require := require.New(t)
 
-	client, _ := setupTestServerWithWorkspaces(t)
+	client, _, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := context.Background()
 
 	// Non-existent repo.
@@ -5467,7 +5522,7 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	client, _ := setupTestServerWithWorkspaces(t)
+	client, _, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := context.Background()
 
 	// Create a workspace for PR #1.
@@ -5509,7 +5564,7 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 func TestWorkspaceCreateDuplicate(t *testing.T) {
 	require := require.New(t)
 
-	client, _ := setupTestServerWithWorkspaces(t)
+	client, _, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := context.Background()
 
 	body := generated.CreateWorkspaceInputBody{
@@ -5528,6 +5583,338 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp2.StatusCode())
+}
+
+func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, database, clonePath, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	seedPR(t, database, "acme", "widget", 2)
+
+	createResp1, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp1.StatusCode())
+	require.NotNil(createResp1.JSON202)
+
+	ws1 := waitForWorkspaceReady(t, ctx, client, createResp1.JSON202.Id)
+	assert.Equal(
+		"feature",
+		gitOutput(t, ws1.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(
+		"origin",
+		gitOutput(
+			t, ws1.WorktreePath,
+			"config", "--get", "branch.feature.remote",
+		),
+	)
+	assert.Equal(
+		"refs/heads/feature",
+		gitOutput(
+			t, ws1.WorktreePath,
+			"config", "--get", "branch.feature.merge",
+		),
+	)
+	runGit(t, clonePath, "fetch", "--prune", "origin")
+
+	createResp2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp2.StatusCode())
+	require.NotNil(createResp2.JSON202)
+
+	ws2 := waitForWorkspaceReady(t, ctx, client, createResp2.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-2",
+		gitOutput(t, ws2.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(
+		testGitSHA(t, ws1.WorktreePath, "HEAD"),
+		testGitSHA(t, ws2.WorktreePath, "HEAD"),
+	)
+}
+
+func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, database, _, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	repo, err := database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+
+	headSHA := testGitSHA(t, remotePath, "feature")
+	runGit(t, remotePath, "update-ref", "refs/pull/2/head", headSHA)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	forkPR := &db.MergeRequest{
+		RepoID:           repo.ID,
+		PlatformID:       2000,
+		Number:           2,
+		URL:              "https://github.com/acme/widget/pull/2",
+		Title:            "Fork PR #2",
+		Author:           "fork-user",
+		State:            "open",
+		Body:             "fork test body",
+		HeadBranch:       "fork-feature",
+		BaseBranch:       "main",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+	}
+	prID, err := database.UpsertMergeRequest(ctx, forkPR)
+	require.NoError(err)
+	require.NoError(database.EnsureKanbanState(ctx, prID))
+
+	create1, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, create1.StatusCode())
+	require.NotNil(create1.JSON202)
+
+	ws1 := waitForWorkspaceReady(t, ctx, client, create1.JSON202.Id)
+	assert.Equal(
+		"fork-feature",
+		gitOutput(t, ws1.WorktreePath, "branch", "--show-current"),
+	)
+
+	force := true
+	delete1, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, create1.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delete1.StatusCode())
+
+	create2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, create2.StatusCode())
+	require.NotNil(create2.JSON202)
+
+	ws2 := waitForWorkspaceReady(t, ctx, client, create2.JSON202.Id)
+	assert.Equal(
+		"fork-feature",
+		gitOutput(t, ws2.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(
+		headSHA,
+		testGitSHA(t, ws2.WorktreePath, "HEAD"),
+	)
+}
+
+func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, _, clonePath, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	runGit(t, ws.WorktreePath, "checkout", "-b", "user-scratch")
+	scratchSHA := testGitSHA(t, ws.WorktreePath, "HEAD")
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, createResp.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	assert.Equal(
+		scratchSHA,
+		testGitSHA(t, clonePath, "refs/heads/user-scratch"),
+	)
+}
+
+func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, _, clonePath, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	privateClone := filepath.Join(t.TempDir(), "private-clone")
+	runGit(t, filepath.Dir(privateClone), "clone", clonePath, privateClone)
+	runGit(t, privateClone, "config", "user.email", "test@test.com")
+	runGit(t, privateClone, "config", "user.name", "Test")
+	runGit(t, privateClone, "checkout", "feature")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(privateClone, "private.txt"),
+		[]byte("private\n"), 0o644,
+	))
+	runGit(t, privateClone, "add", "private.txt")
+	runGit(t, privateClone, "commit", "-m", "private commit")
+	privateSHA := testGitSHA(t, privateClone, "HEAD")
+	runGit(t, privateClone, "push", clonePath, "HEAD:feature")
+
+	originSHA := testGitSHA(t, remotePath, "refs/heads/feature")
+	assert.NotEqual(originSHA, privateSHA)
+	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-1",
+		gitOutput(t, ws.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(originSHA, testGitSHA(t, ws.WorktreePath, "HEAD"))
+	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, createResp.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	assert.Equal(privateSHA, testGitSHA(t, clonePath, "refs/heads/feature"))
+}
+
+func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, database, clonePath, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	privateClone := filepath.Join(t.TempDir(), "legacy-private-clone")
+	runGit(t, filepath.Dir(privateClone), "clone", clonePath, privateClone)
+	runGit(t, privateClone, "config", "user.email", "test@test.com")
+	runGit(t, privateClone, "config", "user.name", "Test")
+	runGit(t, privateClone, "checkout", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(privateClone, "legacy-private.txt"),
+		[]byte("legacy private\n"), 0o644,
+	))
+	runGit(t, privateClone, "add", "legacy-private.txt")
+	runGit(t, privateClone, "commit", "-m", "legacy private commit")
+	privateSHA := testGitSHA(t, privateClone, "HEAD")
+	runGit(t, privateClone, "push", clonePath, "HEAD:feature")
+	originSHA := testGitSHA(t, remotePath, "refs/heads/feature")
+	assert.NotEqual(originSHA, privateSHA)
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-1",
+		gitOutput(t, ws.WorktreePath, "branch", "--show-current"),
+	)
+
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET workspace_branch = '__middleman_unknown__'
+		WHERE id = ?`,
+		createResp.JSON202.Id,
+	)
+	require.NoError(err)
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, createResp.JSON202.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	runGit(t, clonePath, "fetch", "--prune", "origin")
+
+	recreateResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, recreateResp.StatusCode())
+	require.NotNil(recreateResp.JSON202)
+
+	recreated := waitForWorkspaceReady(t, ctx, client, recreateResp.JSON202.Id)
+	assert.Equal(
+		"middleman/pr-1",
+		gitOutput(t, recreated.WorktreePath, "branch", "--show-current"),
+	)
+	assert.Equal(originSHA, testGitSHA(t, recreated.WorktreePath, "HEAD"))
 }
 
 func TestWorkspacePRDetailPlatformHost(t *testing.T) {
@@ -5648,75 +6035,7 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
-	}
-	if testing.Short() {
-		t.Skip("workspace e2e tests skipped in short mode")
-	}
-
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
-
-	bareDir := filepath.Join(dir, "clones")
-	require.NoError(os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(
-		bareDir, "github.com", "acme", "widget.git",
-	)
-
-	tmpWork := filepath.Join(dir, "work")
-	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
-	runGit(t, dir, "clone", bare, tmpWork)
-	runGit(t, tmpWork, "config", "user.email", "test@test.com")
-	runGit(t, tmpWork, "config", "user.name", "Test")
-
-	require.NoError(os.WriteFile(
-		filepath.Join(tmpWork, "base.txt"),
-		[]byte("base\n"), 0o644,
-	))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "base commit")
-	runGit(t, tmpWork, "push", "origin", "main")
-
-	runGit(t, tmpWork, "checkout", "-b", "feature")
-	require.NoError(os.WriteFile(
-		filepath.Join(tmpWork, "new.txt"),
-		[]byte("new\n"), 0o644,
-	))
-	runGit(t, tmpWork, "add", ".")
-	runGit(t, tmpWork, "commit", "-m", "feature commit")
-	runGit(t, tmpWork, "push", "origin", "feature")
-
-	// Point bare origin at itself so EnsureClone fetch works.
-	runGit(t, bare, "remote", "add", "origin", bare)
-
-	clones := gitclone.New(bareDir, nil)
-	worktreeDir := filepath.Join(dir, "worktrees")
-	mock := &mockGH{}
-	repos := []ghclient.RepoRef{
-		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-	}
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": mock},
-		database, nil, repos, time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{
-		Clones:      clones,
-		WorktreeDir: worktreeDir,
-	})
-	t.Cleanup(func() {
-		shutCtx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
-		defer cancel()
-		_ = srv.Shutdown(shutCtx)
-	})
-
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := context.Background()
 
 	// Create workspace.

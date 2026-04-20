@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
@@ -25,6 +26,17 @@ type Manager struct {
 	clones      *gitclone.Manager
 	tmuxCmd     []string
 }
+
+const (
+	workspaceSetupStageSetup       = "setup"
+	workspaceSetupStageClone       = "clone"
+	workspaceSetupStageWorktree    = "worktree"
+	workspaceSetupStageTmuxSession = "tmux_session"
+	workspaceBranchUnknown         = "__middleman_unknown__"
+)
+
+var workspacePersistTimeout = 5 * time.Second
+var workspaceCleanupTimeout = 5 * time.Second
 
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
@@ -117,16 +129,17 @@ func (m *Manager) Create(
 	}
 
 	ws := &Workspace{
-		ID:           id,
-		PlatformHost: platformHost,
-		RepoOwner:    owner,
-		RepoName:     name,
-		MRNumber:     mrNumber,
-		MRHeadRef:    mr.HeadBranch,
-		MRHeadRepo:   headRepo,
-		WorktreePath: wtPath,
-		TmuxSession:  "middleman-" + id,
-		Status:       "creating",
+		ID:              id,
+		PlatformHost:    platformHost,
+		RepoOwner:       owner,
+		RepoName:        name,
+		MRNumber:        mrNumber,
+		MRHeadRef:       mr.HeadBranch,
+		MRHeadRepo:      headRepo,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    wtPath,
+		TmuxSession:     "middleman-" + id,
+		Status:          "creating",
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
@@ -141,8 +154,17 @@ func (m *Manager) Create(
 func (m *Manager) Setup(
 	ctx context.Context, ws *Workspace,
 ) error {
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageSetup, "started",
+		"starting workspace setup",
+	)
 	if m.clones == nil {
-		return fmt.Errorf("clone manager not set")
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageClone,
+			fmt.Errorf("clone manager not set"),
+		)
 	}
 
 	remoteURL := fmt.Sprintf(
@@ -154,47 +176,220 @@ func (m *Manager) Setup(
 		ctx, ws.PlatformHost, ws.RepoOwner,
 		ws.RepoName, remoteURL,
 	); err != nil {
-		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("ensure clone: %w", err)
-	}
-
-	branch := fmt.Sprintf("middleman/pr-%d", ws.MRNumber)
-	var startRef string
-	if ws.MRHeadRepo != nil {
-		startRef = fmt.Sprintf(
-			"refs/pull/%d/head", ws.MRNumber,
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageClone, err,
 		)
-	} else {
-		startRef = "refs/heads/" + ws.MRHeadRef
 	}
 
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 
-	err := runGit(
-		ctx, cloneDir,
-		"worktree", "add", ws.WorktreePath,
-		"-b", branch, startRef,
-	)
+	branch, err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
-		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("git worktree add: %w", err)
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageWorktree, err,
+		)
+	}
+	ws.WorkspaceBranch = branch
+	if err := m.updateWorkspaceBranch(
+		ctx, ws.ID, branch,
+	); err != nil {
+		m.rollbackWorktree(ctx, cloneDir, ws, branch)
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageWorktree, err,
+		)
 	}
 
 	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
 	if err != nil {
-		m.rollbackWorktree(ctx, cloneDir, ws)
-		m.setError(ctx, ws.ID, err)
-		return fmt.Errorf("tmux new-session: %w", err)
+		m.rollbackWorktree(ctx, cloneDir, ws, branch)
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageTmuxSession, err,
+		)
 	}
 
-	if err := m.db.UpdateWorkspaceStatus(
+	if err := m.updateWorkspaceStatus(
 		ctx, ws.ID, "ready", nil,
 	); err != nil {
-		return fmt.Errorf("update status to ready: %w", err)
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageSetup,
+			fmt.Errorf("update status to ready: %w", err),
+		)
 	}
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageSetup, "ready",
+		"workspace ready",
+	)
 	return nil
+}
+
+func (m *Manager) addWorktree(
+	ctx context.Context, cloneDir string, ws *Workspace,
+) (string, error) {
+	if branch, err := m.addPreferredWorktree(ctx, cloneDir, ws); err == nil {
+		return branch, nil
+	} else {
+		fallbackBranch := syntheticWorktreeBranch(ws.MRNumber)
+		startRef := workspaceStartRef(ws)
+		fallbackErr := runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath,
+			"-b", fallbackBranch, startRef,
+		)
+		if fallbackErr == nil {
+			return fallbackBranch, nil
+		}
+		return "", fmt.Errorf(
+			"preferred branch %q failed: %w; fallback branch %q failed: %w",
+			ws.MRHeadRef, err, fallbackBranch, fallbackErr,
+		)
+	}
+}
+
+func (m *Manager) addPreferredWorktree(
+	ctx context.Context, cloneDir string, ws *Workspace,
+) (string, error) {
+	if err := validateLocalBranchName(
+		ctx, cloneDir, ws.MRHeadRef,
+	); err != nil {
+		return "", err
+	}
+
+	if ws.MRHeadRepo != nil {
+		err := runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath,
+			"-b", ws.MRHeadRef, workspaceStartRef(ws),
+		)
+		if err != nil {
+			return "", err
+		}
+		return ws.MRHeadRef, nil
+	}
+
+	startRef := workspaceStartRef(ws)
+	startSHA, ok, err := gitRefSHA(ctx, cloneDir, startRef)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("start ref %q not found", startRef)
+	}
+
+	branchRef := "refs/heads/" + ws.MRHeadRef
+	branchSHA, exists, err := gitRefSHA(ctx, cloneDir, branchRef)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		if err := runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath,
+			"-b", ws.MRHeadRef, startRef,
+		); err != nil {
+			return "", err
+		}
+		if err := setBranchUpstream(
+			ctx, ws.WorktreePath, ws.MRHeadRef,
+			"origin", "refs/heads/"+ws.MRHeadRef,
+		); err != nil {
+			cleanupCtx, cancel := cleanupContext(ctx)
+			defer cancel()
+			_ = runGit(
+				cleanupCtx, cloneDir,
+				"worktree", "remove", "--force", ws.WorktreePath,
+			)
+			_ = runGit(
+				cleanupCtx, cloneDir,
+				"branch", "-D", "--", ws.MRHeadRef,
+			)
+			return "", fmt.Errorf("configure branch upstream: %w", err)
+		}
+		return ws.MRHeadRef, nil
+	}
+	if branchSHA != startSHA {
+		return "", fmt.Errorf(
+			"preferred branch %q points at %s, not %s",
+			ws.MRHeadRef, branchSHA, startSHA,
+		)
+	}
+
+	if err := runGit(
+		ctx, cloneDir,
+		"worktree", "add", ws.WorktreePath, ws.MRHeadRef,
+	); err != nil {
+		return "", err
+	}
+
+	if err := setBranchUpstream(
+		ctx, ws.WorktreePath, ws.MRHeadRef,
+		"origin", "refs/heads/"+ws.MRHeadRef,
+	); err != nil {
+		cleanupCtx, cancel := cleanupContext(ctx)
+		defer cancel()
+		_ = runGit(
+			cleanupCtx, cloneDir,
+			"worktree", "remove", "--force", ws.WorktreePath,
+		)
+		return "", fmt.Errorf("configure branch upstream: %w", err)
+	}
+
+	return "", nil
+}
+
+func workspaceStartRef(ws *Workspace) string {
+	if ws.MRHeadRepo != nil {
+		return fmt.Sprintf("refs/pull/%d/head", ws.MRNumber)
+	}
+	return "origin/" + ws.MRHeadRef
+}
+
+func syntheticWorktreeBranch(mrNumber int) string {
+	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+}
+
+func setBranchUpstream(
+	ctx context.Context,
+	worktreePath, branch, remote, mergeRef string,
+) error {
+	if err := runGit(
+		ctx, worktreePath,
+		"config", "branch."+branch+".remote", remote,
+	); err != nil {
+		return err
+	}
+	return runGit(
+		ctx, worktreePath,
+		"config", "branch."+branch+".merge", mergeRef,
+	)
+}
+
+func validateLocalBranchName(
+	ctx context.Context, dir, branch string,
+) error {
+	cmd := exec.CommandContext(
+		ctx, "git", "check-ref-format", "--branch", branch,
+	)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+
+	msg := strings.TrimSpace(string(out))
+	if msg == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("invalid branch name %q: %s", branch, msg)
 }
 
 // Delete tears down a workspace: kills tmux, removes the git
@@ -236,7 +431,6 @@ func (m *Manager) Delete(
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	branch := fmt.Sprintf("middleman/pr-%d", ws.MRNumber)
 
 	// Remove worktree.
 	_ = runGit(
@@ -244,8 +438,7 @@ func (m *Manager) Delete(
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
 
-	// Delete the tracking branch.
-	_ = runGit(ctx, cloneDir, "branch", "-D", branch)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
 
 	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
@@ -488,12 +681,11 @@ func dirtyFiles(
 	return files, nil
 }
 
-// setError marks a workspace as errored in the DB.
-func (m *Manager) setError(
+func (m *Manager) setErrorWithContext(
 	ctx context.Context, id string, origErr error,
 ) {
 	msg := origErr.Error()
-	if err := m.db.UpdateWorkspaceStatus(
+	if err := m.updateWorkspaceStatusWithContext(
 		ctx, id, "error", &msg,
 	); err != nil {
 		slog.Error("failed to set workspace error status",
@@ -501,23 +693,192 @@ func (m *Manager) setError(
 	}
 }
 
+func (m *Manager) recordSetupEvent(
+	ctx context.Context,
+	workspaceID, stage, outcome, message string,
+) {
+	persistCtx, cancel := m.persistenceContext(ctx)
+	defer cancel()
+	m.recordSetupEventWithContext(
+		persistCtx, workspaceID, stage, outcome, message,
+	)
+}
+
+func (m *Manager) recordSetupEventWithContext(
+	ctx context.Context,
+	workspaceID, stage, outcome, message string,
+) {
+	err := m.db.InsertWorkspaceSetupEvent(
+		ctx,
+		&db.WorkspaceSetupEvent{
+			WorkspaceID: workspaceID,
+			Stage:       stage,
+			Outcome:     outcome,
+			Message:     message,
+		},
+	)
+	if err != nil {
+		slog.Warn("workspace setup audit insert failed",
+			"workspace_id", workspaceID,
+			"stage", stage,
+			"outcome", outcome,
+			"err", err,
+		)
+	}
+}
+
+func (m *Manager) failSetup(
+	ctx context.Context,
+	workspaceID, stage string, origErr error,
+) error {
+	wrapped := wrapWorkspaceSetupError(stage, origErr)
+	persistCtx, cancel := m.persistenceContext(ctx)
+	defer cancel()
+	m.recordSetupEventWithContext(
+		persistCtx, workspaceID, stage, "failure", wrapped.Error(),
+	)
+	slog.Error("workspace setup failed",
+		"workspace_id", workspaceID,
+		"stage", stage,
+		"err", wrapped,
+	)
+	m.setErrorWithContext(persistCtx, workspaceID, wrapped)
+	return wrapped
+}
+
+func wrapWorkspaceSetupError(stage string, err error) error {
+	switch stage {
+	case workspaceSetupStageClone:
+		return fmt.Errorf("ensure clone: %w", err)
+	case workspaceSetupStageWorktree:
+		return fmt.Errorf("add git worktree: %w", err)
+	case workspaceSetupStageTmuxSession:
+		return fmt.Errorf("tmux new-session: %w", err)
+	default:
+		return err
+	}
+}
+
 // rollbackWorktree removes a partially created worktree and its
 // branch.
 func (m *Manager) rollbackWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
+	branch string,
 ) {
-	branch := fmt.Sprintf("middleman/pr-%d", ws.MRNumber)
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
 	if err := runGit(
-		ctx, cloneDir,
+		cleanupCtx, cloneDir,
 		"worktree", "remove", "--force", ws.WorktreePath,
 	); err != nil {
 		slog.Warn("rollback: worktree remove failed",
 			"path", ws.WorktreePath, "err", err)
 	}
-	if err := runGit(
-		ctx, cloneDir, "branch", "-D", branch,
-	); err != nil {
-		slog.Warn("rollback: branch delete failed",
-			"branch", branch, "err", err)
+	m.deleteWorkspaceBranches(cleanupCtx, cloneDir, ws, branch)
+}
+
+func (m *Manager) deleteWorkspaceBranches(
+	ctx context.Context, cloneDir string, ws *Workspace,
+	managedBranch string,
+) {
+	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
+		if err := validateLocalBranchName(
+			ctx, cloneDir, branch,
+		); err != nil {
+			slog.Warn("workspace branch delete skipped",
+				"branch", branch, "err", err)
+			continue
+		}
+		if err := runGit(
+			ctx, cloneDir, "branch", "-D", "--", branch,
+		); err != nil {
+			slog.Warn("workspace branch delete failed",
+				"branch", branch, "err", err)
+		}
 	}
+}
+
+func workspaceBranchCandidates(
+	ws *Workspace, managedBranch string,
+) []string {
+	if managedBranch == workspaceBranchUnknown {
+		return []string{syntheticWorktreeBranch(ws.MRNumber)}
+	}
+	if managedBranch == "" {
+		return nil
+	}
+	return []string{managedBranch}
+}
+
+func (m *Manager) persistenceContext(
+	ctx context.Context,
+) (context.Context, context.CancelFunc) {
+	return boundedDetachedContext(ctx, workspacePersistTimeout)
+}
+
+func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return boundedDetachedContext(ctx, workspaceCleanupTimeout)
+}
+
+func boundedDetachedContext(
+	ctx context.Context, timeout time.Duration,
+) (context.Context, context.CancelFunc) {
+	base := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		if time.Until(deadline) <= timeout {
+			return context.WithDeadline(base, deadline)
+		}
+	}
+	return context.WithTimeout(base, timeout)
+}
+
+func (m *Manager) updateWorkspaceStatus(
+	ctx context.Context, id, status string, errMsg *string,
+) error {
+	persistCtx, cancel := m.persistenceContext(ctx)
+	defer cancel()
+	return m.updateWorkspaceStatusWithContext(
+		persistCtx, id, status, errMsg,
+	)
+}
+
+func (m *Manager) updateWorkspaceStatusWithContext(
+	ctx context.Context, id, status string, errMsg *string,
+) error {
+	return m.db.UpdateWorkspaceStatus(
+		ctx, id, status, errMsg,
+	)
+}
+
+func (m *Manager) updateWorkspaceBranch(
+	ctx context.Context, id, branch string,
+) error {
+	persistCtx, cancel := m.persistenceContext(ctx)
+	defer cancel()
+	return m.db.UpdateWorkspaceBranch(
+		persistCtx, id, branch,
+	)
+}
+
+func gitRefSHA(
+	ctx context.Context, dir, ref string,
+) (string, bool, error) {
+	cmd := exec.CommandContext(
+		ctx, "git", "rev-parse", "--verify", "--quiet",
+		ref+"^{commit}",
+	)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return strings.TrimSpace(string(out)), true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf(
+		"%w: %s", err, strings.TrimSpace(string(out)),
+	)
 }

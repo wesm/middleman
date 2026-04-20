@@ -2,7 +2,9 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -205,6 +208,243 @@ func TestCreateMRNotSynced(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not synced yet")
+}
+
+func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	ws, err := mgr.Create(
+		context.Background(), "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = mgr.Setup(ctx, ws)
+	require.Error(err)
+	require.Contains(err.Error(), "clone manager not set")
+
+	got, err := d.GetWorkspace(context.Background(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "clone manager not set")
+
+	events, err := d.ListWorkspaceSetupEvents(
+		context.Background(), ws.ID,
+	)
+	require.NoError(err)
+	require.Len(events, 2)
+	assert.Equal("setup", events[0].Stage)
+	assert.Equal("started", events[0].Outcome)
+	assert.Equal("clone", events[1].Stage)
+	assert.Equal("failure", events[1].Outcome)
+	assert.Contains(events[1].Message, "clone manager not set")
+}
+
+func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	ws, err := mgr.Create(
+		context.Background(), "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	origTimeout := workspacePersistTimeout
+	workspacePersistTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { workspacePersistTimeout = origTimeout })
+
+	tx, err := d.WriteDB().BeginTx(context.Background(), nil)
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+
+	start := time.Now()
+	err = mgr.failSetup(
+		context.Background(),
+		ws.ID, workspaceSetupStageClone,
+		errors.New("forced persistence timeout"),
+	)
+	elapsed := time.Since(start)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "forced persistence timeout")
+	assert.Less(
+		elapsed,
+		workspacePersistTimeout+(workspacePersistTimeout/2),
+	)
+}
+
+func TestFailSetupRespectsParentDeadline(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	ws, err := mgr.Create(
+		context.Background(), "github.com", "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+
+	origTimeout := workspacePersistTimeout
+	workspacePersistTimeout = time.Second
+	t.Cleanup(func() { workspacePersistTimeout = origTimeout })
+
+	tx, err := d.WriteDB().BeginTx(context.Background(), nil)
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+
+	parent, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	start := time.Now()
+	err = mgr.failSetup(
+		parent,
+		ws.ID, workspaceSetupStageClone,
+		errors.New("forced persistence timeout"),
+	)
+	elapsed := time.Since(start)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "forced persistence timeout")
+	assert.Less(elapsed, 300*time.Millisecond)
+}
+
+func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		MRNumber:     42,
+		MRHeadRef:    "-unsafe",
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+
+	_, err := mgr.addPreferredWorktree(
+		context.Background(), cloneDir, ws,
+	)
+	require.Error(err)
+	require.Contains(err.Error(), "invalid branch name")
+}
+
+func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	branch := syntheticWorktreeBranch(42)
+	require.NoError(runGit(
+		context.Background(), cloneDir,
+		"branch", branch, "main",
+	))
+
+	ws := &Workspace{
+		MRNumber:     42,
+		WorktreePath: filepath.Join(t.TempDir(), "missing-worktree"),
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mgr.rollbackWorktree(ctx, cloneDir, ws, workspaceBranchUnknown)
+
+	_, exists, err := gitRefSHA(
+		context.Background(), cloneDir, "refs/heads/"+branch,
+	)
+	require.NoError(err)
+	assert.False(exists)
+}
+
+func TestCleanupContextRespectsParentDeadline(t *testing.T) {
+	require := require.New(t)
+
+	parent, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	cleanupCtx, cleanupCancel := cleanupContext(parent)
+	defer cleanupCancel()
+
+	deadline, ok := cleanupCtx.Deadline()
+	require.True(ok)
+
+	remaining := time.Until(deadline)
+	require.LessOrEqual(remaining, 100*time.Millisecond)
+	require.Greater(remaining, 0*time.Millisecond)
+}
+
+func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+	cloneDir := filepath.Join(dir, "clone.git")
+
+	runWorkspaceTestGit(
+		t, dir, "init", "--bare", "--initial-branch=main", remote,
+	)
+	runWorkspaceTestGit(t, dir, "clone", remote, work)
+	runWorkspaceTestGit(
+		t, work, "config", "user.email", "test@test.com",
+	)
+	runWorkspaceTestGit(
+		t, work, "config", "user.name", "Test",
+	)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
+	runWorkspaceTestGit(t, work, "push", "origin", "main")
+	runWorkspaceTestGit(t, dir, "clone", "--bare", remote, cloneDir)
+
+	return cloneDir
+}
+
+func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(
+		gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
 }
 
 func TestShellFromPasswdLine(t *testing.T) {

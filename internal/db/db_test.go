@@ -43,6 +43,16 @@ func TestOpenAndSchema(t *testing.T) {
 		).Scan(&name)
 		require.NoErrorf(t, err, "table %s should exist", tbl)
 	}
+
+	var workspaceBranchColumn string
+	err := d.ReadDB().QueryRow(
+		`SELECT name
+		 FROM pragma_table_info('middleman_workspaces')
+		 WHERE name = ?`,
+		"workspace_branch",
+	).Scan(&workspaceBranchColumn)
+	require.NoError(t, err)
+	require.Equal(t, "workspace_branch", workspaceBranchColumn)
 }
 
 func TestOpenCreatesFile(t *testing.T) {
@@ -607,6 +617,12 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 		repoID,
 	)
 	require.NoError(err)
+	_, err = raw.ExecContext(ctx, `
+		DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
+		DROP TABLE IF EXISTS middleman_workspace_setup_events;
+		ALTER TABLE middleman_workspaces DROP COLUMN workspace_branch;
+	`)
+	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
 		9,
@@ -694,6 +710,56 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	}
 	require.NoError(rows.Err())
 	require.Equal(firstPass, secondPass)
+}
+
+func TestOpenRepairsBrokenWorkspaceMigrationVersion10(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken-v10.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		UPDATE schema_migrations
+		SET version = 10, dirty = FALSE
+	`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	version := latestMigrationVersionForTest(t)
+	var actualVersion int
+	var dirty bool
+	err = reopened.ReadDB().QueryRow(
+		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
+	).Scan(&actualVersion, &dirty)
+	require.NoError(err)
+	require.Equal(version, actualVersion)
+	require.False(dirty)
+
+	var workspaceBranchColumn string
+	err = reopened.ReadDB().QueryRow(
+		`SELECT name
+		 FROM pragma_table_info('middleman_workspaces')
+		 WHERE name = ?`,
+		"workspace_branch",
+	).Scan(&workspaceBranchColumn)
+	require.NoError(err)
+	require.Equal("workspace_branch", workspaceBranchColumn)
+
+	require.True(
+		tableExistsForTest(
+			t, reopened.ReadDB(),
+			"middleman_workspace_setup_events",
+		),
+	)
 }
 
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {
