@@ -2,20 +2,60 @@ import { expect, request as playwrightRequest, test, type APIRequestContext } fr
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("detail action buttons", () => {
-  test("issue detail opens the workspace panel for the issue repo", async ({ page }) => {
+  test("issue detail emits direct worktree creation for the issue", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+          (window as Record<string, any>).__last_workspace_command = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    });
+
     await page.goto("/issues/acme/widgets/10");
     await expect(page.locator(".issue-detail")).toBeVisible();
 
     await page.locator(".btn--workspace").click();
 
-    await expect(page).toHaveURL(
-      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    const command = await page.evaluate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+      () => (window as Record<string, any>).__last_workspace_command,
     );
-    await expect(page.locator(".workspace-panel")).toBeVisible();
-    await expect(page.locator(".repo-label")).toHaveText("acme/widgets");
+    expect(command).toBeTruthy();
+    expect(command.cmd).toBe("createWorktreeFromIssue");
+    expect(command.payload.number).toBe(10);
+    expect(command.payload.owner).toBe("acme");
+    expect(command.payload.name).toBe("widgets");
+    expect(command.payload.platformHost).toBe("github.com");
+    await expect(page).toHaveURL(/\/issues\/acme\/widgets\/10$/);
   });
 
-  test("issue workspace button still works after detail sync refresh", async ({ page }) => {
+  test("issue workspace button still emits worktree creation after detail sync refresh", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__middleman_config = {
+        embed: { activePlatformHost: "github.com" },
+        onWorkspaceCommand: (
+          cmd: string,
+          payload: Record<string, unknown>,
+        ) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+          (window as Record<string, any>).__last_workspace_command = {
+            cmd,
+            payload,
+          };
+          return { ok: true };
+        },
+      };
+    });
+
     const syncResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
       return response.request().method() === "POST"
@@ -32,11 +72,15 @@ test.describe("detail action buttons", () => {
 
     await page.locator(".btn--workspace").click();
 
-    await expect(page).toHaveURL(
-      /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
+    const command = await page.evaluate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
+      () => (window as Record<string, any>).__last_workspace_command,
     );
-    await expect(page.locator(".workspace-panel")).toBeVisible();
-    await expect(page.locator(".repo-label")).toHaveText("acme/widgets");
+    expect(command).toBeTruthy();
+    expect(command.cmd).toBe("createWorktreeFromIssue");
+    expect(command.payload.number).toBe(10);
+    expect(command.payload.platformHost).toBe("github.com");
+    await expect(page).toHaveURL(/\/issues\/acme\/widgets\/10$/);
   });
 
   test("pull request actions use shared ActionButton component", async ({ page }) => {

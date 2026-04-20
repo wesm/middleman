@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     getStores, getClient, getActions,
-    getUIConfig, getNavigate,
+    getUIConfig, getWorkspaceCommand,
   } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -16,7 +16,7 @@
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
-  const navigate = getNavigate();
+  const workspaceCommand = getWorkspaceCommand();
 
   interface Props {
     owner: string;
@@ -92,12 +92,36 @@
     }
   }
 
-  function openWorkspacePanel(): void {
+  let workspaceCreating = $state(false);
+  let workspaceError = $state<string | null>(null);
+
+  async function createWorkspace(): Promise<void> {
     const detail = issues.getIssueDetail();
-    if (!detail) return;
-    navigate(
-      `/workspaces/panel/${detail.platform_host}/${detail.repo_owner}/${detail.repo_name}`,
-    );
+    if (!detail || workspaceCommand === null) return;
+
+    workspaceCreating = true;
+    workspaceError = null;
+    try {
+      const result = await workspaceCommand(
+        "createWorktreeFromIssue",
+        {
+          platformHost: detail.platform_host,
+          owner: detail.repo_owner,
+          name: detail.repo_name,
+          number: detail.issue.Number,
+        },
+      );
+      if (!result.ok) {
+        throw new Error(
+          result.message ?? "failed to create workspace",
+        );
+      }
+    } catch (err) {
+      workspaceError =
+        err instanceof Error ? err.message : String(err);
+    } finally {
+      workspaceCreating = false;
+    }
   }
 </script>
 
@@ -206,12 +230,15 @@
 
       <!-- Actions -->
       <div class="actions-row">
-        <button
-          class="btn--workspace"
-          onclick={openWorkspacePanel}
-        >
-          Open Workspace
-        </button>
+        {#if workspaceCommand !== null}
+          <button
+            class="btn--workspace"
+            disabled={workspaceCreating}
+            onclick={() => void createWorkspace()}
+          >
+            {workspaceCreating ? "Creating..." : "Create Workspace"}
+          </button>
+        {/if}
         {#if issue.State === "open"}
           <ActionButton
             class="btn--close"
@@ -234,6 +261,9 @@
           >
             {stateSubmitting ? "Reopening..." : "Reopen issue"}
           </ActionButton>
+        {/if}
+        {#if workspaceError}
+          <span class="action-error">{workspaceError}</span>
         {/if}
         {#each actions.issue ?? [] as action (action.id)}
           <ActionButton

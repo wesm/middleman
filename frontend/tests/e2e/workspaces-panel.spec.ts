@@ -7,22 +7,6 @@ test.beforeEach(async ({ page }) => {
 });
 
 test(
-  "panel standalone route uses route host instead of startup state",
-  async ({ page }) => {
-    await page.goto(
-      "/workspaces/panel/github.com/acme/widgets",
-    );
-
-    await expect(
-      page.getByText("acme/widgets"),
-    ).toBeVisible();
-    await expect(
-      page.getByText("starting up"),
-    ).toHaveCount(0);
-  },
-);
-
-test(
   "panel empty state with noSelection reason",
   async ({ page }) => {
     await page.goto(
@@ -87,27 +71,6 @@ test(
     await expect(
       page.getByText("starting up"),
     ).toBeVisible();
-  },
-);
-
-test(
-  "panel embedded non-workspace config falls back to route host",
-  async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        ui: { hideSync: true },
-      };
-    });
-    await page.goto(
-      "/workspaces/panel/github.com/acme/widgets",
-    );
-
-    await expect(
-      page.getByText("acme/widgets"),
-    ).toBeVisible();
-    await expect(
-      page.getByText("starting up"),
-    ).toHaveCount(0);
   },
 );
 

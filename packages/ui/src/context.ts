@@ -5,6 +5,7 @@ import type {
   NavigateCallback,
   EventCallback,
   PrepareRouteCallback,
+  WorkspaceCommandCallback,
   HostStateAccessors,
   StoreInstances,
   UIConfig,
@@ -17,6 +18,7 @@ export const ACTIONS_KEY = Symbol("middleman-actions");
 export const NAVIGATE_KEY = Symbol("middleman-navigate");
 export const EVENT_KEY = Symbol("middleman-event");
 export const PREPARE_ROUTE_KEY = Symbol("middleman-prepare-route");
+export const WORKSPACE_COMMAND_KEY = Symbol("middleman-workspace-command");
 export const STORES_KEY = Symbol("middleman-stores");
 export const UI_CONFIG_KEY = Symbol("middleman-ui-config");
 export const SIDEBAR_KEY = Symbol("middleman-sidebar");
@@ -36,6 +38,10 @@ export function getEventCallback(): EventCallback {
 }
 export function getPrepareRoute(): PrepareRouteCallback | null {
   return getContext(PREPARE_ROUTE_KEY);
+}
+export function getWorkspaceCommand():
+  WorkspaceCommandCallback | null {
+  return getContext(WORKSPACE_COMMAND_KEY);
 }
 export function getStores(): StoreInstances {
   return getContext(STORES_KEY);

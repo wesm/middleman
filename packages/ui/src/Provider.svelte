@@ -2,8 +2,8 @@
   import { setContext, onDestroy } from "svelte";
   import {
     API_CLIENT_KEY, ACTIONS_KEY, NAVIGATE_KEY, EVENT_KEY,
-    PREPARE_ROUTE_KEY, STORES_KEY, UI_CONFIG_KEY, SIDEBAR_KEY,
-    HOST_STATE_KEY,
+    PREPARE_ROUTE_KEY, WORKSPACE_COMMAND_KEY,
+    STORES_KEY, UI_CONFIG_KEY, SIDEBAR_KEY, HOST_STATE_KEY,
     ROBOREV_CLIENT_KEY,
   } from "./context.js";
   import { createRoborevClient } from "./api/roborev/client.js";
@@ -21,8 +21,9 @@
   } from "./stores/roborev/log.svelte.js";
   import type {
     MiddlemanClient, ActionRegistry, NavigateCallback,
-    EventCallback, PrepareRouteCallback, HostStateAccessors,
-    StoreInstances, UIConfig, SidebarAccessors,
+    EventCallback, PrepareRouteCallback, WorkspaceCommandCallback,
+    HostStateAccessors, StoreInstances, UIConfig,
+    SidebarAccessors,
   } from "./types.js";
   import type {
     PullsStoreOptions,
@@ -76,6 +77,7 @@
     onNavigate?: NavigateCallback;
     onEvent?: EventCallback;
     prepareRoute?: PrepareRouteCallback;
+    onWorkspaceCommand?: WorkspaceCommandCallback | undefined;
     hostState?: HostStateAccessors;
     config?: UIConfig;
     sidebar?: SidebarAccessors;
@@ -92,6 +94,7 @@
     onNavigate = () => {},
     onEvent = () => {},
     prepareRoute = undefined,
+    onWorkspaceCommand = undefined,
     hostState = {},
     config = {},
     sidebar = {
@@ -117,6 +120,7 @@
     nav: NavigateCallback,
     evt: EventCallback,
     prep: PrepareRouteCallback | undefined,
+    workspaceCmd: WorkspaceCommandCallback | undefined,
     sb: SidebarAccessors,
     gp: () => string,
     roborevBase: string | undefined,
@@ -267,6 +271,7 @@
     setContext(NAVIGATE_KEY, nav);
     setContext(EVENT_KEY, evt);
     setContext(PREPARE_ROUTE_KEY, prep ?? null);
+    setContext(WORKSPACE_COMMAND_KEY, workspaceCmd ?? null);
     setContext(STORES_KEY, si);
     setContext(UI_CONFIG_KEY, cfg);
     setContext(SIDEBAR_KEY, sb);
@@ -279,6 +284,7 @@
   stores = init(
     client, hostState, config, actions,
     onNavigate, onEvent, prepareRoute,
+    onWorkspaceCommand,
     sidebar, getPage, roborevBaseUrl, onError,
   );
 

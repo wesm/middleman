@@ -76,7 +76,6 @@
     getSidebarWidth as getEmbeddedSidebarWidth,
     emitLayoutChanged,
     getEmbedActivePlatformHost,
-    getEmbedPanelMode,
     getEmbedHoverCardsEnabled,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
@@ -419,6 +418,7 @@
   onError={showFlash}
   onNavigate={(e) =>
     navigate(typeof e === "string" ? e : e.path)}
+  onWorkspaceCommand={emitWorkspaceCommand}
   actions={{
     pull: getPullRequestActions().map((a) => ({
       id: a.id,
@@ -589,13 +589,7 @@
             name={"name" in route ? route.name : undefined}
             number={"number" in route ? route.number : undefined}
             emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
-            activePlatformHost={
-              getEmbedPanelMode()
-                ? getEmbedActivePlatformHost()
-                : ("platformHost" in route
-                  ? route.platformHost
-                  : null)
-            }
+            activePlatformHost={getEmbedActivePlatformHost()}
             onSelectPR={(n) => {
               if ("platformHost" in route) {
                 navigate(
