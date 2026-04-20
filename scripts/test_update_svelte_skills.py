@@ -21,6 +21,9 @@ def load_module():
 
 
 class UpdateSvelteSkillsTest(unittest.TestCase):
+    def test_default_ref_is_pinned_commit_sha(self):
+        self.assertRegex(self.module.DEFAULT_REF, r"^[0-9a-f]{40}$")
+
     def setUp(self):
         self.module = load_module()
         self.temp_dir = tempfile.TemporaryDirectory()

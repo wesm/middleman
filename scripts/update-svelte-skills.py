@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 REPO_API_ROOT = "https://api.github.com/repos/sveltejs/ai-tools/contents"
-DEFAULT_REF = "main"
+DEFAULT_REF = "e429cd783992de3d39770aab480c5489cd0a5dca"
 SKILLS_API_PATH = "tools/skills"
 MANIFEST_NAME = ".svelte-managed.json"
 
@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
             "- skills/ is checked-in source of truth.\n"
             "- .agents/skills/ and .claude/skills/ entries are managed as symlinks.\n"
             "- Existing non-symlink paths at target locations are preserved as local overrides.\n"
+            "- Default sync source is pinned to an immutable upstream commit.\n"
+            "- Pass --ref explicitly if you intentionally want a different upstream ref.\n"
             "- If an older clone still has generated directories where tracked symlinks should land, remove those directories once and rerun this command."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -52,7 +54,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ref",
         default=DEFAULT_REF,
-        help="Git ref to read from the upstream repository. Defaults to main.",
+        help=(
+            "Git ref to read from the upstream repository. Defaults to pinned "
+            f"commit {DEFAULT_REF}."
+        ),
     )
     parser.add_argument(
         "--target",

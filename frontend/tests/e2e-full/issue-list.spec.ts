@@ -77,7 +77,7 @@ test.describe("issue list view", () => {
     });
 
     expect(stateChipStyles.minHeight).toBe("18px");
-    expect(stateChipStyles.fontSize).toBe("12px");
+    expect(stateChipStyles.fontSize).toBe("10px");
     expect(stateChipStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 

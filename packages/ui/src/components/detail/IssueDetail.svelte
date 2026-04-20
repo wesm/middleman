@@ -353,11 +353,6 @@
     color: var(--text-secondary);
   }
 
-  :global(.issue-state-chip.chip) {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
   .meta-sep {
     font-size: 12px;
     color: var(--text-muted);
