@@ -22,7 +22,12 @@ import (
 	"github.com/wesm/middleman/internal/procutil"
 )
 
-// Manager handles workspace lifecycle: create, setup, delete.
+// Manager owns middleman's persisted workspace lifecycle.
+//
+// Its purpose is to turn tracked review items into durable local execution
+// contexts backed by a database row, a Git worktree, and a tmux session. It is
+// intentionally not a generic host worktree browser or arbitrary Git
+// automation layer.
 type Manager struct {
 	db          *db.DB
 	worktreeDir string
@@ -100,9 +105,12 @@ func (m *Manager) tmuxExec(
 	return exec.CommandContext(ctx, m.tmuxCmd[0], args...)
 }
 
-// Create validates inputs, inserts a workspace row with status
-// "creating", and returns it. The caller runs Setup in the
-// background.
+// Create persists a PR-backed middleman workspace.
+//
+// The point of this row is to give a tracked pull request a stable local
+// workspace entry that the UI can reopen later, rather than rediscovering local
+// Git state on every load. The caller runs Setup in the background to
+// materialize the worktree and tmux session.
 func (m *Manager) Create(
 	ctx context.Context,
 	platformHost, owner, name string,
@@ -162,9 +170,12 @@ func (m *Manager) Create(
 	return ws, nil
 }
 
-// CreateIssue validates inputs, inserts an issue-backed workspace row
-// with status "creating", and returns it. The caller runs Setup in
-// the background.
+// CreateIssue persists an issue-backed middleman workspace.
+//
+// Unlike PR workspaces, issue workspaces are not tied to a remote head branch.
+// They exist to give an issue its own durable local execution context that
+// starts from the repo's current origin/HEAD. The caller runs Setup in the
+// background to materialize the worktree and tmux session.
 func (m *Manager) CreateIssue(
 	ctx context.Context,
 	platformHost, owner, name string,

@@ -2065,6 +2065,11 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 
 // --- Workspaces ---
 
+// createWorkspace creates or reuses a PR-backed middleman workspace.
+//
+// This API exists so a tracked pull request can have a durable local execution
+// context that middleman owns and can reopen later. It is not a generic
+// worktree-creation endpoint for arbitrary branches.
 func (s *Server) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
@@ -2190,6 +2195,12 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 	})
 }
 
+// createIssueWorkspace creates or reuses an issue-backed middleman workspace.
+//
+// This API exists so an issue can have its own durable local execution context
+// even when there is no PR branch yet. These workspaces start from the repo's
+// current origin/HEAD and are presented in the UI with issue-specific sidebar
+// behavior instead of PR/reviews affordances.
 func (s *Server) createIssueWorkspace(
 	ctx context.Context, input *createIssueWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
@@ -2287,6 +2298,11 @@ func (s *Server) createIssueWorkspace(
 	}, nil
 }
 
+// listWorkspaces returns middleman's persisted workspace records.
+//
+// Its purpose is to drive the workspaces page and terminal picker from
+// middleman's own database model, rather than from ad hoc discovery of host
+// worktrees.
 func (s *Server) listWorkspaces(
 	ctx context.Context, _ *struct{},
 ) (*listWorkspacesOutput, error) {
@@ -2331,6 +2347,10 @@ func (s *Server) listWorkspaces(
 	return out, nil
 }
 
+// getWorkspace returns one persisted middleman workspace.
+//
+// The terminal view uses this to reopen an existing local execution context and
+// determine whether the workspace is PR-backed or issue-backed.
 func (s *Server) getWorkspace(
 	ctx context.Context, input *getWorkspaceInput,
 ) (*getWorkspaceOutput, error) {
@@ -2392,7 +2412,7 @@ func (s *Server) retryWorkspace(
 			"workspace summary missing after retry",
 		)
 	}
-	resp := toWorkspaceResponse(summary)
+	resp := s.toWorkspaceResponse(ctx, summary)
 	s.hub.Broadcast(Event{
 		Type: "workspace_status",
 		Data: resp,
@@ -2497,6 +2517,10 @@ func isWorkingTmuxTitle(title string) bool {
 	return false
 }
 
+// deleteWorkspace tears down a middleman-managed workspace.
+//
+// This exists to remove the persisted workspace entry plus its managed local
+// resources. It is not intended to delete arbitrary worktrees on disk.
 func (s *Server) deleteWorkspace(
 	ctx context.Context, input *deleteWorkspaceInput,
 ) (*struct{}, error) {

@@ -137,6 +137,11 @@ type commitsResponse struct {
 	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
 }
 
+// workspaceResponse describes one middleman-managed workspace.
+//
+// This payload exists so the UI can reopen a durable local workspace and render
+// the correct item-specific presentation around it. It represents middleman's
+// own persisted workspace model, not an arbitrary host worktree inventory.
 type workspaceResponse struct {
 	ID                 string  `json:"id"`
 	PlatformHost       string  `json:"platform_host"`
@@ -163,11 +168,18 @@ type workspaceResponse struct {
 	MRDeletions        *int    `json:"mr_deletions,omitempty"`
 }
 
+// workspaceRef is the lightweight link from item detail APIs back to an
+// existing middleman workspace.
+//
+// Its purpose is to let PR and issue detail screens switch from "create
+// workspace" to "open workspace" without embedding the full workspace payload.
 type workspaceRef struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
+// toWorkspaceResponse maps the DB workspace summary into the API shape used by
+// the workspaces page and terminal view.
 func toWorkspaceResponse(
 	s *db.WorkspaceSummary,
 ) workspaceResponse {
