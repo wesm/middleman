@@ -79,9 +79,6 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: 0 8px;
-    border-radius: 10px;
-    font-size: 11px;
     font-weight: 600;
     line-height: 1;
     letter-spacing: 0.03em;
@@ -91,11 +88,17 @@
   }
 
   .chip--sm {
-    min-height: 20px;
+    min-height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    font-size: 10px;
   }
 
   .chip--md {
     min-height: 22px;
+    padding: 0 8px;
+    border-radius: 10px;
+    font-size: 11px;
   }
 
   .chip--interactive {

@@ -38,12 +38,16 @@ test("design system page renders chip matrix with shared styles", async ({ page 
       const styles = getComputedStyle(node);
       return {
         minHeight: styles.minHeight,
+        fontSize: styles.fontSize,
+        paddingInline: `${styles.paddingLeft}/${styles.paddingRight}`,
       };
     }),
     mdGreenChip.evaluate((node) => {
       const styles = getComputedStyle(node);
       return {
         minHeight: styles.minHeight,
+        fontSize: styles.fontSize,
+        paddingInline: `${styles.paddingLeft}/${styles.paddingRight}`,
         backgroundColor: styles.backgroundColor,
         textTransform: styles.textTransform,
       };
@@ -69,8 +73,12 @@ test("design system page renders chip matrix with shared styles", async ({ page 
     }),
   ]);
 
-  expect(styles[0].minHeight).toBe("20px");
+  expect(styles[0].minHeight).toBe("18px");
+  expect(styles[0].fontSize).toBe("10px");
+  expect(styles[0].paddingInline).toBe("6px/6px");
   expect(styles[1].minHeight).toBe("22px");
+  expect(styles[1].fontSize).toBe("11px");
+  expect(styles[1].paddingInline).toBe("8px/8px");
   expect(styles[1].backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles[1].textTransform).toBe("uppercase");
   expect(styles[2].backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
