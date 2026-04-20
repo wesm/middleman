@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { getStores, getClient, getActions, getUIConfig } from "../../context.js";
+  import {
+    getStores, getClient, getActions,
+    getUIConfig, getNavigate,
+  } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -12,6 +15,7 @@
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
+  const navigate = getNavigate();
 
   interface Props {
     owner: string;
@@ -85,6 +89,14 @@
     } finally {
       stateSubmitting = false;
     }
+  }
+
+  function openWorkspacePanel(): void {
+    const detail = issues.getIssueDetail();
+    if (!detail) return;
+    navigate(
+      `/workspaces/panel/${detail.platform_host}/${detail.repo_owner}/${detail.repo_name}`,
+    );
   }
 </script>
 
@@ -193,6 +205,12 @@
 
       <!-- Actions -->
       <div class="actions-row">
+        <button
+          class="btn--workspace"
+          onclick={openWorkspacePanel}
+        >
+          Open Workspace
+        </button>
         {#if issue.State === "open"}
           <ActionButton
             class="btn--close"
@@ -484,6 +502,28 @@
     gap: 8px;
     padding: 8px 0;
   }
+
+  .btn--workspace {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--accent-blue, #0969da);
+    background: var(--accent-blue, #0969da);
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.1s;
+  }
+
+  .btn--workspace:hover {
+    filter: brightness(1.1);
+  }
+
+  .btn--workspace:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .action-error {
     font-size: 11px;
     color: var(--accent-red, #d73a49);

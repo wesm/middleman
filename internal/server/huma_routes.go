@@ -852,6 +852,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		}
 		resp := issueResponse{
 			Issue:        issue,
+			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
 			RepoName:     rp.Name,
 			DetailLoaded: issue.DetailFetchedAt != nil,
@@ -890,6 +891,7 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 	issueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
+		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
 		DetailLoaded: issue.DetailFetchedAt != nil,
@@ -1547,11 +1549,17 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 		events = []db.IssueEvent{}
 	}
 
+	repo, err := s.db.GetRepoByID(ctx, issue.RepoID)
+	if err != nil || repo == nil {
+		return nil, huma.Error500InternalServerError("load repo failed")
+	}
+
 	syncIssueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
-		RepoOwner:    input.Owner,
-		RepoName:     input.Name,
+		PlatformHost: repo.PlatformHost,
+		RepoOwner:    repo.Owner,
+		RepoName:     repo.Name,
 		DetailLoaded: issue.DetailFetchedAt != nil,
 	}
 	if issue.DetailFetchedAt != nil {

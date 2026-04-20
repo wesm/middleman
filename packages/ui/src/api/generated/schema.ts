@@ -805,6 +805,7 @@ export interface components {
             detail_loaded: boolean;
             events: components["schemas"]["IssueEvent"][] | null;
             issue: components["schemas"]["Issue"];
+            platform_host: string;
             repo_name: string;
             repo_owner: string;
         };
@@ -858,6 +859,7 @@ export interface components {
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
+            platform_host: string;
             repo_name: string;
             repo_owner: string;
         };
