@@ -19,6 +19,7 @@
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
+  import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
@@ -539,7 +540,9 @@
     <FlashBanner />
 
     <main class="app-main">
-      {#if !appReady}
+      {#if getPage() === "design-system"}
+        <DesignSystemPage />
+      {:else if !appReady}
         <div class="loading-state">
           <svg
             class="loading-spinner"

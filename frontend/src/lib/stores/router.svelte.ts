@@ -1,5 +1,6 @@
 export type Route =
   | { page: "activity" }
+  | { page: "design-system" }
   | { page: "workspaces" }
   | { page: "workspaces-panel"; view: "list"; platformHost: string; owner: string; name: string }
   | {
@@ -88,6 +89,9 @@ function parseRoute(fullPath: string): Route {
         number: parseInt(issueMatch[3]!, 10),
       };
     }
+  }
+  if (path === "/design-system") {
+    return { page: "design-system" };
   }
   if (path.startsWith("/workspaces/panel")) {
     const rest = path.slice("/workspaces/panel".length);
@@ -205,7 +209,7 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" | "workspaces-panel" | "terminal" {
+  "activity" | "design-system" | "pulls" | "issues" | "settings" | "focus" | "reviews" | "workspaces" | "workspaces-panel" | "terminal" {
   return route.page;
 }
 

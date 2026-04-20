@@ -80,6 +80,12 @@ describe("router /pulls/.../files route", () => {
 });
 
 describe("router basic routes", () => {
+  it("parses /design-system", () => {
+    navigate("/design-system");
+    expect(getRoute()).toEqual({ page: "design-system" });
+    expect(getPage()).toBe("design-system");
+  });
+
   it("parses /pulls as list view", () => {
     navigate("/pulls");
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
