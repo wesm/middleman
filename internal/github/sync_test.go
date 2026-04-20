@@ -5772,6 +5772,107 @@ func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
 }
 
+func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	budget := testBudget(11)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	pr1UpdatedAt := now.Add(-10 * time.Minute)
+	detailFetchedAt := now.Add(-5 * time.Minute)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "Large unchanged thread",
+		Author:          "alice",
+		State:           "open",
+		CommentCount:    100,
+		HeadBranch:      "feature/large-thread",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "1111111",
+		PlatformBaseSHA: "aaaaaaa",
+		CreatedAt:       pr1UpdatedAt,
+		UpdatedAt:       pr1UpdatedAt,
+		LastActivityAt:  pr1UpdatedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	pr2ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1002,
+		Number:          2,
+		URL:             "https://github.com/owner/repo/pull/2",
+		Title:           "Needs detail drain",
+		Author:          "alice",
+		State:           "open",
+		CommentCount:    0,
+		HeadBranch:      "feature/detail-drain",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "2222222",
+		PlatformBaseSHA: "aaaaaaa",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+	require.NoError(d.EnsureKanbanState(ctx, pr2ID))
+
+	var commentCalls []int
+	mc := &mockClient{
+		budget: budget["github.com"],
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(2, number)
+			return &gh.PullRequest{
+				ID:        new(int64(1002)),
+				Number:    new(2),
+				Title:     new("Needs detail drain"),
+				State:     new("open"),
+				HTMLURL:   new("https://github.com/owner/repo/pull/2"),
+				User:      &gh.User{Login: new("alice")},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head:      &gh.PullRequestBranch{Ref: new("feature/detail-drain"), SHA: new("2222222")},
+				Base:      &gh.PullRequestBranch{Ref: new("main"), SHA: new("aaaaaaa")},
+			}, nil
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			commentCalls = append(commentCalls, number)
+			return []*gh.IssueComment{}, nil
+		},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		ciStatus: &gh.CombinedStatus{State: new("success")},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, budget,
+	)
+
+	syncer.queuePRCommentSync(repo, 1)
+	budget["github.com"].Spend(3)
+	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true})
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 2)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.NotNil(pr.DetailFetchedAt,
+		"detail drain should win before unchanged large-thread refresh")
+	assert.Equal([]int{2}, commentCalls,
+		"only the detail-drain PR should spend the remaining budget")
+}
+
 func TestSyncerGQLRateTrackers(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)

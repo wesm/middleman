@@ -4608,6 +4608,130 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 13, 11, 30, 0, 0, time.UTC)
+	firstUpdatedAt := now.Format(time.RFC3339)
+	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	commentCreatedAt := now.Add(2 * time.Minute).Format(time.RFC3339)
+	currentUpdatedAt := firstUpdatedAt
+	currentCommentsJSON := `{"nodes":[{"databaseId":9222,"author":{"login":"commenter"},"body":"bulk PR comment removed","createdAt":"` + commentCreatedAt + `","updatedAt":"` + commentCreatedAt + `"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":172100,
+				"number":173,
+				"title":"Bulk deleted comment PR",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"GraphQL bulk PR",
+				"url":"https://github.com/acme/widget/pull/173",
+				"author":{"login":"heidi"},
+				"createdAt":"` + firstUpdatedAt + `",
+				"updatedAt":"` + currentUpdatedAt + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"feature/bulk-pr",
+				"baseRefName":"main",
+				"headRefOid":"deadbeef",
+				"baseRefOid":"feedface",
+				"headRepository":{"url":"https://github.com/acme/widget"},
+				"labels":{"nodes":[]},
+				"comments":` + currentCommentsJSON + `,
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"review-cursor"}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"commit-cursor"}},
+				"lastCommit":{"nodes":[]}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prID := int64(172100)
+	prNumber := 173
+	prTitle := "Bulk deleted comment PR"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/173"
+	headRef := "feature/bulk-pr"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	prTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			updatedAt, parseErr := time.Parse(time.RFC3339, currentUpdatedAt)
+			require.NoError(parseErr)
+			updatedStamp := gh.Timestamp{Time: updatedAt}
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: new("heidi")},
+				CreatedAt: &prTime,
+				UpdatedAt: &updatedStamp,
+				Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: &baseRef},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(now.Add(2*time.Minute).UTC(), firstResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("bulk PR comment removed", (*firstResp.JSON200.Events)[0].Body)
+
+	currentUpdatedAt = secondUpdatedAt
+	currentCommentsJSON = `{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
 func make422Error() error {
 	return &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},

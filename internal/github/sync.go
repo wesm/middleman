@@ -189,6 +189,20 @@ type Syncer struct {
 	runCtx    context.Context
 	runCancel context.CancelFunc
 	runCtxMu  sync.Mutex
+
+	commentRefreshMu         sync.Mutex
+	pendingPRCommentSyncs    []queuedPRCommentSync
+	pendingIssueCommentSyncs []queuedIssueCommentSync
+}
+
+type queuedPRCommentSync struct {
+	repo   RepoRef
+	number int
+}
+
+type queuedIssueCommentSync struct {
+	repo   RepoRef
+	number int
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
@@ -1015,6 +1029,7 @@ func (s *Syncer) runOnce(
 		Progress: fmt.Sprintf("0/%d", total),
 	})
 	slog.Info("sync started", "repos", total)
+	s.resetPendingCommentSyncs()
 
 	workers := min(max(int(s.parallelism.Load()), 1), total)
 
@@ -1121,6 +1136,10 @@ dispatch:
 			}
 			s.runBackfillDiscovery(ctx, host, repos)
 		}
+	}
+
+	if !canceled.Load() && ctx.Err() == nil {
+		s.drainPendingCommentSyncs(ctx, eligibleHosts)
 	}
 
 	// Use a latched flag (set by the dispatch loop and workers at
@@ -1489,7 +1508,7 @@ func (s *Syncer) indexUpsertMR(
 	if existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
-		s.refreshPRCommentsForItem(ctx, client, repo, existing)
+		s.queuePRCommentSync(repo, existing.Number)
 	}
 
 	return nil
@@ -1585,6 +1604,111 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			"number", issue.Number,
 			"err", err,
 		)
+	}
+}
+
+func (s *Syncer) resetPendingCommentSyncs() {
+	s.commentRefreshMu.Lock()
+	defer s.commentRefreshMu.Unlock()
+	s.pendingPRCommentSyncs = nil
+	s.pendingIssueCommentSyncs = nil
+}
+
+func (s *Syncer) queuePRCommentSync(repo RepoRef, number int) {
+	s.commentRefreshMu.Lock()
+	defer s.commentRefreshMu.Unlock()
+	s.pendingPRCommentSyncs = append(s.pendingPRCommentSyncs, queuedPRCommentSync{
+		repo:   repo,
+		number: number,
+	})
+}
+
+func (s *Syncer) queueIssueCommentSync(repo RepoRef, number int) {
+	s.commentRefreshMu.Lock()
+	defer s.commentRefreshMu.Unlock()
+	s.pendingIssueCommentSyncs = append(s.pendingIssueCommentSyncs, queuedIssueCommentSync{
+		repo:   repo,
+		number: number,
+	})
+}
+
+func (s *Syncer) drainPendingCommentSyncs(
+	ctx context.Context,
+	eligibleHosts map[string]bool,
+) {
+	s.commentRefreshMu.Lock()
+	prs := append([]queuedPRCommentSync(nil), s.pendingPRCommentSyncs...)
+	issues := append([]queuedIssueCommentSync(nil), s.pendingIssueCommentSyncs...)
+	s.pendingPRCommentSyncs = nil
+	s.pendingIssueCommentSyncs = nil
+	s.commentRefreshMu.Unlock()
+
+	for _, item := range prs {
+		if ctx.Err() != nil {
+			return
+		}
+		host := item.repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if !eligibleHosts[host] {
+			continue
+		}
+		client, err := s.clientFor(item.repo)
+		if err != nil {
+			slog.Warn("comment refresh: resolve client failed",
+				"repo", item.repo.Owner+"/"+item.repo.Name,
+				"number", item.number,
+				"err", err,
+			)
+			continue
+		}
+		pr, err := s.db.GetMergeRequest(
+			ctx, item.repo.Owner, item.repo.Name, item.number,
+		)
+		if err != nil {
+			slog.Warn("comment refresh: get PR failed",
+				"repo", item.repo.Owner+"/"+item.repo.Name,
+				"number", item.number,
+				"err", err,
+			)
+			continue
+		}
+		s.refreshPRCommentsForItem(ctx, client, item.repo, pr)
+	}
+
+	for _, item := range issues {
+		if ctx.Err() != nil {
+			return
+		}
+		host := item.repo.PlatformHost
+		if host == "" {
+			host = "github.com"
+		}
+		if !eligibleHosts[host] {
+			continue
+		}
+		client, err := s.clientFor(item.repo)
+		if err != nil {
+			slog.Warn("comment refresh: resolve client failed",
+				"repo", item.repo.Owner+"/"+item.repo.Name,
+				"number", item.number,
+				"err", err,
+			)
+			continue
+		}
+		issue, err := s.db.GetIssue(
+			ctx, item.repo.Owner, item.repo.Name, item.number,
+		)
+		if err != nil {
+			slog.Warn("comment refresh: get issue failed",
+				"repo", item.repo.Owner+"/"+item.repo.Name,
+				"number", item.number,
+				"err", err,
+			)
+			continue
+		}
+		s.refreshIssueCommentsForItem(ctx, client, item.repo, issue)
 	}
 }
 
@@ -2761,7 +2885,7 @@ func (s *Syncer) syncOpenIssue(
 
 	if !needsTimeline {
 		if existing != nil && existing.DetailFetchedAt != nil {
-			s.refreshIssueCommentsForItem(ctx, client, repo, existing)
+			s.queueIssueCommentSync(repo, existing.Number)
 		}
 		return nil
 	}
