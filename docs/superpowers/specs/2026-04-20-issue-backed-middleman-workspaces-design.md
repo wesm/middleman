@@ -52,8 +52,8 @@ The intended behavior is for issue detail to use the second system.
   workspace model in this change
 - Redesigning middleman's remaining terminal/workspace navigation
 - Supporting reviews/roborev sidebars for issue workspaces
-- Generalizing the entire API vocabulary away from `mr_*` fields in
-  one pass
+- Generalizing the entire workspace API vocabulary into a fully
+  generic linked-item model in one pass
 
 ## Approaches Considered
 
@@ -101,9 +101,9 @@ Chosen.
 ### Option 3: Rebuild the workspace model as a fully generic linked
 item system
 
-This would rename `mr_*` fields, add generic linked-item metadata
-throughout the API, and unify all workspace UI around that abstraction
-in one pass.
+This would go beyond the targeted schema cleanup here and fully
+generalize the workspace APIs, types, and UI around a linked-item
+abstraction in one pass.
 
 Pros:
 
@@ -125,10 +125,17 @@ Extend `middleman_workspaces` with a new `item_type` column:
 - `pull_request` for existing PR-backed workspaces
 - `issue` for new issue-backed workspaces
 
-The existing `mr_number` column remains the numeric slot for the
-linked item number in this change. For issue workspaces it stores the
-issue number. This is acceptable because GitHub issue and PR numbers
-share the same repository-local number line.
+Rename `mr_number` to `item_number`.
+
+`item_number` is the numeric slot for the linked item number:
+
+- for PR workspaces: the pull request number
+- for issue workspaces: the issue number
+
+This rename is part of this change because keeping the old column name
+would make the new issue-backed rows needlessly confusing, and there
+is no cross-platform justification for preserving a PR-specific name
+for mixed item types.
 
 The existing `mr_head_ref` column remains the branch field rendered in
 the terminal UI:
@@ -278,8 +285,10 @@ Required coverage:
 ### Database
 
 - Add migration `000012_add_workspace_item_type`
+- Rename `middleman_workspaces.mr_number` to `item_number`
 - Add `Workspace.ItemType`
-- Add DB query support for reading/writing `item_type`
+- Add DB query support for reading/writing `item_type` and
+  `item_number`
 - Add `GetWorkspaceByIssue(...)`
 - Update workspace summary joins so issue-backed workspaces resolve an
   issue title/state instead of always joining merge requests
@@ -330,9 +339,10 @@ Required coverage:
 
 ## Risks
 
-- The current workspace API vocabulary still contains `mr_*` field
-  names even when an issue workspace is represented. This is a
-  conscious short-term compromise to keep the change small.
+- The workspace API will still contain some `mr_*` field names, such
+  as `mr_head_ref`, even after renaming `mr_number`. That is an
+  acceptable intermediate state, but the implementation should avoid
+  introducing any new `mr_*` names for issue-backed data.
 - The issue-create endpoint must use the provided `platform_host`
   carefully so it does not recreate owner/name ambiguity across hosts.
 - `origin/HEAD` resolution must rely on the fetched bare clone state;
@@ -340,8 +350,8 @@ Required coverage:
 
 ## Follow-Up Work
 
-- Rename the workspace API away from `mr_*` to generic linked-item
-  fields
+- Finish renaming remaining workspace API fields away from `mr_*`
+  where the old names no longer fit the data model
 - Decide whether the embedded workspace explorer and middleman's own
   workspace manager should continue to share the `/workspaces` route
   at all
