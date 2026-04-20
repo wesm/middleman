@@ -43,35 +43,38 @@ func testBudget(limit int) map[string]*SyncBudget {
 
 // mockClient implements Client with configurable canned responses.
 type mockClient struct {
-	budget                  *SyncBudget // optional: simulates transport counting
-	openPRs                 []*gh.PullRequest
-	openIssues              []*gh.Issue
-	listOpenPRsErr          error
-	listOpenIssuesErr       error
-	singlePR                *gh.PullRequest
-	getRepositoryFn         func(context.Context, string, string) (*gh.Repository, error)
-	getPullRequestFn        func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn              func(context.Context, string, string, int) (*gh.Issue, error)
-	getUserFn               func(context.Context, string) (*gh.User, error)
-	listReposByOwnerFn      func(context.Context, string) ([]*gh.Repository, error)
-	listOpenPRsFn           func(context.Context, string, string) ([]*gh.PullRequest, error)
-	listPullRequestsPageFn  func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	listIssuesPageFn        func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	comments                []*gh.IssueComment
-	reviews                 []*gh.PullRequestReview
-	commits                 []*gh.RepositoryCommit
-	forcePushEvents         []ForcePushEvent
-	forcePushEventsErr      error
-	ciStatus                *gh.CombinedStatus
-	checkRuns               []*gh.CheckRun
-	workflowRuns            []*gh.WorkflowRun
-	approveWorkflowRunFn    func(context.Context, string, string, int64) error
-	listOpenPRsCalled       bool
-	getUserCalls            atomic.Int32
-	getCombinedCalls        atomic.Int32
-	invalidateCalls         atomic.Int32
-	listIssueCommentsCalled atomic.Int32
-	listIssueCommentsErr    error
+	budget                          *SyncBudget // optional: simulates transport counting
+	openPRs                         []*gh.PullRequest
+	openIssues                      []*gh.Issue
+	listOpenPRsErr                  error
+	listOpenIssuesErr               error
+	singlePR                        *gh.PullRequest
+	getRepositoryFn                 func(context.Context, string, string) (*gh.Repository, error)
+	getPullRequestFn                func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn                      func(context.Context, string, string, int) (*gh.Issue, error)
+	getUserFn                       func(context.Context, string) (*gh.User, error)
+	listReposByOwnerFn              func(context.Context, string) ([]*gh.Repository, error)
+	listOpenPRsFn                   func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listPullRequestsPageFn          func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
+	comments                        []*gh.IssueComment
+	reviews                         []*gh.PullRequestReview
+	commits                         []*gh.RepositoryCommit
+	forcePushEvents                 []ForcePushEvent
+	forcePushEventsErr              error
+	ciStatus                        *gh.CombinedStatus
+	checkRuns                       []*gh.CheckRun
+	workflowRuns                    []*gh.WorkflowRun
+	approveWorkflowRunFn            func(context.Context, string, string, int64) error
+	listOpenPRsCalled               bool
+	getUserCalls                    atomic.Int32
+	getCombinedCalls                atomic.Int32
+	invalidateCalls                 atomic.Int32
+	listIssueCommentsCalled         atomic.Int32
+	listIssueCommentsIfChangedCalls atomic.Int32
+	listIssueCommentsErr            error
+	listIssueCommentsFn             func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listIssueCommentsIfChangedFn    func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 }
 
 func (m *mockClient) trackCall() {
@@ -153,9 +156,12 @@ func (m *mockClient) GetPullRequest(
 	return nil, nil
 }
 
-func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+func (m *mockClient) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error) {
 	m.trackCall()
 	m.listIssueCommentsCalled.Add(1)
+	if m.listIssueCommentsFn != nil {
+		return m.listIssueCommentsFn(ctx, owner, repo, number)
+	}
 	if m.listIssueCommentsErr != nil {
 		return nil, m.listIssueCommentsErr
 	}
@@ -165,6 +171,10 @@ func (m *mockClient) ListIssueComments(_ context.Context, _, _ string, _ int) ([
 func (m *mockClient) ListIssueCommentsIfChanged(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
+	m.listIssueCommentsIfChangedCalls.Add(1)
+	if m.listIssueCommentsIfChangedFn != nil {
+		return m.listIssueCommentsIfChangedFn(ctx, owner, repo, number)
+	}
 	if m.listIssueCommentsErr != nil {
 		return nil, m.listIssueCommentsErr
 	}
@@ -5658,6 +5668,108 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 
 	// GraphQL path skipped REST ListIssueComments.
 	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
+}
+
+func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	detailFetchedAt := now.Add(time.Minute)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      101,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "Large thread",
+		Author:          "alice",
+		State:           "open",
+		CommentCount:    100,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+
+	mock := &mockClient{
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(1, number)
+			return []*gh.IssueComment{}, nil
+		},
+		listIssueCommentsIfChangedFn: func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+			require.FailNow("conditional comment refresh should not be used for 100+ comment PRs")
+			return nil, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	syncer.refreshRepoPRComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+
+	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
+	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
+}
+
+func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	detailFetchedAt := now.Add(time.Minute)
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      201,
+		Number:          2,
+		URL:             "https://github.com/owner/repo/issues/2",
+		Title:           "Large thread issue",
+		Author:          "bob",
+		State:           "open",
+		CommentCount:    100,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+
+	mock := &mockClient{
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(2, number)
+			return []*gh.IssueComment{}, nil
+		},
+		listIssueCommentsIfChangedFn: func(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+			require.FailNow("conditional comment refresh should not be used for 100+ comment issues")
+			return nil, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	syncer.refreshRepoIssueComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+
+	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
+	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
 }
 
 func TestSyncerGQLRateTrackers(t *testing.T) {

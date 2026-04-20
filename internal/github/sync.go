@@ -1311,7 +1311,7 @@ func (s *Syncer) indexSyncRepo(
 
 			for _, ghPR := range ghPRs {
 				if err := s.indexUpsertMR(
-					ctx, repo, repoID, ghPR,
+					ctx, client, repo, repoID, ghPR,
 				); err != nil {
 					slog.Error("index upsert MR failed",
 						"repo", repo.Owner+"/"+repo.Name,
@@ -1390,7 +1390,7 @@ func (s *Syncer) indexSyncRepo(
 		if !graphQLIssuesDone {
 			// REST fallback using already-fetched ghIssues.
 			if err := s.syncIssuesFromList(
-				ctx, repo, repoID, ghIssues, forceIssues,
+				ctx, client, repo, repoID, ghIssues, forceIssues,
 			); err != nil {
 				slog.Error("REST issue sync failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -1427,6 +1427,7 @@ func (s *Syncer) indexSyncRepo(
 // mergeable_state) from the existing DB row.
 func (s *Syncer) indexUpsertMR(
 	ctx context.Context,
+	client Client,
 	repo RepoRef,
 	repoID int64,
 	ghPR *gh.PullRequest,
@@ -1458,16 +1459,10 @@ func (s *Syncer) indexUpsertMR(
 		if host == "" {
 			host = "github.com"
 		}
-		client, clientErr := s.clientFor(repo)
-		if clientErr == nil {
-			if name, ok := s.resolveDisplayName(
-				ctx, client, host, normalized.Author,
-			); ok {
-				normalized.AuthorDisplayName = name
-			} else if existing != nil {
-				normalized.AuthorDisplayName =
-					existing.AuthorDisplayName
-			}
+		if name, ok := s.resolveDisplayName(
+			ctx, client, host, normalized.Author,
+		); ok {
+			normalized.AuthorDisplayName = name
 		} else if existing != nil {
 			normalized.AuthorDisplayName =
 				existing.AuthorDisplayName
@@ -1491,7 +1486,106 @@ func (s *Syncer) indexUpsertMR(
 		)
 	}
 
+	if existing != nil &&
+		existing.DetailFetchedAt != nil &&
+		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
+		s.refreshPRCommentsForItem(ctx, client, repo, existing)
+	}
+
 	return nil
+}
+
+const largeCommentThreadThreshold = 100
+
+func (s *Syncer) listCommentsForRefresh(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	number int,
+	knownCount int,
+) ([]*gh.IssueComment, error) {
+	if knownCount >= largeCommentThreadThreshold {
+		return client.ListIssueComments(
+			ctx, repo.Owner, repo.Name, number,
+		)
+	}
+	return client.ListIssueCommentsIfChanged(
+		ctx, repo.Owner, repo.Name, number,
+	)
+}
+
+func (s *Syncer) refreshPRCommentsForItem(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	pr *db.MergeRequest,
+) {
+	if pr == nil || pr.DetailFetchedAt == nil {
+		return
+	}
+	if !s.canSpendCommentRefresh(repo.PlatformHost) {
+		return
+	}
+
+	comments, err := s.listCommentsForRefresh(
+		ctx, client, repo, pr.Number, pr.CommentCount,
+	)
+	if err != nil {
+		if IsNotModified(err) {
+			return
+		}
+		slog.Warn("comment refresh: list PR comments failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", pr.Number,
+			"err", err,
+		)
+		return
+	}
+	if err := s.persistPRComments(ctx, pr, comments); err != nil {
+		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+		slog.Warn("comment refresh: persist PR comments failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", pr.Number,
+			"err", err,
+		)
+	}
+}
+
+func (s *Syncer) refreshIssueCommentsForItem(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	issue *db.Issue,
+) {
+	if issue == nil || issue.DetailFetchedAt == nil {
+		return
+	}
+	if !s.canSpendCommentRefresh(repo.PlatformHost) {
+		return
+	}
+
+	comments, err := s.listCommentsForRefresh(
+		ctx, client, repo, issue.Number, issue.CommentCount,
+	)
+	if err != nil {
+		if IsNotModified(err) {
+			return
+		}
+		slog.Warn("comment refresh: list issue comments failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", issue.Number,
+			"err", err,
+		)
+		return
+	}
+	if err := s.persistIssueComments(ctx, issue, comments); err != nil {
+		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+		slog.Warn("comment refresh: persist issue comments failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", issue.Number,
+			"err", err,
+		)
+	}
 }
 
 // doSyncRepoGraphQL processes bulk GraphQL results for a repo.
@@ -2582,6 +2676,7 @@ func (s *Syncer) resolveDisplayName(
 // via the REST path. Handles per-issue upsert and closure detection.
 func (s *Syncer) syncIssuesFromList(
 	ctx context.Context,
+	client Client,
 	repo RepoRef,
 	repoID int64,
 	ghIssues []*gh.Issue,
@@ -2594,7 +2689,7 @@ func (s *Syncer) syncIssuesFromList(
 
 	var hadItemFailure bool
 	for _, ghIssue := range ghIssues {
-		if err := s.syncOpenIssue(ctx, repo, repoID, ghIssue, forceRefresh); err != nil {
+		if err := s.syncOpenIssue(ctx, client, repo, repoID, ghIssue, forceRefresh); err != nil {
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghIssue.GetNumber(),
@@ -2631,6 +2726,7 @@ func (s *Syncer) syncIssuesFromList(
 
 func (s *Syncer) syncOpenIssue(
 	ctx context.Context,
+	client Client,
 	repo RepoRef,
 	repoID int64,
 	ghIssue *gh.Issue,
@@ -2664,6 +2760,9 @@ func (s *Syncer) syncOpenIssue(
 	}
 
 	if !needsTimeline {
+		if existing != nil && existing.DetailFetchedAt != nil {
+			s.refreshIssueCommentsForItem(ctx, client, repo, existing)
+		}
 		return nil
 	}
 
@@ -2740,35 +2839,7 @@ func (s *Syncer) refreshRepoPRComments(
 		if ctx.Err() != nil {
 			return
 		}
-		pr := &prs[i]
-		if pr.DetailFetchedAt == nil {
-			continue
-		}
-		if !s.canSpendCommentRefresh(repo.PlatformHost) {
-			return
-		}
-		comments, err := client.ListIssueCommentsIfChanged(
-			ctx, repo.Owner, repo.Name, pr.Number,
-		)
-		if err != nil {
-			if IsNotModified(err) {
-				continue
-			}
-			slog.Warn("comment refresh: list PR comments failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", pr.Number,
-				"err", err,
-			)
-			continue
-		}
-		if err := s.persistPRComments(ctx, pr, comments); err != nil {
-			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-			slog.Warn("comment refresh: persist PR comments failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", pr.Number,
-				"err", err,
-			)
-		}
+		s.refreshPRCommentsForItem(ctx, client, repo, &prs[i])
 	}
 }
 
@@ -2802,35 +2873,7 @@ func (s *Syncer) refreshRepoIssueComments(
 		if ctx.Err() != nil {
 			return
 		}
-		issue := &issues[i]
-		if issue.DetailFetchedAt == nil {
-			continue
-		}
-		if !s.canSpendCommentRefresh(repo.PlatformHost) {
-			return
-		}
-		comments, err := client.ListIssueCommentsIfChanged(
-			ctx, repo.Owner, repo.Name, issue.Number,
-		)
-		if err != nil {
-			if IsNotModified(err) {
-				continue
-			}
-			slog.Warn("comment refresh: list issue comments failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", issue.Number,
-				"err", err,
-			)
-			continue
-		}
-		if err := s.persistIssueComments(ctx, issue, comments); err != nil {
-			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-			slog.Warn("comment refresh: persist issue comments failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", issue.Number,
-				"err", err,
-			)
-		}
+		s.refreshIssueCommentsForItem(ctx, client, repo, &issues[i])
 	}
 }
 

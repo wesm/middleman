@@ -3727,6 +3727,162 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 15, 0, 0, 0, time.UTC)
+	targetNumber := 160
+	targetID := int64(160000)
+	targetTitle := "Target PR keeps stale comment"
+	targetURL := "https://github.com/acme/widget/pull/160"
+	otherNumber := 161
+	otherID := int64(161000)
+	otherTitle := "Other PR changes"
+	otherURL := "https://github.com/acme/widget/pull/161"
+	prState := "open"
+	headRef := "feature/comments"
+	headSHA := "deadbeef"
+	baseRef := "main"
+	commentID := int64(9050)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	targetCommentBody := "target comment"
+	targetComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &targetCommentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	otherUpdatedAt := now
+
+	prListCalls := 0
+	mock := &mockGH{
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, nil
+		},
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			prListCalls++
+			if prListCalls > 1 {
+				otherUpdatedAt = now.Add(5 * time.Minute)
+			}
+			return []*gh.PullRequest{
+				{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					HTMLURL:   &targetURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				},
+				{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					HTMLURL:   &otherURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				},
+			}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			switch number {
+			case targetNumber:
+				return &gh.PullRequest{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					HTMLURL:   &targetURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				}, nil
+			case otherNumber:
+				return &gh.PullRequest{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					HTMLURL:   &otherURL,
+					State:     &prState,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+					Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+					Base:      &gh.PullRequestBranch{Ref: &baseRef},
+				}, nil
+			default:
+				return nil, fmt.Errorf("unexpected pull request %d", number)
+			}
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			if number == targetNumber {
+				return targetComments, nil
+			}
+			return []*gh.IssueComment{}, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.MergeRequest.CommentCount)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("target comment", (*firstResp.JSON200.Events)[0].Body)
+
+	targetComments = []*gh.IssueComment{}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.MergeRequest.CommentCount)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
 func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -3963,6 +4119,153 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	require.NotNil(secondResp.JSON200)
 	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.Equal(now.UTC(), secondResp.JSON200.Issue.LastActivityAt.UTC())
+	require.NotNil(secondResp.JSON200.Events)
+	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	now := time.Date(2026, 4, 12, 16, 0, 0, 0, time.UTC)
+	targetNumber := 161
+	targetID := int64(161000)
+	targetTitle := "Target issue keeps stale comment"
+	targetURL := "https://github.com/acme/widget/issues/161"
+	otherNumber := 162
+	otherID := int64(162000)
+	otherTitle := "Other issue changes"
+	otherURL := "https://github.com/acme/widget/issues/162"
+	issueState := "open"
+	commentID := int64(9060)
+	commentAuthor := "reviewer"
+	commentCreatedAt := now.Add(2 * time.Minute)
+	targetCommentBody := "target issue comment"
+	targetComments := []*gh.IssueComment{{
+		ID:        &commentID,
+		Body:      &targetCommentBody,
+		User:      &gh.User{Login: &commentAuthor},
+		CreatedAt: &gh.Timestamp{Time: commentCreatedAt},
+		UpdatedAt: &gh.Timestamp{Time: commentCreatedAt},
+	}}
+	otherUpdatedAt := now
+
+	issueListCalls := 0
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			issueListCalls++
+			if issueListCalls > 1 {
+				otherUpdatedAt = now.Add(5 * time.Minute)
+			}
+			return []*gh.Issue{
+				{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					State:     &issueState,
+					HTMLURL:   &targetURL,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+				},
+				{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					State:     &issueState,
+					HTMLURL:   &otherURL,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+				},
+			}, nil
+		},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			switch number {
+			case targetNumber:
+				return &gh.Issue{
+					ID:        &targetID,
+					Number:    &targetNumber,
+					Title:     &targetTitle,
+					State:     &issueState,
+					HTMLURL:   &targetURL,
+					UpdatedAt: &gh.Timestamp{Time: now},
+					CreatedAt: &gh.Timestamp{Time: now},
+				}, nil
+			case otherNumber:
+				return &gh.Issue{
+					ID:        &otherID,
+					Number:    &otherNumber,
+					Title:     &otherTitle,
+					State:     &issueState,
+					HTMLURL:   &otherURL,
+					UpdatedAt: &gh.Timestamp{Time: otherUpdatedAt},
+					CreatedAt: &gh.Timestamp{Time: now},
+				}, nil
+			default:
+				return nil, fmt.Errorf("unexpected issue %d", number)
+			}
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			if number == targetNumber {
+				return targetComments, nil
+			}
+			return []*gh.IssueComment{}, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.Equal(int64(1), firstResp.JSON200.Issue.CommentCount)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 1)
+	assert.Equal("target issue comment", (*firstResp.JSON200.Events)[0].Body)
+
+	targetComments = []*gh.IssueComment{}
+
+	srv.syncer.RunOnce(ctx)
+
+	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", int64(targetNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.Equal(int64(0), secondResp.JSON200.Issue.CommentCount)
 	require.NotNil(secondResp.JSON200.Events)
 	require.Empty(*secondResp.JSON200.Events)
 }
