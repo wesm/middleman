@@ -137,14 +137,16 @@ would make the new issue-backed rows needlessly confusing, and there
 is no cross-platform justification for preserving a PR-specific name
 for mixed item types.
 
-The existing `mr_head_ref` column remains the branch field rendered in
-the terminal UI:
+Rename `mr_head_ref` to `git_head_ref`.
+
+`git_head_ref` is the git ref rendered in the terminal UI:
 
 - for PR workspaces: the PR head branch, unchanged
 - for issue workspaces: the synthetic middleman branch name, e.g.
   `middleman/issue-42`
 
-This intentionally avoids a larger schema rewrite in the same change.
+This keeps the schema aligned with the actual data while still
+avoiding a larger end-to-end API rewrite in the same change.
 
 ### Workspace Creation Semantics
 
@@ -286,9 +288,11 @@ Required coverage:
 
 - Add migration `000012_add_workspace_item_type`
 - Rename `middleman_workspaces.mr_number` to `item_number`
+- Rename `middleman_workspaces.mr_head_ref` to `git_head_ref`
 - Add `Workspace.ItemType`
 - Add DB query support for reading/writing `item_type` and
   `item_number`
+- Update DB query support for reading/writing `git_head_ref`
 - Add `GetWorkspaceByIssue(...)`
 - Update workspace summary joins so issue-backed workspaces resolve an
   issue title/state instead of always joining merge requests
@@ -305,12 +309,14 @@ Required coverage:
 - Add issue workspace create endpoint
 - Add issue detail workspace reference lookup
 - Return `item_type` in workspace responses
+- Return `git_head_ref` in workspace responses
 
 ### Frontend
 
 - Change issue detail button to call the new middleman API endpoint
 - Navigate to `/terminal/{id}` on success
 - Teach workspace list/sidebar/terminal views about `item_type`
+- Replace `mr_head_ref` usage with `git_head_ref` in workspace UI
 - Render `IssueDetail` in the right sidebar for issue workspaces
 - Suppress PR-review sidebar behavior for issue workspaces
 - Remove middleman-owned `/workspaces/panel/...` routing and its
@@ -339,10 +345,10 @@ Required coverage:
 
 ## Risks
 
-- The workspace API will still contain some `mr_*` field names, such
-  as `mr_head_ref`, even after renaming `mr_number`. That is an
-  acceptable intermediate state, but the implementation should avoid
-  introducing any new `mr_*` names for issue-backed data.
+- The workspace API may still contain some PR-oriented names outside
+  the renamed schema fields. That is an acceptable intermediate state,
+  but the implementation should avoid introducing any new `mr_*`
+  names for issue-backed data.
 - The issue-create endpoint must use the provided `platform_host`
   carefully so it does not recreate owner/name ambiguity across hosts.
 - `origin/HEAD` resolution must rely on the fetched bare clone state;
