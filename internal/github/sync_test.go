@@ -5670,6 +5670,37 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 	assert.Equal(int32(0), mock.listIssueCommentsCalled.Load())
 }
 
+// TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents
+// guards the comment-only refresh path against regressing a PR whose
+// latest activity came from a review, commit, or force push — data
+// the comment list can't see. The non-comment timestamp is supplied
+// by the caller from the DB's stored events.
+func TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents(t *testing.T) {
+	assert := Assert.New(t)
+
+	created := time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC)
+	updated := created.Add(1 * time.Hour)
+	commentAt := created.Add(2 * time.Hour)
+	reviewAt := created.Add(3 * time.Hour)
+
+	pr := &db.MergeRequest{CreatedAt: created, UpdatedAt: updated}
+	comments := []*gh.IssueComment{{
+		CreatedAt: &gh.Timestamp{Time: commentAt},
+		UpdatedAt: &gh.Timestamp{Time: commentAt},
+	}}
+
+	assert.Equal(reviewAt, computePRCommentRefreshLastActivity(pr, comments, reviewAt),
+		"stored non-comment event activity must win over comment timestamp")
+
+	newerComment := reviewAt.Add(30 * time.Minute)
+	comments[0].UpdatedAt = &gh.Timestamp{Time: newerComment}
+	assert.Equal(newerComment, computePRCommentRefreshLastActivity(pr, comments, reviewAt),
+		"a strictly newer comment should advance activity past stored events")
+
+	assert.Equal(updated, computePRCommentRefreshLastActivity(pr, nil, time.Time{}),
+		"no comments and no stored events should fall back to PR UpdatedAt")
+}
+
 func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

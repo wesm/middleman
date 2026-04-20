@@ -560,6 +560,30 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 		_, ok = et.cache.Load("https://ghe.example.com/api/v3/repos/o/n/pulls")
 		assert.True(ok, "issues-only should preserve GHE pulls cache")
 	})
+
+	t.Run("empty endpoints clears every supported path", func(t *testing.T) {
+		et := &etagTransport{}
+		now := time.Now()
+		et.cache.Store("https://api.github.com/repos/o/n/pulls", etagEntry{etag: `"1"`, cachedAt: now})
+		et.cache.Store("https://api.github.com/repos/o/n/issues", etagEntry{etag: `"2"`, cachedAt: now})
+		et.cache.Store("https://api.github.com/repos/o/n/issues/7/comments", etagEntry{etag: `"3"`, cachedAt: now})
+		et.cache.Store("https://ghe.example.com/api/v3/repos/o/n/issues/9/comments", etagEntry{etag: `"4"`, cachedAt: now})
+		et.cache.Store("https://api.github.com/repos/other/other/pulls", etagEntry{etag: `"5"`, cachedAt: now})
+
+		et.invalidateRepo("o", "n")
+
+		for _, u := range []string{
+			"https://api.github.com/repos/o/n/pulls",
+			"https://api.github.com/repos/o/n/issues",
+			"https://api.github.com/repos/o/n/issues/7/comments",
+			"https://ghe.example.com/api/v3/repos/o/n/issues/9/comments",
+		} {
+			_, ok := et.cache.Load(u)
+			assert.Falsef(ok, "empty endpoints should drop %s", u)
+		}
+		_, ok := et.cache.Load("https://api.github.com/repos/other/other/pulls")
+		assert.True(ok, "empty endpoints must not touch unrelated repos")
+	})
 }
 
 func TestIsNotModified(t *testing.T) {

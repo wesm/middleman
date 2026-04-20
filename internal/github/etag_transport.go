@@ -118,8 +118,9 @@ func hasLinkNext(resp *http.Response) bool {
 }
 
 // invalidateRepo drops cached ETag entries for the given repo's list
-// endpoints. The endpoints parameter controls which to invalidate:
-// "pulls", "issues", or both. Used by the sync engine to force an
+// endpoints. The endpoints parameter selects which to invalidate —
+// "pulls", "issues", or "comments" — and an empty slice clears every
+// supported repo-scoped list path. Used by the sync engine to force an
 // unconditional refetch after a partial failure so the next cycle
 // re-applies per-item state that the previous cycle failed to persist.
 func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) {
@@ -142,6 +143,14 @@ func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) 
 }
 
 func matchesInvalidateEndpoint(path, base, gheBase string, endpoints []string) bool {
+	if len(endpoints) == 0 {
+		// Empty means invalidate every supported repo-scoped list path
+		// so callers can recover from partial-failure syncs without
+		// needing to enumerate every endpoint we cache.
+		return path == base+"pulls" || path == gheBase+"pulls" ||
+			path == base+"issues" || path == gheBase+"issues" ||
+			isCommentListPath(path, base, gheBase)
+	}
 	var exactPrefixes []string
 	for _, ep := range endpoints {
 		switch ep {

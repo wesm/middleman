@@ -2104,11 +2104,24 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// a full REST fetch. Derived fields from truncated data would
 	// overwrite correct values with partial counts.
 	if bulk.CommentsComplete {
+		lastActivity := computeLastActivity(bulk.PR, bulk.Comments, nil, nil)
+		// When reviews/commits are truncated this cycle, any stored
+		// review/commit/force-push event with a newer timestamp must
+		// still win so the dashboard ordering doesn't regress.
+		nonCommentLatest, nErr := s.db.GetMRLatestNonCommentEventTime(ctx, mrID)
+		if nErr != nil {
+			slog.Warn("latest non-comment event lookup failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", nErr,
+			)
+		} else if nonCommentLatest.After(lastActivity) {
+			lastActivity = nonCommentLatest
+		}
 		if err := s.db.UpdateMRDerivedFields(
 			ctx, repoID, number, db.MRDerivedFields{
 				ReviewDecision: normalized.ReviewDecision,
 				CommentCount:   len(bulk.Comments),
-				LastActivityAt: computeLastActivity(bulk.PR, bulk.Comments, nil, nil),
+				LastActivityAt: lastActivity,
 			},
 		); err != nil {
 			slog.Warn("update comment-derived fields failed",
@@ -2638,13 +2651,22 @@ func computeLastActivity(
 	return latest
 }
 
+// computePRCommentRefreshLastActivity derives last_activity_at for a
+// comment-only refresh. nonCommentLatest should be the most recent
+// timestamp among stored review/commit/force-push events so a refresh
+// that only sees comments can't regress activity captured by those
+// events when GitHub's PR.UpdatedAt is stale.
 func computePRCommentRefreshLastActivity(
 	pr *db.MergeRequest,
 	comments []*gh.IssueComment,
+	nonCommentLatest time.Time,
 ) time.Time {
 	latest := pr.UpdatedAt
 	if latest.IsZero() || pr.CreatedAt.After(latest) {
 		latest = pr.CreatedAt
+	}
+	if nonCommentLatest.After(latest) {
+		latest = nonCommentLatest
 	}
 	for _, c := range comments {
 		switch {
@@ -3019,10 +3041,15 @@ func (s *Syncer) persistPRComments(
 		return fmt.Errorf("replace PR comment events: %w", err)
 	}
 
+	nonCommentLatest, err := s.db.GetMRLatestNonCommentEventTime(ctx, pr.ID)
+	if err != nil {
+		return fmt.Errorf("latest non-comment event for PR #%d: %w", pr.Number, err)
+	}
+
 	return s.db.UpdateMRDerivedFields(ctx, pr.RepoID, pr.Number, db.MRDerivedFields{
 		ReviewDecision: pr.ReviewDecision,
 		CommentCount:   len(comments),
-		LastActivityAt: computePRCommentRefreshLastActivity(pr, comments),
+		LastActivityAt: computePRCommentRefreshLastActivity(pr, comments, nonCommentLatest),
 	})
 }
 

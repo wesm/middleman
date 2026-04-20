@@ -935,6 +935,31 @@ func (d *DB) DeleteMissingMRCommentEvents(
 	return nil
 }
 
+// GetMRLatestNonCommentEventTime returns the most recent created_at across
+// non-comment events (reviews, commits, force pushes) for a merge request.
+// Returns zero time when no such events exist. The comment-only refresh
+// paths use this to avoid regressing last_activity_at to a comment-derived
+// value when reviews or commits with a newer timestamp are already stored.
+func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (time.Time, error) {
+	var createdAt sql.NullString
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT MAX(created_at) FROM middleman_mr_events
+		WHERE merge_request_id = ? AND event_type != 'issue_comment'`,
+		mrID,
+	).Scan(&createdAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("query latest non-comment mr event: %w", err)
+	}
+	if !createdAt.Valid {
+		return time.Time{}, nil
+	}
+	t, err := parseDBTime(createdAt.String)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse latest non-comment mr event time %q: %w", createdAt.String, err)
+	}
+	return t, nil
+}
+
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
 func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `

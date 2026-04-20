@@ -60,9 +60,9 @@ type Client interface {
 	// validators for the given repo's list endpoints so the next
 	// list call issues an unconditional fetch. The endpoints
 	// parameter selects which caches to clear ("pulls", "issues",
-	// "comments").
-	// If empty, both are cleared. Used to recover from a
-	// partial-failure sync.
+	// "comments"); passing no endpoints clears every supported
+	// repo-scoped list path. Used to recover from a partial-failure
+	// sync.
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
@@ -129,15 +129,13 @@ type liveClient struct {
 }
 
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
-// list endpoints. Pass "pulls" and/or "issues" to scope the
-// invalidation; if no endpoints are given, both are cleared.
-// Safe to call when the transport is nil (tests).
+// list endpoints. Pass any combination of "pulls", "issues", and
+// "comments" to scope the invalidation; omitting endpoints clears
+// every supported repo-scoped list path. Safe to call when the
+// transport is nil (tests).
 func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ...string) {
 	if c.etag == nil {
 		return
-	}
-	if len(endpoints) == 0 {
-		endpoints = []string{"pulls", "issues"}
 	}
 	c.etag.invalidateRepo(owner, repo, endpoints...)
 }
