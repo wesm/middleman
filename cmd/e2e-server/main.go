@@ -219,7 +219,10 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 
 	srv := server.NewWithConfig(
 		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
-		server.ServerOptions{Clones: diffRepo.Manager},
+		server.ServerOptions{
+			Clones:      diffRepo.Manager,
+			WorktreeDir: filepath.Join(tmpDir, "worktrees"),
+		},
 	)
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
