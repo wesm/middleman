@@ -132,7 +132,7 @@
   });
 </script>
 
-<aside class="sidebar">
+<div class="workspace-list-sidebar">
   <div class="sidebar-header">Workspaces</div>
   <div class="sidebar-list">
     {#each [...grouped] as [repoKey, items]}
@@ -204,15 +204,13 @@
       {/if}
     {/each}
   </div>
-</aside>
+</div>
 
 <style>
-  .sidebar {
-    width: 260px;
-    min-width: 260px;
+  .workspace-list-sidebar {
+    width: 100%;
     height: 100%;
     background: var(--bg-inset);
-    border-right: 1px solid var(--border-default);
     display: flex;
     flex-direction: column;
     overflow: hidden;

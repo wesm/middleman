@@ -3,7 +3,10 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
-  import { WorkspaceRightSidebar } from "@middleman/ui";
+  import {
+    CollapsibleResizableSidebar,
+    WorkspaceRightSidebar,
+  } from "@middleman/ui";
 
   interface Workspace {
     id: string;
@@ -40,8 +43,36 @@
   const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
   const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
   const SIDEBAR_WIDTH_KEY = "middleman-workspace-sidebar-width";
+  const WORKSPACE_LIST_WIDTH_KEY =
+    "middleman-workspace-list-sidebar-width";
 
   type SidebarTab = "pr" | "reviews";
+
+  const MIN_WORKSPACE_LIST_WIDTH = 220;
+  const DEFAULT_WORKSPACE_LIST_WIDTH = 260;
+  const MAX_WORKSPACE_LIST_WIDTH = 420;
+
+  function clampWorkspaceListWidth(
+    value: number,
+  ): number {
+    return Math.max(
+      MIN_WORKSPACE_LIST_WIDTH,
+      Math.min(
+        MAX_WORKSPACE_LIST_WIDTH,
+        Math.round(value),
+      ),
+    );
+  }
+
+  function loadWorkspaceListWidth(): number {
+    const value = parseInt(
+      localStorage.getItem(WORKSPACE_LIST_WIDTH_KEY) ?? "",
+      10,
+    );
+    return Number.isFinite(value)
+      ? clampWorkspaceListWidth(value)
+      : DEFAULT_WORKSPACE_LIST_WIDTH;
+  }
 
   function loadSidebarTab(): SidebarTab {
     const v = localStorage.getItem(SIDEBAR_TAB_KEY);
@@ -55,6 +86,7 @@
   const MIN_SIDEBAR_WIDTH = 280;
   const MIN_TERMINAL_WIDTH = 300;
   const DEFAULT_SIDEBAR_WIDTH = 640;
+  const RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH = 4;
 
   function loadSidebarWidth(): number {
     const v = parseInt(
@@ -69,6 +101,7 @@
   let sidebarTab = $state<SidebarTab>(loadSidebarTab());
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
+  let workspaceListWidth = $state(loadWorkspaceListWidth());
 
   $effect(() => {
     localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
@@ -83,6 +116,12 @@
     localStorage.setItem(
       SIDEBAR_WIDTH_KEY,
       String(sidebarWidth),
+    );
+  });
+  $effect(() => {
+    localStorage.setItem(
+      WORKSPACE_LIST_WIDTH_KEY,
+      String(workspaceListWidth),
     );
   });
 
@@ -101,15 +140,42 @@
 
   let containerEl = $state<HTMLElement | null>(null);
 
-  // Clamp sidebar width to fit container when it
-  // becomes available or when the sidebar opens
-  $effect(() => {
-    if (!containerEl || !sidebarOpen) return;
-    const maxW =
-      containerEl.clientWidth - MIN_TERMINAL_WIDTH;
-    if (sidebarWidth > maxW && maxW > MIN_SIDEBAR_WIDTH) {
+  function clampRightSidebarWidth(
+    containerWidth: number,
+  ): void {
+    const maxW = Math.max(
+      0,
+      containerWidth -
+        MIN_TERMINAL_WIDTH -
+        RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
+    );
+    if (sidebarWidth > maxW) {
       sidebarWidth = maxW;
     }
+  }
+
+  // Keep the terminal usable when the main layout
+  // shrinks, including when the left workspace list
+  // is resized after the right sidebar is already open.
+  $effect(() => {
+    if (!containerEl || !sidebarOpen) return;
+
+    clampRightSidebarWidth(containerEl.clientWidth);
+  });
+
+  $effect(() => {
+    if (!sidebarOpen) return;
+
+    function onResize(): void {
+      if (containerEl) {
+        clampRightSidebarWidth(containerEl.clientWidth);
+      }
+    }
+
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
   });
 
   function startSidebarResize(e: MouseEvent): void {
@@ -117,12 +183,18 @@
     const startX = e.clientX;
     const startW = sidebarWidth;
     const maxW = containerEl
-      ? containerEl.clientWidth - MIN_TERMINAL_WIDTH
+      ? Math.max(
+          0,
+          containerEl.clientWidth -
+            MIN_TERMINAL_WIDTH -
+            RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
+        )
       : 9999;
+    const minW = Math.min(MIN_SIDEBAR_WIDTH, maxW);
 
     function onMove(ev: MouseEvent): void {
       sidebarWidth = Math.max(
-        MIN_SIDEBAR_WIDTH,
+        minW,
         Math.min(maxW, startW - (ev.clientX - startX)),
       );
     }
@@ -272,129 +344,146 @@
 </script>
 
 <div class="terminal-view">
-  <WorkspaceListSidebar selectedId={workspaceId} />
+  <CollapsibleResizableSidebar
+    sidebarWidth={workspaceListWidth}
+    minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
+    maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
+    onSidebarResize={(width) => {
+      workspaceListWidth = clampWorkspaceListWidth(width);
+      requestAnimationFrame(() => {
+        if (containerEl) {
+          clampRightSidebarWidth(containerEl.clientWidth);
+        }
+      });
+    }}
+    mainOverflow="hidden"
+  >
+    {#snippet sidebar()}
+      <WorkspaceListSidebar selectedId={workspaceId} />
+    {/snippet}
 
-  <div class="terminal-main">
-    {#if !workspaceId}
-      <div class="state-message">
-        Select a workspace from the sidebar
-      </div>
-    {:else if loadError && !workspace}
-      <div class="state-message error">
-        <span class="error-icon">!</span>
-        <span>{loadError}</span>
-        <button
-          class="retry-btn"
-          onclick={() => {
-            loadError = null;
-            void fetchWorkspace();
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    {:else if !workspace || workspace.status === "creating"}
-      <div class="state-message">
-        <svg
-          class="spinner"
-          width="18"
-          height="18"
-          viewBox="0 0 18 18"
-          fill="none"
-        >
-          <circle
-            cx="9"
-            cy="9"
-            r="7"
-            stroke="currentColor"
-            stroke-opacity="0.2"
-            stroke-width="2"
-          />
-          <path
-            d="M16 9a7 7 0 0 0-7-7"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          />
-        </svg>
-        <span>Setting up workspace...</span>
-      </div>
-    {:else if workspace.status === "error"}
-      <div class="state-message error">
-        <span class="error-icon">!</span>
-        <span>
-          {workspace.error_message ??
-            "Workspace setup failed"}
-        </span>
-        <button
-          class="retry-btn"
-          onclick={() => void fetchWorkspace()}
-        >
-          Retry
-        </button>
-      </div>
-    {:else}
-      <div class="header-bar">
-        <div class="header-left">
-          <span class="header-name">
-            {displayName(workspace)}
-          </span>
-          <code class="header-branch">
-            {workspace.mr_head_ref}
-          </code>
+    <div class="terminal-main">
+      {#if !workspaceId}
+        <div class="state-message">
+          Select a workspace from the sidebar
         </div>
-        <div class="header-right">
-          <div class="seg-control">
-            <button
-              class="seg-btn"
-              class:active={sidebarOpen && sidebarTab === "pr"}
-              onclick={() => handleSegmentClick("pr")}
-            >
-              PR
-            </button>
-            <button
-              class="seg-btn"
-              class:active={sidebarOpen && sidebarTab === "reviews"}
-              onclick={() => handleSegmentClick("reviews")}
-            >
-              Reviews
-            </button>
-          </div>
+      {:else if loadError && !workspace}
+        <div class="state-message error">
+          <span class="error-icon">!</span>
+          <span>{loadError}</span>
           <button
-            class="header-btn danger"
-            onclick={() => void handleDelete()}
+            class="retry-btn"
+            onclick={() => {
+              loadError = null;
+              void fetchWorkspace();
+            }}
           >
-            Delete
+            Retry
           </button>
         </div>
-      </div>
-      <div class="terminal-and-sidebar" bind:this={containerEl}>
-        <div class="terminal-area">
-          <TerminalPane {workspaceId} />
-        </div>
-        {#if sidebarOpen && workspace}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="sidebar-resize-handle"
-            onmousedown={startSidebarResize}
-          ></div>
-          <div
-            class="right-sidebar"
-            style="width: {sidebarWidth}px"
+      {:else if !workspace || workspace.status === "creating"}
+        <div class="state-message">
+          <svg
+            class="spinner"
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            fill="none"
           >
-            <WorkspaceRightSidebar
-              activeTab={sidebarTab}
-              repoOwner={workspace.repo_owner}
-              repoName={workspace.repo_name}
-              mrNumber={workspace.mr_number}
-              branch={workspace.mr_head_ref}
-              roborevBaseUrl={basePath + "/api/roborev"}
+            <circle
+              cx="9"
+              cy="9"
+              r="7"
+              stroke="currentColor"
+              stroke-opacity="0.2"
+              stroke-width="2"
             />
+            <path
+              d="M16 9a7 7 0 0 0-7-7"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>Setting up workspace...</span>
+        </div>
+      {:else if workspace.status === "error"}
+        <div class="state-message error">
+          <span class="error-icon">!</span>
+          <span>
+            {workspace.error_message ??
+              "Workspace setup failed"}
+          </span>
+          <button
+            class="retry-btn"
+            onclick={() => void fetchWorkspace()}
+          >
+            Retry
+          </button>
+        </div>
+      {:else}
+        <div class="header-bar">
+          <div class="header-left">
+            <span class="header-name">
+              {displayName(workspace)}
+            </span>
+            <code class="header-branch">
+              {workspace.mr_head_ref}
+            </code>
           </div>
-        {/if}
-      </div>
-    {/if}
-  </div>
+          <div class="header-right">
+            <div class="seg-control">
+              <button
+                class="seg-btn"
+                class:active={sidebarOpen && sidebarTab === "pr"}
+                onclick={() => handleSegmentClick("pr")}
+              >
+                PR
+              </button>
+              <button
+                class="seg-btn"
+                class:active={sidebarOpen && sidebarTab === "reviews"}
+                onclick={() => handleSegmentClick("reviews")}
+              >
+                Reviews
+              </button>
+            </div>
+            <button
+              class="header-btn danger"
+              onclick={() => void handleDelete()}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+        <div class="terminal-and-sidebar" bind:this={containerEl}>
+          <div class="terminal-area">
+            <TerminalPane {workspaceId} />
+          </div>
+          {#if sidebarOpen && workspace}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="sidebar-resize-handle"
+              onmousedown={startSidebarResize}
+            ></div>
+            <div
+              class="right-sidebar"
+              style="width: {sidebarWidth}px"
+            >
+              <WorkspaceRightSidebar
+                activeTab={sidebarTab}
+                repoOwner={workspace.repo_owner}
+                repoName={workspace.repo_name}
+                mrNumber={workspace.mr_number}
+                branch={workspace.mr_head_ref}
+                roborevBaseUrl={basePath + "/api/roborev"}
+              />
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </CollapsibleResizableSidebar>
 </div>
 
 <style>

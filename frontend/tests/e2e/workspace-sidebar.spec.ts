@@ -174,6 +174,9 @@ test.describe("sidebar toggle behavior", () => {
     // Clear any persisted sidebar state before each test.
     await page.addInitScript(() => {
       localStorage.removeItem(
+        "middleman-workspace-list-sidebar-width",
+      );
+      localStorage.removeItem(
         "middleman-workspace-sidebar-tab",
       );
       localStorage.removeItem(
@@ -185,6 +188,76 @@ test.describe("sidebar toggle behavior", () => {
     });
     await setupTerminalMocks(page);
   });
+
+  test(
+    "workspace list resize reclamps the right sidebar",
+    async ({ page }) => {
+      await page.goto("/terminal/ws-123");
+
+      const listSidebar = page.locator(
+        ".workspace-list-sidebar",
+      );
+      await expect(listSidebar).toBeVisible();
+
+      const prBtn = page.locator(".seg-btn", {
+        hasText: "PR",
+      });
+      await prBtn.click();
+      const rightSidebar = page.locator(".right-sidebar");
+      await expect(rightSidebar).toBeVisible();
+
+      const initialListWidth = await listSidebar.evaluate(
+        (el) => el.getBoundingClientRect().width,
+      );
+      const initialRightSidebarWidth =
+        await rightSidebar.evaluate(
+          (el) => el.getBoundingClientRect().width,
+        );
+
+      const handle = page.getByRole("separator", {
+        name: "Resize sidebar",
+      });
+      await expect(handle).toBeVisible();
+
+      const box = await handle.boundingBox();
+      expect(box).toBeTruthy();
+
+      if (box) {
+        await page.mouse.move(
+          box.x + box.width / 2,
+          box.y + box.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          box.x + 180,
+          box.y + box.height / 2,
+        );
+        await page.mouse.up();
+      }
+
+      await expect
+        .poll(async () =>
+          rightSidebar.evaluate(
+            (el) => el.getBoundingClientRect().width,
+          ),
+        )
+        .toBeLessThan(initialRightSidebarWidth - 20);
+
+      const resizedListWidth = await listSidebar.evaluate(
+        (el) => el.getBoundingClientRect().width,
+      );
+      expect(resizedListWidth).toBeGreaterThan(
+        initialListWidth + 100,
+      );
+
+      const terminalWidth = await page
+        .locator(".terminal-area")
+        .evaluate((el) => el.getBoundingClientRect().width);
+      expect(terminalWidth).toBeGreaterThanOrEqual(
+        300,
+      );
+    },
+  );
 
   test(
     "segmented control visible in terminal header",
