@@ -500,7 +500,7 @@ test.describe("diff view", () => {
 
     // Filter the sidebar to exclude PR 1 by searching for a different PR.
     await page.locator(".search-input").fill("race");
-    await expect(page.locator(".count-badge"))
+    await expect(page.locator(".list-count-chip"))
       .toHaveText(/^1 PRs?$/, { timeout: 5_000 });
     await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
       .toHaveCount(0);

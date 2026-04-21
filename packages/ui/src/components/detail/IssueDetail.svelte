@@ -9,6 +9,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
+  import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { issues, activity } = getStores();
@@ -155,9 +156,9 @@
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(issue.CreatedAt)}</span>
         <span class="meta-sep">·</span>
-        <span class="meta-item chip chip--{issue.State}">
+        <Chip size="sm" class={`issue-state-chip chip--${issue.State}`}>
           {issue.State === "open" ? "Open" : "Closed"}
-        </span>
+        </Chip>
         {#if issues.isIssueDetailSyncing()}
           <span class="meta-sep">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
@@ -389,26 +390,6 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  .chip {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-  }
-
-  .chip--open {
-    background: color-mix(in srgb, var(--accent-green) 15%, transparent);
-    color: var(--accent-green);
-  }
-
-  .chip--closed {
-    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
-    color: var(--accent-purple);
   }
 
   .section {

@@ -3,6 +3,7 @@
   import { getStores } from "../../context.js";
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
+  import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
 
   const { issues } = getStores();
@@ -52,10 +53,12 @@
   {/if}
   {#if showRepo}
     <div class="repo-row">
-      <span
-        class="repo-badge"
-        style="color: {repoColor(repoSlug)}; background: color-mix(in srgb, {repoColor(repoSlug)} 15%, transparent);"
-      >{repoSlug}</span>
+      <Chip
+        size="sm"
+        uppercase={false}
+        class="chip--muted repo-chip"
+        style={`color: ${repoColor(repoSlug)}; background: color-mix(in srgb, ${repoColor(repoSlug)} 15%, transparent);`}
+      >{repoSlug}</Chip>
     </div>
   {/if}
   <div class="meta-row">
@@ -81,7 +84,7 @@
           </svg>
         {/if}
       </span>
-      <span class="badge badge--{issue.State}">{stateLabel}</span>
+      <Chip size="sm" class={`state-chip chip--${issue.State}`}>{stateLabel}</Chip>
       <span class="time">{ago}</span>
     </span>
   </div>
@@ -139,17 +142,10 @@
     margin-bottom: 4px;
   }
 
-  .repo-badge {
-    font-size: 9px;
-    font-weight: 600;
-    padding: 1px 5px;
-    border-radius: 8px;
-    white-space: nowrap;
+  :global(.repo-chip) {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: inline-block;
-    max-width: 100%;
-    line-height: 1.4;
   }
 
   .meta-right {
@@ -164,24 +160,8 @@
     color: var(--text-muted);
   }
 
-  .badge {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 10px;
-    white-space: nowrap;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .badge--open {
-    background: color-mix(in srgb, var(--accent-green) 18%, transparent);
-    color: var(--accent-green);
-  }
-
-  .badge--closed {
-    background: color-mix(in srgb, var(--accent-purple) 18%, transparent);
-    color: var(--accent-purple);
+  :global(.state-chip) {
+    flex-shrink: 0;
   }
 
   .star-btn {

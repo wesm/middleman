@@ -14,6 +14,7 @@
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
+  import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
@@ -474,13 +475,13 @@
       <!-- Chips row -->
       <div class="chips-row">
         {#if pr.State === "merged"}
-          <span class="chip chip--purple">Merged</span>
+          <Chip class="chip--purple">Merged</Chip>
         {:else if pr.State === "closed"}
-          <span class="chip chip--red">Closed</span>
+          <Chip class="chip--red">Closed</Chip>
         {:else if pr.IsDraft}
-          <span class="chip chip--amber">Draft</span>
+          <Chip class="chip--amber">Draft</Chip>
         {:else}
-          <span class="chip chip--green">Open</span>
+          <Chip class="chip--green">Open</Chip>
         {/if}
         <CIStatus
           status={pr.CIStatus}
@@ -491,13 +492,15 @@
           showPanel={false}
         />
         {#if pr.ReviewDecision}
-          <span class="chip {reviewColor(pr.ReviewDecision)}">{pr.ReviewDecision.replace(/_/g, " ")}</span>
+          <Chip class={reviewColor(pr.ReviewDecision)}>
+            {pr.ReviewDecision.replace(/_/g, " ")}
+          </Chip>
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
-          <span class="chip chip--muted">+{pr.Additions}/-{pr.Deletions}</span>
+          <Chip class="chip--muted">+{pr.Additions}/-{pr.Deletions}</Chip>
         {/if}
         {#if hasWorktreeLinks}
-          <span class="chip chip--teal">Worktree</span>
+          <Chip class="chip--teal">Worktree</Chip>
         {/if}
         <CIStatus
           status={pr.CIStatus}
@@ -1124,50 +1127,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-  }
-
-  .chip {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-  }
-
-  .chip--green {
-    background: color-mix(in srgb, var(--accent-green) 15%, transparent);
-    color: var(--accent-green);
-  }
-
-  .chip--red {
-    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
-    color: var(--accent-red);
-  }
-
-  .chip--amber {
-    background: color-mix(in srgb, var(--accent-amber) 15%, transparent);
-    color: var(--accent-amber);
-  }
-
-  .chip--purple {
-    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
-    color: var(--accent-purple);
-  }
-
-  .chip--muted {
-    background: var(--bg-inset);
-    color: var(--text-muted);
-  }
-
-  .chip--teal {
-    background: color-mix(
-      in srgb,
-      var(--accent-teal, var(--accent-green)) 15%,
-      transparent
-    );
-    color: var(--accent-teal, var(--accent-green));
   }
 
   .kanban-row {

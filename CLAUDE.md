@@ -107,6 +107,7 @@ make vet        # go vet
 - Tests should be fast and isolated
 - No emojis in code or output
 - For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
+- For UI work, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Git Workflow

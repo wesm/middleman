@@ -80,6 +80,12 @@ describe("router /pulls/.../files route", () => {
 });
 
 describe("router basic routes", () => {
+  it("parses /design-system", () => {
+    navigate("/design-system");
+    expect(getRoute()).toEqual({ page: "design-system" });
+    expect(getPage()).toBe("design-system");
+  });
+
   it("parses /pulls as list view", () => {
     navigate("/pulls");
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
@@ -169,5 +175,16 @@ describe("router navigation events", () => {
     expect(payload.type).toBe("pull");
     expect(payload.owner).toBeUndefined();
     expect(payload.number).toBeUndefined();
+  });
+
+  it("maps /design-system to activity navigation events", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/design-system");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("activity");
+    expect(payload.view).toBe("/design-system");
   });
 });

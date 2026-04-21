@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
+  import Chip from "../shared/Chip.svelte";
 
   const { issues, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
@@ -50,7 +51,9 @@
 
 <div class="issue-list">
   <div class="filter-bar">
-    <span class="count-badge">{issues.getIssues().length} issues</span>
+    <Chip size="sm" uppercase={false} class="chip--muted list-count-chip">
+      {issues.getIssues().length} issues
+    </Chip>
     <div class="state-toggle">
       {#each ["open", "closed", "all"] as s (s)}
         <button
@@ -291,14 +294,7 @@
     color: var(--accent-amber);
   }
 
-  .count-badge {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: 10px;
-    padding: 2px 7px;
+  :global(.list-count-chip) {
     flex-shrink: 0;
   }
 

@@ -17,14 +17,23 @@ test.describe("PR list view", () => {
   });
 
   test("renders open PRs by default with correct count", async ({ page }) => {
-    const countBadge = page.locator(".count-badge");
+    const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^8 PRs$/);
+  });
+
+  test("sidebar status pills use the shared chip component", async ({ page }) => {
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^8 PRs$/);
+
+    await page.locator(".group-btn", { hasText: "All" }).click();
+    const firstItem = page.locator(".pull-item").first();
+    await expect(firstItem.locator(".repo-chip")).toBeVisible();
+    await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 
   test("closed state shows closed and merged PRs with correct count", async ({ page }) => {
     await page.locator(".state-btn", { hasText: "Closed" }).click();
 
-    const countBadge = page.locator(".count-badge");
+    const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^4 PRs$/, { timeout: 5_000 });
   });
 
@@ -36,7 +45,7 @@ test.describe("PR list view", () => {
     // matching item is already visible in the unfiltered list, so
     // we must wait on a condition that only becomes true after
     // the debounced search request completes.
-    await expect(page.locator(".count-badge"))
+    await expect(page.locator(".filter-bar .list-count-chip"))
       .toHaveText(/^1 PRs?$/, { timeout: 5_000 });
 
     // Verify the single remaining item is the expected one.

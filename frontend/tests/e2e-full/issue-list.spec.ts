@@ -19,14 +19,23 @@ test.describe("issue list view", () => {
   });
 
   test("renders open issues by default", async ({ page }) => {
-    const countBadge = page.locator(".count-badge");
+    const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^4 issues$/);
+  });
+
+  test("sidebar issue pills use the shared chip component", async ({ page }) => {
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^4 issues$/);
+
+    await page.locator(".group-btn", { hasText: "All" }).click();
+    const firstItem = page.locator(".issue-item").first();
+    await expect(firstItem.locator(".repo-chip")).toBeVisible();
+    await expect(firstItem.locator(".state-chip")).toBeVisible();
   });
 
   test("closed state shows closed issues", async ({ page }) => {
     await page.locator(".state-btn", { hasText: "Closed" }).click();
 
-    const countBadge = page.locator(".count-badge");
+    const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^1 issues?$/, { timeout: 5_000 });
   });
 
@@ -35,7 +44,7 @@ test.describe("issue list view", () => {
     await input.fill("Safari");
 
     // Wait for the filtered result to appear (replaces fixed sleep).
-    await expect(page.locator(".count-badge"))
+    await expect(page.locator(".filter-bar .list-count-chip"))
       .toHaveText(/^1 issues?$/, { timeout: 5_000 });
 
     const items = page.locator(".issue-item");
@@ -46,6 +55,30 @@ test.describe("issue list view", () => {
       const title = await items.nth(i).locator(".title").textContent();
       expect(title).toContain("Safari");
     }
+  });
+
+  test("issue detail state chip preserves shared chip layout", async ({ page }) => {
+    await page.locator(".issue-item")
+      .filter({ hasText: "Safari" })
+      .first()
+      .click();
+
+    const stateChip = page.locator(".issue-detail .issue-state-chip");
+    await expect(stateChip).toBeVisible();
+    await expect(stateChip).toHaveText("Open");
+
+    const stateChipStyles = await stateChip.evaluate((node) => {
+      const styles = getComputedStyle(node);
+      return {
+        minHeight: styles.minHeight,
+        fontSize: styles.fontSize,
+        backgroundColor: styles.backgroundColor,
+      };
+    });
+
+    expect(stateChipStyles.minHeight).toBe("18px");
+    expect(stateChipStyles.fontSize).toBe("10px");
+    expect(stateChipStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 
   test("issue detail scrolls internally and centers horizontally", async ({ page }) => {

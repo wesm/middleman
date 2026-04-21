@@ -119,6 +119,9 @@ export {
   default as ActionButton,
 } from "./components/shared/ActionButton.svelte";
 export {
+  default as Chip,
+} from "./components/shared/Chip.svelte";
+export {
   default as FilterDropdown,
 } from "./components/shared/FilterDropdown.svelte";
 export {
