@@ -49,6 +49,7 @@ type mockClient struct {
 	listOpenPRsErr                  error
 	listOpenIssuesErr               error
 	singlePR                        *gh.PullRequest
+	createIssueFn                   func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getRepositoryFn                 func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn                func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                      func(context.Context, string, string, int) (*gh.Issue, error)
@@ -113,6 +114,16 @@ func (m *mockClient) GetIssue(
 	m.trackCall()
 	if m.getIssueFn != nil {
 		return m.getIssueFn(ctx, owner, repo, number)
+	}
+	return nil, nil
+}
+
+func (m *mockClient) CreateIssue(
+	ctx context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	m.trackCall()
+	if m.createIssueFn != nil {
+		return m.createIssueFn(ctx, owner, repo, title, body)
 	}
 	return nil, nil
 }
