@@ -237,10 +237,10 @@ func (s *Server) runWorkspacePRMonitorPass(ctx context.Context) {
 		return
 	}
 	for i := range updates {
-		update := updates[i]
+		workspaceID := updates[i]
 		s.hub.Broadcast(Event{
 			Type: "workspace_status",
-			Data: map[string]string{"id": update.WorkspaceID},
+			Data: map[string]string{"id": workspaceID},
 		})
 		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	}

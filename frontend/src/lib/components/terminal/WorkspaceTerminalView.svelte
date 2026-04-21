@@ -163,6 +163,7 @@
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
+  let initializedWorkspaceId = $state("");
 
   // Runtime is only "live" when both the runtime fetch and the
   // workspace fetch resolve for the current route. Without the
@@ -457,6 +458,30 @@
     return ws.item_type === "pull_request" || ws.associated_pr != null;
   }
 
+  function syncSidebarTabForWorkspace(
+    ws: Workspace,
+  ): void {
+    const ownerDefault = defaultSidebarTab(ws);
+    const isNewWorkspace = initializedWorkspaceId !== ws.id;
+    initializedWorkspaceId = ws.id;
+
+    if (isNewWorkspace) {
+      if (ws.item_type === "issue") {
+        sidebarTab = ownerDefault;
+        return;
+      }
+      const savedTab = loadSidebarTab();
+      sidebarTab = isSidebarTabSupported(ws, savedTab)
+        ? savedTab
+        : ownerDefault;
+      return;
+    }
+
+    if (!isSidebarTabSupported(ws, sidebarTab)) {
+      sidebarTab = ownerDefault;
+    }
+  }
+
   async function fetchWorkspace(): Promise<void> {
     // Capture the id at call time. With workspaceId changing across
     // navigations, a slow in-flight fetch for the previous id could
@@ -480,6 +505,7 @@
         return;
       }
       workspace = data as Workspace;
+      syncSidebarTabForWorkspace(workspace);
       loadError = null;
       actionError = null;
 
@@ -789,6 +815,7 @@
       workspace = null;
       runtime = null;
       runtimeForId = "";
+      initializedWorkspaceId = "";
       return;
     }
 

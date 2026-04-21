@@ -10824,8 +10824,7 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 	updates, err := fixture.server.workspacePRMonitor.RunOnce(ctx)
 	require.NoError(err)
 	require.Len(updates, 1)
-	assert.Equal(created.ID, updates[0].WorkspaceID)
-	assert.Equal(42, updates[0].PRNumber)
+	assert.Equal(created.ID, updates[0])
 
 	getRR := doJSON(
 		t,

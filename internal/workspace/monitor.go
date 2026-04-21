@@ -13,11 +13,6 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
-type PRAssociationUpdate struct {
-	WorkspaceID string
-	PRNumber    int
-}
-
 type PRMonitor struct {
 	db *db.DB
 }
@@ -28,13 +23,13 @@ func NewPRMonitor(database *db.DB) *PRMonitor {
 
 func (m *PRMonitor) RunOnce(
 	ctx context.Context,
-) ([]PRAssociationUpdate, error) {
+) ([]string, error) {
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 
-	var updates []PRAssociationUpdate
+	var updates []string
 	for i := range workspaces {
 		ws := workspaces[i]
 		if !workspacePRMonitorEligible(&ws) {
@@ -68,10 +63,7 @@ func (m *PRMonitor) RunOnce(
 			continue
 		}
 		if changed {
-			updates = append(updates, PRAssociationUpdate{
-				WorkspaceID: ws.ID,
-				PRNumber:    prNumber,
-			})
+			updates = append(updates, ws.ID)
 		}
 	}
 

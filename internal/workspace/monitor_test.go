@@ -86,8 +86,7 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	updates, err := monitor.RunOnce(ctx)
 	require.NoError(err)
 	require.Len(updates, 1)
-	assert.Equal("ws-issue", updates[0].WorkspaceID)
-	assert.Equal(42, updates[0].PRNumber)
+	assert.Equal("ws-issue", updates[0])
 
 	ws, err := d.GetWorkspace(ctx, "ws-issue")
 	require.NoError(err)
@@ -114,7 +113,7 @@ func TestPRMonitorRunOnceFallsBackToLocalBranchName(t *testing.T) {
 	updates, err := monitor.RunOnce(ctx)
 	require.NoError(err)
 	require.Len(updates, 1)
-	assert.Equal(42, updates[0].PRNumber)
+	assert.Equal("ws-issue", updates[0])
 
 	ws, err := d.GetWorkspace(ctx, "ws-issue")
 	require.NoError(err)
@@ -185,7 +184,7 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 	updates, err := monitor.RunOnce(ctx)
 	require.NoError(err)
 	require.Len(updates, 1)
-	assert.Equal(42, updates[0].PRNumber)
+	assert.Equal("ws-issue", updates[0])
 }
 
 func TestPRMonitorRunOnceSkipsAmbiguousLocalBranchFallback(t *testing.T) {
