@@ -200,6 +200,238 @@ test.describe("detail action buttons", () => {
     await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
+  test("issue workspace conflict dialog can reuse the existing branch", async ({ page }) => {
+    const createdWorkspace = {
+      id: "ws-issue-10",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "issue",
+      item_number: 10,
+      git_head_ref: "middleman/issue-10",
+      worktree_path: "/tmp/workspaces/issue-10",
+      tmux_session: "middleman-ws-issue-10",
+      status: "ready",
+      created_at: "2026-04-20T12:00:00Z",
+      mr_title: "Add keyboard shortcut docs",
+      mr_state: "open",
+    };
+    const conflict = {
+      type: "urn:middleman:error:issue-workspace-branch-conflict",
+      title: "Issue workspace branch conflict",
+      status: 409,
+      detail: "A local branch with the requested name already exists.",
+      errors: [
+        {
+          message: "Requested branch already exists",
+          location: "body.git_head_ref",
+          value: "middleman/issue-10",
+        },
+        {
+          message: "Suggested alternative branch name",
+          location: "body.suggested_git_head_ref",
+          value: "middleman/issue-10-2",
+        },
+      ],
+    };
+
+    const payloads: Record<string, unknown>[] = [];
+    await page.route(
+      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      async (route) => {
+        payloads.push(JSON.parse(
+          route.request().postData() ?? "{}",
+        ) as Record<string, unknown>);
+        if (payloads.length === 1) {
+          await route.fulfill({
+            status: 409,
+            contentType: "application/problem+json",
+            body: JSON.stringify(conflict),
+          });
+          return;
+        }
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces/ws-issue-10",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces",
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [createdWorkspace] }),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/events",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      },
+    );
+
+    await page.goto("/issues/acme/widgets/10");
+    await expect(page.locator(".issue-detail")).toBeVisible();
+
+    await page.locator(".btn--workspace").click();
+
+    const dialog = page.getByRole("dialog", { name: "Branch Name Conflict" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("middleman/issue-10");
+    await expect(
+      dialog.locator("#issue-workspace-branch-name"),
+    ).toHaveValue("middleman/issue-10-2");
+
+    await dialog.getByRole("button", { name: "Use Existing Branch" }).click();
+
+    expect(payloads).toEqual([
+      {
+        platform_host: "github.com",
+      },
+      {
+        platform_host: "github.com",
+        git_head_ref: "middleman/issue-10",
+        reuse_existing_branch: true,
+      },
+    ]);
+    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
+  });
+
+  test("issue workspace conflict dialog can create a new suggested branch", async ({ page }) => {
+    const createdWorkspace = {
+      id: "ws-issue-10",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "issue",
+      item_number: 10,
+      git_head_ref: "middleman/issue-10-2",
+      worktree_path: "/tmp/workspaces/issue-10-2",
+      tmux_session: "middleman-ws-issue-10",
+      status: "ready",
+      created_at: "2026-04-20T12:00:00Z",
+      mr_title: "Add keyboard shortcut docs",
+      mr_state: "open",
+    };
+    const conflict = {
+      type: "urn:middleman:error:issue-workspace-branch-conflict",
+      title: "Issue workspace branch conflict",
+      status: 409,
+      detail: "A local branch with the requested name already exists.",
+      errors: [
+        {
+          message: "Requested branch already exists",
+          location: "body.git_head_ref",
+          value: "middleman/issue-10",
+        },
+        {
+          message: "Suggested alternative branch name",
+          location: "body.suggested_git_head_ref",
+          value: "middleman/issue-10-2",
+        },
+      ],
+    };
+
+    const payloads: Record<string, unknown>[] = [];
+    await page.route(
+      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      async (route) => {
+        payloads.push(JSON.parse(
+          route.request().postData() ?? "{}",
+        ) as Record<string, unknown>);
+        if (payloads.length === 1) {
+          await route.fulfill({
+            status: 409,
+            contentType: "application/problem+json",
+            body: JSON.stringify(conflict),
+          });
+          return;
+        }
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces/ws-issue-10",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/workspaces",
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [createdWorkspace] }),
+        });
+      },
+    );
+    await page.route(
+      "**/api/v1/events",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      },
+    );
+
+    await page.goto("/issues/acme/widgets/10");
+    await expect(page.locator(".issue-detail")).toBeVisible();
+
+    await page.locator(".btn--workspace").click();
+
+    const dialog = page.getByRole("dialog", { name: "Branch Name Conflict" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Create New Branch" }).click();
+
+    expect(payloads).toEqual([
+      {
+        platform_host: "github.com",
+      },
+      {
+        platform_host: "github.com",
+        git_head_ref: "middleman/issue-10-2",
+      },
+    ]);
+    await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
+  });
+
   test("pull request actions use shared ActionButton component", async ({ page }) => {
     await page.goto("/pulls");
     await page.locator(".pull-item").first()

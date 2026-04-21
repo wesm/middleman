@@ -37,6 +37,32 @@ type Manager struct {
 	retryQueued map[string]bool
 }
 
+// CreateIssueOptions controls how issue-backed workspaces choose their branch.
+//
+// The default path creates middleman's conventional issue branch. When a local
+// branch with that name already exists, callers can either ask the manager to
+// reuse it or supply a different GitHeadRef.
+type CreateIssueOptions struct {
+	GitHeadRef          string
+	ReuseExistingBranch bool
+}
+
+// IssueWorkspaceBranchConflictError reports that the requested issue-workspace
+// branch already exists locally, so the caller must either reuse it or choose
+// a different name before a new middleman workspace can be created.
+type IssueWorkspaceBranchConflictError struct {
+	Branch          string
+	SuggestedBranch string
+}
+
+func (e *IssueWorkspaceBranchConflictError) Error() string {
+	return fmt.Sprintf(
+		"issue workspace branch %q already exists; suggested alternative %q",
+		e.Branch,
+		e.SuggestedBranch,
+	)
+}
+
 const (
 	workspaceSetupStageSetup       = "setup"
 	workspaceSetupStageClone       = "clone"
@@ -180,6 +206,7 @@ func (m *Manager) CreateIssue(
 	ctx context.Context,
 	platformHost, owner, name string,
 	issueNumber int,
+	opts CreateIssueOptions,
 ) (*Workspace, error) {
 	repo, err := m.db.GetRepoByHostOwnerName(
 		ctx, platformHost, owner, name,
@@ -203,6 +230,52 @@ func (m *Manager) CreateIssue(
 		)
 	}
 
+	gitHeadRef := opts.GitHeadRef
+	if gitHeadRef == "" {
+		gitHeadRef = issueWorkspaceBranch(issueNumber)
+	}
+	if err := validateLocalBranchName(ctx, "", gitHeadRef); err != nil {
+		return nil, err
+	}
+
+	workspaceBranch := gitHeadRef
+	if m.clones != nil {
+		remoteURL := fmt.Sprintf(
+			"https://%s/%s/%s.git",
+			platformHost, owner, name,
+		)
+		if err := m.clones.EnsureClone(
+			ctx, platformHost, owner, name, remoteURL,
+		); err != nil {
+			return nil, fmt.Errorf("ensure clone: %w", err)
+		}
+
+		cloneDir := m.clones.ClonePath(platformHost, owner, name)
+		exists, err := localBranchExists(ctx, cloneDir, gitHeadRef)
+		if err != nil {
+			return nil, fmt.Errorf("inspect local branch: %w", err)
+		}
+		if exists {
+			if opts.ReuseExistingBranch {
+				workspaceBranch = ""
+			} else {
+				suggested, err := nextAvailableBranchName(
+					ctx, cloneDir, gitHeadRef,
+				)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"suggest branch name: %w",
+						err,
+					)
+				}
+				return nil, &IssueWorkspaceBranchConflictError{
+					Branch:          gitHeadRef,
+					SuggestedBranch: suggested,
+				}
+			}
+		}
+	}
+
 	id, err := newWorkspaceID()
 	if err != nil {
 		return nil, err
@@ -215,8 +288,8 @@ func (m *Manager) CreateIssue(
 		RepoName:        name,
 		ItemType:        db.WorkspaceItemTypeIssue,
 		ItemNumber:      issueNumber,
-		GitHeadRef:      issueWorkspaceBranch(issueNumber),
-		WorkspaceBranch: workspaceBranchUnknown,
+		GitHeadRef:      gitHeadRef,
+		WorkspaceBranch: workspaceBranch,
 		WorktreePath: filepath.Join(
 			m.worktreeDir, platformHost, owner, name,
 			fmt.Sprintf("issue-%d", issueNumber),
@@ -363,15 +436,24 @@ func (m *Manager) addWorktree(
 func (m *Manager) addIssueWorktree(
 	ctx context.Context, cloneDir string, ws *Workspace,
 ) (string, error) {
+	if ws.WorkspaceBranch == "" {
+		if err := runGit(
+			ctx, cloneDir,
+			"worktree", "add", ws.WorktreePath, ws.GitHeadRef,
+		); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
 	startRef := workspaceStartRef(ws)
 	if err := runGit(
 		ctx, cloneDir,
 		"worktree", "add", ws.WorktreePath,
-		"-b", ws.GitHeadRef, startRef,
+		"-b", ws.WorkspaceBranch, startRef,
 	); err != nil {
 		return "", err
 	}
-	return ws.GitHeadRef, nil
+	return ws.WorkspaceBranch, nil
 }
 
 func (m *Manager) addPreferredWorktree(
@@ -1573,5 +1655,49 @@ func gitRefSHA(
 	}
 	return "", false, fmt.Errorf(
 		"%w: %s", err, strings.TrimSpace(string(out)),
+	)
+}
+
+func localBranchExists(
+	ctx context.Context, dir, branch string,
+) (bool, error) {
+	cmd := exec.CommandContext(
+		ctx,
+		"git",
+		"show-ref",
+		"--verify",
+		"--quiet",
+		"refs/heads/"+branch,
+	)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
+func nextAvailableBranchName(
+	ctx context.Context, dir, branch string,
+) (string, error) {
+	for i := 2; i < 1000; i++ {
+		candidate := fmt.Sprintf("%s-%d", branch, i)
+		exists, err := localBranchExists(ctx, dir, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"could not find an available branch name derived from %q",
+		branch,
 	)
 }

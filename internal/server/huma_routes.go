@@ -252,9 +252,13 @@ type createIssueWorkspaceInput struct {
 	Name   string `path:"name"`
 	Number int    `path:"number"`
 	Body   struct {
-		PlatformHost string `json:"platform_host"`
+		PlatformHost        string  `json:"platform_host"`
+		GitHeadRef          *string `json:"git_head_ref,omitempty"`
+		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}
 }
+
+const issueWorkspaceBranchConflictType = "urn:middleman:error:issue-workspace-branch-conflict"
 
 type getWorkspaceInput struct {
 	ID string `path:"id"`
@@ -2246,14 +2250,43 @@ func (s *Server) createIssueWorkspace(
 		input.Owner,
 		input.Name,
 		input.Number,
+		workspace.CreateIssueOptions{
+			GitHeadRef:          strings.TrimSpace(derefString(input.Body.GitHeadRef)),
+			ReuseExistingBranch: input.Body.ReuseExistingBranch,
+		},
 	)
 	if err != nil {
 		msg := err.Error()
+		var branchConflict *workspace.IssueWorkspaceBranchConflictError
+		if errors.As(err, &branchConflict) {
+			conflict := &huma.ErrorModel{
+				Type:   issueWorkspaceBranchConflictType,
+				Title:  "Issue workspace branch conflict",
+				Status: http.StatusConflict,
+				Detail: "A local branch with the requested name already exists.",
+				Errors: []*huma.ErrorDetail{
+					{
+						Message:  "Requested branch already exists",
+						Location: "body.git_head_ref",
+						Value:    branchConflict.Branch,
+					},
+					{
+						Message:  "Suggested alternative branch name",
+						Location: "body.suggested_git_head_ref",
+						Value:    branchConflict.SuggestedBranch,
+					},
+				},
+			}
+			return nil, conflict
+		}
 		if strings.Contains(msg, "not tracked") {
 			return nil, huma.Error404NotFound(msg)
 		}
 		if strings.Contains(msg, "not synced") {
 			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "invalid branch name") {
+			return nil, huma.Error400BadRequest(msg)
 		}
 		if strings.Contains(msg, "UNIQUE constraint") {
 			existing, getErr := s.workspaces.GetByIssue(
@@ -2345,6 +2378,13 @@ func (s *Server) listWorkspaces(
 	out := &listWorkspacesOutput{}
 	out.Body.Workspaces = list
 	return out, nil
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // getWorkspace returns one persisted middleman workspace.

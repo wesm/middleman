@@ -100,8 +100,10 @@ type CommitsResponse struct {
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
 type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	PlatformHost string  `json:"platform_host"`
+	Schema              *string `json:"$schema,omitempty"`
+	GitHeadRef          *string `json:"git_head_ref,omitempty"`
+	PlatformHost        string  `json:"platform_host"`
+	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
 // CreateWorkspaceInputBody defines model for CreateWorkspaceInputBody.

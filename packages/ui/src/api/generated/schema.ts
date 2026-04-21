@@ -670,7 +670,9 @@ export interface components {
              * @example /api/v1/schemas/CreateIssueWorkspaceInputBody.json
              */
             readonly $schema?: string;
+            git_head_ref?: string;
             platform_host: string;
+            reuse_existing_branch?: boolean;
         };
         CreateWorkspaceInputBody: {
             /**

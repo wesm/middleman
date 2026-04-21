@@ -6935,6 +6935,18 @@ type rawIssueDetailResponse struct {
 	Workspace    *rawIssueWorkspaceRef `json:"workspace"`
 }
 
+type rawProblemDetail struct {
+	Type   string `json:"type"`
+	Title  string `json:"title"`
+	Status int    `json:"status"`
+	Detail string `json:"detail"`
+	Errors []struct {
+		Message  string `json:"message"`
+		Location string `json:"location"`
+		Value    any    `json:"value"`
+	} `json:"errors"`
+}
+
 func TestWorkspaceCRUDE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -7272,6 +7284,127 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	assert.Equal(first.ID, second.ID)
 	assert.Equal("issue", second.ItemType)
 	assert.Equal(7, second.ItemNumber)
+}
+
+func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t)
+	ctx := context.Background()
+
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/workspace",
+		map[string]string{"platform_host": "github.com"},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	assert.Equal(
+		"middleman/issue-7",
+		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
+	)
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx,
+		created.ID,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+
+	recreateRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/workspace",
+		map[string]string{"platform_host": "github.com"},
+	)
+	require.Equal(http.StatusAccepted, recreateRR.Code, recreateRR.Body.String())
+
+	var recreated rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(recreateRR.Body).Decode(&recreated))
+	recreatedReady := waitForWorkspaceReady(t, ctx, fixture.client, recreated.ID)
+	assert.Equal(
+		"middleman/issue-7",
+		gitOutput(t, recreatedReady.WorktreePath, "branch", "--show-current"),
+	)
+}
+
+func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t)
+	ctx := context.Background()
+
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+
+	mainSHA := testGitSHA(t, fixture.remote, "refs/heads/main")
+	runGit(
+		t,
+		fixture.bare,
+		"update-ref",
+		"refs/heads/middleman/issue-7",
+		mainSHA,
+	)
+
+	conflictRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/workspace",
+		map[string]string{"platform_host": "github.com"},
+	)
+	require.Equal(http.StatusConflict, conflictRR.Code, conflictRR.Body.String())
+
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(conflictRR.Body).Decode(&problem))
+	assert.Equal(
+		"urn:middleman:error:issue-workspace-branch-conflict",
+		problem.Type,
+	)
+	assert.Equal(http.StatusConflict, problem.Status)
+	assert.NotEmpty(problem.Detail)
+
+	locations := map[string]any{}
+	for _, errDetail := range problem.Errors {
+		locations[errDetail.Location] = errDetail.Value
+	}
+	assert.Equal("middleman/issue-7", locations["body.git_head_ref"])
+	assert.Equal(
+		"middleman/issue-7-2",
+		locations["body.suggested_git_head_ref"],
+	)
+
+	reuseRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/workspace",
+		map[string]any{
+			"platform_host":         "github.com",
+			"git_head_ref":          "middleman/issue-7",
+			"reuse_existing_branch": true,
+		},
+	)
+	require.Equal(http.StatusAccepted, reuseRR.Code, reuseRR.Body.String())
+
+	var reused rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(reuseRR.Body).Decode(&reused))
+	reusedReady := waitForWorkspaceReady(t, ctx, fixture.client, reused.ID)
+	assert.Equal(
+		"middleman/issue-7",
+		gitOutput(t, reusedReady.WorktreePath, "branch", "--show-current"),
+	)
 }
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {

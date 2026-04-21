@@ -94,16 +94,117 @@
 
   let workspaceCreating = $state(false);
   let workspaceError = $state<string | null>(null);
+  const ISSUE_WORKSPACE_BRANCH_CONFLICT_TYPE =
+    "urn:middleman:error:issue-workspace-branch-conflict";
+
+  type APIErrorDetail = {
+    location?: string;
+    value?: unknown;
+  };
+
+  type APIError = {
+    type?: string;
+    title?: string;
+    detail?: string;
+    errors?: APIErrorDetail[] | null;
+  };
+
+  type BranchConflictState = {
+    existingBranch: string;
+    suggestedBranch: string;
+    branchInput: string;
+    error: string | null;
+  };
+
+  let branchConflict = $state<BranchConflictState | null>(
+    null,
+  );
   const workspace = $derived(
     issues.getIssueDetail()?.workspace,
   );
 
-  async function createWorkspace(): Promise<void> {
+  function issueWorkspaceBranch(): string {
+    return `middleman/issue-${number}`;
+  }
+
+  function branchConflictValue(
+    error: APIError,
+    location: string,
+  ): string | null {
+    const value = error.errors?.find(
+      (entry) => entry.location === location,
+    )?.value;
+    return typeof value === "string" && value
+      ? value
+      : null;
+  }
+
+  function parseBranchConflict(
+    error: APIError | undefined,
+  ): BranchConflictState | null {
+    if (!error) {
+      return null;
+    }
+
+    const existingBranch =
+      branchConflictValue(error, "body.git_head_ref")
+      ?? "";
+    const suggestedBranch =
+      branchConflictValue(
+        error,
+        "body.suggested_git_head_ref",
+      )
+      ?? "";
+    const isTypedConflict =
+      error.type === ISSUE_WORKSPACE_BRANCH_CONFLICT_TYPE;
+    if (
+      !isTypedConflict
+      && (!existingBranch || !suggestedBranch)
+    ) {
+      return null;
+    }
+
+    return {
+      existingBranch:
+        existingBranch || issueWorkspaceBranch(),
+      suggestedBranch:
+        suggestedBranch
+        || `${existingBranch || issueWorkspaceBranch()}-2`,
+      branchInput:
+        suggestedBranch
+        || `${existingBranch || issueWorkspaceBranch()}-2`,
+      error: null,
+    };
+  }
+
+  type CreateWorkspaceOptions = {
+    gitHeadRef?: string;
+    reuseExistingBranch?: boolean;
+    fromConflictDialog?: boolean;
+  };
+
+  async function createWorkspace(
+    options: CreateWorkspaceOptions = {},
+  ): Promise<void> {
     const detail = issues.getIssueDetail();
     if (!detail) return;
 
+    if (!options.fromConflictDialog) {
+      branchConflict = null;
+    } else if (
+      branchConflict
+      && options.gitHeadRef?.trim() === ""
+    ) {
+      branchConflict.error =
+        "Branch name cannot be empty.";
+      return;
+    }
+
     workspaceCreating = true;
     workspaceError = null;
+    if (branchConflict) {
+      branchConflict.error = null;
+    }
     try {
       const { data, error: requestError } = await client.POST(
         "/repos/{owner}/{name}/issues/{number}/workspace",
@@ -117,14 +218,39 @@
           },
           body: {
             platform_host: detail.platform_host,
+            ...(options.gitHeadRef
+              ? {
+                  git_head_ref:
+                    options.gitHeadRef.trim(),
+                }
+              : {}),
+            ...(options.reuseExistingBranch
+              ? {
+                  reuse_existing_branch: true,
+                }
+              : {}),
           },
         },
       );
       if (requestError) {
-        throw new Error(
+        const conflict = parseBranchConflict(
+          requestError as APIError,
+        );
+        if (conflict) {
+          branchConflict = conflict;
+          return;
+        }
+
+        const message =
           requestError.detail
-            ?? requestError.title
-            ?? "failed to create workspace",
+          ?? requestError.title
+          ?? "failed to create workspace";
+        if (options.fromConflictDialog && branchConflict) {
+          branchConflict.error = message;
+          return;
+        }
+        throw new Error(
+          message,
         );
       }
       if (data?.id) {
@@ -136,6 +262,11 @@
     } finally {
       workspaceCreating = false;
     }
+  }
+
+  function closeBranchConflictDialog(): void {
+    if (workspaceCreating) return;
+    branchConflict = null;
   }
 </script>
 
@@ -327,6 +458,138 @@
         {/if}
       </div>
     </div>
+
+    {#if branchConflict}
+      {@const conflict = branchConflict}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="modal-overlay"
+        onclick={closeBranchConflictDialog}
+        onkeydown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeBranchConflictDialog();
+          }
+        }}
+      >
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="issue-workspace-branch-conflict-title"
+          tabindex="-1"
+          onclick={(event) => event.stopPropagation()}
+        >
+          <div class="modal-header">
+            <h3
+              id="issue-workspace-branch-conflict-title"
+              class="modal-title"
+            >
+              Branch Name Conflict
+            </h3>
+            <button
+              class="modal-close"
+              onclick={closeBranchConflictDialog}
+              title="Cancel (Esc)"
+              disabled={workspaceCreating}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+              >
+                <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <p class="modal-copy">
+              The branch <code>{conflict.existingBranch}</code> already exists locally.
+            </p>
+
+            <div class="branch-conflict-option">
+              <div>
+                <div class="branch-conflict-heading">
+                  Reuse the existing branch
+                </div>
+                <div class="branch-conflict-copy">
+                  Reopen the workspace on the branch that is already present in the local clone.
+                </div>
+              </div>
+              <ActionButton
+                class="btn btn--primary"
+                onclick={() => void createWorkspace({
+                  gitHeadRef: conflict.existingBranch,
+                  reuseExistingBranch: true,
+                  fromConflictDialog: true,
+                })}
+                disabled={workspaceCreating}
+                tone="neutral"
+                surface="outline"
+                size="sm"
+              >
+                {workspaceCreating ? "Creating..." : "Use Existing Branch"}
+              </ActionButton>
+            </div>
+
+            <div class="field">
+              <label
+                class="field-label"
+                for="issue-workspace-branch-name"
+              >
+                New branch name
+              </label>
+              <input
+                id="issue-workspace-branch-name"
+                class="field-input"
+                type="text"
+                bind:value={conflict.branchInput}
+                oninput={() => {
+                  if (branchConflict) {
+                    branchConflict.error = null;
+                  }
+                }}
+              />
+              <p class="field-hint">
+                Suggested: <code>{conflict.suggestedBranch}</code>
+              </p>
+            </div>
+
+            {#if conflict.error}
+              <p class="merge-error">{conflict.error}</p>
+            {/if}
+          </div>
+
+          <div class="modal-footer">
+            <ActionButton
+              class="btn btn--secondary"
+              onclick={closeBranchConflictDialog}
+              disabled={workspaceCreating}
+              tone="neutral"
+              surface="outline"
+            >
+              Cancel
+            </ActionButton>
+            <ActionButton
+              class="btn btn--primary btn--green"
+              onclick={() => void createWorkspace({
+                gitHeadRef: conflict.branchInput,
+                fromConflictDialog: true,
+              })}
+              disabled={workspaceCreating}
+              tone="success"
+              surface="solid"
+            >
+              {workspaceCreating ? "Creating..." : "Create New Branch"}
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+    {/if}
   {/if}
 {/if}
 
@@ -597,6 +860,147 @@
     padding: 24px 0;
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    animation: fade-in 0.12s ease-out;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .modal {
+    width: min(560px, 92vw);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .modal-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .modal-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .modal-close:hover:not(:disabled) {
+    background: var(--bg-inset);
+    color: var(--text-primary);
+  }
+
+  .modal-close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .modal-body {
+    padding: 16px;
+    display: grid;
+    gap: 14px;
+  }
+
+  .modal-copy {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .branch-conflict-option {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border-muted);
+    border-radius: 10px;
+    background: var(--bg-inset);
+  }
+
+  .branch-conflict-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .branch-conflict-copy {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .field {
+    display: grid;
+    gap: 6px;
+  }
+
+  .field-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .field-input {
+    width: 100%;
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid var(--border-muted);
+    border-radius: 8px;
+    background: var(--bg-canvas);
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+
+  .field-hint {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .merge-error {
+    margin: 0;
+    font-size: 12px;
+    color: var(--accent-red, #d73a49);
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border-muted);
   }
 
 </style>
