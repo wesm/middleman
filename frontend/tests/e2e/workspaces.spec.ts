@@ -84,6 +84,37 @@ test("AppHeader shows Workspaces tab", async ({ page }) => {
 });
 
 test(
+  "repo selector renders icon and still filters repos",
+  async ({ page }) => {
+    await page.goto("/pulls");
+
+    const selector = page.getByTitle(
+      "Select repository",
+    );
+    await expect(selector).toBeVisible();
+    await expect(selector.locator("svg")).toBeVisible();
+
+    await selector.click();
+
+    const input = page.getByLabel("Filter repos");
+    await expect(input).toBeVisible();
+    await input.fill("widg");
+
+    const option = page.getByRole("option", {
+      name: "acme/widgets",
+    });
+    await expect(option).toBeVisible();
+    await option.click();
+
+    await expect(selector).toContainText("acme/widgets");
+    await expect(selector.locator("svg")).toBeVisible();
+    await expect(
+      page.getByText("Add browser regression coverage"),
+    ).toBeVisible();
+  },
+);
+
+test(
   "Workspaces tab navigates to /workspaces",
   async ({ page }) => {
     await page.addInitScript((d) => {

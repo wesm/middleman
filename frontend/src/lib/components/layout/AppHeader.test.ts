@@ -21,6 +21,7 @@ vi.mock("@middleman/ui", () => ({
 
 import AppHeader from "./AppHeader.svelte";
 import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
+import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
@@ -48,6 +49,7 @@ describe("AppHeader", () => {
     document.documentElement.classList.remove("dark");
     localStorage.clear();
     mockMatchMedia(false);
+    setSidebarCollapsed(false);
   });
 
   afterEach(() => {
@@ -55,6 +57,7 @@ describe("AppHeader", () => {
     cleanup();
     document.documentElement.classList.remove("dark");
     localStorage.clear();
+    setSidebarCollapsed(false);
   });
 
   it("toggles the root dark class when the theme button is clicked", async () => {
@@ -162,5 +165,58 @@ describe("AppHeader", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
     vi.restoreAllMocks();
+  });
+
+  it("renders SVG icons for the header controls", () => {
+    initTheme();
+    const { container } = render(AppHeader);
+
+    expect(
+      container.querySelector("button[title='Toggle theme'] svg"),
+    ).toBeTruthy();
+    expect(
+      container.querySelector("button[title='Settings'] svg"),
+    ).toBeTruthy();
+    expect(
+      container.querySelector("button[title='Select repository'] svg"),
+    ).toBeTruthy();
+  });
+
+  it("changes the theme toggle SVG when toggled", async () => {
+    initTheme();
+    render(AppHeader);
+
+    const button = screen.getByTitle("Toggle theme");
+    const before = button.querySelector("svg")?.innerHTML ?? null;
+
+    expect(before).toBeTruthy();
+
+    await fireEvent.click(button);
+
+    const after = button.querySelector("svg")?.innerHTML ?? null;
+
+    expect(after).toBeTruthy();
+    expect(after).not.toBe(before);
+  });
+
+  it("renders a filled moon icon in light mode", () => {
+    initTheme();
+    render(AppHeader);
+
+    const moon = screen.getByTitle("Toggle theme").querySelector(
+      "[data-filled-icon='moon'] svg",
+    );
+
+    expect(moon).toBeTruthy();
+  });
+
+  it("renders the collapsed sidebar toggle as a header icon button", () => {
+    initTheme();
+    setSidebarCollapsed(true);
+    const { container } = render(AppHeader);
+
+    expect(
+      container.querySelector("button[title='Expand sidebar'] svg"),
+    ).toBeTruthy();
   });
 });

@@ -7,6 +7,7 @@
     CollapsibleResizableSidebar,
     WorkspaceRightSidebar,
   } from "@middleman/ui";
+  import { AlertIcon, SpinnerIcon } from "../../icons.ts";
 
   interface Workspace {
     id: string;
@@ -369,7 +370,12 @@
         </div>
       {:else if loadError && !workspace}
         <div class="state-message error">
-          <span class="error-icon">!</span>
+          <AlertIcon
+            class="error-icon"
+            size="16"
+            strokeWidth="2"
+            aria-label="Workspace load failed"
+          />
           <span>{loadError}</span>
           <button
             class="retry-btn"
@@ -383,33 +389,22 @@
         </div>
       {:else if !workspace || workspace.status === "creating"}
         <div class="state-message">
-          <svg
+          <SpinnerIcon
             class="spinner"
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            fill="none"
-          >
-            <circle
-              cx="9"
-              cy="9"
-              r="7"
-              stroke="currentColor"
-              stroke-opacity="0.2"
-              stroke-width="2"
-            />
-            <path
-              d="M16 9a7 7 0 0 0-7-7"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            />
-          </svg>
+            size="18"
+            strokeWidth="2"
+            aria-hidden="true"
+          />
           <span>Setting up workspace...</span>
         </div>
       {:else if workspace.status === "error"}
         <div class="state-message error">
-          <span class="error-icon">!</span>
+          <AlertIcon
+            class="error-icon"
+            size="16"
+            strokeWidth="2"
+            aria-label="Workspace setup failed"
+          />
           <span>
             {workspace.error_message ??
               "Workspace setup failed"}
@@ -516,7 +511,7 @@
     color: var(--accent-red);
   }
 
-  .error-icon {
+  :global(.error-icon) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -544,7 +539,7 @@
     background: var(--bg-surface-hover);
   }
 
-  .spinner {
+  :global(.spinner) {
     animation: spin 0.8s linear infinite;
     color: var(--text-muted);
   }

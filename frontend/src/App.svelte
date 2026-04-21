@@ -21,6 +21,7 @@
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
+  import { SpinnerIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { shouldIgnoreGlobalShortcutTarget } from "./lib/utils/keyboardShortcuts.js";
@@ -546,28 +547,12 @@
         <DesignSystemPage />
       {:else if !appReady}
         <div class="loading-state">
-          <svg
+          <SpinnerIcon
             class="loading-spinner"
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            fill="none"
-          >
-            <circle
-              cx="9"
-              cy="9"
-              r="7"
-              stroke="currentColor"
-              stroke-opacity="0.2"
-              stroke-width="2"
-            />
-            <path
-              d="M16 9a7 7 0 0 0-7-7"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            />
-          </svg>
+            size="18"
+            strokeWidth="2"
+            aria-hidden="true"
+          />
           Loading
         </div>
       {:else if getPage() === "settings"}
@@ -748,7 +733,7 @@
     animation: fade-in 0.3s ease;
   }
 
-  .loading-spinner {
+  :global(.loading-spinner) {
     animation: spin 0.8s linear infinite;
   }
 

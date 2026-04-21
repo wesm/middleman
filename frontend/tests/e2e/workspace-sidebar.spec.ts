@@ -64,11 +64,18 @@ async function setupTerminalMocks(
     workspace?: typeof testWorkspace;
     roborevRepos?: typeof roborevRepos;
     roborevJobs?: typeof roborevJobs;
+    workspaceDetailResponses?: Array<{
+      status: number;
+      body?: unknown;
+    }>;
   },
 ): Promise<void> {
   const ws = opts?.workspace ?? testWorkspace;
   const rrRepos = opts?.roborevRepos ?? roborevRepos;
   const rrJobs = opts?.roborevJobs ?? roborevJobs;
+  const detailResponses = [
+    ...(opts?.workspaceDetailResponses ?? []),
+  ];
 
   // Register catch-all first — later routes override.
   await mockApi(page);
@@ -107,6 +114,17 @@ async function setupTerminalMocks(
     `**/api/v1/workspaces/${ws.id}`,
     async (route) => {
       if (route.request().method() === "GET") {
+        const nextResponse = detailResponses.shift();
+        if (nextResponse) {
+          await route.fulfill({
+            status: nextResponse.status,
+            contentType: "application/json",
+            body: JSON.stringify(
+              nextResponse.body ?? {},
+            ),
+          });
+          return;
+        }
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -164,6 +182,131 @@ async function setupTerminalMocks(
     },
   );
 }
+
+test.describe("terminal state icons", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+  });
+
+  test(
+    "creating workspace shows spinner icon",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: {
+          ...testWorkspace,
+          status: "creating",
+        },
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const stateMessage = page.locator(
+        ".state-message",
+      );
+      await expect(stateMessage).toContainText(
+        "Setting up workspace...",
+      );
+      await expect(
+        stateMessage.locator(".spinner"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "workspace load failure shows alert icon and retry recovers",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspaceDetailResponses: [
+          {
+            status: 500,
+            body: { error: "Internal error" },
+          },
+          {
+            status: 200,
+            body: testWorkspace,
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const stateMessage = page.locator(
+        ".state-message.error",
+      );
+      await expect(stateMessage).toContainText(
+        "Failed to load workspace (500)",
+      );
+      await expect(
+        stateMessage.getByLabel(
+          "Workspace load failed",
+        ),
+      ).toBeVisible();
+
+      await stateMessage
+        .getByRole("button", { name: "Retry" })
+        .click();
+
+      await expect(
+        page.locator(".header-name"),
+      ).toContainText("Add auth middleware");
+    },
+  );
+
+  test(
+    "workspace setup error shows alert icon and retry recovers",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspaceDetailResponses: [
+          {
+            status: 200,
+            body: {
+              ...testWorkspace,
+              status: "error",
+              error_message:
+                "tmux bootstrap failed",
+            },
+          },
+          {
+            status: 200,
+            body: testWorkspace,
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const stateMessage = page.locator(
+        ".state-message.error",
+      );
+      await expect(stateMessage).toContainText(
+        "tmux bootstrap failed",
+      );
+      await expect(
+        stateMessage.getByLabel(
+          "Workspace setup failed",
+        ),
+      ).toBeVisible();
+
+      await stateMessage
+        .getByRole("button", { name: "Retry" })
+        .click();
+
+      await expect(
+        page.locator(".header-name"),
+      ).toContainText("Add auth middleware");
+    },
+  );
+});
 
 // -------------------------------------------------------
 // Group 1: Toggle Behavior
