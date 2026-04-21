@@ -831,6 +831,28 @@ endpoint = "http://custom:9999"
 	assert.Equal("http://custom:9999", cfg2.RoborevEndpoint())
 }
 
+func TestTerminalConfigRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[terminal]
+font_family = '  "Iosevka Term", monospace  '
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("\"Iosevka Term\", monospace", cfg.Terminal.FontFamily)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(t, err)
+	assert.Equal("\"Iosevka Term\", monospace", cfg2.Terminal.FontFamily)
+}
+
 func TestSyncBudgetPerHour(t *testing.T) {
 	t.Run("default is 500 when not set", func(t *testing.T) {
 		path := writeConfig(t, `

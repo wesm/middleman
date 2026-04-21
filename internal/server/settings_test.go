@@ -103,19 +103,25 @@ func TestHandleGetSettings(t *testing.T) {
 	assert.Equal("acme", resp.Repos[0].Owner)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
+	assert.Empty(resp.Terminal.FontFamily)
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
+	activity := config.Activity{
+		ViewMode:   "threaded",
+		TimeRange:  "30d",
+		HideClosed: true,
+		HideBots:   true,
+	}
+	terminal := config.Terminal{
+		FontFamily: "\"Fira Code\", monospace",
+	}
 	body := updateSettingsRequest{
-		Activity: config.Activity{
-			ViewMode:   "threaded",
-			TimeRange:  "30d",
-			HideClosed: true,
-			HideBots:   true,
-		},
+		Activity: &activity,
+		Terminal: &terminal,
 	}
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
@@ -127,16 +133,57 @@ func TestHandleUpdateSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("30d", cfg2.Activity.TimeRange)
+	assert.Equal("\"Fira Code\", monospace", cfg2.Terminal.FontFamily)
+}
+
+func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
+	assert := Assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[activity]
+view_mode = "flat"
+time_range = "30d"
+hide_closed = true
+hide_bots = true
+`, &mockGH{})
+
+	terminal := config.Terminal{
+		FontFamily: "\"Iosevka Term\", monospace",
+	}
+	body := updateSettingsRequest{
+		Terminal: &terminal,
+	}
+	rr := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", body,
+	)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal("flat", cfg2.Activity.ViewMode)
+	assert.Equal("30d", cfg2.Activity.TimeRange)
+	assert.True(cfg2.Activity.HideClosed)
+	assert.True(cfg2.Activity.HideBots)
+	assert.Equal("\"Iosevka Term\", monospace", cfg2.Terminal.FontFamily)
 }
 
 func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
+	activity := config.Activity{
+		ViewMode:  "kanban",
+		TimeRange: "7d",
+	}
 	body := updateSettingsRequest{
-		Activity: config.Activity{
-			ViewMode:  "kanban",
-			TimeRange: "7d",
-		},
+		Activity: &activity,
 	}
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
@@ -325,7 +372,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 
 	// Mutations should be rejected (no cfgPath).
 	mutRR := doJSON(t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Activity: cfg.Activity})
+		updateSettingsRequest{Activity: &cfg.Activity})
 	assert.Equal(http.StatusNotFound, mutRR.Code)
 
 	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos",
@@ -704,7 +751,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
 		updateSettingsRequest{
-			Activity: config.Activity{
+			Activity: &config.Activity{
 				ViewMode:  "threaded",
 				TimeRange: "30d",
 			},
@@ -836,7 +883,7 @@ command = ["systemd-run", "--user", "--scope", "tmux"]
 `, &mockGH{})
 
 	body := updateSettingsRequest{
-		Activity: config.Activity{
+		Activity: &config.Activity{
 			ViewMode:  "threaded",
 			TimeRange: "30d",
 		},

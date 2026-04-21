@@ -6,6 +6,7 @@
   import SettingsSection from "./SettingsSection.svelte";
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
+  import TerminalSettings from "./TerminalSettings.svelte";
 
   const { settings: settingsStore } = getStores();
 
@@ -21,6 +22,9 @@
     try {
       settings = await getSettings();
       settingsStore.setConfiguredRepos(settings.repos);
+      settingsStore.setTerminalFontFamily(
+        settings.terminal.font_family,
+      );
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -43,6 +47,18 @@
 
     <SettingsSection title="Activity feed defaults">
       <ActivitySettings activity={settings.activity} onUpdate={(activity) => { settings = { ...settings!, activity }; }} />
+    </SettingsSection>
+
+    <SettingsSection title="Workspace terminal">
+      <TerminalSettings
+        terminal={settings.terminal}
+        onUpdate={(terminal) => {
+          settings = { ...settings!, terminal };
+          settingsStore.setTerminalFontFamily(
+            terminal.font_family,
+          );
+        }}
+      />
     </SettingsSection>
   {/if}
 </div>

@@ -48,6 +48,10 @@ export interface ActivitySettings {
   hide_bots: boolean;
 }
 
+export interface TerminalSettings {
+  font_family: string;
+}
+
 export interface ConfigRepo {
   owner: string;
   name: string;
@@ -58,6 +62,7 @@ export interface ConfigRepo {
 export interface Settings {
   repos: ConfigRepo[];
   activity: ActivitySettings;
+  terminal: TerminalSettings;
 }
 
 export interface DiffResult {

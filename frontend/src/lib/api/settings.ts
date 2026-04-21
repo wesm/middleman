@@ -10,7 +10,10 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(
-  settings: { activity: Settings["activity"] },
+  settings: {
+    activity?: Settings["activity"];
+    terminal?: Settings["terminal"];
+  },
 ): Promise<Settings> {
   const res = await fetch(`${BASE}/settings`, {
     method: "PUT",

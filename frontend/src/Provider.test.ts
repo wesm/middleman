@@ -100,8 +100,12 @@ vi.mock("@middleman/ui/stores/grouping", () => ({
 
 vi.mock("@middleman/ui/stores/settings", () => ({
   createSettingsStore: () => ({
-    getSettings: () => null,
-    loadSettings: vi.fn(),
+    getConfiguredRepos: () => [],
+    setConfiguredRepos: vi.fn(),
+    getTerminalFontFamily: () => "",
+    setTerminalFontFamily: vi.fn(),
+    hasConfiguredRepos: () => false,
+    isSettingsLoaded: () => true,
   }),
 }));
 

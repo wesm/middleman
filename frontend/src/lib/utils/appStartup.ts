@@ -28,6 +28,9 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
       const stores = deps.getStores();
       if (stores) {
         stores.settings.setConfiguredRepos(settings.repos);
+        stores.settings.setTerminalFontFamily(
+          settings.terminal.font_family,
+        );
         stores.activity.hydrateDefaults(settings.activity);
       }
     } catch (err) {

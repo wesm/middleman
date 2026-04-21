@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { getStores } from "@middleman/ui";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
 
   const { workspaceId }: { workspaceId: string } = $props();
+  const { settings: settingsStore } = getStores();
 
   const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
 
@@ -22,6 +24,22 @@
   const encoder = new TextEncoder();
 
   const MAX_RECONNECT_DELAY = 30000;
+
+  function defaultTerminalFontFamily(): string {
+    const rootFontFamily = getComputedStyle(
+      document.documentElement,
+    )
+      .getPropertyValue("--font-mono")
+      .trim();
+    return rootFontFamily || "monospace";
+  }
+
+  const terminalFontFamily = $derived.by(() => {
+    const configured = settingsStore
+      .getTerminalFontFamily()
+      .trim();
+    return configured || defaultTerminalFontFamily();
+  });
 
   function buildWsUrl(cols: number, rows: number): string {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -142,6 +160,12 @@
     }
   }
 
+  $effect(() => {
+    if (!terminal) return;
+    terminal.options.fontFamily = terminalFontFamily;
+    fitAddon?.fit();
+  });
+
   onMount(() => {
     const term = new Terminal({
       theme: {
@@ -150,7 +174,7 @@
         cursor: "#58a6ff",
       },
       cursorBlink: true,
-      fontFamily: "monospace",
+      fontFamily: terminalFontFamily,
       fontSize: 14,
     });
     terminal = term;

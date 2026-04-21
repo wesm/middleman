@@ -165,6 +165,10 @@ type Activity struct {
 	HideBots   bool   `toml:"hide_bots" json:"hide_bots"`
 }
 
+type Terminal struct {
+	FontFamily string `toml:"font_family,omitempty" json:"font_family"`
+}
+
 type Roborev struct {
 	Endpoint string `toml:"endpoint,omitempty"`
 }
@@ -183,6 +187,7 @@ type Config struct {
 	SyncBudgetPerHour int      `toml:"sync_budget_per_hour"`
 	Repos             []Repo   `toml:"repos"`
 	Activity          Activity `toml:"activity"`
+	Terminal          Terminal `toml:"terminal"`
 	Roborev           Roborev  `toml:"roborev"`
 	Tmux              Tmux     `toml:"tmux"`
 }
@@ -445,6 +450,8 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
+
 	if len(c.Tmux.Command) > 0 &&
 		strings.TrimSpace(c.Tmux.Command[0]) == "" {
 		return fmt.Errorf(
@@ -530,6 +537,7 @@ type configFile struct {
 	DataDir           string   `toml:"data_dir,omitempty"`
 	Repos             []Repo   `toml:"repos"`
 	Activity          Activity `toml:"activity"`
+	Terminal          Terminal `toml:"terminal,omitempty"`
 	Roborev           Roborev  `toml:"roborev,omitempty"`
 	Tmux              Tmux     `toml:"tmux,omitempty"`
 }
@@ -543,6 +551,7 @@ func (c *Config) Save(path string) error {
 		Port:           c.Port,
 		Repos:          c.Repos,
 		Activity:       c.Activity,
+		Terminal:       c.Terminal,
 		Roborev:        c.Roborev,
 		Tmux:           c.Tmux,
 	}
