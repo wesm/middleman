@@ -111,7 +111,11 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	}
 
 	cfg := &config.Config{
-		BasePath: "/",
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		BasePath:       "/",
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "widgets"},
 			{Owner: "acme", Name: "tools"},

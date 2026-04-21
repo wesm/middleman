@@ -7,6 +7,7 @@ function makeStores(): StoreInstances {
   return {
     settings: {
       setConfiguredRepos: vi.fn(),
+      setTerminalFontFamily: vi.fn(),
     },
     activity: {
       hydrateDefaults: vi.fn(),
@@ -34,13 +35,15 @@ function makeSettings(): Settings {
   return {
     repos: [],
     activity: {
-      item_types: [],
-      event_types: [],
-      authored_by_me: false,
-      assigned_or_mentioned: false,
-      include_bots: false,
+      view_mode: "threaded",
+      time_range: "7d",
+      hide_closed: false,
+      hide_bots: false,
     },
-  } as unknown as Settings;
+    terminal: {
+      font_family: "\"Fira Code\", monospace",
+    },
+  };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -63,6 +66,9 @@ describe("runAppStartup", () => {
 
     expect(stores.settings.setConfiguredRepos).toHaveBeenCalledWith(
       settings.repos,
+    );
+    expect(stores.settings.setTerminalFontFamily).toHaveBeenCalledWith(
+      settings.terminal.font_family,
     );
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(
       settings.activity,
@@ -93,6 +99,7 @@ describe("runAppStartup", () => {
     await flushMicrotasks();
 
     expect(stores.settings.setConfiguredRepos).not.toHaveBeenCalled();
+    expect(stores.settings.setTerminalFontFamily).not.toHaveBeenCalled();
     expect(stores.activity.hydrateDefaults).not.toHaveBeenCalled();
     expect(onReady).not.toHaveBeenCalled();
     expect(stores.sync.startPolling).not.toHaveBeenCalled();
@@ -116,6 +123,7 @@ describe("runAppStartup", () => {
 
     expect(warn).toHaveBeenCalled();
     expect(stores.settings.setConfiguredRepos).not.toHaveBeenCalled();
+    expect(stores.settings.setTerminalFontFamily).not.toHaveBeenCalled();
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
     expect(stores.events.connect).toHaveBeenCalledTimes(1);

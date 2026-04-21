@@ -15,10 +15,12 @@ import (
 type settingsResponse struct {
 	Repos    []ghclient.ConfiguredRepoStatus `json:"repos"`
 	Activity config.Activity                 `json:"activity"`
+	Terminal config.Terminal                 `json:"terminal"`
 }
 
 type updateSettingsRequest struct {
-	Activity config.Activity `json:"activity"`
+	Activity *config.Activity `json:"activity,omitempty"`
+	Terminal *config.Terminal `json:"terminal,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -45,6 +47,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
 	repos := append([]config.Repo(nil), s.cfg.Repos...)
 	activity := s.cfg.Activity
+	terminal := s.cfg.Terminal
 	s.cfgMu.Unlock()
 
 	tracked := s.syncer.TrackedRepos()
@@ -62,6 +65,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	return settingsResponse{
 		Repos:    configured,
 		Activity: activity,
+		Terminal: terminal,
 	}
 }
 
@@ -260,25 +264,32 @@ func (s *Server) handleUpdateSettings(
 		return
 	}
 
-	candidate := body.Activity
-	if candidate.ViewMode == "" {
-		candidate.ViewMode = "threaded"
-	}
-	if candidate.TimeRange == "" {
-		candidate.TimeRange = "7d"
-	}
-
 	s.cfgMu.Lock()
-	prev := s.cfg.Activity
-	s.cfg.Activity = candidate
+	prevActivity := s.cfg.Activity
+	prevTerminal := s.cfg.Terminal
+	if body.Activity != nil {
+		candidate := *body.Activity
+		if candidate.ViewMode == "" {
+			candidate.ViewMode = "threaded"
+		}
+		if candidate.TimeRange == "" {
+			candidate.TimeRange = "7d"
+		}
+		s.cfg.Activity = candidate
+	}
+	if body.Terminal != nil {
+		s.cfg.Terminal = *body.Terminal
+	}
 	if err := s.cfg.Validate(); err != nil {
-		s.cfg.Activity = prev
+		s.cfg.Activity = prevActivity
+		s.cfg.Terminal = prevTerminal
 		s.cfgMu.Unlock()
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Activity = prev
+		s.cfg.Activity = prevActivity
+		s.cfg.Terminal = prevTerminal
 		s.cfgMu.Unlock()
 		writeError(w, http.StatusInternalServerError,
 			"save config: "+err.Error())
