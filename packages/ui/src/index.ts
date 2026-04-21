@@ -121,6 +121,7 @@ export {
 export {
   default as Chip,
 } from "./components/shared/Chip.svelte";
+export {
   default as CollapsibleResizableSidebar,
 } from "./components/shared/CollapsibleResizableSidebar.svelte";
 export {
