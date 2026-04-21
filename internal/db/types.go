@@ -313,14 +313,15 @@ const (
 // Workspace represents a middleman-managed git worktree linked to a
 // pull request or issue.
 type Workspace struct {
-	ID           string
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	ItemType     string
-	ItemNumber   int
-	GitHeadRef   string
-	MRHeadRepo   *string // nil for same-repo PRs
+	ID                 string
+	PlatformHost       string
+	RepoOwner          string
+	RepoName           string
+	ItemType           string
+	ItemNumber         int
+	AssociatedPRNumber *int
+	GitHeadRef         string
+	MRHeadRepo         *string // nil for same-repo PRs
 	// WorkspaceBranch is the exact branch name checked out in the
 	// worktree after setup. Before setup completes it may contain the
 	// requested branch name or workspaceBranchUnknown.
@@ -335,13 +336,18 @@ type Workspace struct {
 // WorkspaceSummary extends Workspace with joined MR metadata.
 type WorkspaceSummary struct {
 	Workspace
-	MRTitle          *string
-	MRState          *string
-	MRIsDraft        *bool
-	MRCIStatus       *string
-	MRReviewDecision *string
-	MRAdditions      *int
-	MRDeletions      *int
+	MRTitle                    *string
+	MRState                    *string
+	MRIsDraft                  *bool
+	MRCIStatus                 *string
+	MRReviewDecision           *string
+	MRAdditions                *int
+	MRDeletions                *int
+	AssociatedPRTitle          *string
+	AssociatedPRState          *string
+	AssociatedPRIsDraft        *bool
+	AssociatedPRCIStatus       *string
+	AssociatedPRReviewDecision *string
 }
 
 type WorkspaceSetupEvent struct {

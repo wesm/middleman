@@ -10760,6 +10760,121 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	assert.Equal("middleman/issue-7", stored.WorkspaceBranch)
 }
 
+func prepareIssueWorkspaceAssociationFixture(
+	t *testing.T,
+) (workspaceServerFixture, rawWorkspaceStatusResponse) {
+	t.Helper()
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t)
+	ctx := context.Background()
+
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	repo, err := fixture.database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = fixture.database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repo.ID,
+		PlatformID:     7000,
+		Number:         42,
+		URL:            "https://github.com/acme/widget/pull/42",
+		Title:          "Workspace monitor association",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "issue-feature-7",
+		BaseBranch:     "main",
+		CIStatus:       "success",
+		ReviewDecision: "APPROVED",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/workspace",
+		map[string]string{"platform_host": "github.com"},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	require.NotEmpty(created.ID)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	runGit(t, ready.WorktreePath, "checkout", "-b", "issue-feature-7")
+
+	return fixture, created
+}
+
+func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+
+	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
+
+	updates, err := fixture.server.workspacePRMonitor.RunOnce(ctx)
+	require.NoError(err)
+	require.Len(updates, 1)
+	assert.Equal(created.ID, updates[0].WorkspaceID)
+	assert.Equal(42, updates[0].PRNumber)
+
+	getRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodGet,
+		"/api/v1/workspaces/"+created.ID,
+		nil,
+	)
+	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
+
+	var got rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(getRR.Body).Decode(&got))
+	assert.Equal("issue", got.ItemType)
+	assert.Equal(7, got.ItemNumber)
+	require.NotNil(got.AssociatedPR)
+	assert.Equal(42, got.AssociatedPR.Number)
+	assert.Equal("Workspace monitor association", got.AssociatedPR.Title)
+
+	getIssueRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodGet,
+		"/api/v1/repos/acme/widget/issues/7",
+		nil,
+	)
+	require.Equal(http.StatusOK, getIssueRR.Code, getIssueRR.Body.String())
+
+	var issueDetail rawIssueDetailResponse
+	require.NoError(json.NewDecoder(getIssueRR.Body).Decode(&issueDetail))
+	require.NotNil(issueDetail.Workspace)
+	assert.Equal(created.ID, issueDetail.Workspace.ID)
+}
+
+func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
+	ch, _ := fixture.server.Hub().Subscribe(ctx)
+
+	fixture.server.runWorkspacePRMonitorPass(ctx)
+
+	first := <-ch
+	second := <-ch
+	assert.Equal("workspace_status", first.Type)
+	assert.Equal(map[string]string{"id": created.ID}, first.Data)
+	assert.Equal("data_changed", second.Type)
+}
+
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

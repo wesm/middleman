@@ -44,15 +44,17 @@ func TestOpenAndSchema(t *testing.T) {
 		require.NoErrorf(t, err, "table %s should exist", tbl)
 	}
 
-	var workspaceBranchColumn string
-	err := d.ReadDB().QueryRow(
-		`SELECT name
-		 FROM pragma_table_info('middleman_workspaces')
-		 WHERE name = ?`,
-		"workspace_branch",
-	).Scan(&workspaceBranchColumn)
-	require.NoError(t, err)
-	require.Equal(t, "workspace_branch", workspaceBranchColumn)
+	for _, column := range []string{"workspace_branch", "associated_pr_number"} {
+		var found string
+		err := d.ReadDB().QueryRow(
+			`SELECT name
+			 FROM pragma_table_info('middleman_workspaces')
+			 WHERE name = ?`,
+			column,
+		).Scan(&found)
+		require.NoError(t, err)
+		require.Equal(t, column, found)
+	}
 }
 
 func TestOpenCreatesFile(t *testing.T) {
@@ -994,9 +996,63 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000006_add_stacks.up.sql"
 	case 7:
 		return "000007_add_workspaces.up.sql"
+	case 8:
+		return "000008_casefold_repo_identifiers.up.sql"
+	case 9:
+		return "000009_casefold_identifier_triggers.up.sql"
+	case 10:
+		return "000010_timestamp_repair_gate.up.sql"
+	case 11:
+		return "000011_add_workspace_setup_events.up.sql"
+	case 12:
+		return "000012_workspace_item_types.up.sql"
 	default:
 		return ""
 	}
+}
+
+func TestOpenMigratesWorkspaceAssociatedPRBackfill(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 12))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (12, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_workspaces (
+		    id, platform_host, repo_owner, repo_name,
+		    item_type, item_number, git_head_ref, mr_head_repo,
+		    workspace_branch, worktree_path, tmux_session, status
+		) VALUES
+		    ('ws-pr', 'github.com', 'acme', 'widget', 'pull_request', 42, 'feature/pr', NULL,
+		     '__middleman_unknown__', '/tmp/ws-pr', 'tmux-pr', 'ready'),
+		    ('ws-issue', 'github.com', 'acme', 'widget', 'issue', 7, 'middleman/issue-7', NULL,
+		     '__middleman_unknown__', '/tmp/ws-issue', 'tmux-issue', 'ready')
+	`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { d.Close() })
+
+	prWS, err := d.GetWorkspace(ctx, "ws-pr")
+	require.NoError(err)
+	require.NotNil(prWS)
+	require.NotNil(prWS.AssociatedPRNumber)
+	require.Equal(42, *prWS.AssociatedPRNumber)
+
+	issueWS, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(issueWS)
+	require.Nil(issueWS.AssociatedPRNumber)
 }
 
 func latestMigrationVersionForTest(t *testing.T) int {

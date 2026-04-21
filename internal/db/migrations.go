@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	firstLegacySchemaVersion       = 1
-	latestLegacySchemaVersion      = 3
-	migrationTableName             = "schema_migrations"
-	recreateDatabaseInstruction    = "delete the database file and let middleman recreate it"
-	timestampRepairGateVersion     = 10
-	workspaceSetupMigrationVersion = 11
+	firstLegacySchemaVersion              = 1
+	latestLegacySchemaVersion             = 3
+	migrationTableName                    = "schema_migrations"
+	recreateDatabaseInstruction           = "delete the database file and let middleman recreate it"
+	timestampRepairGateVersion            = 10
+	workspaceSetupMigrationVersion        = 11
+	workspaceAssociatedPRMigrationVersion = 13
 )
 
 //go:embed migrations/*.sql
@@ -98,6 +99,30 @@ func runMigrations(rw *sql.DB) (int, error) {
 			return migratedb.NilVersion, wrapMigrationError(
 				fmt.Errorf("legacy database is missing schema version metadata"),
 			)
+		}
+	}
+
+	if version < workspaceAssociatedPRMigrationVersion {
+		repaired, err := reconcileWorkspaceAssociatedPRMigrationVersion12(
+			rw, databaseDriver,
+		)
+		if err != nil {
+			return migratedb.NilVersion, wrapMigrationError(
+				fmt.Errorf("repair workspace associated PR migration state: %w", err),
+			)
+		}
+		if repaired {
+			version, dirty, err = databaseDriver.Version()
+			if err != nil {
+				return migratedb.NilVersion, wrapMigrationError(
+					fmt.Errorf("read migration version after workspace associated PR repair: %w", err),
+				)
+			}
+			if dirty {
+				return migratedb.NilVersion, wrapMigrationError(
+					fmt.Errorf("database is in a dirty migration state"),
+				)
+			}
 		}
 	}
 
@@ -245,7 +270,114 @@ func reconcileWorkspaceSetupMigrationVersion10(
 	if !hasEventsTable && !hasEventsIndex && !hasWorkspaceBranch {
 		return false, nil
 	}
+	if err := ensureWorkspaceSetupMigrationArtifacts(
+		rw, hasEventsTable, hasEventsIndex, hasWorkspaceBranch,
+	); err != nil {
+		return false, err
+	}
 
+	if err := driver.SetVersion(
+		workspaceSetupMigrationVersion, false,
+	); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func reconcileWorkspaceAssociatedPRMigrationVersion12(
+	rw *sql.DB, driver migratedb.Driver,
+) (bool, error) {
+	hasAssociatedPR, err := hasColumn(
+		rw, "middleman_workspaces", "associated_pr_number",
+	)
+	if err != nil {
+		return false, err
+	}
+	if !hasAssociatedPR {
+		return false, nil
+	}
+
+	hasEventsTable := hasTable(rw, "middleman_workspace_setup_events")
+	hasEventsIndex := hasIndex(
+		rw, "middleman_workspace_setup_events_workspace_id_idx",
+	)
+	hasWorkspaceBranch, err := hasColumn(
+		rw, "middleman_workspaces", "workspace_branch",
+	)
+	if err != nil {
+		return false, err
+	}
+	if err := ensureWorkspaceSetupMigrationArtifacts(
+		rw, hasEventsTable, hasEventsIndex, hasWorkspaceBranch,
+	); err != nil {
+		return false, err
+	}
+
+	hasItemType, err := hasColumn(
+		rw, "middleman_workspaces", "item_type",
+	)
+	if err != nil {
+		return false, err
+	}
+	if !hasItemType {
+		hasMRNumber, err := hasColumn(
+			rw, "middleman_workspaces", "mr_number",
+		)
+		if err != nil {
+			return false, err
+		}
+		hasMRHeadRef, err := hasColumn(
+			rw, "middleman_workspaces", "mr_head_ref",
+		)
+		if err != nil {
+			return false, err
+		}
+		if hasMRNumber {
+			if _, err := rw.Exec(`
+				ALTER TABLE middleman_workspaces
+				    RENAME COLUMN mr_number TO item_number
+			`); err != nil {
+				return false, err
+			}
+		}
+		if hasMRHeadRef {
+			if _, err := rw.Exec(`
+				ALTER TABLE middleman_workspaces
+				    RENAME COLUMN mr_head_ref TO git_head_ref
+			`); err != nil {
+				return false, err
+			}
+		}
+		if _, err := rw.Exec(`
+			ALTER TABLE middleman_workspaces
+			    ADD COLUMN item_type TEXT NOT NULL DEFAULT 'pull_request'
+		`); err != nil {
+			return false, err
+		}
+	}
+
+	if _, err := rw.Exec(`
+		UPDATE middleman_workspaces
+		SET associated_pr_number = item_number
+		WHERE item_type = 'pull_request' AND associated_pr_number IS NULL
+	`); err != nil {
+		return false, err
+	}
+
+	if err := driver.SetVersion(
+		workspaceAssociatedPRMigrationVersion, false,
+	); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func ensureWorkspaceSetupMigrationArtifacts(
+	rw *sql.DB,
+	hasEventsTable, hasEventsIndex, hasWorkspaceBranch bool,
+) error {
 	if !hasEventsTable {
 		if _, err := rw.Exec(`
 			CREATE TABLE IF NOT EXISTS middleman_workspace_setup_events (
@@ -257,7 +389,7 @@ func reconcileWorkspaceSetupMigrationVersion10(
 			    created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 			)
 		`); err != nil {
-			return false, err
+			return err
 		}
 	}
 
@@ -266,7 +398,7 @@ func reconcileWorkspaceSetupMigrationVersion10(
 			CREATE INDEX IF NOT EXISTS middleman_workspace_setup_events_workspace_id_idx
 			    ON middleman_workspace_setup_events (workspace_id, id)
 		`); err != nil {
-			return false, err
+			return err
 		}
 	}
 
@@ -275,17 +407,10 @@ func reconcileWorkspaceSetupMigrationVersion10(
 			ALTER TABLE middleman_workspaces
 			    ADD COLUMN workspace_branch TEXT NOT NULL DEFAULT '__middleman_unknown__'
 		`); err != nil {
-			return false, err
+			return err
 		}
 	}
-
-	if err := driver.SetVersion(
-		workspaceSetupMigrationVersion, false,
-	); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return nil
 }
 
 func readLegacySchemaVersion(db *sql.DB) (int, bool, error) {

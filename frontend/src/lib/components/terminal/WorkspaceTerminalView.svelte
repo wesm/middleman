@@ -23,6 +23,15 @@
   import { AlertIcon, SpinnerIcon } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
 
+  interface AssociatedPR {
+    number: number;
+    title: string;
+    state: string;
+    is_draft: boolean;
+    ci_status?: string | null;
+    review_decision?: string | null;
+  }
+
   interface Workspace {
     id: string;
     platform_host: string;
@@ -39,6 +48,7 @@
     mr_title?: string | null;
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
+    associated_pr?: AssociatedPR | null;
   }
 
   interface ClosedShellSession {
@@ -438,10 +448,13 @@
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
-    if (ws.item_type === "issue") {
-      return tab === "issue";
+    if (tab === "issue") {
+      return ws.item_type === "issue";
     }
-    return tab === "pr" || tab === "reviews";
+    if (tab === "reviews") {
+      return ws.item_type === "pull_request";
+    }
+    return ws.item_type === "pull_request" || ws.associated_pr != null;
   }
 
   async function fetchWorkspace(): Promise<void> {
@@ -936,7 +949,8 @@
                 >
                   Issue
                 </button>
-              {:else}
+              {/if}
+              {#if workspace.item_type === "pull_request" || workspace.associated_pr}
                 <button
                   class="seg-btn"
                   class:active={sidebarOpen && sidebarTab === "pr"}
@@ -944,6 +958,8 @@
                 >
                   PR
                 </button>
+              {/if}
+              {#if workspace.item_type === "pull_request"}
                 <button
                   class="seg-btn"
                   class:active={sidebarOpen && sidebarTab === "reviews"}
@@ -1091,8 +1107,9 @@
                 platformHost={workspace.platform_host}
                 repoOwner={workspace.repo_owner}
                 repoName={workspace.repo_name}
-                itemType={workspace.item_type}
-                itemNumber={workspace.item_number}
+                ownerItemType={workspace.item_type}
+                ownerItemNumber={workspace.item_number}
+                associatedPRNumber={workspace.associated_pr?.number ?? null}
                 branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
               />

@@ -123,6 +123,7 @@ type Server struct {
 	syncer             *ghclient.Syncer
 	clones             *gitclone.Manager
 	workspaces         *workspace.Manager
+	workspacePRMonitor *workspace.PRMonitor
 	tmuxActivity       *tmuxActivityTracker
 	runtime            *localruntime.Manager
 	cfg                *config.Config
@@ -204,6 +205,45 @@ func (s *Server) runBackground(fn func(ctx context.Context)) bool {
 		fn(s.bgCtx)
 	}()
 	return true
+}
+
+func (s *Server) runWorkspacePRMonitorLoop(ctx context.Context) {
+	if s.workspacePRMonitor == nil {
+		return
+	}
+
+	s.runWorkspacePRMonitorPass(ctx)
+
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runWorkspacePRMonitorPass(ctx)
+		}
+	}
+}
+
+func (s *Server) runWorkspacePRMonitorPass(ctx context.Context) {
+	if s.workspacePRMonitor == nil {
+		return
+	}
+
+	updates, err := s.workspacePRMonitor.RunOnce(ctx)
+	if err != nil {
+		slog.Warn("workspace PR monitor pass failed", "err", err)
+		return
+	}
+	for i := range updates {
+		update := updates[i]
+		s.hub.Broadcast(Event{
+			Type: "workspace_status",
+			Data: map[string]string{"id": update.WorkspaceID},
+		})
+		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	}
 }
 
 // Shutdown stops the HTTP listener (if started via ListenAndServe
@@ -374,6 +414,7 @@ func newServer(
 	tmuxCmd := cfg.TmuxCommand()
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		s.workspacePRMonitor = workspace.NewPRMonitor(database)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		if clones != nil {
 			s.workspaces.SetClones(clones)
@@ -405,6 +446,10 @@ func newServer(
 		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
 			slog.Warn("restore runtime tmux sessions", "err", err)
 		}
+	}
+
+	if s.workspaces != nil {
+		s.runBackground(s.runWorkspacePRMonitorLoop)
 	}
 
 	healthAPI := humago.New(mux, healthAPIConfig())

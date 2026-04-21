@@ -40,8 +40,9 @@
     platformHost: string;
     repoOwner: string;
     repoName: string;
-    itemType: "pull_request" | "issue";
-    itemNumber: number;
+    ownerItemType: "pull_request" | "issue";
+    ownerItemNumber: number;
+    associatedPRNumber: number | null;
     branch: string;
     roborevBaseUrl: string;
   }
@@ -51,8 +52,9 @@
     platformHost,
     repoOwner,
     repoName,
-    itemType,
-    itemNumber,
+    ownerItemType,
+    ownerItemNumber,
+    associatedPRNumber,
     branch,
     roborevBaseUrl,
   }: Props = $props();
@@ -235,13 +237,13 @@
     repoOwner !== "" && repoName !== "",
   );
   const hasPR = $derived(
-    itemType === "pull_request" &&
-    itemNumber > 0 &&
+    associatedPRNumber !== null &&
+    associatedPRNumber > 0 &&
     hasRepo
   );
   const hasIssue = $derived(
-    itemType === "issue" &&
-    itemNumber > 0 &&
+    ownerItemType === "issue" &&
+    ownerItemNumber > 0 &&
     hasRepo
   );
 
@@ -273,7 +275,7 @@
         <PullDetail
           owner={repoOwner}
           name={repoName}
-          number={itemNumber}
+          number={associatedPRNumber ?? 0}
           hideTabs={true}
           hideWorkspaceAction={true}
         />
@@ -287,7 +289,7 @@
         <IssueDetail
           owner={repoOwner}
           name={repoName}
-          number={itemNumber}
+          number={ownerItemNumber}
           {platformHost}
         />
       </div>

@@ -2120,8 +2120,13 @@ func TestWorkspaceSummaries(t *testing.T) {
 	ctx := t.Context()
 	base := baseTime()
 
-	// Seed a repo and MR.
+	// Seed repo, issue, and PR.
 	repoID := insertTestRepo(t, d, "acme", "widget")
+	insertTestIssue(
+		t, d, repoID, 7,
+		"Track workspace association",
+		base.Add(-time.Minute),
+	)
 	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     5001,
@@ -2141,22 +2146,37 @@ func TestWorkspaceSummaries(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// Workspace with matching MR (earlier created_at).
+	// PR workspace with matching PR (earlier created_at).
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref,
+		     item_type, item_number, associated_pr_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-with-mr", "github.com", "acme", "widget",
-		WorkspaceItemTypePullRequest, 42, "feat/workspace",
+		WorkspaceItemTypePullRequest, 42, 42, "feat/workspace",
 		"/tmp/ws-with-mr", "ws-with-mr", "ready",
 		base,
 	)
 	require.NoError(err)
 
-	// Workspace without matching MR (later created_at, no repo).
+	// Issue workspace with owner issue metadata and associated PR metadata.
+	_, err = d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     item_type, item_number, associated_pr_number, git_head_ref,
+		     worktree_path, tmux_session, status,
+		     created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-issue-with-pr", "github.com", "acme", "widget",
+		WorkspaceItemTypeIssue, 7, 42, "feature/from-issue",
+		"/tmp/ws-issue-with-pr", "ws-issue-with-pr", "ready",
+		base.Add(30*time.Minute),
+	)
+	require.NoError(err)
+
+	// Workspace without matching PR (later created_at, no repo).
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
@@ -2174,15 +2194,17 @@ func TestWorkspaceSummaries(t *testing.T) {
 	// ListWorkspaceSummaries
 	summaries, err := d.ListWorkspaceSummaries(ctx)
 	require.NoError(err)
-	require.Len(summaries, 2)
+	require.Len(summaries, 3)
 
-	// Newest first: ws-no-mr has later created_at.
+	// Newest first.
 	noMR := summaries[0]
-	withMR := summaries[1]
+	issueWithPR := summaries[1]
+	withMR := summaries[2]
 	assert.Equal("ws-no-mr", noMR.ID)
+	assert.Equal("ws-issue-with-pr", issueWithPR.ID)
 	assert.Equal("ws-with-mr", withMR.ID)
 
-	// MR fields nil when no match.
+	// Owner-derived fields nil when no owner match.
 	assert.Nil(noMR.MRTitle)
 	assert.Nil(noMR.MRState)
 	assert.Nil(noMR.MRIsDraft)
@@ -2190,8 +2212,33 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(noMR.MRReviewDecision)
 	assert.Nil(noMR.MRAdditions)
 	assert.Nil(noMR.MRDeletions)
+	assert.Nil(noMR.AssociatedPRNumber)
+	assert.Nil(noMR.AssociatedPRTitle)
 
-	// MR fields populated when match exists.
+	// Issue workspace keeps issue-owned header metadata.
+	require.NotNil(issueWithPR.MRTitle)
+	assert.Equal("Track workspace association", *issueWithPR.MRTitle)
+	require.NotNil(issueWithPR.MRState)
+	assert.Equal("open", *issueWithPR.MRState)
+	assert.Nil(issueWithPR.MRIsDraft)
+	assert.Nil(issueWithPR.MRCIStatus)
+	assert.Nil(issueWithPR.MRReviewDecision)
+	assert.Nil(issueWithPR.MRAdditions)
+	assert.Nil(issueWithPR.MRDeletions)
+	require.NotNil(issueWithPR.AssociatedPRNumber)
+	assert.Equal(42, *issueWithPR.AssociatedPRNumber)
+	require.NotNil(issueWithPR.AssociatedPRTitle)
+	assert.Equal("Add workspace support", *issueWithPR.AssociatedPRTitle)
+	require.NotNil(issueWithPR.AssociatedPRState)
+	assert.Equal("open", *issueWithPR.AssociatedPRState)
+	require.NotNil(issueWithPR.AssociatedPRIsDraft)
+	assert.True(*issueWithPR.AssociatedPRIsDraft)
+	require.NotNil(issueWithPR.AssociatedPRCIStatus)
+	assert.Equal("pending", *issueWithPR.AssociatedPRCIStatus)
+	require.NotNil(issueWithPR.AssociatedPRReviewDecision)
+	assert.Equal("REVIEW_REQUIRED", *issueWithPR.AssociatedPRReviewDecision)
+
+	// PR workspace exposes PR metadata in both owner and associated slots.
 	require.NotNil(withMR.MRTitle)
 	assert.Equal("Add workspace support", *withMR.MRTitle)
 	require.NotNil(withMR.MRState)
@@ -2206,19 +2253,68 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Equal(100, *withMR.MRAdditions)
 	require.NotNil(withMR.MRDeletions)
 	assert.Equal(20, *withMR.MRDeletions)
+	require.NotNil(withMR.AssociatedPRNumber)
+	assert.Equal(42, *withMR.AssociatedPRNumber)
+	require.NotNil(withMR.AssociatedPRTitle)
+	assert.Equal("Add workspace support", *withMR.AssociatedPRTitle)
 
 	// GetWorkspaceSummary by ID
-	single, err := d.GetWorkspaceSummary(ctx, "ws-with-mr")
+	single, err := d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
 	require.NoError(err)
 	require.NotNil(single)
-	assert.Equal("ws-with-mr", single.ID)
+	assert.Equal("ws-issue-with-pr", single.ID)
 	require.NotNil(single.MRTitle)
-	assert.Equal("Add workspace support", *single.MRTitle)
+	assert.Equal("Track workspace association", *single.MRTitle)
+	require.NotNil(single.AssociatedPRTitle)
+	assert.Equal("Add workspace support", *single.AssociatedPRTitle)
 
 	// GetWorkspaceSummary miss
 	missSum, err := d.GetWorkspaceSummary(ctx, "nonexistent")
 	require.NoError(err)
 	assert.Nil(missSum)
+}
+
+func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_workspaces
+		    (id, platform_host, repo_owner, repo_name,
+		     item_type, item_number, git_head_ref,
+		     worktree_path, tmux_session, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-issue", "github.com", "acme", "widget",
+		WorkspaceItemTypeIssue, 7, "feature/issue-7",
+		"/tmp/ws-issue", "ws-issue", "ready",
+	)
+	require.NoError(err)
+
+	changed, err := d.SetWorkspaceAssociatedPRNumberIfNull(
+		ctx, "ws-issue", 42,
+	)
+	require.NoError(err)
+	assert.True(changed)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	require.NotNil(ws.AssociatedPRNumber)
+	assert.Equal(42, *ws.AssociatedPRNumber)
+
+	changed, err = d.SetWorkspaceAssociatedPRNumberIfNull(
+		ctx, "ws-issue", 99,
+	)
+	require.NoError(err)
+	assert.False(changed)
+
+	ws, err = d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	require.NotNil(ws.AssociatedPRNumber)
+	assert.Equal(42, *ws.AssociatedPRNumber)
 }
 
 func TestUpdateMRTitleBody(t *testing.T) {

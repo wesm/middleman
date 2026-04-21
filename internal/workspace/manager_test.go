@@ -87,6 +87,27 @@ func seedMRWithFork(
 	require.NoError(t, err)
 }
 
+func seedIssue(
+	t *testing.T, d *db.DB,
+	repoID int64, number int, title string,
+) {
+	t.Helper()
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err := d.UpsertIssue(context.Background(), &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     repoID*10000 + int64(number),
+		Number:         number,
+		URL:            "https://github.com/acme/widget/issues/" + strconv.Itoa(number),
+		Title:          title,
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+}
+
 func TestCreate(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -115,6 +136,8 @@ func TestCreate(t *testing.T) {
 	assert.Equal("widget", ws.RepoName)
 	assert.Equal(db.WorkspaceItemTypePullRequest, ws.ItemType)
 	assert.Equal(42, ws.ItemNumber)
+	require.NotNil(ws.AssociatedPRNumber)
+	assert.Equal(42, *ws.AssociatedPRNumber)
 	assert.Equal("feature/thing", ws.GitHeadRef)
 	assert.Nil(ws.MRHeadRepo)
 	assert.Contains(ws.WorktreePath, "pr-42")
@@ -126,6 +149,8 @@ func TestCreate(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal(ws.ID, got.ID)
 	assert.Equal("creating", got.Status)
+	require.NotNil(got.AssociatedPRNumber)
+	assert.Equal(42, *got.AssociatedPRNumber)
 }
 
 func TestCreateForkPR(t *testing.T) {
@@ -149,11 +174,43 @@ func TestCreateForkPR(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ws)
 
+	require.NotNil(t, ws.AssociatedPRNumber)
+	assert.Equal(99, *ws.AssociatedPRNumber)
 	assert.NotNil(ws.MRHeadRepo)
 	assert.Equal(
 		"https://github.com/contributor/widget.git",
 		*ws.MRHeadRepo,
 	)
+}
+
+func TestCreateIssue(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+
+	mgr := NewManager(d, wtDir)
+
+	ws, err := mgr.CreateIssue(
+		ctx, "github.com", "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Equal(db.WorkspaceItemTypeIssue, ws.ItemType)
+	assert.Equal(7, ws.ItemNumber)
+	assert.Nil(ws.AssociatedPRNumber)
+	assert.Equal("middleman/issue-7", ws.GitHeadRef)
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Nil(got.AssociatedPRNumber)
 }
 
 func TestCreateRepoNotTracked(t *testing.T) {

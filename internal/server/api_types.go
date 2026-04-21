@@ -193,37 +193,47 @@ type commitsResponse struct {
 	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
 }
 
+type associatedPRResponse struct {
+	Number         int     `json:"number"`
+	Title          string  `json:"title"`
+	State          string  `json:"state"`
+	IsDraft        bool    `json:"is_draft"`
+	CIStatus       *string `json:"ci_status,omitempty"`
+	ReviewDecision *string `json:"review_decision,omitempty"`
+}
+
 // workspaceResponse describes one middleman-managed workspace.
 //
 // This payload exists so the UI can reopen a durable local workspace and render
 // the correct item-specific presentation around it. It represents middleman's
 // own persisted workspace model, not an arbitrary host worktree inventory.
 type workspaceResponse struct {
-	ID                 string  `json:"id"`
-	PlatformHost       string  `json:"platform_host"`
-	RepoOwner          string  `json:"repo_owner"`
-	RepoName           string  `json:"repo_name"`
-	ItemType           string  `json:"item_type"`
-	ItemNumber         int     `json:"item_number"`
-	GitHeadRef         string  `json:"git_head_ref"`
-	WorktreePath       string  `json:"worktree_path"`
-	TmuxSession        string  `json:"tmux_session"`
-	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
-	TmuxWorking        bool    `json:"tmux_working"`
-	TmuxActivitySource string  `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
-	Status             string  `json:"status"`
-	ErrorMessage       *string `json:"error_message,omitempty"`
-	CreatedAt          string  `json:"created_at"`
-	MRTitle            *string `json:"mr_title,omitempty"`
-	MRState            *string `json:"mr_state,omitempty"`
-	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
-	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
-	MRAdditions        *int    `json:"mr_additions,omitempty"`
-	MRDeletions        *int    `json:"mr_deletions,omitempty"`
-	CommitsAhead       *int    `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int    `json:"commits_behind,omitempty"`
+	ID                 string                `json:"id"`
+	PlatformHost       string                `json:"platform_host"`
+	RepoOwner          string                `json:"repo_owner"`
+	RepoName           string                `json:"repo_name"`
+	ItemType           string                `json:"item_type"`
+	ItemNumber         int                   `json:"item_number"`
+	GitHeadRef         string                `json:"git_head_ref"`
+	WorktreePath       string                `json:"worktree_path"`
+	TmuxSession        string                `json:"tmux_session"`
+	TmuxPaneTitle      *string               `json:"tmux_pane_title,omitempty"`
+	TmuxWorking        bool                  `json:"tmux_working"`
+	TmuxActivitySource string                `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string               `json:"tmux_last_output_at"`
+	Status             string                `json:"status"`
+	ErrorMessage       *string               `json:"error_message,omitempty"`
+	CreatedAt          string                `json:"created_at"`
+	MRTitle            *string               `json:"mr_title,omitempty"`
+	MRState            *string               `json:"mr_state,omitempty"`
+	MRIsDraft          *bool                 `json:"mr_is_draft,omitempty"`
+	MRCIStatus         *string               `json:"mr_ci_status,omitempty"`
+	MRReviewDecision   *string               `json:"mr_review_decision,omitempty"`
+	MRAdditions        *int                  `json:"mr_additions,omitempty"`
+	MRDeletions        *int                  `json:"mr_deletions,omitempty"`
+	CommitsAhead       *int                  `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int                  `json:"commits_behind,omitempty"`
+	AssociatedPR       *associatedPRResponse `json:"associated_pr,omitempty"`
 }
 
 type workspaceRuntimeResponse struct {
@@ -247,6 +257,20 @@ type workspaceRef struct {
 func toWorkspaceResponse(
 	s *db.WorkspaceSummary,
 ) workspaceResponse {
+	var associatedPR *associatedPRResponse
+	if s.AssociatedPRNumber != nil &&
+		s.AssociatedPRTitle != nil &&
+		s.AssociatedPRState != nil &&
+		s.AssociatedPRIsDraft != nil {
+		associatedPR = &associatedPRResponse{
+			Number:         *s.AssociatedPRNumber,
+			Title:          *s.AssociatedPRTitle,
+			State:          *s.AssociatedPRState,
+			IsDraft:        *s.AssociatedPRIsDraft,
+			CIStatus:       s.AssociatedPRCIStatus,
+			ReviewDecision: s.AssociatedPRReviewDecision,
+		}
+	}
 	return workspaceResponse{
 		ID:                 s.ID,
 		PlatformHost:       s.PlatformHost,
@@ -268,6 +292,9 @@ func toWorkspaceResponse(
 		MRReviewDecision:   s.MRReviewDecision,
 		MRAdditions:        s.MRAdditions,
 		MRDeletions:        s.MRDeletions,
+		CommitsAhead:       s.CommitsAhead,
+		CommitsBehind:      s.CommitsBehind,
+		AssociatedPR:       associatedPR,
 	}
 }
 
