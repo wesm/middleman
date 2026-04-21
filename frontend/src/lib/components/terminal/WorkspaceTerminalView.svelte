@@ -449,11 +449,11 @@
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
-    if (tab === "issue") {
-      return ws.item_type === "issue";
-    }
-    if (tab === "reviews") {
-      return ws.item_type === "pull_request";
+	if (tab === "issue") {
+	  return ws.item_type === "issue";
+	}
+	if (tab === "reviews") {
+	  return ws.item_type === "pull_request";
     }
     return ws.item_type === "pull_request" || ws.associated_pr != null;
   }
@@ -477,10 +477,10 @@
       return;
     }
 
-    if (!isSidebarTabSupported(ws, sidebarTab)) {
-      sidebarTab = ownerDefault;
-    }
-  }
+	if (!isSidebarTabSupported(ws, sidebarTab)) {
+	  sidebarTab = ownerDefault;
+	}
+}
 
   async function fetchWorkspace(): Promise<void> {
     // Capture the id at call time. With workspaceId changing across

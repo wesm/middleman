@@ -1353,16 +1353,16 @@ test.describe("sidebar PR tab", () => {
 
   test(
     "workspace without associated PR hides malformed PR tab",
-    async ({ page }) => {
-      const noLinkedPR = {
-        ...testIssueWorkspace,
-        associated_pr: null,
-      };
+	  async ({ page }) => {
+	    const noLinkedPR = {
+	      ...testIssueWorkspace,
+	      associated_pr: null,
+	    };
       await setupTerminalMocks(page, {
         workspace: noLinkedPR,
       });
 
-      await page.goto("/terminal/ws-issue-7");
+	    await page.goto("/terminal/ws-issue-7");
 
       await expect(
         page.locator(".seg-btn", { hasText: "PR" }),

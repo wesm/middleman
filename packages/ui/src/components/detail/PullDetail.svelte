@@ -848,9 +848,9 @@
         </div>
       {/if}
 
-      {#if !hideWorkspaceAction}
-        <!-- Workspace actions -->
-        <div class="actions-row actions-row--workspace">
+	  {#if !hideWorkspaceAction}
+	    <!-- Workspace actions -->
+	    <div class="actions-row actions-row--workspace">
           {#if workspace}
             <ActionButton
               class="btn--workspace"
@@ -874,9 +874,9 @@
               label={wsCreating ? "Creating..." : "Create Workspace"}
               shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
             >
-              <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-          {/if}
+		  <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+		</ActionButton>
+	      {/if}
           {#if wsError}
             <span class="action-error">{wsError}</span>
           {/if}
