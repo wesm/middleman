@@ -32,12 +32,68 @@ test("toggles dark mode from the header control", async ({ page }) => {
 
   const root = page.locator("html");
   const button = page.getByTitle("Toggle theme");
+  const settingsButton = page.getByTitle("Settings");
+  const icon = button.locator("svg");
 
   await expect(root).not.toHaveClass(/dark/);
+  await expect(icon).toBeVisible();
+  await expect(settingsButton.locator("svg")).toBeVisible();
+
+  await expect(button).toHaveJSProperty("tagName", "BUTTON");
+  await expect(settingsButton).toHaveJSProperty("tagName", "BUTTON");
+
+  const themeLayout = await button.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      display: style.display,
+      alignItems: style.alignItems,
+      justifyContent: style.justifyContent,
+    };
+  });
+  const settingsLayout = await settingsButton.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      display: style.display,
+      alignItems: style.alignItems,
+      justifyContent: style.justifyContent,
+    };
+  });
+
+  expect(themeLayout).toEqual({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  });
+  expect(settingsLayout).toEqual({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  });
+
+  const moonPathFill = await button.evaluate((node) => {
+    const path = node.querySelector("[data-filled-icon='moon'] svg path");
+    return path ? getComputedStyle(path).fill : null;
+  });
+  const moonPathStroke = await button.evaluate((node) => {
+    const path = node.querySelector("[data-filled-icon='moon'] svg path");
+    return path ? getComputedStyle(path).stroke : null;
+  });
+
+  expect(moonPathFill).not.toBe("none");
+  expect(moonPathStroke).toBe("none");
+
+  const before = await icon.innerHTML();
 
   await button.click();
   await expect(root).toHaveClass(/dark/);
 
+  await expect(button.locator("svg")).toBeVisible();
+
+  const after = await button.locator("svg").innerHTML();
+
+  expect(after).not.toBe(before);
+
   await button.click();
   await expect(root).not.toHaveClass(/dark/);
+  await expect(button.locator("svg")).toBeVisible();
 });

@@ -116,7 +116,7 @@ test.describe("collapsible sidebar", () => {
     await expect(page).toHaveURL(/\/pulls\/board$/);
 
     // Header expand button should be visible.
-    const headerToggle = page.locator(".app-header .sidebar-toggle");
+    const headerToggle = page.getByRole("button", { name: "Expand sidebar" });
     await expect(headerToggle).toBeVisible();
 
     // Click it to expand.
