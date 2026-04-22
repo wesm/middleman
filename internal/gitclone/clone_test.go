@@ -251,6 +251,38 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	assert.Equal(newSHA, got)
 }
 
+// TestEnsureCloneRestoresOriginHead verifies that EnsureClone leaves the
+// remote default-branch symref available as refs/remotes/origin/HEAD.
+// Issue workspaces start from origin/HEAD, so older clones that lack that
+// symref would otherwise fail to create a worktree.
+func TestEnsureCloneRestoresOriginHead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx := context.Background()
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	run(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+	_, err := exec.Command(
+		"git", "-C", clonePath, "symbolic-ref", "refs/remotes/origin/HEAD",
+	).Output()
+	require.Error(err)
+
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	headRef := gitSymbolicRef(
+		t, clonePath, "refs/remotes/origin/HEAD",
+	)
+	assert.Equal("refs/remotes/origin/main", headRef)
+}
+
 // getFetchRefspecs returns the current fetch refspecs configured for the
 // "origin" remote in a bare clone. Returns an empty slice when the key
 // is unset; `git config --get-all` signals that with exit code 1.
@@ -275,6 +307,15 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 		}
 	}
 	return result
+}
+
+func gitSymbolicRef(t *testing.T, dir, ref string) string {
+	t.Helper()
+	cmd := exec.Command("git", "-C", dir, "symbolic-ref", ref)
+	cmd.Env = filteredGitTestEnv()
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
 }
 
 func TestEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
