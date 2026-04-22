@@ -45,6 +45,7 @@
       "name": "@middleman/ui",
       "version": "0.0.1",
       "dependencies": {
+        "@lucide/svelte": "next",
         "@tiptap/core": "3.22.3",
         "@tiptap/extension-document": "3.22.3",
         "@tiptap/extension-hard-break": "3.22.3",

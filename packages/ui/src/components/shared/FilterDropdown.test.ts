@@ -62,6 +62,36 @@ describe("FilterDropdown", () => {
     expect(screen.getByText("Event types")).toBeTruthy();
   });
 
+  it("does not use the legacy inline polygon icon for the trigger", () => {
+    render(FilterDropdown, {
+      props: {
+        label: "Filters",
+        sections: [
+          {
+            items: [
+              {
+                id: "comment",
+                label: "Comments",
+                active: false,
+                onSelect: vi.fn(),
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const trigger = screen.getByRole("button", {
+      name: /filters/i,
+    });
+
+    expect(
+      trigger.querySelector(
+        'polygon[points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"]',
+      ),
+    ).toBeNull();
+  });
+
   it("supports single-select actions that close after selection", async () => {
     const onDone = vi.fn();
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FunnelIcon from "@lucide/svelte/icons/funnel";
+
   interface FilterDropdownItem {
     id: string;
     label: string;
@@ -114,9 +116,7 @@
     {disabled}
     type="button"
   >
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-    </svg>
+    <FunnelIcon size={12} strokeWidth={2} aria-hidden="true" />
     <span class="filter-trigger-label">{label}</span>
     {#if detail}
       <span class="filter-trigger-detail">{detail}</span>
