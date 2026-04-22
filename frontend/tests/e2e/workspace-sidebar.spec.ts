@@ -155,7 +155,7 @@ async function setupTerminalMocks(
   // Route roborev API calls using a predicate to avoid
   // matching Vite module URLs like /@fs/.../api/roborev/...
   await page.route(
-    "**/api/v1/roborev/status",
+    (url) => url.pathname === "/api/v1/roborev/status",
     async (route) => {
       await route.fulfill({
         status: 200,
