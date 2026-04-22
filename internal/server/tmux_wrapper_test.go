@@ -253,8 +253,8 @@ func setupWrapperServerWithScriptAndDBAndServer(
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
-	assert := Assert.New(t)
 	require := require.New(t)
+	assert := Assert.New(t)
 	client, _, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -733,8 +733,8 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 }
 
 func TestTmuxWrapperAttachSession(t *testing.T) {
-	assert := Assert.New(t)
 	require := require.New(t)
+	assert := Assert.New(t)
 	client, baseURL, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -843,8 +843,8 @@ func TestReadTmuxRecordPreservesEmptyArgs(t *testing.T) {
 // This complements TestTmuxWrapperNewSession and TestTmuxWrapperAttachSession —
 // together they cover all three tmux verbs that cross the HTTP boundary.
 func TestTmuxWrapperKillSession(t *testing.T) {
-	assert := Assert.New(t)
 	require := require.New(t)
+	assert := Assert.New(t)
 	client, _, record := setupWrapperServer(t)
 	ctx := context.Background()
 

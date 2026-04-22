@@ -200,45 +200,6 @@ test(
 );
 
 test(
-  "clicking PR badge emits pinLinkedPR command",
-  async ({ page }) => {
-    await page.addInitScript((data) => {
-      window.__middleman_config = {
-        workspace: data,
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
-          (window as Record<string, any>).__last_workspace_command = {
-            cmd,
-            payload,
-          };
-          return { ok: true };
-        },
-      };
-    }, testWorkspaceData);
-
-    await page.goto("/workspaces");
-
-    const prBadge = page.locator("button.pr-badge").first();
-    await expect(prBadge).toBeVisible();
-    await prBadge.click();
-
-    const command = await page.evaluate(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window property
-      () => (window as Record<string, any>).__last_workspace_command,
-    );
-    expect(command).toBeTruthy();
-    expect(command.cmd).toBe("pinLinkedPR");
-    expect(command.payload.hostKey).toBe("local");
-    expect(command.payload.projectKey).toBe("proj-1");
-    expect(command.payload.worktreeKey).toBe("wt-2");
-    expect(command.payload.prNumber).toBe(42);
-  },
-);
-
-test(
   "navigateToRoute bridge method works",
   async ({ page }) => {
     await page.goto("/pulls");
@@ -304,6 +265,28 @@ test(
     expect(command.payload.worktreeKey).toBe("wt-2");
     expect(command.payload.hostKey).toBe("local");
     expect(command.payload.projectKey).toBe("proj-1");
+  },
+);
+
+test(
+  "linked-PR badge is non-interactive and omits pin menu item",
+  async ({ page }) => {
+    await injectWithCallback(page, testWorkspaceData);
+    await page.goto("/workspaces");
+
+    const badge = page.locator(".pr-badge").filter({ hasText: "#42" });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveJSProperty("tagName", "SPAN");
+
+    await badge.click();
+    const afterBadgeClick = await getLastCommand(page);
+    expect(afterBadgeClick).toBeFalsy();
+
+    const row = page
+      .locator(".worktree-row")
+      .filter({ hasText: "Add auth middleware" });
+    await row.click({ button: "right" });
+    await expect(page.getByText("Pin linked PR")).toHaveCount(0);
   },
 );
 

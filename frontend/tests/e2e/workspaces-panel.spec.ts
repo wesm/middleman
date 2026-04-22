@@ -473,62 +473,12 @@ test(
 );
 
 test(
-  "panel hard-pin skips softPinPR on select",
+  "panel select PR navigates to detail",
   async ({ page }) => {
     await page.addInitScript(() => {
       window.__middleman_config = {
         embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          (window as Record<string, unknown>).__workspace_commands ??= [];
-          (
-            (window as Record<string, unknown>).__workspace_commands as unknown[]
-          ).push({ cmd, payload });
-          return { ok: true };
-        },
-      };
-    });
-    // Start hard-pinned, go back, then select a PR
-    await page.goto(
-      "/workspaces/panel/github.com/acme/widgets/42?pin=hard",
-    );
-    await page
-      .getByRole("button", { name: "Back to list" })
-      .click();
-    await page
-      .locator(".panel-pr-item")
-      .filter({ hasText: "Refactor theme system" })
-      .click();
-
-    const cmds = await page.evaluate(
-      () => (window as Record<string, unknown>).__workspace_commands as
-        { cmd: string }[] | undefined,
-    );
-    const softPins = (cmds ?? []).filter(
-      (c) => c.cmd === "softPinPR",
-    );
-    expect(softPins).toHaveLength(0);
-  },
-);
-
-test(
-  "panel select PR emits softPinPR and shows Unpin",
-  async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          (window as Record<string, unknown>).__workspace_commands ??= [];
-          (
-            (window as Record<string, unknown>).__workspace_commands as unknown[]
-          ).push({ cmd, payload });
-          return { ok: true };
-        },
+        onWorkspaceCommand: () => ({ ok: true }),
       };
     });
     await page.goto(
@@ -543,86 +493,16 @@ test(
     await expect(page).toHaveURL(
       /\/workspaces\/panel\/github\.com\/acme\/widgets\/42$/,
     );
-
-    // softPinPR command emitted
-    const cmds = await page.evaluate(
-      () => (window as Record<string, unknown>).__workspace_commands as
-        { cmd: string; payload: Record<string, unknown> }[],
-    );
-    const softPin = cmds.find((c) => c.cmd === "softPinPR");
-    expect(softPin).toBeTruthy();
-    expect(softPin!.payload).toMatchObject({
-      host: "github.com",
-      owner: "acme",
-      name: "widgets",
-      number: 42,
-    });
-
-    // Unpin button visible
-    await expect(
-      page.locator("button.panel-unpin-btn"),
-    ).toBeVisible();
   },
 );
 
 test(
-  "panel Unpin button emits unpinPanelContext",
+  "panel back returns to list",
   async ({ page }) => {
     await page.addInitScript(() => {
       window.__middleman_config = {
         embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          (window as Record<string, unknown>).__last_cmd = {
-            cmd,
-            payload,
-          };
-          return { ok: true };
-        },
-      };
-    });
-    // Navigate to list first, then click a PR to get soft-pinned
-    await page.goto(
-      "/workspaces/panel/github.com/acme/widgets",
-    );
-    const row = page
-      .locator(".panel-pr-item")
-      .filter({ hasText: "Add browser regression coverage" });
-    await row.click();
-
-    const unpin = page.locator("button.panel-unpin-btn");
-    await expect(unpin).toBeVisible();
-    await unpin.click();
-
-    const cmd = await page.evaluate(
-      () => (window as Record<string, unknown>).__last_cmd as
-        { cmd: string },
-    );
-    expect(cmd.cmd).toBe("unpinPanelContext");
-
-    // Unpin button should disappear
-    await expect(unpin).not.toBeVisible();
-  },
-);
-
-test(
-  "panel back emits clearSoftPin",
-  async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: (
-          cmd: string,
-          payload: Record<string, unknown>,
-        ) => {
-          (window as Record<string, unknown>).__last_cmd = {
-            cmd,
-            payload,
-          };
-          return { ok: true };
-        },
+        onWorkspaceCommand: () => ({ ok: true }),
       };
     });
     await page.goto(
@@ -637,49 +517,9 @@ test(
       .getByRole("button", { name: "Back to list" })
       .click();
 
-    const cmd = await page.evaluate(
-      () => (window as Record<string, unknown>).__last_cmd as
-        { cmd: string },
-    );
-    expect(cmd.cmd).toBe("clearSoftPin");
     await expect(page).toHaveURL(
       /\/workspaces\/panel\/github\.com\/acme\/widgets$/,
     );
-  },
-);
-
-test(
-  "panel hard-pin preserved across back navigation",
-  async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: () => ({ ok: true }),
-      };
-    });
-    await page.goto(
-      "/workspaces/panel/github.com/acme/widgets/42?pin=hard",
-    );
-
-    // Unpin visible on hard-pinned detail
-    await expect(
-      page.locator("button.panel-unpin-btn"),
-    ).toBeVisible();
-
-    // Go back to list
-    await page
-      .getByRole("button", { name: "Back to list" })
-      .click();
-
-    // Click another PR — should still be pinned
-    const row = page
-      .locator(".panel-pr-item")
-      .filter({ hasText: "Refactor theme system" });
-    await row.click();
-
-    await expect(
-      page.locator("button.panel-unpin-btn"),
-    ).toBeVisible();
   },
 );
 

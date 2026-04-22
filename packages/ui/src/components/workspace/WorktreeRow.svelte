@@ -159,18 +159,12 @@
     {#if worktree.linkedPR || worktree.diff || showBranch}
       <span class="meta-row">
         {#if worktree.linkedPR}
-          <button
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span
             class="pr-badge pr-{worktree.linkedPR.state}"
-            title="Pin PR #{worktree.linkedPR.number}"
-            onclick={(e: MouseEvent) => {
-              e.stopPropagation();
-              onCommand("pinLinkedPR", {
-                hostKey,
-                projectKey,
-                worktreeKey: worktree.key,
-                prNumber: worktree.linkedPR!.number,
-              });
-            }}
+            title="PR #{worktree.linkedPR.number}"
+            onclick={(e: MouseEvent) => e.stopPropagation()}
           >
             #{worktree.linkedPR.number} {worktree.linkedPR.state.toUpperCase()}
             {#if worktree.linkedPR.checksStatus === "success"}
@@ -208,7 +202,7 @@
                 />
               </svg>
             {/if}
-          </button>
+          </span>
         {/if}
 
         {#if worktree.diff}
@@ -241,16 +235,6 @@
     >
       Open session
     </button>
-    {#if worktree.linkedPR}
-      <button
-        class="menu-item"
-        onclick={() => menuAction("pinLinkedPR", {
-          prNumber: worktree.linkedPR?.number,
-        })}
-      >
-        Pin linked PR
-      </button>
-    {/if}
     <button
       class="menu-item menu-item--danger"
       onclick={() => menuAction("deleteWorktree")}
@@ -423,9 +407,7 @@
     background: none;
     border: none;
     padding: 1px 6px;
-    cursor: pointer;
     border-radius: 3px;
-    transition: opacity 0.1s;
   }
 
   .pr-open {
@@ -454,10 +436,6 @@
     background: color-mix(
       in srgb, var(--text-muted) 12%, transparent
     );
-  }
-
-  .pr-badge:hover {
-    opacity: 0.75;
   }
 
   .checks-icon {
