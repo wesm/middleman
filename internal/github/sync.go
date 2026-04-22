@@ -2219,38 +2219,7 @@ func deriveCIStatusFromChecks(checks []db.CICheck) string {
 // normalizeBulkCI converts GraphQL check runs and statuses to
 // the db.CICheck slice format used by the rest of the codebase.
 func normalizeBulkCI(bulk *BulkPR) []db.CICheck {
-	var checks []db.CICheck
-	for _, cr := range bulk.CheckRuns {
-		checks = append(checks, db.CICheck{
-			Name:       cr.GetName(),
-			Status:     cr.GetStatus(),
-			Conclusion: cr.GetConclusion(),
-			URL:        cr.GetHTMLURL(),
-			App:        cr.GetApp().GetName(),
-		})
-	}
-	for _, s := range bulk.Statuses {
-		// Mirror NormalizeCIChecks: pending → in_progress with
-		// empty conclusion; failure/error → failure.
-		status := "completed"
-		conclusion := s.GetState()
-		switch conclusion {
-		case "pending", "expected":
-			status = "in_progress"
-			conclusion = ""
-		case "failure", "error":
-			conclusion = "failure"
-		}
-		checks = append(checks, db.CICheck{
-			Name:       s.GetContext(),
-			Status:     status,
-			Conclusion: conclusion,
-			URL:        sanitizeURL(s.GetTargetURL()),
-			App:        s.GetContext(),
-		})
-	}
-	sortCIChecksByName(checks)
-	return checks
+	return normalizeCIChecks(bulk.CheckRuns, bulk.Statuses)
 }
 
 // fetchMRDetail performs a full detail fetch for a single MR:

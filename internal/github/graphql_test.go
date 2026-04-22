@@ -479,3 +479,37 @@ func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
 	assert.Equal("build", checks[1].Name)
 	assert.Equal("Zebra", checks[2].Name)
 }
+
+func TestNormalizeBulkCI_LatestCheckRunPerNameWins(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := gh.Timestamp{Time: time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)}
+	newer := gh.Timestamp{Time: older.Add(10 * time.Minute)}
+	buildName := "build"
+	statusCompleted := "completed"
+	conclusionFailure := "failure"
+	conclusionSuccess := "success"
+
+	checks := normalizeBulkCI(&BulkPR{
+		CheckRuns: []*gh.CheckRun{
+			{
+				ID:          new(int64(100)),
+				Name:        &buildName,
+				Status:      &statusCompleted,
+				Conclusion:  &conclusionFailure,
+				CompletedAt: &older,
+			},
+			{
+				ID:          new(int64(101)),
+				Name:        &buildName,
+				Status:      &statusCompleted,
+				Conclusion:  &conclusionSuccess,
+				CompletedAt: &newer,
+			},
+		},
+	})
+
+	require.Len(t, checks, 1)
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("success", checks[0].Conclusion)
+}
