@@ -616,7 +616,6 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	require := require.New(t)
 
 	// Script: "has-session" emits tmux's canonical "can't find
 	// session" stderr and exits 1 (so isTmuxSessionAbsent classifies

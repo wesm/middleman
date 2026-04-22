@@ -255,7 +255,6 @@ func setupWrapperServerWithScriptAndDBAndServer(
 func TestTmuxWrapperNewSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	require := require.New(t)
 	client, _, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -736,7 +735,6 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 func TestTmuxWrapperAttachSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	require := require.New(t)
 	client, baseURL, record := setupWrapperServer(t)
 	ctx := context.Background()
 
@@ -847,7 +845,6 @@ func TestReadTmuxRecordPreservesEmptyArgs(t *testing.T) {
 func TestTmuxWrapperKillSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	require := require.New(t)
 	client, _, record := setupWrapperServer(t)
 	ctx := context.Background()
 
