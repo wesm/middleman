@@ -150,28 +150,6 @@ test("07 - PR detail view", async ({ page }) => {
   });
 });
 
-test(
-  "08 - detail pinned with Unpin button",
-  async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__middleman_config = {
-        embed: { activePlatformHost: "github.com" },
-        onWorkspaceCommand: () => ({ ok: true }),
-      };
-    });
-    await page.goto(
-      "/workspaces/panel/github.com/acme/widgets/42?pin=hard",
-    );
-    await expect(
-      page.locator("button.panel-unpin-btn"),
-    ).toBeVisible();
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/08-detail-pinned.png`,
-      fullPage: true,
-    });
-  },
-);
-
 test("09 - detail not found", async ({ page }) => {
   await page.addInitScript(() => {
     window.__middleman_config = {

@@ -614,6 +614,7 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 }
 
 func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	require := require.New(t)
 
