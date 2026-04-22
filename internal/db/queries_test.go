@@ -1945,35 +1945,97 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	ws := &Workspace{
-		ID:           "ws-1",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feat/a",
-		WorktreePath: "/tmp/ws-1",
-		TmuxSession:  "ws-1",
-		Status:       "creating",
-	}
-	require.NoError(t, d.InsertWorkspace(ctx, ws))
+	t.Run("pull request duplicates conflict", func(t *testing.T) {
+		ws := &Workspace{
+			ID:           "ws-pr-1",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   42,
+			GitHeadRef:   "feat/pr-1",
+			WorktreePath: "/tmp/ws-pr-1",
+			TmuxSession:  "ws-pr-1",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, ws))
 
-	// Same MR coordinates, different ID -> unique constraint violation.
-	ws2 := &Workspace{
-		ID:           "ws-2",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feat/a",
-		WorktreePath: "/tmp/ws-2",
-		TmuxSession:  "ws-2",
-		Status:       "creating",
-	}
-	err := d.InsertWorkspace(ctx, ws2)
-	require.Error(t, err)
+		dup := &Workspace{
+			ID:           "ws-pr-2",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   42,
+			GitHeadRef:   "feat/pr-2",
+			WorktreePath: "/tmp/ws-pr-2",
+			TmuxSession:  "ws-pr-2",
+			Status:       "creating",
+		}
+		err := d.InsertWorkspace(ctx, dup)
+		require.Error(t, err)
+	})
+
+	t.Run("issue duplicates conflict", func(t *testing.T) {
+		ws := &Workspace{
+			ID:           "ws-issue-1",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-issues",
+			ItemType:     WorkspaceItemTypeIssue,
+			ItemNumber:   42,
+			GitHeadRef:   "middleman/issue-42",
+			WorktreePath: "/tmp/ws-issue-1",
+			TmuxSession:  "ws-issue-1",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, ws))
+
+		dup := &Workspace{
+			ID:           "ws-issue-2",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-issues",
+			ItemType:     WorkspaceItemTypeIssue,
+			ItemNumber:   42,
+			GitHeadRef:   "middleman/issue-42-copy",
+			WorktreePath: "/tmp/ws-issue-2",
+			TmuxSession:  "ws-issue-2",
+			Status:       "creating",
+		}
+		err := d.InsertWorkspace(ctx, dup)
+		require.Error(t, err)
+	})
+
+	t.Run("pull request and issue can coexist", func(t *testing.T) {
+		pr := &Workspace{
+			ID:           "ws-mixed-pr",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-mixed",
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   7,
+			GitHeadRef:   "feat/mixed-pr",
+			WorktreePath: "/tmp/ws-mixed-pr",
+			TmuxSession:  "ws-mixed-pr",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, pr))
+
+		issue := &Workspace{
+			ID:           "ws-mixed-issue",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-mixed",
+			ItemType:     WorkspaceItemTypeIssue,
+			ItemNumber:   7,
+			GitHeadRef:   "middleman/issue-7",
+			WorktreePath: "/tmp/ws-mixed-issue",
+			TmuxSession:  "ws-mixed-issue",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, issue))
+	})
 }
 
 func TestWorkspaceSummaries(t *testing.T) {

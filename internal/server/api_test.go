@@ -5957,12 +5957,63 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	)
 	require.NoError(err)
 	_, err = raw.ExecContext(ctx, `
+		DROP TRIGGER IF EXISTS middleman_workspaces_casefold_update;
+		DROP TRIGGER IF EXISTS middleman_workspaces_casefold_insert;
+
 		DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
 		DROP TABLE IF EXISTS middleman_workspace_setup_events;
-		ALTER TABLE middleman_workspaces DROP COLUMN workspace_branch;
-		ALTER TABLE middleman_workspaces DROP COLUMN item_type;
-		ALTER TABLE middleman_workspaces RENAME COLUMN git_head_ref TO mr_head_ref;
-		ALTER TABLE middleman_workspaces RENAME COLUMN item_number TO mr_number;
+
+		ALTER TABLE middleman_workspaces
+			RENAME TO middleman_workspaces_v11;
+
+		CREATE TABLE middleman_workspaces (
+		    id            TEXT PRIMARY KEY,
+		    platform_host TEXT NOT NULL,
+		    repo_owner    TEXT NOT NULL,
+		    repo_name     TEXT NOT NULL,
+		    mr_number     INTEGER NOT NULL,
+		    mr_head_ref   TEXT NOT NULL,
+		    mr_head_repo  TEXT,
+		    worktree_path TEXT NOT NULL,
+		    tmux_session  TEXT NOT NULL,
+		    status        TEXT NOT NULL DEFAULT 'creating',
+		    error_message TEXT,
+		    created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+		    UNIQUE(platform_host, repo_owner, repo_name, mr_number)
+		);
+
+		INSERT INTO middleman_workspaces (
+		    id, platform_host, repo_owner, repo_name,
+		    mr_number, mr_head_ref, mr_head_repo,
+		    worktree_path, tmux_session, status,
+		    error_message, created_at
+		)
+		SELECT
+		    id, platform_host, repo_owner, repo_name,
+		    item_number, git_head_ref, mr_head_repo,
+		    worktree_path, tmux_session, status,
+		    error_message, created_at
+		FROM middleman_workspaces_v11;
+
+		DROP TABLE middleman_workspaces_v11;
+
+		CREATE TRIGGER middleman_workspaces_casefold_insert
+		BEFORE INSERT ON middleman_workspaces
+		WHEN NEW.platform_host <> lower(NEW.platform_host)
+		  OR NEW.repo_owner <> lower(NEW.repo_owner)
+		  OR NEW.repo_name <> lower(NEW.repo_name)
+		BEGIN
+		    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
+		END;
+
+		CREATE TRIGGER middleman_workspaces_casefold_update
+		BEFORE UPDATE OF platform_host, repo_owner, repo_name ON middleman_workspaces
+		WHEN NEW.platform_host <> lower(NEW.platform_host)
+		  OR NEW.repo_owner <> lower(NEW.repo_owner)
+		  OR NEW.repo_name <> lower(NEW.repo_name)
+		BEGIN
+		    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
+		END;
 	`)
 	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
@@ -7337,6 +7388,54 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 		"middleman/issue-7",
 		gitOutput(t, recreatedReady.WorktreePath, "branch", "--show-current"),
 	)
+}
+
+func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t)
+	ctx := context.Background()
+
+	seedIssue(t, fixture.database, "acme", "widget", 1, "open")
+
+	prResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, prResp.StatusCode())
+	require.NotNil(prResp.JSON202)
+	assert.Equal("pull_request", prResp.JSON202.ItemType)
+	assert.Equal(int64(1), prResp.JSON202.ItemNumber)
+
+	issueResp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
+		ctx,
+		"acme",
+		"widget",
+		1,
+		generated.CreateIssueWorkspaceInputBody{
+			PlatformHost: "github.com",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, issueResp.StatusCode())
+	require.NotNil(issueResp.JSON202)
+	assert.Equal("issue", issueResp.JSON202.ItemType)
+	assert.Equal(int64(1), issueResp.JSON202.ItemNumber)
+	assert.NotEqual(prResp.JSON202.Id, issueResp.JSON202.Id)
+
+	listResp, err := fixture.client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Workspaces)
+	require.Len(*listResp.JSON200.Workspaces, 2)
 }
 
 func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
