@@ -52,6 +52,19 @@ const roborevJobs = {
   stats: { done: 1, closed: 0, open: 0 },
 };
 
+const roborevStatus = {
+  available: true,
+  version: "0.52.0",
+  endpoint: "http://127.0.0.1:17373",
+  active_workers: 1,
+  max_workers: 4,
+  queued_jobs: 2,
+  running_jobs: 1,
+  completed_jobs: 5,
+  failed_jobs: 0,
+  canceled_jobs: 0,
+};
+
 /**
  * Mock all routes needed for terminal view tests.
  * Registers mockApi first (catch-all), then layers
@@ -64,6 +77,7 @@ async function setupTerminalMocks(
     workspace?: typeof testWorkspace;
     roborevRepos?: typeof roborevRepos;
     roborevJobs?: typeof roborevJobs;
+    roborevStatus?: typeof roborevStatus;
     workspaceDetailResponses?: Array<{
       status: number;
       body?: unknown;
@@ -73,6 +87,7 @@ async function setupTerminalMocks(
   const ws = opts?.workspace ?? testWorkspace;
   const rrRepos = opts?.roborevRepos ?? roborevRepos;
   const rrJobs = opts?.roborevJobs ?? roborevJobs;
+  const rrStatus = opts?.roborevStatus ?? roborevStatus;
   const detailResponses = [
     ...(opts?.workspaceDetailResponses ?? []),
   ];
@@ -140,6 +155,17 @@ async function setupTerminalMocks(
   // Route roborev API calls using a predicate to avoid
   // matching Vite module URLs like /@fs/.../api/roborev/...
   await page.route(
+    "**/api/v1/roborev/status",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(rrStatus),
+      });
+    },
+  );
+
+  await page.route(
     (url) => url.pathname.startsWith("/api/roborev/"),
     async (route) => {
       const url = new URL(route.request().url());
@@ -166,7 +192,7 @@ async function setupTerminalMocks(
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ status: "ok" }),
+          body: JSON.stringify(rrStatus),
         });
         return;
       }
@@ -760,6 +786,32 @@ test.describe("sidebar Reviews tab", () => {
       );
     });
   });
+
+  test(
+    "Reviews tab preserves a daemon version that already starts with v",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        roborevStatus: {
+          ...roborevStatus,
+          version: "v0.52.0",
+        },
+      });
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".seg-btn", { hasText: "Reviews" })
+        .click();
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+
+      await expect(
+        page.locator(
+          '.right-sidebar .daemon-status [title="Daemon version"]',
+        ),
+      ).toHaveText("v0.52.0");
+    },
+  );
 
   test(
     "Reviews tab shows job list when roborev repo matches",

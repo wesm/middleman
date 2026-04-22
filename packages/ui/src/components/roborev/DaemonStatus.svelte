@@ -3,6 +3,11 @@
 
   const stores = getStores();
   const daemon = stores.roborevDaemon;
+
+  function formatVersion(version: string): string {
+    if (version.startsWith("v")) return version;
+    return `v${version}`;
+  }
 </script>
 
 {#if daemon}
@@ -22,7 +27,7 @@
       <span class="separator"></span>
 
       <span class="status-item" title="Daemon version">
-        v{daemon.getVersion()}
+        {formatVersion(daemon.getVersion())}
       </span>
 
       <span class="separator"></span>
