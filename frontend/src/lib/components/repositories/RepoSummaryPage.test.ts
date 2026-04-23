@@ -42,8 +42,12 @@ vi.mock("../../stores/filter.svelte.js", () => ({
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@middleman/ui")>();
+  const { default: MockCommentEditor } = await import(
+    "../../../test/MockCommentEditor.svelte"
+  );
   return {
     ...actual,
+    CommentEditor: MockCommentEditor,
     getStores: () => ({
       sync: {
         subscribeSyncComplete: () => () => {},
@@ -227,6 +231,15 @@ describe("RepoSummaryPage", () => {
       screen.getByRole("button", { name: "New issue" }),
     );
 
+    expect(
+      screen.getByRole("dialog", {
+        name: "New issue in acme/widgets",
+      }),
+    ).toBeTruthy();
+    const bodyEditor = screen.getByTestId("mock-comment-editor");
+    expect(bodyEditor.getAttribute("data-owner")).toBe("acme");
+    expect(bodyEditor.getAttribute("data-name")).toBe("widgets");
+
     await fireEvent.input(
       screen.getByPlaceholderText("Issue title"),
       {
@@ -234,9 +247,9 @@ describe("RepoSummaryPage", () => {
       },
     );
     await fireEvent.input(
-      screen.getByPlaceholderText(
-        "Describe the problem, context, or follow-up work",
-      ),
+      screen.getByRole("textbox", {
+        name: "Describe the problem, context, or follow-up work",
+      }),
       {
         target: { value: "Need a compact repo dashboard." },
       },
@@ -265,5 +278,67 @@ describe("RepoSummaryPage", () => {
         "/issues/acme/widgets/27",
       );
     });
+  });
+
+  it("retains modal issue drafts when dismissed", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 2,
+        open_pr_count: 1,
+        draft_pr_count: 0,
+        cached_issue_count: 1,
+        open_issue_count: 1,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByText("acme/widgets");
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      { target: { value: "Draft issue title" } },
+    );
+    await fireEvent.input(
+      screen.getByRole("textbox", {
+        name: "Describe the problem, context, or follow-up work",
+      }),
+      {
+        target: { value: "Draft issue body with @alice" },
+      },
+    );
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
+        .value,
+    ).toBe("Draft issue title");
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Describe the problem, context, or follow-up work",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("Draft issue body with @alice");
   });
 });

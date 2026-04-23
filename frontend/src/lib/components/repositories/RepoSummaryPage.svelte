@@ -12,6 +12,7 @@
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import RepoPageState from "./RepoPageState.svelte";
   import RepoSummaryCard from "./RepoSummaryCard.svelte";
+  import RepoIssueModal from "./RepoIssueModal.svelte";
   import {
     normalizeSummaries,
     repoKey,
@@ -24,7 +25,7 @@
   let summaries = $state<RepoSummaryCardData[]>([]);
   let loading = $state(true);
   let loadError = $state<string | null>(null);
-  let openComposerKey = $state<string | null>(null);
+  let composerSummary = $state<RepoSummaryCardData | null>(null);
   let issueTitleByRepo = $state<Record<string, string>>({});
   let issueBodyByRepo = $state<Record<string, string>>({});
   let issueErrorByRepo = $state<
@@ -91,7 +92,7 @@
 
   function openComposer(summary: RepoSummaryCardData): void {
     const key = repoKey(summary);
-    openComposerKey = key;
+    composerSummary = summary;
     issueErrorByRepo[key] = null;
     if (issueTitleByRepo[key] === undefined) {
       issueTitleByRepo[key] = "";
@@ -102,8 +103,8 @@
   }
 
   function closeComposer(key: string): void {
-    if (openComposerKey === key) {
-      openComposerKey = null;
+    if (composerSummary && repoKey(composerSummary) === key) {
+      composerSummary = null;
     }
     issueErrorByRepo[key] = null;
   }
@@ -159,11 +160,16 @@
 
     issueTitleByRepo[key] = "";
     issueBodyByRepo[key] = "";
-    openComposerKey = null;
+    composerSummary = null;
     setGlobalRepo(key);
     navigate(
       `/issues/${summary.owner}/${summary.name}/${data.Number}`,
     );
+  }
+
+  function submitActiveIssue(): void {
+    if (!composerSummary) return;
+    void submitIssue(composerSummary);
   }
 
   onMount(() => {
@@ -226,22 +232,11 @@
         {@const key = repoKey(summary)}
         <RepoSummaryCard
           {summary}
-          composerOpen={openComposerKey === key}
-          issueTitle={issueTitleByRepo[key] ?? ""}
-          issueBody={issueBodyByRepo[key] ?? ""}
-          issueError={issueErrorByRepo[key] ?? null}
-          issueSubmitting={issueSubmittingByRepo[key] ?? false}
           onviewprs={() =>
             filterAndNavigate(summary, "/pulls")}
           onviewissues={() =>
             filterAndNavigate(summary, "/issues")}
           onopencomposer={() => openComposer(summary)}
-          onclosecomposer={() => closeComposer(key)}
-          onsubmitissue={() => void submitIssue(summary)}
-          onissuetitlechange={(title) =>
-            updateIssueTitle(key, title)}
-          onissuebodychange={(body) =>
-            updateIssueBody(key, body)}
           onopenissue={(number) =>
             filterAndNavigate(
               summary,
@@ -250,6 +245,21 @@
         />
       {/each}
     </div>
+  {/if}
+
+  {#if composerSummary}
+    {@const key = repoKey(composerSummary)}
+    <RepoIssueModal
+      summary={composerSummary}
+      title={issueTitleByRepo[key] ?? ""}
+      body={issueBodyByRepo[key] ?? ""}
+      error={issueErrorByRepo[key] ?? null}
+      submitting={issueSubmittingByRepo[key] ?? false}
+      ontitlechange={(title) => updateIssueTitle(key, title)}
+      onbodychange={(body) => updateIssueBody(key, body)}
+      oncancel={() => closeComposer(key)}
+      onsubmitissue={submitActiveIssue}
+    />
   {/if}
 </section>
 
