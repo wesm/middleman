@@ -39,17 +39,22 @@ vi.mock("../../stores/filter.svelte.js", () => ({
     mockSetGlobalRepo(repo),
 }));
 
-vi.mock("@middleman/ui", () => ({
-  getStores: () => ({
-    sync: {
-      subscribeSyncComplete: () => () => {},
-    },
-    settings: {
-      isSettingsLoaded: () => true,
-      hasConfiguredRepos: () => true,
-    },
-  }),
-}));
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    getStores: () => ({
+      sync: {
+        subscribeSyncComplete: () => () => {},
+      },
+      settings: {
+        isSettingsLoaded: () => true,
+        hasConfiguredRepos: () => true,
+      },
+    }),
+  };
+});
 
 import RepoSummaryPage from "./RepoSummaryPage.svelte";
 
@@ -104,6 +109,85 @@ describe("RepoSummaryPage", () => {
       screen.getByText("Investigate repo summary card"),
     ).toBeTruthy();
     expect(screen.getByText("alice")).toBeTruthy();
+  });
+
+  it("shows cached output and sync errors clearly", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 6,
+        open_pr_count: 3,
+        draft_pr_count: 1,
+        cached_issue_count: 4,
+        open_issue_count: 2,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "rate limit exceeded",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByText("acme/widgets");
+
+    expect(screen.getByText("Cached PRs")).toBeTruthy();
+    expect(screen.getByText("Cached issues")).toBeTruthy();
+    expect(screen.getByText("rate limit exceeded")).toBeTruthy();
+  });
+
+  it("navigates from repo metric cells instead of separate view buttons", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 6,
+        open_pr_count: 3,
+        draft_pr_count: 1,
+        cached_issue_count: 4,
+        open_issue_count: 2,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByText("acme/widgets");
+
+    expect(
+      screen.queryByRole("button", { name: "View PRs" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "View issues" }),
+    ).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /3\s+Open PRs/ }),
+    );
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+      "acme/widgets",
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/pulls");
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /2\s+Open issues/ }),
+    );
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+      "acme/widgets",
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/issues");
   });
 
   it("creates an issue from a repo card and navigates to it", async () => {
