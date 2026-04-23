@@ -320,9 +320,7 @@ func setupTestServerWithRepos(
 	// Drain any TriggerRun goroutines (fired by handlers like
 	// POST /sync) before tests tear down. Registered after the DB
 	// cleanup so LIFO ordering runs Stop first: without this, a
-	// leaked goroutine from one test's handler can call time.Now
-	// concurrently with another test's setTestLocalEDT mutating
-	// time.Local, which the race detector flags under -shuffle=on.
+	// leaked goroutine from one test's handler can outlive its DB.
 	t.Cleanup(syncer.Stop)
 	srv := New(
 		database, syncer, nil, "/",
@@ -381,22 +379,26 @@ func assertRFC3339UTC(t *testing.T, got string, want time.Time) {
 	Assert.True(t, strings.HasSuffix(got, "Z"), "expected UTC RFC3339 with trailing Z: %s", got)
 }
 
-func setTestLocalEDT(t *testing.T) {
+func setTestServerNow(t *testing.T, srv *Server, now time.Time) {
 	t.Helper()
-	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
-	oldLocal := time.Local
-	//nolint:forbidigo // Tests intentionally override the process local zone to verify UTC normalization.
-	time.Local = time.FixedZone("EDT", -4*60*60)
-	t.Cleanup(func() {
-		//nolint:forbidigo // Tests intentionally restore the overridden process local zone.
-		time.Local = oldLocal
-	})
+	srv.now = func() time.Time { return now }
+}
+
+func testEDTTime(hour, minute int) time.Time {
+	//nolint:forbidigo // Test fixture intentionally uses a non-UTC timestamp to verify UTC normalization.
+	return time.Date(2026, 4, 11, hour, minute, 0, 0, time.FixedZone("EDT", -4*60*60))
 }
 
 func assertTimePtrUTC(t *testing.T, got *time.Time) {
 	t.Helper()
 	require.NotNil(t, got)
 	Assert.Equal(t, time.UTC, got.Location())
+}
+
+func assertTimePtrEqualsUTC(t *testing.T, got *time.Time, want time.Time) {
+	t.Helper()
+	assertTimePtrUTC(t, got)
+	Assert.Equal(t, want.UTC(), got.UTC())
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -673,9 +675,10 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 
 func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	require := require.New(t)
-	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
+	handlerNow := testEDTTime(8, 30)
+	setTestServerNow(t, srv, handlerNow)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
@@ -693,8 +696,8 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("merged", pr.State)
-	assertTimePtrUTC(t, pr.MergedAt)
-	assertTimePtrUTC(t, pr.ClosedAt)
+	assertTimePtrEqualsUTC(t, pr.MergedAt, handlerNow)
+	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
 }
 
 func TestAPIClientConstruction(t *testing.T) {
@@ -2165,7 +2168,6 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 
 func TestAPISyncStatus(t *testing.T) {
 	require := require.New(t)
-	setTestLocalEDT(t)
 
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -2476,9 +2478,10 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 
 func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
-	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
+	handlerNow := testEDTTime(9, 15)
+	setTestServerNow(t, srv, handlerNow)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
@@ -2492,7 +2495,7 @@ func TestAPIClosePR(t *testing.T) {
 	pr, err := database.GetMergeRequest(context.Background(), "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal("closed", pr.State)
-	assertTimePtrUTC(t, pr.ClosedAt)
+	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
 }
 
 func TestAPIReopenPR(t *testing.T) {
@@ -2556,9 +2559,10 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 
 func TestAPICloseIssue(t *testing.T) {
 	require := require.New(t)
-	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
+	handlerNow := testEDTTime(10, 45)
+	setTestServerNow(t, srv, handlerNow)
 	seedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
@@ -2572,7 +2576,7 @@ func TestAPICloseIssue(t *testing.T) {
 	issue, err := database.GetIssue(context.Background(), "acme", "widget", 5)
 	require.NoError(err)
 	require.Equal("closed", issue.State)
-	assertTimePtrUTC(t, issue.ClosedAt)
+	assertTimePtrEqualsUTC(t, issue.ClosedAt, handlerNow)
 }
 
 func TestAPIReopenIssue(t *testing.T) {
@@ -5770,7 +5774,6 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	setTestLocalEDT(t)
 
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -5816,7 +5819,6 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	setTestLocalEDT(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
