@@ -1,3 +1,20 @@
+// Package server exposes HTTP routes and, in this file, tracks passive tmux
+// activity for workspace responses.
+//
+// The workspace sidebar polls /workspaces frequently, but tmux has no durable
+// "agent is working" flag for a pane. The tracker turns cheap observations from
+// a tmux pane snapshot into a short-lived activity signal for the UI. A snapshot
+// includes the active pane title and recent scrollback. The title path catches
+// explicit spinner titles set by tools such as Codex; the output path catches
+// tools that do not update the title but are still producing terminal output.
+//
+// Samples are keyed by tmux session. Each sample stores the last pane title, a
+// fingerprint of normalized recent output, and the time that fingerprint last
+// changed. A title that matches the known spinner protocol marks the workspace
+// as working immediately. Otherwise, output is considered active when its
+// fingerprint changed within tmuxActivityTTL. Cached samples remain usable for
+// tmuxSampleMinInterval so the UI poll loop does not shell out to tmux on every
+// request unless the previous sample is old enough to refresh.
 package server
 
 import (
