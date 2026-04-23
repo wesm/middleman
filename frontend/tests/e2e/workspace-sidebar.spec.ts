@@ -459,13 +459,14 @@ test.describe("sidebar toggle behavior", () => {
   });
 
   test(
-    "workspace row shows working indicator for busy tmux title",
+    "workspace row shows working indicator with activity source",
     async ({ page }) => {
       await setupTerminalMocks(page, {
         workspace: {
           ...testWorkspace,
-          tmux_pane_title: "codex working",
+          tmux_pane_title: "⠴ t3code-b5014b03",
           tmux_working: true,
+          tmux_activity_source: "title",
         },
       });
 
@@ -479,8 +480,42 @@ test.describe("sidebar toggle behavior", () => {
       await expect(badge).toContainText("Working");
       await expect(badge).toHaveAttribute(
         "title",
-        "codex working",
+        "Working (title): ⠴ t3code-b5014b03",
       );
+    },
+  );
+
+  test(
+    "workspace list polls while mounted",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      let listRequests = 0;
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            listRequests += 1;
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                workspaces: [testWorkspace],
+              }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await expect
+        .poll(() => listRequests)
+        .toBeGreaterThanOrEqual(1);
+      await expect
+        .poll(() => listRequests, { timeout: 6500 })
+        .toBeGreaterThanOrEqual(2);
     },
   );
 

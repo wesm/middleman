@@ -2261,28 +2261,52 @@ func (s *Server) toWorkspaceResponse(
 		return resp
 	}
 
-	title, err := s.workspaces.TmuxPaneTitle(
-		ctx, summary.TmuxSession,
-	)
+	if s.tmuxActivity != nil {
+		if result, ok := s.tmuxActivity.Cached(summary.TmuxSession); ok {
+			applyTmuxActivity(&resp, result)
+			return resp
+		}
+	}
+
+	snapshot, err := s.workspaces.TmuxPaneSnapshot(ctx, summary.TmuxSession)
 	if err != nil {
 		slog.Debug(
-			"read tmux pane title",
+			"read tmux pane snapshot",
 			"workspace_id", summary.ID,
 			"tmux_session", summary.TmuxSession,
 			"err", err,
 		)
 		return resp
 	}
-	if title == "" {
-		return resp
+
+	tracker := s.tmuxActivity
+	if tracker == nil {
+		tracker = newTmuxActivityTracker(nil)
 	}
-	resp.TmuxPaneTitle = &title
-	resp.TmuxWorking = isWorkingTmuxTitle(title)
+	activity := tracker.Update(summary.TmuxSession, tmuxActivityObservation{
+		PaneTitle: snapshot.Title,
+		Output:    snapshot.Output,
+		HasOutput: true,
+	})
+	applyTmuxActivity(&resp, activity)
 	return resp
 }
 
+func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {
+	if activity.PaneTitle != "" {
+		title := activity.PaneTitle
+		resp.TmuxPaneTitle = &title
+	}
+	resp.TmuxWorking = activity.Working
+	resp.TmuxActivitySource = activity.Source
+	if activity.LastOutputAt != nil {
+		lastOutputAt := activity.LastOutputAt.UTC().Format(time.RFC3339)
+		resp.TmuxLastOutputAt = &lastOutputAt
+	}
+}
+
 func isWorkingTmuxTitle(title string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(title))
+	normalized := strings.TrimSpace(title)
 	if normalized == "" {
 		return false
 	}
@@ -2293,20 +2317,6 @@ func isWorkingTmuxTitle(title string) bool {
 		}
 	}
 
-	for _, token := range []string{
-		"working",
-		"busy",
-		"thinking",
-		"running",
-		"executing",
-		"processing",
-		"responding",
-		"coding",
-	} {
-		if strings.Contains(normalized, token) {
-			return true
-		}
-	}
 	return false
 }
 

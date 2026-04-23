@@ -16,6 +16,13 @@
     tmux_session: string;
     tmux_pane_title?: string | null;
     tmux_working?: boolean;
+    tmux_activity_source?:
+      | "title"
+      | "output"
+      | "none"
+      | "unknown"
+      | null;
+    tmux_last_output_at?: string | null;
     status: string;
     error_message?: string | null;
     created_at: string;
@@ -34,7 +41,7 @@
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
 
-  let workspaces = $state<Workspace[]>([]);
+  let workspaces = $state.raw<Workspace[]>([]);
   let collapsedGroups = $state<Set<string>>(new Set());
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
@@ -90,6 +97,18 @@
     return "var(--accent-amber)";
   }
 
+  function workingBadgeTitle(ws: Workspace): string {
+    const title = ws.tmux_pane_title?.trim();
+    const source = ws.tmux_activity_source;
+    if (source && source !== "unknown" && title) {
+      return `Working (${source}): ${title}`;
+    }
+    if (source && source !== "unknown") {
+      return `Working (${source})`;
+    }
+    return title || "Working";
+  }
+
   function prBadgeColor(ws: Workspace): string {
     if (ws.mr_is_draft) return "var(--text-muted)";
     if (ws.mr_state === "merged") {
@@ -118,6 +137,9 @@
 
   onMount(() => {
     void fetchWorkspaces();
+    const pollHandle = window.setInterval(() => {
+      void fetchWorkspaces();
+    }, 5_000);
 
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
@@ -129,6 +151,7 @@
     );
 
     return () => {
+      window.clearInterval(pollHandle);
       source.close();
     };
   });
@@ -178,7 +201,7 @@
               {#if ws.tmux_working}
                 <span
                   class="working-badge"
-                  title={ws.tmux_pane_title ?? "Working"}
+                  title={workingBadgeTitle(ws)}
                 >
                   <span
                     class="working-spinner"

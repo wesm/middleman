@@ -68,6 +68,10 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 		`    printf '%s\n' "$TMUX_PANE_TITLE"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_PANE_OUTPUT"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
@@ -310,7 +314,8 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	t.Setenv("TMUX_PANE_TITLE", "codex working")
+	t.Setenv("TMUX_PANE_TITLE", "⠴ t3code-b5014b03")
+	t.Setenv("TMUX_PANE_OUTPUT", "stable output")
 
 	client, _, _ := setupWrapperServer(t)
 	ctx := context.Background()
@@ -354,7 +359,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	}
 	require.NoError(json.NewDecoder(getResp.Body).Decode(&got))
 	require.NotNil(got.TmuxPaneTitle)
-	assert.Equal("codex working", *got.TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 	assert.True(got.TmuxWorking)
 
 	listResp, err := client.HTTP.GetWorkspaces(ctx)
@@ -373,8 +378,121 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	require.Len(listed.Workspaces, 1)
 	assert.Equal(wsID, listed.Workspaces[0].ID)
 	require.NotNil(listed.Workspaces[0].TmuxPaneTitle)
-	assert.Equal("codex working", *listed.Workspaces[0].TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *listed.Workspaces[0].TmuxPaneTitle)
 	assert.True(listed.Workspaces[0].TmuxWorking)
+}
+
+func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	outputPath := filepath.Join(dir, "pane-output")
+	require.NoError(os.WriteFile(outputPath, []byte("initial\n"), 0o644))
+
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_PANE_TITLE"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    cat "$TMUX_PANE_OUTPUT_FILE"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_PANE_TITLE", "workspace")
+	t.Setenv("TMUX_PANE_OUTPUT_FILE", outputPath)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time { return now })
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		workspace, dbErr := database.GetWorkspace(ctx, wsID)
+		require.NoError(dbErr)
+		if workspace != nil && workspace.Status == "ready" {
+			break
+		}
+	}
+
+	first := getRawWorkspaceActivity(t, client, ctx, wsID)
+	require.NotNil(first.TmuxPaneTitle)
+	assert.Equal("workspace", *first.TmuxPaneTitle)
+	assert.False(first.TmuxWorking)
+	assert.Equal(tmuxActivitySourceNone, first.TmuxActivitySource)
+	assert.Nil(first.TmuxLastOutputAt)
+
+	require.NoError(os.WriteFile(
+		outputPath,
+		[]byte("initial\nnew output\n"),
+		0o644,
+	))
+	now = now.Add(tmuxSampleMinInterval + time.Second)
+	second := getRawWorkspaceActivity(t, client, ctx, wsID)
+	assert.True(second.TmuxWorking)
+	assert.Equal(tmuxActivitySourceOutput, second.TmuxActivitySource)
+	require.NotNil(second.TmuxLastOutputAt)
+	assert.Equal(now.Format(time.RFC3339), *second.TmuxLastOutputAt)
+
+	now = now.Add(tmuxActivityTTL + time.Second)
+	expired := getRawWorkspaceActivity(t, client, ctx, wsID)
+	assert.False(expired.TmuxWorking)
+	assert.Equal(tmuxActivitySourceNone, expired.TmuxActivitySource)
+	require.NotNil(expired.TmuxLastOutputAt)
+	assert.Equal(*second.TmuxLastOutputAt, *expired.TmuxLastOutputAt)
+}
+
+func getRawWorkspaceActivity(
+	t *testing.T,
+	client *apiclient.Client,
+	ctx context.Context,
+	wsID string,
+) struct {
+	TmuxPaneTitle      *string `json:"tmux_pane_title"`
+	TmuxWorking        bool    `json:"tmux_working"`
+	TmuxActivitySource string  `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+} {
+	t.Helper()
+	resp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var got struct {
+		TmuxPaneTitle      *string `json:"tmux_pane_title"`
+		TmuxWorking        bool    `json:"tmux_working"`
+		TmuxActivitySource string  `json:"tmux_activity_source"`
+		TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	return got
 }
 
 func TestIsWorkingTmuxTitleDetectsCodexSpinner(t *testing.T) {
@@ -401,9 +519,19 @@ func TestIsWorkingTmuxTitleDetectsCodexSpinner(t *testing.T) {
 			working: false,
 		},
 		{
-			name:    "textual busy title",
+			name:    "english busy title is not protocol",
 			title:   "codex working",
-			working: true,
+			working: false,
+		},
+		{
+			name:    "opencode style title is not protocol",
+			title:   "OC | Run sleep 10",
+			working: false,
+		},
+		{
+			name:    "pi style title is not protocol",
+			title:   "π - tmp.foo",
+			working: false,
 		},
 	}
 
