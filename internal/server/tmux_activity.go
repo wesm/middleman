@@ -14,7 +14,9 @@
 // as working immediately. Otherwise, output is considered active when its
 // fingerprint changed within tmuxActivityTTL. Cached samples remain usable for
 // tmuxSampleMinInterval so the UI poll loop does not shell out to tmux on every
-// request unless the previous sample is old enough to refresh.
+// request unless the previous sample is old enough to refresh. Refresh probes
+// are bounded globally and coalesced per session; if a probe is already running
+// or the limit is full, callers reuse the last cached result when one exists.
 package server
 
 import (
@@ -29,6 +31,7 @@ const (
 	tmuxActivityTTL            = 30 * time.Second
 	tmuxSampleMinInterval      = 4 * time.Second
 	tmuxCaptureScrollbackLines = 160
+	tmuxProbeMaxConcurrency    = 4
 
 	tmuxActivitySourceTitle   = "title"
 	tmuxActivitySourceOutput  = "output"
@@ -61,18 +64,47 @@ type tmuxActivityResult struct {
 }
 
 type tmuxActivityTracker struct {
-	mu      sync.Mutex
-	clock   func() time.Time
-	samples map[string]TmuxActivitySample
+	mu         sync.Mutex
+	clock      func() time.Time
+	samples    map[string]TmuxActivitySample
+	probeSlots chan struct{}
+	inFlight   map[string]chan struct{}
+}
+
+type tmuxProbeStart struct {
+	Probe       tmuxActivityProbe
+	Fallback    tmuxActivityResult
+	HasFallback bool
+	Wait        <-chan struct{}
+	Started     bool
+}
+
+type tmuxActivityProbe struct {
+	tracker *tmuxActivityTracker
+	session string
 }
 
 func newTmuxActivityTracker(clock func() time.Time) *tmuxActivityTracker {
+	return newTmuxActivityTrackerWithProbeLimit(
+		clock, tmuxProbeMaxConcurrency,
+	)
+}
+
+func newTmuxActivityTrackerWithProbeLimit(
+	clock func() time.Time,
+	maxConcurrentProbes int,
+) *tmuxActivityTracker {
 	if clock == nil {
 		clock = time.Now
 	}
+	if maxConcurrentProbes < 1 {
+		maxConcurrentProbes = 1
+	}
 	return &tmuxActivityTracker{
-		clock:   clock,
-		samples: make(map[string]TmuxActivitySample),
+		clock:      clock,
+		samples:    make(map[string]TmuxActivitySample),
+		probeSlots: make(chan struct{}, maxConcurrentProbes),
+		inFlight:   make(map[string]chan struct{}),
 	}
 }
 
@@ -82,15 +114,7 @@ func (t *tmuxActivityTracker) Cached(
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	sample, ok := t.samples[session]
-	if !ok {
-		return tmuxActivityResult{}, false
-	}
-	now := t.clock().UTC()
-	if now.Sub(sample.LastSampledAt) >= tmuxSampleMinInterval {
-		return tmuxActivityResult{}, false
-	}
-	return tmuxActivityResultFromSample(sample, now), true
+	return t.cachedLocked(session, true)
 }
 
 func (t *tmuxActivityTracker) Update(
@@ -100,6 +124,82 @@ func (t *tmuxActivityTracker) Update(
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	return t.updateLocked(session, obs)
+}
+
+func (t *tmuxActivityTracker) StartProbe(
+	session string,
+) tmuxProbeStart {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	fallback, hasFallback := t.cachedLocked(session, false)
+	if wait, ok := t.inFlight[session]; ok {
+		return tmuxProbeStart{
+			Fallback:    fallback,
+			HasFallback: hasFallback,
+			Wait:        wait,
+		}
+	}
+
+	select {
+	case t.probeSlots <- struct{}{}:
+		wait := make(chan struct{})
+		t.inFlight[session] = wait
+		return tmuxProbeStart{
+			Probe: tmuxActivityProbe{
+				tracker: t,
+				session: session,
+			},
+			Fallback:    fallback,
+			HasFallback: hasFallback,
+			Started:     true,
+		}
+	default:
+		return tmuxProbeStart{
+			Fallback:    fallback,
+			HasFallback: hasFallback,
+		}
+	}
+}
+
+func (p tmuxActivityProbe) Finish(
+	obs tmuxActivityObservation,
+) tmuxActivityResult {
+	p.tracker.mu.Lock()
+	defer p.tracker.mu.Unlock()
+	defer p.tracker.finishProbeLocked(p.session)
+
+	return p.tracker.updateLocked(p.session, obs)
+}
+
+func (p tmuxActivityProbe) Cancel() {
+	p.tracker.mu.Lock()
+	defer p.tracker.mu.Unlock()
+
+	p.tracker.finishProbeLocked(p.session)
+}
+
+func (t *tmuxActivityTracker) cachedLocked(
+	session string,
+	requireFresh bool,
+) (tmuxActivityResult, bool) {
+	sample, ok := t.samples[session]
+	if !ok {
+		return tmuxActivityResult{}, false
+	}
+	now := t.clock().UTC()
+	if requireFresh &&
+		now.Sub(sample.LastSampledAt) >= tmuxSampleMinInterval {
+		return tmuxActivityResult{}, false
+	}
+	return tmuxActivityResultFromSample(sample, now), true
+}
+
+func (t *tmuxActivityTracker) updateLocked(
+	session string,
+	obs tmuxActivityObservation,
+) tmuxActivityResult {
 	now := t.clock().UTC()
 	sample := t.samples[session]
 	sample.Session = session
@@ -122,6 +222,14 @@ func (t *tmuxActivityTracker) Update(
 	sample.Working = result.Working
 	t.samples[session] = sample
 	return result
+}
+
+func (t *tmuxActivityTracker) finishProbeLocked(session string) {
+	if wait, ok := t.inFlight[session]; ok {
+		close(wait)
+	}
+	delete(t.inFlight, session)
+	<-t.probeSlots
 }
 
 func tmuxActivityResultFromSample(

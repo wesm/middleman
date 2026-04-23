@@ -2279,22 +2279,44 @@ func (s *Server) toWorkspaceResponse(
 		}
 	}
 
+	tracker := s.tmuxActivity
+	if tracker == nil {
+		tracker = newTmuxActivityTracker(nil)
+	}
+	probe := tracker.StartProbe(summary.TmuxSession)
+	if !probe.Started {
+		if probe.HasFallback {
+			applyTmuxActivity(&resp, probe.Fallback)
+			return resp
+		}
+		if probe.Wait != nil {
+			select {
+			case <-probe.Wait:
+				if result, ok := tracker.Cached(summary.TmuxSession); ok {
+					applyTmuxActivity(&resp, result)
+				}
+			case <-ctx.Done():
+			}
+		}
+		return resp
+	}
+
 	snapshot, err := s.workspaces.TmuxPaneSnapshot(ctx, summary.TmuxSession)
 	if err != nil {
+		probe.Probe.Cancel()
 		slog.Debug(
 			"read tmux pane snapshot",
 			"workspace_id", summary.ID,
 			"tmux_session", summary.TmuxSession,
 			"err", err,
 		)
+		if probe.HasFallback {
+			applyTmuxActivity(&resp, probe.Fallback)
+		}
 		return resp
 	}
 
-	tracker := s.tmuxActivity
-	if tracker == nil {
-		tracker = newTmuxActivityTracker(nil)
-	}
-	activity := tracker.Update(summary.TmuxSession, tmuxActivityObservation{
+	activity := probe.Probe.Finish(tmuxActivityObservation{
 		PaneTitle: snapshot.Title,
 		Output:    snapshot.Output,
 		HasOutput: true,

@@ -95,6 +95,46 @@ func TestTmuxActivityTrackerCachesFreshSamples(t *testing.T) {
 	assert.False(ok)
 }
 
+func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
+	assert := Assert.New(t)
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	tracker := newTmuxActivityTrackerWithProbeLimit(
+		func() time.Time { return now }, 1,
+	)
+	cached := tracker.Update("session-a", tmuxActivityObservation{
+		PaneTitle: "workspace",
+		Output:    "baseline\n",
+		HasOutput: true,
+	})
+	now = now.Add(tmuxSampleMinInterval + time.Second)
+
+	first := tracker.StartProbe("session-a")
+	assert.True(first.Started)
+	assert.True(first.HasFallback)
+	assert.Equal(cached, first.Fallback)
+
+	sameSession := tracker.StartProbe("session-a")
+	assert.False(sameSession.Started)
+	assert.True(sameSession.HasFallback)
+	assert.Equal(cached, sameSession.Fallback)
+
+	otherSession := tracker.StartProbe("session-b")
+	assert.False(otherSession.Started)
+	assert.False(otherSession.HasFallback)
+
+	updated := first.Probe.Finish(tmuxActivityObservation{
+		PaneTitle: "workspace",
+		Output:    "baseline\nnew output\n",
+		HasOutput: true,
+	})
+	assert.True(updated.Working)
+	assert.Equal(tmuxActivitySourceOutput, updated.Source)
+
+	afterFinish := tracker.StartProbe("session-b")
+	assert.True(afterFinish.Started)
+	afterFinish.Probe.Cancel()
+}
+
 func TestNormalizeTmuxOutputForFingerprinting(t *testing.T) {
 	assert := Assert.New(t)
 
