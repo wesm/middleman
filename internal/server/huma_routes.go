@@ -2074,7 +2074,7 @@ func (s *Server) createWorkspace(
 	}
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   toWorkspaceResponse(summary),
+		Body:   s.toWorkspaceResponse(ctx, summary),
 	}, nil
 }
 
@@ -2170,7 +2170,7 @@ func (s *Server) listWorkspaces(
 
 	list := make([]workspaceResponse, len(summaries))
 	for i := range summaries {
-		list[i] = toWorkspaceResponse(&summaries[i])
+		list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
 	}
 
 	out := &listWorkspacesOutput{}
@@ -2198,7 +2198,7 @@ func (s *Server) getWorkspace(
 	}
 
 	return &getWorkspaceOutput{
-		Body: toWorkspaceResponse(summary),
+		Body: s.toWorkspaceResponse(ctx, summary),
 	}, nil
 }
 
@@ -2248,6 +2248,60 @@ func (s *Server) retryWorkspace(
 		Status: http.StatusAccepted,
 		Body:   resp,
 	}, nil
+}
+
+func (s *Server) toWorkspaceResponse(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) workspaceResponse {
+	resp := toWorkspaceResponse(summary)
+	if s.workspaces == nil ||
+		summary.Status != "ready" ||
+		summary.TmuxSession == "" {
+		return resp
+	}
+
+	title, err := s.workspaces.TmuxPaneTitle(
+		ctx, summary.TmuxSession,
+	)
+	if err != nil {
+		slog.Debug(
+			"read tmux pane title",
+			"workspace_id", summary.ID,
+			"tmux_session", summary.TmuxSession,
+			"err", err,
+		)
+		return resp
+	}
+	if title == "" {
+		return resp
+	}
+	resp.TmuxPaneTitle = &title
+	resp.TmuxWorking = isWorkingTmuxTitle(title)
+	return resp
+}
+
+func isWorkingTmuxTitle(title string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(title))
+	if normalized == "" {
+		return false
+	}
+
+	for _, token := range []string{
+		"working",
+		"busy",
+		"thinking",
+		"running",
+		"executing",
+		"processing",
+		"responding",
+		"coding",
+	} {
+		if strings.Contains(normalized, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) deleteWorkspace(

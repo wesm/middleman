@@ -14,6 +14,8 @@
     mr_head_ref: string;
     worktree_path: string;
     tmux_session: string;
+    tmux_pane_title?: string | null;
+    tmux_working?: boolean;
     status: string;
     error_message?: string | null;
     created_at: string;
@@ -135,7 +137,7 @@
 <div class="workspace-list-sidebar">
   <div class="sidebar-header">Workspaces</div>
   <div class="sidebar-list">
-    {#each [...grouped] as [repoKey, items]}
+    {#each [...grouped] as [repoKey, items] (repoKey)}
       <button
         class="group-header"
         onclick={() => toggleGroup(repoKey)}
@@ -149,7 +151,6 @@
       </button>
       {#if !collapsedGroups.has(repoKey)}
         {#each items as ws (ws.id)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="ws-row"
             class:selected={ws.id === selectedId}
@@ -174,6 +175,18 @@
               <span class="ws-name">
                 {displayName(ws)}
               </span>
+              {#if ws.tmux_working}
+                <span
+                  class="working-badge"
+                  title={ws.tmux_pane_title ?? "Working"}
+                >
+                  <span
+                    class="working-spinner"
+                    aria-hidden="true"
+                  ></span>
+                  Working
+                </span>
+              {/if}
             </div>
             <div class="ws-row-bottom">
               <button
@@ -283,6 +296,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
   }
 
   .status-dot {
@@ -312,6 +326,39 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
+  }
+
+  .working-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border: 1px solid color-mix(in srgb, var(--accent-amber) 55%, transparent);
+    border-radius: 999px;
+    color: var(--accent-amber);
+    background: color-mix(in srgb, var(--accent-amber) 12%, transparent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+
+  .working-spinner {
+    width: 7px;
+    height: 7px;
+    border: 1px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .ws-row-bottom {

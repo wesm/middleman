@@ -11,6 +11,8 @@ const testWorkspace = {
   mr_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-123",
   tmux_session: "middleman-ws-123",
+  tmux_pane_title: null,
+  tmux_working: false,
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Add auth middleware",
@@ -455,6 +457,32 @@ test.describe("sidebar toggle behavior", () => {
     });
     await setupTerminalMocks(page);
   });
+
+  test(
+    "workspace row shows working indicator for busy tmux title",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: {
+          ...testWorkspace,
+          tmux_pane_title: "codex working",
+          tmux_working: true,
+        },
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const row = page.locator(".ws-row", {
+        hasText: "Add auth middleware",
+      });
+      const badge = row.locator(".working-badge");
+      await expect(badge).toBeVisible();
+      await expect(badge).toContainText("Working");
+      await expect(badge).toHaveAttribute(
+        "title",
+        "codex working",
+      );
+    },
+  );
 
   test(
     "workspace list resize reclamps the right sidebar",

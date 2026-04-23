@@ -614,7 +614,9 @@ type WorkspaceResponse struct {
 	RepoName         string  `json:"repo_name"`
 	RepoOwner        string  `json:"repo_owner"`
 	Status           string  `json:"status"`
+	TmuxPaneTitle    *string `json:"tmux_pane_title,omitempty"`
 	TmuxSession      string  `json:"tmux_session"`
+	TmuxWorking      bool    `json:"tmux_working"`
 	WorktreePath     string  `json:"worktree_path"`
 }
 

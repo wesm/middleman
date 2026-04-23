@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -62,6 +63,10 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_PANE_TITLE"` + "\n" +
+		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
@@ -300,6 +305,76 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	assert.NotEmpty(newSession[6])
 	assert.NotEmpty(newSession[7])
 	assert.Equal("-l", newSession[8])
+}
+
+func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	t.Setenv("TMUX_PANE_TITLE", "codex working")
+
+	client, _, _ := setupWrapperServer(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	var ready *generated.WorkspaceResponse
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			ctx, wsID,
+		)
+		require.NoError(getErr)
+		if getResp.JSON200 != nil && getResp.JSON200.Status == "ready" {
+			ready = getResp.JSON200
+			break
+		}
+	}
+	require.NotNil(ready, "workspace never became ready")
+
+	getResp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
+	require.NoError(err)
+	defer getResp.Body.Close()
+	require.Equal(http.StatusOK, getResp.StatusCode)
+
+	var got struct {
+		TmuxPaneTitle *string `json:"tmux_pane_title"`
+		TmuxWorking   bool    `json:"tmux_working"`
+	}
+	require.NoError(json.NewDecoder(getResp.Body).Decode(&got))
+	require.NotNil(got.TmuxPaneTitle)
+	assert.Equal("codex working", *got.TmuxPaneTitle)
+	assert.True(got.TmuxWorking)
+
+	listResp, err := client.HTTP.GetWorkspaces(ctx)
+	require.NoError(err)
+	defer listResp.Body.Close()
+	require.Equal(http.StatusOK, listResp.StatusCode)
+
+	var listed struct {
+		Workspaces []struct {
+			ID            string  `json:"id"`
+			TmuxPaneTitle *string `json:"tmux_pane_title"`
+			TmuxWorking   bool    `json:"tmux_working"`
+		} `json:"workspaces"`
+	}
+	require.NoError(json.NewDecoder(listResp.Body).Decode(&listed))
+	require.Len(listed.Workspaces, 1)
+	assert.Equal(wsID, listed.Workspaces[0].ID)
+	require.NotNil(listed.Workspaces[0].TmuxPaneTitle)
+	assert.Equal("codex working", *listed.Workspaces[0].TmuxPaneTitle)
+	assert.True(listed.Workspaces[0].TmuxWorking)
 }
 
 func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {

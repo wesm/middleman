@@ -1294,7 +1294,9 @@ export interface components {
             repo_name: string;
             repo_owner: string;
             status: string;
+            tmux_pane_title?: string;
             tmux_session: string;
+            tmux_working: boolean;
             worktree_path: string;
         };
         WorktreeLinkResponse: {

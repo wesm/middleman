@@ -145,6 +145,8 @@ type workspaceResponse struct {
 	MRHeadRef        string  `json:"mr_head_ref"`
 	WorktreePath     string  `json:"worktree_path"`
 	TmuxSession      string  `json:"tmux_session"`
+	TmuxPaneTitle    *string `json:"tmux_pane_title,omitempty"`
+	TmuxWorking      bool    `json:"tmux_working"`
 	Status           string  `json:"status"`
 	ErrorMessage     *string `json:"error_message,omitempty"`
 	CreatedAt        string  `json:"created_at"`

@@ -879,6 +879,32 @@ func (m *Manager) listTmuxSessions(
 	return sessions, nil
 }
 
+// TmuxPaneTitle returns the active pane title for a session. Agents
+// can update this via terminal title escape sequences, which tmux
+// exposes through the pane_title format.
+func (m *Manager) TmuxPaneTitle(
+	ctx context.Context, session string,
+) (string, error) {
+	cmd := m.tmuxExec(
+		ctx,
+		"display-message", "-p",
+		"-t", session,
+		"#{pane_title}",
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return "", fmt.Errorf("tmux display-message: %w: %s", err, msg)
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
 func (m *Manager) newTmuxSession(
 	ctx context.Context, session, cwd string,
 ) error {
