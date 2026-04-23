@@ -21,6 +21,27 @@ test.describe("repository summaries", () => {
       .locator(".repo-card", { hasText: "acme/widgets" })
       .first();
 
+    await expect(
+      widgetsCard.getByRole("button", { name: "View PRs" }),
+    ).toHaveCount(0);
+    await expect(
+      widgetsCard.getByRole("button", { name: "View issues" }),
+    ).toHaveCount(0);
+
+    await widgetsCard
+      .getByRole("button", { name: /\d+\s+Open PRs/ })
+      .click();
+    await expect(page).toHaveURL(/\/pulls$/);
+
+    await page.goto("/repos");
+    await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
+    await widgetsCard
+      .getByRole("button", { name: /\d+\s+Open issues/ })
+      .click();
+    await expect(page).toHaveURL(/\/issues$/);
+
+    await page.goto("/repos");
+    await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
     await widgetsCard.getByRole("button", { name: "New issue" }).click();
     await widgetsCard.getByPlaceholder("Issue title").fill("Repo overview follow-up");
     await widgetsCard
