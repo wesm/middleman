@@ -70,7 +70,10 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMR(t, d, repoID, 42, "feature/issue-7")
+	seedMRWithFork(
+		t, d, repoID, 42,
+		"feature/issue-7", "https://github.com/acme/widget.git",
+	)
 
 	worktreePath := setupMonitorRepo(t)
 	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/issue-7")
@@ -80,6 +83,10 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	runWorkspaceTestGit(t, worktreePath, "add", ".")
 	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "feature commit")
 	runWorkspaceTestGit(t, worktreePath, "push", "-u", "origin", "feature/issue-7")
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
+	)
 	insertMonitorWorkspace(t, d, worktreePath, nil)
 
 	monitor := NewPRMonitor(d)
@@ -237,6 +244,46 @@ func TestPRMonitorRunOnceRequiresCandidateRemoteIdentityForUpstreamMatch(t *test
 			assert.Nil(ws.AssociatedPRNumber)
 		})
 	}
+}
+
+func TestPRMonitorRunOnceRequiresParseableUpstreamRemoteIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+	seedMRWithFork(
+		t, d, repoID, 42,
+		"shared-branch", "https://github.com/fork-two/widget.git",
+	)
+
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "shared-branch")
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"remote", "set-url", "origin", "not a clone url",
+	)
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"config", "branch.shared-branch.remote", "origin",
+	)
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"config", "branch.shared-branch.merge", "refs/heads/shared-branch",
+	)
+	insertMonitorWorkspace(t, d, worktreePath, nil)
+
+	monitor := NewPRMonitor(d)
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	assert.Empty(updates)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Nil(ws.AssociatedPRNumber)
 }
 
 func TestPRMonitorRunOnceSkipsAmbiguousLocalBranchFallback(t *testing.T) {

@@ -139,6 +139,9 @@ func selectPRByUpstream(
 	}
 
 	remoteRepo := normalizeCloneRepoIdentity(upstream.remoteURL)
+	if strings.TrimSpace(upstream.remoteURL) != "" && remoteRepo == "" {
+		return 0, false
+	}
 	matches := make([]db.MergeRequest, 0, len(candidates))
 	for i := range candidates {
 		candidate := candidates[i]
