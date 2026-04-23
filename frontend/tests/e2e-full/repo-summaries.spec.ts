@@ -38,5 +38,10 @@ test.describe("repository summaries", () => {
     await expect(page.locator(".issue-detail")).toContainText(
       "Repo overview follow-up",
     );
+    await expect(
+      page.locator(".issue-detail .label-pill", {
+        hasText: "created-from-repos",
+      }),
+    ).toBeVisible();
   });
 });

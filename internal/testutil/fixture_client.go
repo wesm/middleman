@@ -187,9 +187,15 @@ func (c *FixtureClient) CreateIssue(
 	state := "open"
 	id := c.nextID
 	c.nextID++
+	labelID := c.nextID
+	c.nextID++
 	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
 	login := "fixture-bot"
 	comments := 0
+	labelName := "created-from-repos"
+	labelDescription := "Issue created from the repositories page"
+	labelColor := "0e8a16"
+	labelDefault := false
 
 	issue := &gh.Issue{
 		ID:               &id,
@@ -204,6 +210,13 @@ func (c *FixtureClient) CreateIssue(
 		UpdatedAt:        &now,
 		ClosedAt:         nil,
 		PullRequestLinks: nil,
+		Labels: []*gh.Label{{
+			ID:          &labelID,
+			Name:        &labelName,
+			Description: &labelDescription,
+			Color:       &labelColor,
+			Default:     &labelDefault,
+		}},
 	}
 	c.Issues[issuesKey] = append([]*gh.Issue{issue}, c.Issues[issuesKey]...)
 	c.OpenIssues[issuesKey] = append([]*gh.Issue{issue}, c.OpenIssues[issuesKey]...)
