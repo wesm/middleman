@@ -564,6 +564,82 @@ func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
 	assert.Equal("success", checks[0].Conclusion)
 }
 
+func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	name := "build"
+	statusCompleted := "completed"
+	statusInProgress := "in_progress"
+	conclusionFailure := "failure"
+
+	raw := NormalizeCIChecks([]*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionFailure,
+			CompletedAt: ghTimestamp(older),
+			StartedAt:   ghTimestamp(older.Add(-2 * time.Minute)),
+		},
+		{
+			ID:        new(int64(101)),
+			Name:      &name,
+			Status:    &statusInProgress,
+			StartedAt: ghTimestamp(newer),
+		},
+	}, nil)
+	require.NotEmpty(t, raw)
+
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 1)
+
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("in_progress", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+}
+
+func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	context := "roborev"
+	oldState := "success"
+	newState := "failure"
+
+	raw := NormalizeCIChecks(nil, &gh.CombinedStatus{
+		TotalCount: new(2),
+		State:      &newState,
+		Statuses: []*gh.RepoStatus{
+			{
+				ID:        new(int64(100)),
+				Context:   &context,
+				State:     &oldState,
+				UpdatedAt: ghTimestamp(older),
+				CreatedAt: ghTimestamp(older.Add(-2 * time.Minute)),
+			},
+			{
+				ID:        new(int64(101)),
+				Context:   &context,
+				State:     &newState,
+				CreatedAt: ghTimestamp(newer),
+			},
+		},
+	})
+	require.NotEmpty(t, raw)
+
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 1)
+
+	assert.Equal("roborev", checks[0].Name)
+	assert.Equal("completed", checks[0].Status)
+	assert.Equal("failure", checks[0].Conclusion)
+}
+
 func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)

@@ -360,19 +360,26 @@ func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
 }
 
 func checkRunRecency(r *gh.CheckRun) time.Time {
-	completedAt := r.GetCompletedAt().Time
+	completedAt := timestampTime(r.CompletedAt)
 	if !completedAt.IsZero() {
 		return completedAt
 	}
-	return r.GetStartedAt().Time
+	return timestampTime(r.StartedAt)
 }
 
 func repoStatusRecency(s *gh.RepoStatus) time.Time {
-	updatedAt := s.GetUpdatedAt().Time
+	updatedAt := timestampTime(s.UpdatedAt)
 	if !updatedAt.IsZero() {
 		return updatedAt
 	}
-	return s.GetCreatedAt().Time
+	return timestampTime(s.CreatedAt)
+}
+
+func timestampTime(t *gh.Timestamp) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.Time
 }
 
 func repoStatusCheckState(s *gh.RepoStatus) string {
