@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -224,16 +224,32 @@ func setupWrapperServerWithScriptAndDBAndServer(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
 	seedPR(t, database, "acme", "widget", 1)
 
 	// Real listener — WebSocket Dial needs a real TCP endpoint.
 	// The generated API client also points at this URL rather than
 	// the in-process roundtripper used elsewhere, because we cannot
 	// split HTTP and WebSocket transports per-request.
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.Serve(ln)
+	}()
+	baseURL = "http://" + ln.Addr().String()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		require.NoError(t, srv.Shutdown(ctx))
+		select {
+		case err := <-serveErr:
+			require.ErrorIs(t, err, http.ErrServerClosed)
+		case <-ctx.Done():
+			require.FailNow(t, "workspace wrapper server did not stop")
+		}
+	})
 
 	// Wrap the underlying TCP transport with the same Content-Type
 	// shim setupTestClient uses — the server's CSRF check rejects
@@ -249,10 +265,10 @@ func setupWrapperServerWithScriptAndDBAndServer(
 			return http.DefaultTransport.RoundTrip(req)
 		}),
 	}
-	client, err = apiclient.NewWithHTTPClient(ts.URL, httpClient)
+	client, err = apiclient.NewWithHTTPClient(baseURL, httpClient)
 	require.NoError(t, err)
 
-	return client, ts.URL, database, srv
+	return client, baseURL, database, srv
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
