@@ -1,7 +1,6 @@
 <script lang="ts">
   import { ActionButton, Chip } from "@middleman/ui";
   import { timeAgo } from "@middleman/ui/utils/time";
-  import RepoIssueComposer from "./RepoIssueComposer.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import {
     localDateTimeLabel,
@@ -12,35 +11,17 @@
 
   interface Props {
     summary: RepoSummaryCard;
-    composerOpen: boolean;
-    issueTitle: string;
-    issueBody: string;
-    issueError?: string | null;
-    issueSubmitting?: boolean;
     onviewprs: () => void;
     onviewissues: () => void;
     onopencomposer: () => void;
-    onclosecomposer: () => void;
-    onsubmitissue: () => void;
-    onissuetitlechange: (value: string) => void;
-    onissuebodychange: (value: string) => void;
     onopenissue: (number: number) => void;
   }
 
   let {
     summary,
-    composerOpen,
-    issueTitle,
-    issueBody,
-    issueError = null,
-    issueSubmitting = false,
     onviewprs,
     onviewissues,
     onopencomposer,
-    onclosecomposer,
-    onsubmitissue,
-    onissuetitlechange,
-    onissuebodychange,
     onopenissue,
   }: Props = $props();
 
@@ -190,19 +171,6 @@
       {/if}
     </section>
   </div>
-
-  {#if composerOpen}
-    <RepoIssueComposer
-      title={issueTitle}
-      body={issueBody}
-      error={issueError}
-      submitting={issueSubmitting}
-      ontitlechange={onissuetitlechange}
-      onbodychange={onissuebodychange}
-      oncancel={onclosecomposer}
-      {onsubmitissue}
-    />
-  {/if}
 </article>
 
 <style>

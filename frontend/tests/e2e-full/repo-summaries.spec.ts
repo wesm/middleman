@@ -43,13 +43,25 @@ test.describe("repository summaries", () => {
     await page.goto("/repos");
     await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
     await widgetsCard.getByRole("button", { name: "New issue" }).click();
-    await widgetsCard.getByPlaceholder("Issue title").fill("Repo overview follow-up");
-    await widgetsCard
-      .getByPlaceholder(
-        "Describe the problem, context, or follow-up work",
-      )
-      .fill("Add additional filters to the repository dashboard.");
-    await widgetsCard.getByRole("button", { name: "Create issue" }).click();
+
+    const dialog = page.getByRole("dialog", {
+      name: "New issue in acme/widgets",
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByPlaceholder("Issue title").fill("Repo overview follow-up");
+
+    const bodyEditor = dialog.getByRole("textbox", {
+      name: "Describe the problem, context, or follow-up work",
+    });
+    await bodyEditor.click();
+    await page.keyboard.type("Add additional filters @al");
+    await expect(
+      page.getByRole("option", { name: /@alice/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(bodyEditor).toContainText("@alice");
+
+    await dialog.getByRole("button", { name: "Create issue" }).click();
 
     await expect(page).toHaveURL(/\/issues\/acme\/widgets\/\d+$/);
     await page.locator(".issue-detail").waitFor({
