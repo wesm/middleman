@@ -2287,6 +2287,12 @@ func isWorkingTmuxTitle(title string) bool {
 		return false
 	}
 
+	for _, frame := range "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏" {
+		if strings.HasPrefix(normalized, string(frame)+" ") {
+			return true
+		}
+	}
+
 	for _, token := range []string{
 		"working",
 		"busy",

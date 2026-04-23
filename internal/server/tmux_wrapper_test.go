@@ -377,6 +377,43 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	assert.True(listed.Workspaces[0].TmuxWorking)
 }
 
+func TestIsWorkingTmuxTitleDetectsCodexSpinner(t *testing.T) {
+	assert := Assert.New(t)
+
+	cases := []struct {
+		name    string
+		title   string
+		working bool
+	}{
+		{
+			name:    "codex spinner frame",
+			title:   "⠴ t3code-b5014b03",
+			working: true,
+		},
+		{
+			name:    "another codex spinner frame",
+			title:   "⠦ t3code-b5014b03",
+			working: true,
+		},
+		{
+			name:    "settled codex title",
+			title:   "t3code-b5014b03",
+			working: false,
+		},
+		{
+			name:    "textual busy title",
+			title:   "codex working",
+			working: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(tc.working, isWorkingTmuxTitle(tc.title))
+		})
+	}
+}
+
 func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
