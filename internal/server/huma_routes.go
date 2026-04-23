@@ -750,7 +750,7 @@ func (s *Server) editPRContent(
 	} else if input.Body.Body != nil {
 		newBody = *input.Body.Body
 	}
-	updatedAt := time.Now().UTC()
+	updatedAt := s.now().UTC()
 	if ghPR.UpdatedAt != nil {
 		updatedAt = ghPR.UpdatedAt.UTC()
 	}
@@ -1209,7 +1209,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if repoObj != nil {
-		now := time.Now().UTC()
+		now := s.now().UTC()
 		_ = s.db.UpdateMRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
 	}
 
@@ -1305,7 +1305,7 @@ func (s *Server) setPRGitHubState(
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
-		now := time.Now().UTC()
+		now := s.now().UTC()
 		closedAt = &now
 	}
 	if err := s.db.UpdateMRState(
@@ -1395,7 +1395,7 @@ func (s *Server) setIssueGitHubState(
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
-		now := time.Now().UTC()
+		now := s.now().UTC()
 		closedAt = &now
 	}
 	if err := s.db.UpdateIssueState(
@@ -1584,7 +1584,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		}
 		opts.Since = &t
 	} else {
-		defaultSince := time.Now().UTC().AddDate(0, 0, -7)
+		defaultSince := s.now().UTC().AddDate(0, 0, -7)
 		opts.Since = &defaultSince
 	}
 

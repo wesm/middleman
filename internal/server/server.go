@@ -116,6 +116,7 @@ type Server struct {
 	basePath          string
 	options           ServerOptions
 	version           string
+	now               func() time.Time
 	handler           http.Handler
 	hub               *EventHub
 	activeWorktreeMu  sync.Mutex
@@ -147,9 +148,7 @@ type Server struct {
 	// Incremented from ConnState(StateNew), decremented from
 	// ConnState(StateClosed|StateHijacked). Shutdown waits on it
 	// after http.Server.Shutdown so that the deferred setState in
-	// (*conn).serve (which reads time.Now()) finishes before the
-	// test returns. Without this, a later test that mutates
-	// time.Local races with that read under -race -shuffle=on.
+	// (*conn).serve finishes before tests tear down dependencies.
 	connWG sync.WaitGroup
 }
 
@@ -226,10 +225,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		// http.Server.Shutdown returns when active connections
 		// become idle and are removed from its tracking map, but
 		// the per-connection goroutine's deferred setState(Closed)
-		// chain — which reads time.Now() — is still running on its
-		// way out. Wait for our ConnState hook to observe the
-		// final state transition so callers (tests in particular,
-		// which override time.Local) cannot race with that read.
+		// chain is still running on its way out. Wait for our
+		// ConnState hook to observe the final state transition so
+		// callers can safely tear down dependencies.
 		connDone := make(chan struct{})
 		go func() {
 			s.connWG.Wait()
@@ -337,6 +335,7 @@ func newServer(
 		cfg:      cfg,
 		cfgPath:  cfgPath,
 		options:  options,
+		now:      time.Now,
 		hub:      NewEventHub(),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
