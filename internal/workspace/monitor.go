@@ -146,8 +146,10 @@ func selectPRByUpstream(
 			continue
 		}
 		candidateRepo := normalizeCloneRepoIdentity(candidate.HeadRepoCloneURL)
-		if remoteRepo != "" && candidateRepo != "" && candidateRepo != remoteRepo {
-			continue
+		if remoteRepo != "" {
+			if candidateRepo == "" || candidateRepo != remoteRepo {
+				continue
+			}
 		}
 		matches = append(matches, candidate)
 	}
@@ -256,6 +258,13 @@ func gitOutput(
 }
 
 func normalizeCloneRepoIdentity(cloneURL string) string {
+	cloneURL = strings.TrimSpace(cloneURL)
+	if cloneURL == "" {
+		return ""
+	}
+	if !strings.Contains(cloneURL, "://") && !strings.Contains(cloneURL, "@") {
+		return ""
+	}
 	fullName := ghclient.ParseHeadRepoFullName(cloneURL)
 	if fullName == "" {
 		return ""
