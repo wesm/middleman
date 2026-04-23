@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -2169,8 +2170,18 @@ func (s *Server) listWorkspaces(
 	}
 
 	list := make([]workspaceResponse, len(summaries))
-	for i := range summaries {
-		list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
+	if len(summaries) == 1 {
+		list[0] = s.toWorkspaceResponse(ctx, &summaries[0])
+	} else {
+		var wg sync.WaitGroup
+		wg.Add(len(summaries))
+		for i := range summaries {
+			go func() {
+				defer wg.Done()
+				list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
+			}()
+		}
+		wg.Wait()
 	}
 
 	out := &listWorkspacesOutput{}

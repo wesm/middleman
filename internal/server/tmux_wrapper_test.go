@@ -484,6 +484,106 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	assert.Equal(*second.TmuxLastOutputAt, *expired.TmuxLastOutputAt)
 }
 
+func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	activeDir := filepath.Join(dir, "active")
+	overlapPath := filepath.Join(dir, "overlap")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ] || [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    mkdir -p "$TMUX_ACTIVE_DIR"` + "\n" +
+		`    marker="$TMUX_ACTIVE_DIR/$$"` + "\n" +
+		`    : > "$marker"` + "\n" +
+		`    set -- "$TMUX_ACTIVE_DIR"/*` + "\n" +
+		`    if [ "$#" -gt 1 ]; then` + "\n" +
+		`      : > "$TMUX_OVERLAP_FILE"` + "\n" +
+		`    fi` + "\n" +
+		`    sleep 0.2` + "\n" +
+		`    rm -f "$marker"` + "\n" +
+		`    if [ "$a" = "display-message" ]; then` + "\n" +
+		`      printf 'workspace\n'` + "\n" +
+		`      exit 0` + "\n" +
+		`    fi` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_ACTIVE_DIR", activeDir)
+	t.Setenv("TMUX_OVERLAP_FILE", overlapPath)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+	ctx := context.Background()
+
+	seedPR(t, database, "acme", "widget", 2)
+
+	createResp1, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp1.StatusCode())
+	require.NotNil(createResp1.JSON202)
+	waitForWorkspaceReady(t, ctx, client, createResp1.JSON202.Id)
+
+	createResp2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp2.StatusCode())
+	require.NotNil(createResp2.JSON202)
+	waitForWorkspaceReady(t, ctx, client, createResp2.JSON202.Id)
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 5, 0, time.UTC)
+	})
+	require.NoError(os.RemoveAll(activeDir))
+	err = os.Remove(overlapPath)
+	if err != nil && !os.IsNotExist(err) {
+		require.NoError(err)
+	}
+
+	resp, err := client.HTTP.GetWorkspaces(ctx)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	var listed struct {
+		Workspaces []struct {
+			ID string `json:"id"`
+		} `json:"workspaces"`
+	}
+	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
+	require.Len(listed.Workspaces, 2)
+
+	_, err = os.Stat(overlapPath)
+	assert.NoError(err, "expected overlapping tmux activity probes")
+}
+
 func getRawWorkspaceActivity(
 	t *testing.T,
 	client *apiclient.Client,
