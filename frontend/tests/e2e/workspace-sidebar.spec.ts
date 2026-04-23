@@ -209,6 +209,32 @@ async function setupTerminalMocks(
   );
 }
 
+test(
+  "roborev status mock ignores Vite module URLs",
+  async ({ page }) => {
+    await setupTerminalMocks(page);
+    await page.goto("/");
+
+    const response = await page.evaluate(async () => {
+      const res = await fetch(
+        "/@fs/tmp/project/api/v1/roborev/status",
+      );
+      return {
+        status: res.status,
+        body: await res.json(),
+      };
+    });
+
+    expect(response).toEqual({
+      status: 404,
+      body: {
+        error:
+          "Unhandled GET /@fs/tmp/project/api/v1/roborev/status",
+      },
+    });
+  },
+);
+
 test.describe("terminal state icons", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -863,7 +889,7 @@ test.describe("sidebar Reviews tab", () => {
   );
 
   test(
-    "branch pill shows and clears branch filter",
+    "branch picker shows and clears branch filter",
     async ({ page }) => {
       await setupTerminalMocks(page);
       await page.goto("/terminal/ws-123");
@@ -876,16 +902,20 @@ test.describe("sidebar Reviews tab", () => {
         page.locator(".right-sidebar"),
       ).toBeVisible();
 
-      // Branch pill should show workspace branch
-      const pill = page.locator(
-        ".right-sidebar .branch-pill",
+      // Branch filter should show workspace branch
+      const picker = page.locator(
+        '.right-sidebar .picker-button[title="Filter by repository"]',
       );
-      await expect(pill).toBeVisible();
-      await expect(pill).toContainText("feature/auth");
+      await expect(picker).toContainText("feature/auth");
 
-      // Clear button removes pill
-      await pill.locator(".branch-pill-clear").click();
-      await expect(pill).not.toBeVisible();
+      // Selecting All Repos clears the branch filter
+      await picker.click();
+      await page
+        .locator(".right-sidebar .dropdown-item", {
+          hasText: "All Repos",
+        })
+        .click();
+      await expect(picker).toContainText("All Repos");
     },
   );
 
