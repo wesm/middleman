@@ -126,7 +126,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")

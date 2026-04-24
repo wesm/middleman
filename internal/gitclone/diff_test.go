@@ -54,18 +54,18 @@ func TestDiff(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 	require.NoError(mgr.EnsureClone(
-		context.Background(), "github.com", "test", "repo", remote))
+		t.Context(), "github.com", "test", "repo", remote))
 
 	// Compute merge base.
 	mb, err := mgr.MergeBase(
-		context.Background(), "github.com", "test", "repo",
+		t.Context(), "github.com", "test", "repo",
 		mainSHA, featureSHA)
 	require.NoError(err)
 	assert.Equal(mainSHA, mb) // merge base is the initial commit
 
 	// Run diff.
 	result, err := mgr.Diff(
-		context.Background(), "github.com", "test", "repo",
+		t.Context(), "github.com", "test", "repo",
 		mb, featureSHA, false)
 	require.NoError(err)
 	require.Len(result.Files, 2)
@@ -118,15 +118,15 @@ func TestDiffFiles(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 	require.NoError(mgr.EnsureClone(
-		context.Background(), "github.com", "test", "repo", remote))
+		t.Context(), "github.com", "test", "repo", remote))
 
 	mb, err := mgr.MergeBase(
-		context.Background(), "github.com", "test", "repo",
+		t.Context(), "github.com", "test", "repo",
 		mainSHA, featureSHA)
 	require.NoError(err)
 
 	files, err := mgr.DiffFiles(
-		context.Background(), "github.com", "test", "repo",
+		t.Context(), "github.com", "test", "repo",
 		mb, featureSHA)
 	require.NoError(err)
 	require.Len(files, 2)
@@ -166,18 +166,18 @@ func TestDiffFilesEmpty(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 	require.NoError(t, mgr.EnsureClone(
-		context.Background(), "github.com", "test", "repo", remote))
+		t.Context(), "github.com", "test", "repo", remote))
 
 	// DiffFiles returns non-nil empty slice.
 	files, err := mgr.DiffFiles(
-		context.Background(), "github.com", "test", "repo", sha, sha)
+		t.Context(), "github.com", "test", "repo", sha, sha)
 	require.NoError(t, err)
 	assert.NotNil(files)
 	assert.Empty(files)
 
 	// Diff returns non-nil empty slice.
 	result, err := mgr.Diff(
-		context.Background(), "github.com", "test", "repo", sha, sha, false)
+		t.Context(), "github.com", "test", "repo", sha, sha, false)
 	require.NoError(t, err)
 	assert.NotNil(result.Files)
 	assert.Empty(result.Files)

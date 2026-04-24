@@ -56,7 +56,7 @@ func setupTestServerWithConfigContent(
 
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(
-		context.Background(), clients, cfg.Repos,
+		t.Context(), clients, cfg.Repos,
 	)
 	syncer := ghclient.NewSyncer(
 		clients, database, nil, resolved.Expanded,
@@ -264,7 +264,7 @@ name = "widget"
 
 	// Prime nextSyncAfter so the add-repo trigger exercises the same
 	// cooldown path as a user clicking Sync right after a recent sync.
-	syncer.RunOnce(context.Background())
+	syncer.RunOnce(t.Context())
 
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
@@ -276,7 +276,7 @@ name = "widget"
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	require.Eventually(func() bool {
-		repos, err := database.ListRepos(context.Background())
+		repos, err := database.ListRepos(t.Context())
 		if err != nil {
 			return false
 		}

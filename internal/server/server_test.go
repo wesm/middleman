@@ -71,7 +71,7 @@ func TestHealthz_ReturnsServiceUnavailableAfterDBClose(t *testing.T) {
 	defer ts.Close()
 
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 		_ = s.Shutdown(ctx)
 	})
@@ -305,7 +305,7 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	rec := httptest.NewRecorder()
 	// First call (initial clear) succeeds; second (pre-write deadline) fails
 	w := &deadlineControlWriter{ResponseWriter: rec, failAfter: 1}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := httptest.NewRequest("GET", "/api/v1/events", nil).WithContext(ctx)
 

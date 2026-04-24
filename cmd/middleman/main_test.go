@@ -42,7 +42,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	}
 
 	repos := resolveStartupRepos(
-		context.Background(),
+		t.Context(),
 		cfg,
 		map[string]ghclient.Client{"github.com": client},
 		nil,
@@ -62,7 +62,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	}
 
 	repos := resolveStartupRepos(
-		context.Background(),
+		t.Context(),
 		cfg,
 		map[string]ghclient.Client{},
 		nil,
@@ -84,7 +84,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { database.Close() })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = database.UpsertRepo(ctx, "github.com", "acme", "widgets")
 	require.NoError(err)
 	_, err = database.UpsertRepo(ctx, "github.com", "acme", "tools")
@@ -116,11 +116,11 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	_, err = database.UpsertRepo(
-		context.Background(), "github.com", "roborev-dev", "middleman",
+		t.Context(), "github.com", "roborev-dev", "middleman",
 	)
 	require.NoError(err)
 	_, err = database.UpsertRepo(
-		context.Background(), "github.com", "roborev-dev", "worker",
+		t.Context(), "github.com", "roborev-dev", "worker",
 	)
 	require.NoError(err)
 
@@ -149,7 +149,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 		},
 	}
 	repos := resolveStartupRepos(
-		context.Background(),
+		t.Context(),
 		cfg,
 		map[string]ghclient.Client{"github.com": client},
 		database,

@@ -13,7 +13,7 @@ func TestFetchAllPagesSinglePage(t *testing.T) {
 	assert := Assert.New(t)
 
 	items, err := fetchAllPages(
-		context.Background(),
+		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
 			assert.Nil(cursor)
 			return []int{1, 2, 3}, pageInfo{HasNextPage: false}, nil
@@ -28,7 +28,7 @@ func TestFetchAllPagesMultiPage(t *testing.T) {
 	calls := 0
 
 	items, err := fetchAllPages(
-		context.Background(),
+		t.Context(),
 		func(_ context.Context, cursor *string) ([]string, pageInfo, error) {
 			calls++
 			switch calls {
@@ -60,7 +60,7 @@ func TestFetchAllPagesError(t *testing.T) {
 
 	// Test error on first page
 	_, err := fetchAllPages(
-		context.Background(),
+		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
 			return nil, pageInfo{}, fmt.Errorf("graphql: rate limited")
 		},
@@ -70,7 +70,7 @@ func TestFetchAllPagesError(t *testing.T) {
 }
 
 func TestFetchAllPagesContextCanceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	_, err := fetchAllPages(
@@ -86,7 +86,7 @@ func TestFetchAllPagesEmptyCursor(t *testing.T) {
 	assert := Assert.New(t)
 
 	items, err := fetchAllPages(
-		context.Background(),
+		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
 			return []int{1}, pageInfo{
 				HasNextPage: true,
@@ -104,7 +104,7 @@ func TestFetchAllPagesRepeatedCursor(t *testing.T) {
 	calls := 0
 
 	items, err := fetchAllPages(
-		context.Background(),
+		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
 			calls++
 			return []int{calls}, pageInfo{
@@ -123,7 +123,7 @@ func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
 	calls := 0
 
 	items, err := fetchAllPages(
-		context.Background(),
+		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, pageInfo, error) {
 			calls++
 			if calls == 1 {

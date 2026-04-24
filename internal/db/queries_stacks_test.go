@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -25,7 +24,7 @@ func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, hea
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	}
-	id, err := d.UpsertMergeRequest(context.Background(), mr)
+	id, err := d.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 	return id
 }
@@ -33,7 +32,7 @@ func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, hea
 func TestListPRsForStackDetection(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	// open PR — included
@@ -54,7 +53,7 @@ func TestUpsertStackAndReplaceMembers(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID1 := insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", "open")
@@ -94,7 +93,7 @@ func TestDeleteStaleStacks(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	id1, err := d.UpsertStack(ctx, repoID, 1, "keep")
@@ -116,7 +115,7 @@ func TestDeleteStaleStacks(t *testing.T) {
 
 func TestListStacksWithMembers_MalformedFilter(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, bad := range []string{"noslash", "/bar", "foo/", "/", "foo/bar/baz"} {
 		_, _, err := d.ListStacksWithMembers(ctx, bad)
@@ -131,7 +130,7 @@ func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID := insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", "open")
@@ -174,7 +173,7 @@ func TestGetStackForPR(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID1 := insertTestMRWithBranches(t, d, repoID, 10, "feature/a", "main", "open")

@@ -26,7 +26,7 @@ func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
 
 	shutdownDone := make(chan error, 1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 		shutdownDone <- srv.Shutdown(ctx)
 	}()
@@ -53,7 +53,7 @@ func TestServerShutdownTimesOut(t *testing.T) {
 	})
 	defer close(stuck)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	err := srv.Shutdown(ctx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -65,7 +65,7 @@ func TestServerShutdownTimesOut(t *testing.T) {
 func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	require.NoError(t, srv.Shutdown(ctx))
 
@@ -83,7 +83,7 @@ func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
 func TestServerShutdownIsIdempotent(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	require.NoError(t, srv.Shutdown(ctx))
 	require.NoError(t, srv.Shutdown(ctx))
@@ -102,7 +102,7 @@ func TestServerShutdownRaceNoPanic(t *testing.T) {
 		close(done)
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, srv.Shutdown(ctx))
 	<-done
@@ -134,7 +134,7 @@ func TestServerShutdownStopsHTTPListener(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, 2*time.Second, 10*time.Millisecond, "server never accepted requests")
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	req.NoError(srv.Shutdown(ctx))
 
@@ -160,14 +160,14 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 		<-release
 	})
 
-	shortCtx, shortCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer shortCancel()
 	err := srv.Shutdown(shortCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	close(release)
 
-	longCtx, longCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	longCtx, longCancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer longCancel()
 	require.NoError(t, srv.Shutdown(longCtx))
 }
@@ -216,14 +216,14 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 		req.FailNow("slow handler never started")
 	}
 
-	shortCtx, shortCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer shortCancel()
 	err = srv.Shutdown(shortCtx)
 	req.ErrorIs(err, context.DeadlineExceeded)
 
 	longErrCh := make(chan error, 1)
 	go func() {
-		longCtx, longCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		longCtx, longCancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer longCancel()
 		longErrCh <- srv.Shutdown(longCtx)
 	}()
@@ -279,7 +279,7 @@ func TestServerShutdownClosesSSESubscribers(t *testing.T) {
 	// closed, http.Server.Shutdown would hang on the SSE handler
 	// until the 2 s deadline.
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	req.NoError(srv.Shutdown(ctx))
 	req.Less(time.Since(start), time.Second,

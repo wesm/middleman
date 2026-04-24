@@ -32,7 +32,7 @@ func seedRepo(
 ) int64 {
 	t.Helper()
 	id, err := d.UpsertRepo(
-		context.Background(), host, owner, name,
+		t.Context(), host, owner, name,
 	)
 	require.NoError(t, err)
 	return id
@@ -57,7 +57,7 @@ func seedMR(
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	}
-	_, err := d.UpsertMergeRequest(context.Background(), mr)
+	_, err := d.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 }
 
@@ -82,7 +82,7 @@ func seedMRWithFork(
 		UpdatedAt:        now,
 		LastActivityAt:   now,
 	}
-	_, err := d.UpsertMergeRequest(context.Background(), mr)
+	_, err := d.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 }
 
@@ -90,7 +90,7 @@ func TestCreate(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	wtDir := t.TempDir()
 
 	repoID := seedRepo(
@@ -129,7 +129,7 @@ func TestCreate(t *testing.T) {
 func TestCreateForkPR(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	wtDir := t.TempDir()
 
 	repoID := seedRepo(
@@ -157,7 +157,7 @@ func TestCreateForkPR(t *testing.T) {
 
 func TestCreateRepoNotTracked(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(d, t.TempDir())
 
 	_, err := mgr.Create(
@@ -170,7 +170,7 @@ func TestCreateRepoNotTracked(t *testing.T) {
 func TestCreateDuplicate(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	wtDir := t.TempDir()
 
 	repoID := seedRepo(
@@ -197,7 +197,7 @@ func TestCreateDuplicate(t *testing.T) {
 
 func TestCreateMRNotSynced(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seedRepo(t, d, "github.com", "acme", "widget")
 
@@ -223,19 +223,19 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 
 	mgr := NewManager(d, wtDir)
 	ws, err := mgr.Create(
-		context.Background(), "github.com", "acme", "widget", 42,
+		t.Context(), "github.com", "acme", "widget", 42,
 	)
 	require.NoError(err)
 	require.NotNil(ws)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	err = mgr.Setup(ctx, ws)
 	require.Error(err)
 	require.Contains(err.Error(), "clone manager not set")
 
-	got, err := d.GetWorkspace(context.Background(), ws.ID)
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("error", got.Status)
@@ -243,7 +243,7 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 	assert.Contains(*got.ErrorMessage, "clone manager not set")
 
 	events, err := d.ListWorkspaceSetupEvents(
-		context.Background(), ws.ID,
+		t.Context(), ws.ID,
 	)
 	require.NoError(err)
 	require.Len(events, 2)
@@ -267,7 +267,7 @@ func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 
 	mgr := NewManager(d, wtDir)
 	ws, err := mgr.Create(
-		context.Background(), "github.com", "acme", "widget", 42,
+		t.Context(), "github.com", "acme", "widget", 42,
 	)
 	require.NoError(err)
 	require.NotNil(ws)
@@ -276,13 +276,13 @@ func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 	workspacePersistTimeout = 200 * time.Millisecond
 	t.Cleanup(func() { workspacePersistTimeout = origTimeout })
 
-	tx, err := d.WriteDB().BeginTx(context.Background(), nil)
+	tx, err := d.WriteDB().BeginTx(t.Context(), nil)
 	require.NoError(err)
 	t.Cleanup(func() { _ = tx.Rollback() })
 
 	start := time.Now()
 	err = mgr.failSetup(
-		context.Background(),
+		t.Context(),
 		ws.ID, workspaceSetupStageClone,
 		errors.New("forced persistence timeout"),
 	)
@@ -309,7 +309,7 @@ func TestFailSetupRespectsParentDeadline(t *testing.T) {
 
 	mgr := NewManager(d, wtDir)
 	ws, err := mgr.Create(
-		context.Background(), "github.com", "acme", "widget", 42,
+		t.Context(), "github.com", "acme", "widget", 42,
 	)
 	require.NoError(err)
 	require.NotNil(ws)
@@ -318,12 +318,12 @@ func TestFailSetupRespectsParentDeadline(t *testing.T) {
 	workspacePersistTimeout = time.Second
 	t.Cleanup(func() { workspacePersistTimeout = origTimeout })
 
-	tx, err := d.WriteDB().BeginTx(context.Background(), nil)
+	tx, err := d.WriteDB().BeginTx(t.Context(), nil)
 	require.NoError(err)
 	t.Cleanup(func() { _ = tx.Rollback() })
 
 	parent, cancel := context.WithTimeout(
-		context.Background(), 100*time.Millisecond,
+		t.Context(), 100*time.Millisecond,
 	)
 	defer cancel()
 
@@ -352,7 +352,7 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	}
 
 	_, err := mgr.addPreferredWorktree(
-		context.Background(), cloneDir, ws,
+		t.Context(), cloneDir, ws,
 	)
 	require.Error(err)
 	require.Contains(err.Error(), "invalid branch name")
@@ -365,7 +365,7 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	branch := syntheticWorktreeBranch(42)
 	require.NoError(runGit(
-		context.Background(), cloneDir,
+		t.Context(), cloneDir,
 		"branch", branch, "main",
 	))
 
@@ -375,13 +375,13 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	}
 	mgr := NewManager(openTestDB(t), t.TempDir())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	mgr.rollbackWorktree(ctx, cloneDir, ws, workspaceBranchUnknown)
 
 	_, exists, err := gitRefSHA(
-		context.Background(), cloneDir, "refs/heads/"+branch,
+		t.Context(), cloneDir, "refs/heads/"+branch,
 	)
 	require.NoError(err)
 	assert.False(exists)
@@ -391,7 +391,7 @@ func TestCleanupContextRespectsParentDeadline(t *testing.T) {
 	require := require.New(t)
 
 	parent, cancel := context.WithTimeout(
-		context.Background(), 100*time.Millisecond,
+		t.Context(), 100*time.Millisecond,
 	)
 	defer cancel()
 
@@ -564,7 +564,7 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Script exits 0 for every invocation, so EnsureTmux observes
 	// "session exists" after the has-session call and returns
@@ -591,7 +591,7 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
 	require.NoError(t, err)
 
@@ -640,7 +640,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureTmux(ctx, "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
@@ -701,7 +701,7 @@ func TestManagerEnsureTmuxPropagatesBinaryError(t *testing.T) {
 		[]string{filepath.Join(t.TempDir(), "does-not-exist")},
 	)
 
-	err := mgr.EnsureTmux(context.Background(), "sess-X", "/tmp")
+	err := mgr.EnsureTmux(t.Context(), "sess-X", "/tmp")
 	require.Error(err)
 	require.Contains(err.Error(), "tmux has-session")
 }
@@ -727,7 +727,7 @@ func TestManagerEnsureTmuxPropagatesNon1ExitCode(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
-	err := mgr.EnsureTmux(context.Background(), "sess-Y", "/tmp")
+	err := mgr.EnsureTmux(t.Context(), "sess-Y", "/tmp")
 	require.Error(err)
 	require.Contains(err.Error(), "tmux has-session")
 }
@@ -750,7 +750,7 @@ func TestManagerEnsureTmuxPropagatesExit1NonTmuxError(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
-	err := mgr.EnsureTmux(context.Background(), "sess-Q", "/tmp")
+	err := mgr.EnsureTmux(t.Context(), "sess-Q", "/tmp")
 	require.Error(err)
 	require.Contains(err.Error(), "tmux has-session")
 	require.Contains(err.Error(), "wrapper blew up")
@@ -776,7 +776,7 @@ func TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
-	err := mgr.EnsureTmux(context.Background(), "sess-R", "/tmp")
+	err := mgr.EnsureTmux(t.Context(), "sess-R", "/tmp")
 	require.Error(err)
 	require.Contains(err.Error(), "tmux has-session")
 	require.Contains(err.Error(), "real failure")

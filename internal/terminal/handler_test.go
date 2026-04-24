@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -29,7 +28,7 @@ func seedRepo(
 ) int64 {
 	t.Helper()
 	id, err := d.UpsertRepo(
-		context.Background(), host, owner, name,
+		t.Context(), host, owner, name,
 	)
 	require.NoError(t, err)
 	return id
@@ -54,7 +53,7 @@ func seedMR(
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	}
-	_, err := d.UpsertMergeRequest(context.Background(), mr)
+	_, err := d.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 }
 
@@ -79,7 +78,7 @@ func TestHandlerWorkspaceNotFound(t *testing.T) {
 
 func TestHandlerWorkspaceNotReady(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	wtDir := t.TempDir()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")

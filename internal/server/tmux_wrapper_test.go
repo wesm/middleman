@@ -256,7 +256,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	client, _, record := setupWrapperServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -337,7 +337,7 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 	client, _, database := setupWrapperServerWithScriptAndDB(
 		t, script,
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -432,7 +432,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -463,7 +463,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	)
 
 	shutdownCtx, cancel := context.WithTimeout(
-		context.Background(), 5*time.Second,
+		t.Context(), 5*time.Second,
 	)
 	defer cancel()
 	require.NoError(srv.Shutdown(shutdownCtx))
@@ -549,7 +549,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 	clonePath := srv.clones.ClonePath("github.com", "acme", "widget")
 	featureSHA := testGitSHA(t, clonePath, "refs/heads/feature")
 
@@ -630,7 +630,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	client, baseURL, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -660,7 +660,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 		50*time.Millisecond,
 	)
 
-	tx, err := database.WriteDB().BeginTx(context.Background(), nil)
+	tx, err := database.WriteDB().BeginTx(t.Context(), nil)
 	require.NoError(err)
 	t.Cleanup(func() { _ = tx.Rollback() })
 
@@ -700,7 +700,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	})
 
 	shutdownCtx, cancel := context.WithTimeout(
-		context.Background(), 400*time.Millisecond,
+		t.Context(), 400*time.Millisecond,
 	)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
@@ -710,14 +710,14 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 
 	time.Sleep(300 * time.Millisecond)
 
-	ws, err := database.GetWorkspace(context.Background(), wsID)
+	ws, err := database.GetWorkspace(t.Context(), wsID)
 	require.NoError(err)
 	require.NotNil(ws)
 	assert.Equal("creating", ws.Status)
 	assert.Nil(ws.ErrorMessage)
 
 	events, err := database.ListWorkspaceSetupEvents(
-		context.Background(), wsID,
+		t.Context(), wsID,
 	)
 	require.NoError(err)
 	require.Len(events, 1)
@@ -725,7 +725,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	assert.Equal("started", events[0].Outcome)
 
 	longCtx, longCancel := context.WithTimeout(
-		context.Background(), 2*time.Second,
+		t.Context(), 2*time.Second,
 	)
 	defer longCancel()
 	require.NoError(srv.Shutdown(longCtx))
@@ -736,7 +736,7 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	client, baseURL, record := setupWrapperServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -846,7 +846,7 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	client, _, record := setupWrapperServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
@@ -939,7 +939,7 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	t.Setenv("TMUX_RECORD", record)
 
 	client, baseURL := setupWrapperServerWithScript(t, script)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,

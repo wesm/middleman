@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"context"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
@@ -13,7 +12,7 @@ func TestSeedFixtures_Repos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repos, err := d.ListRepos(ctx)
 	require.NoError(err)
@@ -32,7 +31,7 @@ func TestSeedFixtures_PRCounts(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	allPRs, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "all"})
 	require.NoError(err)
@@ -65,7 +64,7 @@ func TestSeedFixtures_IssueCounts(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	allIssues, err := d.ListIssues(ctx, db.ListIssuesOpts{State: "all"})
 	require.NoError(err)
@@ -85,7 +84,7 @@ func TestSeedFixtures_Activity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	items, err := d.ListActivity(ctx, db.ListActivityOpts{Limit: 200})
 	require.NoError(err)
@@ -152,12 +151,12 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 	// Verify tools issue
 	assert.Equal(5, toolsIssues[0].GetNumber())
 
-	pr, err := fc.GetPullRequest(context.Background(), "acme", "widgets", 5)
+	pr, err := fc.GetPullRequest(t.Context(), "acme", "widgets", 5)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("closed", pr.GetState())
 
-	issue, err := fc.GetIssue(context.Background(), "acme", "widgets", 12)
+	issue, err := fc.GetIssue(t.Context(), "acme", "widgets", 12)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("closed", issue.GetState())

@@ -1,7 +1,6 @@
 package github
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -74,7 +73,7 @@ func TestListForcePushEvents(t *testing.T) {
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
 
-	events, err := c.ListForcePushEvents(context.Background(), "owner", "repo", 42)
+	events, err := c.ListForcePushEvents(t.Context(), "owner", "repo", 42)
 	require.NoError(err)
 	require.Len(events, 2)
 	require.Equal("alice", events[0].Actor)
@@ -99,7 +98,7 @@ func TestListForcePushEventsReturnsGraphQLErrors(t *testing.T) {
 		graphQLEndpoint: srv.URL,
 	}
 
-	events, err := c.ListForcePushEvents(context.Background(), "owner", "repo", 42)
+	events, err := c.ListForcePushEvents(t.Context(), "owner", "repo", 42)
 	require.Nil(events)
 	require.ErrorContains(err, "permission denied")
 }
@@ -136,7 +135,7 @@ func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
 				graphQLEndpoint: srv.URL,
 			}
 
-			events, err := c.ListForcePushEvents(context.Background(), "owner", "repo", 42)
+			events, err := c.ListForcePushEvents(t.Context(), "owner", "repo", 42)
 			require.Nil(events)
 			require.ErrorContains(err, tt.want)
 		})
@@ -172,7 +171,7 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
 
-	pr, err := c.MarkPullRequestReadyForReview(context.Background(), "wesm", "middleman", 141)
+	pr, err := c.MarkPullRequestReadyForReview(t.Context(), "wesm", "middleman", 141)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.Equal(141, pr.GetNumber())
@@ -212,7 +211,7 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
 
-	pr, err := c.MarkPullRequestReadyForReview(context.Background(), "wesm", "middleman", 141)
+	pr, err := c.MarkPullRequestReadyForReview(t.Context(), "wesm", "middleman", 141)
 	require.Nil(pr)
 	require.Error(err)
 	require.ErrorContains(err, "Could not resolve to a PullRequest")

@@ -402,7 +402,7 @@ func TestDiffSyncErrorUserMessageSanitized(t *testing.T) {
 func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -462,7 +462,7 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	commitSHA := "abc123def456"
@@ -516,7 +516,7 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 
 func TestSyncStoresPRLabels(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
@@ -549,7 +549,7 @@ func TestSyncStoresPRLabels(t *testing.T) {
 
 func TestSyncMRReplacesLabelsOnResync(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
@@ -583,7 +583,7 @@ func TestSyncMRReplacesLabelsOnResync(t *testing.T) {
 
 func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
@@ -639,7 +639,7 @@ func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
 func TestSyncIssueNilUpdatedAt(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
@@ -712,7 +712,7 @@ func TestSyncIssueNilUpdatedAt(t *testing.T) {
 func TestSyncIssueNilUpdatedAtNoComments(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	created := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
@@ -830,7 +830,7 @@ func TestHostForConcurrentSetRepos(t *testing.T) {
 func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	commitSHA := "abc123def456"
@@ -891,7 +891,7 @@ func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 }
 
 func TestSyncSingleFlight(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	callCount := 0
@@ -919,7 +919,7 @@ func TestSyncSingleFlight(t *testing.T) {
 func TestSyncPreservesMergeableState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -974,7 +974,7 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -1025,7 +1025,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -1074,7 +1074,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 
 func TestSyncStatusUpdated(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -1114,7 +1114,7 @@ func setTestLocalEDT(t *testing.T) {
 func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
 	setTestLocalEDT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{},
@@ -1224,7 +1224,7 @@ func (p *parallelMockClient) ListOpenPullRequests(
 func TestRunOnceSyncesReposInParallel(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	const parallelism = 3
@@ -1304,7 +1304,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 		completedCalled.Store(true)
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
 		syncer.RunOnce(ctx)
@@ -1350,7 +1350,7 @@ func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
 		completedCalled.Store(true)
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	done := make(chan struct{})
@@ -1417,7 +1417,7 @@ func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
 		completedCalled.Store(true)
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
 		syncer.RunOnce(ctx)
@@ -1484,7 +1484,7 @@ func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
 		completedCalled.Store(true)
 	})
 
-	syncer.RunOnce(context.Background())
+	syncer.RunOnce(t.Context())
 
 	status := syncer.Status()
 	assert.False(status.Running)
@@ -1551,7 +1551,7 @@ func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
 	// race manifests if the ctx pre-check is missing. Each iter
 	// uses a fresh pre-canceled ctx.
 	for range 20 {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		syncer.RunOnce(ctx)
 	}
@@ -1584,7 +1584,7 @@ func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	err := syncer.SyncMR(context.Background(), "owner", "repo", 1)
+	err := syncer.SyncMR(t.Context(), "owner", "repo", 1)
 	require.Error(err)
 	require.Contains(err.Error(), "nil pull request")
 }
@@ -1596,7 +1596,7 @@ func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
 func TestRunOnceSyncOpenMRSurvivesNilFullPR(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -1686,7 +1686,7 @@ func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
 	}
 	close(work)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	var (
@@ -1741,7 +1741,7 @@ func (c *dedupGetUserClient) GetUser(
 func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	author := "alice"
@@ -1836,7 +1836,7 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	number := 42
 	title := "Bug report"
@@ -1881,7 +1881,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	number := 10
 	title := "Add feature"
@@ -1941,7 +1941,7 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 func TestSyncMRReturnsErrorWhenClientReturnsNilPR(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mc := &mockClient{
 		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
@@ -1964,7 +1964,7 @@ func TestSyncMRReturnsErrorWhenClientReturnsNilPR(t *testing.T) {
 func TestSyncIssueReturnsErrorWhenClientReturnsNilIssue(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mc := &mockClient{
 		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
@@ -1988,7 +1988,7 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mc := &mockClient{}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
@@ -2002,7 +2002,7 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 
 func TestSyncerMultiHostClientDispatch(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	ghMock := &mockClient{
@@ -2039,7 +2039,7 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2086,7 +2086,7 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 
 func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2134,7 +2134,7 @@ func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -2172,7 +2172,7 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 }
 
 func TestNilHooksNoOp(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -2524,7 +2524,7 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2625,7 +2625,7 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	c := &ignoresCancelClient{cancel: cancel}
@@ -2673,7 +2673,7 @@ func (c *detailTrackingClient) GetPullRequest(
 func TestRunOnceIndexOnly(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2728,7 +2728,7 @@ func TestRunOnceIndexOnly(t *testing.T) {
 func TestRunOnceDetailDrain(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2778,7 +2778,7 @@ func TestRunOnceDetailDrain(t *testing.T) {
 func TestDetailDrainRespectsBudget(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2934,12 +2934,12 @@ func TestSyncMRSkipsGetUserWhenDisplayNameCached(t *testing.T) {
 	)
 
 	// First sync: GetUser should be called to resolve display name
-	err := syncer.SyncMR(context.Background(), "acme", "widget", 1)
+	err := syncer.SyncMR(t.Context(), "acme", "widget", 1)
 	require.NoError(t, err)
 	assert.Equal(int32(1), mock.getUserCalls.Load())
 
 	// Second sync: display name is in DB, GetUser should be skipped
-	err = syncer.SyncMR(context.Background(), "acme", "widget", 1)
+	err = syncer.SyncMR(t.Context(), "acme", "widget", 1)
 	require.NoError(t, err)
 	assert.Equal(int32(1), mock.getUserCalls.Load(),
 		"GetUser should not be called again when display name is cached")
@@ -2970,9 +2970,9 @@ func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
 		nil,
 	)
 
-	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
+	repoID, _ := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
 	err := syncer.refreshCIStatus(
-		context.Background(),
+		t.Context(),
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		repoID,
 		1,
@@ -3007,9 +3007,9 @@ func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
 		nil,
 	)
 
-	repoID, _ := d.UpsertRepo(context.Background(), "github.com", "acme", "widget")
+	repoID, _ := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
 	err := syncer.refreshCIStatus(
-		context.Background(),
+		t.Context(),
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		repoID,
 		1,
@@ -3029,7 +3029,7 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(context.Background(), "github.com", "o", "n")
+	_, err := d.UpsertRepo(t.Context(), "github.com", "o", "n")
 	require.NoError(t, err)
 	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := NewSyncer(
@@ -3045,7 +3045,7 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 		mu.Unlock()
 	})
 
-	s.RunOnce(context.Background())
+	s.RunOnce(t.Context())
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -3064,7 +3064,7 @@ func TestSyncer_TriggerRunRunsRunOnce(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(context.Background(), "github.com", "o", "n")
+	_, err := d.UpsertRepo(t.Context(), "github.com", "o", "n")
 	require.NoError(t, err)
 	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := NewSyncer(
@@ -3082,7 +3082,7 @@ func TestSyncer_TriggerRunRunsRunOnce(t *testing.T) {
 		}
 	})
 
-	s.TriggerRun(context.Background())
+	s.TriggerRun(t.Context())
 
 	select {
 	case <-done:
@@ -3115,7 +3115,7 @@ func notModifiedErr() error {
 func TestSyncerHandles304OnPRList(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -3161,7 +3161,7 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 func TestSyncerHandles304OnIssueList(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -3203,7 +3203,7 @@ func TestSyncerHandles304OnIssueList(t *testing.T) {
 // priority scoring (ci_had_pending items get expedited refetches).
 func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	// Seed one open PR with pending CI via a full sync.
@@ -3281,7 +3281,7 @@ func (c *callCountingClient) GetCombinedStatus(
 func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -3324,7 +3324,7 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 
 func TestSyncStoresIssueLabels(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 4, 12, 0, 0, 0, time.UTC)
@@ -3373,7 +3373,7 @@ func TestSyncStoresIssueLabels(t *testing.T) {
 
 func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3415,7 +3415,7 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 
 func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
@@ -3486,7 +3486,7 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 
 func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3525,7 +3525,7 @@ func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 
 func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
@@ -3592,7 +3592,7 @@ func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *te
 
 func TestBackfillRepoPersistsPRLabels(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3622,7 +3622,7 @@ func TestBackfillRepoPersistsPRLabels(t *testing.T) {
 
 func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3657,7 +3657,7 @@ func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 	require := require.New(t)
 	setTestLocalEDT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3702,7 +3702,7 @@ func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 
 func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3753,7 +3753,7 @@ func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.
 
 func TestBackfillRepoDoesNotAdvanceIssueCursorWhenLabelPersistenceFails(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -3905,7 +3905,7 @@ func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string, endpoints .
 func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4004,7 +4004,7 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4122,7 +4122,7 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4187,7 +4187,7 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 func TestSyncerMRDetailFailureRetries(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4255,7 +4255,7 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4332,7 +4332,7 @@ func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4402,7 +4402,7 @@ func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -4479,7 +4479,7 @@ func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) 
 func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -4555,7 +4555,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -4645,7 +4645,7 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -4718,7 +4718,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -4789,7 +4789,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -4882,7 +4882,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 func TestSyncRepoGraphQLIssues(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5026,7 +5026,7 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 	// so the TriggerRun's caller context is effectively immune to
 	// per-request cancellation. Only the syncer's lifetime ctx can
 	// unblock the work.
-	syncer.TriggerRun(context.WithoutCancel(context.Background()))
+	syncer.TriggerRun(context.WithoutCancel(t.Context()))
 
 	// Wait for the blocked ListOpenPullRequests to enter. Using a
 	// channel rather than time.Sleep so the test is deterministic
@@ -5053,7 +5053,7 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 }
 
 func TestResolveDisplayName(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name          string
@@ -5139,7 +5139,7 @@ func TestResolveDisplayName(t *testing.T) {
 
 func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	mc := &mockClient{
@@ -5168,7 +5168,7 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 
 func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	mc := &mockClient{
@@ -5198,7 +5198,7 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5276,7 +5276,7 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5347,7 +5347,7 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5426,7 +5426,7 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5504,7 +5504,7 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 
 func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -5572,7 +5572,7 @@ func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
 func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
@@ -5704,7 +5704,7 @@ func TestComputePRCommentRefreshLastActivity_PreservesNonCommentEvents(t *testin
 func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5755,7 +5755,7 @@ func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
@@ -5806,7 +5806,7 @@ func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
@@ -5985,7 +5985,7 @@ func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	prNumber := 1
@@ -6056,7 +6056,7 @@ func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
 // /users while the outage persists, defeating the cache.
 func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	shouldFail := false

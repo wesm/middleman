@@ -1,7 +1,6 @@
 package stacks
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -166,7 +165,7 @@ func TestRunDetection(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := d.UpsertRepo(ctx, "", "org", "repo")
 	require.NoError(err)
@@ -206,7 +205,7 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := d.UpsertRepo(ctx, "", "org", "repo")
 	require.NoError(err)
