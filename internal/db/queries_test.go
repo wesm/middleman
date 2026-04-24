@@ -71,7 +71,41 @@ func TestStartWorkspaceRetryTransitionsOnlyOneConcurrentCaller(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal("creating", got.Status)
 	assert.Nil(got.ErrorMessage)
-	assert.Equal("__middleman_unknown__", got.WorkspaceBranch)
+	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+}
+
+func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	ctx := context.Background()
+	errMsg := "tmux new-session failed"
+	ws := &Workspace{
+		ID:              "ws-retry-preserve-branch",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-retry-preserve-branch",
+		TmuxSession:     "middleman-ws-retry-preserve-branch",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	started, err := d.StartWorkspaceRetry(ctx, ws.ID)
+	require.NoError(err)
+	assert.True(started)
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("creating", got.Status)
+	assert.Nil(got.ErrorMessage)
+	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
 }
 
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {

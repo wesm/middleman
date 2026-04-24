@@ -749,8 +749,15 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-notes\nother-session\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa\nmiddleman-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "show-options" ]; then` + "\n" +
+		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa" ]; then` + "\n" +
+		`      printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`      exit 0` + "\n" +
+		`    fi` + "\n" +
+		`    exit 1` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
@@ -760,6 +767,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
+	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
 
 	live := &Workspace{
 		ID:           "ws-live",
@@ -777,14 +785,97 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 2)
+	require.Len(argvs, 4)
 	assert.Equal(
 		[]string{"wrap", "list-sessions", "-F", "#{session_name}"},
 		argvs[0],
 	)
 	assert.Equal(
-		[]string{"wrap", "kill-session", "-t", "middleman-ffffffffffffffff"},
+		[]string{
+			"wrap", "show-options", "-qv", "-t",
+			"middleman-ffffffffffffffff", "@middleman_owner",
+		},
 		argvs[1],
+	)
+	assert.Equal(
+		[]string{
+			"wrap", "show-options", "-qv", "-t",
+			"middleman-aaaaaaaaaaaaaaaa", "@middleman_owner",
+		},
+		argvs[2],
+	)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa"},
+		argvs[3],
+	)
+}
+
+func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "permission denied" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	ctx := context.Background()
+	errMsg := "tmux new-session failed"
+	ws := &Workspace{
+		ID:              "ws-retry-cleanup-fails",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-retry-cleanup-fails",
+		TmuxSession:     "middleman-retry-cleanup-fails",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+	require.NoError(d.InsertWorkspaceSetupEvent(ctx, &db.WorkspaceSetupEvent{
+		WorkspaceID: ws.ID,
+		Stage:       workspaceSetupStageTmuxSession,
+		Outcome:     "success",
+		Message:     "tmux session started",
+	}))
+
+	next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	assert.Nil(next)
+	assert.False(startNow)
+	require.Error(err)
+	assert.Contains(err.Error(), "cleanup workspace artifacts before retry")
+	assert.Contains(err.Error(), "kill tmux session")
+	assert.Contains(err.Error(), "permission denied")
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "permission denied")
+	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
 	)
 }
 
@@ -952,7 +1043,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 2)
+	require.Len(argvs, 3)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -969,6 +1060,13 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	assert.Equal("/tmp/cwd", argvs[1][5])
 	assert.NotEmpty(argvs[1][6])
 	assert.Equal("-l", argvs[1][7])
+	assert.Equal(
+		[]string{
+			"set-option", "-t", "sess-B",
+			"@middleman_owner", mgr.tmuxOwnerMarker(),
+		},
+		argvs[2],
+	)
 }
 
 func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
@@ -997,13 +1095,20 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 2)
+	require.Len(argvs, 3)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-macos"},
 		argvs[0],
 	)
 	assert.Equal("new-session", argvs[1][0])
 	assert.Equal("sess-macos", argvs[1][3])
+	assert.Equal(
+		[]string{
+			"set-option", "-t", "sess-macos",
+			"@middleman_owner", mgr.tmuxOwnerMarker(),
+		},
+		argvs[2],
+	)
 }
 
 // TestReadRecorderArgvPreservesEmptyArgs pins down the parser's

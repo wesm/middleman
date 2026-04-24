@@ -2417,8 +2417,7 @@ func (d *DB) StartWorkspaceRetry(
 	res, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET status = 'creating',
-		    error_message = NULL,
-		    workspace_branch = '__middleman_unknown__'
+		    error_message = NULL
 		WHERE id = ? AND status = 'error'`, id,
 	)
 	if err != nil {
