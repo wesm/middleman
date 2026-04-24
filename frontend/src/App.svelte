@@ -69,6 +69,7 @@
     isStatusBarHidden,
     getInitialRoute,
     emitLayoutChanged,
+    initWorkspaceBridge,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
 
@@ -78,6 +79,7 @@
   onMount(() => {
     initTheme();
     initSidebar();
+    initWorkspaceBridge();
     const initialRoute = getInitialRoute();
     if (initialRoute) {
       replaceUrl(initialRoute);

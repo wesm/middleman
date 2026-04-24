@@ -72,3 +72,21 @@ test("navigateToRoute bridge method works", async ({ page }) => {
   });
   await expect(page).toHaveURL(/\/workspaces/);
 });
+
+test("workspace bridge methods are registered on startup", async ({ page }) => {
+  await page.goto("/workspaces");
+
+  await expect(
+    page.evaluate(() => ({
+      navigateToRoute: typeof window.__middleman_navigate_to_route,
+      updateWorkspace: typeof window.__middleman_update_workspace,
+      updateSelection: typeof window.__middleman_update_selection,
+      updateHostState: typeof window.__middleman_update_host_state,
+    })),
+  ).resolves.toEqual({
+    navigateToRoute: "function",
+    updateWorkspace: "function",
+    updateSelection: "function",
+    updateHostState: "function",
+  });
+});
