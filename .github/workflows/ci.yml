@@ -7,9 +7,11 @@ on:
   workflow_dispatch:
 
 permissions:
+  checks: read
   contents: read
   issues: read
   pull-requests: read
+  statuses: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
