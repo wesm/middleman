@@ -31,6 +31,11 @@ import (
 	"github.com/wesm/middleman/internal/stacks"
 )
 
+func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
 	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
@@ -2264,9 +2269,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	})
@@ -3558,7 +3561,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -3695,7 +3698,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -3853,7 +3856,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -3969,7 +3972,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -4091,7 +4094,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -4240,7 +4243,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -4348,7 +4351,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -4451,7 +4454,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -4575,7 +4578,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	})
@@ -6654,9 +6657,7 @@ func setupTestServerWithWorkspaces(
 		WorktreeDir: worktreeDir,
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	})
@@ -7253,9 +7254,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 		database, syncer, nil, "/", nil, ServerOptions{},
 	)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	})

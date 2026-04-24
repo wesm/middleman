@@ -204,9 +204,7 @@ func startSyncCooldownE2EServer(
 	}, 2*time.Second, 10*time.Millisecond)
 
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 		select {

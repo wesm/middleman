@@ -216,9 +216,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 		WorktreeDir: worktreeDir,
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	})
@@ -478,9 +476,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 		nil, ServerOptions{WorktreeDir: filepath.Join(dir, "restart-worktrees")},
 	)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = restarted.Shutdown(ctx)
 	})
