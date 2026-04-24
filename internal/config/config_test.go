@@ -18,16 +18,10 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
-func loadConfigString(t *testing.T, content string) *Config {
+func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	t.Helper()
 	cfg, err := Load(writeConfig(t, content))
 	require.NoError(t, err)
-	return cfg
-}
-
-func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
-	t.Helper()
-	cfg := loadConfigString(t, content)
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(t, cfg.Save(savePath))
 	cfg2, err := Load(savePath)

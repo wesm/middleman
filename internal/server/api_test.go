@@ -341,37 +341,6 @@ func setupTestServerWithRepos(
 	return srv, database
 }
 
-type serverFixture struct {
-	DB     *db.DB
-	Server *Server
-	Client *apiclient.Client
-	Syncer *ghclient.Syncer
-}
-
-type serverFixtureOptions struct {
-	Mock  *mockGH
-	Repos []ghclient.RepoRef
-}
-
-func newServerFixture(t *testing.T, opts serverFixtureOptions) serverFixture {
-	t.Helper()
-	mock := opts.Mock
-	if mock == nil {
-		mock = &mockGH{}
-	}
-	repos := opts.Repos
-	if repos == nil {
-		repos = defaultTestRepos
-	}
-	srv, database := setupTestServerWithRepos(t, mock, repos)
-	return serverFixture{
-		DB:     database,
-		Server: srv,
-		Client: setupTestClient(t, srv),
-		Syncer: srv.syncer,
-	}
-}
-
 func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 	t.Helper()
 
@@ -527,10 +496,11 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 		},
 	}
 
-	fixture := newServerFixture(t, serverFixtureOptions{Mock: mock})
-	seedPR(t, fixture.DB, "acme", "widget", 1)
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
 
-	resp, err := fixture.Client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
