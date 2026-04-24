@@ -127,6 +127,7 @@ func TestAdaptCommit(t *testing.T) {
 func TestAdaptCheckContext(t *testing.T) {
 	assert := Assert.New(t)
 
+	now := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	contexts := []gqlCheckContext{
 		{
 			Typename: "CheckRun",
@@ -135,6 +136,7 @@ func TestAdaptCheckContext(t *testing.T) {
 				Status:     "COMPLETED",
 				Conclusion: "SUCCESS",
 				DetailsURL: "https://example.com/1",
+				CreatedAt:  &now,
 			},
 		},
 		{
@@ -155,6 +157,8 @@ func TestAdaptCheckContext(t *testing.T) {
 	assert.Equal("completed", checks[0].GetStatus())
 	assert.Equal("success", checks[0].GetConclusion())
 	assert.Equal("GitHub Actions", checks[0].GetApp().GetName())
+	require.NotNil(t, checks[0].GetCheckSuite().CreatedAt)
+	assert.True(checks[0].GetCheckSuite().CreatedAt.Time.Equal(now))
 
 	require.Len(t, statuses, 1)
 	assert.Equal("ci/lint", statuses[0].GetContext())

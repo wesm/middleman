@@ -273,6 +273,7 @@ func NormalizeCIChecks(
 type ciCheckCandidate struct {
 	check db.CICheck
 	name  string
+	key   string
 	at    time.Time
 	id    int64
 	order int
@@ -290,6 +291,7 @@ func normalizeCIChecks(runs []*gh.CheckRun, statuses []*gh.RepoStatus) []db.CICh
 				App:        appName(r),
 			},
 			name:  r.GetName(),
+			key:   checkRunDedupeKey(r),
 			at:    checkRunRecency(r),
 			id:    r.GetID(),
 			order: len(candidates),
@@ -305,6 +307,7 @@ func normalizeCIChecks(runs []*gh.CheckRun, statuses []*gh.RepoStatus) []db.CICh
 				App:        s.GetContext(),
 			},
 			name:  s.GetContext(),
+			key:   repoStatusDedupeKey(s),
 			at:    repoStatusRecency(s),
 			id:    s.GetID(),
 			order: len(candidates),
@@ -318,18 +321,18 @@ func normalizeCIChecks(runs []*gh.CheckRun, statuses []*gh.RepoStatus) []db.CICh
 	orderedKeys := make([]string, 0, len(candidates))
 	checks := make([]db.CICheck, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.name == "" {
+		if candidate.key == "" {
 			checks = append(checks, candidate.check)
 			continue
 		}
-		existing, ok := byName[candidate.name]
+		existing, ok := byName[candidate.key]
 		if !ok {
-			orderedKeys = append(orderedKeys, candidate.name)
-			byName[candidate.name] = candidate
+			orderedKeys = append(orderedKeys, candidate.key)
+			byName[candidate.key] = candidate
 			continue
 		}
 		if ciCheckCandidateIsNewer(existing, candidate) {
-			byName[candidate.name] = candidate
+			byName[candidate.key] = candidate
 		}
 	}
 	for _, key := range orderedKeys {
@@ -364,7 +367,30 @@ func checkRunRecency(r *gh.CheckRun) time.Time {
 	if !completedAt.IsZero() {
 		return completedAt
 	}
-	return timestampTime(r.StartedAt)
+	startedAt := timestampTime(r.StartedAt)
+	if !startedAt.IsZero() {
+		return startedAt
+	}
+	if suite := r.GetCheckSuite(); suite != nil {
+		return timestampTime(suite.CreatedAt)
+	}
+	return time.Time{}
+}
+
+func checkRunDedupeKey(r *gh.CheckRun) string {
+	name := r.GetName()
+	if name == "" {
+		return ""
+	}
+	return "check-run\x00" + appName(r) + "\x00" + name
+}
+
+func repoStatusDedupeKey(s *gh.RepoStatus) string {
+	context := s.GetContext()
+	if context == "" {
+		return ""
+	}
+	return "status\x00" + context
 }
 
 func repoStatusRecency(s *gh.RepoStatus) time.Time {
