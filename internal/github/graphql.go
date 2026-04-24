@@ -164,11 +164,11 @@ type gqlCheckRunFields struct {
 	Status      string
 	Conclusion  string
 	DetailsURL  string `graphql:"detailsUrl"`
-	CreatedAt   *time.Time
 	StartedAt   *time.Time
 	CompletedAt *time.Time
 	CheckSuite  struct {
-		App struct {
+		CreatedAt *time.Time
+		App       struct {
 			Name string
 		}
 	}
@@ -363,7 +363,7 @@ func adaptCheckRun(gql *gqlCheckRunFields) *gh.CheckRun {
 		DetailsURL:  new(gql.DetailsURL),
 		StartedAt:   ghTimestampPtr(gql.StartedAt),
 		CompletedAt: ghTimestampPtr(gql.CompletedAt),
-		CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestampPtr(gql.CreatedAt)},
+		CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestampPtr(gql.CheckSuite.CreatedAt)},
 		App:         &gh.App{Name: new(gql.CheckSuite.App.Name)},
 	}
 }

@@ -136,7 +136,6 @@ func TestAdaptCheckContext(t *testing.T) {
 				Status:     "COMPLETED",
 				Conclusion: "SUCCESS",
 				DetailsURL: "https://example.com/1",
-				CreatedAt:  &now,
 			},
 		},
 		{
@@ -148,6 +147,7 @@ func TestAdaptCheckContext(t *testing.T) {
 			},
 		},
 	}
+	contexts[0].CheckRun.CheckSuite.CreatedAt = &now
 	contexts[0].CheckRun.CheckSuite.App.Name = "GitHub Actions"
 
 	checks, statuses := splitCheckContexts(contexts)
