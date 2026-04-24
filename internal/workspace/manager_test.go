@@ -608,6 +608,151 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	)
 }
 
+func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "can't find session: missing" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	ctx := context.Background()
+	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
+	require.NoError(err)
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	require.NoError(err)
+	assert.Nil(dirty)
+
+	got, err := mgr.Get(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(got)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
+	)
+}
+
+func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "permission denied" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	ctx := context.Background()
+	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
+	require.NoError(err)
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	assert.Nil(dirty)
+	require.Error(err)
+	assert.Contains(err.Error(), "kill tmux session")
+	assert.Contains(err.Error(), "permission denied")
+
+	got, getErr := mgr.Get(ctx, ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal(ws.ID, got.ID)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
+	)
+}
+
+func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf 'middleman-live\nmiddleman-orphan\nother-session\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	live := &Workspace{
+		ID:           "ws-live",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     1,
+		MRHeadRef:    "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-live",
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(context.Background(), live))
+
+	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 2)
+	assert.Equal(
+		[]string{"wrap", "list-sessions", "-F", "#{session_name}"},
+		argvs[0],
+	)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", "middleman-orphan"},
+		argvs[1],
+	)
+}
+
 func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

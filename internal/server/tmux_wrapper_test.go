@@ -1067,6 +1067,80 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	assert.NotEmpty(kill[3])
 }
 
+func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "permission denied" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			if getErr != nil || getResp.JSON200 == nil {
+				return false
+			}
+			return getResp.JSON200.Status == "ready"
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusInternalServerError, delResp.StatusCode())
+	require.NotNil(delResp.ApplicationproblemJSONDefault)
+	require.NotNil(delResp.ApplicationproblemJSONDefault.Detail)
+	assert.Contains(
+		*delResp.ApplicationproblemJSONDefault.Detail,
+		"kill tmux session",
+	)
+	assert.Contains(
+		*delResp.ApplicationproblemJSONDefault.Detail,
+		"permission denied",
+	)
+
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, wsID)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	assert.Equal(wsID, getResp.JSON200.Id)
+}
+
 // TestTmuxWrapperAttachSurfacesWrapperFailure exercises the
 // error-propagation path end-to-end. Workspace setup uses a wrapper
 // that succeeds for new-session (so the workspace reaches "ready")

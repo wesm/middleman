@@ -351,6 +351,11 @@ func newServer(
 		if clones != nil {
 			s.workspaces.SetClones(clones)
 		}
+		if err := s.workspaces.ReapOrphanTmuxSessions(
+			context.Background(),
+		); err != nil {
+			slog.Warn("reap orphan tmux sessions", "err", err)
+		}
 	}
 
 	if s.workspaces != nil {

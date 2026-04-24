@@ -428,7 +428,9 @@ func (m *Manager) Delete(
 		}
 	}
 
-	m.cleanupWorkspaceArtifacts(ctx, ws)
+	if err := m.cleanupWorkspaceArtifactsForDelete(ctx, ws); err != nil {
+		return nil, err
+	}
 
 	if err := m.db.DeleteWorkspace(ctx, id); err != nil {
 		return nil, fmt.Errorf("delete workspace record: %w", err)
@@ -587,6 +589,31 @@ func (m *Manager) cleanupWorkspaceArtifacts(
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
 }
 
+func (m *Manager) cleanupWorkspaceArtifactsForDelete(
+	ctx context.Context, ws *Workspace,
+) error {
+	if err := m.killTmuxSession(ctx, ws.TmuxSession); err != nil &&
+		!isTmuxSessionAbsent([]byte(err.Error()), err) {
+		return fmt.Errorf("kill tmux session: %w", err)
+	}
+
+	if m.clones == nil {
+		return nil
+	}
+
+	cloneDir := m.clones.ClonePath(
+		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+
+	_ = runGit(
+		ctx, cloneDir,
+		"worktree", "remove", "--force", ws.WorktreePath,
+	)
+	m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
+	_ = runGit(ctx, cloneDir, "worktree", "prune")
+	return nil
+}
+
 // Get returns a workspace by ID, or nil if not found.
 func (m *Manager) Get(
 	ctx context.Context, id string,
@@ -619,6 +646,40 @@ func (m *Manager) ListSummaries(
 	return m.db.ListWorkspaceSummaries(ctx)
 }
 
+// ReapOrphanTmuxSessions kills middleman-managed tmux sessions that no longer
+// correspond to any workspace row. This is a conservative startup cleanup for
+// stale sessions left behind by crashes or previous bugs.
+func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
+	workspaces, err := m.db.ListWorkspaces(ctx)
+	if err != nil {
+		return fmt.Errorf("list workspaces: %w", err)
+	}
+	live := make(map[string]bool, len(workspaces))
+	for _, ws := range workspaces {
+		live[ws.TmuxSession] = true
+	}
+
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if !strings.HasPrefix(session, "middleman-") {
+			continue
+		}
+		if live[session] {
+			continue
+		}
+		if err := m.killTmuxSession(ctx, session); err != nil &&
+			!isTmuxSessionAbsent([]byte(err.Error()), err) {
+			return fmt.Errorf(
+				"kill orphan tmux session %q: %w", session, err,
+			)
+		}
+	}
+	return nil
+}
+
 // EnsureTmux creates a tmux session if it does not already exist,
 // using the manager's configured tmux command prefix.
 func (m *Manager) EnsureTmux(
@@ -632,6 +693,34 @@ func (m *Manager) EnsureTmux(
 		return nil
 	}
 	return m.newTmuxSession(ctx, session, cwd)
+}
+
+func (m *Manager) listTmuxSessions(
+	ctx context.Context,
+) ([]string, error) {
+	cmd := m.tmuxExec(ctx, "list-sessions", "-F", "#{session_name}")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		if isTmuxSessionAbsent(stderr.Bytes(), err) {
+			return nil, nil
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return nil, fmt.Errorf("tmux list-sessions: %w: %s", err, msg)
+	}
+	var sessions []string
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			sessions = append(sessions, line)
+		}
+	}
+	return sessions, nil
 }
 
 func (m *Manager) newTmuxSession(
