@@ -608,6 +608,96 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	)
 }
 
+func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	ws := &Workspace{
+		ID:              "ws-queued-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    "/tmp/ws-queued-retry",
+		TmuxSession:     "middleman-ws-queued-retry",
+		Status:          "creating",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	current, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(current)
+	assert.False(startNow)
+	assert.Equal("creating", current.Status)
+
+	errMsg := "ensure clone failed"
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "error", &errMsg))
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(queued)
+	assert.Equal("creating", next.Status)
+	assert.Nil(next.ErrorMessage)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("creating", stored.Status)
+	assert.Nil(stored.ErrorMessage)
+	assert.Equal(workspaceBranchUnknown, stored.WorkspaceBranch)
+
+	next, queued, err = mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(next)
+	assert.False(queued)
+}
+
+func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	ws := &Workspace{
+		ID:              "ws-discard-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    "/tmp/ws-discard-retry",
+		TmuxSession:     "middleman-ws-discard-retry",
+		Status:          "creating",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	current, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(current)
+	assert.False(startNow)
+
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.False(queued)
+	assert.Equal("ready", next.Status)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("ready", stored.Status)
+}
+
 func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

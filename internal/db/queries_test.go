@@ -2,12 +2,77 @@ package db
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestStartWorkspaceRetryTransitionsOnlyOneConcurrentCaller(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	ctx := t.Context()
+	errMsg := "ensure clone failed"
+	ws := &Workspace{
+		ID:              "ws-retry-race",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-retry-race",
+		TmuxSession:     "middleman-ws-retry-race",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	const callers = 16
+	start := make(chan struct{})
+	results := make(chan bool, callers)
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			<-start
+			ok, err := d.StartWorkspaceRetry(
+				ctx, "ws-retry-race",
+			)
+			errs <- err
+			results <- ok
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		require.NoError(err)
+	}
+
+	var successes int
+	for ok := range results {
+		if ok {
+			successes++
+		}
+	}
+	assert.Equal(1, successes)
+
+	got, err := d.GetWorkspace(ctx, "ws-retry-race")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("creating", got.Status)
+	assert.Nil(got.ErrorMessage)
+	assert.Equal("__middleman_unknown__", got.WorkspaceBranch)
+}
 
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	t.Helper()

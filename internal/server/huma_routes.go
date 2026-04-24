@@ -2081,29 +2081,62 @@ func (s *Server) createWorkspace(
 
 func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 	s.runBackground(func(bgCtx context.Context) {
-		setupErr := s.workspaces.Setup(bgCtx, ws)
-		summary, getErr := s.workspaces.GetSummary(
-			bgCtx, ws.ID,
-		)
-		if getErr != nil {
-			slog.Warn("get workspace summary after setup",
-				"id", ws.ID, "err", getErr,
+		for {
+			setupErr := s.workspaces.Setup(bgCtx, ws)
+			summary, getErr := s.workspaces.GetSummary(
+				bgCtx, ws.ID,
 			)
-			return
-		}
-		if summary == nil {
-			return
-		}
-		resp := toWorkspaceResponse(summary)
-		if setupErr != nil {
-			slog.Warn("workspace setup failed",
-				"id", ws.ID, "err", setupErr,
+			if getErr != nil {
+				slog.Warn("get workspace summary after setup",
+					"id", ws.ID, "err", getErr,
+				)
+				return
+			}
+			if summary == nil {
+				return
+			}
+			resp := toWorkspaceResponse(summary)
+			if setupErr != nil {
+				slog.Warn("workspace setup failed",
+					"id", ws.ID, "err", setupErr,
+				)
+			}
+			s.hub.Broadcast(Event{
+				Type: "workspace_status",
+				Data: resp,
+			})
+
+			next, queued, queueErr := s.workspaces.StartQueuedRetryIfErrored(
+				bgCtx, ws.ID,
 			)
+			if queueErr != nil {
+				slog.Warn("start queued workspace retry",
+					"id", ws.ID, "err", queueErr,
+				)
+				return
+			}
+			if !queued {
+				return
+			}
+			if next == nil {
+				return
+			}
+			ws = next
+			summary, getErr = s.workspaces.GetSummary(bgCtx, ws.ID)
+			if getErr != nil {
+				slog.Warn("get workspace summary after queued retry",
+					"id", ws.ID, "err", getErr,
+				)
+				return
+			}
+			if summary == nil {
+				return
+			}
+			s.hub.Broadcast(Event{
+				Type: "workspace_status",
+				Data: toWorkspaceResponse(summary),
+			})
 		}
-		s.hub.Broadcast(Event{
-			Type: "workspace_status",
-			Data: resp,
-		})
 	})
 }
 
@@ -2166,21 +2199,19 @@ func (s *Server) retryWorkspace(
 		)
 	}
 
-	ws, err := s.workspaces.Retry(ctx, input.ID)
+	ws, startNow, err := s.workspaces.RequestRetry(ctx, input.ID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, huma.Error404NotFound(err.Error())
-		}
-		if strings.Contains(err.Error(), "already running") ||
-			strings.Contains(err.Error(), "not in error status") {
-			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError(
 			"retry workspace: " + err.Error(),
 		)
 	}
 
-	s.runWorkspaceSetup(ws)
+	if startNow {
+		s.runWorkspaceSetup(ws)
+	}
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {

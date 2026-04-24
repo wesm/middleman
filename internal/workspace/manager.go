@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wesm/middleman/internal/db"
@@ -25,6 +26,8 @@ type Manager struct {
 	worktreeDir string
 	clones      *gitclone.Manager
 	tmuxCmd     []string
+	retryMu     sync.Mutex
+	retryQueued map[string]bool
 }
 
 const (
@@ -46,6 +49,7 @@ func NewManager(
 	return &Manager{
 		db:          database,
 		worktreeDir: worktreeDir,
+		retryQueued: make(map[string]bool),
 	}
 }
 
@@ -429,36 +433,92 @@ func (m *Manager) Delete(
 	return nil, nil
 }
 
-// Retry prepares an errored workspace for another setup attempt and
-// returns the updated row. The caller should invoke Setup in the
-// background with the returned workspace.
-func (m *Manager) Retry(
+// RequestRetry prepares an errored workspace for another setup
+// attempt. If setup is already running, it queues one follow-up retry
+// and returns startNow=false. If the workspace is not errored or
+// creating, the request is discarded and startNow=false.
+func (m *Manager) RequestRetry(
 	ctx context.Context, id string,
-) (*Workspace, error) {
+) (*Workspace, bool, error) {
 	ws, err := m.db.GetWorkspace(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("get workspace: %w", err)
+		return nil, false, fmt.Errorf("get workspace: %w", err)
 	}
 	if ws == nil {
-		return nil, fmt.Errorf("workspace not found")
+		return nil, false, fmt.Errorf("workspace not found")
 	}
-	if ws.Status == "creating" {
-		return nil, fmt.Errorf("workspace setup already running")
+	started, err := m.db.StartWorkspaceRetry(ctx, ws.ID)
+	if err != nil {
+		return nil, false, err
 	}
-	if ws.Status != "error" {
-		return nil, fmt.Errorf("workspace is not in error status")
+	if !started {
+		current, getErr := m.db.GetWorkspace(ctx, id)
+		if getErr != nil {
+			return nil, false, fmt.Errorf("get workspace after retry conflict: %w", getErr)
+		}
+		if current == nil {
+			return nil, false, fmt.Errorf("workspace not found")
+		}
+		if current.Status == "creating" {
+			m.queueRetry(id)
+		}
+		return current, false, nil
 	}
 
 	m.cleanupWorkspaceArtifacts(ctx, ws)
-	if err := m.updateWorkspaceBranch(
-		ctx, ws.ID, workspaceBranchUnknown,
-	); err != nil {
-		return nil, err
-	}
-	if err := m.updateWorkspaceStatus(ctx, ws.ID, "creating", nil); err != nil {
-		return nil, err
+	m.markRetryStarted(ctx, ws)
+	return ws, true, nil
+}
+
+// StartQueuedRetryIfErrored consumes one queued retry for id. It
+// starts the retry only if the workspace is still in error status at
+// the time the queue is consumed; otherwise the queued retry is
+// discarded.
+func (m *Manager) StartQueuedRetryIfErrored(
+	ctx context.Context, id string,
+) (*Workspace, bool, error) {
+	if !m.consumeQueuedRetry(id) {
+		return nil, false, nil
 	}
 
+	ws, err := m.db.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, false, fmt.Errorf("get workspace: %w", err)
+	}
+	if ws == nil || ws.Status != "error" {
+		return ws, false, nil
+	}
+
+	started, err := m.db.StartWorkspaceRetry(ctx, id)
+	if err != nil {
+		return nil, false, err
+	}
+	if !started {
+		return ws, false, nil
+	}
+
+	m.cleanupWorkspaceArtifacts(ctx, ws)
+	m.markRetryStarted(ctx, ws)
+	return ws, true, nil
+}
+
+func (m *Manager) queueRetry(id string) {
+	m.retryMu.Lock()
+	defer m.retryMu.Unlock()
+	m.retryQueued[id] = true
+}
+
+func (m *Manager) consumeQueuedRetry(id string) bool {
+	m.retryMu.Lock()
+	defer m.retryMu.Unlock()
+	if !m.retryQueued[id] {
+		return false
+	}
+	delete(m.retryQueued, id)
+	return true
+}
+
+func (m *Manager) markRetryStarted(ctx context.Context, ws *Workspace) {
 	ws.WorkspaceBranch = workspaceBranchUnknown
 	ws.Status = "creating"
 	ws.ErrorMessage = nil
@@ -467,7 +527,6 @@ func (m *Manager) Retry(
 		ws.ID, workspaceSetupStageSetup, "retrying",
 		"retrying workspace setup",
 	)
-	return ws, nil
 }
 
 func (m *Manager) cleanupWorkspaceArtifacts(
