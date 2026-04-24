@@ -2044,19 +2044,18 @@ func (s *Server) createWorkspace(
 		input.Body.MRNumber,
 	)
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "not tracked") {
-			return nil, huma.Error404NotFound(msg)
+		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
 		}
-		if strings.Contains(msg, "not synced") {
-			return nil, huma.Error404NotFound(msg)
+		if errors.Is(err, workspace.ErrWorkspaceNotSynced) {
+			return nil, huma.Error404NotFound(err.Error())
 		}
-		if strings.Contains(msg, "UNIQUE constraint") {
+		if errors.Is(err, workspace.ErrWorkspaceDuplicate) {
 			return nil, huma.Error409Conflict(
 				"workspace already exists for this MR")
 		}
 		return nil, huma.Error500InternalServerError(
-			"create workspace: " + msg,
+			"create workspace: " + err.Error(),
 		)
 	}
 
@@ -2201,10 +2200,10 @@ func (s *Server) retryWorkspace(
 
 	ws, startNow, err := s.workspaces.RequestRetry(ctx, input.ID)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
 		}
-		if strings.Contains(err.Error(), "not in error status") {
+		if errors.Is(err, workspace.ErrWorkspaceInvalidState) {
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError(
@@ -2251,7 +2250,7 @@ func (s *Server) deleteWorkspace(
 		ctx, input.ID, input.Force,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
 		}
 		return nil, huma.Error500InternalServerError(

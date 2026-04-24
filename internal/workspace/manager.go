@@ -43,6 +43,13 @@ const (
 var workspacePersistTimeout = 5 * time.Second
 var workspaceCleanupTimeout = 5 * time.Second
 
+var (
+	ErrWorkspaceNotFound     = errors.New("workspace not found")
+	ErrWorkspaceNotSynced    = errors.New("workspace merge request not synced")
+	ErrWorkspaceDuplicate    = errors.New("workspace already exists")
+	ErrWorkspaceInvalidState = errors.New("workspace invalid state")
+)
+
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
 func NewManager(
@@ -102,7 +109,7 @@ func (m *Manager) Create(
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
 	if repo == nil {
-		return nil, fmt.Errorf("repository not tracked")
+		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
 	}
 
 	mr, err := m.db.GetMergeRequestByRepoIDAndNumber(
@@ -113,7 +120,7 @@ func (m *Manager) Create(
 	}
 	if mr == nil {
 		return nil, fmt.Errorf(
-			"merge request %d not synced yet", mrNumber,
+			"%w: merge request %d", ErrWorkspaceNotSynced, mrNumber,
 		)
 	}
 
@@ -149,6 +156,9 @@ func (m *Manager) Create(
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+		if isUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+		}
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
 	return ws, nil
@@ -417,7 +427,7 @@ func (m *Manager) Delete(
 		return nil, fmt.Errorf("get workspace: %w", err)
 	}
 	if ws == nil {
-		return nil, fmt.Errorf("workspace not found")
+		return nil, ErrWorkspaceNotFound
 	}
 
 	if !force {
@@ -456,7 +466,7 @@ func (m *Manager) RequestRetry(
 		return nil, false, fmt.Errorf("get workspace: %w", err)
 	}
 	if ws == nil {
-		return nil, false, fmt.Errorf("workspace not found")
+		return nil, false, ErrWorkspaceNotFound
 	}
 	started, err := m.db.StartWorkspaceRetry(ctx, ws.ID)
 	if err != nil {
@@ -521,7 +531,7 @@ func (m *Manager) queueRetryOrStartErrored(
 	}
 	if current == nil {
 		m.retryMu.Unlock()
-		return nil, false, fmt.Errorf("workspace not found")
+		return nil, false, ErrWorkspaceNotFound
 	}
 	switch current.Status {
 	case "creating":
@@ -534,7 +544,10 @@ func (m *Manager) queueRetryOrStartErrored(
 		return m.startWorkspaceRetry(ctx, current)
 	default:
 		m.retryMu.Unlock()
-		return nil, false, fmt.Errorf("workspace is not in error status")
+		return nil, false, fmt.Errorf(
+			"%w: workspace is not in error status",
+			ErrWorkspaceInvalidState,
+		)
 	}
 }
 
@@ -1253,6 +1266,18 @@ func isGitBranchAbsent(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "branch") &&
 		strings.Contains(msg, "not found")
+}
+
+func isUniqueConstraintError(err error) bool {
+	type sqliteCoder interface {
+		Code() int
+	}
+	var coder sqliteCoder
+	if !errors.As(err, &coder) {
+		return false
+	}
+	const sqliteConstraintUnique = 2067
+	return coder.Code() == sqliteConstraintUnique
 }
 
 func workspaceBranchCandidates(

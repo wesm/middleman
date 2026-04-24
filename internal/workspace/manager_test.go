@@ -162,7 +162,7 @@ func TestCreateRepoNotTracked(t *testing.T) {
 		t.Context(), "github.com", "unknown", "repo", 1,
 	)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "repository not tracked")
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
 }
 
 func TestCreateDuplicate(t *testing.T) {
@@ -190,7 +190,7 @@ func TestCreateDuplicate(t *testing.T) {
 		ctx, "github.com", "acme", "widget", 42,
 	)
 	require.Error(err)
-	require.Contains(err.Error(), "UNIQUE constraint")
+	require.ErrorIs(err, ErrWorkspaceDuplicate)
 }
 
 func TestCreateMRNotSynced(t *testing.T) {
@@ -204,7 +204,7 @@ func TestCreateMRNotSynced(t *testing.T) {
 		t.Context(), "github.com", "acme", "widget", 999,
 	)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "not synced yet")
+	require.ErrorIs(t, err, ErrWorkspaceNotSynced)
 }
 
 func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
