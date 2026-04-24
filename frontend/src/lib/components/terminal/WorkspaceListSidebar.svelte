@@ -137,6 +137,7 @@
         ws.repo_owner,
         ws.repo_name,
         ws.item_number,
+        ws.platform_host,
       ),
     );
   }

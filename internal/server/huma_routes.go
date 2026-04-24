@@ -1705,6 +1705,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
+			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
 			ItemType:     it.ItemType,

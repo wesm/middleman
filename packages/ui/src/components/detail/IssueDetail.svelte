@@ -22,7 +22,7 @@
     owner: string;
     name: string;
     number: number;
-    platformHost?: string;
+    platformHost?: string | undefined;
   }
 
   const { owner, name, number, platformHost }: Props = $props();

@@ -38,6 +38,7 @@ type ActivityItemResponse struct {
 	ItemTitle    string `json:"item_title"`
 	ItemType     string `json:"item_type"`
 	ItemUrl      string `json:"item_url"`
+	PlatformHost string `json:"platform_host"`
 	RepoName     string `json:"repo_name"`
 	RepoOwner    string `json:"repo_owner"`
 }

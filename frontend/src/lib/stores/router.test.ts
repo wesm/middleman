@@ -119,6 +119,19 @@ describe("router basic routes", () => {
     });
   });
 
+  it("preserves issue platform_host query state", () => {
+    navigate("/issues/org/repo/3?platform_host=ghe.example.com");
+    expect(getRoute()).toEqual({
+      page: "issues",
+      selected: {
+        owner: "org",
+        name: "repo",
+        number: 3,
+        platformHost: "ghe.example.com",
+      },
+    });
+  });
+
   it("treats legacy /workspaces/panel routes as the workspaces page", () => {
     navigate("/workspaces/panel/github.com/acme/widgets/42");
     expect(getRoute()).toEqual({ page: "workspaces" });

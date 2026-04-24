@@ -4,6 +4,7 @@
 
   interface Props {
     itemType: "pr" | "issue";
+    platformHost?: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -12,7 +13,7 @@
   }
 
   let {
-    itemType, owner, name, number, onClose, onPullsRefresh,
+    itemType, platformHost, owner, name, number, onClose, onPullsRefresh,
   }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent): void {
@@ -46,7 +47,7 @@
             {...(onPullsRefresh ? { onPullsRefresh } : {})}
           />
         {:else}
-          <IssueDetail {owner} {name} {number} />
+          <IssueDetail {owner} {name} {number} {platformHost} />
         {/if}
       {/key}
     </div>

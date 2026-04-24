@@ -150,7 +150,8 @@ func (m *Manager) fetch(
 		return fmt.Errorf("git fetch: %w", err)
 	}
 	if _, err := m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a"); err != nil {
-		return fmt.Errorf("git remote set-head origin -a: %w", err)
+		slog.Warn("failed to repair origin HEAD",
+			"path", clonePath, "err", err)
 	}
 	return nil
 }

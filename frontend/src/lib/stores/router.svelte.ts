@@ -3,9 +3,9 @@ export type Route =
   | { page: "design-system" }
   | { page: "workspaces" }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
-  | { page: "issues"; selected?: { owner: string; name: string; number: number } }
+  | { page: "issues"; selected?: { owner: string; name: string; number: number; platformHost?: string | undefined } }
   | { page: "settings" }
-  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
+  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number; platformHost?: string | undefined }
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
@@ -70,12 +70,15 @@ function parseRoute(fullPath: string): Route {
       /^\/focus\/issue\/([^/]+)\/([^/]+)\/(\d+)$/,
     );
     if (issueMatch) {
+      const sp = new URLSearchParams(search);
+      const platformHost = sp.get("platform_host") ?? undefined;
       return {
         page: "focus",
         itemType: "issue",
         owner: issueMatch[1]!,
         name: issueMatch[2]!,
         number: parseInt(issueMatch[3]!, 10),
+        ...(platformHost && { platformHost }),
       };
     }
   }
@@ -112,9 +115,16 @@ function parseRoute(fullPath: string): Route {
   if (path.startsWith("/issues")) {
     const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
     if (match) {
+      const sp = new URLSearchParams(search);
+      const platformHost = sp.get("platform_host") ?? undefined;
       return {
         page: "issues",
-        selected: { owner: match[1]!, name: match[2]!, number: parseInt(match[3]!, 10) },
+        selected: {
+          owner: match[1]!,
+          name: match[2]!,
+          number: parseInt(match[3]!, 10),
+          ...(platformHost && { platformHost }),
+        },
       };
     }
     return { page: "issues" };
@@ -171,13 +181,17 @@ export function buildItemRoute(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string,
 ): string {
+  const issueQuery = type === "issue" && platformHost
+    ? `?platform_host=${encodeURIComponent(platformHost)}`
+    : "";
   if (isFocusMode()) {
-    return `/focus/${type}/${owner}/${name}/${number}`;
+    return `/focus/${type}/${owner}/${name}/${number}${issueQuery}`;
   }
   return type === "pr"
     ? `/pulls/${owner}/${name}/${number}`
-    : `/issues/${owner}/${name}/${number}`;
+    : `/issues/${owner}/${name}/${number}${issueQuery}`;
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {

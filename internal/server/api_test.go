@@ -6696,6 +6696,7 @@ func TestAPIListActivity(t *testing.T) {
 	require.NotNil(resp.JSON200.Items)
 	assert.NotEmpty(*resp.JSON200.Items,
 		"activity feed should contain PR and comment items")
+	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
 }
 
 // --- Stacks E2E ---

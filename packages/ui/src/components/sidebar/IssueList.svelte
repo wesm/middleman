@@ -38,14 +38,30 @@
     }, 300);
   }
 
-  function handleSelect(owner: string, name: string, number: number): void {
-    issues.selectIssue(owner, name, number);
-    navigate(`/issues/${owner}/${name}/${number}`);
+  function handleSelect(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost: string,
+  ): void {
+    issues.selectIssue(owner, name, number, platformHost);
+    navigate(
+      `/issues/${owner}/${name}/${number}?platform_host=${encodeURIComponent(platformHost)}`,
+    );
   }
 
-  function isSelected(owner: string, name: string, number: number): boolean {
+  function isSelected(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost: string,
+  ): boolean {
     const sel = issues.getSelectedIssue();
-    return sel !== null && sel.owner === owner && sel.name === name && sel.number === number;
+    return sel !== null
+      && sel.owner === owner
+      && sel.name === name
+      && sel.number === number
+      && sel.platformHost === platformHost;
   }
 </script>
 
@@ -166,8 +182,8 @@
                 <IssueItem
                   {issue}
                   showRepo={false}
-                  selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
-                  onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
+                  selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
+                  onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
                 />
               {/each}
             {/if}
@@ -178,8 +194,8 @@
           <IssueItem
             {issue}
             showRepo={true}
-            selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
-            onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number)}
+            selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
+            onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
           />
         {/each}
       {/if}

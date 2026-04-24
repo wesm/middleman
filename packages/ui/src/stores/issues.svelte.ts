@@ -1,6 +1,13 @@
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
+export interface IssueSelection {
+  owner: string;
+  name: string;
+  number: number;
+  platformHost?: string | undefined;
+}
+
 export interface IssuesStoreOptions {
   client: MiddlemanClient;
   getGlobalRepo?: () => string | undefined;
@@ -39,11 +46,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let filterStarred = $state(false);
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
-  let selectedIssue = $state<{
-    owner: string;
-    name: string;
-    number: number;
-  } | null>(null);
+  let selectedIssue = $state<IssueSelection | null>(null);
 
   // --- detail state ---
 
@@ -66,11 +69,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function getIssuesError(): string | null {
     return storeError;
   }
-  function getSelectedIssue(): {
-    owner: string;
-    name: string;
-    number: number;
-  } | null {
+  function getSelectedIssue(): IssueSelection | null {
     return selectedIssue;
   }
   function getIssueFilterStarred(): boolean {
@@ -135,8 +134,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     filterState = s;
   }
 
-  function selectIssue(owner: string, name: string, number: number): void {
-    selectedIssue = { owner, name, number };
+  function selectIssue(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost?: string,
+  ): void {
+    selectedIssue = {
+      owner,
+      name,
+      number,
+      ...(platformHost && { platformHost }),
+    };
   }
   function clearIssueSelection(): void {
     selectedIssue = null;
@@ -187,6 +196,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.issue.Number === number
     ) {
       return issueDetail.platform_host;
+    }
+    if (
+      selectedIssue &&
+      selectedIssue.owner === owner &&
+      selectedIssue.name === name &&
+      selectedIssue.number === number
+    ) {
+      return selectedIssue.platformHost;
     }
     return undefined;
   }
@@ -476,6 +493,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: first.repo_owner ?? "",
           name: first.repo_name ?? "",
           number: first.Number,
+          platformHost: first.platform_host,
         };
       }
       return;
@@ -484,7 +502,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       (i) =>
         (i.repo_owner ?? "") === selectedIssue!.owner &&
         (i.repo_name ?? "") === selectedIssue!.name &&
-        i.Number === selectedIssue!.number,
+        i.Number === selectedIssue!.number &&
+        (!selectedIssue!.platformHost ||
+          i.platform_host === selectedIssue!.platformHost),
     );
     if (idx < list.length - 1) {
       const next = list[idx + 1];
@@ -493,6 +513,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: next.repo_owner ?? "",
           name: next.repo_name ?? "",
           number: next.Number,
+          platformHost: next.platform_host,
         };
       }
     }
@@ -508,6 +529,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: last.repo_owner ?? "",
           name: last.repo_name ?? "",
           number: last.Number,
+          platformHost: last.platform_host,
         };
       }
       return;
@@ -516,7 +538,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       (i) =>
         (i.repo_owner ?? "") === selectedIssue!.owner &&
         (i.repo_name ?? "") === selectedIssue!.name &&
-        i.Number === selectedIssue!.number,
+        i.Number === selectedIssue!.number &&
+        (!selectedIssue!.platformHost ||
+          i.platform_host === selectedIssue!.platformHost),
     );
     if (idx > 0) {
       const prev = list[idx - 1];
@@ -525,6 +549,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: prev.repo_owner ?? "",
           name: prev.repo_name ?? "",
           number: prev.Number,
+          platformHost: prev.platform_host,
         };
       }
     }

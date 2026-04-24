@@ -248,6 +248,7 @@ type activityItemResponse struct {
 	ID           string `json:"id"`
 	Cursor       string `json:"cursor"`
 	ActivityType string `json:"activity_type"`
+	PlatformHost string `json:"platform_host"`
 	RepoOwner    string `json:"repo_owner"`
 	RepoName     string `json:"repo_name"`
 	ItemType     string `json:"item_type"`

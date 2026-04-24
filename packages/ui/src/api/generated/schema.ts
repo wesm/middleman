@@ -601,6 +601,7 @@ export interface components {
             item_title: string;
             item_type: string;
             item_url: string;
+            platform_host: string;
             repo_name: string;
             repo_owner: string;
         };

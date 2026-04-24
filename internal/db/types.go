@@ -202,6 +202,7 @@ type ActivityItem struct {
 	ActivityType string // new_pr, new_issue, comment, review, commit
 	Source       string // pr, issue, pre, ise
 	SourceID     int64  // PK from the source table
+	PlatformHost string
 	RepoOwner    string
 	RepoName     string
 	ItemType     string // pr or issue

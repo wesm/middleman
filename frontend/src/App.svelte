@@ -196,6 +196,7 @@
           route.selected.owner,
           route.selected.name,
           route.selected.number,
+          route.selected.platformHost,
         );
       } else {
         stores.issues.clearIssueSelection();
@@ -205,6 +206,7 @@
 
   let drawerItem = $state<{
     itemType: "pr" | "issue";
+    platformHost?: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -241,6 +243,7 @@
       item.item_type === "issue" ? "issue" : "pr";
     drawerItem = {
       itemType,
+      platformHost: item.platform_host,
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,
@@ -483,6 +486,7 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              platformHost: r.platformHost,
             }}
             isSidebarCollapsed={true}
             hideSidebar={true}
@@ -538,8 +542,8 @@
       {:else if getPage() === "issues"}
         {@const selectedIssue =
           stores?.issues.getSelectedIssue() ?? null}
-        <IssueListView
-          {selectedIssue}
+          <IssueListView
+            {selectedIssue}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={handleSidebarResize}
