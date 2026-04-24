@@ -71,7 +71,7 @@ func TestHealthz_ReturnsServiceUnavailableAfterDBClose(t *testing.T) {
 	defer ts.Close()
 
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = s.Shutdown(ctx)
 	})

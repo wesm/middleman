@@ -295,7 +295,7 @@ func setupTestServerWithDatabase(
 		nil, ServerOptions{},
 	)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	})
@@ -334,7 +334,7 @@ func setupTestServerWithRepos(
 	// Registered after the DB cleanup so LIFO ordering runs Shutdown
 	// first and lets background goroutines finish before DB close.
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	})
