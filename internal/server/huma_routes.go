@@ -15,6 +15,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/workspace"
 )
 
 type listPullsInput struct {
@@ -249,6 +250,10 @@ type getWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
+type retryWorkspaceInput struct {
+	ID string `path:"id"`
+}
+
 type deleteWorkspaceInput struct {
 	ID    string `path:"id"`
 	Force bool   `query:"force"`
@@ -383,6 +388,12 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.createWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces)
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID:   "retry-workspace",
+		Method:        http.MethodPost,
+		Path:          "/workspaces/{id}/retry",
+		DefaultStatus: http.StatusAccepted,
+	}, s.retryWorkspace)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-workspace",
 		Method:        http.MethodDelete,
@@ -2049,6 +2060,26 @@ func (s *Server) createWorkspace(
 		)
 	}
 
+	s.runWorkspaceSetup(ws)
+
+	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace summary: " + err.Error(),
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error500InternalServerError(
+			"workspace summary missing after create",
+		)
+	}
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   toWorkspaceResponse(summary),
+	}, nil
+}
+
+func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 	s.runBackground(func(bgCtx context.Context) {
 		setupErr := s.workspaces.Setup(bgCtx, ws)
 		summary, getErr := s.workspaces.GetSummary(
@@ -2074,22 +2105,6 @@ func (s *Server) createWorkspace(
 			Data: resp,
 		})
 	})
-
-	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get workspace summary: " + err.Error(),
-		)
-	}
-	if summary == nil {
-		return nil, huma.Error500InternalServerError(
-			"workspace summary missing after create",
-		)
-	}
-	return &createWorkspaceOutput{
-		Status: http.StatusAccepted,
-		Body:   toWorkspaceResponse(summary),
-	}, nil
 }
 
 func (s *Server) listWorkspaces(
@@ -2139,6 +2154,53 @@ func (s *Server) getWorkspace(
 
 	return &getWorkspaceOutput{
 		Body: toWorkspaceResponse(summary),
+	}, nil
+}
+
+func (s *Server) retryWorkspace(
+	ctx context.Context, input *retryWorkspaceInput,
+) (*createWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	ws, err := s.workspaces.Retry(ctx, input.ID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		if strings.Contains(err.Error(), "already running") ||
+			strings.Contains(err.Error(), "not in error status") {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(
+			"retry workspace: " + err.Error(),
+		)
+	}
+
+	s.runWorkspaceSetup(ws)
+
+	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace summary: " + err.Error(),
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error500InternalServerError(
+			"workspace summary missing after retry",
+		)
+	}
+	resp := toWorkspaceResponse(summary)
+	s.hub.Broadcast(Event{
+		Type: "workspace_status",
+		Data: resp,
+	})
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   resp,
 	}, nil
 }
 

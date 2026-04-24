@@ -657,6 +657,41 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	assert.Equal("-l", argvs[1][7])
 }
 
+func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "error connecting to /private/tmp/tmux-501/default (No such file or directory)" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+
+	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 2)
+	assert.Equal(
+		[]string{"has-session", "-t", "sess-macos"},
+		argvs[0],
+	)
+	assert.Equal("new-session", argvs[1][0])
+	assert.Equal("sess-macos", argvs[1][3])
+}
+
 // TestReadRecorderArgvPreservesEmptyArgs pins down the parser's
 // empty-arg handling. The NUL-delimited record format was chosen to
 // round-trip argv with empty-string elements unambiguously; the

@@ -6952,6 +6952,46 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	require.Equal(http.StatusNotFound, getResp2.StatusCode())
 }
 
+func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+	waitForWorkspaceReady(t, ctx, client, wsID)
+
+	msg := "ensure clone: git fetch: fork/exec /opt/homebrew/bin/git: resource temporarily unavailable"
+	err = database.UpdateWorkspaceStatus(ctx, wsID, "error", &msg)
+	require.NoError(err)
+
+	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.NotNil(retryResp.JSON202)
+	retryBody := retryResp.JSON202
+	assert.Equal(wsID, retryBody.Id)
+	assert.Equal("creating", retryBody.Status)
+	assert.Nil(retryBody.ErrorMessage)
+
+	ready := waitForWorkspaceReady(t, ctx, client, wsID)
+	assert.Equal(wsID, ready.Id)
+	assert.Nil(ready.ErrorMessage)
+}
+
 func TestWorkspaceCreateNotFound(t *testing.T) {
 	require := require.New(t)
 

@@ -36,6 +36,8 @@
 
   let workspace = $state<Workspace | null>(null);
   let loadError = $state<string | null>(null);
+  let actionError = $state<string | null>(null);
+  let retryingSetup = $state(false);
   let pollTimer = $state<ReturnType<
     typeof setInterval
   > | null>(null);
@@ -242,6 +244,7 @@
       const data = (await res.json()) as Workspace;
       workspace = data;
       loadError = null;
+      actionError = null;
 
       if (data.status !== "creating") {
         stopPolling();
@@ -268,7 +271,40 @@
     }
   }
 
+  async function handleRetrySetup(): Promise<void> {
+    if (!workspace || retryingSetup) return;
+
+    retryingSetup = true;
+    actionError = null;
+    try {
+      const url =
+        `${basePath}/api/v1/workspaces` +
+        `/${encodeURIComponent(workspaceId)}/retry`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        actionError = `Retry failed (${res.status})`;
+        return;
+      }
+      workspace = (await res.json()) as Workspace;
+      if (workspace.status === "creating") {
+        startPolling();
+        await fetchWorkspace();
+      }
+    } catch (err) {
+      actionError =
+        err instanceof Error
+          ? err.message
+          : "Retry failed";
+    } finally {
+      retryingSetup = false;
+    }
+  }
+
   async function handleDelete(): Promise<void> {
+    actionError = null;
     const url =
       `${basePath}/api/v1/workspaces` +
       `/${encodeURIComponent(workspaceId)}`;
@@ -292,11 +328,11 @@
         },
       );
       if (!forceRes.ok && forceRes.status !== 204) {
-        loadError = `Delete failed (${forceRes.status})`;
+        actionError = `Delete failed (${forceRes.status})`;
         return;
       }
     } else if (!res.ok && res.status !== 204) {
-      loadError = `Delete failed (${res.status})`;
+      actionError = `Delete failed (${res.status})`;
       return;
     }
     navigate("/pulls");
@@ -411,10 +447,20 @@
           </span>
           <button
             class="retry-btn"
-            onclick={() => void fetchWorkspace()}
+            disabled={retryingSetup}
+            onclick={() => void handleRetrySetup()}
           >
             Retry
           </button>
+          <button
+            class="retry-btn danger"
+            onclick={() => void handleDelete()}
+          >
+            Delete
+          </button>
+          {#if actionError}
+            <span class="action-error">{actionError}</span>
+          {/if}
         </div>
       {:else}
         <div class="header-bar">
@@ -537,6 +583,22 @@
 
   .retry-btn:hover {
     background: var(--bg-surface-hover);
+  }
+
+  .retry-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  .retry-btn.danger:hover {
+    background: var(--accent-red);
+    border-color: var(--accent-red);
+    color: #fff;
+  }
+
+  .action-error {
+    color: var(--accent-red);
+    font-size: 12px;
   }
 
   :global(.spinner) {

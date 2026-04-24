@@ -421,32 +421,75 @@ func (m *Manager) Delete(
 		}
 	}
 
+	m.cleanupWorkspaceArtifacts(ctx, ws)
+
+	if err := m.db.DeleteWorkspace(ctx, id); err != nil {
+		return nil, fmt.Errorf("delete workspace record: %w", err)
+	}
+	return nil, nil
+}
+
+// Retry prepares an errored workspace for another setup attempt and
+// returns the updated row. The caller should invoke Setup in the
+// background with the returned workspace.
+func (m *Manager) Retry(
+	ctx context.Context, id string,
+) (*Workspace, error) {
+	ws, err := m.db.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get workspace: %w", err)
+	}
+	if ws == nil {
+		return nil, fmt.Errorf("workspace not found")
+	}
+	if ws.Status == "creating" {
+		return nil, fmt.Errorf("workspace setup already running")
+	}
+	if ws.Status != "error" {
+		return nil, fmt.Errorf("workspace is not in error status")
+	}
+
+	m.cleanupWorkspaceArtifacts(ctx, ws)
+	if err := m.updateWorkspaceBranch(
+		ctx, ws.ID, workspaceBranchUnknown,
+	); err != nil {
+		return nil, err
+	}
+	if err := m.updateWorkspaceStatus(ctx, ws.ID, "creating", nil); err != nil {
+		return nil, err
+	}
+
+	ws.WorkspaceBranch = workspaceBranchUnknown
+	ws.Status = "creating"
+	ws.ErrorMessage = nil
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageSetup, "retrying",
+		"retrying workspace setup",
+	)
+	return ws, nil
+}
+
+func (m *Manager) cleanupWorkspaceArtifacts(
+	ctx context.Context, ws *Workspace,
+) {
 	// Kill tmux session (ignore errors -- session may not exist).
 	_ = m.killTmuxSession(ctx, ws.TmuxSession)
 
 	if m.clones == nil {
-		return nil, m.db.DeleteWorkspace(ctx, ws.ID)
+		return
 	}
 
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 
-	// Remove worktree.
 	_ = runGit(
 		ctx, cloneDir,
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
-
 	m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
-
-	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
-
-	if err := m.db.DeleteWorkspace(ctx, id); err != nil {
-		return nil, fmt.Errorf("delete workspace record: %w", err)
-	}
-	return nil, nil
 }
 
 // Get returns a workspace by ID, or nil if not found.
@@ -559,7 +602,9 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	}
 	msg := string(stderr)
 	return strings.Contains(msg, "can't find session") ||
-		strings.Contains(msg, "no server running")
+		strings.Contains(msg, "no server running") ||
+		(strings.Contains(msg, "error connecting to") &&
+			strings.Contains(msg, "No such file or directory"))
 }
 
 // killTmuxSession kills a tmux session via the manager's prefix.
