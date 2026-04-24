@@ -4740,6 +4740,126 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	prUpdatedAt := newer.Add(time.Minute)
+	prID := int64(173100)
+	prNumber := 174
+	prTitle := "GraphQL check dedupe"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/174"
+	prAuthor := "alice"
+	headRef := "feature/graphql-check-dedupe"
+	baseRef := "main"
+	headSHA := "abc123"
+	baseSHA := "def456"
+	checkName := "build"
+	oldCheckURL := "https://ci.example.com/runs/old"
+	newCheckURL := "https://ci.example.com/runs/new"
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":173100,
+				"number":174,
+				"title":"GraphQL check dedupe",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"",
+				"url":"https://github.com/acme/widget/pull/174",
+				"author":{"login":"alice"},
+				"createdAt":"` + older.Format(time.RFC3339) + `",
+				"updatedAt":"` + prUpdatedAt.Format(time.RFC3339) + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"feature/graphql-check-dedupe",
+				"baseRefName":"main",
+				"headRefOid":"abc123",
+				"baseRefOid":"def456",
+				"headRepository":{"url":"https://github.com/acme/widget"},
+				"labels":{"nodes":[]},
+				"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"lastCommit":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":[
+					{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://ci.example.com/runs/old","startedAt":null,"completedAt":null,"checkSuite":{"createdAt":"` + older.Format(time.RFC3339) + `","app":{"name":"GitHub Actions"}}},
+					{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://ci.example.com/runs/new","startedAt":null,"completedAt":null,"checkSuite":{"createdAt":"` + newer.Format(time.RFC3339) + `","app":{"name":"GitHub Actions"}}}
+				],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}]}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prTime := gh.Timestamp{Time: prUpdatedAt}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    &prNumber,
+				Title:     &prTitle,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: &prAuthor},
+				CreatedAt: &gh.Timestamp{Time: older},
+				UpdatedAt: &prTime,
+				Head:      &gh.PullRequestBranch{Ref: &headRef, SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		ctx, "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.MergeRequest)
+	require.Equal("success", resp.JSON200.MergeRequest.CIStatus)
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal(
+		[]byte(resp.JSON200.MergeRequest.CIChecksJSON),
+		&checks,
+	))
+	require.Len(checks, 1)
+	assert.Equal(checkName, checks[0].Name)
+	assert.Equal("completed", checks[0].Status)
+	assert.Equal("success", checks[0].Conclusion)
+	assert.Equal(newCheckURL, checks[0].URL)
+	assert.Equal("GitHub Actions", checks[0].App)
+	assert.NotEqual(oldCheckURL, checks[0].URL)
+}
+
 func make422Error() error {
 	return &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},
