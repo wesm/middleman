@@ -910,13 +910,22 @@ func (m *Manager) TmuxPaneSnapshot(
 		"-t", session,
 		"-S", fmt.Sprintf("-%d", tmuxCaptureScrollbackLines),
 	)
-	out, err := cmd.Output()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = procutil.Run(ctx, cmd, "tmux subprocess capacity")
 	if err != nil {
-		return TmuxPaneSnapshot{}, fmt.Errorf("tmux capture-pane: %w", err)
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return TmuxPaneSnapshot{}, fmt.Errorf(
+			"tmux capture-pane: %w: %s", err, msg,
+		)
 	}
 	return TmuxPaneSnapshot{
 		Title:  title,
-		Output: string(out),
+		Output: stdout.String(),
 	}, nil
 }
 

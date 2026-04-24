@@ -679,6 +679,106 @@ func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
 	assert.Equal(1, capturePaneCalls)
 }
 
+func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	activeDir := filepath.Join(dir, "active")
+	violationPath := filepath.Join(dir, "violation")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ] || [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    mkdir -p "$TMUX_ACTIVE_DIR"` + "\n" +
+		`    marker="$TMUX_ACTIVE_DIR/$$"` + "\n" +
+		`    : > "$marker"` + "\n" +
+		`    trap 'rm -f "$marker"' EXIT INT TERM` + "\n" +
+		`    active=$(find "$TMUX_ACTIVE_DIR" -type f | wc -l | tr -d ' ')` + "\n" +
+		`    if [ "$active" -gt "$TMUX_MAX_ACTIVE" ]; then` + "\n" +
+		`      printf '%s\n' "$active" >> "$TMUX_VIOLATION"` + "\n" +
+		`    fi` + "\n" +
+		`    sleep 0.05` + "\n" +
+		`    if [ "$a" = "display-message" ]; then` + "\n" +
+		`      printf 'workspace\n'` + "\n" +
+		`      exit 0` + "\n" +
+		`    fi` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_ACTIVE_DIR", activeDir)
+	t.Setenv("TMUX_MAX_ACTIVE", strconv.Itoa(tmuxProbeMaxConcurrency))
+	t.Setenv("TMUX_VIOLATION", violationPath)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	for i := range 12 {
+		mrNumber := 100 + i
+		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+			ID:              "ws-stress-" + strconv.Itoa(i),
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        "widget",
+			MRNumber:        mrNumber,
+			MRHeadRef:       "feature",
+			WorkspaceBranch: "feature",
+			WorktreePath: filepath.Join(
+				dir, "worktree-"+strconv.Itoa(i),
+			),
+			TmuxSession: "middleman-ws-stress-" + strconv.Itoa(i),
+			Status:      "ready",
+		}))
+	}
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 48)
+	statuses := make(chan int, 48)
+	wg.Add(48)
+	for range 48 {
+		go func() {
+			defer wg.Done()
+			resp, getErr := client.HTTP.GetWorkspaces(ctx)
+			errs <- getErr
+			if resp != nil {
+				resp.Body.Close()
+				statuses <- resp.StatusCode
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	close(statuses)
+
+	for getErr := range errs {
+		require.NoError(getErr)
+	}
+	for status := range statuses {
+		assert.Equal(http.StatusOK, status)
+	}
+
+	assert.NoFileExists(violationPath)
+	require.Eventually(func() bool {
+		entries, err := os.ReadDir(activeDir)
+		if os.IsNotExist(err) {
+			return true
+		}
+		require.NoError(err)
+		return len(entries) == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
 func getRawWorkspaceActivity(
 	t *testing.T,
 	client *apiclient.Client,
