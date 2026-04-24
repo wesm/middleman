@@ -19,6 +19,7 @@ import (
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/procutil"
 )
 
@@ -1307,10 +1308,7 @@ func shellFromPasswdLine(line string) string {
 // runGit executes a git command in dir and returns combined
 // output on error.
 func runGit(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+	cmd := workspaceGitCommand(ctx, dir, args...)
 	out, err := procutil.CombinedOutput(
 		ctx, cmd, "git subprocess capacity",
 	)
@@ -1341,9 +1339,8 @@ func runBuiltCmd(ctx context.Context, cmd *exec.Cmd) error {
 func dirtyFiles(
 	ctx context.Context, worktreePath string,
 ) ([]string, error) {
-	cmd := exec.CommandContext(
-		ctx, "git", "-C", worktreePath,
-		"status", "--porcelain",
+	cmd := workspaceGitCommand(
+		ctx, "", "-C", worktreePath, "status", "--porcelain",
 	)
 	out, err := procutil.Output(
 		ctx, cmd, "git subprocess capacity",
@@ -1636,13 +1633,10 @@ func (m *Manager) updateWorkspaceBranch(
 func gitRefSHA(
 	ctx context.Context, dir, ref string,
 ) (string, bool, error) {
-	cmd := exec.CommandContext(
-		ctx, "git", "rev-parse", "--verify", "--quiet",
+	cmd := workspaceGitCommand(
+		ctx, dir, "rev-parse", "--verify", "--quiet",
 		ref+"^{commit}",
 	)
-	if dir != "" {
-		cmd.Dir = dir
-	}
 	out, err := procutil.CombinedOutput(
 		ctx, cmd, "git subprocess capacity",
 	)
@@ -1661,17 +1655,14 @@ func gitRefSHA(
 func localBranchExists(
 	ctx context.Context, dir, branch string,
 ) (bool, error) {
-	cmd := exec.CommandContext(
+	cmd := workspaceGitCommand(
 		ctx,
-		"git",
+		dir,
 		"show-ref",
 		"--verify",
 		"--quiet",
 		"refs/heads/"+branch,
 	)
-	if dir != "" {
-		cmd.Dir = dir
-	}
 	err := cmd.Run()
 	if err == nil {
 		return true, nil
@@ -1681,6 +1672,21 @@ func localBranchExists(
 		return false, nil
 	}
 	return false, err
+}
+
+func workspaceGitCommand(
+	ctx context.Context, dir string, args ...string,
+) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = append(
+		gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	return cmd
 }
 
 func nextAvailableBranchName(

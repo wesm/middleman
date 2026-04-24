@@ -388,6 +388,28 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	assert.False(exists)
 }
 
+func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	targetClone := setupBareCloneForWorkspaceGitTest(t)
+	poisonClone := setupBareCloneForWorkspaceGitTest(t)
+	require.NoError(runGit(
+		context.Background(), poisonClone,
+		"branch", "middleman/issue-7", "main",
+	))
+
+	t.Setenv("GIT_DIR", poisonClone)
+	t.Setenv("GIT_WORK_TREE", t.TempDir())
+
+	exists, err := localBranchExists(
+		context.Background(), targetClone, "middleman/issue-7",
+	)
+
+	require.NoError(err)
+	assert.False(exists)
+}
+
 func TestCleanupContextRespectsParentDeadline(t *testing.T) {
 	require := require.New(t)
 
