@@ -527,7 +527,6 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 
 func TestListPullRequests(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
@@ -537,7 +536,7 @@ func TestListPullRequests(t *testing.T) {
 	insertTestMR(t, d, repoID, 2, "middle", base.Add(time.Hour))
 	insertTestMR(t, d, repoID, 3, "newest", base.Add(2*time.Hour))
 
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{})
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{})
 	require.NoError(t, err)
 	require.Len(t, prs, 3)
 	// Newest first.
@@ -546,7 +545,6 @@ func TestListPullRequests(t *testing.T) {
 
 func TestListPullRequestsFilterByRepo(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	repo1 := insertTestRepo(t, d, "owner", "repo1")
 	repo2 := insertTestRepo(t, d, "owner", "repo2")
@@ -555,7 +553,7 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	insertTestMR(t, d, repo1, 1, "pr in repo1", base)
 	insertTestMR(t, d, repo2, 1, "pr in repo2", base)
 
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{RepoOwner: "owner", RepoName: "repo1"})
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{RepoOwner: "owner", RepoName: "repo1"})
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, repo1, prs[0].RepoID)
@@ -596,7 +594,6 @@ func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 
 func TestListPullRequestsFilterBySearch(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
@@ -604,7 +601,7 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 	insertTestMR(t, d, repoID, 1, "add feature", base)
 	insertTestMR(t, d, repoID, 2, "fix bug", base.Add(time.Hour))
 
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{Search: "feature"})
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "feature"})
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, 1, prs[0].Number)
@@ -1109,7 +1106,6 @@ func TestGetPRIDByRepoAndNumber(t *testing.T) {
 
 func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	base := baseTime()
@@ -1119,7 +1115,7 @@ func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 
 	// PRs 1 and 3 are still open; 2 was closed externally.
 	stillOpen := map[int]bool{1: true, 3: true}
-	closed, err := d.GetPreviouslyOpenMRNumbers(ctx, repoID, stillOpen)
+	closed, err := d.GetPreviouslyOpenMRNumbers(t.Context(), repoID, stillOpen)
 	require.NoError(t, err)
 	Assert.Equal(t, []int{2}, closed)
 }

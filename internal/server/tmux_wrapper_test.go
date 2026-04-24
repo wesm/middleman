@@ -250,10 +250,9 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	client, _, record := setupWrapperServer(t)
-	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
+		t.Context(),
 		generated.CreateWorkspaceInputBody{
 			PlatformHost: "github.com",
 			Owner:        "acme",
@@ -618,10 +617,9 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	client, baseURL, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
 	)
-	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
-		ctx,
+		t.Context(),
 		generated.CreateWorkspaceInputBody{
 			PlatformHost: "github.com",
 			Owner:        "acme",

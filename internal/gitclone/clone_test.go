@@ -96,9 +96,8 @@ func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		t.Context(), "github.com", "testowner", "testrepo", remote))
 
 	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
 	refspecs := getFetchRefspecs(t, clonePath)

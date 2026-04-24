@@ -1074,7 +1074,6 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 
 func TestSyncStatusUpdated(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -1087,7 +1086,7 @@ func TestSyncStatusUpdated(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 
 	before := time.Now()
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 	after := time.Now()
 
 	status := syncer.Status()
@@ -1114,7 +1113,6 @@ func setTestLocalEDT(t *testing.T) {
 func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
 	setTestLocalEDT(t)
 
-	ctx := t.Context()
 	d := openTestDB(t)
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{},
@@ -1124,7 +1122,7 @@ func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
 	}
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 
 	status := syncer.Status()
 	Assert.Equal(t, time.UTC, status.LastRunAt.Location())
@@ -1224,7 +1222,6 @@ func (p *parallelMockClient) ListOpenPullRequests(
 func TestRunOnceSyncesReposInParallel(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	const parallelism = 3
@@ -1248,7 +1245,7 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		syncer.RunOnce(ctx)
+		syncer.RunOnce(t.Context())
 		close(done)
 	}()
 
@@ -1741,7 +1738,6 @@ func (c *dedupGetUserClient) GetUser(
 func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	author := "alice"
@@ -1772,7 +1768,7 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		syncer.RunOnce(ctx)
+		syncer.RunOnce(t.Context())
 		close(done)
 	}()
 
@@ -1988,21 +1984,19 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := t.Context()
 
 	mc := &mockClient{}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, []RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 	}, time.Minute, nil, nil)
 
-	_, err := syncer.SyncItemByNumber(ctx, "other", "repo", 1)
+	_, err := syncer.SyncItemByNumber(t.Context(), "other", "repo", 1)
 	require.Error(err)
 	assert.Contains(err.Error(), "not tracked")
 }
 
 func TestSyncerMultiHostClientDispatch(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	ghMock := &mockClient{
@@ -2028,7 +2022,7 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 	}
 
 	syncer := NewSyncer(clients, d, nil, repos, time.Minute, nil, nil)
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 
 	assert.True(ghMock.listOpenPRsCalled,
 		"github.com mock should have been called")
@@ -2039,7 +2033,6 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2074,7 +2067,7 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 		})
 	})
 
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 
 	require.Len(called, 1)
 	assert.Equal("owner", called[0].owner)
@@ -2086,7 +2079,6 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 
 func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2125,7 +2117,7 @@ func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 		},
 	)
 
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 
 	assert.Contains(gotJSON, "build",
 		"CIChecksJSON should contain check run name")
@@ -2134,7 +2126,6 @@ func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -2158,7 +2149,7 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 		gotResults = results
 	})
 
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 
 	require.Len(gotResults, 2)
 	assert.Equal("acme", gotResults[0].Owner)
@@ -2172,7 +2163,6 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 }
 
 func TestNilHooksNoOp(t *testing.T) {
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -2189,7 +2179,7 @@ func TestNilHooksNoOp(t *testing.T) {
 	)
 
 	// No hooks set -- should not panic.
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 }
 
 func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
@@ -2251,7 +2241,6 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 }
 
 func TestEmptyWatchListNoOp(t *testing.T) {
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -2276,7 +2265,7 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 	)
 
 	// Leave watch list empty.
-	syncer.Start(ctx)
+	syncer.Start(t.Context())
 
 	// Let several ticks pass.
 	time.Sleep(200 * time.Millisecond)
@@ -2288,7 +2277,6 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 
 func TestSetWatchedMRsReplacesList(t *testing.T) {
 	assert := Assert.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2330,7 +2318,7 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 	syncer.SetWatchedMRs([]WatchedMR{
 		{Owner: "acme", Name: "app", Number: 1},
 	})
-	syncer.Start(ctx)
+	syncer.Start(t.Context())
 	defer syncer.Stop()
 
 	// Wait for PR #1 to be synced.
@@ -2368,7 +2356,6 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	mc := &mockClient{
@@ -2413,7 +2400,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 	})
 
 	// Call syncWatchedMRs directly to avoid the bulk RunOnce goroutine.
-	syncer.syncWatchedMRs(ctx)
+	syncer.syncWatchedMRs(t.Context())
 
 	assert.Equal(0, callCount,
 		"watched MRs should be skipped when host is rate-limited")
@@ -2479,7 +2466,6 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 
 func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	mc := &mockClient{
@@ -2515,7 +2501,7 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 		},
 	})
 
-	syncer.syncWatchedMRs(ctx)
+	syncer.syncWatchedMRs(t.Context())
 
 	Assert.Equal(t, 0, callCount,
 		"watched MR on untracked host should not be synced")
@@ -2524,7 +2510,6 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -2569,7 +2554,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 		gotResults = results
 	})
 
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 
 	require.Len(gotResults, 2)
 
@@ -3115,7 +3100,6 @@ func notModifiedErr() error {
 func TestSyncerHandles304OnPRList(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -3142,7 +3126,7 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 		gotResult.Done()
 	})
 
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 	gotResult.Wait()
 
 	require.Len(results, 1)
@@ -3161,7 +3145,6 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 func TestSyncerHandles304OnIssueList(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := t.Context()
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -3189,7 +3172,7 @@ func TestSyncerHandles304OnIssueList(t *testing.T) {
 		gotResult.Done()
 	})
 
-	syncer.RunOnce(ctx)
+	syncer.RunOnce(t.Context())
 	gotResult.Wait()
 
 	require.Len(results, 1)

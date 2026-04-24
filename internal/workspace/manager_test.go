@@ -129,7 +129,6 @@ func TestCreate(t *testing.T) {
 func TestCreateForkPR(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := t.Context()
 	wtDir := t.TempDir()
 
 	repoID := seedRepo(
@@ -143,7 +142,7 @@ func TestCreateForkPR(t *testing.T) {
 	mgr := NewManager(d, wtDir)
 
 	ws, err := mgr.Create(
-		ctx, "github.com", "acme", "widget", 99,
+		t.Context(), "github.com", "acme", "widget", 99,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, ws)
@@ -157,11 +156,10 @@ func TestCreateForkPR(t *testing.T) {
 
 func TestCreateRepoNotTracked(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 	mgr := NewManager(d, t.TempDir())
 
 	_, err := mgr.Create(
-		ctx, "github.com", "unknown", "repo", 1,
+		t.Context(), "github.com", "unknown", "repo", 1,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "repository not tracked")
@@ -197,14 +195,13 @@ func TestCreateDuplicate(t *testing.T) {
 
 func TestCreateMRNotSynced(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 
 	seedRepo(t, d, "github.com", "acme", "widget")
 
 	mgr := NewManager(d, t.TempDir())
 
 	_, err := mgr.Create(
-		ctx, "github.com", "acme", "widget", 999,
+		t.Context(), "github.com", "acme", "widget", 999,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not synced yet")
@@ -564,12 +561,10 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := t.Context()
-
 	// Script exits 0 for every invocation, so EnsureTmux observes
 	// "session exists" after the has-session call and returns
 	// without running new-session.
-	require.NoError(t, mgr.EnsureTmux(ctx, "sess-A", t.TempDir()))
+	require.NoError(t, mgr.EnsureTmux(t.Context(), "sess-A", t.TempDir()))
 
 	argvs := readRecorderArgv(t, record)
 	require.Len(t, argvs, 1)
@@ -640,8 +635,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
-	ctx := t.Context()
-	require.NoError(mgr.EnsureTmux(ctx, "sess-B", "/tmp/cwd"))
+	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 2)

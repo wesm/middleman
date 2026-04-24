@@ -76,8 +76,7 @@ func TestListCommits(t *testing.T) {
 	mgr := New(filepath.Dir(bare), nil)
 
 	// The bare repo is at dir/remote.git, so host="" owner="" name="remote".
-	ctx := t.Context()
-	commits, err := mgr.ListCommits(ctx, "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 5)
 

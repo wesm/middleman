@@ -12,9 +12,8 @@ func TestSeedFixtures_Repos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
-	ctx := t.Context()
 
-	repos, err := d.ListRepos(ctx)
+	repos, err := d.ListRepos(t.Context())
 	require.NoError(err)
 	assert.Len(repos, 3)
 
@@ -84,9 +83,8 @@ func TestSeedFixtures_Activity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d, _ := OpenFixtureTestDB(t)
-	ctx := t.Context()
 
-	items, err := d.ListActivity(ctx, db.ListActivityOpts{Limit: 200})
+	items, err := d.ListActivity(t.Context(), db.ListActivityOpts{Limit: 200})
 	require.NoError(err)
 
 	var prComments, issueComments int

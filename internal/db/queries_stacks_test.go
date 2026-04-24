@@ -32,7 +32,6 @@ func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, hea
 func TestListPRsForStackDetection(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	// open PR — included
@@ -42,7 +41,7 @@ func TestListPRsForStackDetection(t *testing.T) {
 	// closed PR — excluded
 	insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "main", "closed")
 
-	prs, err := d.ListPRsForStackDetection(ctx, repoID)
+	prs, err := d.ListPRsForStackDetection(t.Context(), repoID)
 	require.NoError(t, err)
 	assert.Len(prs, 2)
 	numbers := []int{prs[0].Number, prs[1].Number}

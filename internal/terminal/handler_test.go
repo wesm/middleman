@@ -78,7 +78,6 @@ func TestHandlerWorkspaceNotFound(t *testing.T) {
 
 func TestHandlerWorkspaceNotReady(t *testing.T) {
 	d := openTestDB(t)
-	ctx := t.Context()
 	wtDir := t.TempDir()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -86,7 +85,7 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 
 	mgr := workspace.NewManager(d, wtDir)
 	ws, err := mgr.Create(
-		ctx, "github.com", "acme", "widget", 42,
+		t.Context(), "github.com", "acme", "widget", 42,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "creating", ws.Status)
