@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 )
 
@@ -31,6 +33,43 @@ func openTestDB(t *testing.T) *db.DB {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	return New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+}
+
+func TestNewBoundsStartupTmuxOrphanCleanup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "slow-tmux")
+	require.NoError(os.WriteFile(script, []byte(
+		"#!/bin/sh\nsleep 0.25\nexit 0\n",
+	), 0o755))
+
+	origTimeout := startupTmuxCleanupTimeout
+	startupTmuxCleanupTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { startupTmuxCleanupTimeout = origTimeout })
+
+	cfg := &config.Config{
+		Tmux: config.Tmux{
+			Command: []string{script, "wrap"},
+		},
+	}
+
+	start := time.Now()
+	s := New(
+		openTestDB(t), nil, nil, "/", cfg,
+		ServerOptions{WorktreeDir: t.TempDir()},
+	)
+	elapsed := time.Since(start)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = s.Shutdown(ctx)
+	})
+
+	assert.Less(elapsed, 150*time.Millisecond)
 }
 
 func TestHealthzAndLivez_ReturnOK(t *testing.T) {

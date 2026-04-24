@@ -60,6 +60,8 @@ type shutdownDeadline struct {
 	set      bool
 }
 
+var startupTmuxCleanupTimeout = 2 * time.Second
+
 func (d *shutdownDeadline) tighten(deadline time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -351,11 +353,13 @@ func newServer(
 		if clones != nil {
 			s.workspaces.SetClones(clones)
 		}
-		if err := s.workspaces.ReapOrphanTmuxSessions(
-			context.Background(),
-		); err != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(
+			context.Background(), startupTmuxCleanupTimeout,
+		)
+		if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
 			slog.Warn("reap orphan tmux sessions", "err", err)
 		}
+		cleanupCancel()
 	}
 
 	if s.workspaces != nil {
