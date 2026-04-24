@@ -286,6 +286,39 @@ func TestPRMonitorRunOnceRequiresParseableUpstreamRemoteIdentity(t *testing.T) {
 	assert.Nil(ws.AssociatedPRNumber)
 }
 
+func TestPRMonitorRunOnceSkipsWhenConfiguredUpstreamRemoteURLFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+	seedMR(t, d, repoID, 42, "transient-remote")
+
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "transient-remote")
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"config", "branch.transient-remote.remote", "missing-remote",
+	)
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"config", "branch.transient-remote.merge", "refs/heads/transient-remote",
+	)
+	insertMonitorWorkspace(t, d, worktreePath, nil)
+
+	monitor := NewPRMonitor(d)
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	assert.Empty(updates)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Nil(ws.AssociatedPRNumber)
+}
+
 func TestPRMonitorRunOnceSkipsAmbiguousLocalBranchFallback(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

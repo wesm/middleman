@@ -212,8 +212,7 @@ func gitUpstreamState(
 	state.branchName = strings.TrimPrefix(mergeRef, "refs/heads/")
 	remoteURL, err := gitRemoteURL(ctx, dir, remoteName)
 	if err != nil {
-		state.allowFallback = true
-		return state, nil
+		return state, fmt.Errorf("git remote get-url %q: %w", remoteName, err)
 	}
 	state.remoteURL = remoteURL
 	return state, nil
