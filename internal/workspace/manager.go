@@ -217,6 +217,11 @@ func (m *Manager) Setup(
 			ws.ID, workspaceSetupStageTmuxSession, err,
 		)
 	}
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageTmuxSession, "success",
+		"tmux session started",
+	)
 
 	if err := m.updateWorkspaceStatus(
 		ctx, ws.ID, "ready", nil,
@@ -594,7 +599,13 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 ) error {
 	if err := m.killTmuxSession(ctx, ws.TmuxSession); err != nil &&
 		!isTmuxSessionAbsent([]byte(err.Error()), err) {
-		return fmt.Errorf("kill tmux session: %w", err)
+		hasSession, checkErr := m.workspaceHasCreatedTmuxSession(ctx, ws)
+		if checkErr != nil {
+			return checkErr
+		}
+		if hasSession {
+			return fmt.Errorf("kill tmux session: %w", err)
+		}
 	}
 
 	if m.clones == nil {
@@ -664,7 +675,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		return err
 	}
 	for _, session := range sessions {
-		if !strings.HasPrefix(session, "middleman-") {
+		if !isWorkspaceTmuxSessionName(session) {
 			continue
 		}
 		if live[session] {
@@ -678,6 +689,44 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func isWorkspaceTmuxSessionName(session string) bool {
+	const prefix = "middleman-"
+	if len(session) != len(prefix)+16 ||
+		!strings.HasPrefix(session, prefix) {
+		return false
+	}
+	for _, ch := range session[len(prefix):] {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Manager) workspaceHasCreatedTmuxSession(
+	ctx context.Context, ws *Workspace,
+) (bool, error) {
+	if ws.Status == "ready" {
+		return true, nil
+	}
+
+	events, err := m.db.ListWorkspaceSetupEvents(ctx, ws.ID)
+	if err != nil {
+		return false, fmt.Errorf("list workspace setup events: %w", err)
+	}
+	for _, event := range events {
+		if event.Stage == workspaceSetupStageTmuxSession &&
+			event.Outcome == "success" {
+			return true, nil
+		}
+		if event.Stage == workspaceSetupStageSetup &&
+			event.Outcome == "ready" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // EnsureTmux creates a tmux session if it does not already exist,

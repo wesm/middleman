@@ -683,6 +683,7 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	ctx := context.Background()
 	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
 	require.NoError(err)
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
 
 	dirty, err := mgr.Delete(ctx, ws.ID, true)
 	assert.Nil(dirty)
@@ -703,6 +704,40 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	)
 }
 
+func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{
+		filepath.Join(t.TempDir(), "missing-tmux"),
+	})
+
+	ctx := context.Background()
+	ws := &Workspace{
+		ID:              "ws-tmux-unavailable",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/thing",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "middleman-0000000000000042",
+		Status:          "error",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	require.NoError(err)
+	assert.Nil(dirty)
+
+	got, err := mgr.Get(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(got)
+}
+
 func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -714,7 +749,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-live\nmiddleman-orphan\nother-session\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -734,7 +769,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		MRNumber:     1,
 		MRHeadRef:    "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "middleman-live",
+		TmuxSession:  "middleman-0000000000000001",
 		Status:       "ready",
 	}
 	require.NoError(d.InsertWorkspace(context.Background(), live))
@@ -748,7 +783,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		argvs[0],
 	)
 	assert.Equal(
-		[]string{"wrap", "kill-session", "-t", "middleman-orphan"},
+		[]string{"wrap", "kill-session", "-t", "middleman-ffffffffffffffff"},
 		argvs[1],
 	)
 }
