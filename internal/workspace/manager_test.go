@@ -658,6 +658,50 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 	assert.False(queued)
 }
 
+func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	errMsg := "ensure clone failed"
+	ws := &Workspace{
+		ID:              "ws-raced-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-raced-retry",
+		TmuxSession:     "middleman-ws-raced-retry",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	next, startNow, err := mgr.queueRetryOrStartErrored(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(startNow)
+	assert.Equal("creating", next.Status)
+	assert.Nil(next.ErrorMessage)
+	assert.Equal(workspaceBranchUnknown, next.WorkspaceBranch)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("creating", stored.Status)
+	assert.Nil(stored.ErrorMessage)
+	assert.Equal(workspaceBranchUnknown, stored.WorkspaceBranch)
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(next)
+	assert.False(queued)
+}
+
 func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

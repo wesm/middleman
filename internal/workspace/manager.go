@@ -452,18 +452,7 @@ func (m *Manager) RequestRetry(
 		return nil, false, err
 	}
 	if !started {
-		current, getErr := m.db.GetWorkspace(ctx, id)
-		if getErr != nil {
-			return nil, false, fmt.Errorf("get workspace after retry conflict: %w", getErr)
-		}
-		if current == nil {
-			return nil, false, fmt.Errorf("workspace not found")
-		}
-		if current.Status == "creating" {
-			m.queueRetry(id)
-			return current, false, nil
-		}
-		return nil, false, fmt.Errorf("workspace is not in error status")
+		return m.queueRetryOrStartErrored(ctx, id)
 	}
 
 	m.cleanupWorkspaceArtifacts(ctx, ws)
@@ -503,10 +492,53 @@ func (m *Manager) StartQueuedRetryIfErrored(
 	return ws, true, nil
 }
 
-func (m *Manager) queueRetry(id string) {
+func (m *Manager) queueRetryOrStartErrored(
+	ctx context.Context, id string,
+) (*Workspace, bool, error) {
+	// Serialize the status re-check with queue consumption. If setup
+	// already failed and the worker drained an empty queue, the retry
+	// request must start the next setup attempt itself.
 	m.retryMu.Lock()
-	defer m.retryMu.Unlock()
-	m.retryQueued[id] = true
+	current, getErr := m.db.GetWorkspace(ctx, id)
+	if getErr != nil {
+		m.retryMu.Unlock()
+		return nil, false, fmt.Errorf(
+			"get workspace after retry conflict: %w", getErr,
+		)
+	}
+	if current == nil {
+		m.retryMu.Unlock()
+		return nil, false, fmt.Errorf("workspace not found")
+	}
+	switch current.Status {
+	case "creating":
+		m.retryQueued[id] = true
+		m.retryMu.Unlock()
+		return current, false, nil
+	case "error":
+		delete(m.retryQueued, id)
+		m.retryMu.Unlock()
+		return m.startWorkspaceRetry(ctx, current)
+	default:
+		m.retryMu.Unlock()
+		return nil, false, fmt.Errorf("workspace is not in error status")
+	}
+}
+
+func (m *Manager) startWorkspaceRetry(
+	ctx context.Context, ws *Workspace,
+) (*Workspace, bool, error) {
+	started, err := m.db.StartWorkspaceRetry(ctx, ws.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !started {
+		return m.queueRetryOrStartErrored(ctx, ws.ID)
+	}
+
+	m.cleanupWorkspaceArtifacts(ctx, ws)
+	m.markRetryStarted(ctx, ws)
+	return ws, true, nil
 }
 
 func (m *Manager) consumeQueuedRetry(id string) bool {
