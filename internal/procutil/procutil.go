@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"golang.org/x/sync/semaphore"
 )
 
 const DefaultMaxProcesses = 32
@@ -15,7 +17,7 @@ const DefaultMaxProcesses = 32
 var ErrProcessLimitReached = errors.New("host process limit reached")
 
 type Limiter struct {
-	slots chan struct{}
+	sem *semaphore.Weighted
 }
 
 func NewLimiter(max int) *Limiter {
@@ -23,22 +25,14 @@ func NewLimiter(max int) *Limiter {
 		max = 1
 	}
 	return &Limiter{
-		slots: make(chan struct{}, max),
+		sem: semaphore.NewWeighted(int64(max)),
 	}
 }
 
 func (l *Limiter) TryAcquire(
 	_ context.Context, reason string,
 ) (func(), error) {
-	select {
-	case l.slots <- struct{}{}:
-		var once sync.Once
-		return func() {
-			once.Do(func() {
-				<-l.slots
-			})
-		}, nil
-	default:
+	if !l.sem.TryAcquire(1) {
 		if reason != "" {
 			return nil, fmt.Errorf(
 				"%w: %s", ErrProcessLimitReached, reason,
@@ -46,6 +40,12 @@ func (l *Limiter) TryAcquire(
 		}
 		return nil, ErrProcessLimitReached
 	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.sem.Release(1)
+		})
+	}, nil
 }
 
 var defaultLimiter = NewLimiter(DefaultMaxProcesses)

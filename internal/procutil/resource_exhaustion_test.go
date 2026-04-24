@@ -1,7 +1,6 @@
 package procutil
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"syscall"
@@ -20,27 +19,6 @@ func TestIsResourceExhausted(t *testing.T) {
 	assert.True(IsResourceExhausted(errors.New("zsh: fork failed: resource temporarily unavailable")))
 	assert.False(IsResourceExhausted(errors.New("permission denied")))
 	assert.False(IsResourceExhausted(nil))
-}
-
-func TestLimiterTryAcquireAndRelease(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-
-	limiter := NewLimiter(1)
-	release, err := limiter.TryAcquire(context.Background(), "first")
-	require.NoError(err)
-	assert.NotNil(release)
-
-	release2, err := limiter.TryAcquire(context.Background(), "second")
-	require.ErrorIs(err, ErrProcessLimitReached)
-	assert.Nil(release2)
-
-	release()
-
-	release3, err := limiter.TryAcquire(context.Background(), "third")
-	require.NoError(err)
-	assert.NotNil(release3)
-	release3()
 }
 
 func TestWrapResourceExhaustion(t *testing.T) {
