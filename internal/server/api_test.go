@@ -6992,6 +6992,54 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 	assert.Nil(ready.ErrorMessage)
 }
 
+func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	waitForWorkspaceReady(t, ctx, client, wsID)
+	before, err := database.GetWorkspace(ctx, wsID)
+	require.NoError(err)
+	require.NotNil(before)
+	require.Equal("ready", before.Status)
+	require.Nil(before.ErrorMessage)
+	require.NotEmpty(before.WorktreePath)
+	beforeEvents, err := database.ListWorkspaceSetupEvents(ctx, wsID)
+	require.NoError(err)
+
+	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, retryResp.StatusCode())
+
+	after, err := database.GetWorkspace(ctx, wsID)
+	require.NoError(err)
+	require.NotNil(after)
+	assert.Equal("ready", after.Status)
+	assert.Nil(after.ErrorMessage)
+	assert.Equal(before.WorktreePath, after.WorktreePath)
+	assert.Equal(before.WorkspaceBranch, after.WorkspaceBranch)
+
+	afterEvents, err := database.ListWorkspaceSetupEvents(ctx, wsID)
+	require.NoError(err)
+	assert.Len(afterEvents, len(beforeEvents))
+}
+
 func TestWorkspaceCreateNotFound(t *testing.T) {
 	require := require.New(t)
 
