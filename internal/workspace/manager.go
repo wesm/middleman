@@ -461,8 +461,9 @@ func (m *Manager) RequestRetry(
 		}
 		if current.Status == "creating" {
 			m.queueRetry(id)
+			return current, false, nil
 		}
-		return current, false, nil
+		return nil, false, fmt.Errorf("workspace is not in error status")
 	}
 
 	m.cleanupWorkspaceArtifacts(ctx, ws)

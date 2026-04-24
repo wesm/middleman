@@ -2204,6 +2204,9 @@ func (s *Server) retryWorkspace(
 		if strings.Contains(err.Error(), "not found") {
 			return nil, huma.Error404NotFound(err.Error())
 		}
+		if strings.Contains(err.Error(), "not in error status") {
+			return nil, huma.Error409Conflict(err.Error())
+		}
 		return nil, huma.Error500InternalServerError(
 			"retry workspace: " + err.Error(),
 		)
