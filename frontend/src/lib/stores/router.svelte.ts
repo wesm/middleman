@@ -34,6 +34,10 @@ function stripBase(path: string): string {
   return path;
 }
 
+function currentLocationPath(): string {
+  return window.location.pathname + window.location.search;
+}
+
 function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
@@ -153,7 +157,7 @@ function parseRoute(fullPath: string): Route {
 }
 
 let route = $state<Route>(
-  parseRoute(window.location.pathname + window.location.search),
+  parseRoute(currentLocationPath()),
 );
 
 // Fire onRouteChange for the initial route after the module loads.
@@ -288,9 +292,7 @@ export function replaceUrl(path: string): void {
 // Listen for browser back/forward.
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    route = parseRoute(
-      window.location.pathname + window.location.search,
-    );
+    route = parseRoute(currentLocationPath());
     fireRouteChange(route);
   });
 }
