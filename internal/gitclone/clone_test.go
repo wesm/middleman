@@ -283,6 +283,33 @@ func TestEnsureCloneRestoresOriginHead(t *testing.T) {
 	assert.Equal("refs/remotes/origin/main", headRef)
 }
 
+func TestEnsureCloneRepairsStaleOriginHead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx := context.Background()
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	run(t, clonePath, "git", "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+	assert.Equal("refs/remotes/origin/master", gitSymbolicRef(
+		t, clonePath, "refs/remotes/origin/HEAD",
+	))
+
+	require.NoError(mgr.EnsureClone(
+		ctx, "github.com", "testowner", "testrepo", remote))
+
+	headRef := gitSymbolicRef(
+		t, clonePath, "refs/remotes/origin/HEAD",
+	)
+	assert.Equal("refs/remotes/origin/main", headRef)
+}
+
 // getFetchRefspecs returns the current fetch refspecs configured for the
 // "origin" remote in a bare clone. Returns an empty slice when the key
 // is unset; `git config --get-all` signals that with exit code 1.

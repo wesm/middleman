@@ -146,9 +146,11 @@ func (m *Manager) cloneBare(
 func (m *Manager) fetch(
 	ctx context.Context, host, clonePath string,
 ) error {
-	_, err := m.git(ctx, host, clonePath, "fetch", "--prune", "origin")
-	if err != nil {
+	if _, err := m.git(ctx, host, clonePath, "fetch", "--prune", "origin"); err != nil {
 		return fmt.Errorf("git fetch: %w", err)
+	}
+	if _, err := m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a"); err != nil {
+		return fmt.Errorf("git remote set-head origin -a: %w", err)
 	}
 	return nil
 }
