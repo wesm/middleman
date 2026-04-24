@@ -70,11 +70,7 @@ func TestHealthz_ReturnsServiceUnavailableAfterDBClose(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = s.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, s) })
 
 	require.NoError(database.Close())
 

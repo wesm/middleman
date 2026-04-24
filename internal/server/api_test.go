@@ -36,6 +36,13 @@ func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 5*time.Second)
 }
 
+func gracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) error }) {
+	t.Helper()
+	ctx, cancel := cleanupContext(t)
+	defer cancel()
+	require.NoError(t, srv.Shutdown(ctx))
+}
+
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
 	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
@@ -294,11 +301,7 @@ func setupTestServerWithDatabase(
 		database, syncer, nil, "/",
 		nil, ServerOptions{},
 	)
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv
 }
 
@@ -333,11 +336,7 @@ func setupTestServerWithRepos(
 	)
 	// Registered after the DB cleanup so LIFO ordering runs Shutdown
 	// first and lets background goroutines finish before DB close.
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv, database
 }
 
@@ -2268,11 +2267,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	// Seed the host cooldown window exactly like a recent background sync.
 	syncer.RunOnce(t.Context())
@@ -3560,11 +3555,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -3697,11 +3688,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -3855,11 +3842,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -3971,11 +3954,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -4093,11 +4072,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -4242,11 +4217,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -4350,11 +4321,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
@@ -4453,11 +4420,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
@@ -4577,11 +4540,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	})
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() {
-		shutdownCtx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
@@ -6656,11 +6615,7 @@ func setupTestServerWithWorkspaces(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -7253,11 +7208,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	srv := New(
 		database, syncer, nil, "/", nil, ServerOptions{},
 	)
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 	ctx := t.Context()
 

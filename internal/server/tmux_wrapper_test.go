@@ -215,11 +215,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -475,11 +471,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 		database, restartSyncer, nil, "/",
 		nil, ServerOptions{WorktreeDir: filepath.Join(dir, "restart-worktrees")},
 	)
-	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		_ = restarted.Shutdown(ctx)
-	})
+	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	getResp, err := restartedClient.HTTP.GetWorkspacesByIdWithResponse(

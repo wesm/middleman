@@ -204,9 +204,7 @@ func startSyncCooldownE2EServer(
 	}, 2*time.Second, 10*time.Millisecond)
 
 	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
-		require.NoError(srv.Shutdown(ctx))
+		gracefulShutdown(t, srv)
 		select {
 		case err := <-serveErr:
 			require.ErrorIs(err, http.ErrServerClosed)
