@@ -3,15 +3,16 @@
 package gitclone
 
 import (
-	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/testutil"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 // setupTestRepo creates a bare "remote" repo with one commit and returns
@@ -41,13 +42,27 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", msg)
 	run(t, work, "git", "push", "origin", "main")
-	return testutil.GitSHA(t, work, "HEAD")
+	cmd := exec.Command("git", "-C", work, "rev-parse", "HEAD")
+	cmd.Env = filteredGitTestEnv()
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
+}
+
+func filteredGitTestEnv() []string {
+	return append(gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
 }
 
 func run(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
-	require.Equal(t, "git", name)
-	testutil.RunGit(t, dir, args...)
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = filteredGitTestEnv()
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "command %s %v failed: %s", name, args, out)
 }
 
 func TestEnsureClone(t *testing.T) {

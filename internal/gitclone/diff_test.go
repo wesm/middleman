@@ -3,7 +3,6 @@
 package gitclone
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
