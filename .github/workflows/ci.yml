@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
@@ -78,6 +83,9 @@ jobs:
         run: cd frontend && bun run test
 
       - name: Run tests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MIDDLEMAN_LIVE_GITHUB_TESTS: "1"
         run: go test ./... -v -shuffle=on
 
       - name: Run integration tests (git-dependent)
