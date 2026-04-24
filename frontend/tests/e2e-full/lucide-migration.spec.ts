@@ -102,6 +102,22 @@ async function installWorkspaceRoutes(
       });
     },
   );
+
+  await page.route(
+    `**/api/v1/workspaces/${workspace.id}/retry`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify(workspace),
+      });
+    },
+  );
 }
 
 test.describe("lucide migration", () => {
