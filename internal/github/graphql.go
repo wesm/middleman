@@ -160,12 +160,15 @@ type gqlCheckContext struct {
 }
 
 type gqlCheckRunFields struct {
-	Name       string
-	Status     string
-	Conclusion string
-	DetailsURL string `graphql:"detailsUrl"`
-	CheckSuite struct {
-		App struct {
+	Name        string
+	Status      string
+	Conclusion  string
+	DetailsURL  string `graphql:"detailsUrl"`
+	StartedAt   *time.Time
+	CompletedAt *time.Time
+	CheckSuite  struct {
+		CreatedAt *time.Time
+		App       struct {
 			Name string
 		}
 	}
@@ -353,12 +356,15 @@ func splitCheckContexts(contexts []gqlCheckContext) ([]*gh.CheckRun, []*gh.RepoS
 func adaptCheckRun(gql *gqlCheckRunFields) *gh.CheckRun {
 	url := sanitizeURL(gql.DetailsURL)
 	return &gh.CheckRun{
-		Name:       new(gql.Name),
-		Status:     new(toLower(gql.Status)),
-		Conclusion: new(toLower(gql.Conclusion)),
-		HTMLURL:    new(url),
-		DetailsURL: new(gql.DetailsURL),
-		App:        &gh.App{Name: new(gql.CheckSuite.App.Name)},
+		Name:        new(gql.Name),
+		Status:      new(toLower(gql.Status)),
+		Conclusion:  new(toLower(gql.Conclusion)),
+		HTMLURL:     new(url),
+		DetailsURL:  new(gql.DetailsURL),
+		StartedAt:   ghTimestampPtr(gql.StartedAt),
+		CompletedAt: ghTimestampPtr(gql.CompletedAt),
+		CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestampPtr(gql.CheckSuite.CreatedAt)},
+		App:         &gh.App{Name: new(gql.CheckSuite.App.Name)},
 	}
 }
 
@@ -380,6 +386,13 @@ func toLower(s string) string {
 		b[i] = c
 	}
 	return string(b)
+}
+
+func ghTimestampPtr(t *time.Time) *gh.Timestamp {
+	if t == nil {
+		return nil
+	}
+	return &gh.Timestamp{Time: *t}
 }
 
 // --- Bulk result types ---

@@ -127,6 +127,7 @@ func TestAdaptCommit(t *testing.T) {
 func TestAdaptCheckContext(t *testing.T) {
 	assert := Assert.New(t)
 
+	now := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	contexts := []gqlCheckContext{
 		{
 			Typename: "CheckRun",
@@ -146,6 +147,7 @@ func TestAdaptCheckContext(t *testing.T) {
 			},
 		},
 	}
+	contexts[0].CheckRun.CheckSuite.CreatedAt = &now
 	contexts[0].CheckRun.CheckSuite.App.Name = "GitHub Actions"
 
 	checks, statuses := splitCheckContexts(contexts)
@@ -155,6 +157,8 @@ func TestAdaptCheckContext(t *testing.T) {
 	assert.Equal("completed", checks[0].GetStatus())
 	assert.Equal("success", checks[0].GetConclusion())
 	assert.Equal("GitHub Actions", checks[0].GetApp().GetName())
+	require.NotNil(t, checks[0].GetCheckSuite().CreatedAt)
+	assert.True(checks[0].GetCheckSuite().CreatedAt.Time.Equal(now))
 
 	require.Len(t, statuses, 1)
 	assert.Equal("ci/lint", statuses[0].GetContext())
@@ -478,4 +482,38 @@ func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
 	assert.Equal("alpha", checks[0].Name)
 	assert.Equal("build", checks[1].Name)
 	assert.Equal("Zebra", checks[2].Name)
+}
+
+func TestNormalizeBulkCI_LatestCheckRunPerNameWins(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := gh.Timestamp{Time: time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)}
+	newer := gh.Timestamp{Time: older.Add(10 * time.Minute)}
+	buildName := "build"
+	statusCompleted := "completed"
+	conclusionFailure := "failure"
+	conclusionSuccess := "success"
+
+	checks := normalizeBulkCI(&BulkPR{
+		CheckRuns: []*gh.CheckRun{
+			{
+				ID:          new(int64(100)),
+				Name:        &buildName,
+				Status:      &statusCompleted,
+				Conclusion:  &conclusionFailure,
+				CompletedAt: &older,
+			},
+			{
+				ID:          new(int64(101)),
+				Name:        &buildName,
+				Status:      &statusCompleted,
+				Conclusion:  &conclusionSuccess,
+				CompletedAt: &newer,
+			},
+		},
+	})
+
+	require.Len(t, checks, 1)
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("success", checks[0].Conclusion)
 }

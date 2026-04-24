@@ -91,6 +91,7 @@ make vet        # go vet
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
 - Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
+- For GraphQL query changes, follow `context/testing.md` and enable `MIDDLEMAN_LIVE_GITHUB_TESTS=1` to validate query shape against GitHub's live GraphQL API
 
 ## Build Requirements
 

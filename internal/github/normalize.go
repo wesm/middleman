@@ -183,46 +183,26 @@ func DeriveOverallCIStatus(
 	runs []*gh.CheckRun,
 	combined *gh.CombinedStatus,
 ) string {
-	hasAny := false
-	hasPending := false
-	hasFailed := false
-
-	for _, r := range runs {
-		hasAny = true
-		if r.GetStatus() != "completed" {
-			hasPending = true
-			continue
-		}
-		switch r.GetConclusion() {
-		case "success", "neutral", "skipped":
-			// OK — not a failure.
-		default:
-			hasFailed = true
-		}
+	status := deriveCIStatusFromChecks(normalizeCIChecks(
+		runs,
+		combinedStatuses(combined),
+	))
+	if combined == nil || combined.GetTotalCount() == 0 {
+		return status
 	}
-
-	// Use GitHub's pre-aggregated State rather than iterating
-	// combined.Statuses, which may be truncated by pagination.
-	if combined != nil && combined.GetTotalCount() > 0 {
-		hasAny = true
-		switch combined.GetState() {
-		case "pending":
-			hasPending = true
-		case "failure", "error":
-			hasFailed = true
-		}
-	}
-
-	if !hasAny {
-		return ""
-	}
-	if hasFailed {
+	switch combined.GetState() {
+	case "failure", "error":
 		return "failure"
+	case "pending":
+		if status != "failure" {
+			return "pending"
+		}
+	case "success":
+		if status == "" {
+			return "success"
+		}
 	}
-	if hasPending {
-		return "pending"
-	}
-	return "success"
+	return status
 }
 
 // DeriveReviewDecision computes the aggregate review decision from a list of
@@ -260,20 +240,10 @@ func DeriveReviewDecision(reviews []*gh.PullRequestReview) string {
 
 // NormalizeCheckRuns converts GitHub check runs to a JSON string of CICheck objects.
 func NormalizeCheckRuns(runs []*gh.CheckRun) string {
-	if len(runs) == 0 {
+	checks := normalizeCIChecks(runs, nil)
+	if len(checks) == 0 {
 		return ""
 	}
-	checks := make([]db.CICheck, 0, len(runs))
-	for _, r := range runs {
-		checks = append(checks, db.CICheck{
-			Name:       r.GetName(),
-			Status:     r.GetStatus(),
-			Conclusion: r.GetConclusion(),
-			URL:        r.GetHTMLURL(),
-			App:        appName(r),
-		})
-	}
-	sortCIChecksByName(checks)
 	b, err := json.Marshal(checks)
 	if err != nil {
 		return ""
@@ -289,43 +259,173 @@ func NormalizeCIChecks(
 	runs []*gh.CheckRun,
 	combined *gh.CombinedStatus,
 ) string {
-	var checks []db.CICheck
-	for _, r := range runs {
-		checks = append(checks, db.CICheck{
-			Name:       r.GetName(),
-			Status:     r.GetStatus(),
-			Conclusion: r.GetConclusion(),
-			URL:        r.GetHTMLURL(),
-			App:        appName(r),
-		})
-	}
-	if combined != nil {
-		for _, s := range combined.Statuses {
-			// Map commit status state to check run status/conclusion.
-			status := "completed"
-			conclusion := s.GetState()
-			if conclusion == "pending" || conclusion == "expected" {
-				status = "in_progress"
-				conclusion = ""
-			}
-			checks = append(checks, db.CICheck{
-				Name:       s.GetContext(),
-				Status:     status,
-				Conclusion: conclusion,
-				URL:        sanitizeURL(s.GetTargetURL()),
-				App:        s.GetContext(),
-			})
-		}
-	}
+	checks := normalizeCIChecks(runs, combinedStatuses(combined))
 	if len(checks) == 0 {
 		return ""
 	}
-	sortCIChecksByName(checks)
 	b, err := json.Marshal(checks)
 	if err != nil {
 		return ""
 	}
 	return string(b)
+}
+
+type ciCheckCandidate struct {
+	check db.CICheck
+	name  string
+	key   string
+	at    time.Time
+	id    int64
+	order int
+}
+
+func normalizeCIChecks(runs []*gh.CheckRun, statuses []*gh.RepoStatus) []db.CICheck {
+	candidates := make([]ciCheckCandidate, 0, len(runs)+len(statuses))
+	for _, r := range runs {
+		candidates = append(candidates, ciCheckCandidate{
+			check: db.CICheck{
+				Name:       r.GetName(),
+				Status:     r.GetStatus(),
+				Conclusion: r.GetConclusion(),
+				URL:        r.GetHTMLURL(),
+				App:        appName(r),
+			},
+			name:  r.GetName(),
+			key:   checkRunDedupeKey(r),
+			at:    checkRunRecency(r),
+			id:    r.GetID(),
+			order: len(candidates),
+		})
+	}
+	for _, s := range statuses {
+		candidates = append(candidates, ciCheckCandidate{
+			check: db.CICheck{
+				Name:       s.GetContext(),
+				Status:     repoStatusCheckState(s),
+				Conclusion: repoStatusConclusion(s),
+				URL:        sanitizeURL(s.GetTargetURL()),
+				App:        s.GetContext(),
+			},
+			name:  s.GetContext(),
+			key:   repoStatusDedupeKey(s),
+			at:    repoStatusRecency(s),
+			id:    s.GetID(),
+			order: len(candidates),
+		})
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	byName := make(map[string]ciCheckCandidate, len(candidates))
+	orderedKeys := make([]string, 0, len(candidates))
+	checks := make([]db.CICheck, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.key == "" {
+			checks = append(checks, candidate.check)
+			continue
+		}
+		existing, ok := byName[candidate.key]
+		if !ok {
+			orderedKeys = append(orderedKeys, candidate.key)
+			byName[candidate.key] = candidate
+			continue
+		}
+		if ciCheckCandidateIsNewer(existing, candidate) {
+			byName[candidate.key] = candidate
+		}
+	}
+	for _, key := range orderedKeys {
+		checks = append(checks, byName[key].check)
+	}
+	sortCIChecksByName(checks)
+	return checks
+}
+
+func ciCheckCandidateIsNewer(existing, candidate ciCheckCandidate) bool {
+	if existing.at.IsZero() != candidate.at.IsZero() {
+		return existing.at.IsZero()
+	}
+	if !existing.at.Equal(candidate.at) {
+		return candidate.at.After(existing.at)
+	}
+	if existing.id != candidate.id {
+		return candidate.id > existing.id
+	}
+	return candidate.order > existing.order
+}
+
+func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
+	if combined == nil {
+		return nil
+	}
+	return combined.Statuses
+}
+
+func checkRunRecency(r *gh.CheckRun) time.Time {
+	completedAt := timestampTime(r.CompletedAt)
+	if !completedAt.IsZero() {
+		return completedAt
+	}
+	startedAt := timestampTime(r.StartedAt)
+	if !startedAt.IsZero() {
+		return startedAt
+	}
+	if suite := r.GetCheckSuite(); suite != nil {
+		return timestampTime(suite.CreatedAt)
+	}
+	return time.Time{}
+}
+
+func checkRunDedupeKey(r *gh.CheckRun) string {
+	name := r.GetName()
+	if name == "" {
+		return ""
+	}
+	return "check-run\x00" + appName(r) + "\x00" + name
+}
+
+func repoStatusDedupeKey(s *gh.RepoStatus) string {
+	context := s.GetContext()
+	if context == "" {
+		return ""
+	}
+	return "status\x00" + context
+}
+
+func repoStatusRecency(s *gh.RepoStatus) time.Time {
+	updatedAt := timestampTime(s.UpdatedAt)
+	if !updatedAt.IsZero() {
+		return updatedAt
+	}
+	return timestampTime(s.CreatedAt)
+}
+
+func timestampTime(t *gh.Timestamp) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.Time
+}
+
+func repoStatusCheckState(s *gh.RepoStatus) string {
+	switch s.GetState() {
+	case "pending", "expected":
+		return "in_progress"
+	default:
+		return "completed"
+	}
+}
+
+func repoStatusConclusion(s *gh.RepoStatus) string {
+	switch s.GetState() {
+	case "pending", "expected":
+		return ""
+	case "failure", "error":
+		return "failure"
+	default:
+		return s.GetState()
+	}
 }
 
 func sortCIChecksByName(checks []db.CICheck) {

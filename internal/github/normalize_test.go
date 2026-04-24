@@ -527,6 +527,242 @@ func TestNormalizeCheckRuns_SortsByCasefoldedName(t *testing.T) {
 	assert.Equal("Zebra", checks[2].Name)
 }
 
+func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	name := "build"
+	statusCompleted := "completed"
+	conclusionFailure := "failure"
+	conclusionSuccess := "success"
+
+	raw := NormalizeCIChecks([]*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionFailure,
+			CompletedAt: ghTimestamp(older),
+		},
+		{
+			ID:          new(int64(101)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionSuccess,
+			CompletedAt: ghTimestamp(newer),
+		},
+	}, nil)
+	require.NotEmpty(t, raw)
+
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 1)
+
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("completed", checks[0].Status)
+	assert.Equal("success", checks[0].Conclusion)
+}
+
+func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	name := "build"
+	statusCompleted := "completed"
+	statusInProgress := "in_progress"
+	conclusionFailure := "failure"
+
+	raw := NormalizeCIChecks([]*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionFailure,
+			CompletedAt: ghTimestamp(older),
+			StartedAt:   ghTimestamp(older.Add(-2 * time.Minute)),
+		},
+		{
+			ID:        new(int64(101)),
+			Name:      &name,
+			Status:    &statusInProgress,
+			StartedAt: ghTimestamp(newer),
+		},
+	}, nil)
+	require.NotEmpty(t, raw)
+
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 1)
+
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("in_progress", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+}
+
+func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	name := "build"
+	statusQueued := "queued"
+	statusCompleted := "completed"
+	conclusionSuccess := "success"
+
+	raw := NormalizeCIChecks([]*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionSuccess,
+			CompletedAt: ghTimestamp(older),
+			CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestamp(older.Add(-2 * time.Minute))},
+		},
+		{
+			ID:         new(int64(101)),
+			Name:       &name,
+			Status:     &statusQueued,
+			CheckSuite: &gh.CheckSuite{CreatedAt: ghTimestamp(newer)},
+		},
+	}, nil)
+	require.NotEmpty(t, raw)
+
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 1)
+
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("queued", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+}
+
+func TestNormalizeCIChecks_DeduplicatesBySourceAwareKey(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	name := "build"
+	statusCompleted := "completed"
+	conclusionFailure := "failure"
+	conclusionSuccess := "success"
+	conclusionNeutral := "neutral"
+	appOne := "GitHub Actions"
+	appTwo := "Buildkite"
+
+	raw := NormalizeCIChecks([]*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionFailure,
+			CompletedAt: ghTimestamp(older),
+			App:         &gh.App{Name: &appOne},
+		},
+		{
+			ID:          new(int64(101)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionSuccess,
+			CompletedAt: ghTimestamp(newer),
+			App:         &gh.App{Name: &appOne},
+		},
+		{
+			ID:          new(int64(102)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionNeutral,
+			CompletedAt: ghTimestamp(older),
+			App:         &gh.App{Name: &appTwo},
+		},
+	}, nil)
+	require.NotEmpty(raw)
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(raw), &checks))
+	require.Len(checks, 2)
+
+	byApp := make(map[string]db.CICheck, len(checks))
+	for _, check := range checks {
+		byApp[check.App] = check
+	}
+	require.Contains(byApp, "Buildkite")
+	require.Contains(byApp, "GitHub Actions")
+	assert.Equal("build", byApp["Buildkite"].Name)
+	assert.Equal("neutral", byApp["Buildkite"].Conclusion)
+	assert.Equal("build", byApp["GitHub Actions"].Name)
+	assert.Equal("success", byApp["GitHub Actions"].Conclusion)
+}
+
+func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing.T) {
+	assert := Assert.New(t)
+
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	context := "roborev"
+	oldState := "success"
+	newState := "failure"
+
+	raw := NormalizeCIChecks(nil, &gh.CombinedStatus{
+		TotalCount: new(2),
+		State:      &newState,
+		Statuses: []*gh.RepoStatus{
+			{
+				ID:        new(int64(100)),
+				Context:   &context,
+				State:     &oldState,
+				UpdatedAt: ghTimestamp(older),
+				CreatedAt: ghTimestamp(older.Add(-2 * time.Minute)),
+			},
+			{
+				ID:        new(int64(101)),
+				Context:   &context,
+				State:     &newState,
+				CreatedAt: ghTimestamp(newer),
+			},
+		},
+	})
+	require.NotEmpty(t, raw)
+
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
+	require.Len(t, checks, 1)
+
+	assert.Equal("roborev", checks[0].Name)
+	assert.Equal("completed", checks[0].Status)
+	assert.Equal("failure", checks[0].Conclusion)
+}
+
+func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
+	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(10 * time.Minute)
+	name := "build"
+	statusCompleted := "completed"
+	conclusionFailure := "failure"
+	conclusionSuccess := "success"
+
+	result := DeriveOverallCIStatus([]*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionFailure,
+			CompletedAt: ghTimestamp(older),
+		},
+		{
+			ID:          new(int64(101)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionSuccess,
+			CompletedAt: ghTimestamp(newer),
+		},
+	}, nil)
+
+	Assert.Equal(t, "success", result)
+}
+
 func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
 	assert := Assert.New(t)
 

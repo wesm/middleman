@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  checks: read
+  contents: read
+  issues: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -79,6 +87,13 @@ jobs:
 
       - name: Run tests
         run: go test ./... -v -shuffle=on
+
+      - name: Run live GraphQL validation
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MIDDLEMAN_LIVE_GITHUB_TESTS: "1"
+        run: go test ./internal/github -run TestLiveGraphQLQueriesValidateAgainstGitHub -shuffle=on
 
       - name: Run integration tests (git-dependent)
         run: go test -tags integration ./... -v -shuffle=on
