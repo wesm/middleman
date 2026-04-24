@@ -547,6 +547,7 @@
             >
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
+                platformHost={workspace.platform_host}
                 repoOwner={workspace.repo_owner}
                 repoName={workspace.repo_name}
                 itemType={workspace.item_type}

@@ -1,8 +1,4 @@
-import type {
-  Issue,
-  IssueDetail,
-  IssuesParams,
-} from "../api/types.js";
+import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
 export interface IssuesStoreOptions {
@@ -22,14 +18,10 @@ function apiErrorMessage(
   return error.detail ?? error.title ?? fallback;
 }
 
-export function createIssuesStore(
-  opts: IssuesStoreOptions,
-) {
+export function createIssuesStore(opts: IssuesStoreOptions) {
   const apiClient = opts.client;
-  const getGlobalRepo =
-    opts.getGlobalRepo ?? (() => undefined);
-  const getGroupByRepo =
-    opts.getGroupByRepo ?? (() => false);
+  const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
+  const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
   const getPage = opts.getPage ?? (() => "");
   const syncDep = opts.sync;
 
@@ -60,9 +52,7 @@ export function createIssuesStore(
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
   let issueDetailLoaded = $state(false);
-  let detailPollHandle: ReturnType<
-    typeof setInterval
-  > | null = null;
+  let detailPollHandle: ReturnType<typeof setInterval> | null = null;
   let issueSyncGeneration = 0;
 
   // --- list reads ---
@@ -125,9 +115,7 @@ export function createIssuesStore(
     const fetchedAt = issueDetail.detail_fetched_at;
     if (!fetchedAt) return false;
     const fetchedMs = new Date(fetchedAt).getTime();
-    const updatedMs = new Date(
-      issueDetail.issue.UpdatedAt,
-    ).getTime();
+    const updatedMs = new Date(issueDetail.issue.UpdatedAt).getTime();
     const hourAgo = Date.now() - 3_600_000;
     return fetchedMs < hourAgo && updatedMs > fetchedMs;
   }
@@ -137,9 +125,7 @@ export function createIssuesStore(
   function setIssueFilterStarred(v: boolean): void {
     filterStarred = v;
   }
-  function setIssueSearchQuery(
-    q: string | undefined,
-  ): void {
+  function setIssueSearchQuery(q: string | undefined): void {
     searchQuery = q;
   }
   function getIssueFilterState(): string {
@@ -149,52 +135,39 @@ export function createIssuesStore(
     filterState = s;
   }
 
-  function selectIssue(
-    owner: string,
-    name: string,
-    number: number,
-  ): void {
+  function selectIssue(owner: string, name: string, number: number): void {
     selectedIssue = { owner, name, number };
   }
   function clearIssueSelection(): void {
     selectedIssue = null;
   }
 
-  async function loadIssues(
-    params?: IssuesParams,
-  ): Promise<void> {
+  async function loadIssues(params?: IssuesParams): Promise<void> {
     loading = true;
     storeError = null;
     try {
       const globalRepo = getGlobalRepo();
-      const { data, error: requestError } =
-        await apiClient.GET("/issues", {
-          params: {
-            query: {
-              state: filterState,
-              ...(globalRepo !== undefined && {
-                repo: globalRepo,
-              }),
-              ...(filterStarred && { starred: true }),
-              ...(searchQuery !== undefined && {
-                q: searchQuery,
-              }),
-              ...params,
-            },
+      const { data, error: requestError } = await apiClient.GET("/issues", {
+        params: {
+          query: {
+            state: filterState,
+            ...(globalRepo !== undefined && {
+              repo: globalRepo,
+            }),
+            ...(filterStarred && { starred: true }),
+            ...(searchQuery !== undefined && {
+              q: searchQuery,
+            }),
+            ...params,
           },
-        });
+        },
+      });
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(
-            requestError,
-            "failed to load issues",
-          ),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to load issues"));
       }
       issues = (data ?? []) as Issue[];
     } catch (err) {
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
     }
@@ -202,10 +175,27 @@ export function createIssuesStore(
 
   // --- detail writes ---
 
+  function currentIssuePlatformHost(
+    owner: string,
+    name: string,
+    number: number,
+  ): string | undefined {
+    if (
+      issueDetail &&
+      issueDetail.repo_owner === owner &&
+      issueDetail.repo_name === name &&
+      issueDetail.issue.Number === number
+    ) {
+      return issueDetail.platform_host;
+    }
+    return undefined;
+  }
+
   async function loadIssueDetail(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): Promise<void> {
     const gen = ++issueSyncGeneration;
 
@@ -213,19 +203,22 @@ export function createIssuesStore(
     detailSyncing = false;
     detailError = null;
     try {
-      const { data, error: requestError } =
-        await apiClient.GET(
-          "/repos/{owner}/{name}/issues/{number}",
-          { params: { path: { owner, name, number } } },
-        );
+      const { data, error: requestError } = await apiClient.GET(
+        "/repos/{owner}/{name}/issues/{number}",
+        {
+          params: {
+            path: { owner, name, number },
+            query: {
+              ...(platformHost && {
+                platform_host: platformHost,
+              }),
+            },
+          },
+        },
+      );
       if (gen !== issueSyncGeneration) return;
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(
-            requestError,
-            "failed to load issue",
-          ),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to load issue"));
       }
       issueDetail = data
         ? ({
@@ -236,15 +229,13 @@ export function createIssuesStore(
       issueDetailLoaded = data?.detail_loaded ?? false;
     } catch (err) {
       if (gen !== issueSyncGeneration) return;
-      detailError =
-        err instanceof Error ? err.message : String(err);
+      detailError = err instanceof Error ? err.message : String(err);
     } finally {
-      if (gen === issueSyncGeneration)
-        detailLoading = false;
+      if (gen === issueSyncGeneration) detailLoading = false;
     }
 
     if (gen === issueSyncGeneration) {
-      void syncIssueDetail(owner, name, number, gen);
+      void syncIssueDetail(owner, name, number, gen, platformHost);
     }
   }
 
@@ -253,19 +244,26 @@ export function createIssuesStore(
     name: string,
     number: number,
     gen: number,
+    platformHost?: string,
   ): Promise<void> {
     detailSyncing = true;
     try {
-      const { data, error: requestError } =
-        await apiClient.POST(
-          "/repos/{owner}/{name}/issues/{number}/sync",
-          { params: { path: { owner, name, number } } },
-        );
+      const { data, error: requestError } = await apiClient.POST(
+        "/repos/{owner}/{name}/issues/{number}/sync",
+        {
+          params: {
+            path: { owner, name, number },
+            query: {
+              ...(platformHost && {
+                platform_host: platformHost,
+              }),
+            },
+          },
+        },
+      );
       if (gen !== issueSyncGeneration) return;
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(requestError, "sync failed"),
-        );
+        throw new Error(apiErrorMessage(requestError, "sync failed"));
       }
       if (data) {
         detailError = null;
@@ -273,14 +271,12 @@ export function createIssuesStore(
           ...data,
           events: data.events ?? [],
         } as IssueDetail;
-        issueDetailLoaded =
-          data.detail_loaded ?? issueDetailLoaded;
+        issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
       // Sync failure is non-fatal.
     } finally {
-      if (gen === issueSyncGeneration)
-        detailSyncing = false;
+      if (gen === issueSyncGeneration) detailSyncing = false;
     }
     // Always refresh rate limits -- the API calls happened
     // regardless of whether user navigated away.
@@ -294,12 +290,22 @@ export function createIssuesStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): Promise<void> {
     const gen = issueSyncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/issues/{number}",
-        { params: { path: { owner, name, number } } },
+        {
+          params: {
+            path: { owner, name, number },
+            query: {
+              ...(platformHost && {
+                platform_host: platformHost,
+              }),
+            },
+          },
+        },
       );
       if (gen !== issueSyncGeneration) return;
       if (data !== undefined) {
@@ -318,10 +324,11 @@ export function createIssuesStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): void {
     stopIssueDetailPolling();
     detailPollHandle = setInterval(() => {
-      void refreshIssueDetail(owner, name, number);
+      void refreshIssueDetail(owner, name, number, platformHost);
     }, 60_000);
   }
 
@@ -347,26 +354,29 @@ export function createIssuesStore(
     number: number,
     body: string,
   ): Promise<void> {
+    const platformHost = currentIssuePlatformHost(owner, name, number);
+
     detailError = null;
     try {
       const { error: requestError } = await apiClient.POST(
         "/repos/{owner}/{name}/issues/{number}/comments",
         {
           params: { path: { owner, name, number } },
-          body: { body },
+          body: {
+            body,
+            ...(platformHost && {
+              platform_host: platformHost,
+            }),
+          },
         },
       );
       if (requestError) {
         throw new Error(
-          apiErrorMessage(
-            requestError,
-            "failed to post comment",
-          ),
+          apiErrorMessage(requestError, "failed to post comment"),
         );
       }
     } catch (err) {
-      detailError =
-        err instanceof Error ? err.message : String(err);
+      detailError = err instanceof Error ? err.message : String(err);
       return;
     }
     // Supersede any in-flight syncIssueDetail so its stale response
@@ -375,11 +385,11 @@ export function createIssuesStore(
     detailSyncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshIssueDetail(owner, name, number);
+    await refreshIssueDetail(owner, name, number, platformHost);
     // Pull authoritative state from GitHub so issue row metadata
     // catches up. Skip if the user navigated away mid-refresh.
     if (gen === issueSyncGeneration) {
-      void syncIssueDetail(owner, name, number, gen);
+      void syncIssueDetail(owner, name, number, gen, platformHost);
     }
   }
 
@@ -389,47 +399,46 @@ export function createIssuesStore(
     number: number,
     currentlyStarred: boolean,
   ): Promise<void> {
+    const platformHost = currentIssuePlatformHost(owner, name, number);
+
     try {
       if (currentlyStarred) {
-        const { error: requestError } =
-          await apiClient.DELETE("/starred", {
-            body: {
-              item_type: "issue",
-              owner,
-              name,
-              number,
-            },
-          });
+        const { error: requestError } = await apiClient.DELETE("/starred", {
+          body: {
+            item_type: "issue",
+            owner,
+            name,
+            number,
+            ...(platformHost && {
+              platform_host: platformHost,
+            }),
+          },
+        });
         if (requestError) {
           throw new Error(
-            apiErrorMessage(
-              requestError,
-              "failed to unstar issue",
-            ),
+            apiErrorMessage(requestError, "failed to unstar issue"),
           );
         }
       } else {
-        const { error: requestError } =
-          await apiClient.PUT("/starred", {
-            body: {
-              item_type: "issue",
-              owner,
-              name,
-              number,
-            },
-          });
+        const { error: requestError } = await apiClient.PUT("/starred", {
+          body: {
+            item_type: "issue",
+            owner,
+            name,
+            number,
+            ...(platformHost && {
+              platform_host: platformHost,
+            }),
+          },
+        });
         if (requestError) {
           throw new Error(
-            apiErrorMessage(
-              requestError,
-              "failed to star issue",
-            ),
+            apiErrorMessage(requestError, "failed to star issue"),
           );
         }
       }
     } catch (err) {
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
       return;
     }
     await loadIssues();
@@ -439,7 +448,7 @@ export function createIssuesStore(
       issueDetail.repo_name === name &&
       issueDetail.issue.Number === number
     ) {
-      await loadIssueDetail(owner, name, number);
+      await loadIssueDetail(owner, name, number, platformHost);
     }
   }
 
@@ -553,6 +562,4 @@ export function createIssuesStore(
   };
 }
 
-export type IssuesStore = ReturnType<
-  typeof createIssuesStore
->;
+export type IssuesStore = ReturnType<typeof createIssuesStore>;

@@ -37,6 +37,7 @@
 
   interface Props {
     activeTab: "pr" | "issue" | "reviews";
+    platformHost: string;
     repoOwner: string;
     repoName: string;
     itemType: "pull_request" | "issue";
@@ -47,6 +48,7 @@
 
   let {
     activeTab,
+    platformHost,
     repoOwner,
     repoName,
     itemType,
@@ -285,6 +287,7 @@
           owner={repoOwner}
           name={repoName}
           number={itemNumber}
+          {platformHost}
         />
       </div>
     {:else}

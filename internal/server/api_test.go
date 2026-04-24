@@ -2460,6 +2460,39 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 	return issueID
 }
 
+func seedIssueOnHost(
+	t *testing.T, database *db.DB,
+	host, owner, name string, number int,
+	state, title string,
+) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	repoID, err := database.UpsertRepo(ctx, host, owner, name)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issue := &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     int64(number) * 1000,
+		Number:         number,
+		URL:            fmt.Sprintf("https://%s/%s/%s/issues/%d", host, owner, name, number),
+		Title:          title,
+		Author:         "testuser",
+		State:          state,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+	if state == "closed" {
+		issue.ClosedAt = &now
+	}
+
+	issueID, err := database.UpsertIssue(ctx, issue)
+	require.NoError(t, err)
+	return issueID
+}
+
 func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
 
@@ -2861,6 +2894,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 	go func() {
 		resp, err := client.HTTP.PostReposByOwnerByNameIssuesByNumberSyncWithResponse(
 			t.Context(), "acme", "widget", 5,
+			nil,
 		)
 		if err != nil {
 			syncErr <- err
@@ -2946,6 +2980,7 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 	// ghIssue.UpdatedAt.Time and the handler returned 502.
 	syncResp, err := client.HTTP.PostReposByOwnerByNameIssuesByNumberSyncWithResponse(
 		ctx, "acme", "widget", 9,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, syncResp.StatusCode())
@@ -2960,6 +2995,7 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 	// endpoint so the storage -> serializer path is covered.
 	getResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 9,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, getResp.StatusCode())
@@ -3093,6 +3129,7 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3114,6 +3151,7 @@ func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		t.Context(), "Acme", "Widget", 5,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3138,6 +3176,322 @@ func TestAPIListIssuesAcceptsMixedCaseRepoFilter(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
+}
+
+func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	database, err := db.Open(
+		filepath.Join(t.TempDir(), "test.db"),
+	)
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	seedIssueOnHost(
+		t, database,
+		"github.com", "acme", "widget", 7,
+		"open", "GitHub issue",
+	)
+	seedIssueOnHost(
+		t, database,
+		"ghe.example.com", "acme", "widget", 7,
+		"open", "GHES issue",
+	)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      &mockGH{},
+			"ghe.example.com": &mockGH{},
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(
+		database, syncer, nil, "/", nil, ServerOptions{},
+	)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/repos/acme/widget/issues/7?platform_host=ghe.example.com",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body rawIssueDetailResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal("ghe.example.com", body.PlatformHost)
+	if assert.NotNil(body.Issue) {
+		assert.Equal("GHES issue", body.Issue.Title)
+	}
+}
+
+func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	database, err := db.Open(
+		filepath.Join(t.TempDir(), "test.db"),
+	)
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	seedIssueOnHost(
+		t, database,
+		"github.com", "acme", "widget", 7,
+		"open", "GitHub stale issue",
+	)
+	seedIssueOnHost(
+		t, database,
+		"ghe.example.com", "acme", "widget", 7,
+		"open", "GHES stale issue",
+	)
+
+	githubClient := &mockGH{
+		getIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
+			title := "GitHub synced issue"
+			state := "open"
+			url := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				User:      &gh.User{Login: new("github-user")},
+			}, nil
+		},
+	}
+	ghesClient := &mockGH{
+		getIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
+			title := "GHES synced issue"
+			state := "open"
+			url := fmt.Sprintf("https://ghe.example.com/%s/%s/issues/%d", owner, repo, number)
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				User:      &gh.User{Login: new("ghes-user")},
+			}, nil
+		},
+	}
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": ghesClient,
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(
+		database, syncer, nil, "/", nil, ServerOptions{},
+	)
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/sync?platform_host=ghe.example.com",
+		http.NoBody,
+	).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	var body rawIssueDetailResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal("ghe.example.com", body.PlatformHost)
+	if assert.NotNil(body.Issue) {
+		assert.Equal("GHES synced issue", body.Issue.Title)
+	}
+
+	githubRepo, err := database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(githubRepo)
+	githubIssue, err := database.GetIssueByRepoIDAndNumber(
+		ctx, githubRepo.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(githubIssue)
+	assert.Equal("GitHub stale issue", githubIssue.Title)
+
+	ghesRepo, err := database.GetRepoByHostOwnerName(
+		ctx, "ghe.example.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(ghesRepo)
+	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
+		ctx, ghesRepo.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(ghesIssue)
+	assert.Equal("GHES synced issue", ghesIssue.Title)
+}
+
+func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	database, err := db.Open(
+		filepath.Join(t.TempDir(), "test.db"),
+	)
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	seedIssueOnHost(
+		t, database,
+		"github.com", "acme", "widget", 7,
+		"open", "GitHub issue",
+	)
+	seedIssueOnHost(
+		t, database,
+		"ghe.example.com", "acme", "widget", 7,
+		"open", "GHES issue",
+	)
+
+	githubClient := &mockGH{
+		editIssueFn: func(_ context.Context, _, _ string, number int, state string) (*gh.Issue, error) {
+			url := fmt.Sprintf("https://github.com/acme/widget/issues/%d", number)
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			title := "GitHub issue"
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				User:      &gh.User{Login: new("github-user")},
+			}, nil
+		},
+	}
+	ghesClient := &mockGH{
+		editIssueFn: func(_ context.Context, _, _ string, number int, state string) (*gh.Issue, error) {
+			url := fmt.Sprintf("https://ghe.example.com/acme/widget/issues/%d", number)
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			title := "GHES issue"
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				User:      &gh.User{Login: new("ghes-user")},
+			}, nil
+		},
+	}
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": ghesClient,
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(
+		database, syncer, nil, "/", nil, ServerOptions{},
+	)
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/github-state",
+		strings.NewReader(`{"state":"closed","platform_host":"ghe.example.com"}`),
+	).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+
+	githubRepo, err := database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(githubRepo)
+	githubIssue, err := database.GetIssueByRepoIDAndNumber(
+		ctx, githubRepo.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(githubIssue)
+	assert.Equal("open", githubIssue.State)
+
+	ghesRepo, err := database.GetRepoByHostOwnerName(
+		ctx, "ghe.example.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(ghesRepo)
+	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
+		ctx, ghesRepo.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(ghesIssue)
+	assert.Equal("closed", ghesIssue.State)
 }
 
 // TestAPIIssueDataFromGraphQLSync verifies the API correctly serves
@@ -3210,6 +3564,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	// Verify via GetIssue API
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 60,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(200, detailResp.StatusCode())
@@ -3316,6 +3671,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 80,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(200, detailResp.StatusCode())
@@ -3437,6 +3793,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	client := setupTestClient(t, srv)
 	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", 90,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(200, detailResp.StatusCode())
@@ -3946,6 +4303,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -3967,6 +4325,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -4064,6 +4423,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -4080,6 +4440,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -4209,6 +4570,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(targetNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -4224,6 +4586,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(targetNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -4412,6 +4775,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -4429,6 +4793,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -4532,6 +4897,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -4549,6 +4915,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
 		ctx, "acme", "widget", int64(issueNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -6979,7 +7346,13 @@ type rawIssueWorkspaceRef struct {
 	Status string `json:"status"`
 }
 
+type rawIssueSummary struct {
+	Title string `json:"title"`
+	State string `json:"state"`
+}
+
 type rawIssueDetailResponse struct {
+	Issue        *rawIssueSummary      `json:"issue"`
 	PlatformHost string                `json:"platform_host"`
 	RepoOwner    string                `json:"repo_owner"`
 	RepoName     string                `json:"repo_name"`

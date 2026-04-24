@@ -11,16 +11,18 @@ import (
 )
 
 type repoNumberPathRef struct {
-	owner  string
-	name   string
-	number int
+	owner        string
+	name         string
+	number       int
+	platformHost string
 }
 
 type starredRequest struct {
-	ItemType string `json:"item_type"`
-	Owner    string `json:"owner"`
-	Name     string `json:"name"`
-	Number   int    `json:"number"`
+	ItemType     string `json:"item_type"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int    `json:"number"`
+	PlatformHost string `json:"platform_host,omitempty"`
 }
 
 var errRepoNotFound = errors.New("repo not found")
@@ -60,15 +62,48 @@ func (s *Server) filterConfiguredRepos(repos []db.Repo) []db.Repo {
 	return filtered
 }
 
+// lookupRepo resolves a repository from owner/name and optional host inputs.
+func (s *Server) lookupRepo(
+	ctx context.Context,
+	owner, name, platformHost string,
+) (*db.Repo, error) {
+	var (
+		repo *db.Repo
+		err  error
+	)
+	if platformHost != "" {
+		repo, err = s.db.GetRepoByHostOwnerName(
+			ctx, platformHost, owner, name,
+		)
+	} else {
+		repo, err = s.db.GetRepoByOwnerName(ctx, owner, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get repo: %w", err)
+	}
+	if repo == nil {
+		return nil, errRepoNotFound
+	}
+	return repo, nil
+}
+
 // lookupRepoID resolves a repository from owner/name inputs and returns a
 // stable not-found error for handlers that need repo identity only.
 func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, error) {
-	repo, err := s.db.GetRepoByOwnerName(ctx, owner, name)
+	repo, err := s.lookupRepo(ctx, owner, name, "")
 	if err != nil {
-		return 0, fmt.Errorf("get repo: %w", err)
+		return 0, err
 	}
-	if repo == nil {
-		return 0, errRepoNotFound
+	return repo.ID, nil
+}
+
+func (s *Server) lookupRepoIDOnHost(
+	ctx context.Context,
+	owner, name, platformHost string,
+) (int64, error) {
+	repo, err := s.lookupRepo(ctx, owner, name, platformHost)
+	if err != nil {
+		return 0, err
 	}
 	return repo.ID, nil
 }
@@ -80,7 +115,60 @@ func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, 
 
 // lookupIssueID resolves the internal issue id from the common route tuple.
 func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	return s.db.GetIssueIDByRepoAndNumber(ctx, ref.owner, ref.name, ref.number)
+	if ref.platformHost == "" {
+		return s.db.GetIssueIDByRepoAndNumber(
+			ctx, ref.owner, ref.name, ref.number,
+		)
+	}
+	repoID, err := s.lookupRepoIDOnHost(
+		ctx, ref.owner, ref.name, ref.platformHost,
+	)
+	if err != nil {
+		return 0, err
+	}
+	issue, err := s.db.GetIssueByRepoIDAndNumber(
+		ctx, repoID, ref.number,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if issue == nil {
+		return 0, fmt.Errorf(
+			"issue %s/%s#%d not found", ref.owner, ref.name, ref.number,
+		)
+	}
+	return issue.ID, nil
+}
+
+func (s *Server) lookupIssue(
+	ctx context.Context,
+	ref repoNumberPathRef,
+) (*db.Repo, *db.Issue, error) {
+	repo, err := s.lookupRepo(
+		ctx, ref.owner, ref.name, ref.platformHost,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	var issue *db.Issue
+	if ref.platformHost != "" {
+		issue, err = s.db.GetIssueByRepoIDAndNumber(
+			ctx, repo.ID, ref.number,
+		)
+	} else {
+		issue, err = s.db.GetIssue(
+			ctx, ref.owner, ref.name, ref.number,
+		)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if issue == nil {
+		return repo, nil, fmt.Errorf(
+			"issue %s/%s#%d not found", ref.owner, ref.name, ref.number,
+		)
+	}
+	return repo, issue, nil
 }
 
 // parseRepoFilter splits the repo query parameter when it is in owner/name

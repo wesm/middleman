@@ -22,13 +22,24 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string;
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, platformHost }: Props = $props();
 
   $effect(() => {
-    void issues.loadIssueDetail(owner, name, number);
-    issues.startIssueDetailPolling(owner, name, number);
+    void issues.loadIssueDetail(
+      owner,
+      name,
+      number,
+      platformHost,
+    );
+    issues.startIssueDetailPolling(
+      owner,
+      name,
+      number,
+      platformHost,
+    );
     return () => issues.stopIssueDetailPolling();
   });
 
@@ -67,11 +78,17 @@
     stateSubmitting = true;
     stateError = null;
     try {
+      const detail = issues.getIssueDetail();
       const { error: requestError } = await client.POST(
         "/repos/{owner}/{name}/issues/{number}/github-state",
         {
           params: { path: { owner, name, number } },
-          body: { state: newState },
+          body: {
+            state: newState,
+            ...(detail && {
+              platform_host: detail.platform_host,
+            }),
+          },
         },
       );
       if (requestError) {
@@ -81,7 +98,12 @@
             ?? "failed to change issue state",
         );
       }
-      await issues.loadIssueDetail(owner, name, number);
+      await issues.loadIssueDetail(
+        owner,
+        name,
+        number,
+        detail?.platform_host ?? platformHost,
+      );
       await issues.loadIssues();
       await activity.loadActivity();
     } catch (err) {

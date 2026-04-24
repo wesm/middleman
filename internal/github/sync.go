@@ -3756,11 +3756,35 @@ func (s *Syncer) syncMRDiff(
 // SyncIssue fetches fresh data for a single issue from GitHub and updates the DB.
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncIssue(ctx context.Context, owner, name string, number int) error {
-	if !s.IsTrackedRepo(owner, name) {
-		return fmt.Errorf("repo %s/%s is not tracked", owner, name)
+	return s.syncIssueWithHost(ctx, owner, name, number, "")
+}
+
+// SyncIssueOnHost fetches fresh issue data for a specific tracked host.
+func (s *Syncer) SyncIssueOnHost(
+	ctx context.Context,
+	host, owner, name string,
+	number int,
+) error {
+	return s.syncIssueWithHost(ctx, owner, name, number, host)
+}
+
+func (s *Syncer) syncIssueWithHost(
+	ctx context.Context,
+	owner, name string,
+	number int,
+	hostHint string,
+) error {
+	host := hostHint
+	if host == "" {
+		host = s.hostFor(owner, name)
 	}
 
-	host := s.hostFor(owner, name)
+	if !s.isTrackedRepoOnHost(owner, name, host) {
+		return fmt.Errorf(
+			"repo %s/%s on %s is not tracked", owner, name, host,
+		)
+	}
+
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
 	client, err := s.clientFor(repo)
 	if err != nil {

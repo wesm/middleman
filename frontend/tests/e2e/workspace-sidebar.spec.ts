@@ -1002,6 +1002,89 @@ test.describe("issue workspace sidebar", () => {
       ).toContainText("Theme toggle does not stick");
     },
   );
+
+  test(
+    "issue segment includes workspace platform_host in detail requests",
+    async ({ page }) => {
+      const mirroredWorkspace = {
+        ...testIssueWorkspace,
+        platform_host: "example.com",
+      };
+      const seenHosts: string[] = [];
+      const mirroredIssueDetail = {
+        issue: {
+          ID: 2,
+          RepoID: 2,
+          GitHubID: 202,
+          Number: 7,
+          URL: "https://example.com/acme/widgets/issues/7",
+          Title: "Mirror host issue",
+          Author: "marius",
+          State: "open",
+          Body: "",
+          CommentCount: 1,
+          LabelsJSON: "[]",
+          CreatedAt: "2026-03-28T14:00:00Z",
+          UpdatedAt: "2026-03-30T14:00:00Z",
+          LastActivityAt: "2026-03-30T14:00:00Z",
+          ClosedAt: null,
+          Starred: false,
+        },
+        events: [],
+        platform_host: "example.com",
+        repo_owner: "acme",
+        repo_name: "widgets",
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      };
+
+      await setupTerminalMocks(page, {
+        workspace: mirroredWorkspace,
+      });
+
+      await page.route(
+        "**/api/v1/repos/acme/widgets/issues/7**",
+        async (route) => {
+          const url = new URL(route.request().url());
+          seenHosts.push(
+            url.searchParams.get("platform_host") ?? "",
+          );
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(mirroredIssueDetail),
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/repos/acme/widgets/issues/7/sync**",
+        async (route) => {
+          const url = new URL(route.request().url());
+          seenHosts.push(
+            url.searchParams.get("platform_host") ?? "",
+          );
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(mirroredIssueDetail),
+          });
+        },
+      );
+
+      await page.goto("/terminal/ws-issue-7");
+      await page
+        .locator(".seg-btn", { hasText: "Issue" })
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar .detail-title"),
+      ).toContainText("Mirror host issue");
+      await expect.poll(() => seenHosts).toEqual([
+        "example.com",
+        "example.com",
+      ]);
+    },
+  );
 });
 
 // -------------------------------------------------------

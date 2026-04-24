@@ -87,6 +87,13 @@ type listIssuesOutput struct {
 	Body []issueResponse
 }
 
+type issueRepoNumberInput struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+}
+
 type getIssueOutput struct {
 	Body issueDetailResponse
 }
@@ -96,7 +103,8 @@ type postIssueCommentInput struct {
 	Name   string `path:"name"`
 	Number int    `path:"number"`
 	Body   struct {
-		Body string `json:"body"`
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host,omitempty"`
 	}
 }
 
@@ -188,7 +196,8 @@ type githubStateInput struct {
 	Name   string `path:"name"`
 	Number int    `path:"number"`
 	Body   struct {
-		State string `json:"state"`
+		State        string `json:"state"`
+		PlatformHost string `json:"platform_host,omitempty"`
 	}
 }
 
@@ -897,13 +906,18 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 	return &listIssuesOutput{Body: out}, nil
 }
 
-func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssueOutput, error) {
-	issue, err := s.db.GetIssue(ctx, input.Owner, input.Name, input.Number)
+func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
+	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: input.PlatformHost,
+	})
 	if err != nil {
+		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound("issue not found")
+		}
 		return nil, huma.Error500InternalServerError("get issue failed")
-	}
-	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
 	}
 
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
@@ -912,11 +926,6 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
-	}
-
-	repo, err := s.db.GetRepoByID(ctx, issue.RepoID)
-	if err != nil || repo == nil {
-		return nil, huma.Error500InternalServerError("load repo failed")
 	}
 
 	issueResp := issueDetailResponse{
@@ -949,17 +958,34 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.lookupRepo(
+		ctx, input.Owner, input.Name, input.Body.PlatformHost,
+	)
+	if err != nil {
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("repo lookup failed")
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	comment, err := client.CreateIssueComment(
+		ctx, input.Owner, input.Name, input.Number, input.Body.Body,
+	)
 	if err != nil {
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	ref := repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
@@ -1373,21 +1399,24 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: input.Body.PlatformHost,
+	})
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
-	}
-
-	issue, err := s.db.GetIssue(
-		ctx, input.Owner, input.Name, input.Number,
-	)
-	if err != nil {
+		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound("issue not found")
+		}
 		return nil, huma.Error500InternalServerError(
 			"get issue: " + err.Error(),
 		)
 	}
-	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
 	}
 
 	if _, err := client.EditIssue(
@@ -1399,39 +1428,29 @@ func (s *Server) setIssueGitHubState(
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state. If already in the
 			// requested state (concurrent edit), treat as success.
-			repoID, repoErr := s.lookupRepoID(
-				ctx, input.Owner, input.Name,
+			ghIssue, fetchErr := client.GetIssue(
+				ctx, input.Owner, input.Name, input.Number,
 			)
-			if repoErr == nil {
-				ghIssue, fetchErr := client.GetIssue(
-					ctx, input.Owner, input.Name, input.Number,
+			if fetchErr == nil {
+				if ghIssue == nil {
+					return nil, huma.Error502BadGateway("GitHub API returned no issue")
+				}
+				normalized, normalizeErr := ghclient.NormalizeIssue(
+					repo.ID, ghIssue,
 				)
-				if fetchErr == nil {
-					if ghIssue == nil {
-						return nil, huma.Error502BadGateway("GitHub API returned no issue")
-					}
-					normalized, normalizeErr := ghclient.NormalizeIssue(repoID, ghIssue)
-					if normalizeErr != nil {
-						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
-					}
-					_, _ = s.db.UpsertIssue(ctx, normalized)
-					if ghIssue.GetState() == input.Body.State {
-						out := &githubStateOutput{}
-						out.Body.State = input.Body.State
-						return out, nil
-					}
+				if normalizeErr != nil {
+					return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+				}
+				_, _ = s.db.UpsertIssue(ctx, normalized)
+				if ghIssue.GetState() == input.Body.State {
+					out := &githubStateOutput{}
+					out.Body.State = input.Body.State
+					return out, nil
 				}
 			}
 		}
 		return nil, huma.Error502BadGateway(
 			"GitHub API error: " + err.Error(),
-		)
-	}
-
-	repoID, err := s.lookupRepoID(ctx, input.Owner, input.Name)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get repo: " + err.Error(),
 		)
 	}
 
@@ -1441,7 +1460,7 @@ func (s *Server) setIssueGitHubState(
 		closedAt = &now
 	}
 	if err := s.db.UpdateIssueState(
-		ctx, repoID, input.Number,
+		ctx, repo.ID, issue.Number,
 		input.Body.State, closedAt,
 	); err != nil {
 		return nil, huma.Error500InternalServerError(
@@ -1567,20 +1586,33 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	return &syncPROutput{Body: body}, nil
 }
 
-func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIssueOutput, error) {
-	if err := s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number); err != nil {
+func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
+	var err error
+	if input.PlatformHost != "" {
+		err = s.syncer.SyncIssueOnHost(
+			ctx, input.PlatformHost, input.Owner, input.Name, input.Number,
+		)
+	} else {
+		err = s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number)
+	}
+	if err != nil {
 		if strings.Contains(err.Error(), "is not tracked") {
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error502BadGateway("sync issue: " + err.Error())
 	}
 
-	issue, err := s.db.GetIssue(ctx, input.Owner, input.Name, input.Number)
+	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: input.PlatformHost,
+	})
 	if err != nil {
+		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound("issue not found after sync")
+		}
 		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
-	}
-	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found after sync")
 	}
 
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
@@ -1589,11 +1621,6 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
-	}
-
-	repo, err := s.db.GetRepoByID(ctx, issue.RepoID)
-	if err != nil || repo == nil {
-		return nil, huma.Error500InternalServerError("load repo failed")
 	}
 
 	syncIssueResp := issueDetailResponse{
@@ -1786,7 +1813,17 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, huma.Error400BadRequest("item_type must be 'pr' or 'issue'")
 	}
 
-	repoID, err := s.lookupRepoID(ctx, body.Owner, body.Name)
+	var (
+		repoID int64
+		err    error
+	)
+	if body.PlatformHost != "" {
+		repoID, err = s.lookupRepoIDOnHost(
+			ctx, body.Owner, body.Name, body.PlatformHost,
+		)
+	} else {
+		repoID, err = s.lookupRepoID(ctx, body.Owner, body.Name)
+	}
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
 			return 0, huma.Error404NotFound(err.Error())

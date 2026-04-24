@@ -785,6 +785,7 @@ export interface components {
              * @example /api/v1/schemas/GithubStateInputBody.json
              */
             readonly $schema?: string;
+            platform_host?: string;
             state: string;
         };
         GithubStateOutputBody: {
@@ -1123,6 +1124,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            platform_host?: string;
         };
         RateLimitHostStatus: {
             /** Format: int64 */
@@ -1271,6 +1273,7 @@ export interface components {
             /** Format: int64 */
             number: number;
             owner: string;
+            platform_host?: string;
         };
         SyncStatus: {
             /**
@@ -1580,7 +1583,9 @@ export interface operations {
     };
     "get-repos-by-owner-by-name-issues-by-number": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -1687,7 +1692,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-issues-by-number-sync": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
