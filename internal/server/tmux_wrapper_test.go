@@ -25,6 +25,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/testutil"
 )
 
 type lockedBuffer struct {
@@ -53,21 +54,14 @@ func (b *lockedBuffer) String() string {
 // path.
 func writeTmuxRecorder(t *testing.T) (script, record string) {
 	t.Helper()
-	dir := t.TempDir()
-	record = filepath.Join(dir, "record")
-	script = filepath.Join(dir, "fake-tmux")
-	body := "#!/bin/sh\n" +
-		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
-		`for a in "$@"; do` + "\n" +
-		`  if [ "$a" = "has-session" ]; then` + "\n" +
-		`    echo "can't find session: sim" >&2` + "\n" +
-		`    exit 1` + "\n" +
-		`  fi` + "\n" +
-		"done\n" +
-		"exit 0\n"
-	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-	return script, record
+	return testutil.WriteTmuxRecorder(t, `for a in "$@"; do
+  if [ "$a" = "has-session" ]; then
+    echo "can't find session: sim" >&2
+    exit 1
+  fi
+done
+exit 0
+`)
 }
 
 func readTmuxRecord(t *testing.T, path string) [][]string {

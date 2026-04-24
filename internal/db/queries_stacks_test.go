@@ -2,7 +2,6 @@ package db
 
 import (
 	"testing"
-	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,23 +9,7 @@ import (
 
 func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, head, base, state string) int64 {
 	t.Helper()
-	now := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	mr := &MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		Title:          "PR " + head,
-		Author:         "author",
-		State:          state,
-		HeadBranch:     head,
-		BaseBranch:     base,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	}
-	id, err := d.UpsertMergeRequest(t.Context(), mr)
-	require.NoError(t, err)
-	return id
+	return insertTestMRWithOptions(t, d, testMR(repoID, number, withMRTitle("PR "+head), withMRBranches(head, base), withMRState(state)))
 }
 
 func TestListPRsForStackDetection(t *testing.T) {

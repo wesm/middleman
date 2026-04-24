@@ -9,36 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func baseTime() time.Time {
-	return time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-}
-
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	t.Helper()
 	id, err := d.UpsertRepo(t.Context(), "github.com", owner, name)
 	require.NoErrorf(t, err, "UpsertRepo(%s/%s)", owner, name)
-	return id
-}
-
-func insertTestMR(t *testing.T, d *DB, repoID int64, number int, title string, activity time.Time) int64 {
-	t.Helper()
-	mr := &MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		URL:            "https://github.com/example/repo/pull/" + title,
-		Title:          title,
-		Author:         "author",
-		State:          "open",
-		IsDraft:        false,
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		CreatedAt:      activity,
-		UpdatedAt:      activity,
-		LastActivityAt: activity,
-	}
-	id, err := d.UpsertMergeRequest(t.Context(), mr)
-	require.NoErrorf(t, err, "UpsertMergeRequest %d", number)
 	return id
 }
 

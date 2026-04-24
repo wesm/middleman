@@ -18,6 +18,31 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func loadConfigString(t *testing.T, content string) *Config {
+	t.Helper()
+	cfg, err := Load(writeConfig(t, content))
+	require.NoError(t, err)
+	return cfg
+}
+
+func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
+	t.Helper()
+	cfg := loadConfigString(t, content)
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+	cfg2, err := Load(savePath)
+	require.NoError(t, err)
+	return cfg, cfg2
+}
+
+func setFakeGHCLI(t *testing.T, stdout string) {
+	t.Helper()
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	require.NoError(t, os.WriteFile(ghPath, []byte("#!/bin/sh\necho "+stdout+"\n"), 0o755))
+	t.Setenv("PATH", dir)
+}
+
 func TestLoadValid(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
@@ -175,11 +200,7 @@ func TestGitHubToken(t *testing.T) {
 }
 
 func TestGitHubTokenFallsBackToGHCli(t *testing.T) {
-	dir := t.TempDir()
-	ghPath := filepath.Join(dir, "gh")
-	require.NoError(t, os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755))
-
-	t.Setenv("PATH", dir)
+	setFakeGHCLI(t, "gh-secret")
 	t.Setenv("TEST_GH_TOKEN", "")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
@@ -187,11 +208,7 @@ func TestGitHubTokenFallsBackToGHCli(t *testing.T) {
 }
 
 func TestGitHubTokenPrefersEnvVarOverGHCli(t *testing.T) {
-	dir := t.TempDir()
-	ghPath := filepath.Join(dir, "gh")
-	require.NoError(t, os.WriteFile(ghPath, []byte("#!/bin/sh\necho gh-secret\n"), 0o755))
-
-	t.Setenv("PATH", dir)
+	setFakeGHCLI(t, "gh-secret")
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
@@ -558,7 +575,7 @@ name = %q
 
 func TestSaveRoundTrip(t *testing.T) {
 	assert := Assert.New(t)
-	path := writeConfig(t, `
+	cfg, cfg2 := roundTripConfigString(t, `
 sync_interval = "10m"
 github_token_env = "MY_TOKEN"
 host = "127.0.0.1"
@@ -575,14 +592,6 @@ time_range = "30d"
 hide_closed = true
 hide_bots = true
 `)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-
-	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	require.NoError(t, cfg.Save(savePath))
-
-	cfg2, err := Load(savePath)
-	require.NoError(t, err)
 	assert.Equal("MY_TOKEN", cfg2.GitHubTokenEnv)
 	assert.Equal(cfg.SyncInterval, cfg2.SyncInterval)
 	assert.Equal(cfg.Host, cfg2.Host)
@@ -598,19 +607,11 @@ hide_bots = true
 
 func TestSavePreservesDefaults(t *testing.T) {
 	assert := Assert.New(t)
-	path := writeConfig(t, `
+	_, cfg2 := roundTripConfigString(t, `
 [[repos]]
 owner = "a"
 name = "b"
 `)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-
-	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	require.NoError(t, cfg.Save(savePath))
-
-	cfg2, err := Load(savePath)
-	require.NoError(t, err)
 	assert.Equal("5m", cfg2.SyncInterval)
 	assert.Equal("127.0.0.1", cfg2.Host)
 	assert.Equal(8091, cfg2.Port)

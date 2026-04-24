@@ -9,28 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func insertTestIssue(
-	t *testing.T, d *DB,
-	repoID int64, number int, title string, activity time.Time,
-) int64 {
-	t.Helper()
-	issue := &Issue{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		URL:            "https://github.com/example/repo/issues/" + title,
-		Title:          title,
-		Author:         "author",
-		State:          "open",
-		CreatedAt:      activity,
-		UpdatedAt:      activity,
-		LastActivityAt: activity,
-	}
-	id, err := d.UpsertIssue(t.Context(), issue)
-	require.NoErrorf(t, err, "UpsertIssue %d", number)
-	return id
-}
-
 func TestListActivity(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()

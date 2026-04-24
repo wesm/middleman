@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -340,6 +341,37 @@ func setupTestServerWithRepos(
 	return srv, database
 }
 
+type serverFixture struct {
+	DB     *db.DB
+	Server *Server
+	Client *apiclient.Client
+	Syncer *ghclient.Syncer
+}
+
+type serverFixtureOptions struct {
+	Mock  *mockGH
+	Repos []ghclient.RepoRef
+}
+
+func newServerFixture(t *testing.T, opts serverFixtureOptions) serverFixture {
+	t.Helper()
+	mock := opts.Mock
+	if mock == nil {
+		mock = &mockGH{}
+	}
+	repos := opts.Repos
+	if repos == nil {
+		repos = defaultTestRepos
+	}
+	srv, database := setupTestServerWithRepos(t, mock, repos)
+	return serverFixture{
+		DB:     database,
+		Server: srv,
+		Client: setupTestClient(t, srv),
+		Syncer: srv.syncer,
+	}
+}
+
 func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 	t.Helper()
 
@@ -418,21 +450,32 @@ func (e *staleReadyForReviewError) Unwrap() error      { return e.err }
 func (e *staleReadyForReviewError) StatusCode() int    { return http.StatusNotFound }
 func (e *staleReadyForReviewError) IsStaleState() bool { return true }
 
+type seedPROpt func(*db.MergeRequest)
+
+func withSeedPRLabels(labels []db.Label) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.Labels = labels }
+}
+
+func withSeedPRHeadSHA(headSHA string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
+}
+
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
-func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64 {
+func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
 	t.Helper()
 	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
 	require.NoError(t, err)
 
+	numberText := strconv.Itoa(number)
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     int64(number) * 1000,
 		Number:         number,
-		URL:            "https://github.com/" + owner + "/" + name + "/pull/" + string(rune('0'+number)),
-		Title:          "Test PR #" + string(rune('0'+number)),
+		URL:            "https://github.com/" + owner + "/" + name + "/pull/" + numberText,
+		Title:          "Test PR #" + numberText,
 		Author:         "testuser",
 		State:          "open",
 		IsDraft:        false,
@@ -448,10 +491,15 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	}
+	for _, opt := range opts {
+		opt(pr)
+	}
 
 	prID, err := database.UpsertMergeRequest(ctx, pr)
 	require.NoError(t, err)
-
+	if len(pr.Labels) > 0 {
+		require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repoID, prID, pr.Labels))
+	}
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
@@ -459,51 +507,12 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int) int64
 
 func seedPRWithLabels(t *testing.T, database *db.DB, owner, name string, number int, labels []db.Label) int64 {
 	t.Helper()
-	ctx := t.Context()
-	prID := seedPR(t, database, owner, name, number)
-	repo, err := database.GetRepoByOwnerName(ctx, owner, name)
-	require.NoError(t, err)
-	require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repo.ID, prID, labels))
-	return prID
+	return seedPR(t, database, owner, name, number, withSeedPRLabels(labels))
 }
 
 func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {
 	t.Helper()
-	ctx := t.Context()
-
-	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
-	require.NoError(t, err)
-
-	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      int64(number) * 1000,
-		Number:          number,
-		URL:             "https://github.com/" + owner + "/" + name + "/pull/" + string(rune('0'+number)),
-		Title:           "Test PR #" + string(rune('0'+number)),
-		Author:          "testuser",
-		State:           "open",
-		IsDraft:         false,
-		Body:            "test body",
-		HeadBranch:      "feature",
-		BaseBranch:      "main",
-		PlatformHeadSHA: headSHA,
-		Additions:       5,
-		Deletions:       2,
-		CommentCount:    0,
-		ReviewDecision:  "",
-		CIStatus:        "",
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
-	}
-
-	prID, err := database.UpsertMergeRequest(ctx, pr)
-	require.NoError(t, err)
-
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
-
-	return prID
+	return seedPR(t, database, owner, name, number, withSeedPRHeadSHA(headSHA))
 }
 
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
@@ -518,11 +527,10 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	fixture := newServerFixture(t, serverFixtureOptions{Mock: mock})
+	seedPR(t, fixture.DB, "acme", "widget", 1)
 
-	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+	resp, err := fixture.Client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
