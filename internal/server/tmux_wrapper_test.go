@@ -920,6 +920,69 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	assert.NotEmpty(attach[3])
 }
 
+func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    echo "fork/exec /opt/homebrew/bin/tmux: resource temporarily unavailable" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	var failed *generated.WorkspaceResponse
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			require.NoError(getErr)
+			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+				return false
+			}
+			if getResp.JSON200.Status != "error" {
+				return false
+			}
+			failed = getResp.JSON200
+			return true
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+	require.NotNil(failed)
+	require.NotNil(failed.ErrorMessage)
+	assert.Contains(*failed.ErrorMessage, "host process limit reached")
+}
+
 // TestReadTmuxRecordPreservesEmptyArgs pins down the parser's
 // empty-arg handling. The NUL-delimited record format was chosen to
 // round-trip argv with empty-string elements unambiguously; the

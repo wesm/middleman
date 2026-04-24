@@ -18,6 +18,7 @@ import (
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // Manager handles workspace lifecycle: create, setup, delete.
@@ -384,7 +385,9 @@ func validateLocalBranchName(
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err == nil {
 		return nil
 	}
@@ -642,7 +645,7 @@ func (m *Manager) newTmuxSession(
 		"-c", cwd,
 		shell, "-l",
 	)
-	return runBuiltCmd(cmd)
+	return runBuiltCmd(ctx, cmd)
 }
 
 // tmuxSessionExists runs `tmux has-session` and distinguishes a
@@ -667,7 +670,7 @@ func (m *Manager) tmuxSessionExists(
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
 	if err == nil {
 		return true, nil
 	}
@@ -705,7 +708,9 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 func (m *Manager) killTmuxSession(
 	ctx context.Context, session string,
 ) error {
-	return runBuiltCmd(m.tmuxExec(ctx, "kill-session", "-t", session))
+	return runBuiltCmd(
+		ctx, m.tmuxExec(ctx, "kill-session", "-t", session),
+	)
 }
 
 // userLoginShell resolves the current user's login shell from
@@ -724,7 +729,10 @@ func userLoginShell() string {
 }
 
 func lookupPasswdShell(username string) string {
-	out, err := exec.Command("getent", "passwd", username).Output()
+	cmd := exec.Command("getent", "passwd", username)
+	out, err := procutil.Output(
+		context.Background(), cmd, "shell lookup subprocess capacity",
+	)
 	if err == nil {
 		return shellFromPasswdLine(string(out))
 	}
@@ -765,7 +773,9 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err != nil {
 		return fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
@@ -777,8 +787,10 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 // runBuiltCmd runs a pre-built exec.Cmd and wraps any failure with
 // the combined output. Used for tmux invocations whose *exec.Cmd is
 // assembled by tmuxExec so argv[0] access stays inside that helper.
-func runBuiltCmd(cmd *exec.Cmd) error {
-	out, err := cmd.CombinedOutput()
+func runBuiltCmd(ctx context.Context, cmd *exec.Cmd) error {
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "tmux subprocess capacity",
+	)
 	if err != nil {
 		return fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
@@ -795,7 +807,9 @@ func dirtyFiles(
 		ctx, "git", "-C", worktreePath,
 		"status", "--porcelain",
 	)
-	out, err := cmd.Output()
+	out, err := procutil.Output(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -884,6 +898,25 @@ func (m *Manager) failSetup(
 }
 
 func wrapWorkspaceSetupError(stage string, err error) error {
+	if procutil.IsResourceExhausted(err) {
+		switch stage {
+		case workspaceSetupStageClone:
+			return fmt.Errorf(
+				"ensure clone: host process limit reached while starting git or helper processes: %w",
+				err,
+			)
+		case workspaceSetupStageWorktree:
+			return fmt.Errorf(
+				"add git worktree: host process limit reached while starting git or helper processes: %w",
+				err,
+			)
+		case workspaceSetupStageTmuxSession:
+			return fmt.Errorf(
+				"tmux new-session: host process limit reached while starting tmux or shell: %w",
+				err,
+			)
+		}
+	}
 	switch stage {
 	case workspaceSetupStageClone:
 		return fmt.Errorf("ensure clone: %w", err)
@@ -1007,7 +1040,9 @@ func gitRefSHA(
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err == nil {
 		return strings.TrimSpace(string(out)), true, nil
 	}
