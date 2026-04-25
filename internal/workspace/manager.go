@@ -444,7 +444,7 @@ func (m *Manager) addIssueWorktree(
 		); err != nil {
 			return "", err
 		}
-		return "", nil
+		return ws.GitHeadRef, nil
 	}
 	startRef := workspaceStartRef(ws)
 	if err := runGit(

@@ -269,9 +269,9 @@ type Workspace struct {
 	ItemNumber   int
 	GitHeadRef   string
 	MRHeadRepo   *string // nil for same-repo PRs
-	// WorkspaceBranch is the exact branch name middleman created
-	// for this workspace. It stays empty when setup reused an
-	// existing local branch and therefore does not own it.
+	// WorkspaceBranch is the exact branch name checked out in the
+	// worktree after setup. Before setup completes it may contain the
+	// requested branch name or workspaceBranchUnknown.
 	WorkspaceBranch string
 	WorktreePath    string
 	TmuxSession     string

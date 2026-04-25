@@ -7878,6 +7878,11 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 		"middleman/issue-7",
 		gitOutput(t, reusedReady.WorktreePath, "branch", "--show-current"),
 	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, reused.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("middleman/issue-7", stored.WorkspaceBranch)
 }
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
