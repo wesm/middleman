@@ -1457,6 +1457,8 @@ func wrapWorkspaceSetupError(stage string, err error) error {
 		return fmt.Errorf("ensure clone: %w", err)
 	case workspaceSetupStageWorktree:
 		return fmt.Errorf("add git worktree: %w", err)
+	case workspaceSetupStageTmuxSession:
+		return fmt.Errorf("tmux new-session: %w", err)
 	default:
 		return err
 	}

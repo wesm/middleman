@@ -8,8 +8,8 @@
     id: string;
     repo_owner: string;
     repo_name: string;
-    mr_number: number;
-    mr_head_ref: string;
+    item_number: number;
+    git_head_ref: string;
     worktree_path: string;
     mr_title?: string | null;
   }
@@ -37,7 +37,7 @@
   );
 
   function title(): string {
-    return workspace.mr_title ?? workspace.mr_head_ref;
+    return workspace.mr_title ?? workspace.git_head_ref;
   }
 
   function sourceLabel(target: LaunchTarget): string {
@@ -52,8 +52,8 @@
     <div class="home-title-block">
       <h2>{title()}</h2>
       <div class="home-meta">
-        <span>{workspace.repo_owner}/{workspace.repo_name} #{workspace.mr_number}</span>
-        <span>{workspace.mr_head_ref}</span>
+        <span>{workspace.repo_owner}/{workspace.repo_name} #{workspace.item_number}</span>
+        <span>{workspace.git_head_ref}</span>
       </div>
     </div>
     <code class="worktree-path">{workspace.worktree_path}</code>

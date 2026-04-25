@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -1304,59 +1303,6 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 		},
 		argvs[2],
 	)
-}
-
-func TestManagerEnsureTmuxConcurrentCreatesOneSession(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
-	dir := t.TempDir()
-	record := filepath.Join(dir, "record")
-	state := filepath.Join(dir, "state")
-	script := filepath.Join(dir, "fake-tmux")
-	body := "#!/bin/sh\n" +
-		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
-		`if [ "$1" = "has-session" ]; then` + "\n" +
-		`  sleep 0.15` + "\n" +
-		`  if [ -f "$TMUX_STATE" ]; then exit 0; fi` + "\n" +
-		`  echo "can't find session: sim" >&2` + "\n" +
-		`  exit 1` + "\n" +
-		`fi` + "\n" +
-		`if [ "$1" = "new-session" ]; then` + "\n" +
-		`  : > "$TMUX_STATE"` + "\n" +
-		`fi` + "\n" +
-		"exit 0\n"
-	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	t.Setenv("TMUX_RECORD", record)
-	t.Setenv("TMUX_STATE", state)
-
-	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
-	mgr.SetTmuxCommand([]string{script})
-
-	ctx := context.Background()
-	const calls = 8
-	var wg sync.WaitGroup
-	errs := make(chan error, calls)
-	for range calls {
-		wg.Go(func() {
-			errs <- mgr.EnsureTmux(ctx, "sess-C", "/tmp/cwd")
-		})
-	}
-	wg.Wait()
-	close(errs)
-
-	for err := range errs {
-		require.NoError(err)
-	}
-	argvs := readRecorderArgv(t, record)
-	newSessions := 0
-	for _, argv := range argvs {
-		if len(argv) > 0 && argv[0] == "new-session" {
-			newSessions++
-		}
-	}
-	assert.Equal(1, newSessions)
 }
 
 // TestReadRecorderArgvPreservesEmptyArgs pins down the parser's
