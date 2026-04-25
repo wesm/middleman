@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -899,4 +900,267 @@ command = ["systemd-run", "--user", "--scope", "tmux"]
 	)
 	// Sanity: the mutation actually took effect, so Save did write.
 	assert.Equal("30d", reloaded.Activity.TimeRange)
+}
+
+func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	pushedNewer := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
+	pushedOlder := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
+	privateRepo := true
+	publicRepo := false
+	mock := &mockGH{
+		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+			return []*gh.Repository{
+				{
+					Name:        new("widget"),
+					Owner:       &gh.User{Login: new(owner)},
+					Description: new("already configured widget"),
+					Private:     &privateRepo,
+					Archived:    new(false),
+					PushedAt:    &pushedOlder,
+				},
+				{
+					Name:        new("widget-api"),
+					Owner:       &gh.User{Login: new(owner)},
+					Description: new("api service"),
+					Private:     &publicRepo,
+					Archived:    new(false),
+					PushedAt:    &pushedNewer,
+				},
+				{
+					Name:     new("widget-archive"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(true),
+					PushedAt: &pushedNewer,
+				},
+				{
+					Name:     new("other"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				},
+			}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "widget-*"
+`, mock)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"owner":   " ACME ",
+		"pattern": " Widget* ",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp repoPreviewResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 2)
+	assert.Equal("ACME", resp.Owner)
+	assert.Equal("Widget*", resp.Pattern)
+	assert.Equal("acme", resp.Repos[0].Owner)
+	assert.Equal("widget", resp.Repos[0].Name)
+	assert.Equal("already configured widget", *resp.Repos[0].Description)
+	assert.True(resp.Repos[0].Private)
+	assert.True(resp.Repos[0].AlreadyConfigured)
+	require.NotNil(resp.Repos[0].PushedAt)
+	assert.Equal(pushedOlder.Time.UTC().Format(time.RFC3339), *resp.Repos[0].PushedAt)
+	assert.Equal("widget-api", resp.Repos[1].Name)
+	assert.False(resp.Repos[1].Private)
+	assert.False(resp.Repos[1].AlreadyConfigured)
+	assert.NotContains(rr.Body.String(), "widget-archive")
+	assert.NotContains(rr.Body.String(), "other")
+}
+
+func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"owner":   "acme*",
+		"pattern": "widget",
+	})
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(rr.Body.String(), "glob syntax in owner is not supported")
+
+	rr = doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"owner":   "acme",
+		"pattern": "widget[",
+	})
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(rr.Body.String(), "invalid glob pattern")
+}
+
+func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var getCalls atomic.Int32
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			getCalls.Add(1)
+			return &gh.Repository{
+				Name:     new(strings.ToUpper(repo)),
+				Owner:    &gh.User{Login: new(strings.ToUpper(owner))},
+				Archived: new(false),
+			}, nil
+		},
+	}
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+	callsAfterSetup := getCalls.Load()
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+		"repos": []map[string]string{
+			{"owner": " acme ", "name": " api "},
+			{"owner": "acme", "name": "worker"},
+			{"owner": "acme", "name": "api"},
+		},
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+	assert.Equal(callsAfterSetup+2, getCalls.Load())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 3)
+	assert.Equal("acme", resp.Repos[1].Owner)
+	assert.Equal("api", resp.Repos[1].Name)
+	assert.Equal("worker", resp.Repos[2].Name)
+	assert.True(srv.syncer.IsTrackedRepo("acme", "api"))
+	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 3)
+	assert.Equal("api", cfg2.Repos[1].Name)
+	assert.Equal("worker", cfg2.Repos[2].Name)
+}
+
+func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			if repo == "missing" {
+				return nil, errors.New("not found")
+			}
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}, nil
+		},
+	}
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+		"repos": []map[string]string{
+			{"owner": "acme", "name": "api"},
+			{"owner": "acme", "name": "missing"},
+		},
+	})
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.False(srv.syncer.IsTrackedRepo("acme", "api"))
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	assert.Equal("widget", cfg2.Repos[0].Name)
+}
+
+func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	unblockGet := make(chan struct{})
+	getStarted := make(chan struct{}, 1)
+	var apiCalls atomic.Int32
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			if repo == "api" && apiCalls.Add(1) == 1 {
+				getStarted <- struct{}{}
+				<-unblockGet
+			}
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+
+	var bulkBody bytes.Buffer
+	require.NoError(json.NewEncoder(&bulkBody).Encode(map[string]any{
+		"repos": []map[string]string{
+			{"owner": "acme", "name": "api"},
+			{"owner": "acme", "name": "worker"},
+		},
+	}))
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		// Inline request avoids testify assertions inside this goroutine.
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/repos/bulk", bytes.NewReader(bulkBody.Bytes()))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		done <- rr
+	}()
+
+	select {
+	case <-getStarted:
+	case <-time.After(5 * time.Second):
+		require.FailNow("bulk validation did not start")
+	}
+	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+		"owner": "acme", "name": "api",
+	})
+	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
+	close(unblockGet)
+
+	var rr *httptest.ResponseRecorder
+	select {
+	case rr = <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow("bulk add did not finish")
+	}
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Equal([]string{"widget", "api", "worker"}, []string{resp.Repos[0].Name, resp.Repos[1].Name, resp.Repos[2].Name})
 }
