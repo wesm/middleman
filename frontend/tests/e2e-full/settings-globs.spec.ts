@@ -1,8 +1,6 @@
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
-test.describe.configure({ mode: "serial" });
-
 type RepoSummary = {
   Owner: string;
   Name: string;
@@ -11,16 +9,18 @@ type RepoSummary = {
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
 
-test.beforeAll(async () => {
+test.beforeEach(async () => {
   isolatedServer = await startIsolatedE2EServer();
   api = await playwrightRequest.newContext({
     baseURL: isolatedServer.info.base_url,
   });
 });
 
-test.afterAll(async () => {
+test.afterEach(async () => {
   await api?.dispose();
   await isolatedServer?.stop();
+  api = undefined;
+  isolatedServer = undefined;
 });
 
 test("settings shows glob match counts and refresh updates tracked repos", async ({ page }) => {
@@ -141,7 +141,18 @@ test("repository import ignores older preview responses", async ({ page }) => {
     }
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ owner: request.owner, pattern: request.pattern, repos: [] }),
+      body: JSON.stringify({
+        owner: request.owner,
+        pattern: request.pattern,
+        repos: [{
+          owner: "roborev-dev",
+          name: "review-bot",
+          description: "Review automation",
+          private: false,
+          pushed_at: "2026-04-24T09:15:00Z",
+          already_configured: false,
+        }],
+      }),
     });
   });
 
@@ -157,8 +168,9 @@ test("repository import ignores older preview responses", async ({ page }) => {
   await dialog.getByLabel("Repository pattern").fill("roborev-dev/review-*");
   await dialog.getByRole("button", { name: "Preview" }).click();
   await expect.poll(() => previewCalls).toBe(2);
-  await expect(dialog.getByText("Selected 0 of 0")).toBeVisible();
+  await expect(dialog.getByText("roborev-dev/review-bot")).toBeVisible();
 
   firstPreviewRelease?.();
+  await expect(dialog.getByText("roborev-dev/review-bot")).toBeVisible();
   await expect(dialog.getByText("roborev-dev/middleman")).toHaveCount(0);
 });

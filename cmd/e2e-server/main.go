@@ -164,10 +164,12 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 				PushedAt:    &pushedWorker,
 			},
 			{
-				Name:     new("archived"),
-				Owner:    &gh.User{Login: new(owner)},
-				Archived: new(true),
-				PushedAt: &pushedBot,
+				Name:        new("archived"),
+				Owner:       &gh.User{Login: new(owner)},
+				Description: new("Archived service"),
+				Private:     new(false),
+				Archived:    new(true),
+				PushedAt:    &pushedBot,
 			},
 		}
 		if includeRefreshRepo, _ := ctx.Value(globRefreshContextKey{}).(bool); includeRefreshRepo {
