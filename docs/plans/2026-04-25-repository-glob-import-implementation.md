@@ -895,7 +895,7 @@ describe("repo import selection helpers", () => {
 Run:
 
 ```bash
-cd frontend && bun test src/lib/api/settings.test.ts src/lib/components/settings/repoImportSelection.test.ts
+cd frontend && bun run test src/lib/api/settings.test.ts src/lib/components/settings/repoImportSelection.test.ts
 ```
 
 Expected: FAIL because new exports do not exist.
@@ -1103,7 +1103,7 @@ export function selectedRowsForSubmit(
 Run:
 
 ```bash
-cd frontend && bun test src/lib/api/settings.test.ts src/lib/components/settings/repoImportSelection.test.ts
+cd frontend && bun run test src/lib/api/settings.test.ts src/lib/components/settings/repoImportSelection.test.ts
 ```
 
 Expected: PASS.
@@ -1277,7 +1277,7 @@ Add `fireEvent` import from `@testing-library/svelte`.
 Run:
 
 ```bash
-cd frontend && bun test src/lib/components/settings/RepoSettings.test.ts src/lib/components/settings/RepoImportModal.test.ts
+cd frontend && bun run test src/lib/components/settings/RepoSettings.test.ts src/lib/components/settings/RepoImportModal.test.ts
 ```
 
 Expected: FAIL because components are missing or UI not implemented.
@@ -1730,7 +1730,7 @@ Expected: no required fixes remain. Apply any concrete fixes suggested by the to
 Run:
 
 ```bash
-cd frontend && bun test src/lib/components/settings/RepoSettings.test.ts src/lib/components/settings/RepoImportModal.test.ts src/lib/components/settings/repoImportSelection.test.ts
+cd frontend && bun run test src/lib/components/settings/RepoSettings.test.ts src/lib/components/settings/RepoImportModal.test.ts src/lib/components/settings/repoImportSelection.test.ts
 ```
 
 Expected: PASS.
@@ -1940,7 +1940,7 @@ Expected: PASS.
 Run:
 
 ```bash
-cd frontend && bun test src/lib/api/settings.test.ts src/lib/components/settings/RepoSettings.test.ts src/lib/components/settings/RepoImportModal.test.ts src/lib/components/settings/repoImportSelection.test.ts
+cd frontend && bun run test src/lib/api/settings.test.ts src/lib/components/settings/RepoSettings.test.ts src/lib/components/settings/RepoImportModal.test.ts src/lib/components/settings/repoImportSelection.test.ts
 ```
 
 Expected: PASS.
