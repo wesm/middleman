@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -94,6 +96,63 @@ func TestRoborevProxyForwarding(t *testing.T) {
 	assert.Equal("GET", gotMethod)
 	assert.Equal("/jobs", gotPath)
 	assert.JSONEq(`{"jobs":[{"id":1}]}`, rr.Body.String())
+}
+
+func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
+	assert := Assert.New(t)
+
+	var mu sync.Mutex
+	var receivedMethod, receivedPath, receivedQuery, receivedBody string
+	daemon := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			mu.Lock()
+			receivedMethod = r.Method
+			receivedPath = r.URL.Path
+			receivedQuery = r.URL.RawQuery
+			receivedBody = string(body)
+			mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		},
+	))
+	defer daemon.Close()
+
+	srv := setupTestServerWithRoborev(t, daemon.URL)
+	middleman := httptest.NewServer(srv)
+	defer middleman.Close()
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		middleman.URL+"/api/roborev/api/jobs/123/retry?force=1",
+		strings.NewReader(`{"reason":"retry"}`),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(respBody))
+
+	mu.Lock()
+	gotMethod := receivedMethod
+	gotPath := receivedPath
+	gotQuery := receivedQuery
+	gotBody := receivedBody
+	mu.Unlock()
+
+	assert.Equal(http.MethodPost, gotMethod)
+	assert.Equal("/api/jobs/123/retry", gotPath)
+	assert.Equal("force=1", gotQuery)
+	assert.JSONEq(`{"reason":"retry"}`, gotBody)
+	assert.JSONEq(`{"ok":true}`, string(respBody))
 }
 
 func TestRoborevProxy502(t *testing.T) {

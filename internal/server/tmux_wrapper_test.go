@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -1655,6 +1656,23 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	assert.Equal("attach-session", attach[1])
 	assert.Equal("-t", attach[2])
 	assert.NotEmpty(attach[3])
+}
+
+func TestTerminalRouteE2EPropagatesWorkspaceID(t *testing.T) {
+	assert := Assert.New(t)
+	_, baseURL, _ := setupWrapperServer(t)
+
+	resp, err := http.Get(
+		baseURL + "/api/v1/workspaces/not-present/terminal",
+	)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.Equal(http.StatusNotFound, resp.StatusCode)
+	assert.Contains(string(body), "workspace not found")
 }
 
 func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
