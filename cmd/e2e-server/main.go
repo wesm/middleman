@@ -138,14 +138,42 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	fc.ListRepositoriesByOwnerFn = func(
 		ctx context.Context, owner string,
 	) ([]*gh.Repository, error) {
-		if owner != "roborev-dev" {
-			return fc.ReposByOwner[owner], nil
-		}
-
 		pushedMiddleman := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
 		pushedWorker := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
 		pushedBot := gh.Timestamp{Time: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)}
 		privateFalse := false
+		if owner == "import-lab" {
+			return []*gh.Repository{
+				{
+					Name:        new("api"),
+					Owner:       &gh.User{Login: new(owner)},
+					Description: new("Import API"),
+					Private:     &privateFalse,
+					Archived:    new(false),
+					PushedAt:    &pushedMiddleman,
+				},
+				{
+					Name:        new("worker"),
+					Owner:       &gh.User{Login: new(owner)},
+					Description: new("Import worker"),
+					Private:     &privateFalse,
+					Archived:    new(false),
+					PushedAt:    &pushedWorker,
+				},
+				{
+					Name:        new("archived"),
+					Owner:       &gh.User{Login: new(owner)},
+					Description: new("Archived import fixture"),
+					Private:     &privateFalse,
+					Archived:    new(true),
+					PushedAt:    &pushedBot,
+				},
+			}, nil
+		}
+		if owner != "roborev-dev" {
+			return fc.ReposByOwner[owner], nil
+		}
+
 		repos := []*gh.Repository{
 			{
 				Name:        new("middleman"),
