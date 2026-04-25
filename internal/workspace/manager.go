@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,10 +14,12 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // Manager handles workspace lifecycle: create, setup, delete.
@@ -25,6 +28,8 @@ type Manager struct {
 	worktreeDir string
 	clones      *gitclone.Manager
 	tmuxCmd     []string
+	retryMu     sync.Mutex
+	retryQueued map[string]bool
 }
 
 const (
@@ -38,6 +43,13 @@ const (
 var workspacePersistTimeout = 5 * time.Second
 var workspaceCleanupTimeout = 5 * time.Second
 
+var (
+	ErrWorkspaceNotFound     = errors.New("workspace not found")
+	ErrWorkspaceNotSynced    = errors.New("workspace merge request not synced")
+	ErrWorkspaceDuplicate    = errors.New("workspace already exists")
+	ErrWorkspaceInvalidState = errors.New("workspace invalid state")
+)
+
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
 func NewManager(
@@ -46,6 +58,7 @@ func NewManager(
 	return &Manager{
 		db:          database,
 		worktreeDir: worktreeDir,
+		retryQueued: make(map[string]bool),
 	}
 }
 
@@ -96,7 +109,7 @@ func (m *Manager) Create(
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
 	if repo == nil {
-		return nil, fmt.Errorf("repository not tracked")
+		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
 	}
 
 	mr, err := m.db.GetMergeRequestByRepoIDAndNumber(
@@ -107,7 +120,7 @@ func (m *Manager) Create(
 	}
 	if mr == nil {
 		return nil, fmt.Errorf(
-			"merge request %d not synced yet", mrNumber,
+			"%w: merge request %d", ErrWorkspaceNotSynced, mrNumber,
 		)
 	}
 
@@ -143,6 +156,9 @@ func (m *Manager) Create(
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+		if isUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+		}
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
 	return ws, nil
@@ -212,6 +228,11 @@ func (m *Manager) Setup(
 			ws.ID, workspaceSetupStageTmuxSession, err,
 		)
 	}
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageTmuxSession, "success",
+		"tmux session started",
+	)
 
 	if err := m.updateWorkspaceStatus(
 		ctx, ws.ID, "ready", nil,
@@ -380,7 +401,9 @@ func validateLocalBranchName(
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err == nil {
 		return nil
 	}
@@ -404,7 +427,7 @@ func (m *Manager) Delete(
 		return nil, fmt.Errorf("get workspace: %w", err)
 	}
 	if ws == nil {
-		return nil, fmt.Errorf("workspace not found")
+		return nil, ErrWorkspaceNotFound
 	}
 
 	if !force {
@@ -421,32 +444,256 @@ func (m *Manager) Delete(
 		}
 	}
 
-	// Kill tmux session (ignore errors -- session may not exist).
-	_ = m.killTmuxSession(ctx, ws.TmuxSession)
+	if err := m.cleanupWorkspaceArtifactsForDelete(ctx, ws); err != nil {
+		return nil, err
+	}
+
+	if err := m.db.DeleteWorkspace(ctx, id); err != nil {
+		return nil, fmt.Errorf("delete workspace record: %w", err)
+	}
+	return nil, nil
+}
+
+// RequestRetry prepares an errored workspace for another setup
+// attempt. If setup is already running, it queues one follow-up retry
+// and returns startNow=false. If the workspace is not errored or
+// creating, the request is discarded and startNow=false.
+func (m *Manager) RequestRetry(
+	ctx context.Context, id string,
+) (*Workspace, bool, error) {
+	ws, err := m.db.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, false, fmt.Errorf("get workspace: %w", err)
+	}
+	if ws == nil {
+		return nil, false, ErrWorkspaceNotFound
+	}
+	started, err := m.db.StartWorkspaceRetry(ctx, ws.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !started {
+		return m.queueRetryOrStartErrored(ctx, id)
+	}
+
+	if err := m.prepareWorkspaceRetry(ctx, ws); err != nil {
+		m.consumeQueuedRetry(ws.ID)
+		return nil, false, err
+	}
+	return ws, true, nil
+}
+
+// StartQueuedRetryIfErrored consumes one queued retry for id. It
+// starts the retry only if the workspace is still in error status at
+// the time the queue is consumed; otherwise the queued retry is
+// discarded.
+func (m *Manager) StartQueuedRetryIfErrored(
+	ctx context.Context, id string,
+) (*Workspace, bool, error) {
+	if !m.consumeQueuedRetry(id) {
+		return nil, false, nil
+	}
+
+	ws, err := m.db.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, false, fmt.Errorf("get workspace: %w", err)
+	}
+	if ws == nil || ws.Status != "error" {
+		return ws, false, nil
+	}
+
+	started, err := m.db.StartWorkspaceRetry(ctx, id)
+	if err != nil {
+		return nil, false, err
+	}
+	if !started {
+		return ws, false, nil
+	}
+
+	if err := m.prepareWorkspaceRetry(ctx, ws); err != nil {
+		m.consumeQueuedRetry(ws.ID)
+		return nil, false, err
+	}
+	return ws, true, nil
+}
+
+func (m *Manager) queueRetryOrStartErrored(
+	ctx context.Context, id string,
+) (*Workspace, bool, error) {
+	// Serialize the status re-check with queue consumption. If setup
+	// already failed and the worker drained an empty queue, the retry
+	// request must start the next setup attempt itself.
+	m.retryMu.Lock()
+	current, getErr := m.db.GetWorkspace(ctx, id)
+	if getErr != nil {
+		m.retryMu.Unlock()
+		return nil, false, fmt.Errorf(
+			"get workspace after retry conflict: %w", getErr,
+		)
+	}
+	if current == nil {
+		m.retryMu.Unlock()
+		return nil, false, ErrWorkspaceNotFound
+	}
+	switch current.Status {
+	case "creating":
+		m.retryQueued[id] = true
+		m.retryMu.Unlock()
+		return current, false, nil
+	case "error":
+		delete(m.retryQueued, id)
+		m.retryMu.Unlock()
+		return m.startWorkspaceRetry(ctx, current)
+	default:
+		m.retryMu.Unlock()
+		return nil, false, fmt.Errorf(
+			"%w: workspace is not in error status",
+			ErrWorkspaceInvalidState,
+		)
+	}
+}
+
+func (m *Manager) startWorkspaceRetry(
+	ctx context.Context, ws *Workspace,
+) (*Workspace, bool, error) {
+	started, err := m.db.StartWorkspaceRetry(ctx, ws.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !started {
+		return m.queueRetryOrStartErrored(ctx, ws.ID)
+	}
+
+	if err := m.prepareWorkspaceRetry(ctx, ws); err != nil {
+		m.consumeQueuedRetry(ws.ID)
+		return nil, false, err
+	}
+	return ws, true, nil
+}
+
+func (m *Manager) prepareWorkspaceRetry(
+	ctx context.Context, ws *Workspace,
+) error {
+	if err := m.cleanupWorkspaceArtifactsForRetry(ctx, ws); err != nil {
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageSetup,
+			fmt.Errorf(
+				"cleanup workspace artifacts before retry: %w", err,
+			),
+		)
+	}
+	if err := m.updateWorkspaceBranch(
+		ctx, ws.ID, workspaceBranchUnknown,
+	); err != nil {
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageSetup,
+			fmt.Errorf("reset workspace branch before retry: %w", err),
+		)
+	}
+	m.markRetryStarted(ctx, ws)
+	return nil
+}
+
+func (m *Manager) consumeQueuedRetry(id string) bool {
+	m.retryMu.Lock()
+	defer m.retryMu.Unlock()
+	if !m.retryQueued[id] {
+		return false
+	}
+	delete(m.retryQueued, id)
+	return true
+}
+
+func (m *Manager) markRetryStarted(ctx context.Context, ws *Workspace) {
+	ws.WorkspaceBranch = workspaceBranchUnknown
+	ws.Status = "creating"
+	ws.ErrorMessage = nil
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageSetup, "retrying",
+		"retrying workspace setup",
+	)
+}
+
+func (m *Manager) cleanupWorkspaceArtifactsForRetry(
+	ctx context.Context, ws *Workspace,
+) error {
+	if err := m.cleanupTmuxSession(ctx, ws); err != nil {
+		return err
+	}
 
 	if m.clones == nil {
-		return nil, m.db.DeleteWorkspace(ctx, ws.ID)
+		return nil
+	}
+
+	cloneDir := m.clones.ClonePath(
+		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	ready, err := gitCloneDirReady(cloneDir)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return nil
+	}
+
+	if err := runGit(
+		ctx, cloneDir,
+		"worktree", "remove", "--force", ws.WorktreePath,
+	); err != nil && !isGitWorktreeAbsent(err) {
+		return fmt.Errorf("remove git worktree: %w", err)
+	}
+	if err := m.deleteWorkspaceBranchesStrict(
+		ctx, cloneDir, ws, ws.WorkspaceBranch,
+	); err != nil {
+		return err
+	}
+	if err := runGit(ctx, cloneDir, "worktree", "prune"); err != nil {
+		return fmt.Errorf("prune git worktrees: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) cleanupWorkspaceArtifactsForDelete(
+	ctx context.Context, ws *Workspace,
+) error {
+	if err := m.cleanupTmuxSession(ctx, ws); err != nil {
+		return err
+	}
+
+	if m.clones == nil {
+		return nil
 	}
 
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 
-	// Remove worktree.
 	_ = runGit(
 		ctx, cloneDir,
 		"worktree", "remove", "--force", ws.WorktreePath,
 	)
-
 	m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
-
-	// Prune stale worktree metadata.
 	_ = runGit(ctx, cloneDir, "worktree", "prune")
+	return nil
+}
 
-	if err := m.db.DeleteWorkspace(ctx, id); err != nil {
-		return nil, fmt.Errorf("delete workspace record: %w", err)
+func (m *Manager) cleanupTmuxSession(
+	ctx context.Context, ws *Workspace,
+) error {
+	if err := m.killTmuxSession(ctx, ws.TmuxSession); err != nil &&
+		!isTmuxSessionAbsent([]byte(err.Error()), err) {
+		hasSession, checkErr := m.workspaceHasCreatedTmuxSession(ctx, ws)
+		if checkErr != nil {
+			return checkErr
+		}
+		if hasSession {
+			return fmt.Errorf("kill tmux session: %w", err)
+		}
 	}
-	return nil, nil
+	return nil
 }
 
 // Get returns a workspace by ID, or nil if not found.
@@ -481,6 +728,114 @@ func (m *Manager) ListSummaries(
 	return m.db.ListWorkspaceSummaries(ctx)
 }
 
+// ReapOrphanTmuxSessions kills middleman-managed tmux sessions that no longer
+// correspond to any workspace row. This is a conservative startup cleanup for
+// stale sessions left behind by crashes or previous bugs.
+func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
+	workspaces, err := m.db.ListWorkspaces(ctx)
+	if err != nil {
+		return fmt.Errorf("list workspaces: %w", err)
+	}
+	live := make(map[string]bool, len(workspaces))
+	for _, ws := range workspaces {
+		live[ws.TmuxSession] = true
+	}
+
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		if !isWorkspaceTmuxSessionName(session) {
+			continue
+		}
+		if live[session] {
+			continue
+		}
+		owned, err := m.tmuxSessionOwnedByThisManager(ctx, session)
+		if err != nil {
+			return err
+		}
+		if !owned {
+			continue
+		}
+		if err := m.killTmuxSession(ctx, session); err != nil &&
+			!isTmuxSessionAbsent([]byte(err.Error()), err) {
+			return fmt.Errorf(
+				"kill orphan tmux session %q: %w", session, err,
+			)
+		}
+	}
+	return nil
+}
+
+func isWorkspaceTmuxSessionName(session string) bool {
+	const prefix = "middleman-"
+	if len(session) != len(prefix)+16 ||
+		!strings.HasPrefix(session, prefix) {
+		return false
+	}
+	for _, ch := range session[len(prefix):] {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Manager) tmuxOwnerMarker() string {
+	abs, err := filepath.Abs(m.worktreeDir)
+	if err != nil {
+		abs = m.worktreeDir
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return "middleman:" + hex.EncodeToString(sum[:8])
+}
+
+func (m *Manager) tmuxSessionOwnedByThisManager(
+	ctx context.Context, session string,
+) (bool, error) {
+	cmd := m.tmuxExec(
+		ctx,
+		"show-options", "-qv", "-t", session,
+		"@middleman_owner",
+	)
+	out, err := procutil.Output(
+		ctx, cmd, "tmux subprocess capacity",
+	)
+	if err != nil {
+		if procutil.IsResourceExhausted(err) {
+			return false, err
+		}
+		return false, nil
+	}
+	return strings.TrimSpace(string(out)) == m.tmuxOwnerMarker(), nil
+}
+
+func (m *Manager) workspaceHasCreatedTmuxSession(
+	ctx context.Context, ws *Workspace,
+) (bool, error) {
+	if ws.Status == "ready" {
+		return true, nil
+	}
+
+	events, err := m.db.ListWorkspaceSetupEvents(ctx, ws.ID)
+	if err != nil {
+		return false, fmt.Errorf("list workspace setup events: %w", err)
+	}
+	for _, event := range events {
+		if event.Stage == workspaceSetupStageTmuxSession &&
+			event.Outcome == "success" {
+			return true, nil
+		}
+		if event.Stage == workspaceSetupStageSetup &&
+			event.Outcome == "ready" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // EnsureTmux creates a tmux session if it does not already exist,
 // using the manager's configured tmux command prefix.
 func (m *Manager) EnsureTmux(
@@ -496,6 +851,34 @@ func (m *Manager) EnsureTmux(
 	return m.newTmuxSession(ctx, session, cwd)
 }
 
+func (m *Manager) listTmuxSessions(
+	ctx context.Context,
+) ([]string, error) {
+	cmd := m.tmuxExec(ctx, "list-sessions", "-F", "#{session_name}")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		if isTmuxSessionAbsent(stderr.Bytes(), err) {
+			return nil, nil
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return nil, fmt.Errorf("tmux list-sessions: %w: %s", err, msg)
+	}
+	var sessions []string
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			sessions = append(sessions, line)
+		}
+	}
+	return sessions, nil
+}
+
 func (m *Manager) newTmuxSession(
 	ctx context.Context, session, cwd string,
 ) error {
@@ -507,7 +890,33 @@ func (m *Manager) newTmuxSession(
 		"-c", cwd,
 		shell, "-l",
 	)
-	return runBuiltCmd(cmd)
+	if err := runBuiltCmd(ctx, cmd); err != nil {
+		return err
+	}
+	if err := m.setTmuxOwnerMarker(ctx, session); err != nil {
+		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
+			!isTmuxSessionAbsent([]byte(killErr.Error()), killErr) {
+			return fmt.Errorf(
+				"set tmux owner marker: %w; cleanup new tmux session: %v",
+				err, killErr,
+			)
+		}
+		return fmt.Errorf("set tmux owner marker: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) setTmuxOwnerMarker(
+	ctx context.Context, session string,
+) error {
+	return runBuiltCmd(
+		ctx,
+		m.tmuxExec(
+			ctx,
+			"set-option", "-t", session,
+			"@middleman_owner", m.tmuxOwnerMarker(),
+		),
+	)
 }
 
 // tmuxSessionExists runs `tmux has-session` and distinguishes a
@@ -532,7 +941,7 @@ func (m *Manager) tmuxSessionExists(
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
 	if err == nil {
 		return true, nil
 	}
@@ -559,7 +968,9 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	}
 	msg := string(stderr)
 	return strings.Contains(msg, "can't find session") ||
-		strings.Contains(msg, "no server running")
+		strings.Contains(msg, "no server running") ||
+		(strings.Contains(msg, "error connecting to") &&
+			strings.Contains(msg, "No such file or directory"))
 }
 
 // killTmuxSession kills a tmux session via the manager's prefix.
@@ -568,7 +979,9 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 func (m *Manager) killTmuxSession(
 	ctx context.Context, session string,
 ) error {
-	return runBuiltCmd(m.tmuxExec(ctx, "kill-session", "-t", session))
+	return runBuiltCmd(
+		ctx, m.tmuxExec(ctx, "kill-session", "-t", session),
+	)
 }
 
 // userLoginShell resolves the current user's login shell from
@@ -587,7 +1000,10 @@ func userLoginShell() string {
 }
 
 func lookupPasswdShell(username string) string {
-	out, err := exec.Command("getent", "passwd", username).Output()
+	cmd := exec.Command("getent", "passwd", username)
+	out, err := procutil.Output(
+		context.Background(), cmd, "shell lookup subprocess capacity",
+	)
 	if err == nil {
 		return shellFromPasswdLine(string(out))
 	}
@@ -628,7 +1044,9 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err != nil {
 		return fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
@@ -640,8 +1058,10 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 // runBuiltCmd runs a pre-built exec.Cmd and wraps any failure with
 // the combined output. Used for tmux invocations whose *exec.Cmd is
 // assembled by tmuxExec so argv[0] access stays inside that helper.
-func runBuiltCmd(cmd *exec.Cmd) error {
-	out, err := cmd.CombinedOutput()
+func runBuiltCmd(ctx context.Context, cmd *exec.Cmd) error {
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "tmux subprocess capacity",
+	)
 	if err != nil {
 		return fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
@@ -658,7 +1078,9 @@ func dirtyFiles(
 		ctx, "git", "-C", worktreePath,
 		"status", "--porcelain",
 	)
-	out, err := cmd.Output()
+	out, err := procutil.Output(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +1169,25 @@ func (m *Manager) failSetup(
 }
 
 func wrapWorkspaceSetupError(stage string, err error) error {
+	if procutil.IsResourceExhausted(err) {
+		switch stage {
+		case workspaceSetupStageClone:
+			return fmt.Errorf(
+				"ensure clone: host process limit reached while starting git or helper processes: %w",
+				err,
+			)
+		case workspaceSetupStageWorktree:
+			return fmt.Errorf(
+				"add git worktree: host process limit reached while starting git or helper processes: %w",
+				err,
+			)
+		case workspaceSetupStageTmuxSession:
+			return fmt.Errorf(
+				"tmux new-session: host process limit reached while starting tmux or shell: %w",
+				err,
+			)
+		}
+	}
 	switch stage {
 	case workspaceSetupStageClone:
 		return fmt.Errorf("ensure clone: %w", err)
@@ -796,6 +1237,68 @@ func (m *Manager) deleteWorkspaceBranches(
 				"branch", branch, "err", err)
 		}
 	}
+}
+
+func (m *Manager) deleteWorkspaceBranchesStrict(
+	ctx context.Context, cloneDir string, ws *Workspace,
+	managedBranch string,
+) error {
+	for _, branch := range workspaceBranchCandidates(ws, managedBranch) {
+		if err := validateLocalBranchName(
+			ctx, cloneDir, branch,
+		); err != nil {
+			return err
+		}
+		if err := runGit(
+			ctx, cloneDir, "branch", "-D", "--", branch,
+		); err != nil && !isGitBranchAbsent(err) {
+			return fmt.Errorf("delete git branch %q: %w", branch, err)
+		}
+	}
+	return nil
+}
+
+func isGitWorktreeAbsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "is not a working tree") ||
+		strings.Contains(msg, "is not a worktree") ||
+		strings.Contains(msg, "not a git repository") ||
+		strings.Contains(msg, "no such file or directory")
+}
+
+func isGitBranchAbsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "branch") &&
+		strings.Contains(msg, "not found")
+}
+
+func gitCloneDirReady(cloneDir string) (bool, error) {
+	_, err := os.Stat(filepath.Join(cloneDir, "HEAD"))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("stat git clone dir: %w", err)
+}
+
+func isUniqueConstraintError(err error) bool {
+	type sqliteCoder interface {
+		Code() int
+	}
+	var coder sqliteCoder
+	if !errors.As(err, &coder) {
+		return false
+	}
+	const sqliteConstraintUnique = 2067
+	return coder.Code() == sqliteConstraintUnique
 }
 
 func workspaceBranchCandidates(
@@ -870,7 +1373,9 @@ func gitRefSHA(
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
 	if err == nil {
 		return strings.TrimSpace(string(out)), true, nil
 	}

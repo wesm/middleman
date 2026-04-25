@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // ErrNotFound is returned when a git ref or object cannot be resolved.
@@ -203,7 +204,7 @@ func (m *Manager) git(
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, err := procutil.Output(ctx, cmd, "git subprocess capacity")
 	if err != nil {
 		msg := stderr.String()
 		if isNotFoundError(msg) {

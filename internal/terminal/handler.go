@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
 
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/workspace"
 )
 
@@ -23,6 +24,9 @@ import (
 type Handler struct {
 	Workspaces  *workspace.Manager
 	TmuxCommand []string
+
+	mu     sync.Mutex
+	active map[string]bool
 }
 
 type controlMsg struct {
@@ -64,6 +68,13 @@ func (h *Handler) ServeHTTP(
 
 	cols, rows := parseSize(r)
 
+	releaseTerminal, err := h.claimTerminalSlot(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	defer releaseTerminal()
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
@@ -79,9 +90,13 @@ func (h *Handler) ServeHTTP(
 		ctx, ws.TmuxSession, ws.WorktreePath,
 	); tmuxErr != nil {
 		slog.Error("ensure tmux", "err", tmuxErr)
+		reason := "failed to start tmux"
+		if procutil.IsResourceExhausted(tmuxErr) {
+			reason = "host process limit reached"
+		}
 		conn.Close(
 			websocket.StatusInternalError,
-			"failed to start tmux",
+			reason,
 		)
 		return
 	}
@@ -96,6 +111,19 @@ func (h *Handler) ServeHTTP(
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
+	releaseProc, err := procutil.TryAcquire(
+		ctx, "terminal attach subprocess capacity",
+	)
+	if err != nil {
+		slog.Error("terminal attach capacity", "err", err)
+		conn.Close(
+			websocket.StatusInternalError,
+			"host process limit reached",
+		)
+		return
+	}
+	defer releaseProc()
+
 	winSize := &pty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),
@@ -103,9 +131,13 @@ func (h *Handler) ServeHTTP(
 	ptmx, err := pty.StartWithSize(cmd, winSize)
 	if err != nil {
 		slog.Error("pty start", "err", err)
+		reason := "failed to start pty"
+		if procutil.IsResourceExhausted(err) {
+			reason = "host process limit reached"
+		}
 		conn.Close(
 			websocket.StatusInternalError,
-			"failed to start pty",
+			reason,
 		)
 		return
 	}
@@ -161,10 +193,11 @@ func (h *Handler) ServeHTTP(
 	case <-bridgeDone:
 		// Browser disconnected. Cancel context to kill tmux attach.
 		cancel()
+		_ = ptmx.Close()
 		// Wait briefly for cmd to finish.
 		select {
 		case exitCode = <-cmdDone:
-		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
 			exitCode = -1
 		}
 	}
@@ -182,6 +215,28 @@ func (h *Handler) ServeHTTP(
 	cancel()
 	wg.Wait()
 	conn.Close(websocket.StatusNormalClosure, "session ended")
+}
+
+func (h *Handler) claimTerminalSlot(
+	id string,
+) (func(), error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.active == nil {
+		h.active = make(map[string]bool)
+	}
+	if h.active[id] {
+		return nil, fmt.Errorf("workspace terminal already attached")
+	}
+	h.active[id] = true
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			delete(h.active, id)
+		})
+	}, nil
 }
 
 func ptyToWS(

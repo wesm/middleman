@@ -2408,6 +2408,30 @@ func (d *DB) UpdateWorkspaceBranch(
 	return nil
 }
 
+// StartWorkspaceRetry atomically transitions an errored workspace
+// into setup state. It returns false when the workspace exists but
+// was not in error status at the instant of the update.
+func (d *DB) StartWorkspaceRetry(
+	ctx context.Context, id string,
+) (bool, error) {
+	res, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET status = 'creating',
+		    error_message = NULL
+		WHERE id = ? AND status = 'error'`, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("start workspace retry: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf(
+			"start workspace retry rows affected: %w", err,
+		)
+	}
+	return affected == 1, nil
+}
+
 // InsertWorkspaceSetupEvent appends an audit event for workspace
 // setup activity.
 func (d *DB) InsertWorkspaceSetupEvent(

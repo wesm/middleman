@@ -921,6 +921,9 @@ type ClientInterface interface {
 
 	// GetWorkspacesById request
 	GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryWorkspace request
+	RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1477,6 +1480,18 @@ func (c *Client) DeleteWorkspace(ctx context.Context, id string, params *DeleteW
 
 func (c *Client) GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspacesByIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryWorkspaceRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3538,6 +3553,40 @@ func NewGetWorkspacesByIdRequest(server string, id string) (*http.Request, error
 	return req, nil
 }
 
+// NewRetryWorkspaceRequest generates requests for RetryWorkspace
+func NewRetryWorkspaceRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/retry", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3710,6 +3759,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspacesByIdWithResponse request
 	GetWorkspacesByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdResponse, error)
+
+	// RetryWorkspaceWithResponse request
+	RetryWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RetryWorkspaceResponse, error)
 }
 
 type GetActivityResponse struct {
@@ -4535,6 +4587,29 @@ func (r GetWorkspacesByIdResponse) StatusCode() int {
 	return 0
 }
 
+type RetryWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RetryWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetryWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetActivityWithResponse request returning *GetActivityResponse
 func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
 	rsp, err := c.GetActivity(ctx, params, reqEditors...)
@@ -4945,6 +5020,15 @@ func (c *ClientWithResponses) GetWorkspacesByIdWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetWorkspacesByIdResponse(rsp)
+}
+
+// RetryWorkspaceWithResponse request returning *RetryWorkspaceResponse
+func (c *ClientWithResponses) RetryWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RetryWorkspaceResponse, error) {
+	rsp, err := c.RetryWorkspace(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryWorkspaceResponse(rsp)
 }
 
 // ParseGetActivityResponse parses an HTTP response from a GetActivityWithResponse call
@@ -6087,6 +6171,39 @@ func ParseGetWorkspacesByIdResponse(rsp *http.Response) (*GetWorkspacesByIdRespo
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetryWorkspaceResponse parses an HTTP response from a RetryWorkspaceWithResponse call
+func ParseRetryWorkspaceResponse(rsp *http.Response) (*RetryWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetryWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

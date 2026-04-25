@@ -106,3 +106,24 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 	assert.Equal(http.StatusConflict, rec.Code)
 	assert.Contains(rec.Body.String(), "not ready")
 }
+
+func TestHandlerClaimWorkspaceTerminal(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	h := &Handler{}
+	release, err := h.claimTerminalSlot("ws-1")
+	require.NoError(err)
+	assert.NotNil(release)
+
+	release2, err := h.claimTerminalSlot("ws-1")
+	require.Error(err)
+	assert.Nil(release2)
+
+	release()
+
+	release3, err := h.claimTerminalSlot("ws-1")
+	require.NoError(err)
+	assert.NotNil(release3)
+	release3()
+}

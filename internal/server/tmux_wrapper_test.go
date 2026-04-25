@@ -592,6 +592,123 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	assert.Empty(stored.WorkspaceBranch)
 }
 
+func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	release := filepath.Join(dir, "release-first")
+	countFile := filepath.Join(dir, "new-session-count")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    count=0` + "\n" +
+		`    if [ -f "$TMUX_COUNT" ]; then count=$(cat "$TMUX_COUNT"); fi` + "\n" +
+		`    count=$((count + 1))` + "\n" +
+		`    printf '%s' "$count" > "$TMUX_COUNT"` + "\n" +
+		`    if [ "$count" = "1" ]; then` + "\n" +
+		`      while [ ! -f "$TMUX_RELEASE" ]; do sleep 0.05; done` + "\n" +
+		`      echo "first setup failed" >&2` + "\n" +
+		`      exit 42` + "\n" +
+		`    fi` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+	t.Setenv("TMUX_RELEASE", release)
+	t.Setenv("TMUX_COUNT", countFile)
+
+	client, _, database := setupWrapperServerWithScriptAndDB(
+		t, script,
+	)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		func() bool {
+			argvs := readTmuxRecord(t, record)
+			for _, argv := range argvs {
+				if len(argv) >= 2 && argv[1] == "new-session" {
+					return true
+				}
+			}
+			return false
+		},
+		5*time.Second,
+		50*time.Millisecond,
+	)
+
+	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.NotNil(retryResp.JSON202)
+	assert.Equal("creating", retryResp.JSON202.Status)
+
+	require.NoError(os.WriteFile(release, []byte("go\n"), 0o644))
+
+	var ready *generated.WorkspaceResponse
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			require.NoError(getErr)
+			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+				return false
+			}
+			if getResp.JSON200.Status != "ready" {
+				return false
+			}
+			ready = getResp.JSON200
+			return true
+		},
+		5*time.Second,
+		50*time.Millisecond,
+	)
+	require.NotNil(ready)
+	assert.Nil(ready.ErrorMessage)
+
+	argvs := readTmuxRecord(t, record)
+	var newSessionCount int
+	for _, argv := range argvs {
+		if len(argv) >= 2 && argv[1] == "new-session" {
+			newSessionCount++
+		}
+	}
+	assert.Equal(2, newSessionCount)
+
+	events, err := database.ListWorkspaceSetupEvents(ctx, wsID)
+	require.NoError(err)
+	var retryEvents int
+	for _, event := range events {
+		if event.Stage == "setup" && event.Outcome == "retrying" {
+			retryEvents++
+		}
+	}
+	assert.Equal(1, retryEvents)
+}
+
 func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -803,6 +920,69 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	assert.NotEmpty(attach[3])
 }
 
+func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    echo "fork/exec /opt/homebrew/bin/tmux: resource temporarily unavailable" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	var failed *generated.WorkspaceResponse
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			require.NoError(getErr)
+			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+				return false
+			}
+			if getResp.JSON200.Status != "error" {
+				return false
+			}
+			failed = getResp.JSON200
+			return true
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+	require.NotNil(failed)
+	require.NotNil(failed.ErrorMessage)
+	assert.Contains(*failed.ErrorMessage, "host process limit reached")
+}
+
 // TestReadTmuxRecordPreservesEmptyArgs pins down the parser's
 // empty-arg handling. The NUL-delimited record format was chosen to
 // round-trip argv with empty-string elements unambiguously; the
@@ -885,6 +1065,146 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	assert.Equal("kill-session", kill[1])
 	assert.Equal("-t", kill[2])
 	assert.NotEmpty(kill[3])
+}
+
+func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "permission denied" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			if getErr != nil || getResp.JSON200 == nil {
+				return false
+			}
+			return getResp.JSON200.Status == "ready"
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusInternalServerError, delResp.StatusCode())
+	require.NotNil(delResp.ApplicationproblemJSONDefault)
+	require.NotNil(delResp.ApplicationproblemJSONDefault.Detail)
+	assert.Contains(
+		*delResp.ApplicationproblemJSONDefault.Detail,
+		"kill tmux session",
+	)
+	assert.Contains(
+		*delResp.ApplicationproblemJSONDefault.Detail,
+		"permission denied",
+	)
+
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, wsID)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	assert.Equal(wsID, getResp.JSON200.Id)
+}
+
+func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "new-session" ]; then` + "\n" +
+		`    echo "tmux unavailable" >&2` + "\n" +
+		`    exit 127` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "tmux unavailable" >&2` + "\n" +
+		`    exit 127` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				ctx, wsID,
+			)
+			if getErr != nil || getResp.JSON200 == nil {
+				return false
+			}
+			return getResp.JSON200.Status == "error"
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, wsID)
+	require.NoError(err)
+	assert.Equal(http.StatusNotFound, getResp.StatusCode())
 }
 
 // TestTmuxWrapperAttachSurfacesWrapperFailure exercises the

@@ -82,6 +82,10 @@ async function setupTerminalMocks(
       status: number;
       body?: unknown;
     }>;
+    workspaceRetryResponse?: {
+      status: number;
+      body?: unknown;
+    };
   },
 ): Promise<void> {
   const ws = opts?.workspace ?? testWorkspace;
@@ -122,6 +126,21 @@ async function setupTerminalMocks(
         return;
       }
       await route.fulfill({ status: 200 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/retry`,
+    async (route) => {
+      const response = opts?.workspaceRetryResponse ?? {
+        status: 202,
+        body: { ...ws, status: "creating" },
+      };
+      await route.fulfill({
+        status: response.status,
+        contentType: "application/json",
+        body: JSON.stringify(response.body ?? {}),
+      });
     },
   );
 
@@ -315,8 +334,9 @@ test.describe("terminal state icons", () => {
   );
 
   test(
-    "workspace setup error shows alert icon and retry recovers",
+    "workspace setup error retries setup and recovers",
     async ({ page }) => {
+      let retryCalls = 0;
       await setupTerminalMocks(page, {
         workspaceDetailResponses: [
           {
@@ -333,7 +353,25 @@ test.describe("terminal state icons", () => {
             body: testWorkspace,
           },
         ],
+        workspaceRetryResponse: {
+          status: 202,
+          body: { ...testWorkspace, status: "creating" },
+        },
       });
+      await page.route(
+        "**/api/v1/workspaces/ws-123/retry",
+        async (route) => {
+          retryCalls += 1;
+          await route.fulfill({
+            status: 202,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ...testWorkspace,
+              status: "creating",
+            }),
+          });
+        },
+      );
 
       await page.goto("/terminal/ws-123");
 
@@ -353,9 +391,43 @@ test.describe("terminal state icons", () => {
         .getByRole("button", { name: "Retry" })
         .click();
 
+      expect(retryCalls).toBe(1);
       await expect(
         page.locator(".header-name"),
       ).toContainText("Add auth middleware");
+    },
+  );
+
+  test(
+    "workspace setup error can be deleted",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspaceDetailResponses: [
+          {
+            status: 200,
+            body: {
+              ...testWorkspace,
+              status: "error",
+              error_message: "ensure clone failed",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const stateMessage = page.locator(
+        ".state-message.error",
+      );
+      await expect(stateMessage).toContainText(
+        "ensure clone failed",
+      );
+
+      await stateMessage
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      await expect(page).toHaveURL(/\/pulls$/);
     },
   );
 });

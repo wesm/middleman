@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 )
 
@@ -162,7 +163,7 @@ func TestCreateRepoNotTracked(t *testing.T) {
 		t.Context(), "github.com", "unknown", "repo", 1,
 	)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "repository not tracked")
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
 }
 
 func TestCreateDuplicate(t *testing.T) {
@@ -190,7 +191,7 @@ func TestCreateDuplicate(t *testing.T) {
 		ctx, "github.com", "acme", "widget", 42,
 	)
 	require.Error(err)
-	require.Contains(err.Error(), "UNIQUE constraint")
+	require.ErrorIs(err, ErrWorkspaceDuplicate)
 }
 
 func TestCreateMRNotSynced(t *testing.T) {
@@ -204,7 +205,7 @@ func TestCreateMRNotSynced(t *testing.T) {
 		t.Context(), "github.com", "acme", "widget", 999,
 	)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "not synced yet")
+	require.ErrorIs(t, err, ErrWorkspaceNotSynced)
 }
 
 func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
@@ -608,6 +609,571 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	)
 }
 
+func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "can't find session: missing" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	ctx := context.Background()
+	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
+	require.NoError(err)
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	require.NoError(err)
+	assert.Nil(dirty)
+
+	got, err := mgr.Get(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(got)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
+	)
+}
+
+func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "permission denied" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	ctx := context.Background()
+	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	assert.Nil(dirty)
+	require.Error(err)
+	assert.Contains(err.Error(), "kill tmux session")
+	assert.Contains(err.Error(), "permission denied")
+
+	got, getErr := mgr.Get(ctx, ws.ID)
+	require.NoError(getErr)
+	require.NotNil(got)
+	assert.Equal(ws.ID, got.ID)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
+	)
+}
+
+func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{
+		filepath.Join(t.TempDir(), "missing-tmux"),
+	})
+
+	ctx := context.Background()
+	ws := &Workspace{
+		ID:              "ws-tmux-unavailable",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/thing",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "middleman-0000000000000042",
+		Status:          "error",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	require.NoError(err)
+	assert.Nil(dirty)
+
+	got, err := mgr.Get(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(got)
+}
+
+func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa\nmiddleman-notes\nother-session\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "show-options" ]; then` + "\n" +
+		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa" ]; then` + "\n" +
+		`      printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`      exit 0` + "\n" +
+		`    fi` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+
+	live := &Workspace{
+		ID:           "ws-live",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		MRNumber:     1,
+		MRHeadRef:    "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(context.Background(), live))
+
+	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 4)
+	assert.Equal(
+		[]string{"wrap", "list-sessions", "-F", "#{session_name}"},
+		argvs[0],
+	)
+	assert.Equal(
+		[]string{
+			"wrap", "show-options", "-qv", "-t",
+			"middleman-ffffffffffffffff", "@middleman_owner",
+		},
+		argvs[1],
+	)
+	assert.Equal(
+		[]string{
+			"wrap", "show-options", "-qv", "-t",
+			"middleman-aaaaaaaaaaaaaaaa", "@middleman_owner",
+		},
+		argvs[2],
+	)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa"},
+		argvs[3],
+	)
+}
+
+func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "permission denied" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	ctx := context.Background()
+	errMsg := "tmux new-session failed"
+	ws := &Workspace{
+		ID:              "ws-retry-cleanup-fails",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-retry-cleanup-fails",
+		TmuxSession:     "middleman-retry-cleanup-fails",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+	require.NoError(d.InsertWorkspaceSetupEvent(ctx, &db.WorkspaceSetupEvent{
+		WorkspaceID: ws.ID,
+		Stage:       workspaceSetupStageTmuxSession,
+		Outcome:     "success",
+		Message:     "tmux session started",
+	}))
+
+	next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	assert.Nil(next)
+	assert.False(startNow)
+	require.Error(err)
+	assert.Contains(err.Error(), "cleanup workspace artifacts before retry")
+	assert.Contains(err.Error(), "kill tmux session")
+	assert.Contains(err.Error(), "permission denied")
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "permission denied")
+	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
+	)
+}
+
+func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	started := filepath.Join(dir, "started")
+	release := filepath.Join(dir, "release")
+	count := filepath.Join(dir, "count")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    n=0` + "\n" +
+		`    if [ -f "$TMUX_COUNT" ]; then n=$(cat "$TMUX_COUNT"); fi` + "\n" +
+		`    n=$((n + 1))` + "\n" +
+		`    printf '%s' "$n" > "$TMUX_COUNT"` + "\n" +
+		`    if [ "$n" -eq 1 ]; then` + "\n" +
+		`      : > "$TMUX_STARTED"` + "\n" +
+		`      while [ ! -f "$TMUX_RELEASE" ]; do sleep 0.01; done` + "\n" +
+		`      echo "permission denied" >&2` + "\n" +
+		`      exit 1` + "\n" +
+		`    fi` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_STARTED", started)
+	t.Setenv("TMUX_RELEASE", release)
+	t.Setenv("TMUX_COUNT", count)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	ctx := context.Background()
+	errMsg := "tmux new-session failed"
+	ws := &Workspace{
+		ID:              "ws-retry-cleanup-queued",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-retry-cleanup-queued",
+		TmuxSession:     "middleman-retry-cleanup-queued",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+	require.NoError(d.InsertWorkspaceSetupEvent(ctx, &db.WorkspaceSetupEvent{
+		WorkspaceID: ws.ID,
+		Stage:       workspaceSetupStageTmuxSession,
+		Outcome:     "success",
+		Message:     "tmux session started",
+	}))
+
+	type retryResult struct {
+		ws       *Workspace
+		startNow bool
+		err      error
+	}
+	firstResult := make(chan retryResult, 1)
+	go func() {
+		next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+		firstResult <- retryResult{ws: next, startNow: startNow, err: err}
+	}()
+
+	require.Eventually(func() bool {
+		_, err := os.Stat(started)
+		return err == nil
+	}, time.Second, 10*time.Millisecond)
+	require.Eventually(func() bool {
+		got, err := d.GetWorkspace(ctx, ws.ID)
+		return err == nil && got != nil && got.Status == "creating"
+	}, time.Second, 10*time.Millisecond)
+
+	queuedWS, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(queuedWS)
+	assert.False(startNow)
+	assert.Equal("creating", queuedWS.Status)
+
+	require.NoError(os.WriteFile(release, []byte("1"), 0o644))
+	var first retryResult
+	require.Eventually(func() bool {
+		select {
+		case first = <-firstResult:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	assert.Nil(first.ws)
+	assert.False(first.startNow)
+	require.Error(first.err)
+	assert.Contains(first.err.Error(), "permission denied")
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(next)
+	assert.False(queued)
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+}
+
+func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "can't find session: missing" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetClones(gitclone.New(filepath.Join(dir, "clones"), nil))
+	ctx := context.Background()
+	errMsg := "ensure clone failed"
+	ws := &Workspace{
+		ID:              "ws-retry-missing-clone",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    filepath.Join(dir, "missing-worktree"),
+		TmuxSession:     "middleman-retry-missing-clone",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(startNow)
+	assert.Equal("creating", next.Status)
+	assert.Equal(workspaceBranchUnknown, next.WorkspaceBranch)
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("creating", got.Status)
+	assert.Equal(workspaceBranchUnknown, got.WorkspaceBranch)
+	assert.Nil(got.ErrorMessage)
+}
+
+func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	ws := &Workspace{
+		ID:              "ws-queued-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    "/tmp/ws-queued-retry",
+		TmuxSession:     "middleman-ws-queued-retry",
+		Status:          "creating",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	current, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(current)
+	assert.False(startNow)
+	assert.Equal("creating", current.Status)
+
+	errMsg := "ensure clone failed"
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "error", &errMsg))
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(queued)
+	assert.Equal("creating", next.Status)
+	assert.Nil(next.ErrorMessage)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("creating", stored.Status)
+	assert.Nil(stored.ErrorMessage)
+	assert.Equal(workspaceBranchUnknown, stored.WorkspaceBranch)
+
+	next, queued, err = mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(next)
+	assert.False(queued)
+}
+
+func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	errMsg := "ensure clone failed"
+	ws := &Workspace{
+		ID:              "ws-raced-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-raced-retry",
+		TmuxSession:     "middleman-ws-raced-retry",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	next, startNow, err := mgr.queueRetryOrStartErrored(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(startNow)
+	assert.Equal("creating", next.Status)
+	assert.Nil(next.ErrorMessage)
+	assert.Equal(workspaceBranchUnknown, next.WorkspaceBranch)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("creating", stored.Status)
+	assert.Nil(stored.ErrorMessage)
+	assert.Equal(workspaceBranchUnknown, stored.WorkspaceBranch)
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(next)
+	assert.False(queued)
+}
+
+func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	ws := &Workspace{
+		ID:              "ws-discard-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    "/tmp/ws-discard-retry",
+		TmuxSession:     "middleman-ws-discard-retry",
+		Status:          "creating",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	current, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(current)
+	assert.False(startNow)
+
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.False(queued)
+	assert.Equal("ready", next.Status)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("ready", stored.Status)
+}
+
 func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -638,7 +1204,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 2)
+	require.Len(argvs, 3)
 	assert.Equal(
 		[]string{"has-session", "-t", "sess-B"},
 		argvs[0],
@@ -655,6 +1221,55 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	assert.Equal("/tmp/cwd", argvs[1][5])
 	assert.NotEmpty(argvs[1][6])
 	assert.Equal("-l", argvs[1][7])
+	assert.Equal(
+		[]string{
+			"set-option", "-t", "sess-B",
+			"@middleman_owner", mgr.tmuxOwnerMarker(),
+		},
+		argvs[2],
+	)
+}
+
+func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "error connecting to /private/tmp/tmux-501/default (No such file or directory)" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+
+	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 3)
+	assert.Equal(
+		[]string{"has-session", "-t", "sess-macos"},
+		argvs[0],
+	)
+	assert.Equal("new-session", argvs[1][0])
+	assert.Equal("sess-macos", argvs[1][3])
+	assert.Equal(
+		[]string{
+			"set-option", "-t", "sess-macos",
+			"@middleman_owner", mgr.tmuxOwnerMarker(),
+		},
+		argvs[2],
+	)
 }
 
 // TestReadRecorderArgvPreservesEmptyArgs pins down the parser's
