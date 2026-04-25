@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { getStores } from "@middleman/ui";
   import type { ConfigRepo } from "@middleman/ui/api/types";
   import { addRepo, removeRepo, getSettings, refreshRepo } from "../../api/settings.js";
@@ -17,6 +18,7 @@
   const embedded = isEmbedded();
 
   let importOpen = $state(false);
+  let importTrigger = $state<HTMLButtonElement | null>(null);
   let inputValue = $state("");
   let adding = $state(false);
   let addError = $state<string | null>(null);
@@ -97,18 +99,24 @@
       void handleAdd();
     }
   }
+
+  async function closeImportModal(): Promise<void> {
+    importOpen = false;
+    await tick();
+    importTrigger?.focus();
+  }
 </script>
 
 {#if !embedded}
   <div class="repo-import-entry">
-    <button class="primary-import-btn" type="button" onclick={() => { importOpen = true; }}>Add repositories…</button>
+    <button bind:this={importTrigger} class="primary-import-btn" type="button" onclick={() => { importOpen = true; }}>Add repositories…</button>
     <p>Preview a glob, filter results, and add selected repositories as exact entries.</p>
   </div>
 {/if}
 
 <RepoImportModal
   open={importOpen}
-  onClose={() => { importOpen = false; }}
+  onClose={() => { void closeImportModal(); }}
   onImported={(settings) => {
     onUpdate(settings.repos);
     void sync.refreshSyncStatus();

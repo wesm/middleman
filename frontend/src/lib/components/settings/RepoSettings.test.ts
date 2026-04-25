@@ -57,7 +57,7 @@ describe("RepoSettings", () => {
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
   });
 
-  it("opens the repository import modal", async () => {
+  it("opens the repository import modal and restores focus on close", async () => {
     render(RepoSettings, {
       props: {
         repos: [],
@@ -65,10 +65,14 @@ describe("RepoSettings", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Add repositories…" }));
+    const trigger = screen.getByRole("button", { name: "Add repositories…" });
+    await fireEvent.click(trigger);
 
     expect(screen.getByRole("dialog", { name: "Add repositories" })).toBeTruthy();
     expect(screen.getByLabelText("Repository pattern")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it("keeps direct glob add in an advanced section", () => {

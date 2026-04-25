@@ -39,6 +39,11 @@
     if (!value) return "Never pushed";
     return new Date(value).toLocaleString();
   }
+
+  function ariaSort(field: SortState["field"]): "ascending" | "descending" | "none" {
+    if (sort.field !== field) return "none";
+    return sort.direction === "asc" ? "ascending" : "descending";
+  }
 </script>
 
 <div class="repo-preview-controls">
@@ -69,9 +74,9 @@
     <thead>
       <tr>
         <th scope="col" class="select-col">Select</th>
-        <th scope="col"><button type="button" class="sort-btn" onclick={() => onSort("name")}>Repository{sortLabel("name")}</button></th>
+        <th scope="col" aria-sort={ariaSort("name")}><button type="button" class="sort-btn" onclick={() => onSort("name")}>Repository{sortLabel("name")}</button></th>
         <th scope="col">Description</th>
-        <th scope="col"><button type="button" class="sort-btn" onclick={() => onSort("pushed_at")}>Last pushed{sortLabel("pushed_at")}</button></th>
+        <th scope="col" aria-sort={ariaSort("pushed_at")}><button type="button" class="sort-btn" onclick={() => onSort("pushed_at")}>Last pushed{sortLabel("pushed_at")}</button></th>
         <th scope="col">Visibility</th>
         <th scope="col">Status</th>
       </tr>
