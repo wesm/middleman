@@ -97,6 +97,64 @@ func TestSSE_ReturnsEventStream(t *testing.T) {
 	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
 }
 
+func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal("text/event-stream", resp.Header.Get("Content-Type"))
+	assert.Equal("no-cache", resp.Header.Get("Cache-Control"))
+	require.Eventually(func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+
+	s.hub.Broadcast(Event{
+		Type: "data_changed",
+		Data: map[string]string{"source": "e2e"},
+	})
+
+	scanner := bufio.NewScanner(resp.Body)
+	var eventType, eventData string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if rest, ok := strings.CutPrefix(line, "event: "); ok {
+			eventType = rest
+		}
+		if rest, ok := strings.CutPrefix(line, "data: "); ok {
+			eventData = rest
+		}
+		if line == "" && eventType != "" {
+			break
+		}
+	}
+	require.Equal("data_changed", eventType)
+	assert.JSONEq(`{"source":"e2e"}`, eventData)
+
+	cancel()
+	resp.Body.Close()
+	require.Eventually(func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 0
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
 func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 	s := newTestServer(t)
 	ts := httptest.NewServer(s)
