@@ -6531,6 +6531,18 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MREvent"}}},"description":"Created"}`)
 	require.Contains(spec, `"operationId":"post-issue-comment"`)
 	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
+	for _, operationID := range []string{
+		"get-version",
+		"get-settings",
+		"update-settings",
+		"add-repo",
+		"refresh-repo",
+		"delete-repo",
+		"stream-events",
+		"get-roborev-status",
+	} {
+		require.Contains(spec, `"operationId":"`+operationID+`"`)
+	}
 }
 
 func TestMRListIncludesWorktreeLinks(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
@@ -47,6 +49,12 @@ type UIConfig struct {
 type RepoRef struct {
 	Owner string `json:"owner"`
 	Name  string `json:"name"`
+}
+
+type versionOutput struct {
+	Body struct {
+		Version string `json:"version"`
+	}
 }
 
 type ServerOptions struct {
@@ -435,22 +443,10 @@ func newServer(
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
 
-	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
-	mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
-	mux.HandleFunc("PUT /api/v1/settings", s.handleUpdateSettings)
-	mux.HandleFunc("POST /api/v1/repos", s.handleAddRepo)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/refresh", s.handleRefreshRepo)
-	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.handleDeleteRepo)
-	mux.HandleFunc("GET /api/v1/events", s.handleSSE)
-
 	// Roborev proxy
 	if cfg != nil {
 		roborevTarget := cfg.RoborevEndpoint()
 		mux.Handle("/api/roborev/", roborevProxy(roborevTarget))
-		mux.HandleFunc(
-			"GET /api/v1/roborev/status",
-			handleRoborevStatus(cfg),
-		)
 	}
 
 	if frontend != nil {
@@ -709,11 +705,63 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
 		return
 	}
+	s.serveSSE(r.Context(), w, rc)
+}
 
+func (s *Server) streamEvents(
+	_ context.Context, _ *struct{},
+) (*huma.StreamResponse, error) {
+	return &huma.StreamResponse{
+		Body: func(ctx huma.Context) {
+			ctx.SetHeader("Content-Type", "text/event-stream")
+			ctx.SetHeader("Cache-Control", "no-cache")
+			ctx.SetHeader("Connection", "keep-alive")
+
+			writer := ctx.BodyWriter()
+			deadline := streamDeadlineController{writer: writer}
+			_ = deadline.SetWriteDeadline(time.Time{})
+			s.serveSSE(ctx.Context(), writer, deadline)
+		},
+	}, nil
+}
+
+type streamDeadlineController struct {
+	writer io.Writer
+}
+
+func (c streamDeadlineController) SetWriteDeadline(t time.Time) error {
+	deadline, ok := c.writer.(interface {
+		SetWriteDeadline(time.Time) error
+	})
+	if !ok {
+		return nil
+	}
+	return deadline.SetWriteDeadline(t)
+}
+
+func (c streamDeadlineController) Flush() error {
+	flusher, ok := c.writer.(http.Flusher)
+	if !ok {
+		return nil
+	}
+	flusher.Flush()
+	return nil
+}
+
+type sseController interface {
+	SetWriteDeadline(time.Time) error
+	Flush() error
+}
+
+func (s *Server) serveSSE(
+	ctx context.Context,
+	w io.Writer,
+	rc sseController,
+) {
 	// Subscribe BEFORE the first flush so any broadcast issued between
 	// the headers landing on the wire and the subscriber being registered
 	// is delivered to this client instead of dropped.
-	ch, done := s.hub.Subscribe(r.Context())
+	ch, done := s.hub.Subscribe(ctx)
 
 	if err := rc.Flush(); err != nil {
 		return
@@ -767,18 +815,18 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
 				return
 			}
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Server) handleVersion(
-	w http.ResponseWriter, _ *http.Request,
-) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"version": s.version,
-	})
+func (s *Server) getVersion(
+	_ context.Context, _ *struct{},
+) (*versionOutput, error) {
+	resp := &versionOutput{}
+	resp.Body.Version = s.version
+	return resp, nil
 }
 
 // writeJSON encodes v as JSON and writes it with the given HTTP status code.

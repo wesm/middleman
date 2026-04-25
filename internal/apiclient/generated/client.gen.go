@@ -59,6 +59,14 @@ type ActivityResponse struct {
 	Items  *[]ActivityItemResponse `json:"items"`
 }
 
+// AddRepoInputBody defines model for AddRepoInputBody.
+type AddRepoInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Name   string  `json:"name"`
+	Owner  string  `json:"owner"`
+}
+
 // ApprovePRInputBody defines model for ApprovePRInputBody.
 type ApprovePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -676,6 +684,15 @@ type ResolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
+// RoborevStatusResponse defines model for RoborevStatusResponse.
+type RoborevStatusResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	Available bool    `json:"available"`
+	Endpoint  string  `json:"endpoint"`
+	Version   string  `json:"version"`
+}
+
 // SessionInfo defines model for SessionInfo.
 type SessionInfo struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -767,6 +784,21 @@ type SyncStatus struct {
 // Terminal defines model for Terminal.
 type Terminal struct {
 	FontFamily string `json:"font_family"`
+}
+
+// UpdateSettingsRequest defines model for UpdateSettingsRequest.
+type UpdateSettingsRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string   `json:"$schema,omitempty"`
+	Activity *Activity `json:"activity,omitempty"`
+	Terminal *Terminal `json:"terminal,omitempty"`
+}
+
+// VersionOutputBody defines model for VersionOutputBody.
+type VersionOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Version string  `json:"version"`
 }
 
 // WorkflowApprovalResponse defines model for WorkflowApprovalResponse.
@@ -906,6 +938,9 @@ type DeleteWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
 }
 
+// AddRepoJSONRequestBody defines body for AddRepo for application/json ContentType.
+type AddRepoJSONRequestBody = AddRepoInputBody
+
 // BulkAddReposJSONRequestBody defines body for BulkAddRepos for application/json ContentType.
 type BulkAddReposJSONRequestBody = BulkAddReposRequest
 
@@ -941,6 +976,9 @@ type PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody = MergePRInputBody
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
+
+// UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
+type UpdateSettingsJSONRequestBody = UpdateSettingsRequest
 
 // UnsetStarredJSONRequestBody defines body for UnsetStarred for application/json ContentType.
 type UnsetStarredJSONRequestBody = StarredRequest
@@ -1030,6 +1068,9 @@ type ClientInterface interface {
 	// GetActivity request
 	GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// StreamEvents request
+	StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1041,6 +1082,11 @@ type ClientInterface interface {
 
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddRepoWithBody request with any body
+	AddRepoWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AddRepo(ctx context.Context, body AddRepoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// BulkAddReposWithBody request with any body
 	BulkAddReposWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1054,6 +1100,9 @@ type ClientInterface interface {
 
 	// ListRepoSummaries request
 	ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteRepo request
+	DeleteRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByName request
 	GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1153,6 +1202,20 @@ type ClientInterface interface {
 	// EnqueuePrSync request
 	EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RefreshRepo request
+	RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRoborevStatus request
+	GetRoborevStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSettings request
+	GetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateSettingsWithBody request with any body
+	UpdateSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateSettings(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListStacks request
 	ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1171,6 +1234,9 @@ type ClientInterface interface {
 
 	// GetSyncStatus request
 	GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetVersion request
+	GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkspaces request
 	GetWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1206,6 +1272,18 @@ type ClientInterface interface {
 
 func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetActivityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamEventsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1254,6 +1332,30 @@ func (c *Client) GetRateLimits(ctx context.Context, reqEditors ...RequestEditorF
 
 func (c *Client) ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListReposRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddRepoWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddRepoRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddRepo(ctx context.Context, body AddRepoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddRepoRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1314,6 +1416,18 @@ func (c *Client) PreviewRepos(ctx context.Context, body PreviewReposJSONRequestB
 
 func (c *Client) ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListRepoSummariesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteRepoRequest(c.Server, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -1756,6 +1870,66 @@ func (c *Client) EnqueuePrSync(ctx context.Context, owner string, name string, n
 	return c.Client.Do(req)
 }
 
+func (c *Client) RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshRepoRequest(c.Server, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRoborevStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRoborevStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSettingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateSettingsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateSettings(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateSettingsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListStacksRequest(c.Server, params)
 	if err != nil {
@@ -1830,6 +2004,18 @@ func (c *Client) TriggerSync(ctx context.Context, reqEditors ...RequestEditorFn)
 
 func (c *Client) GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSyncStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetVersionRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -2075,6 +2261,33 @@ func NewGetActivityRequest(server string, params *GetActivityParams) (*http.Requ
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStreamEventsRequest generates requests for StreamEvents
+func NewStreamEventsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -2413,6 +2626,46 @@ func NewListReposRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewAddRepoRequest calls the generic AddRepo builder with application/json body
+func NewAddRepoRequest(server string, body AddRepoJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAddRepoRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAddRepoRequestWithBody generates requests for AddRepo with any type of body
+func NewAddRepoRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewBulkAddReposRequest calls the generic BulkAddRepos builder with application/json body
 func NewBulkAddReposRequest(server string, body BulkAddReposJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2513,6 +2766,47 @@ func NewListRepoSummariesRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteRepoRequest generates requests for DeleteRepo
+func NewDeleteRepoRequest(server string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -4083,6 +4377,141 @@ func NewEnqueuePrSyncRequest(server string, owner string, name string, number in
 	return req, nil
 }
 
+// NewRefreshRepoRequest generates requests for RefreshRepo
+func NewRefreshRepoRequest(server string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/refresh", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRoborevStatusRequest generates requests for GetRoborevStatus
+func NewGetRoborevStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/roborev/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSettingsRequest generates requests for GetSettings
+func NewGetSettingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateSettingsRequest calls the generic UpdateSettings builder with application/json body
+func NewUpdateSettingsRequest(server string, body UpdateSettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateSettingsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdateSettingsRequestWithBody generates requests for UpdateSettings with any type of body
+func NewUpdateSettingsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListStacksRequest generates requests for ListStacks
 func NewListStacksRequest(server string, params *ListStacksParams) (*http.Request, error) {
 	var err error
@@ -4249,6 +4678,33 @@ func NewGetSyncStatusRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/sync/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetVersionRequest generates requests for GetVersion
+func NewGetVersionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/version")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -4659,6 +5115,9 @@ type ClientWithResponsesInterface interface {
 	// GetActivityWithResponse request
 	GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
 
+	// StreamEventsWithResponse request
+	StreamEventsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StreamEventsResponse, error)
+
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
 
@@ -4670,6 +5129,11 @@ type ClientWithResponsesInterface interface {
 
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
+
+	// AddRepoWithBodyWithResponse request with any body
+	AddRepoWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddRepoResponse, error)
+
+	AddRepoWithResponse(ctx context.Context, body AddRepoJSONRequestBody, reqEditors ...RequestEditorFn) (*AddRepoResponse, error)
 
 	// BulkAddReposWithBodyWithResponse request with any body
 	BulkAddReposWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BulkAddReposResponse, error)
@@ -4683,6 +5147,9 @@ type ClientWithResponsesInterface interface {
 
 	// ListRepoSummariesWithResponse request
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error)
+
+	// DeleteRepoWithResponse request
+	DeleteRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error)
 
 	// GetReposByOwnerByNameWithResponse request
 	GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error)
@@ -4782,6 +5249,20 @@ type ClientWithResponsesInterface interface {
 	// EnqueuePrSyncWithResponse request
 	EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
 
+	// RefreshRepoWithResponse request
+	RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
+
+	// GetRoborevStatusWithResponse request
+	GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoborevStatusResponse, error)
+
+	// GetSettingsWithResponse request
+	GetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsResponse, error)
+
+	// UpdateSettingsWithBodyWithResponse request with any body
+	UpdateSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
+
+	UpdateSettingsWithResponse(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
+
 	// ListStacksWithResponse request
 	ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error)
 
@@ -4800,6 +5281,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetSyncStatusWithResponse request
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncStatusResponse, error)
+
+	// GetVersionWithResponse request
+	GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error)
 
 	// GetWorkspacesWithResponse request
 	GetWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWorkspacesResponse, error)
@@ -4850,6 +5334,28 @@ func (r GetActivityResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetActivityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StreamEventsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4948,6 +5454,29 @@ func (r ListReposResponse) StatusCode() int {
 	return 0
 }
 
+type AddRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r AddRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type BulkAddReposResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -5011,6 +5540,28 @@ func (r ListRepoSummariesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListRepoSummariesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteRepoResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5612,6 +6163,98 @@ func (r EnqueuePrSyncResponse) StatusCode() int {
 	return 0
 }
 
+type RefreshRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRoborevStatusResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RoborevStatusResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRoborevStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRoborevStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSettingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateSettingsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListStacksResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -5718,6 +6361,29 @@ func (r GetSyncStatusResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetSyncStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetVersionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *VersionOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetVersionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetVersionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5938,6 +6604,15 @@ func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, param
 	return ParseGetActivityResponse(rsp)
 }
 
+// StreamEventsWithResponse request returning *StreamEventsResponse
+func (c *ClientWithResponses) StreamEventsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StreamEventsResponse, error) {
+	rsp, err := c.StreamEvents(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamEventsResponse(rsp)
+}
+
 // ListIssuesWithResponse request returning *ListIssuesResponse
 func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error) {
 	rsp, err := c.ListIssues(ctx, params, reqEditors...)
@@ -5972,6 +6647,23 @@ func (c *ClientWithResponses) ListReposWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseListReposResponse(rsp)
+}
+
+// AddRepoWithBodyWithResponse request with arbitrary body returning *AddRepoResponse
+func (c *ClientWithResponses) AddRepoWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddRepoResponse, error) {
+	rsp, err := c.AddRepoWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddRepoResponse(rsp)
+}
+
+func (c *ClientWithResponses) AddRepoWithResponse(ctx context.Context, body AddRepoJSONRequestBody, reqEditors ...RequestEditorFn) (*AddRepoResponse, error) {
+	rsp, err := c.AddRepo(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddRepoResponse(rsp)
 }
 
 // BulkAddReposWithBodyWithResponse request with arbitrary body returning *BulkAddReposResponse
@@ -6015,6 +6707,15 @@ func (c *ClientWithResponses) ListRepoSummariesWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseListRepoSummariesResponse(rsp)
+}
+
+// DeleteRepoWithResponse request returning *DeleteRepoResponse
+func (c *ClientWithResponses) DeleteRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error) {
+	rsp, err := c.DeleteRepo(ctx, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteRepoResponse(rsp)
 }
 
 // GetReposByOwnerByNameWithResponse request returning *GetReposByOwnerByNameResponse
@@ -6331,6 +7032,50 @@ func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, own
 	return ParseEnqueuePrSyncResponse(rsp)
 }
 
+// RefreshRepoWithResponse request returning *RefreshRepoResponse
+func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error) {
+	rsp, err := c.RefreshRepo(ctx, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshRepoResponse(rsp)
+}
+
+// GetRoborevStatusWithResponse request returning *GetRoborevStatusResponse
+func (c *ClientWithResponses) GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoborevStatusResponse, error) {
+	rsp, err := c.GetRoborevStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRoborevStatusResponse(rsp)
+}
+
+// GetSettingsWithResponse request returning *GetSettingsResponse
+func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsResponse, error) {
+	rsp, err := c.GetSettings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSettingsResponse(rsp)
+}
+
+// UpdateSettingsWithBodyWithResponse request with arbitrary body returning *UpdateSettingsResponse
+func (c *ClientWithResponses) UpdateSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error) {
+	rsp, err := c.UpdateSettingsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateSettingsResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateSettingsWithResponse(ctx context.Context, body UpdateSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error) {
+	rsp, err := c.UpdateSettings(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateSettingsResponse(rsp)
+}
+
 // ListStacksWithResponse request returning *ListStacksResponse
 func (c *ClientWithResponses) ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error) {
 	rsp, err := c.ListStacks(ctx, params, reqEditors...)
@@ -6390,6 +7135,15 @@ func (c *ClientWithResponses) GetSyncStatusWithResponse(ctx context.Context, req
 		return nil, err
 	}
 	return ParseGetSyncStatusResponse(rsp)
+}
+
+// GetVersionWithResponse request returning *GetVersionResponse
+func (c *ClientWithResponses) GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error) {
+	rsp, err := c.GetVersion(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetVersionResponse(rsp)
 }
 
 // GetWorkspacesWithResponse request returning *GetWorkspacesResponse
@@ -6510,6 +7264,32 @@ func ParseGetActivityResponse(rsp *http.Response) (*GetActivityResponse, error) 
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStreamEventsResponse parses an HTTP response from a StreamEventsWithResponse call
+func ParseStreamEventsResponse(rsp *http.Response) (*StreamEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -6654,6 +7434,39 @@ func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 	return response, nil
 }
 
+// ParseAddRepoResponse parses an HTTP response from a AddRepoWithResponse call
+func ParseAddRepoResponse(rsp *http.Response) (*AddRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseBulkAddReposResponse parses an HTTP response from a BulkAddReposWithResponse call
 func ParseBulkAddReposResponse(rsp *http.Response) (*BulkAddReposResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6741,6 +7554,32 @@ func ParseListRepoSummariesResponse(rsp *http.Response) (*ListRepoSummariesRespo
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteRepoResponse parses an HTTP response from a DeleteRepoWithResponse call
+func ParseDeleteRepoResponse(rsp *http.Response) (*DeleteRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -7590,6 +8429,138 @@ func ParseEnqueuePrSyncResponse(rsp *http.Response) (*EnqueuePrSyncResponse, err
 	return response, nil
 }
 
+// ParseRefreshRepoResponse parses an HTTP response from a RefreshRepoWithResponse call
+func ParseRefreshRepoResponse(rsp *http.Response) (*RefreshRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRoborevStatusResponse parses an HTTP response from a GetRoborevStatusWithResponse call
+func ParseGetRoborevStatusResponse(rsp *http.Response) (*GetRoborevStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRoborevStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RoborevStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSettingsResponse parses an HTTP response from a GetSettingsWithResponse call
+func ParseGetSettingsResponse(rsp *http.Response) (*GetSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateSettingsResponse parses an HTTP response from a UpdateSettingsWithResponse call
+func ParseUpdateSettingsResponse(rsp *http.Response) (*UpdateSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListStacksResponse parses an HTTP response from a ListStacksWithResponse call
 func ParseListStacksResponse(rsp *http.Response) (*ListStacksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7717,6 +8688,39 @@ func ParseGetSyncStatusResponse(rsp *http.Response) (*GetSyncStatusResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest SyncStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetVersionResponse parses an HTTP response from a GetVersionWithResponse call
+func ParseGetVersionResponse(rsp *http.Response) (*GetVersionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetVersionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VersionOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
