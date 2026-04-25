@@ -717,35 +717,12 @@ func (s *Server) streamEvents(
 			ctx.SetHeader("Cache-Control", "no-cache")
 			ctx.SetHeader("Connection", "keep-alive")
 
-			writer := ctx.BodyWriter()
-			deadline := streamDeadlineController{writer: writer}
-			_ = deadline.SetWriteDeadline(time.Time{})
-			s.serveSSE(ctx.Context(), writer, deadline)
+			_, w := humago.Unwrap(ctx)
+			rc := http.NewResponseController(w)
+			_ = rc.SetWriteDeadline(time.Time{})
+			s.serveSSE(ctx.Context(), w, rc)
 		},
 	}, nil
-}
-
-type streamDeadlineController struct {
-	writer io.Writer
-}
-
-func (c streamDeadlineController) SetWriteDeadline(t time.Time) error {
-	deadline, ok := c.writer.(interface {
-		SetWriteDeadline(time.Time) error
-	})
-	if !ok {
-		return nil
-	}
-	return deadline.SetWriteDeadline(t)
-}
-
-func (c streamDeadlineController) Flush() error {
-	flusher, ok := c.writer.(http.Flusher)
-	if !ok {
-		return nil
-	}
-	flusher.Flush()
-	return nil
 }
 
 type sseController interface {
