@@ -1,0 +1,84 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import WorkspaceHome from "./WorkspaceHome.svelte";
+
+describe("WorkspaceHome", () => {
+  afterEach(() => cleanup());
+
+  it("renders launch targets and running sessions", async () => {
+    const onLaunch = vi.fn();
+    const onOpenSession = vi.fn();
+
+    render(WorkspaceHome, {
+      props: {
+        workspace: {
+          id: "ws-1",
+          repo_owner: "acme",
+          repo_name: "widget",
+          mr_number: 7,
+          mr_head_ref: "feature/workspace",
+          worktree_path: "/tmp/widget",
+          mr_title: "Improve workspace UX",
+        },
+        launchTargets: [
+          {
+            key: "codex",
+            label: "Codex",
+            kind: "agent",
+            source: "builtin",
+            available: true,
+          },
+          {
+            key: "missing",
+            label: "Missing",
+            kind: "agent",
+            source: "builtin",
+            available: false,
+            disabled_reason: "missing not found on PATH",
+          },
+          {
+            key: "plain_shell",
+            label: "Plain shell",
+            kind: "plain_shell",
+            source: "system",
+            available: true,
+          },
+        ],
+        sessions: [
+          {
+            key: "ws-1:codex",
+            workspace_id: "ws-1",
+            target_key: "codex",
+            label: "Codex",
+            kind: "agent",
+            status: "running",
+            created_at: "2026-04-25T00:00:00Z",
+          },
+        ],
+        onLaunch,
+        onOpenSession,
+      },
+    });
+
+    expect(screen.getByText("Improve workspace UX")).toBeTruthy();
+    expect(screen.getByText("/tmp/widget")).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Codex" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Missing" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: "Plain shell" }),
+    ).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    expect(onLaunch).toHaveBeenCalledWith("codex");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Codex running" }));
+    expect(onOpenSession).toHaveBeenCalledWith("ws-1:codex");
+  });
+});

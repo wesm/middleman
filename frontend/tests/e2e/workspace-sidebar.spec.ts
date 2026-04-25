@@ -84,6 +84,53 @@ const roborevStatus = {
   canceled_jobs: 0,
 };
 
+const workspaceRuntime = {
+  launch_targets: [
+    {
+      key: "codex",
+      label: "Codex",
+      kind: "agent",
+      source: "builtin",
+      command: ["codex"],
+      available: true,
+    },
+    {
+      key: "tmux",
+      label: "tmux",
+      kind: "tmux",
+      source: "system",
+      command: ["tmux"],
+      available: false,
+      disabled_reason: "tmux not found",
+    },
+    {
+      key: "plain_shell",
+      label: "Plain shell",
+      kind: "plain_shell",
+      source: "system",
+      command: ["/bin/sh"],
+      available: true,
+    },
+  ],
+  sessions: [],
+  shell_session: null,
+};
+
+type RuntimeTarget = (typeof workspaceRuntime.launch_targets)[number];
+type RuntimeSession = {
+  key: string;
+  workspace_id: string;
+  target_key: string;
+  label: string;
+  kind: RuntimeTarget["kind"];
+  status: "starting" | "running" | "exited" | "error";
+  created_at: string;
+};
+type WorkspaceRuntime = Omit<typeof workspaceRuntime, "sessions" | "shell_session"> & {
+  sessions: RuntimeSession[];
+  shell_session: RuntimeSession | null;
+};
+
 /**
  * Mock all routes needed for terminal view tests.
  * Registers mockApi first (catch-all), then layers
@@ -105,6 +152,7 @@ async function setupTerminalMocks(
       status: number;
       body?: unknown;
     };
+    runtime?: WorkspaceRuntime;
   },
 ): Promise<void> {
   const ws = opts?.workspace ?? testWorkspace;
@@ -114,6 +162,9 @@ async function setupTerminalMocks(
   const detailResponses = [
     ...(opts?.workspaceDetailResponses ?? []),
   ];
+  const runtime = JSON.parse(
+    JSON.stringify(opts?.runtime ?? workspaceRuntime),
+  ) as WorkspaceRuntime;
 
   // Register catch-all first — later routes override.
   await mockApi(page);
@@ -187,6 +238,119 @@ async function setupTerminalMocks(
       }
       // DELETE
       await route.fulfill({ status: 204 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/runtime`,
+    async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(runtime),
+        });
+        return;
+      }
+      await route.fulfill({ status: 405 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/runtime/sessions`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fulfill({ status: 405 });
+        return;
+      }
+      const body = JSON.parse(
+        route.request().postData() ?? "{}",
+      ) as { target_key?: string };
+      const target = runtime.launch_targets.find(
+        (candidate) => candidate.key === body.target_key,
+      );
+      if (!target || !target.available) {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            detail: "launch target unavailable",
+          }),
+        });
+        return;
+      }
+      let session = runtime.sessions.find(
+        (candidate) => candidate.target_key === target.key,
+      );
+      if (!session) {
+        session = {
+          key: `${ws.id}:${target.key}`,
+          workspace_id: ws.id,
+          target_key: target.key,
+          label: target.label,
+          kind: target.kind,
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        };
+        runtime.sessions = [...runtime.sessions, session];
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(session),
+      });
+    },
+  );
+
+  await page.route(
+    (url) =>
+      url.pathname.startsWith(
+        `/api/v1/workspaces/${ws.id}/runtime/sessions/`,
+      ),
+    async (route) => {
+      if (route.request().method() !== "DELETE") {
+        await route.continue();
+        return;
+      }
+      const url = new URL(route.request().url());
+      const sessionKey = decodeURIComponent(
+        url.pathname.split("/").at(-1) ?? "",
+      );
+      runtime.sessions = runtime.sessions.filter(
+        (session) => session.key !== sessionKey,
+      );
+      await route.fulfill({ status: 204 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/runtime/shell`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fulfill({ status: 405 });
+        return;
+      }
+      if (
+        !runtime.shell_session ||
+        !["running", "starting"].includes(
+          runtime.shell_session.status,
+        )
+      ) {
+        runtime.shell_session = {
+          key: `${ws.id}:shell`,
+          workspace_id: ws.id,
+          target_key: "plain_shell",
+          label: "Shell",
+          kind: "plain_shell",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        };
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(runtime.shell_session),
+      });
     },
   );
 
@@ -447,6 +611,154 @@ test.describe("terminal state icons", () => {
         .click();
 
       await expect(page).toHaveURL(/\/pulls$/);
+    },
+  );
+});
+
+test.describe("workspace launch home", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-list-sidebar-width",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+    await setupTerminalMocks(page);
+  });
+
+  test(
+    "shows Worktree Home and does not attach a terminal by default",
+    async ({ page }) => {
+      const terminalSockets: string[] = [];
+      page.on("websocket", (socket) => {
+        const url = socket.url();
+        if (url.includes("/terminal")) {
+          terminalSockets.push(url);
+        }
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await expect(
+        page.getByRole("tab", { name: "Home" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Launch" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Codex" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "tmux" }),
+      ).toBeDisabled();
+      await expect(
+        page.getByRole("button", {
+          name: "Open shell drawer",
+        }),
+      ).toBeVisible();
+      await expect(page.getByText("Plain shell")).toHaveCount(0);
+      await expect
+        .poll(() => terminalSockets.length)
+        .toBe(0);
+    },
+  );
+
+  test(
+    "launches an agent into a compact running tab",
+    async ({ page }) => {
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .getByRole("button", { name: "Codex" })
+        .click();
+
+      const tabs = page.locator(".workspace-tabs");
+      await expect(
+        tabs.getByRole("tab", { name: "Codex" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".terminal-container"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "opens the plain shell from the bottom drawer",
+    async ({ page }) => {
+      const terminalSockets: string[] = [];
+      page.on("websocket", (socket) => {
+        terminalSockets.push(socket.url());
+      });
+
+      await page.goto("/terminal/ws-123");
+      await page
+        .getByRole("button", {
+          name: "Open shell drawer",
+        })
+        .click();
+
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          terminalSockets.some((url) =>
+            url.includes("/runtime/shell/terminal"),
+          ),
+        )
+        .toBe(true);
+    },
+  );
+
+  test(
+    "restarts an exited shell session when opening the drawer",
+    async ({ page }) => {
+      const shellEnsures: string[] = [];
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          request.url().includes("/runtime/shell")
+        ) {
+          shellEnsures.push(request.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        runtime: {
+          ...workspaceRuntime,
+          shell_session: {
+            key: "ws-123:shell",
+            workspace_id: "ws-123",
+            target_key: "plain_shell",
+            label: "Shell",
+            kind: "plain_shell",
+            status: "exited",
+            created_at: "2026-04-10T12:00:00Z",
+          },
+        },
+      });
+
+      await page.goto("/terminal/ws-123");
+      await page
+        .getByRole("button", {
+          name: "Open shell drawer",
+        })
+        .click();
+
+      await expect
+        .poll(() => shellEnsures.length)
+        .toBe(1);
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toBeVisible();
     },
   );
 });

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
@@ -19,17 +20,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/creack/pty/v2"
 	gh "github.com/google/go-github/v84/github"
 	"github.com/shurcooL/githubv4"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/apiclient"
 	"github.com/wesm/middleman/internal/apiclient/generated"
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/stacks"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
@@ -7192,8 +7197,17 @@ func setupTestServerWithWorkspaces(
 	t *testing.T,
 ) (*apiclient.Client, *db.DB, string, string) {
 	t.Helper()
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	return fixture.client, fixture.database, fixture.bare, fixture.remote
+}
+
+func setupTestServerWithWorkspacesServer(
+	t *testing.T,
+	cfg *config.Config,
+) (*apiclient.Client, *db.DB, string, string, *Server) {
+	t.Helper()
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	return fixture.client, fixture.database, fixture.bare, fixture.remote, fixture.server
 }
 
 type workspaceServerFixture struct {
@@ -7206,12 +7220,10 @@ type workspaceServerFixture struct {
 
 func setupWorkspaceServerFixture(
 	t *testing.T,
+	cfg *config.Config,
 ) workspaceServerFixture {
 	t.Helper()
 
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
-	}
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
 	}
@@ -7268,7 +7280,7 @@ func setupWorkspaceServerFixture(
 		database, nil, repos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+	srv := New(database, syncer, nil, "/", cfg, ServerOptions{
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
@@ -7312,6 +7324,398 @@ func waitForWorkspaceReady(
 
 	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
 	return ready
+}
+
+func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.LaunchTargets)
+	require.NotNil(resp.JSON200.Sessions)
+	assert.NotEmpty(*resp.JSON200.LaunchTargets)
+	assert.Empty(*resp.JSON200.Sessions)
+	assert.Nil(resp.JSON200.ShellSession)
+	assertWorkspaceRuntimeTarget(
+		t, *resp.JSON200.LaunchTargets, "plain_shell",
+	)
+	assertWorkspaceRuntimeTarget(t, *resp.JSON200.LaunchTargets, "tmux")
+}
+
+func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	tmuxPath := filepath.Join(dir, "tmux-wrapper")
+	require.NoError(os.WriteFile(
+		tmuxPath,
+		[]byte("#!/bin/sh\nexit 0\n"),
+		0o755,
+	))
+	cfg := &config.Config{Tmux: config.Tmux{
+		Command: []string{tmuxPath, "--scope", "tmux"},
+	}}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.LaunchTargets)
+
+	var tmux generated.LaunchTarget
+	for _, target := range *resp.JSON200.LaunchTargets {
+		if target.Key == "tmux" {
+			tmux = target
+			break
+		}
+	}
+	assert.Equal([]string{tmuxPath, "--scope", "tmux"}, *tmux.Command)
+	assert.True(tmux.Available)
+}
+
+func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
+	disabled := false
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "disabled",
+		Label:   "Disabled",
+		Enabled: &disabled,
+	}}}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "disabled",
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	require.Contains(t, string(resp.Body), "not available")
+}
+
+func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "plain_shell",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	shell := resp.JSON200
+	assert.Equal("plain_shell", shell.TargetKey)
+	assert.Equal(string(localruntime.LaunchTargetPlainShell), shell.Kind)
+	assert.Equal(string(localruntime.SessionStatusRunning), shell.Status)
+
+	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	require.NotNil(getResp.JSON200.ShellSession)
+	require.NotNil(getResp.JSON200.Sessions)
+	assert.Equal(shell.Key, getResp.JSON200.ShellSession.Key)
+	assert.Empty(*getResp.JSON200.Sessions)
+}
+
+func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("sleep"),
+	}}}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	firstResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	first := firstResp.JSON200
+
+	secondResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	second := secondResp.JSON200
+	assert.Equal(first.Key, second.Key)
+	assert.Equal(string(localruntime.SessionStatusRunning), first.Status)
+
+	listResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Sessions)
+	require.Len(*listResp.JSON200.Sessions, 1)
+	assert.Equal(first.Key, (*listResp.JSON200.Sessions)[0].Key)
+
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, first.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+
+	afterStopResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, afterStopResp.StatusCode())
+	require.NotNil(afterStopResp.JSON200)
+	require.NotNil(afterStopResp.JSON200.Sessions)
+	assert.Empty(*afterStopResp.JSON200.Sessions)
+}
+
+func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	shellResp, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, shellResp.StatusCode())
+	require.NotNil(shellResp.JSON200)
+	shell := shellResp.JSON200
+	assert.Equal("plain_shell", shell.TargetKey)
+	assert.Equal(string(localruntime.LaunchTargetPlainShell), shell.Kind)
+	assert.Equal(string(localruntime.SessionStatusRunning), shell.Status)
+
+	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	require.NotNil(getResp.JSON200.ShellSession)
+	require.NotNil(getResp.JSON200.Sessions)
+	assert.Equal(shell.Key, getResp.JSON200.ShellSession.Key)
+	assert.Empty(*getResp.JSON200.Sessions)
+}
+
+func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("echo"),
+	}}}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/api/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key + "/terminal"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary, []byte("ping\n"),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ != websocket.MessageBinary {
+			continue
+		}
+		got.WriteString(string(data))
+		if strings.Contains(got.String(), "echo:ping") {
+			return
+		}
+	}
+	require.Contains(got.String(), "echo:ping")
+}
+
+func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("size"),
+	}}}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/api/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key +
+		"/terminal?cols=177&rows=41"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary, []byte("size\n"),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ != websocket.MessageBinary {
+			continue
+		}
+		got.WriteString(string(data))
+		if strings.Contains(got.String(), "size:41:177") {
+			return
+		}
+	}
+	require.Contains(got.String(), "size:41:177")
+}
+
+func createReadyWorkspace(
+	t *testing.T,
+	ctx context.Context,
+	client *apiclient.Client,
+) *generated.WorkspaceResponse {
+	t.Helper()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(t, createResp.JSON202)
+	return waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+}
+
+func assertWorkspaceRuntimeTarget(
+	t *testing.T,
+	targets []generated.LaunchTarget,
+	key string,
+) {
+	t.Helper()
+
+	for _, target := range targets {
+		if target.Key == key {
+			return
+		}
+	}
+	require.Failf(t, "runtime target not found", "key %q", key)
+}
+
+func serverRuntimeHelperCommand(mode string) []string {
+	return []string{
+		os.Args[0],
+		"-test.run=TestServerRuntimeHelperProcess",
+		"--",
+		mode,
+	}
+}
+
+func TestServerRuntimeHelperProcess(t *testing.T) {
+	if os.Getenv("MIDDLEMAN_SERVER_RUNTIME_HELPER") != "1" {
+		return
+	}
+	args := os.Args
+	mode := args[len(args)-1]
+	switch mode {
+	case "sleep":
+		select {}
+	case "echo":
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err == nil {
+			fmt.Print("echo:" + line)
+		}
+		select {}
+	case "size":
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err == nil {
+			rows, cols, sizeErr := pty.Getsize(os.Stdin)
+			if sizeErr == nil {
+				fmt.Printf("size:%d:%d:%s", rows, cols, line)
+			}
+		}
+		return
+	default:
+		os.Exit(2)
+	}
 }
 
 func gitOutput(t *testing.T, dir string, args ...string) string {
@@ -7633,7 +8037,7 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
@@ -7684,7 +8088,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
 	path := "/api/v1/repos/acme/widget/issues/7/workspace"
@@ -7715,7 +8119,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
@@ -7768,7 +8172,7 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 1, "open")
@@ -7816,7 +8220,7 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")

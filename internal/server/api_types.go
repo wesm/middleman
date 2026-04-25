@@ -5,6 +5,7 @@ import (
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type worktreeLinkResponse struct {
@@ -166,6 +167,12 @@ type workspaceResponse struct {
 	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MRAdditions        *int    `json:"mr_additions,omitempty"`
 	MRDeletions        *int    `json:"mr_deletions,omitempty"`
+}
+
+type workspaceRuntimeResponse struct {
+	LaunchTargets []localruntime.LaunchTarget `json:"launch_targets"`
+	Sessions      []localruntime.SessionInfo  `json:"sessions"`
+	ShellSession  *localruntime.SessionInfo   `json:"shell_session,omitempty"`
 }
 
 // workspaceRef is the lightweight link from item detail APIs back to an

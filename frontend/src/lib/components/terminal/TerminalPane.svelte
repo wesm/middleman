@@ -6,7 +6,19 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
 
-  const { workspaceId }: { workspaceId: string } = $props();
+  interface TerminalPaneProps {
+    workspaceId?: string;
+    websocketPath?: string;
+    reconnectOnExit?: boolean;
+    onExit?: (code: number) => void;
+  }
+
+  const {
+    workspaceId,
+    websocketPath,
+    reconnectOnExit = true,
+    onExit,
+  }: TerminalPaneProps = $props();
   const { settings: settingsStore } = getStores();
 
   const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
@@ -41,13 +53,41 @@
     return configured || defaultTerminalFontFamily();
   });
 
-  function buildWsUrl(cols: number, rows: number): string {
+  function defaultWebsocketPath(): string {
+    if (!workspaceId) return "";
+    return (
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+      "/terminal"
+    );
+  }
+
+  function appendSizeParams(
+    url: string,
+    cols: number,
+    rows: number,
+  ): string {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}cols=${cols}&rows=${rows}`;
+  }
+
+  function buildWsUrl(
+    cols: number,
+    rows: number,
+  ): string | null {
+    const path = websocketPath ?? defaultWebsocketPath();
+    if (!path) return null;
+
+    const withSize = appendSizeParams(path, cols, rows);
+    if (/^wss?:\/\//.test(withSize)) {
+      return withSize;
+    }
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const params = `cols=${cols}&rows=${rows}`;
+    const normalizedPath = withSize.startsWith("/")
+      ? withSize
+      : `/${withSize}`;
     return (
       `${proto}://${location.host}${basePath}` +
-      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
-      `/terminal?${params}`
+      normalizedPath
     );
   }
 
@@ -63,6 +103,7 @@
     const cols = terminal.cols;
     const rows = terminal.rows;
     const url = buildWsUrl(cols, rows);
+    if (!url) return;
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
     ws = socket;
@@ -77,13 +118,23 @@
         terminal.write(new Uint8Array(ev.data));
       } else if (typeof ev.data === "string") {
         try {
-          const msg = JSON.parse(ev.data) as { type: string };
+          const msg = JSON.parse(ev.data) as {
+            type: string;
+            code?: number;
+          };
           if (msg.type === "exited") {
+            onExit?.(msg.code ?? 0);
             exited = true;
-            terminal.write(
-              "\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n",
-            );
-            scheduleSessionRestart();
+            if (reconnectOnExit) {
+              terminal.write(
+                "\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n",
+              );
+              scheduleSessionRestart();
+            } else {
+              terminal.write(
+                "\r\n\x1b[90m[Process exited]\x1b[0m\r\n",
+              );
+            }
           }
         } catch {
           // Non-JSON text frame; ignore.

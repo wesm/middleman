@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/workspace"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type listPullsInput struct {
@@ -277,6 +278,22 @@ type retryWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
+type getWorkspaceRuntimeInput struct {
+	ID string `path:"id"`
+}
+
+type launchWorkspaceRuntimeSessionInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		TargetKey string `json:"target_key"`
+	}
+}
+
+type stopWorkspaceRuntimeSessionInput struct {
+	ID         string `path:"id"`
+	SessionKey string `path:"session_key"`
+}
+
 type deleteWorkspaceInput struct {
 	ID    string `path:"id"`
 	Force bool   `query:"force"`
@@ -290,6 +307,14 @@ type listWorkspacesOutput struct {
 
 type getWorkspaceOutput struct {
 	Body workspaceResponse
+}
+
+type getWorkspaceRuntimeOutput struct {
+	Body workspaceRuntimeResponse
+}
+
+type workspaceRuntimeSessionOutput struct {
+	Body localruntime.SessionInfo
 }
 
 type createWorkspaceOutput struct {
@@ -423,6 +448,27 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces/{id}/retry",
 		DefaultStatus: http.StatusAccepted,
 	}, s.retryWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-workspace-runtime",
+		Method:      http.MethodGet,
+		Path:        "/workspaces/{id}/runtime",
+	}, s.getWorkspaceRuntime)
+	huma.Register(api, huma.Operation{
+		OperationID: "launch-workspace-runtime-session",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/sessions",
+	}, s.launchWorkspaceRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID:   "stop-workspace-runtime-session",
+		Method:        http.MethodDelete,
+		Path:          "/workspaces/{id}/runtime/sessions/{session_key}",
+		DefaultStatus: http.StatusNoContent,
+	}, s.stopWorkspaceRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID: "ensure-workspace-runtime-shell",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/shell",
+	}, s.ensureWorkspaceRuntimeShell)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-workspace",
 		Method:        http.MethodDelete,
@@ -2593,6 +2639,133 @@ func isWorkingTmuxTitle(title string) bool {
 	}
 
 	return false
+}
+
+func (s *Server) getWorkspaceRuntime(
+	ctx context.Context,
+	input *getWorkspaceRuntimeInput,
+) (*getWorkspaceRuntimeOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &getWorkspaceRuntimeOutput{
+		Body: workspaceRuntimeResponse{
+			LaunchTargets: s.runtime.LaunchTargets(),
+			Sessions:      s.runtime.ListSessions(summary.ID),
+			ShellSession:  s.runtime.ShellSession(summary.ID),
+		},
+	}, nil
+}
+
+func (s *Server) launchWorkspaceRuntimeSession(
+	ctx context.Context,
+	input *launchWorkspaceRuntimeSessionInput,
+) (*workspaceRuntimeSessionOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	targetKey := strings.TrimSpace(input.Body.TargetKey)
+	if targetKey == "" {
+		return nil, huma.Error400BadRequest("target_key is required")
+	}
+
+	if targetKey == string(localruntime.LaunchTargetPlainShell) {
+		session, err := s.runtime.EnsureShell(
+			ctx, summary.ID, summary.WorktreePath,
+		)
+		if err != nil {
+			return nil, huma.Error500InternalServerError(
+				"ensure shell: " + err.Error(),
+			)
+		}
+		return &workspaceRuntimeSessionOutput{Body: session}, nil
+	}
+
+	session, err := s.runtime.Launch(
+		ctx, summary.ID, summary.WorktreePath, targetKey,
+	)
+	if err != nil {
+		return nil, workspaceRuntimeLaunchError(err)
+	}
+	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Server) stopWorkspaceRuntimeSession(
+	ctx context.Context,
+	input *stopWorkspaceRuntimeSessionInput,
+) (*struct{}, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runtime.Stop(
+		ctx, summary.ID, input.SessionKey,
+	); err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+	return nil, nil
+}
+
+func (s *Server) ensureWorkspaceRuntimeShell(
+	ctx context.Context,
+	input *getWorkspaceRuntimeInput,
+) (*workspaceRuntimeSessionOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := s.runtime.EnsureShell(
+		ctx, summary.ID, summary.WorktreePath,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"ensure shell: " + err.Error(),
+		)
+	}
+	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Server) getReadyRuntimeWorkspace(
+	ctx context.Context,
+	id string,
+) (*db.WorkspaceSummary, error) {
+	if s.workspaces == nil || s.runtime == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace runtime not configured",
+		)
+	}
+
+	summary, err := s.workspaces.GetSummary(ctx, id)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace failed",
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error404NotFound("workspace not found")
+	}
+	if summary.Status != "ready" {
+		return nil, huma.Error409Conflict(
+			"workspace not ready (status: " + summary.Status + ")",
+		)
+	}
+	return summary, nil
+}
+
+func workspaceRuntimeLaunchError(err error) error {
+	msg := err.Error()
+	if strings.Contains(msg, "target not found") {
+		return huma.Error404NotFound(msg)
+	}
+	if strings.Contains(msg, "not available") ||
+		strings.Contains(msg, "no command") {
+		return huma.Error400BadRequest(msg)
+	}
+	return huma.Error500InternalServerError("launch session: " + msg)
 }
 
 // deleteWorkspace tears down a middleman-managed workspace.

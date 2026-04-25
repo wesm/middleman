@@ -3,6 +3,20 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import WorkspaceHome from "./WorkspaceHome.svelte";
+  import WorkspaceTabs from "./WorkspaceTabs.svelte";
+  import LaunchMenu from "./LaunchMenu.svelte";
+  import ShellDrawer from "./ShellDrawer.svelte";
+  import type { RuntimeSession } from "@middleman/ui/api/types";
+  import {
+    ensureWorkspaceShell,
+    getWorkspaceRuntime,
+    launchWorkspaceSession,
+    stopWorkspaceSession,
+    workspaceSessionWebSocketPath,
+    workspaceTmuxWebSocketPath,
+    type WorkspaceRuntimeState,
+  } from "../../api/workspace-runtime.ts";
   import {
     CollapsibleResizableSidebar,
     WorkspaceRightSidebar,
@@ -36,13 +50,20 @@
   ).replace(/\/$/, "");
 
   let workspace = $state<Workspace | null>(null);
+  let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
+  let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
     typeof setInterval
   > | null>(null);
   let eventSource = $state<EventSource | null>(null);
+  let activeTabKey = $state("home");
+  let tmuxTabOpen = $state(false);
+  let launchingKey = $state<string | null>(null);
+  let shellOpen = $state(false);
+  let shellLoading = $state(false);
 
   const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
   const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
@@ -107,6 +128,19 @@
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
+
+  const runtimeSessions = $derived(runtime?.sessions ?? []);
+  const launchTargets = $derived(runtime?.launch_targets ?? []);
+  const shellSession = $derived(runtime?.shell_session ?? null);
+  const shellSessionActive = $derived(
+    shellSession?.status === "running" ||
+      shellSession?.status === "starting",
+  );
+  const activeSession = $derived.by(() => {
+    if (!activeTabKey.startsWith("session:")) return null;
+    const key = activeTabKey.slice("session:".length);
+    return runtimeSessions.find((session) => session.key === key) ?? null;
+  });
 
   $effect(() => {
     localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
@@ -267,11 +301,105 @@
       if (data.status !== "creating") {
         stopPolling();
       }
+      if (data.status === "ready") {
+        void fetchRuntime();
+      }
     } catch (err) {
       loadError =
         err instanceof Error
           ? err.message
           : "Network error";
+    }
+  }
+
+  async function fetchRuntime(): Promise<void> {
+    if (!workspaceId) return;
+    try {
+      runtime = await getWorkspaceRuntime(workspaceId);
+      runtimeError = null;
+      if (
+        activeTabKey.startsWith("session:") &&
+        !activeSession
+      ) {
+        activeTabKey = "home";
+      }
+    } catch (err) {
+      runtimeError =
+        err instanceof Error
+          ? err.message
+          : "Runtime load failed";
+    }
+  }
+
+  async function handleLaunch(targetKey: string): Promise<void> {
+    if (!workspaceId || launchingKey) return;
+    const target = launchTargets.find((t) => t.key === targetKey);
+    if (target?.kind === "tmux") {
+      tmuxTabOpen = true;
+      activeTabKey = "tmux";
+      return;
+    }
+
+    launchingKey = targetKey;
+    runtimeError = null;
+    try {
+      const session = await launchWorkspaceSession(
+        workspaceId,
+        targetKey,
+      );
+      await fetchRuntime();
+      activeTabKey = `session:${session.key}`;
+    } catch (err) {
+      runtimeError =
+        err instanceof Error ? err.message : "Launch failed";
+    } finally {
+      launchingKey = null;
+    }
+  }
+
+  function openSession(sessionKey: string): void {
+    activeTabKey = `session:${sessionKey}`;
+  }
+
+  async function closeSession(session: RuntimeSession): Promise<void> {
+    if (
+      session.status === "running" &&
+      !confirm(`Stop ${session.label}?`)
+    ) {
+      return;
+    }
+    try {
+      await stopWorkspaceSession(workspaceId, session.key);
+      await fetchRuntime();
+      if (activeTabKey === `session:${session.key}`) {
+        activeTabKey = "home";
+      }
+    } catch (err) {
+      runtimeError =
+        err instanceof Error ? err.message : "Stop failed";
+    }
+  }
+
+  async function toggleShell(): Promise<void> {
+    if (shellOpen) {
+      shellOpen = false;
+      return;
+    }
+    shellOpen = true;
+    if (shellSessionActive || shellLoading) return;
+
+    shellLoading = true;
+    runtimeError = null;
+    try {
+      await ensureWorkspaceShell(workspaceId);
+      await fetchRuntime();
+    } catch (err) {
+      runtimeError =
+        err instanceof Error
+          ? err.message
+          : "Shell launch failed";
+    } finally {
+      shellLoading = false;
     }
   }
 
@@ -533,7 +661,92 @@
         </div>
         <div class="terminal-and-sidebar" bind:this={containerEl}>
           <div class="terminal-area">
-            <TerminalPane {workspaceId} />
+            <div class="workspace-surface">
+              <div class="workspace-toolbar">
+                <WorkspaceTabs
+                  activeKey={activeTabKey}
+                  sessions={runtimeSessions}
+                  tmuxOpen={tmuxTabOpen}
+                  onSelectHome={() => {
+                    activeTabKey = "home";
+                  }}
+                  onSelectTmux={() => {
+                    activeTabKey = "tmux";
+                  }}
+                  onSelectSession={openSession}
+                  onCloseTmux={() => {
+                    tmuxTabOpen = false;
+                    if (activeTabKey === "tmux") {
+                      activeTabKey = "home";
+                    }
+                  }}
+                  onCloseSession={(key) => {
+                    const session = runtimeSessions.find(
+                      (s) => s.key === key,
+                    );
+                    if (session) void closeSession(session);
+                  }}
+                />
+                <div class="workspace-actions">
+                  <LaunchMenu
+                    launchTargets={launchTargets}
+                    {launchingKey}
+                    onLaunch={(key) => void handleLaunch(key)}
+                  />
+                </div>
+              </div>
+              {#if runtimeError}
+                <div class="runtime-error">{runtimeError}</div>
+              {/if}
+              <div class="workspace-stage">
+                {#if activeTabKey === "tmux" && tmuxTabOpen}
+                  {#key "tmux"}
+                    <TerminalPane
+                      websocketPath={workspaceTmuxWebSocketPath(workspaceId)}
+                      reconnectOnExit={true}
+                    />
+                  {/key}
+                {:else if activeSession}
+                  {#key activeSession.key}
+                    <TerminalPane
+                      websocketPath={workspaceSessionWebSocketPath(
+                        workspaceId,
+                        activeSession.key,
+                      )}
+                      reconnectOnExit={false}
+                      onExit={() => void fetchRuntime()}
+                    />
+                  {/key}
+                {:else if runtime}
+                  <WorkspaceHome
+                    {workspace}
+                    launchTargets={launchTargets}
+                    sessions={runtimeSessions}
+                    {launchingKey}
+                    onLaunch={(key) => void handleLaunch(key)}
+                    onOpenSession={openSession}
+                  />
+                {:else}
+                  <div class="state-message">
+                    <SpinnerIcon
+                      class="spinner"
+                      size="18"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    />
+                    <span>Loading workspace runtime...</span>
+                  </div>
+                {/if}
+              </div>
+              <ShellDrawer
+                {workspaceId}
+                open={shellOpen}
+                loading={shellLoading}
+                shellSession={shellSessionActive ? shellSession : null}
+                onToggle={() => void toggleShell()}
+                onExit={() => void fetchRuntime()}
+              />
+            </div>
           </div>
           {#if sidebarOpen && workspace}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -716,6 +929,47 @@
 
   .terminal-area {
     flex: 1;
+    overflow: hidden;
+  }
+
+  .workspace-surface {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    background: var(--bg-primary);
+  }
+
+  .workspace-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 36px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .workspace-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .runtime-error {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-default);
+    background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-surface));
+    color: var(--accent-red);
+    font-size: 12px;
+  }
+
+  .workspace-stage {
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 

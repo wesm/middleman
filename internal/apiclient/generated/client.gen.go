@@ -299,6 +299,24 @@ type Label struct {
 	Name        string  `json:"name"`
 }
 
+// LaunchTarget defines model for LaunchTarget.
+type LaunchTarget struct {
+	Available      bool      `json:"available"`
+	Command        *[]string `json:"command,omitempty"`
+	DisabledReason *string   `json:"disabled_reason,omitempty"`
+	Key            string    `json:"key"`
+	Kind           string    `json:"kind"`
+	Label          string    `json:"label"`
+	Source         string    `json:"source"`
+}
+
+// LaunchWorkspaceRuntimeSessionInputBody defines model for LaunchWorkspaceRuntimeSessionInputBody.
+type LaunchWorkspaceRuntimeSessionInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	TargetKey string  `json:"target_key"`
+}
+
 // Line defines model for Line.
 type Line struct {
 	Content   string `json:"content"`
@@ -531,6 +549,21 @@ type ResolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
+// SessionInfo defines model for SessionInfo.
+type SessionInfo struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string    `json:"$schema,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExitCode    *int64     `json:"exit_code,omitempty"`
+	ExitedAt    *time.Time `json:"exited_at,omitempty"`
+	Key         string     `json:"key"`
+	Kind        string     `json:"kind"`
+	Label       string     `json:"label"`
+	Status      string     `json:"status"`
+	TargetKey   string     `json:"target_key"`
+	WorkspaceId string     `json:"workspace_id"`
+}
+
 // SetKanbanStateInputBody defines model for SetKanbanStateInputBody.
 type SetKanbanStateInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -635,6 +668,15 @@ type WorkspaceResponse struct {
 	TmuxSession        string  `json:"tmux_session"`
 	TmuxWorking        bool    `json:"tmux_working"`
 	WorktreePath       string  `json:"worktree_path"`
+}
+
+// WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.
+type WorkspaceRuntimeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string         `json:"$schema,omitempty"`
+	LaunchTargets *[]LaunchTarget `json:"launch_targets"`
+	Sessions      *[]SessionInfo  `json:"sessions"`
+	ShellSession  *SessionInfo    `json:"shell_session,omitempty"`
 }
 
 // WorktreeLinkResponse defines model for WorktreeLinkResponse.
@@ -750,6 +792,9 @@ type SetStarredJSONRequestBody = StarredRequest
 
 // CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
 type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
+
+// LaunchWorkspaceRuntimeSessionJSONRequestBody defines body for LaunchWorkspaceRuntimeSession for application/json ContentType.
+type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessionInputBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -961,6 +1006,20 @@ type ClientInterface interface {
 
 	// RetryWorkspace request
 	RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspaceRuntime request
+	GetWorkspaceRuntime(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LaunchWorkspaceRuntimeSessionWithBody request with any body
+	LaunchWorkspaceRuntimeSessionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LaunchWorkspaceRuntimeSession(ctx context.Context, id string, body LaunchWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopWorkspaceRuntimeSession request
+	StopWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnsureWorkspaceRuntimeShell request
+	EnsureWorkspaceRuntimeShell(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1553,6 +1612,66 @@ func (c *Client) GetWorkspacesById(ctx context.Context, id string, reqEditors ..
 
 func (c *Client) RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRetryWorkspaceRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspaceRuntime(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceRuntimeRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchWorkspaceRuntimeSessionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchWorkspaceRuntimeSessionRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LaunchWorkspaceRuntimeSession(ctx context.Context, id string, body LaunchWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLaunchWorkspaceRuntimeSessionRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopWorkspaceRuntimeSessionRequest(c.Server, id, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnsureWorkspaceRuntimeShell(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnsureWorkspaceRuntimeShellRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3753,6 +3872,162 @@ func NewRetryWorkspaceRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetWorkspaceRuntimeRequest generates requests for GetWorkspaceRuntime
+func NewGetWorkspaceRuntimeRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLaunchWorkspaceRuntimeSessionRequest calls the generic LaunchWorkspaceRuntimeSession builder with application/json body
+func NewLaunchWorkspaceRuntimeSessionRequest(server string, id string, body LaunchWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLaunchWorkspaceRuntimeSessionRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewLaunchWorkspaceRuntimeSessionRequestWithBody generates requests for LaunchWorkspaceRuntimeSession with any type of body
+func NewLaunchWorkspaceRuntimeSessionRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopWorkspaceRuntimeSessionRequest generates requests for StopWorkspaceRuntimeSession
+func NewStopWorkspaceRuntimeSessionRequest(server string, id string, sessionKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnsureWorkspaceRuntimeShellRequest generates requests for EnsureWorkspaceRuntimeShell
+func NewEnsureWorkspaceRuntimeShellRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/shell", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3933,6 +4208,20 @@ type ClientWithResponsesInterface interface {
 
 	// RetryWorkspaceWithResponse request
 	RetryWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RetryWorkspaceResponse, error)
+
+	// GetWorkspaceRuntimeWithResponse request
+	GetWorkspaceRuntimeWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeResponse, error)
+
+	// LaunchWorkspaceRuntimeSessionWithBodyWithResponse request with any body
+	LaunchWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResponse, error)
+
+	LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, body LaunchWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResponse, error)
+
+	// StopWorkspaceRuntimeSessionWithResponse request
+	StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*StopWorkspaceRuntimeSessionResponse, error)
+
+	// EnsureWorkspaceRuntimeShellWithResponse request
+	EnsureWorkspaceRuntimeShellWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*EnsureWorkspaceRuntimeShellResponse, error)
 }
 
 type GetActivityResponse struct {
@@ -4804,6 +5093,97 @@ func (r RetryWorkspaceResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkspaceRuntimeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceRuntimeResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspaceRuntimeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspaceRuntimeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LaunchWorkspaceRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SessionInfo
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r LaunchWorkspaceRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LaunchWorkspaceRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopWorkspaceRuntimeSessionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r StopWorkspaceRuntimeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopWorkspaceRuntimeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnsureWorkspaceRuntimeShellResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SessionInfo
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnsureWorkspaceRuntimeShellResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnsureWorkspaceRuntimeShellResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetActivityWithResponse request returning *GetActivityResponse
 func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
 	rsp, err := c.GetActivity(ctx, params, reqEditors...)
@@ -5240,6 +5620,50 @@ func (c *ClientWithResponses) RetryWorkspaceWithResponse(ctx context.Context, id
 		return nil, err
 	}
 	return ParseRetryWorkspaceResponse(rsp)
+}
+
+// GetWorkspaceRuntimeWithResponse request returning *GetWorkspaceRuntimeResponse
+func (c *ClientWithResponses) GetWorkspaceRuntimeWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceRuntimeResponse, error) {
+	rsp, err := c.GetWorkspaceRuntime(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspaceRuntimeResponse(rsp)
+}
+
+// LaunchWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *LaunchWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) LaunchWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchWorkspaceRuntimeSessionWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchWorkspaceRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, body LaunchWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.LaunchWorkspaceRuntimeSession(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLaunchWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// StopWorkspaceRuntimeSessionWithResponse request returning *StopWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*StopWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.StopWorkspaceRuntimeSession(ctx, id, sessionKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopWorkspaceRuntimeSessionResponse(rsp)
+}
+
+// EnsureWorkspaceRuntimeShellWithResponse request returning *EnsureWorkspaceRuntimeShellResponse
+func (c *ClientWithResponses) EnsureWorkspaceRuntimeShellWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*EnsureWorkspaceRuntimeShellResponse, error) {
+	rsp, err := c.EnsureWorkspaceRuntimeShell(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnsureWorkspaceRuntimeShellResponse(rsp)
 }
 
 // ParseGetActivityResponse parses an HTTP response from a GetActivityWithResponse call
@@ -6448,6 +6872,131 @@ func ParseRetryWorkspaceResponse(rsp *http.Response) (*RetryWorkspaceResponse, e
 			return nil, err
 		}
 		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspaceRuntimeResponse parses an HTTP response from a GetWorkspaceRuntimeWithResponse call
+func ParseGetWorkspaceRuntimeResponse(rsp *http.Response) (*GetWorkspaceRuntimeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspaceRuntimeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceRuntimeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLaunchWorkspaceRuntimeSessionResponse parses an HTTP response from a LaunchWorkspaceRuntimeSessionWithResponse call
+func ParseLaunchWorkspaceRuntimeSessionResponse(rsp *http.Response) (*LaunchWorkspaceRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LaunchWorkspaceRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SessionInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopWorkspaceRuntimeSessionResponse parses an HTTP response from a StopWorkspaceRuntimeSessionWithResponse call
+func ParseStopWorkspaceRuntimeSessionResponse(rsp *http.Response) (*StopWorkspaceRuntimeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopWorkspaceRuntimeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnsureWorkspaceRuntimeShellResponse parses an HTTP response from a EnsureWorkspaceRuntimeShellWithResponse call
+func ParseEnsureWorkspaceRuntimeShellResponse(rsp *http.Response) (*EnsureWorkspaceRuntimeShellResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnsureWorkspaceRuntimeShellResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SessionInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

@@ -20,6 +20,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/terminal"
 	"github.com/wesm/middleman/internal/workspace"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type EmbedConfig struct {
@@ -113,6 +114,7 @@ type Server struct {
 	clones            *gitclone.Manager
 	workspaces        *workspace.Manager
 	tmuxActivity      *tmuxActivityTracker
+	runtime           *localruntime.Manager
 	cfg               *config.Config
 	cfgPath           string
 	cfgMu             sync.Mutex
@@ -220,6 +222,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// client disconnect, hanging the shutdown until ctx expires.
 	if first && s.hub != nil {
 		s.hub.Close()
+	}
+	if first && s.runtime != nil {
+		s.runtime.Shutdown()
 	}
 
 	var httpErr error
@@ -362,6 +367,15 @@ func newServer(
 			slog.Warn("reap orphan tmux sessions", "err", err)
 		}
 		cleanupCancel()
+		var agents []config.Agent
+		if cfg != nil {
+			agents = cfg.Agents
+		}
+		s.runtime = localruntime.NewManager(localruntime.Options{
+			Targets: localruntime.ResolveLaunchTargets(
+				agents, cfg.TmuxCommand(), nil,
+			),
+		})
 	}
 
 	if s.workspaces != nil {
@@ -373,6 +387,16 @@ func newServer(
 			"GET /api/v1/workspaces/{id}/terminal",
 			termHandler,
 		)
+		if s.runtime != nil {
+			mux.HandleFunc(
+				"GET /api/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
+				s.handleWorkspaceRuntimeSessionTerminal,
+			)
+			mux.HandleFunc(
+				"GET /api/v1/workspaces/{id}/runtime/shell/terminal",
+				s.handleWorkspaceRuntimeShellTerminal,
+			)
+		}
 	}
 
 	healthAPI := humago.New(mux, healthAPIConfig())
