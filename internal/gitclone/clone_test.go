@@ -263,7 +263,7 @@ func TestEnsureCloneRestoresOriginHead(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
@@ -291,7 +291,7 @@ func TestEnsureCloneRepairsStaleOriginHead(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
@@ -317,7 +317,7 @@ func TestEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
