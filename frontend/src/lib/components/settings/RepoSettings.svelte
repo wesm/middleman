@@ -2,6 +2,7 @@
   import { getStores } from "@middleman/ui";
   import type { ConfigRepo } from "@middleman/ui/api/types";
   import { addRepo, removeRepo, getSettings, refreshRepo } from "../../api/settings.js";
+  import RepoImportModal from "./RepoImportModal.svelte";
 
   const { sync } = getStores();
 
@@ -15,6 +16,7 @@
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   const embedded = isEmbedded();
 
+  let importOpen = $state(false);
   let inputValue = $state("");
   let adding = $state(false);
   let addError = $state<string | null>(null);
@@ -97,6 +99,22 @@
   }
 </script>
 
+{#if !embedded}
+  <div class="repo-import-entry">
+    <button class="primary-import-btn" type="button" onclick={() => { importOpen = true; }}>Add repositories…</button>
+    <p>Preview a glob, filter results, and add selected repositories as exact entries.</p>
+  </div>
+{/if}
+
+<RepoImportModal
+  open={importOpen}
+  onClose={() => { importOpen = false; }}
+  onImported={(settings) => {
+    onUpdate(settings.repos);
+    void sync.refreshSyncStatus();
+  }}
+/>
+
 <div class="repo-list">
   {#each repos as repo (`${repo.owner}/${repo.name}`)}
     {@const key = `${repo.owner}/${repo.name}`}
@@ -152,18 +170,31 @@
   <div class="error-msg">{removeError}</div>
 {/if}
 
-<div class="add-form">
-  <input class="add-input" type="text" placeholder="owner/name" bind:value={inputValue} onkeydown={handleInputKeydown} disabled={adding} />
-  <button class="add-btn" onclick={() => void handleAdd()} disabled={adding || !inputValue.trim()}>
-    {adding ? "Adding..." : "Add"}
-  </button>
-</div>
+{#if !embedded}
+  <details class="advanced-add">
+    <summary>Advanced: add exact repo or tracking glob directly</summary>
+    <div class="advanced-body">
+      <div class="add-form">
+        <input class="add-input" type="text" placeholder="owner/name" bind:value={inputValue} onkeydown={handleInputKeydown} disabled={adding} />
+        <button class="add-btn" onclick={() => void handleAdd()} disabled={adding || !inputValue.trim()}>
+          {adding ? "Adding..." : "Add"}
+        </button>
+      </div>
 
-{#if addError}
-  <div class="error-msg">{addError}</div>
+      {#if addError}
+        <div class="error-msg">{addError}</div>
+      {/if}
+    </div>
+  </details>
 {/if}
 
 <style>
+  .repo-import-entry { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
+  .primary-import-btn { align-self: flex-start; padding: 6px 14px; font-size: 13px; font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
+  .repo-import-entry p { margin: 0; color: var(--text-muted); font-size: 12px; }
+  .advanced-add { padding-top: 8px; }
+  .advanced-add summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+  .advanced-body { padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
   .repo-list { display: flex; flex-direction: column; }
   .repo-row {
     display: flex; align-items: center; justify-content: space-between;
