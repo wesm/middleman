@@ -2291,7 +2291,9 @@ func (s *Server) toWorkspaceResponse(
 	if tracker == nil {
 		tracker = newTmuxActivityTracker(nil)
 	}
-	probe := tracker.StartProbe(ctx, summary.TmuxSession)
+	probeCtx, cancelProbe := context.WithTimeout(ctx, tmuxActivityProbeTimeout)
+	defer cancelProbe()
+	probe := tracker.StartProbe(probeCtx, summary.TmuxSession)
 	if !probe.Started {
 		if probe.HasFallback {
 			applyTmuxActivity(&resp, probe.Fallback)
@@ -2303,13 +2305,13 @@ func (s *Server) toWorkspaceResponse(
 				if result, ok := tracker.Cached(summary.TmuxSession); ok {
 					applyTmuxActivity(&resp, result)
 				}
-			case <-ctx.Done():
+			case <-probeCtx.Done():
 			}
 		}
 		return resp
 	}
 
-	snapshot, err := s.workspaces.TmuxPaneSnapshot(ctx, summary.TmuxSession)
+	snapshot, err := s.workspaces.TmuxPaneSnapshot(probeCtx, summary.TmuxSession)
 	if err != nil {
 		probe.Probe.Cancel()
 		slog.Debug(

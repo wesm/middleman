@@ -31,6 +31,7 @@ import (
 const (
 	tmuxActivityTTL            = 30 * time.Second
 	tmuxSampleMinInterval      = 4 * time.Second
+	tmuxActivityProbeTimeout   = 750 * time.Millisecond
 	tmuxCaptureScrollbackLines = 160
 	tmuxProbeMaxConcurrency    = 4
 
