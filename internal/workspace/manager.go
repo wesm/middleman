@@ -38,6 +38,7 @@ const (
 	workspaceSetupStageWorktree    = "worktree"
 	workspaceSetupStageTmuxSession = "tmux_session"
 	workspaceBranchUnknown         = "__middleman_unknown__"
+	tmuxCaptureScrollbackLines     = 160
 )
 
 var workspacePersistTimeout = 5 * time.Second
@@ -49,6 +50,11 @@ var (
 	ErrWorkspaceDuplicate    = errors.New("workspace already exists")
 	ErrWorkspaceInvalidState = errors.New("workspace invalid state")
 )
+
+type TmuxPaneSnapshot struct {
+	Title  string
+	Output string
+}
 
 // NewManager creates a Manager that stores worktrees under
 // worktreeDir.
@@ -877,6 +883,73 @@ func (m *Manager) listTmuxSessions(
 		}
 	}
 	return sessions, nil
+}
+
+// TmuxPaneTitle returns the active pane title for a session. Agents
+// can update this via terminal title escape sequences, which tmux
+// exposes through the pane_title format.
+func (m *Manager) TmuxPaneTitle(
+	ctx context.Context, session string,
+) (string, error) {
+	return m.tmuxPaneTitle(ctx, session)
+}
+
+// TmuxPaneSnapshot returns the active pane title and recent pane
+// output for passive activity detection.
+func (m *Manager) TmuxPaneSnapshot(
+	ctx context.Context, session string,
+) (TmuxPaneSnapshot, error) {
+	title, err := m.tmuxPaneTitle(ctx, session)
+	if err != nil {
+		return TmuxPaneSnapshot{}, err
+	}
+
+	cmd := m.tmuxExec(
+		ctx,
+		"capture-pane", "-p",
+		"-t", session,
+		"-S", fmt.Sprintf("-%d", tmuxCaptureScrollbackLines),
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return TmuxPaneSnapshot{}, fmt.Errorf(
+			"tmux capture-pane: %w: %s", err, msg,
+		)
+	}
+	return TmuxPaneSnapshot{
+		Title:  title,
+		Output: stdout.String(),
+	}, nil
+}
+
+func (m *Manager) tmuxPaneTitle(
+	ctx context.Context, session string,
+) (string, error) {
+	cmd := m.tmuxExec(
+		ctx,
+		"display-message", "-p",
+		"-t", session,
+		"#{pane_title}",
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(stdout.String())
+		}
+		return "", fmt.Errorf("tmux display-message: %w: %s", err, msg)
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func (m *Manager) newTmuxSession(

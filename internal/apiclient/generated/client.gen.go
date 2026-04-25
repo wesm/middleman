@@ -597,25 +597,29 @@ type WorkspaceMRRef struct {
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string `json:"$schema,omitempty"`
-	CreatedAt        string  `json:"created_at"`
-	ErrorMessage     *string `json:"error_message,omitempty"`
-	Id               string  `json:"id"`
-	MrAdditions      *int64  `json:"mr_additions,omitempty"`
-	MrCiStatus       *string `json:"mr_ci_status,omitempty"`
-	MrDeletions      *int64  `json:"mr_deletions,omitempty"`
-	MrHeadRef        string  `json:"mr_head_ref"`
-	MrIsDraft        *bool   `json:"mr_is_draft,omitempty"`
-	MrNumber         int64   `json:"mr_number"`
-	MrReviewDecision *string `json:"mr_review_decision,omitempty"`
-	MrState          *string `json:"mr_state,omitempty"`
-	MrTitle          *string `json:"mr_title,omitempty"`
-	PlatformHost     string  `json:"platform_host"`
-	RepoName         string  `json:"repo_name"`
-	RepoOwner        string  `json:"repo_owner"`
-	Status           string  `json:"status"`
-	TmuxSession      string  `json:"tmux_session"`
-	WorktreePath     string  `json:"worktree_path"`
+	Schema             *string `json:"$schema,omitempty"`
+	CreatedAt          string  `json:"created_at"`
+	ErrorMessage       *string `json:"error_message,omitempty"`
+	Id                 string  `json:"id"`
+	MrAdditions        *int64  `json:"mr_additions,omitempty"`
+	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
+	MrHeadRef          string  `json:"mr_head_ref"`
+	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MrNumber           int64   `json:"mr_number"`
+	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
+	MrState            *string `json:"mr_state,omitempty"`
+	MrTitle            *string `json:"mr_title,omitempty"`
+	PlatformHost       string  `json:"platform_host"`
+	RepoName           string  `json:"repo_name"`
+	RepoOwner          string  `json:"repo_owner"`
+	Status             string  `json:"status"`
+	TmuxActivitySource string  `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string  `json:"tmux_session"`
+	TmuxWorking        bool    `json:"tmux_working"`
+	WorktreePath       string  `json:"worktree_path"`
 }
 
 // WorktreeLinkResponse defines model for WorktreeLinkResponse.

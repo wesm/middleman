@@ -14,6 +14,15 @@
     mr_head_ref: string;
     worktree_path: string;
     tmux_session: string;
+    tmux_pane_title?: string | null;
+    tmux_working?: boolean;
+    tmux_activity_source?:
+      | "title"
+      | "output"
+      | "none"
+      | "unknown"
+      | null;
+    tmux_last_output_at?: string | null;
     status: string;
     error_message?: string | null;
     created_at: string;
@@ -32,7 +41,7 @@
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
 
-  let workspaces = $state<Workspace[]>([]);
+  let workspaces = $state.raw<Workspace[]>([]);
   let collapsedGroups = $state<Set<string>>(new Set());
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
@@ -88,6 +97,18 @@
     return "var(--accent-amber)";
   }
 
+  function workingBadgeTitle(ws: Workspace): string {
+    const title = ws.tmux_pane_title?.trim();
+    const source = ws.tmux_activity_source;
+    if (source && source !== "unknown" && title) {
+      return `Working (${source}): ${title}`;
+    }
+    if (source && source !== "unknown") {
+      return `Working (${source})`;
+    }
+    return title || "Working";
+  }
+
   function prBadgeColor(ws: Workspace): string {
     if (ws.mr_is_draft) return "var(--text-muted)";
     if (ws.mr_state === "merged") {
@@ -116,6 +137,9 @@
 
   onMount(() => {
     void fetchWorkspaces();
+    const pollHandle = window.setInterval(() => {
+      void fetchWorkspaces();
+    }, 5_000);
 
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
@@ -127,6 +151,7 @@
     );
 
     return () => {
+      window.clearInterval(pollHandle);
       source.close();
     };
   });
@@ -135,7 +160,7 @@
 <div class="workspace-list-sidebar">
   <div class="sidebar-header">Workspaces</div>
   <div class="sidebar-list">
-    {#each [...grouped] as [repoKey, items]}
+    {#each [...grouped] as [repoKey, items] (repoKey)}
       <button
         class="group-header"
         onclick={() => toggleGroup(repoKey)}
@@ -149,7 +174,6 @@
       </button>
       {#if !collapsedGroups.has(repoKey)}
         {#each items as ws (ws.id)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="ws-row"
             class:selected={ws.id === selectedId}
@@ -174,6 +198,18 @@
               <span class="ws-name">
                 {displayName(ws)}
               </span>
+              {#if ws.tmux_working}
+                <span
+                  class="working-badge"
+                  title={workingBadgeTitle(ws)}
+                >
+                  <span
+                    class="working-spinner"
+                    aria-hidden="true"
+                  ></span>
+                  Working
+                </span>
+              {/if}
             </div>
             <div class="ws-row-bottom">
               <button
@@ -283,6 +319,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
   }
 
   .status-dot {
@@ -312,6 +349,39 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
+  }
+
+  .working-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border: 1px solid color-mix(in srgb, var(--accent-amber) 55%, transparent);
+    border-radius: 999px;
+    color: var(--accent-amber);
+    background: color-mix(in srgb, var(--accent-amber) 12%, transparent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+
+  .working-spinner {
+    width: 7px;
+    height: 7px;
+    border: 1px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .ws-row-bottom {

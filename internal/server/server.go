@@ -112,6 +112,7 @@ type Server struct {
 	syncer            *ghclient.Syncer
 	clones            *gitclone.Manager
 	workspaces        *workspace.Manager
+	tmuxActivity      *tmuxActivityTracker
 	cfg               *config.Config
 	cfgPath           string
 	cfgMu             sync.Mutex
@@ -330,15 +331,16 @@ func newServer(
 	bgBaseCtx, bgCancel := context.WithCancel(context.Background())
 	bgDeadline := &shutdownDeadline{}
 	s := &Server{
-		db:       database,
-		basePath: basePath,
-		syncer:   syncer,
-		clones:   clones,
-		cfg:      cfg,
-		cfgPath:  cfgPath,
-		options:  options,
-		now:      time.Now,
-		hub:      NewEventHub(),
+		db:           database,
+		basePath:     basePath,
+		syncer:       syncer,
+		clones:       clones,
+		cfg:          cfg,
+		cfgPath:      cfgPath,
+		options:      options,
+		now:          time.Now,
+		hub:          NewEventHub(),
+		tmuxActivity: newTmuxActivityTracker(nil),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,

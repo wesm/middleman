@@ -137,24 +137,28 @@ type commitsResponse struct {
 }
 
 type workspaceResponse struct {
-	ID               string  `json:"id"`
-	PlatformHost     string  `json:"platform_host"`
-	RepoOwner        string  `json:"repo_owner"`
-	RepoName         string  `json:"repo_name"`
-	MRNumber         int     `json:"mr_number"`
-	MRHeadRef        string  `json:"mr_head_ref"`
-	WorktreePath     string  `json:"worktree_path"`
-	TmuxSession      string  `json:"tmux_session"`
-	Status           string  `json:"status"`
-	ErrorMessage     *string `json:"error_message,omitempty"`
-	CreatedAt        string  `json:"created_at"`
-	MRTitle          *string `json:"mr_title,omitempty"`
-	MRState          *string `json:"mr_state,omitempty"`
-	MRIsDraft        *bool   `json:"mr_is_draft,omitempty"`
-	MRCIStatus       *string `json:"mr_ci_status,omitempty"`
-	MRReviewDecision *string `json:"mr_review_decision,omitempty"`
-	MRAdditions      *int    `json:"mr_additions,omitempty"`
-	MRDeletions      *int    `json:"mr_deletions,omitempty"`
+	ID                 string  `json:"id"`
+	PlatformHost       string  `json:"platform_host"`
+	RepoOwner          string  `json:"repo_owner"`
+	RepoName           string  `json:"repo_name"`
+	MRNumber           int     `json:"mr_number"`
+	MRHeadRef          string  `json:"mr_head_ref"`
+	WorktreePath       string  `json:"worktree_path"`
+	TmuxSession        string  `json:"tmux_session"`
+	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
+	TmuxWorking        bool    `json:"tmux_working"`
+	TmuxActivitySource string  `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	Status             string  `json:"status"`
+	ErrorMessage       *string `json:"error_message,omitempty"`
+	CreatedAt          string  `json:"created_at"`
+	MRTitle            *string `json:"mr_title,omitempty"`
+	MRState            *string `json:"mr_state,omitempty"`
+	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
+	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
+	MRAdditions        *int    `json:"mr_additions,omitempty"`
+	MRDeletions        *int    `json:"mr_deletions,omitempty"`
 }
 
 type workspaceMRRef struct {
@@ -166,24 +170,25 @@ func toWorkspaceResponse(
 	s *db.WorkspaceSummary,
 ) workspaceResponse {
 	return workspaceResponse{
-		ID:               s.ID,
-		PlatformHost:     s.PlatformHost,
-		RepoOwner:        s.RepoOwner,
-		RepoName:         s.RepoName,
-		MRNumber:         s.MRNumber,
-		MRHeadRef:        s.MRHeadRef,
-		WorktreePath:     s.WorktreePath,
-		TmuxSession:      s.TmuxSession,
-		Status:           s.Status,
-		ErrorMessage:     s.ErrorMessage,
-		CreatedAt:        s.CreatedAt.UTC().Format(time.RFC3339),
-		MRTitle:          s.MRTitle,
-		MRState:          s.MRState,
-		MRIsDraft:        s.MRIsDraft,
-		MRCIStatus:       s.MRCIStatus,
-		MRReviewDecision: s.MRReviewDecision,
-		MRAdditions:      s.MRAdditions,
-		MRDeletions:      s.MRDeletions,
+		ID:                 s.ID,
+		PlatformHost:       s.PlatformHost,
+		RepoOwner:          s.RepoOwner,
+		RepoName:           s.RepoName,
+		MRNumber:           s.MRNumber,
+		MRHeadRef:          s.MRHeadRef,
+		WorktreePath:       s.WorktreePath,
+		TmuxSession:        s.TmuxSession,
+		Status:             s.Status,
+		TmuxActivitySource: tmuxActivitySourceUnknown,
+		ErrorMessage:       s.ErrorMessage,
+		CreatedAt:          s.CreatedAt.UTC().Format(time.RFC3339),
+		MRTitle:            s.MRTitle,
+		MRState:            s.MRState,
+		MRIsDraft:          s.MRIsDraft,
+		MRCIStatus:         s.MRCIStatus,
+		MRReviewDecision:   s.MRReviewDecision,
+		MRAdditions:        s.MRAdditions,
+		MRDeletions:        s.MRDeletions,
 	}
 }
 

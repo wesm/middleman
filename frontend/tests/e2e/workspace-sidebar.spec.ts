@@ -11,6 +11,8 @@ const testWorkspace = {
   mr_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-123",
   tmux_session: "middleman-ws-123",
+  tmux_pane_title: null,
+  tmux_working: false,
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Add auth middleware",
@@ -455,6 +457,67 @@ test.describe("sidebar toggle behavior", () => {
     });
     await setupTerminalMocks(page);
   });
+
+  test(
+    "workspace row shows working indicator with activity source",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: {
+          ...testWorkspace,
+          tmux_pane_title: "⠴ t3code-b5014b03",
+          tmux_working: true,
+          tmux_activity_source: "title",
+        },
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const row = page.locator(".ws-row", {
+        hasText: "Add auth middleware",
+      });
+      const badge = row.locator(".working-badge");
+      await expect(badge).toBeVisible();
+      await expect(badge).toContainText("Working");
+      await expect(badge).toHaveAttribute(
+        "title",
+        "Working (title): ⠴ t3code-b5014b03",
+      );
+    },
+  );
+
+  test(
+    "workspace list polls while mounted",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      let listRequests = 0;
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            listRequests += 1;
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                workspaces: [testWorkspace],
+              }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await expect
+        .poll(() => listRequests)
+        .toBeGreaterThanOrEqual(1);
+      await expect
+        .poll(() => listRequests, { timeout: 6500 })
+        .toBeGreaterThanOrEqual(2);
+    },
+  );
 
   test(
     "workspace list resize reclamps the right sidebar",

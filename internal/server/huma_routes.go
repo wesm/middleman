@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -2074,7 +2075,7 @@ func (s *Server) createWorkspace(
 	}
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   toWorkspaceResponse(summary),
+		Body:   s.toWorkspaceResponse(ctx, summary),
 	}, nil
 }
 
@@ -2169,8 +2170,26 @@ func (s *Server) listWorkspaces(
 	}
 
 	list := make([]workspaceResponse, len(summaries))
-	for i := range summaries {
-		list[i] = toWorkspaceResponse(&summaries[i])
+	if len(summaries) == 1 {
+		list[0] = s.toWorkspaceResponse(ctx, &summaries[0])
+	} else {
+		workers := min(len(summaries), tmuxProbeMaxConcurrency)
+		jobs := make(chan int)
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for range workers {
+			go func() {
+				defer wg.Done()
+				for i := range jobs {
+					list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
+				}
+			}()
+		}
+		for i := range summaries {
+			jobs <- i
+		}
+		close(jobs)
+		wg.Wait()
 	}
 
 	out := &listWorkspacesOutput{}
@@ -2198,7 +2217,7 @@ func (s *Server) getWorkspace(
 	}
 
 	return &getWorkspaceOutput{
-		Body: toWorkspaceResponse(summary),
+		Body: s.toWorkspaceResponse(ctx, summary),
 	}, nil
 }
 
@@ -2248,6 +2267,100 @@ func (s *Server) retryWorkspace(
 		Status: http.StatusAccepted,
 		Body:   resp,
 	}, nil
+}
+
+func (s *Server) toWorkspaceResponse(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) workspaceResponse {
+	resp := toWorkspaceResponse(summary)
+	if s.workspaces == nil ||
+		summary.Status != "ready" ||
+		summary.TmuxSession == "" {
+		return resp
+	}
+
+	if s.tmuxActivity != nil {
+		if result, ok := s.tmuxActivity.Cached(summary.TmuxSession); ok {
+			applyTmuxActivity(&resp, result)
+			return resp
+		}
+	}
+
+	tracker := s.tmuxActivity
+	if tracker == nil {
+		tracker = newTmuxActivityTracker(nil)
+	}
+	probeCtx, cancelProbe := context.WithTimeout(ctx, tmuxActivityProbeTimeout)
+	defer cancelProbe()
+	probe := tracker.StartProbe(probeCtx, summary.TmuxSession)
+	if !probe.Started {
+		if probe.HasFallback {
+			applyTmuxActivity(&resp, probe.Fallback)
+			return resp
+		}
+		if probe.Wait != nil {
+			select {
+			case <-probe.Wait:
+				if result, ok := tracker.Cached(summary.TmuxSession); ok {
+					applyTmuxActivity(&resp, result)
+				}
+			case <-probeCtx.Done():
+			}
+		}
+		return resp
+	}
+
+	snapshot, err := s.workspaces.TmuxPaneSnapshot(probeCtx, summary.TmuxSession)
+	if err != nil {
+		probe.Probe.Cancel()
+		slog.Debug(
+			"read tmux pane snapshot",
+			"workspace_id", summary.ID,
+			"tmux_session", summary.TmuxSession,
+			"err", err,
+		)
+		if probe.HasFallback {
+			applyTmuxActivity(&resp, probe.Fallback)
+		}
+		return resp
+	}
+
+	activity := probe.Probe.Finish(tmuxActivityObservation{
+		PaneTitle: snapshot.Title,
+		Output:    snapshot.Output,
+		HasOutput: true,
+	})
+	applyTmuxActivity(&resp, activity)
+	return resp
+}
+
+func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {
+	if activity.PaneTitle != "" {
+		title := activity.PaneTitle
+		resp.TmuxPaneTitle = &title
+	}
+	resp.TmuxWorking = activity.Working
+	resp.TmuxActivitySource = activity.Source
+	if activity.LastOutputAt != nil {
+		lastOutputAt := activity.LastOutputAt.UTC().Format(time.RFC3339)
+		resp.TmuxLastOutputAt = &lastOutputAt
+	}
+}
+
+func isWorkingTmuxTitle(title string) bool {
+	normalized := strings.TrimSpace(title)
+	if normalized == "" {
+		return false
+	}
+
+	for _, frame := range "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏" {
+		if strings.HasPrefix(normalized, string(frame)+" ") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Server) deleteWorkspace(

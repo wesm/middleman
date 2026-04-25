@@ -3,12 +3,14 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +65,14 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
 		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_PANE_TITLE"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_PANE_OUTPUT"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
@@ -107,6 +117,19 @@ func readTmuxRecord(t *testing.T, path string) [][]string {
 		i += n
 	}
 	return out
+}
+
+func containsArg(argv []string, want string) bool {
+	return slices.Contains(argv, want)
+}
+
+func argAfter(argv []string, flag string) (string, bool) {
+	for i, arg := range argv {
+		if arg == flag && i+1 < len(argv) {
+			return argv[i+1], true
+		}
+	}
+	return "", false
 }
 
 // setupWrapperServer constructs a full server wired with a
@@ -215,16 +238,32 @@ func setupWrapperServerWithScriptAndDBAndServer(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
 	seedPR(t, database, "acme", "widget", 1)
 
 	// Real listener — WebSocket Dial needs a real TCP endpoint.
 	// The generated API client also points at this URL rather than
 	// the in-process roundtripper used elsewhere, because we cannot
 	// split HTTP and WebSocket transports per-request.
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.Serve(ln)
+	}()
+	baseURL = "http://" + ln.Addr().String()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		require.NoError(t, srv.Shutdown(ctx))
+		select {
+		case err := <-serveErr:
+			require.ErrorIs(t, err, http.ErrServerClosed)
+		case <-ctx.Done():
+			require.FailNow(t, "workspace wrapper server did not stop")
+		}
+	})
 
 	// Wrap the underlying TCP transport with the same Content-Type
 	// shim setupTestClient uses — the server's CSRF check rejects
@@ -240,10 +279,10 @@ func setupWrapperServerWithScriptAndDBAndServer(
 			return http.DefaultTransport.RoundTrip(req)
 		}),
 	}
-	client, err = apiclient.NewWithHTTPClient(ts.URL, httpClient)
+	client, err = apiclient.NewWithHTTPClient(baseURL, httpClient)
 	require.NoError(t, err)
 
-	return client, ts.URL, database, srv
+	return client, baseURL, database, srv
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
@@ -300,6 +339,657 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	assert.NotEmpty(newSession[6])
 	assert.NotEmpty(newSession[7])
 	assert.Equal("-l", newSession[8])
+}
+
+func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	t.Setenv("TMUX_PANE_TITLE", "⠴ t3code-b5014b03")
+	t.Setenv("TMUX_PANE_OUTPUT", "stable output")
+
+	client, _, _ := setupWrapperServer(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	var ready *generated.WorkspaceResponse
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			ctx, wsID,
+		)
+		require.NoError(getErr)
+		if getResp.JSON200 != nil && getResp.JSON200.Status == "ready" {
+			ready = getResp.JSON200
+			break
+		}
+	}
+	require.NotNil(ready, "workspace never became ready")
+
+	getResp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
+	require.NoError(err)
+	defer getResp.Body.Close()
+	require.Equal(http.StatusOK, getResp.StatusCode)
+
+	var got struct {
+		TmuxPaneTitle *string `json:"tmux_pane_title"`
+		TmuxWorking   bool    `json:"tmux_working"`
+	}
+	require.NoError(json.NewDecoder(getResp.Body).Decode(&got))
+	require.NotNil(got.TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
+	assert.True(got.TmuxWorking)
+
+	listResp, err := client.HTTP.GetWorkspaces(ctx)
+	require.NoError(err)
+	defer listResp.Body.Close()
+	require.Equal(http.StatusOK, listResp.StatusCode)
+
+	var listed struct {
+		Workspaces []struct {
+			ID            string  `json:"id"`
+			TmuxPaneTitle *string `json:"tmux_pane_title"`
+			TmuxWorking   bool    `json:"tmux_working"`
+		} `json:"workspaces"`
+	}
+	require.NoError(json.NewDecoder(listResp.Body).Decode(&listed))
+	require.Len(listed.Workspaces, 1)
+	assert.Equal(wsID, listed.Workspaces[0].ID)
+	require.NotNil(listed.Workspaces[0].TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *listed.Workspaces[0].TmuxPaneTitle)
+	assert.True(listed.Workspaces[0].TmuxWorking)
+}
+
+func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	outputPath := filepath.Join(dir, "pane-output")
+	require.NoError(os.WriteFile(outputPath, []byte("initial\n"), 0o644))
+
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_PANE_TITLE"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    cat "$TMUX_PANE_OUTPUT_FILE"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_PANE_TITLE", "workspace")
+	t.Setenv("TMUX_PANE_OUTPUT_FILE", outputPath)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time { return now })
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		workspace, dbErr := database.GetWorkspace(ctx, wsID)
+		require.NoError(dbErr)
+		if workspace != nil && workspace.Status == "ready" {
+			break
+		}
+	}
+
+	first := getRawWorkspaceActivity(t, client, ctx, wsID)
+	require.NotNil(first.TmuxPaneTitle)
+	assert.Equal("workspace", *first.TmuxPaneTitle)
+	assert.False(first.TmuxWorking)
+	assert.Equal(tmuxActivitySourceNone, first.TmuxActivitySource)
+	assert.Nil(first.TmuxLastOutputAt)
+
+	require.NoError(os.WriteFile(
+		outputPath,
+		[]byte("initial\nnew output\n"),
+		0o644,
+	))
+	now = now.Add(tmuxSampleMinInterval + time.Second)
+	second := getRawWorkspaceActivity(t, client, ctx, wsID)
+	assert.True(second.TmuxWorking)
+	assert.Equal(tmuxActivitySourceOutput, second.TmuxActivitySource)
+	require.NotNil(second.TmuxLastOutputAt)
+	assert.Equal(now.Format(time.RFC3339), *second.TmuxLastOutputAt)
+
+	now = now.Add(tmuxActivityTTL + time.Second)
+	expired := getRawWorkspaceActivity(t, client, ctx, wsID)
+	assert.False(expired.TmuxWorking)
+	assert.Equal(tmuxActivitySourceNone, expired.TmuxActivitySource)
+	require.NotNil(expired.TmuxLastOutputAt)
+	assert.Equal(*second.TmuxLastOutputAt, *expired.TmuxLastOutputAt)
+}
+
+func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	activeDir := filepath.Join(dir, "active")
+	overlapPath := filepath.Join(dir, "overlap")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ] || [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    mkdir -p "$TMUX_ACTIVE_DIR"` + "\n" +
+		`    marker="$TMUX_ACTIVE_DIR/$$"` + "\n" +
+		`    : > "$marker"` + "\n" +
+		`    set -- "$TMUX_ACTIVE_DIR"/*` + "\n" +
+		`    if [ "$#" -gt 1 ]; then` + "\n" +
+		`      : > "$TMUX_OVERLAP_FILE"` + "\n" +
+		`    fi` + "\n" +
+		`    sleep 0.2` + "\n" +
+		`    rm -f "$marker"` + "\n" +
+		`    if [ "$a" = "display-message" ]; then` + "\n" +
+		`      printf 'workspace\n'` + "\n" +
+		`      exit 0` + "\n" +
+		`    fi` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_ACTIVE_DIR", activeDir)
+	t.Setenv("TMUX_OVERLAP_FILE", overlapPath)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+	ctx := context.Background()
+
+	seedPR(t, database, "acme", "widget", 2)
+
+	createResp1, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp1.StatusCode())
+	require.NotNil(createResp1.JSON202)
+	waitForWorkspaceReady(t, ctx, client, createResp1.JSON202.Id)
+
+	createResp2, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp2.StatusCode())
+	require.NotNil(createResp2.JSON202)
+	waitForWorkspaceReady(t, ctx, client, createResp2.JSON202.Id)
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 5, 0, time.UTC)
+	})
+	require.NoError(os.RemoveAll(activeDir))
+	err = os.Remove(overlapPath)
+	if err != nil && !os.IsNotExist(err) {
+		require.NoError(err)
+	}
+
+	resp, err := client.HTTP.GetWorkspaces(ctx)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	var listed struct {
+		Workspaces []struct {
+			ID string `json:"id"`
+		} `json:"workspaces"`
+	}
+	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
+	require.Len(listed.Workspaces, 2)
+
+	_, err = os.Stat(overlapPath)
+	assert.NoError(err, "expected overlapping tmux activity probes")
+}
+
+func TestWorkspaceListReturnsUnknownWhenTmuxActivityProbeTimesOut(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "display-message" ] || [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    exec sleep 5` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "ws-probe-timeout",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        1,
+		MRHeadRef:       "feature",
+		WorkspaceBranch: "feature",
+		WorktreePath:    filepath.Join(dir, "worktree"),
+		TmuxSession:     "middleman-ws-timeout",
+		Status:          "ready",
+	}))
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+
+	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	resp, err := client.HTTP.GetWorkspaces(requestCtx)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	var listed struct {
+		Workspaces []struct {
+			ID                 string  `json:"id"`
+			TmuxPaneTitle      *string `json:"tmux_pane_title"`
+			TmuxWorking        bool    `json:"tmux_working"`
+			TmuxActivitySource string  `json:"tmux_activity_source"`
+		} `json:"workspaces"`
+	}
+	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
+	require.Len(listed.Workspaces, 1)
+	assert.Equal("ws-probe-timeout", listed.Workspaces[0].ID)
+	assert.Nil(listed.Workspaces[0].TmuxPaneTitle)
+	assert.False(listed.Workspaces[0].TmuxWorking)
+	assert.Equal(tmuxActivitySourceUnknown, listed.Workspaces[0].TmuxActivitySource)
+}
+
+func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    sleep 0.2` + "\n" +
+		`    printf 'workspace\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    sleep 0.2` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "ws-coalesce",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        1,
+		MRHeadRef:       "feature",
+		WorkspaceBranch: "feature",
+		WorktreePath:    filepath.Join(dir, "worktree"),
+		TmuxSession:     "middleman-ws-coalesce",
+		Status:          "ready",
+	}))
+
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+
+	var wg sync.WaitGroup
+	statuses := make(chan int, 2)
+	errs := make(chan error, 2)
+	wg.Add(2)
+	for range 2 {
+		go func() {
+			defer wg.Done()
+			resp, getErr := client.HTTP.GetWorkspaces(ctx)
+			errs <- getErr
+			if resp != nil {
+				resp.Body.Close()
+				statuses <- resp.StatusCode
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	close(statuses)
+
+	for getErr := range errs {
+		require.NoError(getErr)
+	}
+	for status := range statuses {
+		assert.Equal(http.StatusOK, status)
+	}
+
+	var displayMessageCalls int
+	var capturePaneCalls int
+	for _, argv := range readTmuxRecord(t, record) {
+		if containsArg(argv, "display-message") {
+			displayMessageCalls++
+		}
+		if containsArg(argv, "capture-pane") {
+			capturePaneCalls++
+		}
+	}
+	assert.Equal(1, displayMessageCalls)
+	assert.Equal(1, capturePaneCalls)
+}
+
+func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    printf 'workspace\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	wantSessions := make(map[string]bool)
+	for i := range tmuxProbeMaxConcurrency + 4 {
+		session := "middleman-ws-refresh-" + strconv.Itoa(i)
+		wantSessions[session] = true
+		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+			ID:              "ws-refresh-" + strconv.Itoa(i),
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        "widget",
+			MRNumber:        200 + i,
+			MRHeadRef:       "feature",
+			WorkspaceBranch: "feature",
+			WorktreePath: filepath.Join(
+				dir, "refresh-worktree-"+strconv.Itoa(i),
+			),
+			TmuxSession: session,
+			Status:      "ready",
+		}))
+	}
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+
+	resp, err := client.HTTP.GetWorkspaces(ctx)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	gotSessions := make(map[string]bool)
+	for _, argv := range readTmuxRecord(t, record) {
+		if !containsArg(argv, "capture-pane") {
+			continue
+		}
+		session, ok := argAfter(argv, "-t")
+		if ok {
+			gotSessions[session] = true
+		}
+	}
+	assert.Equal(wantSessions, gotSessions)
+}
+
+func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	activeDir := filepath.Join(dir, "active")
+	violationPath := filepath.Join(dir, "violation")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ] || [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    mkdir -p "$TMUX_ACTIVE_DIR"` + "\n" +
+		`    marker="$TMUX_ACTIVE_DIR/$$"` + "\n" +
+		`    : > "$marker"` + "\n" +
+		`    trap 'rm -f "$marker"' EXIT INT TERM` + "\n" +
+		`    active=$(find "$TMUX_ACTIVE_DIR" -type f | wc -l | tr -d ' ')` + "\n" +
+		`    if [ "$active" -gt "$TMUX_MAX_ACTIVE" ]; then` + "\n" +
+		`      printf '%s\n' "$active" >> "$TMUX_VIOLATION"` + "\n" +
+		`    fi` + "\n" +
+		`    sleep 0.05` + "\n" +
+		`    if [ "$a" = "display-message" ]; then` + "\n" +
+		`      printf 'workspace\n'` + "\n" +
+		`      exit 0` + "\n" +
+		`    fi` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_ACTIVE_DIR", activeDir)
+	t.Setenv("TMUX_MAX_ACTIVE", strconv.Itoa(tmuxProbeMaxConcurrency))
+	t.Setenv("TMUX_VIOLATION", violationPath)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	for i := range 12 {
+		mrNumber := 100 + i
+		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+			ID:              "ws-stress-" + strconv.Itoa(i),
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        "widget",
+			MRNumber:        mrNumber,
+			MRHeadRef:       "feature",
+			WorkspaceBranch: "feature",
+			WorktreePath: filepath.Join(
+				dir, "worktree-"+strconv.Itoa(i),
+			),
+			TmuxSession: "middleman-ws-stress-" + strconv.Itoa(i),
+			Status:      "ready",
+		}))
+	}
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 48)
+	statuses := make(chan int, 48)
+	wg.Add(48)
+	for range 48 {
+		go func() {
+			defer wg.Done()
+			resp, getErr := client.HTTP.GetWorkspaces(ctx)
+			errs <- getErr
+			if resp != nil {
+				resp.Body.Close()
+				statuses <- resp.StatusCode
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	close(statuses)
+
+	for getErr := range errs {
+		require.NoError(getErr)
+	}
+	for status := range statuses {
+		assert.Equal(http.StatusOK, status)
+	}
+
+	assert.NoFileExists(violationPath)
+	require.Eventually(func() bool {
+		entries, err := os.ReadDir(activeDir)
+		if os.IsNotExist(err) {
+			return true
+		}
+		require.NoError(err)
+		return len(entries) == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
+func getRawWorkspaceActivity(
+	t *testing.T,
+	client *apiclient.Client,
+	ctx context.Context,
+	wsID string,
+) struct {
+	TmuxPaneTitle      *string `json:"tmux_pane_title"`
+	TmuxWorking        bool    `json:"tmux_working"`
+	TmuxActivitySource string  `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+} {
+	t.Helper()
+	resp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var got struct {
+		TmuxPaneTitle      *string `json:"tmux_pane_title"`
+		TmuxWorking        bool    `json:"tmux_working"`
+		TmuxActivitySource string  `json:"tmux_activity_source"`
+		TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	return got
+}
+
+func TestIsWorkingTmuxTitleDetectsCodexSpinner(t *testing.T) {
+	assert := Assert.New(t)
+
+	cases := []struct {
+		name    string
+		title   string
+		working bool
+	}{
+		{
+			name:    "codex spinner frame",
+			title:   "⠴ t3code-b5014b03",
+			working: true,
+		},
+		{
+			name:    "another codex spinner frame",
+			title:   "⠦ t3code-b5014b03",
+			working: true,
+		},
+		{
+			name:    "settled codex title",
+			title:   "t3code-b5014b03",
+			working: false,
+		},
+		{
+			name:    "english busy title is not protocol",
+			title:   "codex working",
+			working: false,
+		},
+		{
+			name:    "opencode style title is not protocol",
+			title:   "OC | Run sleep 10",
+			working: false,
+		},
+		{
+			name:    "pi style title is not protocol",
+			title:   "π - tmp.foo",
+			working: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(tc.working, isWorkingTmuxTitle(tc.title))
+		})
+	}
 }
 
 func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
