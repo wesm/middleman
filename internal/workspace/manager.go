@@ -628,6 +628,13 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 	cloneDir := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
+	ready, err := gitCloneDirReady(cloneDir)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return nil
+	}
 
 	if err := runGit(
 		ctx, cloneDir,
@@ -1266,6 +1273,17 @@ func isGitBranchAbsent(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "branch") &&
 		strings.Contains(msg, "not found")
+}
+
+func gitCloneDirReady(cloneDir string) (bool, error) {
+	_, err := os.Stat(filepath.Join(cloneDir, "HEAD"))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("stat git clone dir: %w", err)
 }
 
 func isUniqueConstraintError(err error) bool {

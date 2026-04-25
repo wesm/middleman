@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 )
 
@@ -877,6 +878,58 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
 		argvs[0],
 	)
+}
+
+func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "can't find session: missing" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetClones(gitclone.New(filepath.Join(dir, "clones"), nil))
+	ctx := context.Background()
+	errMsg := "ensure clone failed"
+	ws := &Workspace{
+		ID:              "ws-retry-missing-clone",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    filepath.Join(dir, "missing-worktree"),
+		TmuxSession:     "middleman-retry-missing-clone",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(startNow)
+	assert.Equal("creating", next.Status)
+	assert.Equal(workspaceBranchUnknown, next.WorkspaceBranch)
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("creating", got.Status)
+	assert.Equal(workspaceBranchUnknown, got.WorkspaceBranch)
+	assert.Nil(got.ErrorMessage)
 }
 
 func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) {

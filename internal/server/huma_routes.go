@@ -2112,6 +2112,19 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 				slog.Warn("start queued workspace retry",
 					"id", ws.ID, "err", queueErr,
 				)
+				summary, getErr = s.workspaces.GetSummary(bgCtx, ws.ID)
+				if getErr != nil {
+					slog.Warn("get workspace summary after queued retry failure",
+						"id", ws.ID, "err", getErr,
+					)
+					return
+				}
+				if summary != nil {
+					s.hub.Broadcast(Event{
+						Type: "workspace_status",
+						Data: toWorkspaceResponse(summary),
+					})
+				}
 				return
 			}
 			if !queued {
