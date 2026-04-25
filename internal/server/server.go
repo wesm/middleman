@@ -20,7 +20,6 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/terminal"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -404,49 +403,21 @@ func newServer(
 		}
 	}
 
-	if s.workspaces != nil {
-		termHandler := &terminal.Handler{
-			Workspaces:  s.workspaces,
-			TmuxCommand: tmuxCmd,
-		}
-		mux.Handle(
-			"GET /api/v1/workspaces/{id}/terminal",
-			termHandler,
-		)
-		mux.Handle(
-			"GET /ws/v1/workspaces/{id}/terminal",
-			termHandler,
-		)
-		if s.runtime != nil {
-			mux.HandleFunc(
-				"GET /api/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
-				s.handleWorkspaceRuntimeSessionTerminal,
-			)
-			mux.HandleFunc(
-				"GET /ws/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
-				s.handleWorkspaceRuntimeSessionTerminal,
-			)
-			mux.HandleFunc(
-				"GET /api/v1/workspaces/{id}/runtime/shell/terminal",
-				s.handleWorkspaceRuntimeShellTerminal,
-			)
-			mux.HandleFunc(
-				"GET /ws/v1/workspaces/{id}/runtime/shell/terminal",
-				s.handleWorkspaceRuntimeShellTerminal,
-			)
-		}
-	}
-
 	healthAPI := humago.New(mux, healthAPIConfig())
 	s.registerHealthAPI(healthAPI)
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
 	s.registerAPI(api)
+	if s.workspaces != nil {
+		s.registerTerminalAPI(api)
+	}
 
 	// Roborev proxy
 	if cfg != nil {
-		roborevTarget := cfg.RoborevEndpoint()
-		mux.Handle("/api/roborev/", roborevProxy(roborevTarget))
+		roborevAPI := humago.NewWithPrefix(
+			mux, "/api", roborevProxyAPIConfig(),
+		)
+		s.registerRoborevProxyAPI(roborevAPI)
 	}
 
 	if frontend != nil {
