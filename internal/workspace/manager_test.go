@@ -880,6 +880,114 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 	)
 }
 
+func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	started := filepath.Join(dir, "started")
+	release := filepath.Join(dir, "release")
+	count := filepath.Join(dir, "count")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    n=0` + "\n" +
+		`    if [ -f "$TMUX_COUNT" ]; then n=$(cat "$TMUX_COUNT"); fi` + "\n" +
+		`    n=$((n + 1))` + "\n" +
+		`    printf '%s' "$n" > "$TMUX_COUNT"` + "\n" +
+		`    if [ "$n" -eq 1 ]; then` + "\n" +
+		`      : > "$TMUX_STARTED"` + "\n" +
+		`      while [ ! -f "$TMUX_RELEASE" ]; do sleep 0.01; done` + "\n" +
+		`      echo "permission denied" >&2` + "\n" +
+		`      exit 1` + "\n" +
+		`    fi` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_STARTED", started)
+	t.Setenv("TMUX_RELEASE", release)
+	t.Setenv("TMUX_COUNT", count)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	ctx := context.Background()
+	errMsg := "tmux new-session failed"
+	ws := &Workspace{
+		ID:              "ws-retry-cleanup-queued",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		MRNumber:        42,
+		MRHeadRef:       "feature/retry",
+		WorkspaceBranch: "middleman/pr-42",
+		WorktreePath:    "/tmp/ws-retry-cleanup-queued",
+		TmuxSession:     "middleman-retry-cleanup-queued",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+	require.NoError(d.InsertWorkspaceSetupEvent(ctx, &db.WorkspaceSetupEvent{
+		WorkspaceID: ws.ID,
+		Stage:       workspaceSetupStageTmuxSession,
+		Outcome:     "success",
+		Message:     "tmux session started",
+	}))
+
+	type retryResult struct {
+		ws       *Workspace
+		startNow bool
+		err      error
+	}
+	firstResult := make(chan retryResult, 1)
+	go func() {
+		next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+		firstResult <- retryResult{ws: next, startNow: startNow, err: err}
+	}()
+
+	require.Eventually(func() bool {
+		_, err := os.Stat(started)
+		return err == nil
+	}, time.Second, 10*time.Millisecond)
+	require.Eventually(func() bool {
+		got, err := d.GetWorkspace(ctx, ws.ID)
+		return err == nil && got != nil && got.Status == "creating"
+	}, time.Second, 10*time.Millisecond)
+
+	queuedWS, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(queuedWS)
+	assert.False(startNow)
+	assert.Equal("creating", queuedWS.Status)
+
+	require.NoError(os.WriteFile(release, []byte("1"), 0o644))
+	var first retryResult
+	require.Eventually(func() bool {
+		select {
+		case first = <-firstResult:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	assert.Nil(first.ws)
+	assert.False(first.startNow)
+	require.Error(first.err)
+	assert.Contains(first.err.Error(), "permission denied")
+
+	next, queued, err := mgr.StartQueuedRetryIfErrored(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(next)
+	assert.False(queued)
+
+	got, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("error", got.Status)
+}
+
 func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

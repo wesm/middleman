@@ -477,6 +477,7 @@ func (m *Manager) RequestRetry(
 	}
 
 	if err := m.prepareWorkspaceRetry(ctx, ws); err != nil {
+		m.consumeQueuedRetry(ws.ID)
 		return nil, false, err
 	}
 	return ws, true, nil
@@ -510,6 +511,7 @@ func (m *Manager) StartQueuedRetryIfErrored(
 	}
 
 	if err := m.prepareWorkspaceRetry(ctx, ws); err != nil {
+		m.consumeQueuedRetry(ws.ID)
 		return nil, false, err
 	}
 	return ws, true, nil
@@ -563,6 +565,7 @@ func (m *Manager) startWorkspaceRetry(
 	}
 
 	if err := m.prepareWorkspaceRetry(ctx, ws); err != nil {
+		m.consumeQueuedRetry(ws.ID)
 		return nil, false, err
 	}
 	return ws, true, nil
