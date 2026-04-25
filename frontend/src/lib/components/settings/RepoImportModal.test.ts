@@ -15,6 +15,7 @@ const rows = [
   { owner: "acme", name: "worker", description: "Background jobs", private: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
   { owner: "acme", name: "api", description: "HTTP API", private: true, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
   { owner: "acme", name: "widget", description: "Configured", private: false, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  { owner: "acme", name: "empty", description: null, private: false, pushed_at: null, already_configured: false },
 ];
 
 describe("RepoImportModal", () => {
@@ -32,9 +33,9 @@ describe("RepoImportModal", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
     await screen.findByText("acme/api");
-    expect(screen.getByText("Selected 2 of 3")).toBeTruthy();
+    expect(screen.getByText("Selected 3 of 4")).toBeTruthy();
     expect((screen.getByRole("checkbox", { name: "Select acme/widget" }) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getAllByText("Already added").length).toBeGreaterThan(1);
+    expect(screen.getByText("Never pushed")).toBeTruthy();
   });
 
   it("filters, deselects visible rows, and submits remaining selected rows", async () => {
@@ -52,7 +53,10 @@ describe("RepoImportModal", () => {
     await fireEvent.input(screen.getByLabelText("Filter repositories"), { target: { value: "" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
 
-    await waitFor(() => expect(bulk).toHaveBeenCalledWith([{ owner: "acme", name: "api" }]));
+    await waitFor(() => expect(bulk).toHaveBeenCalledWith([
+      { owner: "acme", name: "api" },
+      { owner: "acme", name: "empty" },
+    ]));
     expect(onImported).toHaveBeenCalled();
   });
 
@@ -67,7 +71,7 @@ describe("RepoImportModal", () => {
     resolveFirst({ owner: "acme", pattern: "*", repos: rows });
 
     await waitFor(() => expect(screen.queryByText("acme/api")).toBeNull());
-    expect(screen.getAllByText("Preview repositories before adding them.").length).toBeGreaterThan(0);
+    expect(screen.getByText("Selected 0 of 0")).toBeTruthy();
   });
 
   it("clears stale rows on failed preview", async () => {
