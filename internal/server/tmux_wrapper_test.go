@@ -123,6 +123,15 @@ func containsArg(argv []string, want string) bool {
 	return slices.Contains(argv, want)
 }
 
+func argAfter(argv []string, flag string) (string, bool) {
+	for i, arg := range argv {
+		if arg == flag && i+1 < len(argv) {
+			return argv[i+1], true
+		}
+	}
+	return "", false
+}
+
 // setupWrapperServer constructs a full server wired with a
 // recording-script tmux command, a bare repo, and a seeded PR.
 // Returns a generated API client pointed at the httptest server,
@@ -677,6 +686,78 @@ func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
 	}
 	assert.Equal(1, displayMessageCalls)
 	assert.Equal(1, capturePaneCalls)
+}
+
+func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "display-message" ]; then` + "\n" +
+		`    printf 'workspace\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "capture-pane" ]; then` + "\n" +
+		`    printf 'output\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+		t, script,
+	)
+	ctx := context.Background()
+	wantSessions := make(map[string]bool)
+	for i := range tmuxProbeMaxConcurrency + 4 {
+		session := "middleman-ws-refresh-" + strconv.Itoa(i)
+		wantSessions[session] = true
+		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+			ID:              "ws-refresh-" + strconv.Itoa(i),
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        "widget",
+			MRNumber:        200 + i,
+			MRHeadRef:       "feature",
+			WorkspaceBranch: "feature",
+			WorktreePath: filepath.Join(
+				dir, "refresh-worktree-"+strconv.Itoa(i),
+			),
+			TmuxSession: session,
+			Status:      "ready",
+		}))
+	}
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	})
+
+	resp, err := client.HTTP.GetWorkspaces(ctx)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+
+	gotSessions := make(map[string]bool)
+	for _, argv := range readTmuxRecord(t, record) {
+		if !containsArg(argv, "capture-pane") {
+			continue
+		}
+		session, ok := argAfter(argv, "-t")
+		if ok {
+			gotSessions[session] = true
+		}
+	}
+	assert.Equal(wantSessions, gotSessions)
 }
 
 func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {

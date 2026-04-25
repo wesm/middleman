@@ -2173,14 +2173,22 @@ func (s *Server) listWorkspaces(
 	if len(summaries) == 1 {
 		list[0] = s.toWorkspaceResponse(ctx, &summaries[0])
 	} else {
+		workers := min(len(summaries), tmuxProbeMaxConcurrency)
+		jobs := make(chan int)
 		var wg sync.WaitGroup
-		wg.Add(len(summaries))
-		for i := range summaries {
+		wg.Add(workers)
+		for range workers {
 			go func() {
 				defer wg.Done()
-				list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
+				for i := range jobs {
+					list[i] = s.toWorkspaceResponse(ctx, &summaries[i])
+				}
 			}()
 		}
+		for i := range summaries {
+			jobs <- i
+		}
+		close(jobs)
 		wg.Wait()
 	}
 
@@ -2283,7 +2291,7 @@ func (s *Server) toWorkspaceResponse(
 	if tracker == nil {
 		tracker = newTmuxActivityTracker(nil)
 	}
-	probe := tracker.StartProbe(summary.TmuxSession)
+	probe := tracker.StartProbe(ctx, summary.TmuxSession)
 	if !probe.Started {
 		if probe.HasFallback {
 			applyTmuxActivity(&resp, probe.Fallback)

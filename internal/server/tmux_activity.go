@@ -20,6 +20,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -128,37 +129,54 @@ func (t *tmuxActivityTracker) Update(
 }
 
 func (t *tmuxActivityTracker) StartProbe(
+	ctx context.Context,
 	session string,
 ) tmuxProbeStart {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	fallback, hasFallback := t.cachedLocked(session, false)
-	if wait, ok := t.inFlight[session]; ok {
-		return tmuxProbeStart{
-			Fallback:    fallback,
-			HasFallback: hasFallback,
-			Wait:        wait,
+	for {
+		t.mu.Lock()
+		fallback, hasFallback := t.cachedLocked(session, false)
+		if wait, ok := t.inFlight[session]; ok {
+			t.mu.Unlock()
+			return tmuxProbeStart{
+				Fallback:    fallback,
+				HasFallback: hasFallback,
+				Wait:        wait,
+			}
 		}
-	}
+		t.mu.Unlock()
 
-	select {
-	case t.probeSlots <- struct{}{}:
-		wait := make(chan struct{})
-		t.inFlight[session] = wait
-		return tmuxProbeStart{
-			Probe: tmuxActivityProbe{
-				tracker: t,
-				session: session,
-			},
-			Fallback:    fallback,
-			HasFallback: hasFallback,
-			Started:     true,
-		}
-	default:
-		return tmuxProbeStart{
-			Fallback:    fallback,
-			HasFallback: hasFallback,
+		select {
+		case t.probeSlots <- struct{}{}:
+			t.mu.Lock()
+			if wait, ok := t.inFlight[session]; ok {
+				<-t.probeSlots
+				t.mu.Unlock()
+				return tmuxProbeStart{
+					Fallback:    fallback,
+					HasFallback: hasFallback,
+					Wait:        wait,
+				}
+			}
+			wait := make(chan struct{})
+			t.inFlight[session] = wait
+			t.mu.Unlock()
+			return tmuxProbeStart{
+				Probe: tmuxActivityProbe{
+					tracker: t,
+					session: session,
+				},
+				Fallback:    fallback,
+				HasFallback: hasFallback,
+				Started:     true,
+			}
+		case <-ctx.Done():
+			t.mu.Lock()
+			fallback, hasFallback = t.cachedLocked(session, false)
+			t.mu.Unlock()
+			return tmuxProbeStart{
+				Fallback:    fallback,
+				HasFallback: hasFallback,
+			}
 		}
 	}
 }

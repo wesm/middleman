@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTmuxActivityTrackerUsesOutputFingerprintChanges(t *testing.T) {
@@ -97,6 +99,7 @@ func TestTmuxActivityTrackerCachesFreshSamples(t *testing.T) {
 
 func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTrackerWithProbeLimit(
 		func() time.Time { return now }, 1,
@@ -108,19 +111,23 @@ func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
 	})
 	now = now.Add(tmuxSampleMinInterval + time.Second)
 
-	first := tracker.StartProbe("session-a")
+	first := tracker.StartProbe(context.Background(), "session-a")
 	assert.True(first.Started)
 	assert.True(first.HasFallback)
 	assert.Equal(cached, first.Fallback)
 
-	sameSession := tracker.StartProbe("session-a")
+	sameSession := tracker.StartProbe(context.Background(), "session-a")
 	assert.False(sameSession.Started)
 	assert.True(sameSession.HasFallback)
 	assert.Equal(cached, sameSession.Fallback)
 
-	otherSession := tracker.StartProbe("session-b")
-	assert.False(otherSession.Started)
-	assert.False(otherSession.HasFallback)
+	started := make(chan tmuxProbeStart, 1)
+	go func() {
+		started <- tracker.StartProbe(context.Background(), "session-b")
+	}()
+	assert.Never(func() bool {
+		return len(started) > 0
+	}, 50*time.Millisecond, 5*time.Millisecond)
 
 	updated := first.Probe.Finish(tmuxActivityObservation{
 		PaneTitle: "workspace",
@@ -130,7 +137,10 @@ func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
 	assert.True(updated.Working)
 	assert.Equal(tmuxActivitySourceOutput, updated.Source)
 
-	afterFinish := tracker.StartProbe("session-b")
+	require.Eventually(func() bool {
+		return len(started) > 0
+	}, time.Second, 5*time.Millisecond)
+	afterFinish := <-started
 	assert.True(afterFinish.Started)
 	afterFinish.Probe.Cancel()
 }
