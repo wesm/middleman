@@ -787,8 +787,9 @@ func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
 			PlatformHost:    "github.com",
 			RepoOwner:       "acme",
 			RepoName:        "widget",
-			MRNumber:        200 + i,
-			MRHeadRef:       "feature",
+			ItemType:        db.WorkspaceItemTypePullRequest,
+			ItemNumber:      200 + i,
+			GitHeadRef:      "feature",
 			WorkspaceBranch: "feature",
 			WorktreePath: filepath.Join(
 				dir, "refresh-worktree-"+strconv.Itoa(i),

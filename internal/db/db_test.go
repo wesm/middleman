@@ -756,7 +756,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 
 func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "workspace-v11.db")
 
