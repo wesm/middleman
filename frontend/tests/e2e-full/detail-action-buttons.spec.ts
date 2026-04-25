@@ -306,7 +306,7 @@ test.describe("detail action buttons", () => {
 
     await dialog.getByRole("button", { name: "Use Existing Branch" }).click();
 
-    expect(payloads).toEqual([
+    await expect.poll(() => payloads).toEqual([
       {
         platform_host: "github.com",
       },
@@ -420,7 +420,7 @@ test.describe("detail action buttons", () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Create New Branch" }).click();
 
-    expect(payloads).toEqual([
+    await expect.poll(() => payloads).toEqual([
       {
         platform_host: "github.com",
       },
