@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -34,6 +36,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "marshal openapi %s: %v\n", version, err)
 		os.Exit(1)
 	}
+	spec, err = prettyJSON(spec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "format openapi %s: %v\n", version, err)
+		os.Exit(1)
+	}
 
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "mkdir %s: %v\n", filepath.Dir(out), err)
@@ -44,4 +51,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", out, err)
 		os.Exit(1)
 	}
+}
+
+func prettyJSON(spec []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, spec, "", "  "); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
