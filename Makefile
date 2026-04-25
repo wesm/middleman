@@ -76,7 +76,7 @@ frontend-check:
 	cd packages/ui && bun run typecheck && bun run lint
 	cd frontend && bun run typecheck && bun run lint
 
-# Regenerate the checked-in OpenAPI documents and generated clients
+# Regenerate the checked-in OpenAPI document and generated clients
 api-generate:
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.json
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
