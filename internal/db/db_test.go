@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"io/fs"
 	"os"
@@ -357,7 +356,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
-	repos, err := d.ListRepos(context.Background())
+	repos, err := d.ListRepos(t.Context())
 	require.NoError(err)
 	require.Len(repos, 1)
 	require.Equal("org", repos[0].Owner)
@@ -515,7 +514,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.db")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	d, err := Open(path)
 	require.NoError(err)
@@ -764,7 +763,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion10(t *testing.T) {
 
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")

@@ -1,7 +1,6 @@
 package github
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -12,7 +11,7 @@ import (
 func TestCollectPagesAccumulatesAllPages(t *testing.T) {
 	callPages := []int{}
 
-	items, err := collectPages(context.Background(), func(opts *gh.ListOptions) ([]int, *gh.Response, error) {
+	items, err := collectPages(t.Context(), func(opts *gh.ListOptions) ([]int, *gh.Response, error) {
 		callPages = append(callPages, opts.Page)
 		switch opts.Page {
 		case 0:
@@ -31,7 +30,7 @@ func TestCollectPagesAccumulatesAllPages(t *testing.T) {
 func TestCollectPagesStopsOnError(t *testing.T) {
 	wantErr := errors.New("boom")
 
-	_, err := collectPages(context.Background(), func(opts *gh.ListOptions) ([]int, *gh.Response, error) {
+	_, err := collectPages(t.Context(), func(opts *gh.ListOptions) ([]int, *gh.Response, error) {
 		if opts.Page == 0 {
 			return []int{1}, &gh.Response{NextPage: 2}, nil
 		}

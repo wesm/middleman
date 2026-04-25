@@ -105,7 +105,7 @@ func TestComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -147,7 +147,7 @@ func TestComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -193,7 +193,7 @@ func TestComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -233,7 +233,7 @@ func TestComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -290,7 +290,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -424,7 +424,7 @@ func TestSyncFirstSeenMergedPR(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -528,7 +528,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 
@@ -632,7 +632,7 @@ func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceDir := t.TempDir()
 	clonesDir := t.TempDir()
 

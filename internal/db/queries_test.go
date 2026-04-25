@@ -9,36 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func baseTime() time.Time {
-	return time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-}
-
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	t.Helper()
-	id, err := d.UpsertRepo(context.Background(), "github.com", owner, name)
+	id, err := d.UpsertRepo(t.Context(), "github.com", owner, name)
 	require.NoErrorf(t, err, "UpsertRepo(%s/%s)", owner, name)
-	return id
-}
-
-func insertTestMR(t *testing.T, d *DB, repoID int64, number int, title string, activity time.Time) int64 {
-	t.Helper()
-	mr := &MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		URL:            "https://github.com/example/repo/pull/" + title,
-		Title:          title,
-		Author:         "author",
-		State:          "open",
-		IsDraft:        false,
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		CreatedAt:      activity,
-		UpdatedAt:      activity,
-		LastActivityAt: activity,
-	}
-	id, err := d.UpsertMergeRequest(context.Background(), mr)
-	require.NoErrorf(t, err, "UpsertMergeRequest %d", number)
 	return id
 }
 
@@ -47,7 +21,7 @@ func insertTestRepoWithHost(
 	t *testing.T, d *DB, owner, name, host string,
 ) int64 {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := d.WriteDB().ExecContext(ctx,
 		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
 		 VALUES ('github', ?, ?, ?)
@@ -70,7 +44,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	// Insert repos for two hosts.
@@ -210,7 +184,7 @@ func TestCascadeDeleteRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -283,7 +257,7 @@ func TestUpsertMREventsUpdatesExistingEventBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -320,7 +294,7 @@ func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -369,7 +343,7 @@ func TestUpsertAndListRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	id1, err := d.UpsertRepo(ctx, "github.com", "alice", "alpha")
 	require.NoError(err)
@@ -396,7 +370,7 @@ func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	id, err := d.UpsertRepo(ctx, "github.com", "Org", "Foo")
 	require.NoError(err)
@@ -415,7 +389,7 @@ func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
 func TestGetRepoByOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	id := insertTestRepo(t, d, "owner", "repo")
 
@@ -433,7 +407,7 @@ func TestUpdateRepoSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	id := insertTestRepo(t, d, "o", "r")
 	now := baseTime()
@@ -462,7 +436,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	now := baseTime()
@@ -527,7 +501,6 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 
 func TestListPullRequests(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
@@ -537,7 +510,7 @@ func TestListPullRequests(t *testing.T) {
 	insertTestMR(t, d, repoID, 2, "middle", base.Add(time.Hour))
 	insertTestMR(t, d, repoID, 3, "newest", base.Add(2*time.Hour))
 
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{})
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{})
 	require.NoError(t, err)
 	require.Len(t, prs, 3)
 	// Newest first.
@@ -546,7 +519,6 @@ func TestListPullRequests(t *testing.T) {
 
 func TestListPullRequestsFilterByRepo(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
 
 	repo1 := insertTestRepo(t, d, "owner", "repo1")
 	repo2 := insertTestRepo(t, d, "owner", "repo2")
@@ -555,7 +527,7 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	insertTestMR(t, d, repo1, 1, "pr in repo1", base)
 	insertTestMR(t, d, repo2, 1, "pr in repo2", base)
 
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{RepoOwner: "owner", RepoName: "repo1"})
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{RepoOwner: "owner", RepoName: "repo1"})
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, repo1, prs[0].RepoID)
@@ -565,7 +537,7 @@ func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	prID := insertTestMR(t, d, repoID, 7, "mixed case path", baseTime())
@@ -596,7 +568,6 @@ func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 
 func TestListPullRequestsFilterBySearch(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
@@ -604,7 +575,7 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 	insertTestMR(t, d, repoID, 1, "add feature", base)
 	insertTestMR(t, d, repoID, 2, "fix bug", base.Add(time.Hour))
 
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{Search: "feature"})
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "feature"})
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
 	Assert.Equal(t, 1, prs[0].Number)
@@ -614,7 +585,7 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	base := baseTime()
@@ -639,7 +610,7 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
@@ -684,7 +655,7 @@ func TestListMergeRequests_AttachesLabels(t *testing.T) {
 func TestGetMergeRequest_AttachesLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -727,7 +698,7 @@ func TestGetMergeRequest_AttachesLabels(t *testing.T) {
 func TestReplaceMergeRequestLabels_RejectsWrongRepoID(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoA := insertTestRepo(t, d, "acme", "widget")
@@ -752,7 +723,7 @@ func TestReplaceMergeRequestLabels_RejectsWrongRepoID(t *testing.T) {
 func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -800,7 +771,7 @@ func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
 func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -878,7 +849,7 @@ func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
 func TestUpsertLabels_RejectsAmbiguousNameAndPlatformIDMatch(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -911,7 +882,7 @@ func TestKanbanState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	prID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
@@ -945,7 +916,7 @@ func TestPREvents(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	prID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
@@ -999,7 +970,7 @@ func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "o", "r")
@@ -1047,7 +1018,7 @@ func TestListMREventsHandlesNonUTCTimes(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	prID := insertTestMR(t, d, repoID, 1, "pr one", baseTime())
@@ -1094,7 +1065,7 @@ func TestListMREventsHandlesNonUTCTimes(t *testing.T) {
 
 func TestGetPRIDByRepoAndNumber(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	insertTestMR(t, d, repoID, 5, "pr five", baseTime())
@@ -1109,7 +1080,6 @@ func TestGetPRIDByRepoAndNumber(t *testing.T) {
 
 func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	base := baseTime()
@@ -1119,7 +1089,7 @@ func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 
 	// PRs 1 and 3 are still open; 2 was closed externally.
 	stillOpen := map[int]bool{1: true, 3: true}
-	closed, err := d.GetPreviouslyOpenMRNumbers(ctx, repoID, stillOpen)
+	closed, err := d.GetPreviouslyOpenMRNumbers(t.Context(), repoID, stillOpen)
 	require.NoError(t, err)
 	Assert.Equal(t, []int{2}, closed)
 }
@@ -1127,7 +1097,7 @@ func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 func TestUpsertPullRequestMergeableState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -1221,7 +1191,7 @@ func TestUpdatePRState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	insertTestMR(t, d, repoID, 1, "pr", baseTime())
@@ -1240,7 +1210,7 @@ func TestUpdatePRState(t *testing.T) {
 func TestListIssues_AttachesLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
@@ -1282,7 +1252,7 @@ func TestListIssues_AttachesLabels(t *testing.T) {
 func TestGetIssue_AttachesLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -1323,7 +1293,7 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
 	issueID := insertTestIssue(t, d, repoID, 7, "mixed case issue", baseTime())
@@ -1349,7 +1319,7 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoA := insertTestRepo(t, d, "acme", "widget")
@@ -1386,7 +1356,7 @@ func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {
 func TestListIssues_UsesRepoScopedLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := baseTime()
 
 	repoA, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
@@ -1435,7 +1405,7 @@ func TestSetWorktreeLinks(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	mrID1 := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
@@ -1473,7 +1443,7 @@ func TestGetWorktreeLinksForMR(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	mrID1 := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
@@ -1501,7 +1471,7 @@ func TestListCommentAutocompleteUsers(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -1564,7 +1534,7 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -1589,7 +1559,7 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := insertTestRepo(t, d, "o", "r")
 	mrID := insertTestMR(t, d, repoID, 1, "pr1", baseTime())
@@ -1621,7 +1591,7 @@ func TestWorktreeAndPurgeRespectCanceledContext(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	err := d.PurgeOtherHosts(canceled, "github.com")
@@ -1644,7 +1614,7 @@ func TestGetRepoByHostOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Insert two repos with same owner/name but different hosts.
 	ghID := insertTestRepoWithHost(t, d, "acme", "widget", "github.com")
@@ -1680,7 +1650,7 @@ func TestGetRepoByHostOwnerName(t *testing.T) {
 func TestRepoIdentifierCasefoldTriggers(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_repos (platform, platform_host, owner, name)
@@ -1701,7 +1671,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ws := &Workspace{
 		ID:              "ws-abc-123",
@@ -1840,7 +1810,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
@@ -1871,7 +1841,7 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 
 func TestWorkspaceUniqueConstraint(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ws := &Workspace{
 		ID:           "ws-1",
@@ -1906,7 +1876,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	// Seed a repo and MR.
@@ -2013,7 +1983,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 func TestUpdateMRTitleBody(t *testing.T) {
 	assert := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "owner", "repo")
@@ -2057,7 +2027,7 @@ func TestUpdateMRTitleBody(t *testing.T) {
 func TestUpdateMRTitleBodyPreservesNewerActivity(t *testing.T) {
 	assert := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "owner2", "repo2")
@@ -2095,7 +2065,7 @@ func TestUpdateMRTitleBodyPreservesNewerActivity(t *testing.T) {
 func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
 	assert := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoID := insertTestRepo(t, d, "owner3", "repo3")

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -10,31 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func insertTestIssue(
-	t *testing.T, d *DB,
-	repoID int64, number int, title string, activity time.Time,
-) int64 {
-	t.Helper()
-	issue := &Issue{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		URL:            "https://github.com/example/repo/issues/" + title,
-		Title:          title,
-		Author:         "author",
-		State:          "open",
-		CreatedAt:      activity,
-		UpdatedAt:      activity,
-		LastActivityAt: activity,
-	}
-	id, err := d.UpsertIssue(context.Background(), issue)
-	require.NoErrorf(t, err, "UpsertIssue %d", number)
-	return id
-}
-
 func TestListActivity(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 
 	repoA := insertTestRepo(t, d, "alice", "alpha")
@@ -129,7 +106,7 @@ func TestListActivity(t *testing.T) {
 	t.Run("force push events appear in the activity feed", func(t *testing.T) {
 		assert := Assert.New(t)
 		d := openTestDB(t)
-		ctx := context.Background()
+		ctx := t.Context()
 		base := baseTime()
 		repoID := insertTestRepo(t, d, "alice", "alpha")
 		prID := insertTestMR(t, d, repoID, 1, "Rewrite branch", base)
@@ -312,7 +289,7 @@ func TestParseDBTime(t *testing.T) {
 func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
 	prID := insertTestMR(t, d, repoID, 1, "Rewrite timestamps", base)
@@ -364,7 +341,7 @@ func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
 	issueID := insertTestIssue(t, d, repoID, 7, "Rewrite timestamps", base)

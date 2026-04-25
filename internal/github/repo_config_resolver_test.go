@@ -36,7 +36,7 @@ func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
 	}
 
 	result := ResolveConfiguredRepos(
-		context.Background(),
+		t.Context(),
 		map[string]Client{"github.com": client},
 		[]config.Repo{{Owner: "acme", Name: "widgets-*"}},
 	)
@@ -79,7 +79,7 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 	}
 
 	result := ResolveConfiguredRepos(
-		context.Background(),
+		t.Context(),
 		map[string]Client{"github.com": client},
 		[]config.Repo{
 			{Owner: "acme", Name: "widgets"},
@@ -118,7 +118,7 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 	}
 
 	result := ResolveConfiguredRepos(
-		context.Background(),
+		t.Context(),
 		map[string]Client{"github.com": client},
 		[]config.Repo{
 			{Owner: "Acme", Name: "widgets"},
@@ -148,7 +148,7 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 	}
 
 	result := ResolveConfiguredRepos(
-		context.Background(),
+		t.Context(),
 		map[string]Client{"github.com": client},
 		[]config.Repo{{Owner: "org", Name: "foo"}},
 	)
@@ -171,7 +171,7 @@ func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
 	}
 
 	result := ResolveConfiguredRepos(
-		context.Background(),
+		t.Context(),
 		map[string]Client{"github.com": client},
 		[]config.Repo{{Owner: "acme", Name: "widgets-*"}},
 	)
@@ -198,7 +198,7 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 	}
 
 	result := ResolveConfiguredRepos(
-		context.Background(),
+		t.Context(),
 		map[string]Client{"github.com": client},
 		[]config.Repo{{Owner: "acme", Name: "widget-*"}},
 	)

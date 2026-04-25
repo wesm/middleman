@@ -1,7 +1,6 @@
 package gitclone
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,8 +76,7 @@ func TestListCommits(t *testing.T) {
 	mgr := New(filepath.Dir(bare), nil)
 
 	// The bare repo is at dir/remote.git, so host="" owner="" name="remote".
-	ctx := context.Background()
-	commits, err := mgr.ListCommits(ctx, "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 5)
 
@@ -98,7 +96,7 @@ func TestListCommits_EmptyRange(t *testing.T) {
 	bare, mergeBase, _ := setupCommitTestRepo(t)
 	mgr := New(filepath.Dir(bare), nil)
 
-	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", mergeBase, mergeBase)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, mergeBase)
 	require.NoError(t, err)
 	assert.Empty(t, commits)
 }
@@ -150,7 +148,7 @@ func TestListCommits_FirstParent(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 
 	// First-parent walk: pr commit 2, merge side branch, pr commit 1.
@@ -167,7 +165,7 @@ func TestParentOf(t *testing.T) {
 
 	bare, mergeBase, headSHA := setupCommitTestRepo(t)
 	mgr := New(filepath.Dir(bare), nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	commits, err := mgr.ListCommits(ctx, "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
@@ -198,7 +196,7 @@ func TestParentOf_RootCommit(t *testing.T) {
 	rootSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	parent, err := mgr.ParentOf(context.Background(), "", "", "remote", rootSHA)
+	parent, err := mgr.ParentOf(t.Context(), "", "", "remote", rootSHA)
 	require.NoError(t, err)
 	assert.Equal(t, emptyTreeSHA, parent)
 }
@@ -207,7 +205,7 @@ func TestParentOf_ErrorPropagation(t *testing.T) {
 	bare, _, _ := setupCommitTestRepo(t)
 	mgr := New(filepath.Dir(bare), nil)
 
-	_, err := mgr.ParentOf(context.Background(), "", "", "remote", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	_, err := mgr.ParentOf(t.Context(), "", "", "remote", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	require.Error(t, err)
 }
 
@@ -238,7 +236,7 @@ func TestListCommits_SingleCommit(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 1)
 	assert.Equal("only commit", commits[0].Message)
@@ -270,7 +268,7 @@ func TestListCommits_EmptyTreeMergeBase(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", emptyTreeSHA, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", emptyTreeSHA, headSHA)
 	require.NoError(err)
 	assert.Len(commits, 2)
 	assert.Equal("second", commits[0].Message)
@@ -309,7 +307,7 @@ func TestParentOf_MergeCommit(t *testing.T) {
 	mergeSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	parent, err := mgr.ParentOf(context.Background(), "", "", "remote", mergeSHA)
+	parent, err := mgr.ParentOf(t.Context(), "", "", "remote", mergeSHA)
 	require.NoError(err)
 	assert.Equal(firstParentSHA, parent)
 }
@@ -341,7 +339,7 @@ func TestListCommits_NulInMessage(t *testing.T) {
 	headSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Dir(bare), nil)
-	commits, err := mgr.ListCommits(context.Background(), "", "", "remote", mergeBase, headSHA)
+	commits, err := mgr.ListCommits(t.Context(), "", "", "remote", mergeBase, headSHA)
 	require.NoError(err)
 	require.Len(commits, 1)
 	assert.Contains(commits[0].Message, `\x00`)

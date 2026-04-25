@@ -1,9 +1,7 @@
 package db
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,29 +9,12 @@ import (
 
 func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, head, base, state string) int64 {
 	t.Helper()
-	now := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	mr := &MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     repoID*10000 + int64(number),
-		Number:         number,
-		Title:          "PR " + head,
-		Author:         "author",
-		State:          state,
-		HeadBranch:     head,
-		BaseBranch:     base,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	}
-	id, err := d.UpsertMergeRequest(context.Background(), mr)
-	require.NoError(t, err)
-	return id
+	return insertTestMRWithOptions(t, d, testMR(repoID, number, withMRTitle("PR "+head), withMRBranches(head, base), withMRState(state)))
 }
 
 func TestListPRsForStackDetection(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	// open PR — included
@@ -43,7 +24,7 @@ func TestListPRsForStackDetection(t *testing.T) {
 	// closed PR — excluded
 	insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "main", "closed")
 
-	prs, err := d.ListPRsForStackDetection(ctx, repoID)
+	prs, err := d.ListPRsForStackDetection(t.Context(), repoID)
 	require.NoError(t, err)
 	assert.Len(prs, 2)
 	numbers := []int{prs[0].Number, prs[1].Number}
@@ -54,7 +35,7 @@ func TestUpsertStackAndReplaceMembers(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID1 := insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", "open")
@@ -94,7 +75,7 @@ func TestDeleteStaleStacks(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	id1, err := d.UpsertStack(ctx, repoID, 1, "keep")
@@ -116,7 +97,7 @@ func TestDeleteStaleStacks(t *testing.T) {
 
 func TestListStacksWithMembers_MalformedFilter(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, bad := range []string{"noslash", "/bar", "foo/", "/", "foo/bar/baz"} {
 		_, _, err := d.ListStacksWithMembers(ctx, bad)
@@ -131,7 +112,7 @@ func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID := insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", "open")
@@ -174,7 +155,7 @@ func TestGetStackForPR(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	mrID1 := insertTestMRWithBranches(t, d, repoID, 10, "feature/a", "main", "open")

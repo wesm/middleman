@@ -28,7 +28,7 @@ func TestEventHub_UnsubscribeOnContextCancel(t *testing.T) {
 	hub := NewEventHub()
 	defer hub.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ch, _ := hub.Subscribe(ctx)
 	cancel()
 

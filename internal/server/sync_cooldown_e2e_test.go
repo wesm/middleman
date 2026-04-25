@@ -164,7 +164,7 @@ func startSyncCooldownE2EServer(
 
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(
-		context.Background(), clients, cfg.Repos,
+		t.Context(), clients, cfg.Repos,
 	)
 	trackers := map[string]*ghclient.RateTracker{
 		"github.com": ghclient.NewRateTracker(
@@ -204,11 +204,7 @@ func startSyncCooldownE2EServer(
 	}, 2*time.Second, 10*time.Millisecond)
 
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
-		)
-		defer cancel()
-		require.NoError(srv.Shutdown(ctx))
+		gracefulShutdown(t, srv)
 		select {
 		case err := <-serveErr:
 			require.ErrorIs(err, http.ErrServerClosed)
@@ -261,7 +257,7 @@ func waitForRepoSynced(
 	var repo *db.Repo
 	require.Eventually(func() bool {
 		got, err := database.GetRepoByOwnerName(
-			context.Background(), owner, name,
+			t.Context(), owner, name,
 		)
 		if err != nil || got == nil || got.LastSyncCompletedAt == nil {
 			return false

@@ -21,7 +21,7 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithSyncBudget(context.Background())
+	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
 		ctx, "GET", "https://api.github.com/repos/o/n/pulls", nil,
 	)
@@ -43,7 +43,7 @@ func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
 	}
 
 	req, _ := http.NewRequestWithContext(
-		context.Background(), "GET",
+		t.Context(), "GET",
 		"https://api.github.com/repos/o/n/pulls", nil,
 	)
 	_, err := bt.RoundTrip(req)
@@ -64,7 +64,7 @@ func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithSyncBudget(context.Background())
+	ctx := WithSyncBudget(t.Context())
 	for range 5 {
 		req, _ := http.NewRequestWithContext(
 			ctx, "GET",
@@ -88,7 +88,7 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithSyncBudget(context.Background())
+	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
 		ctx, "GET",
 		"https://api.github.com/repos/o/n/pulls", nil,
@@ -102,7 +102,7 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
 	type customKey struct{}
 	base := context.WithValue(
-		context.Background(), customKey{}, "hello",
+		t.Context(), customKey{}, "hello",
 	)
 	ctx := WithSyncBudget(base)
 

@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,7 +49,7 @@ func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
 	// still runs even if the leak makes a subsequent git operation
 	// crash partway through — a regressed strip helper tends to
 	// blow up at `git commit` long before returning.
-	_, setupErr := SetupDiffRepo(context.Background(), fixtureDir, database)
+	_, setupErr := SetupDiffRepo(t.Context(), fixtureDir, database)
 
 	after, err := os.ReadFile(hostConfig)
 	r.NoError(err)

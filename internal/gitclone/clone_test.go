@@ -3,7 +3,6 @@
 package gitclone
 
 import (
-	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -71,7 +70,7 @@ func TestEnsureClone(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	err := mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 
@@ -96,9 +95,8 @@ func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		t.Context(), "github.com", "testowner", "testrepo", remote))
 
 	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
 	refspecs := getFetchRefspecs(t, clonePath)
@@ -118,7 +116,7 @@ func TestEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
@@ -146,7 +144,7 @@ func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
@@ -191,7 +189,7 @@ func TestEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
@@ -223,7 +221,7 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
@@ -302,7 +300,7 @@ func TestEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
 	t.Setenv("GIT_SSH_COMMAND", "/bin/false")
 	t.Setenv("SSH_ASKPASS", "/bin/false")
 
-	err := mgr.EnsureClone(context.Background(), "github.com", "testowner", "testrepo", remote)
+	err := mgr.EnsureClone(t.Context(), "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 }
 
@@ -314,7 +312,7 @@ func TestMergeBase(t *testing.T) {
 	clonesDir := t.TempDir()
 	mgr := New(clonesDir, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 

@@ -220,7 +220,7 @@ func TestNewResolveTokenError(t *testing.T) {
 // propagates the caller's ctx to ResolveToken so a slow or hung
 // token provider can be bounded.
 func TestNewWithContextCancelsResolveToken(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
 	_, err := NewWithContext(ctx, Options{
@@ -237,7 +237,7 @@ func TestNewWithContextCancelsResolveToken(t *testing.T) {
 }
 
 // TestNewWithContextNilCtx verifies a nil ctx is treated as
-// context.Background() so ResolveToken callbacks that call
+// t.Context() so ResolveToken callbacks that call
 // ctx.Err() / ctx.Done() / context.WithTimeout(ctx, ...) do not
 // panic. Regression test for the old New(opts) contract.
 func TestNewWithContextNilCtx(t *testing.T) {
@@ -479,7 +479,7 @@ func TestStopSyncConcurrent(t *testing.T) {
 }
 
 // TestInstancePurgeOtherHostsWithContextNilCtx verifies a nil
-// ctx is normalized to context.Background() at the API
+// ctx is normalized to t.Context() at the API
 // boundary so database/sql does not panic.
 func TestInstancePurgeOtherHostsWithContextNilCtx(t *testing.T) {
 	inst, err := New(Options{
@@ -495,7 +495,7 @@ func TestInstancePurgeOtherHostsWithContextNilCtx(t *testing.T) {
 }
 
 // TestInstanceSetWorktreeLinksWithContextNilCtx verifies a nil
-// ctx is normalized to context.Background() at the API
+// ctx is normalized to t.Context() at the API
 // boundary so database/sql does not panic.
 func TestInstanceSetWorktreeLinksWithContextNilCtx(t *testing.T) {
 	inst, err := New(Options{

@@ -1,9 +1,7 @@
 package db
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,42 +11,16 @@ func TestResolveItemNumber(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
 	require.NoError(err)
 
-	now := time.Now().UTC().Truncate(time.Second)
-
 	// Seed a PR at number 10
-	_, err = database.UpsertMergeRequest(ctx, &MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     10000,
-		Number:         10,
-		URL:            "https://github.com/acme/widget/pull/10",
-		Title:          "PR ten",
-		Author:         "user",
-		State:          "open",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	})
-	require.NoError(err)
+	insertTestMRWithOptions(t, database, testMR(repoID, 10, withMRTitle("PR ten")))
 
 	// Seed an issue at number 20
-	_, err = database.UpsertIssue(ctx, &Issue{
-		RepoID:         repoID,
-		PlatformID:     20000,
-		Number:         20,
-		URL:            "https://github.com/acme/widget/issues/20",
-		Title:          "Issue twenty",
-		Author:         "user",
-		State:          "open",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	})
-	require.NoError(err)
+	insertTestIssueWithOptions(t, database, testIssue(repoID, 20, withIssueTitle("Issue twenty")))
 
 	// Resolve PR
 	itemType, found, err := database.ResolveItemNumber(ctx, repoID, 10)
