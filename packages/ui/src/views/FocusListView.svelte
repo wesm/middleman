@@ -103,8 +103,11 @@
     owner: string,
     name: string,
     number: number,
+    platformHost: string,
   ): void {
-    navigate(`/focus/issue/${owner}/${name}/${number}`);
+    navigate(
+      `/focus/issue/${owner}/${name}/${number}?platform_host=${encodeURIComponent(platformHost)}`,
+    );
   }
 
   // Filter state accessors for PRs.
@@ -311,6 +314,7 @@
                 issue.repo_owner ?? "",
                 issue.repo_name ?? "",
                 issue.Number,
+                issue.platform_host,
               )}
           />
         {/each}

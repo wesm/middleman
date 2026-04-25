@@ -110,15 +110,6 @@ export {
   default as FocusListView,
 } from "./views/FocusListView.svelte";
 export {
-  default as WorkspacesView,
-} from "./views/WorkspacesView.svelte";
-export {
-  default as WorkspacePanelView,
-} from "./views/WorkspacePanelView.svelte";
-export {
-  default as WorkspaceSidebarView,
-} from "./views/WorkspaceSidebarView.svelte";
-export {
   default as ActionButton,
 } from "./components/shared/ActionButton.svelte";
 export {

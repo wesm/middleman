@@ -8,9 +8,6 @@
     KanbanBoardView,
     ReviewsView,
     FocusListView,
-    WorkspacesView,
-    WorkspacePanelView,
-    WorkspaceSidebarView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
@@ -67,17 +64,12 @@
     getIssueActions,
     getActiveWorktreeKey,
     invokeAction,
-    getWorkspaceData,
     emitWorkspaceCommand,
-    initWorkspaceBridge,
     isHeaderHidden,
     isStatusBarHidden,
     getInitialRoute,
-    getSidebarWidth as getEmbeddedSidebarWidth,
     emitLayoutChanged,
-    getEmbedActivePlatformHost,
-    getEmbedPanelMode,
-    getEmbedHoverCardsEnabled,
+    initWorkspaceBridge,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
 
@@ -204,6 +196,7 @@
           route.selected.owner,
           route.selected.name,
           route.selected.number,
+          route.selected.platformHost,
         );
       } else {
         stores.issues.clearIssueSelection();
@@ -213,6 +206,7 @@
 
   let drawerItem = $state<{
     itemType: "pr" | "issue";
+    platformHost?: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -249,6 +243,7 @@
       item.item_type === "issue" ? "issue" : "pr";
     drawerItem = {
       itemType,
+      platformHost: item.platform_host,
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,
@@ -324,8 +319,6 @@
     if (page === "design-system") return;
     if (page === "reviews") return;
     if (page === "workspaces") return;
-    if (page === "workspaces-panel") return;
-    if (page === "workspaces-sidebar") return;
 
     if (page === "activity") {
       if (
@@ -419,6 +412,7 @@
   onError={showFlash}
   onNavigate={(e) =>
     navigate(typeof e === "string" ? e : e.path)}
+  onWorkspaceCommand={emitWorkspaceCommand}
   actions={{
     pull: getPullRequestActions().map((a) => ({
       id: a.id,
@@ -492,30 +486,12 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              platformHost: r.platformHost,
             }}
             isSidebarCollapsed={true}
             hideSidebar={true}
           />
         {/if}
-      </main>
-    {/if}
-  {:else if getPage() === "workspaces-sidebar"}
-    {@const r = getRoute()}
-    {#if r.page === "workspaces-sidebar"}
-      <FlashBanner />
-      <main class="focus-layout">
-        <WorkspaceSidebarView
-          platformHost={r.platformHost}
-          owner={r.owner}
-          name={r.name}
-          number={r.number}
-          branch={r.branch}
-          tab={r.tab}
-          basePath={getBasePath()}
-          activePlatformHost={getEmbedActivePlatformHost()}
-          navigate={(path) => navigate(path)}
-          onWorkspaceCommand={emitWorkspaceCommand}
-        />
       </main>
     {/if}
   {:else}
@@ -566,8 +542,8 @@
       {:else if getPage() === "issues"}
         {@const selectedIssue =
           stores?.issues.getSelectedIssue() ?? null}
-        <IssueListView
-          {selectedIssue}
+          <IssueListView
+            {selectedIssue}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={handleSidebarResize}
@@ -579,75 +555,8 @@
         {:else}
           <ReviewsView />
         {/if}
-      {:else if getPage() === "workspaces-panel"}
-        {@const route = getRoute()}
-        {#if route.page === "workspaces-panel"}
-          <WorkspacePanelView
-            view={route.view}
-            platformHost={"platformHost" in route ? route.platformHost : undefined}
-            owner={"owner" in route ? route.owner : undefined}
-            name={"name" in route ? route.name : undefined}
-            number={"number" in route ? route.number : undefined}
-            emptyReason={"emptyReason" in route ? route.emptyReason : undefined}
-            activePlatformHost={
-              getEmbedPanelMode()
-                ? getEmbedActivePlatformHost()
-                : ("platformHost" in route
-                  ? route.platformHost
-                  : null)
-            }
-            onSelectPR={(n) => {
-              if ("platformHost" in route) {
-                navigate(
-                  `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}/${n}`,
-                );
-              }
-            }}
-            onBack={() => {
-              if ("platformHost" in route) {
-                navigate(
-                  `/workspaces/panel/${route.platformHost}/${route.owner}/${route.name}`,
-                );
-              }
-            }}
-            onCreateWorktree={(n) => {
-              if ("owner" in route) {
-                emitWorkspaceCommand("createWorktreeFromPR", {
-                  number: n,
-                  owner: route.owner,
-                  name: route.name,
-                  platformHost: route.platformHost,
-                });
-              }
-            }}
-            onNavigateWorktree={(key) => {
-              emitWorkspaceCommand("navigateWorktree", {
-                worktreeKey: key,
-              });
-            }}
-            onRefresh={() => {
-              emitWorkspaceCommand("refreshPulls", {});
-            }}
-            onRevealHostSettings={() => {
-              emitWorkspaceCommand("revealHostSettings", {});
-            }}
-          />
-        {/if}
       {:else if getPage() === "workspaces"}
-        {#if getWorkspaceData()}
-          <WorkspacesView
-            workspaceData={getWorkspaceData()}
-            hoverCardsEnabled={getEmbedHoverCardsEnabled()}
-            onCommand={emitWorkspaceCommand}
-            sidebarWidth={getEmbeddedSidebarWidth()}
-            onSidebarResize={(width) => emitLayoutChanged({
-              sidebar: { width },
-              pinnedPanel: { width: 0, visible: false },
-            })}
-          />
-        {:else}
-          <WorkspaceTerminalView workspaceId="" />
-        {/if}
+        <WorkspaceTerminalView workspaceId="" />
       {:else if getPage() === "terminal"}
         {@const r = getRoute()}
         {#if r.page === "terminal"}

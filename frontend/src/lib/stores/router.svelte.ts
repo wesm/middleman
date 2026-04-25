@@ -2,29 +2,10 @@ export type Route =
   | { page: "activity" }
   | { page: "design-system" }
   | { page: "workspaces" }
-  | { page: "workspaces-panel"; view: "list"; platformHost: string; owner: string; name: string }
-  | {
-      page: "workspaces-panel";
-      view: "detail";
-      platformHost: string;
-      owner: string;
-      name: string;
-      number: number;
-    }
-  | { page: "workspaces-panel"; view: "empty"; emptyReason: string }
-  | {
-      page: "workspaces-sidebar";
-      platformHost: string;
-      owner: string;
-      name: string;
-      number: number;
-      branch?: string;
-      tab?: "pr" | "reviews";
-    }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
-  | { page: "issues"; selected?: { owner: string; name: string; number: number } }
+  | { page: "issues"; selected?: { owner: string; name: string; number: number; platformHost?: string | undefined } }
   | { page: "settings" }
-  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number }
+  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number; platformHost?: string | undefined }
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
@@ -51,6 +32,10 @@ function stripBase(path: string): string {
     return path.slice(basePrefix.length) || "/";
   }
   return path;
+}
+
+function currentLocationPath(): string {
+  return window.location.pathname + window.location.search;
 }
 
 function parseRoute(fullPath: string): Route {
@@ -89,77 +74,20 @@ function parseRoute(fullPath: string): Route {
       /^\/focus\/issue\/([^/]+)\/([^/]+)\/(\d+)$/,
     );
     if (issueMatch) {
+      const sp = new URLSearchParams(search);
+      const platformHost = sp.get("platform_host") ?? undefined;
       return {
         page: "focus",
         itemType: "issue",
         owner: issueMatch[1]!,
         name: issueMatch[2]!,
         number: parseInt(issueMatch[3]!, 10),
+        ...(platformHost && { platformHost }),
       };
     }
   }
   if (path === "/design-system") {
     return { page: "design-system" };
-  }
-  if (path.startsWith("/workspaces/sidebar/")) {
-    const tail = path.slice("/workspaces/sidebar/".length);
-    const parts = tail.split("/");
-    if (parts.length === 4) {
-      const [platformHost, owner, name, numberStr] = parts as [
-        string, string, string, string,
-      ];
-      if (platformHost && owner && name && /^\d+$/.test(numberStr)) {
-        const number = Number.parseInt(numberStr, 10);
-        const sp = new URLSearchParams(search);
-        const branch = sp.get("branch") ?? undefined;
-        const tabRaw = sp.get("tab");
-        const tab =
-          tabRaw === "pr" || tabRaw === "reviews" ? tabRaw : undefined;
-        const r: Route = {
-          page: "workspaces-sidebar",
-          platformHost, owner, name, number,
-        };
-        if (branch) r.branch = branch;
-        if (tab) r.tab = tab;
-        return r;
-      }
-    }
-  }
-  if (path.startsWith("/workspaces/panel")) {
-    const rest = path.slice("/workspaces/panel".length);
-    if (rest.startsWith("/empty/")) {
-      const reason = rest.slice("/empty/".length);
-      return {
-        page: "workspaces-panel",
-        view: "empty",
-        emptyReason: reason,
-      };
-    }
-    const detail = rest.match(
-      /^\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
-    );
-    if (detail) {
-      return {
-        page: "workspaces-panel",
-        view: "detail",
-        platformHost: detail[1]!,
-        owner: detail[2]!,
-        name: detail[3]!,
-        number: parseInt(detail[4]!, 10),
-      };
-    }
-    const list = rest.match(
-      /^\/([^/]+)\/([^/]+)\/([^/]+)$/,
-    );
-    if (list) {
-      return {
-        page: "workspaces-panel",
-        view: "list",
-        platformHost: list[1]!,
-        owner: list[2]!,
-        name: list[3]!,
-      };
-    }
   }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
@@ -191,9 +119,16 @@ function parseRoute(fullPath: string): Route {
   if (path.startsWith("/issues")) {
     const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
     if (match) {
+      const sp = new URLSearchParams(search);
+      const platformHost = sp.get("platform_host") ?? undefined;
       return {
         page: "issues",
-        selected: { owner: match[1]!, name: match[2]!, number: parseInt(match[3]!, 10) },
+        selected: {
+          owner: match[1]!,
+          name: match[2]!,
+          number: parseInt(match[3]!, 10),
+          ...(platformHost && { platformHost }),
+        },
       };
     }
     return { page: "issues" };
@@ -222,7 +157,7 @@ function parseRoute(fullPath: string): Route {
 }
 
 let route = $state<Route>(
-  parseRoute(window.location.pathname + window.location.search),
+  parseRoute(currentLocationPath()),
 );
 
 // Fire onRouteChange for the initial route after the module loads.
@@ -237,7 +172,7 @@ export function getRoute(): Route {
 
 export function getPage():
   "activity" | "design-system" | "pulls" | "issues" | "settings" | "focus" | "reviews"
-  | "workspaces" | "workspaces-panel" | "workspaces-sidebar" | "terminal" {
+  | "workspaces" | "terminal" {
   return route.page;
 }
 
@@ -250,13 +185,17 @@ export function buildItemRoute(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string,
 ): string {
+  const issueQuery = type === "issue" && platformHost
+    ? `?platform_host=${encodeURIComponent(platformHost)}`
+    : "";
   if (isFocusMode()) {
-    return `/focus/${type}/${owner}/${name}/${number}`;
+    return `/focus/${type}/${owner}/${name}/${number}${issueQuery}`;
   }
   return type === "pr"
     ? `/pulls/${owner}/${name}/${number}`
-    : `/issues/${owner}/${name}/${number}`;
+    : `/issues/${owner}/${name}/${number}${issueQuery}`;
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {
@@ -286,8 +225,6 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "reviews";
   } else if (
     r.page === "workspaces" ||
-    r.page === "workspaces-panel" ||
-    r.page === "workspaces-sidebar" ||
     r.page === "terminal"
   ) {
     navType = "workspaces";
@@ -352,18 +289,10 @@ export function replaceUrl(path: string): void {
   fireRouteChange(route);
 }
 
-export function isWorkspaceSidebarRoute(
-  r: Route = route,
-): r is Route & { page: "workspaces-sidebar" } {
-  return r.page === "workspaces-sidebar";
-}
-
 // Listen for browser back/forward.
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    route = parseRoute(
-      window.location.pathname + window.location.search,
-    );
+    route = parseRoute(currentLocationPath());
     fireRouteChange(route);
   });
 }

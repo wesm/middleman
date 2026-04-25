@@ -7,6 +7,7 @@
 
   type DrawerItem = {
     itemType: "pr" | "issue";
+    platformHost?: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -40,6 +41,7 @@
       item.item_type === "issue" ? "issue" : "pr";
     const entry: DrawerItem = {
       itemType,
+      platformHost: item.platform_host,
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,
@@ -63,6 +65,7 @@
   {#if activeDrawer}
     <DetailDrawer
       itemType={activeDrawer.itemType}
+      platformHost={activeDrawer.platformHost}
       owner={activeDrawer.owner}
       name={activeDrawer.name}
       number={activeDrawer.number}

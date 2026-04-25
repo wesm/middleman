@@ -41,7 +41,7 @@ type mergeRequestDetailResponse struct {
 	Warnings         []string                 `json:"warnings,omitempty"`
 	DetailLoaded     bool                     `json:"detail_loaded"`
 	DetailFetchedAt  string                   `json:"detail_fetched_at,omitempty"`
-	Workspace        *workspaceMRRef          `json:"workspace,omitempty"`
+	Workspace        *workspaceRef            `json:"workspace,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{
@@ -68,6 +68,7 @@ type issueDetailResponse struct {
 	RepoName        string          `json:"repo_name"`
 	DetailLoaded    bool            `json:"detail_loaded"`
 	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
+	Workspace       *workspaceRef   `json:"workspace,omitempty"`
 }
 
 type commentAutocompleteResponse struct {
@@ -136,13 +137,19 @@ type commitsResponse struct {
 	Commits []commitResponse `json:"commits" doc:"Commits in newest-first order"`
 }
 
+// workspaceResponse describes one middleman-managed workspace.
+//
+// This payload exists so the UI can reopen a durable local workspace and render
+// the correct item-specific presentation around it. It represents middleman's
+// own persisted workspace model, not an arbitrary host worktree inventory.
 type workspaceResponse struct {
 	ID                 string  `json:"id"`
 	PlatformHost       string  `json:"platform_host"`
 	RepoOwner          string  `json:"repo_owner"`
 	RepoName           string  `json:"repo_name"`
-	MRNumber           int     `json:"mr_number"`
-	MRHeadRef          string  `json:"mr_head_ref"`
+	ItemType           string  `json:"item_type"`
+	ItemNumber         int     `json:"item_number"`
+	GitHeadRef         string  `json:"git_head_ref"`
 	WorktreePath       string  `json:"worktree_path"`
 	TmuxSession        string  `json:"tmux_session"`
 	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
@@ -161,11 +168,18 @@ type workspaceResponse struct {
 	MRDeletions        *int    `json:"mr_deletions,omitempty"`
 }
 
-type workspaceMRRef struct {
+// workspaceRef is the lightweight link from item detail APIs back to an
+// existing middleman workspace.
+//
+// Its purpose is to let PR and issue detail screens switch from "create
+// workspace" to "open workspace" without embedding the full workspace payload.
+type workspaceRef struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
+// toWorkspaceResponse maps the DB workspace summary into the API shape used by
+// the workspaces page and terminal view.
 func toWorkspaceResponse(
 	s *db.WorkspaceSummary,
 ) workspaceResponse {
@@ -174,8 +188,9 @@ func toWorkspaceResponse(
 		PlatformHost:       s.PlatformHost,
 		RepoOwner:          s.RepoOwner,
 		RepoName:           s.RepoName,
-		MRNumber:           s.MRNumber,
-		MRHeadRef:          s.MRHeadRef,
+		ItemType:           s.ItemType,
+		ItemNumber:         s.ItemNumber,
+		GitHeadRef:         s.GitHeadRef,
 		WorktreePath:       s.WorktreePath,
 		TmuxSession:        s.TmuxSession,
 		Status:             s.Status,
@@ -233,6 +248,7 @@ type activityItemResponse struct {
 	ID           string `json:"id"`
 	Cursor       string `json:"cursor"`
 	ActivityType string `json:"activity_type"`
+	PlatformHost string `json:"platform_host"`
 	RepoOwner    string `json:"repo_owner"`
 	RepoName     string `json:"repo_name"`
 	ItemType     string `json:"item_type"`

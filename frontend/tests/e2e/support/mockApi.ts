@@ -119,6 +119,7 @@ const issues = [
     LastActivityAt: "2026-03-30T14:00:00Z",
     ClosedAt: null,
     Starred: false,
+    platform_host: "github.com",
     repo_owner: "acme",
     repo_name: "widgets",
   },
@@ -227,6 +228,64 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/issues") {
       await fulfillJson(route, issues);
+      return;
+    }
+
+    const singleIssueMatch = pathname.match(
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)$/,
+    );
+    if (method === "GET" && singleIssueMatch) {
+      const issueOwner = singleIssueMatch[1];
+      const issueName = singleIssueMatch[2];
+      const issueNumber = parseInt(singleIssueMatch[3]!, 10);
+      const issue = issues.find(
+        (candidate) =>
+          candidate.repo_owner === issueOwner &&
+          candidate.repo_name === issueName &&
+          candidate.Number === issueNumber,
+      );
+      if (!issue) {
+        await fulfillJson(route, { title: "Not found" }, 404);
+        return;
+      }
+      await fulfillJson(route, {
+        issue,
+        events: [],
+        platform_host: issue.platform_host,
+        repo_owner: issue.repo_owner,
+        repo_name: issue.repo_name,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      });
+      return;
+    }
+
+    const syncIssueMatch = pathname.match(
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)\/sync$/,
+    );
+    if (method === "POST" && syncIssueMatch) {
+      const issueOwner = syncIssueMatch[1];
+      const issueName = syncIssueMatch[2];
+      const issueNumber = parseInt(syncIssueMatch[3]!, 10);
+      const issue = issues.find(
+        (candidate) =>
+          candidate.repo_owner === issueOwner &&
+          candidate.repo_name === issueName &&
+          candidate.Number === issueNumber,
+      );
+      if (!issue) {
+        await fulfillJson(route, { title: "Not found" }, 404);
+        return;
+      }
+      await fulfillJson(route, {
+        issue,
+        events: [],
+        platform_host: issue.platform_host,
+        repo_owner: issue.repo_owner,
+        repo_name: issue.repo_name,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      });
       return;
     }
 

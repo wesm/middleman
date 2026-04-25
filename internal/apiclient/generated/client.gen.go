@@ -38,6 +38,7 @@ type ActivityItemResponse struct {
 	ItemTitle    string `json:"item_title"`
 	ItemType     string `json:"item_type"`
 	ItemUrl      string `json:"item_url"`
+	PlatformHost string `json:"platform_host"`
 	RepoName     string `json:"repo_name"`
 	RepoOwner    string `json:"repo_owner"`
 }
@@ -95,6 +96,15 @@ type CommitsResponse struct {
 
 	// Commits Commits in newest-first order
 	Commits *[]CommitResponse `json:"commits"`
+}
+
+// CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
+type CreateIssueWorkspaceInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string `json:"$schema,omitempty"`
+	GitHeadRef          *string `json:"git_head_ref,omitempty"`
+	PlatformHost        string  `json:"platform_host"`
+	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
 // CreateWorkspaceInputBody defines model for CreateWorkspaceInputBody.
@@ -183,8 +193,9 @@ type FilesResponse struct {
 // GithubStateInputBody defines model for GithubStateInputBody.
 type GithubStateInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	State  string  `json:"state"`
+	Schema       *string `json:"$schema,omitempty"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	State        string  `json:"state"`
 }
 
 // GithubStateOutputBody defines model for GithubStateOutputBody.
@@ -236,6 +247,7 @@ type IssueDetailResponse struct {
 	PlatformHost    string        `json:"platform_host"`
 	RepoName        string        `json:"repo_name"`
 	RepoOwner       string        `json:"repo_owner"`
+	Workspace       *WorkspaceRef `json:"workspace,omitempty"`
 }
 
 // IssueEvent defines model for IssueEvent.
@@ -385,7 +397,7 @@ type MergeRequestDetailResponse struct {
 	RepoOwner        string                   `json:"repo_owner"`
 	Warnings         *[]string                `json:"warnings,omitempty"`
 	WorkflowApproval WorkflowApprovalResponse `json:"workflow_approval"`
-	Workspace        *WorkspaceMRRef          `json:"workspace,omitempty"`
+	Workspace        *WorkspaceRef            `json:"workspace,omitempty"`
 	WorktreeLinks    *[]WorktreeLinkResponse  `json:"worktree_links"`
 }
 
@@ -452,8 +464,9 @@ type PostCommentInputBody struct {
 // PostIssueCommentInputBody defines model for PostIssueCommentInputBody.
 type PostIssueCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Body   string  `json:"body"`
+	Schema       *string `json:"$schema,omitempty"`
+	Body         string  `json:"body"`
+	PlatformHost *string `json:"platform_host,omitempty"`
 }
 
 // RateLimitHostStatus defines model for RateLimitHostStatus.
@@ -563,11 +576,12 @@ type StackResponse struct {
 // StarredRequest defines model for StarredRequest.
 type StarredRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string `json:"$schema,omitempty"`
-	ItemType string  `json:"item_type"`
-	Name     string  `json:"name"`
-	Number   int64   `json:"number"`
-	Owner    string  `json:"owner"`
+	Schema       *string `json:"$schema,omitempty"`
+	ItemType     string  `json:"item_type"`
+	Name         string  `json:"name"`
+	Number       int64   `json:"number"`
+	Owner        string  `json:"owner"`
+	PlatformHost *string `json:"platform_host,omitempty"`
 }
 
 // SyncStatus defines model for SyncStatus.
@@ -588,8 +602,8 @@ type WorkflowApprovalResponse struct {
 	Required bool  `json:"required"`
 }
 
-// WorkspaceMRRef defines model for WorkspaceMRRef.
-type WorkspaceMRRef struct {
+// WorkspaceRef defines model for WorkspaceRef.
+type WorkspaceRef struct {
 	Id     string `json:"id"`
 	Status string `json:"status"`
 }
@@ -600,13 +614,14 @@ type WorkspaceResponse struct {
 	Schema             *string `json:"$schema,omitempty"`
 	CreatedAt          string  `json:"created_at"`
 	ErrorMessage       *string `json:"error_message,omitempty"`
+	GitHeadRef         string  `json:"git_head_ref"`
 	Id                 string  `json:"id"`
+	ItemNumber         int64   `json:"item_number"`
+	ItemType           string  `json:"item_type"`
 	MrAdditions        *int64  `json:"mr_additions,omitempty"`
 	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
 	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
-	MrHeadRef          string  `json:"mr_head_ref"`
 	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MrNumber           int64   `json:"mr_number"`
 	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MrState            *string `json:"mr_state,omitempty"`
 	MrTitle            *string `json:"mr_title,omitempty"`
@@ -666,6 +681,16 @@ type GetReposByOwnerByNameCommentAutocompleteParams struct {
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GetReposByOwnerByNameIssuesByNumberParams defines parameters for GetReposByOwnerByNameIssuesByNumber.
+type GetReposByOwnerByNameIssuesByNumberParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// PostReposByOwnerByNameIssuesByNumberSyncParams defines parameters for PostReposByOwnerByNameIssuesByNumberSync.
+type PostReposByOwnerByNameIssuesByNumberSyncParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
 type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -695,6 +720,9 @@ type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
 
 // SetIssueGithubStateJSONRequestBody defines body for SetIssueGithubState for application/json ContentType.
 type SetIssueGithubStateJSONRequestBody = GithubStateInputBody
+
+// CreateIssueWorkspaceJSONRequestBody defines body for CreateIssueWorkspace for application/json ContentType.
+type CreateIssueWorkspaceJSONRequestBody = CreateIssueWorkspaceInputBody
 
 // EditPrContentJSONRequestBody defines body for EditPrContent for application/json ContentType.
 type EditPrContentJSONRequestBody = EditPRContentInputBody
@@ -818,7 +846,7 @@ type ClientInterface interface {
 	GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNameIssuesByNumber request
-	GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostIssueCommentWithBody request with any body
 	PostIssueCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -831,7 +859,12 @@ type ClientInterface interface {
 	SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNameIssuesByNumberSync request
-	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueWorkspaceWithBody request with any body
+	CreateIssueWorkspaceWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssueWorkspace(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNameItemsByNumberResolve request
 	PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1014,8 +1047,8 @@ func (c *Client) GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, o
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNameIssuesByNumberRequest(c.Server, owner, name, number)
+func (c *Client) GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNameIssuesByNumberRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1074,8 +1107,32 @@ func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name str
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNameIssuesByNumberSyncRequest(c.Server, owner, name, number)
+func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNameIssuesByNumberSyncRequest(c.Server, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWorkspaceWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueWorkspaceRequestWithBody(c.Server, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWorkspace(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueWorkspaceRequest(c.Server, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2084,7 +2141,7 @@ func NewGetReposByOwnerByNameCommentAutocompleteRequest(server string, owner str
 }
 
 // NewGetReposByOwnerByNameIssuesByNumberRequest generates requests for GetReposByOwnerByNameIssuesByNumber
-func NewGetReposByOwnerByNameIssuesByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewGetReposByOwnerByNameIssuesByNumberRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2121,6 +2178,28 @@ func NewGetReposByOwnerByNameIssuesByNumberRequest(server string, owner string, 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -2254,7 +2333,7 @@ func NewSetIssueGithubStateRequestWithBody(server string, owner string, name str
 }
 
 // NewPostReposByOwnerByNameIssuesByNumberSyncRequest generates requests for PostReposByOwnerByNameIssuesByNumberSync
-func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2293,10 +2372,93 @@ func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner str
 		return nil, err
 	}
 
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewCreateIssueWorkspaceRequest calls the generic CreateIssueWorkspace builder with application/json body
+func NewCreateIssueWorkspaceRequest(server string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueWorkspaceRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateIssueWorkspaceRequestWithBody generates requests for CreateIssueWorkspace with any type of body
+func NewCreateIssueWorkspaceRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/workspace", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3656,7 +3818,7 @@ type ClientWithResponsesInterface interface {
 	GetReposByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameCommentAutocompleteResponse, error)
 
 	// GetReposByOwnerByNameIssuesByNumberWithResponse request
-	GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error)
+	GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error)
 
 	// PostIssueCommentWithBodyWithResponse request with any body
 	PostIssueCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
@@ -3669,7 +3831,12 @@ type ClientWithResponsesInterface interface {
 	SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
 
 	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
-	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
+	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
+
+	// CreateIssueWorkspaceWithBodyWithResponse request with any body
+	CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
+
+	CreateIssueWorkspaceWithResponse(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
 
 	// PostReposByOwnerByNameItemsByNumberResolveWithResponse request
 	PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error)
@@ -4015,6 +4182,29 @@ func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueWorkspaceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4678,8 +4868,8 @@ func (c *ClientWithResponses) GetReposByOwnerByNameCommentAutocompleteWithRespon
 }
 
 // GetReposByOwnerByNameIssuesByNumberWithResponse request returning *GetReposByOwnerByNameIssuesByNumberResponse
-func (c *ClientWithResponses) GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error) {
-	rsp, err := c.GetReposByOwnerByNameIssuesByNumber(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error) {
+	rsp, err := c.GetReposByOwnerByNameIssuesByNumber(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -4721,12 +4911,29 @@ func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Contex
 }
 
 // PostReposByOwnerByNameIssuesByNumberSyncWithResponse request returning *PostReposByOwnerByNameIssuesByNumberSyncResponse
-func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error) {
-	rsp, err := c.PostReposByOwnerByNameIssuesByNumberSync(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error) {
+	rsp, err := c.PostReposByOwnerByNameIssuesByNumberSync(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp)
+}
+
+// CreateIssueWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateIssueWorkspaceResponse
+func (c *ClientWithResponses) CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
+	rsp, err := c.CreateIssueWorkspaceWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueWorkspaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueWorkspaceWithResponse(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
+	rsp, err := c.CreateIssueWorkspace(ctx, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueWorkspaceResponse(rsp)
 }
 
 // PostReposByOwnerByNameItemsByNumberResolveWithResponse request returning *PostReposByOwnerByNameItemsByNumberResolveResponse
@@ -5385,6 +5592,39 @@ func ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp *http.Response) (
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueWorkspaceResponse parses an HTTP response from a CreateIssueWorkspaceWithResponse call
+func ParseCreateIssueWorkspaceResponse(rsp *http.Response) (*CreateIssueWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

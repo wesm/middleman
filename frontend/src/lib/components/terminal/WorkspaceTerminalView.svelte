@@ -14,8 +14,9 @@
     platform_host: string;
     repo_owner: string;
     repo_name: string;
-    mr_number: number;
-    mr_head_ref: string;
+    item_type: "pull_request" | "issue";
+    item_number: number;
+    git_head_ref: string;
     worktree_path: string;
     tmux_session: string;
     status: string;
@@ -49,7 +50,7 @@
   const WORKSPACE_LIST_WIDTH_KEY =
     "middleman-workspace-list-sidebar-width";
 
-  type SidebarTab = "pr" | "reviews";
+  type SidebarTab = "pr" | "issue" | "reviews";
 
   const MIN_WORKSPACE_LIST_WIDTH = 220;
   const DEFAULT_WORKSPACE_LIST_WIDTH = 260;
@@ -79,6 +80,7 @@
 
   function loadSidebarTab(): SidebarTab {
     const v = localStorage.getItem(SIDEBAR_TAB_KEY);
+    if (v === "issue") return "issue";
     return v === "reviews" ? "reviews" : "pr";
   }
 
@@ -228,7 +230,23 @@
   });
 
   function displayName(ws: Workspace): string {
-    return ws.mr_title ?? ws.mr_head_ref;
+    return ws.mr_title ?? ws.git_head_ref;
+  }
+
+  function defaultSidebarTab(
+    ws: Workspace,
+  ): SidebarTab {
+    return ws.item_type === "issue" ? "issue" : "pr";
+  }
+
+  function isSidebarTabSupported(
+    ws: Workspace,
+    tab: SidebarTab,
+  ): boolean {
+    if (ws.item_type === "issue") {
+      return tab === "issue";
+    }
+    return tab === "pr" || tab === "reviews";
   }
 
   async function fetchWorkspace(): Promise<void> {
@@ -335,8 +353,15 @@
       actionError = `Delete failed (${res.status})`;
       return;
     }
-    navigate("/pulls");
+    navigate("/workspaces");
   }
+
+  $effect(() => {
+    if (!workspace) return;
+    if (!isSidebarTabSupported(workspace, sidebarTab)) {
+      sidebarTab = defaultSidebarTab(workspace);
+    }
+  });
 
   onMount(() => {
     if (!workspaceId) return;
@@ -398,7 +423,6 @@
     {#snippet sidebar()}
       <WorkspaceListSidebar selectedId={workspaceId} />
     {/snippet}
-
     <div class="terminal-main">
       {#if !workspaceId}
         <div class="state-message">
@@ -469,25 +493,35 @@
               {displayName(workspace)}
             </span>
             <code class="header-branch">
-              {workspace.mr_head_ref}
+              {workspace.git_head_ref}
             </code>
           </div>
           <div class="header-right">
             <div class="seg-control">
-              <button
-                class="seg-btn"
-                class:active={sidebarOpen && sidebarTab === "pr"}
-                onclick={() => handleSegmentClick("pr")}
-              >
-                PR
-              </button>
-              <button
-                class="seg-btn"
-                class:active={sidebarOpen && sidebarTab === "reviews"}
-                onclick={() => handleSegmentClick("reviews")}
-              >
-                Reviews
-              </button>
+              {#if workspace.item_type === "issue"}
+                <button
+                  class="seg-btn"
+                  class:active={sidebarOpen && sidebarTab === "issue"}
+                  onclick={() => handleSegmentClick("issue")}
+                >
+                  Issue
+                </button>
+              {:else}
+                <button
+                  class="seg-btn"
+                  class:active={sidebarOpen && sidebarTab === "pr"}
+                  onclick={() => handleSegmentClick("pr")}
+                >
+                  PR
+                </button>
+                <button
+                  class="seg-btn"
+                  class:active={sidebarOpen && sidebarTab === "reviews"}
+                  onclick={() => handleSegmentClick("reviews")}
+                >
+                  Reviews
+                </button>
+              {/if}
             </div>
             <button
               class="header-btn danger"
@@ -513,10 +547,12 @@
             >
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
+                platformHost={workspace.platform_host}
                 repoOwner={workspace.repo_owner}
                 repoName={workspace.repo_name}
-                mrNumber={workspace.mr_number}
-                branch={workspace.mr_head_ref}
+                itemType={workspace.item_type}
+                itemNumber={workspace.item_number}
+                branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
               />
             </div>

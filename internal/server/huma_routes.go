@@ -87,6 +87,13 @@ type listIssuesOutput struct {
 	Body []issueResponse
 }
 
+type issueRepoNumberInput struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+}
+
 type getIssueOutput struct {
 	Body issueDetailResponse
 }
@@ -96,7 +103,8 @@ type postIssueCommentInput struct {
 	Name   string `path:"name"`
 	Number int    `path:"number"`
 	Body   struct {
-		Body string `json:"body"`
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host,omitempty"`
 	}
 }
 
@@ -188,7 +196,8 @@ type githubStateInput struct {
 	Name   string `path:"name"`
 	Number int    `path:"number"`
 	Body   struct {
-		State string `json:"state"`
+		State        string `json:"state"`
+		PlatformHost string `json:"platform_host,omitempty"`
 	}
 }
 
@@ -246,6 +255,19 @@ type createWorkspaceInput struct {
 		MRNumber     int    `json:"mr_number"`
 	}
 }
+
+type createIssueWorkspaceInput struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		PlatformHost        string  `json:"platform_host"`
+		GitHeadRef          *string `json:"git_head_ref,omitempty"`
+		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
+	}
+}
+
+const issueWorkspaceBranchConflictType = "urn:middleman:error:issue-workspace-branch-conflict"
 
 type getWorkspaceInput struct {
 	ID string `path:"id"`
@@ -387,6 +409,12 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces",
 		DefaultStatus: http.StatusAccepted,
 	}, s.createWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-issue-workspace",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/issues/{number}/workspace",
+		DefaultStatus: http.StatusAccepted,
+	}, s.createIssueWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces)
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
 	huma.Register(api, huma.Operation{
@@ -546,7 +574,7 @@ func (s *Server) buildPullDetailResponse(
 			ctx, repo.PlatformHost, repo.Owner, repo.Name, mr.Number,
 		)
 		if wsErr == nil && wsRef != nil {
-			resp.Workspace = &workspaceMRRef{
+			resp.Workspace = &workspaceRef{
 				ID:     wsRef.ID,
 				Status: wsRef.Status,
 			}
@@ -878,13 +906,18 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 	return &listIssuesOutput{Body: out}, nil
 }
 
-func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssueOutput, error) {
-	issue, err := s.db.GetIssue(ctx, input.Owner, input.Name, input.Number)
+func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
+	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: input.PlatformHost,
+	})
 	if err != nil {
+		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound("issue not found")
+		}
 		return nil, huma.Error500InternalServerError("get issue failed")
-	}
-	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
 	}
 
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
@@ -893,11 +926,6 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
-	}
-
-	repo, err := s.db.GetRepoByID(ctx, issue.RepoID)
-	if err != nil || repo == nil {
-		return nil, huma.Error500InternalServerError("load repo failed")
 	}
 
 	issueResp := issueDetailResponse{
@@ -911,6 +939,17 @@ func (s *Server) getIssue(ctx context.Context, input *repoNumberInput) (*getIssu
 	if issue.DetailFetchedAt != nil {
 		issueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
 	}
+	if s.workspaces != nil {
+		wsRef, wsErr := s.workspaces.GetByIssue(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
+		)
+		if wsErr == nil && wsRef != nil {
+			issueResp.Workspace = &workspaceRef{
+				ID:     wsRef.ID,
+				Status: wsRef.Status,
+			}
+		}
+	}
 	return &getIssueOutput{Body: issueResp}, nil
 }
 
@@ -919,17 +958,34 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.lookupRepo(
+		ctx, input.Owner, input.Name, input.Body.PlatformHost,
+	)
+	if err != nil {
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("repo lookup failed")
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	comment, err := client.CreateIssueComment(
+		ctx, input.Owner, input.Name, input.Number, input.Body.Body,
+	)
 	if err != nil {
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	ref := repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
@@ -1343,21 +1399,24 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: input.Body.PlatformHost,
+	})
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
-	}
-
-	issue, err := s.db.GetIssue(
-		ctx, input.Owner, input.Name, input.Number,
-	)
-	if err != nil {
+		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound("issue not found")
+		}
 		return nil, huma.Error500InternalServerError(
 			"get issue: " + err.Error(),
 		)
 	}
-	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
 	}
 
 	if _, err := client.EditIssue(
@@ -1369,39 +1428,29 @@ func (s *Server) setIssueGitHubState(
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state. If already in the
 			// requested state (concurrent edit), treat as success.
-			repoID, repoErr := s.lookupRepoID(
-				ctx, input.Owner, input.Name,
+			ghIssue, fetchErr := client.GetIssue(
+				ctx, input.Owner, input.Name, input.Number,
 			)
-			if repoErr == nil {
-				ghIssue, fetchErr := client.GetIssue(
-					ctx, input.Owner, input.Name, input.Number,
+			if fetchErr == nil {
+				if ghIssue == nil {
+					return nil, huma.Error502BadGateway("GitHub API returned no issue")
+				}
+				normalized, normalizeErr := ghclient.NormalizeIssue(
+					repo.ID, ghIssue,
 				)
-				if fetchErr == nil {
-					if ghIssue == nil {
-						return nil, huma.Error502BadGateway("GitHub API returned no issue")
-					}
-					normalized, normalizeErr := ghclient.NormalizeIssue(repoID, ghIssue)
-					if normalizeErr != nil {
-						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
-					}
-					_, _ = s.db.UpsertIssue(ctx, normalized)
-					if ghIssue.GetState() == input.Body.State {
-						out := &githubStateOutput{}
-						out.Body.State = input.Body.State
-						return out, nil
-					}
+				if normalizeErr != nil {
+					return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+				}
+				_, _ = s.db.UpsertIssue(ctx, normalized)
+				if ghIssue.GetState() == input.Body.State {
+					out := &githubStateOutput{}
+					out.Body.State = input.Body.State
+					return out, nil
 				}
 			}
 		}
 		return nil, huma.Error502BadGateway(
 			"GitHub API error: " + err.Error(),
-		)
-	}
-
-	repoID, err := s.lookupRepoID(ctx, input.Owner, input.Name)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get repo: " + err.Error(),
 		)
 	}
 
@@ -1411,7 +1460,7 @@ func (s *Server) setIssueGitHubState(
 		closedAt = &now
 	}
 	if err := s.db.UpdateIssueState(
-		ctx, repoID, input.Number,
+		ctx, repo.ID, issue.Number,
 		input.Body.State, closedAt,
 	); err != nil {
 		return nil, huma.Error500InternalServerError(
@@ -1537,20 +1586,33 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	return &syncPROutput{Body: body}, nil
 }
 
-func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIssueOutput, error) {
-	if err := s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number); err != nil {
+func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
+	var err error
+	if input.PlatformHost != "" {
+		err = s.syncer.SyncIssueOnHost(
+			ctx, input.PlatformHost, input.Owner, input.Name, input.Number,
+		)
+	} else {
+		err = s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number)
+	}
+	if err != nil {
 		if strings.Contains(err.Error(), "is not tracked") {
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error502BadGateway("sync issue: " + err.Error())
 	}
 
-	issue, err := s.db.GetIssue(ctx, input.Owner, input.Name, input.Number)
+	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: input.PlatformHost,
+	})
 	if err != nil {
+		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
+			return nil, huma.Error404NotFound("issue not found after sync")
+		}
 		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
-	}
-	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found after sync")
 	}
 
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
@@ -1559,11 +1621,6 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
-	}
-
-	repo, err := s.db.GetRepoByID(ctx, issue.RepoID)
-	if err != nil || repo == nil {
-		return nil, huma.Error500InternalServerError("load repo failed")
 	}
 
 	syncIssueResp := issueDetailResponse{
@@ -1576,6 +1633,17 @@ func (s *Server) syncIssue(ctx context.Context, input *repoNumberInput) (*syncIs
 	}
 	if issue.DetailFetchedAt != nil {
 		syncIssueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
+	}
+	if s.workspaces != nil {
+		wsRef, wsErr := s.workspaces.GetByIssue(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
+		)
+		if wsErr == nil && wsRef != nil {
+			syncIssueResp.Workspace = &workspaceRef{
+				ID:     wsRef.ID,
+				Status: wsRef.Status,
+			}
+		}
 	}
 	return &syncIssueOutput{Body: syncIssueResp}, nil
 }
@@ -1637,6 +1705,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
+			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
 			ItemType:     it.ItemType,
@@ -1745,7 +1814,17 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, huma.Error400BadRequest("item_type must be 'pr' or 'issue'")
 	}
 
-	repoID, err := s.lookupRepoID(ctx, body.Owner, body.Name)
+	var (
+		repoID int64
+		err    error
+	)
+	if body.PlatformHost != "" {
+		repoID, err = s.lookupRepoIDOnHost(
+			ctx, body.Owner, body.Name, body.PlatformHost,
+		)
+	} else {
+		repoID, err = s.lookupRepoID(ctx, body.Owner, body.Name)
+	}
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
 			return 0, huma.Error404NotFound(err.Error())
@@ -2028,6 +2107,11 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 
 // --- Workspaces ---
 
+// createWorkspace creates or reuses a PR-backed middleman workspace.
+//
+// This API exists so a tracked pull request can have a durable local execution
+// context that middleman owns and can reopen later. It is not a generic
+// worktree-creation endpoint for arbitrary branches.
 func (s *Server) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
@@ -2095,7 +2179,7 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 			if summary == nil {
 				return
 			}
-			resp := toWorkspaceResponse(summary)
+			resp := s.toWorkspaceResponse(bgCtx, summary)
 			if setupErr != nil {
 				slog.Warn("workspace setup failed",
 					"id", ws.ID, "err", setupErr,
@@ -2147,12 +2231,149 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 			}
 			s.hub.Broadcast(Event{
 				Type: "workspace_status",
-				Data: toWorkspaceResponse(summary),
+				Data: s.toWorkspaceResponse(bgCtx, summary),
 			})
 		}
 	})
 }
 
+// createIssueWorkspace creates or reuses an issue-backed middleman workspace.
+//
+// This API exists so an issue can have its own durable local execution context
+// even when there is no PR branch yet. These workspaces start from the repo's
+// current origin/HEAD and are presented in the UI with issue-specific sidebar
+// behavior instead of PR/reviews affordances.
+func (s *Server) createIssueWorkspace(
+	ctx context.Context, input *createIssueWorkspaceInput,
+) (*createWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	existing, err := s.workspaces.GetByIssue(
+		ctx,
+		input.Body.PlatformHost,
+		input.Owner,
+		input.Name,
+		input.Number,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"lookup existing issue workspace: " + err.Error(),
+		)
+	}
+	if existing != nil {
+		summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
+		if getErr != nil {
+			return nil, huma.Error500InternalServerError(
+				"get workspace summary: " + getErr.Error(),
+			)
+		}
+		if summary == nil {
+			return nil, huma.Error500InternalServerError(
+				"workspace summary missing for existing workspace",
+			)
+		}
+		return &createWorkspaceOutput{
+			Status: http.StatusAccepted,
+			Body:   s.toWorkspaceResponse(ctx, summary),
+		}, nil
+	}
+
+	ws, err := s.workspaces.CreateIssue(
+		ctx,
+		input.Body.PlatformHost,
+		input.Owner,
+		input.Name,
+		input.Number,
+		workspace.CreateIssueOptions{
+			GitHeadRef:          strings.TrimSpace(derefString(input.Body.GitHeadRef)),
+			ReuseExistingBranch: input.Body.ReuseExistingBranch,
+		},
+	)
+	if err != nil {
+		msg := err.Error()
+		var branchConflict *workspace.IssueWorkspaceBranchConflictError
+		if errors.As(err, &branchConflict) {
+			conflict := &huma.ErrorModel{
+				Type:   issueWorkspaceBranchConflictType,
+				Title:  "Issue workspace branch conflict",
+				Status: http.StatusConflict,
+				Detail: "A local branch with the requested name already exists.",
+				Errors: []*huma.ErrorDetail{
+					{
+						Message:  "Requested branch already exists",
+						Location: "body.git_head_ref",
+						Value:    branchConflict.Branch,
+					},
+					{
+						Message:  "Suggested alternative branch name",
+						Location: "body.suggested_git_head_ref",
+						Value:    branchConflict.SuggestedBranch,
+					},
+				},
+			}
+			return nil, conflict
+		}
+		if strings.Contains(msg, "not tracked") {
+			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "not synced") {
+			return nil, huma.Error404NotFound(msg)
+		}
+		if strings.Contains(msg, "invalid branch name") {
+			return nil, huma.Error400BadRequest(msg)
+		}
+		if strings.Contains(msg, "UNIQUE constraint") {
+			existing, getErr := s.workspaces.GetByIssue(
+				ctx,
+				input.Body.PlatformHost,
+				input.Owner,
+				input.Name,
+				input.Number,
+			)
+			if getErr == nil && existing != nil {
+				summary, summaryErr := s.workspaces.GetSummary(ctx, existing.ID)
+				if summaryErr == nil && summary != nil {
+					return &createWorkspaceOutput{
+						Status: http.StatusAccepted,
+						Body:   s.toWorkspaceResponse(ctx, summary),
+					}, nil
+				}
+			}
+		}
+		return nil, huma.Error500InternalServerError(
+			"create issue workspace: " + msg,
+		)
+	}
+
+	s.runWorkspaceSetup(ws)
+
+	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace summary: " + err.Error(),
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error500InternalServerError(
+			"workspace summary missing after create",
+		)
+	}
+
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   s.toWorkspaceResponse(ctx, summary),
+	}, nil
+}
+
+// listWorkspaces returns middleman's persisted workspace records.
+//
+// Its purpose is to drive the workspaces page and terminal picker from
+// middleman's own database model, rather than from ad hoc discovery of host
+// worktrees.
 func (s *Server) listWorkspaces(
 	ctx context.Context, _ *struct{},
 ) (*listWorkspacesOutput, error) {
@@ -2197,6 +2418,17 @@ func (s *Server) listWorkspaces(
 	return out, nil
 }
 
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// getWorkspace returns one persisted middleman workspace.
+//
+// The terminal view uses this to reopen an existing local execution context and
+// determine whether the workspace is PR-backed or issue-backed.
 func (s *Server) getWorkspace(
 	ctx context.Context, input *getWorkspaceInput,
 ) (*getWorkspaceOutput, error) {
@@ -2258,7 +2490,7 @@ func (s *Server) retryWorkspace(
 			"workspace summary missing after retry",
 		)
 	}
-	resp := toWorkspaceResponse(summary)
+	resp := s.toWorkspaceResponse(ctx, summary)
 	s.hub.Broadcast(Event{
 		Type: "workspace_status",
 		Data: resp,
@@ -2363,6 +2595,10 @@ func isWorkingTmuxTitle(title string) bool {
 	return false
 }
 
+// deleteWorkspace tears down a middleman-managed workspace.
+//
+// This exists to remove the persisted workspace entry plus its managed local
+// resources. It is not intended to delete arbitrary worktrees on disk.
 func (s *Server) deleteWorkspace(
 	ctx context.Context, input *deleteWorkspaceInput,
 ) (*struct{}, error) {

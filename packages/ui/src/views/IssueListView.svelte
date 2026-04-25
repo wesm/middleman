@@ -13,6 +13,7 @@
       owner: string;
       name: string;
       number: number;
+      platformHost?: string | undefined;
     } | null;
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
@@ -47,6 +48,7 @@
       owner={selectedIssue.owner}
       name={selectedIssue.name}
       number={selectedIssue.number}
+      platformHost={selectedIssue.platformHost}
     />
   {:else}
     <div class="placeholder-content">

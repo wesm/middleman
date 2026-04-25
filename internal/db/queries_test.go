@@ -22,8 +22,9 @@ func TestStartWorkspaceRetryTransitionsOnlyOneConcurrentCaller(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-retry-race",
 		TmuxSession:     "middleman-ws-retry-race",
@@ -86,8 +87,9 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-retry-preserve-branch",
 		TmuxSession:     "middleman-ws-retry-preserve-branch",
@@ -1777,8 +1779,9 @@ func TestWorkspaceCRUD(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/thing",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-abc-123",
 		TmuxSession:     "ws-abc-123",
@@ -1796,8 +1799,9 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Equal("github.com", got.PlatformHost)
 	assert.Equal("acme", got.RepoOwner)
 	assert.Equal("widget", got.RepoName)
-	assert.Equal(42, got.MRNumber)
-	assert.Equal("feature/thing", got.MRHeadRef)
+	assert.Equal(WorkspaceItemTypePullRequest, got.ItemType)
+	assert.Equal(42, got.ItemNumber)
+	assert.Equal("feature/thing", got.GitHeadRef)
 	assert.Nil(got.MRHeadRepo)
 	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
 	assert.Equal("/tmp/ws-abc-123", got.WorktreePath)
@@ -1827,13 +1831,13 @@ func TestWorkspaceCRUD(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        datetime('now', '+1 minute'))`,
 		"ws-def-456", "github.com", "acme", "gadget",
-		7, "fix/bug",
+		WorkspaceItemTypePullRequest, 7, "fix/bug",
 		"/tmp/ws-def-456", "ws-def-456", "ready",
 	)
 	require.NoError(err)
@@ -1914,8 +1918,8 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref, worktree_path, tmux_session)
-		VALUES ('mixed', 'github.com', 'Acme', 'widget', 1, 'feature',
+		     item_type, item_number, git_head_ref, worktree_path, tmux_session)
+		VALUES ('mixed', 'github.com', 'Acme', 'widget', 'pull_request', 1, 'feature',
 		        '/tmp/mixed', 'mixed')`)
 	require.Error(err)
 	require.Contains(err.Error(), "workspace repo identifiers must be lowercase")
@@ -1925,8 +1929,9 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
 		RepoName:     "widget",
-		MRNumber:     1,
-		MRHeadRef:    "feature",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature",
 		WorktreePath: "/tmp/lower",
 		TmuxSession:  "lower",
 	}
@@ -1942,33 +1947,97 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	ws := &Workspace{
-		ID:           "ws-1",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		MRNumber:     42,
-		MRHeadRef:    "feat/a",
-		WorktreePath: "/tmp/ws-1",
-		TmuxSession:  "ws-1",
-		Status:       "creating",
-	}
-	require.NoError(t, d.InsertWorkspace(ctx, ws))
+	t.Run("pull request duplicates conflict", func(t *testing.T) {
+		ws := &Workspace{
+			ID:           "ws-pr-1",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   42,
+			GitHeadRef:   "feat/pr-1",
+			WorktreePath: "/tmp/ws-pr-1",
+			TmuxSession:  "ws-pr-1",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, ws))
 
-	// Same MR coordinates, different ID -> unique constraint violation.
-	ws2 := &Workspace{
-		ID:           "ws-2",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		MRNumber:     42,
-		MRHeadRef:    "feat/a",
-		WorktreePath: "/tmp/ws-2",
-		TmuxSession:  "ws-2",
-		Status:       "creating",
-	}
-	err := d.InsertWorkspace(ctx, ws2)
-	require.Error(t, err)
+		dup := &Workspace{
+			ID:           "ws-pr-2",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   42,
+			GitHeadRef:   "feat/pr-2",
+			WorktreePath: "/tmp/ws-pr-2",
+			TmuxSession:  "ws-pr-2",
+			Status:       "creating",
+		}
+		err := d.InsertWorkspace(ctx, dup)
+		require.Error(t, err)
+	})
+
+	t.Run("issue duplicates conflict", func(t *testing.T) {
+		ws := &Workspace{
+			ID:           "ws-issue-1",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-issues",
+			ItemType:     WorkspaceItemTypeIssue,
+			ItemNumber:   42,
+			GitHeadRef:   "middleman/issue-42",
+			WorktreePath: "/tmp/ws-issue-1",
+			TmuxSession:  "ws-issue-1",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, ws))
+
+		dup := &Workspace{
+			ID:           "ws-issue-2",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-issues",
+			ItemType:     WorkspaceItemTypeIssue,
+			ItemNumber:   42,
+			GitHeadRef:   "middleman/issue-42-copy",
+			WorktreePath: "/tmp/ws-issue-2",
+			TmuxSession:  "ws-issue-2",
+			Status:       "creating",
+		}
+		err := d.InsertWorkspace(ctx, dup)
+		require.Error(t, err)
+	})
+
+	t.Run("pull request and issue can coexist", func(t *testing.T) {
+		pr := &Workspace{
+			ID:           "ws-mixed-pr",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-mixed",
+			ItemType:     WorkspaceItemTypePullRequest,
+			ItemNumber:   7,
+			GitHeadRef:   "feat/mixed-pr",
+			WorktreePath: "/tmp/ws-mixed-pr",
+			TmuxSession:  "ws-mixed-pr",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, pr))
+
+		issue := &Workspace{
+			ID:           "ws-mixed-issue",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget-mixed",
+			ItemType:     WorkspaceItemTypeIssue,
+			ItemNumber:   7,
+			GitHeadRef:   "middleman/issue-7",
+			WorktreePath: "/tmp/ws-mixed-issue",
+			TmuxSession:  "ws-mixed-issue",
+			Status:       "creating",
+		}
+		require.NoError(t, d.InsertWorkspace(ctx, issue))
+	})
 }
 
 func TestWorkspaceSummaries(t *testing.T) {
@@ -2003,12 +2072,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-with-mr", "github.com", "acme", "widget",
-		42, "feat/workspace",
+		WorkspaceItemTypePullRequest, 42, "feat/workspace",
 		"/tmp/ws-with-mr", "ws-with-mr", "ready",
 		base,
 	)
@@ -2018,12 +2087,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     mr_number, mr_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-no-mr", "github.com", "acme", "gadget",
-		99, "fix/thing",
+		WorkspaceItemTypePullRequest, 99, "fix/thing",
 		"/tmp/ws-no-mr", "ws-no-mr", "creating",
 		base.Add(time.Hour),
 	)

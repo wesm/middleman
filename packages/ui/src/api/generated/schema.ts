@@ -189,6 +189,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/issues/{number}/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create-issue-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/items/{number}/resolve": {
         parameters: {
             query?: never;
@@ -585,6 +601,7 @@ export interface components {
             item_title: string;
             item_type: string;
             item_url: string;
+            platform_host: string;
             repo_name: string;
             repo_owner: string;
         };
@@ -646,6 +663,17 @@ export interface components {
             readonly $schema?: string;
             /** @description Commits in newest-first order */
             commits: components["schemas"]["CommitResponse"][] | null;
+        };
+        CreateIssueWorkspaceInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateIssueWorkspaceInputBody.json
+             */
+            readonly $schema?: string;
+            git_head_ref?: string;
+            platform_host: string;
+            reuse_existing_branch?: boolean;
         };
         CreateWorkspaceInputBody: {
             /**
@@ -758,6 +786,7 @@ export interface components {
              * @example /api/v1/schemas/GithubStateInputBody.json
              */
             readonly $schema?: string;
+            platform_host?: string;
             state: string;
         };
         GithubStateOutputBody: {
@@ -824,6 +853,7 @@ export interface components {
             platform_host: string;
             repo_name: string;
             repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
         };
         IssueEvent: {
             /**
@@ -1009,7 +1039,7 @@ export interface components {
             repo_owner: string;
             warnings?: string[] | null;
             workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
-            workspace?: components["schemas"]["WorkspaceMRRef"];
+            workspace?: components["schemas"]["WorkspaceRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestResponse: {
@@ -1095,6 +1125,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            platform_host?: string;
         };
         RateLimitHostStatus: {
             /** Format: int64 */
@@ -1243,6 +1274,7 @@ export interface components {
             /** Format: int64 */
             number: number;
             owner: string;
+            platform_host?: string;
         };
         SyncStatus: {
             /**
@@ -1264,7 +1296,7 @@ export interface components {
             count: number;
             required: boolean;
         };
-        WorkspaceMRRef: {
+        WorkspaceRef: {
             id: string;
             status: string;
         };
@@ -1277,16 +1309,17 @@ export interface components {
             readonly $schema?: string;
             created_at: string;
             error_message?: string;
+            git_head_ref: string;
             id: string;
+            /** Format: int64 */
+            item_number: number;
+            item_type: string;
             /** Format: int64 */
             mr_additions?: number;
             mr_ci_status?: string;
             /** Format: int64 */
             mr_deletions?: number;
-            mr_head_ref: string;
             mr_is_draft?: boolean;
-            /** Format: int64 */
-            mr_number: number;
             mr_review_decision?: string;
             mr_state?: string;
             mr_title?: string;
@@ -1551,7 +1584,9 @@ export interface operations {
     };
     "get-repos-by-owner-by-name-issues-by-number": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -1658,7 +1693,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-issues-by-number-sync": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -1676,6 +1713,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-issue-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIssueWorkspaceInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
                 };
             };
             /** @description Error */

@@ -202,6 +202,7 @@ type ActivityItem struct {
 	ActivityType string // new_pr, new_issue, comment, review, commit
 	Source       string // pr, issue, pre, ise
 	SourceID     int64  // PK from the source table
+	PlatformHost string
 	RepoOwner    string
 	RepoName     string
 	ItemType     string // pr or issue
@@ -252,18 +253,25 @@ type StackMemberWithPR struct {
 	BaseBranch     string
 }
 
-// Workspace represents a middleman-managed git worktree linked to an MR.
+const (
+	WorkspaceItemTypePullRequest = "pull_request"
+	WorkspaceItemTypeIssue       = "issue"
+)
+
+// Workspace represents a middleman-managed git worktree linked to a
+// pull request or issue.
 type Workspace struct {
 	ID           string
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
-	MRNumber     int
-	MRHeadRef    string
+	ItemType     string
+	ItemNumber   int
+	GitHeadRef   string
 	MRHeadRepo   *string // nil for same-repo PRs
-	// WorkspaceBranch is the exact branch name middleman created
-	// for this workspace. It stays empty when setup reused an
-	// existing local branch and therefore does not own it.
+	// WorkspaceBranch is the exact branch name checked out in the
+	// worktree after setup. Before setup completes it may contain the
+	// requested branch name or workspaceBranchUnknown.
 	WorkspaceBranch string
 	WorktreePath    string
 	TmuxSession     string

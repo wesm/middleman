@@ -118,6 +118,25 @@ describe("router basic routes", () => {
       selected: { owner: "org", name: "repo", number: 3 },
     });
   });
+
+  it("preserves issue platform_host query state", () => {
+    navigate("/issues/org/repo/3?platform_host=ghe.example.com");
+    expect(getRoute()).toEqual({
+      page: "issues",
+      selected: {
+        owner: "org",
+        name: "repo",
+        number: 3,
+        platformHost: "ghe.example.com",
+      },
+    });
+  });
+
+  it("treats legacy /workspaces/panel routes as the workspaces page", () => {
+    navigate("/workspaces/panel/github.com/acme/widgets/42");
+    expect(getRoute()).toEqual({ page: "workspaces" });
+    expect(getPage()).toBe("workspaces");
+  });
 });
 
 describe("router navigation events", () => {
@@ -186,105 +205,5 @@ describe("router navigation events", () => {
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
     expect(payload.type).toBe("activity");
     expect(payload.view).toBe("/design-system");
-  });
-});
-
-describe("router /workspaces/sidebar route", () => {
-  beforeEach(() => {
-    navigate("/pulls");
-  });
-
-  afterEach(() => {
-    delete (window as unknown as { __middleman_config?: unknown })
-      .__middleman_config;
-    (window as unknown as {
-      __middleman_notify_config_changed?: () => void;
-    }).__middleman_notify_config_changed?.();
-  });
-
-  it("parses /workspaces/sidebar/:host/:owner/:name/:number", () => {
-    navigate("/workspaces/sidebar/github.com/acme/widgets/42");
-    expect(getRoute()).toEqual({
-      page: "workspaces-sidebar",
-      platformHost: "github.com",
-      owner: "acme",
-      name: "widgets",
-      number: 42,
-    });
-  });
-
-  it("parses branch and tab query params", () => {
-    navigate(
-      "/workspaces/sidebar/github.com/acme/widgets/42"
-        + "?branch=feat/x&tab=reviews",
-    );
-    expect(getRoute()).toEqual({
-      page: "workspaces-sidebar",
-      platformHost: "github.com",
-      owner: "acme",
-      name: "widgets",
-      number: 42,
-      branch: "feat/x",
-      tab: "reviews",
-    });
-  });
-
-  it("ignores unknown tab values", () => {
-    navigate(
-      "/workspaces/sidebar/github.com/acme/widgets/42?tab=bogus",
-    );
-    const route = getRoute();
-    expect(route.page).toBe("workspaces-sidebar");
-    expect((route as { tab?: string }).tab).toBeUndefined();
-  });
-
-  it("falls back to /workspaces on malformed paths", () => {
-    navigate("/workspaces/sidebar/github.com/acme/widgets");
-    expect(getRoute()).toEqual({ page: "workspaces" });
-  });
-
-  it("rejects non-digit number segments", () => {
-    navigate("/workspaces/sidebar/github.com/acme/widgets/42abc");
-    expect(getRoute()).toEqual({ page: "workspaces" });
-  });
-
-  it("getPage returns workspaces-sidebar", () => {
-    navigate("/workspaces/sidebar/github.com/acme/widgets/42");
-    expect(getPage()).toBe("workspaces-sidebar");
-  });
-
-  it("fires onNavigate with workspaces type", () => {
-    const spy = vi.fn();
-    (window as unknown as { __middleman_config?: unknown })
-      .__middleman_config = { onNavigate: spy };
-    (window as unknown as {
-      __middleman_notify_config_changed?: () => void;
-    }).__middleman_notify_config_changed?.();
-
-    navigate("/workspaces/sidebar/github.com/acme/widgets/42");
-
-    expect(spy).toHaveBeenCalled();
-    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
-    expect(payload.type).toBe("workspaces");
-  });
-
-  it("includes query string in onNavigate view", () => {
-    const spy = vi.fn();
-    (window as unknown as { __middleman_config?: unknown })
-      .__middleman_config = { onNavigate: spy };
-    (window as unknown as {
-      __middleman_notify_config_changed?: () => void;
-    }).__middleman_notify_config_changed?.();
-
-    navigate(
-      "/workspaces/sidebar/github.com/acme/widgets/42"
-        + "?branch=feat/x&tab=reviews",
-    );
-
-    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
-    expect(payload.view).toBe(
-      "/workspaces/sidebar/github.com/acme/widgets/42"
-        + "?branch=feat/x&tab=reviews",
-    );
   });
 });

@@ -113,8 +113,9 @@ func TestCreate(t *testing.T) {
 	assert.Equal("github.com", ws.PlatformHost)
 	assert.Equal("acme", ws.RepoOwner)
 	assert.Equal("widget", ws.RepoName)
-	assert.Equal(42, ws.MRNumber)
-	assert.Equal("feature/thing", ws.MRHeadRef)
+	assert.Equal(db.WorkspaceItemTypePullRequest, ws.ItemType)
+	assert.Equal(42, ws.ItemNumber)
+	assert.Equal("feature/thing", ws.GitHeadRef)
 	assert.Nil(ws.MRHeadRepo)
 	assert.Contains(ws.WorktreePath, "pr-42")
 	assert.Equal("middleman-"+ws.ID, ws.TmuxSession)
@@ -344,8 +345,9 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	ws := &Workspace{
-		MRNumber:     42,
-		MRHeadRef:    "-unsafe",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "-unsafe",
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
@@ -361,14 +363,15 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	require := require.New(t)
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
-	branch := syntheticWorktreeBranch(42)
+	branch := syntheticPRWorktreeBranch(42)
 	require.NoError(runGit(
 		t.Context(), cloneDir,
 		"branch", branch, "main",
 	))
 
 	ws := &Workspace{
-		MRNumber:     42,
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
 		WorktreePath: filepath.Join(t.TempDir(), "missing-worktree"),
 	}
 	mgr := NewManager(openTestDB(t), t.TempDir())
@@ -381,6 +384,28 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	_, exists, err := gitRefSHA(
 		t.Context(), cloneDir, "refs/heads/"+branch,
 	)
+	require.NoError(err)
+	assert.False(exists)
+}
+
+func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	targetClone := setupBareCloneForWorkspaceGitTest(t)
+	poisonClone := setupBareCloneForWorkspaceGitTest(t)
+	require.NoError(runGit(
+		context.Background(), poisonClone,
+		"branch", "middleman/issue-7", "main",
+	))
+
+	t.Setenv("GIT_DIR", poisonClone)
+	t.Setenv("GIT_WORK_TREE", t.TempDir())
+
+	exists, err := localBranchExists(
+		context.Background(), targetClone, "middleman/issue-7",
+	)
+
 	require.NoError(err)
 	assert.False(exists)
 }
@@ -721,8 +746,9 @@ func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/thing",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
 		TmuxSession:     "middleman-0000000000000042",
@@ -775,8 +801,9 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
 		RepoName:     "widget",
-		MRNumber:     1,
-		MRHeadRef:    "feature/live",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
 		TmuxSession:  "middleman-0000000000000001",
 		Status:       "ready",
@@ -840,8 +867,9 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-retry-cleanup-fails",
 		TmuxSession:     "middleman-retry-cleanup-fails",
@@ -920,8 +948,9 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-retry-cleanup-queued",
 		TmuxSession:     "middleman-retry-cleanup-queued",
@@ -1015,8 +1044,9 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    filepath.Join(dir, "missing-worktree"),
 		TmuxSession:     "middleman-retry-missing-clone",
@@ -1052,8 +1082,9 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    "/tmp/ws-queued-retry",
 		TmuxSession:     "middleman-ws-queued-retry",
@@ -1103,8 +1134,9 @@ func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: "middleman/pr-42",
 		WorktreePath:    "/tmp/ws-raced-retry",
 		TmuxSession:     "middleman-ws-raced-retry",
@@ -1146,8 +1178,9 @@ func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
-		MRNumber:        42,
-		MRHeadRef:       "feature/retry",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    "/tmp/ws-discard-retry",
 		TmuxSession:     "middleman-ws-discard-retry",

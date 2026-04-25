@@ -43,6 +43,16 @@ export type NavigateCallback = (
   event: string | NavigateEvent,
 ) => void;
 
+export interface WorkspaceCommandResult {
+  ok: boolean;
+  message?: string;
+}
+
+export type WorkspaceCommandCallback = (
+  command: string,
+  payload: Record<string, unknown>,
+) => WorkspaceCommandResult | Promise<WorkspaceCommandResult>;
+
 export interface MiddlemanEvent {
   type:
     | "pr-selected"

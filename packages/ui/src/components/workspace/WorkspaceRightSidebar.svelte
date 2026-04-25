@@ -21,6 +21,8 @@
     from "./SidebarStoreScope.svelte";
   import PullDetail
     from "../detail/PullDetail.svelte";
+  import IssueDetail
+    from "../detail/IssueDetail.svelte";
   import FilterBar
     from "../roborev/FilterBar.svelte";
   import DaemonStatus
@@ -34,19 +36,23 @@
     components["schemas"]["RepoWithCount"];
 
   interface Props {
-    activeTab: "pr" | "reviews";
+    activeTab: "pr" | "issue" | "reviews";
+    platformHost: string;
     repoOwner: string;
     repoName: string;
-    mrNumber: number;
+    itemType: "pull_request" | "issue";
+    itemNumber: number;
     branch: string;
     roborevBaseUrl: string;
   }
 
   let {
     activeTab,
+    platformHost,
     repoOwner,
     repoName,
-    mrNumber,
+    itemType,
+    itemNumber,
     branch,
     roborevBaseUrl,
   }: Props = $props();
@@ -228,7 +234,16 @@
   const hasRepo = $derived(
     repoOwner !== "" && repoName !== "",
   );
-  const hasPR = $derived(mrNumber > 0 && hasRepo);
+  const hasPR = $derived(
+    itemType === "pull_request" &&
+    itemNumber > 0 &&
+    hasRepo
+  );
+  const hasIssue = $derived(
+    itemType === "issue" &&
+    itemNumber > 0 &&
+    hasRepo
+  );
 
   // Connect/disconnect SSE based on daemon availability
   let sseConnected = $state(false);
@@ -258,12 +273,25 @@
         <PullDetail
           owner={repoOwner}
           name={repoName}
-          number={mrNumber}
+          number={itemNumber}
           hideTabs={true}
         />
       </div>
     {:else}
       <div class="empty-state">No linked PR</div>
+    {/if}
+  {:else if activeTab === "issue"}
+    {#if hasIssue}
+      <div class="pr-scroll">
+        <IssueDetail
+          owner={repoOwner}
+          name={repoName}
+          number={itemNumber}
+          {platformHost}
+        />
+      </div>
+    {:else}
+      <div class="empty-state">No linked issue</div>
     {/if}
   {:else if activeTab === "reviews"}
     {#if !hasRepo}
