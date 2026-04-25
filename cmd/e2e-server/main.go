@@ -142,28 +142,42 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 			return fc.ReposByOwner[owner], nil
 		}
 
+		pushedMiddleman := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
+		pushedWorker := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
+		pushedBot := gh.Timestamp{Time: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)}
+		privateFalse := false
 		repos := []*gh.Repository{
 			{
-				Name:     new("middleman"),
-				Owner:    &gh.User{Login: new(owner)},
-				Archived: new(false),
+				Name:        new("middleman"),
+				Owner:       &gh.User{Login: new(owner)},
+				Description: new("Main dashboard"),
+				Private:     &privateFalse,
+				Archived:    new(false),
+				PushedAt:    &pushedMiddleman,
 			},
 			{
-				Name:     new("worker"),
-				Owner:    &gh.User{Login: new(owner)},
-				Archived: new(false),
+				Name:        new("worker"),
+				Owner:       &gh.User{Login: new(owner)},
+				Description: new("Background jobs"),
+				Private:     &privateFalse,
+				Archived:    new(false),
+				PushedAt:    &pushedWorker,
 			},
 			{
 				Name:     new("archived"),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(true),
+				PushedAt: &pushedBot,
 			},
 		}
 		if includeRefreshRepo, _ := ctx.Value(globRefreshContextKey{}).(bool); includeRefreshRepo {
 			repos = append(repos, &gh.Repository{
-				Name:     new("review-bot"),
-				Owner:    &gh.User{Login: new(owner)},
-				Archived: new(false),
+				Name:        new("review-bot"),
+				Owner:       &gh.User{Login: new(owner)},
+				Description: new("Review automation"),
+				Private:     &privateFalse,
+				Archived:    new(false),
+				PushedAt:    &pushedBot,
 			})
 		}
 		return repos, nil
