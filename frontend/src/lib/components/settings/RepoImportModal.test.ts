@@ -60,6 +60,30 @@ describe("RepoImportModal", () => {
     expect(onImported).toHaveBeenCalled();
   });
 
+  it("does not start duplicate previews while loading", async () => {
+    preview.mockReturnValue(new Promise(() => {}));
+    render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
+
+    const input = screen.getByLabelText("Repository pattern");
+    await fireEvent.input(input, { target: { value: "acme/*" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(preview).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps tab focus inside the modal", async () => {
+    render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
+
+    const input = screen.getByLabelText("Repository pattern");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    const close = screen.getByRole("button", { name: "Close" });
+    close.focus();
+    await fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+  });
+
   it("ignores stale preview responses after input changes", async () => {
     let resolveFirst: (value: Awaited<ReturnType<typeof previewRepos>>) => void = () => {};
     preview.mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }));
@@ -85,7 +109,7 @@ describe("RepoImportModal", () => {
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/worker*" } });
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
-    await screen.findByText("GitHub API error: boom");
+    expect((await screen.findByRole("alert")).textContent).toContain("GitHub API error: boom");
     expect(screen.queryByText("acme/api")).toBeNull();
   });
 });

@@ -76,6 +76,7 @@
   }
 
   async function handlePreview(): Promise<void> {
+    if (loading) return;
     let parsed: { owner: string; pattern: string };
     try {
       parsed = parseImportPattern(patternInput);
@@ -143,7 +144,31 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") closeIfAllowed();
+    if (event.key === "Escape") {
+      closeIfAllowed();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const container = event.currentTarget;
+    if (!(container instanceof HTMLElement)) return;
+    const modal = container.querySelector("[role='dialog']");
+    if (!(modal instanceof HTMLElement)) return;
+    const focusable = Array.from(
+      modal.querySelectorAll<HTMLElement>(
+        "button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])",
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 </script>
 
@@ -166,7 +191,7 @@
             value={patternInput}
             placeholder="owner/pattern"
             oninput={(event) => handlePatternInput(event.currentTarget.value)}
-            onkeydown={(event) => { if (event.key === "Enter") void handlePreview(); }}
+            onkeydown={(event) => { if (event.key === "Enter" && !loading) void handlePreview(); }}
           />
         </label>
         <button class="preview-btn" type="button" onclick={() => void handlePreview()} disabled={loading || !patternInput.trim()}>
@@ -175,7 +200,7 @@
       </div>
 
       {#if error}
-        <div class="error-msg">{error}</div>
+        <div class="error-msg" role="alert">{error}</div>
       {/if}
 
       {#if rows.length > 0}
