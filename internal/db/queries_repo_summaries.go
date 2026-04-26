@@ -209,10 +209,20 @@ func (d *DB) UpsertRepoOverview(
 		    latest_release_target = excluded.latest_release_target,
 		    latest_release_prerelease = excluded.latest_release_prerelease,
 		    latest_release_published_at = excluded.latest_release_published_at,
-		    commits_since_release = excluded.commits_since_release,
-		    commit_timeline_json = excluded.commit_timeline_json,
+		    commits_since_release = COALESCE(
+		        excluded.commits_since_release,
+		        middleman_repo_overviews.commits_since_release
+		    ),
+		    commit_timeline_json = CASE
+		        WHEN excluded.timeline_updated_at IS NULL
+		        THEN middleman_repo_overviews.commit_timeline_json
+		        ELSE excluded.commit_timeline_json
+		    END,
 		    releases_json = excluded.releases_json,
-		    timeline_updated_at = excluded.timeline_updated_at,
+		    timeline_updated_at = COALESCE(
+		        excluded.timeline_updated_at,
+		        middleman_repo_overviews.timeline_updated_at
+		    ),
 		    updated_at = excluded.updated_at`,
 		repoID,
 		tagName,
