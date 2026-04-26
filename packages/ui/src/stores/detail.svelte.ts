@@ -209,10 +209,16 @@ export function createDetailStore(
   ): Promise<void> {
     const gen = ++syncGeneration;
 
+    // Keep the previously loaded detail visible while the new one
+    // is in flight. Nulling `detail` here flipped consumers to a
+    // "Loading…" empty state for every prop change, which produced
+    // a visible flash when, for example, the workspace right
+    // sidebar updates from one PR to another. Consumers that need
+    // a "first load" empty state should check `detail === null`
+    // alongside `loading`.
     loading = true;
     syncing = false;
     storeError = null;
-    detail = null;
     detailLoaded = false;
     try {
       const { data, error: requestError } =

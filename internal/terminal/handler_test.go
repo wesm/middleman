@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -126,4 +127,20 @@ func TestHandlerClaimWorkspaceTerminal(t *testing.T) {
 	require.NoError(err)
 	assert.NotNil(release3)
 	release3()
+}
+
+func TestProcessExitCode(t *testing.T) {
+	assert := Assert.New(t)
+	assert.Equal(0, processExitCode(nil))
+	assert.Equal(-1, processExitCode(errors.New("wait failed")))
+}
+
+func TestParseSizeFallsBack(t *testing.T) {
+	req := httptest.NewRequest(
+		http.MethodGet, "/?cols=bad&rows=0", nil,
+	)
+	cols, rows := parseSize(req)
+	assert := Assert.New(t)
+	assert.Equal(120, cols)
+	assert.Equal(30, rows)
 }

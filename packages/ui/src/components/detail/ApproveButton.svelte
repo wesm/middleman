@@ -10,16 +10,35 @@
     name: string;
     number: number;
     size?: "sm" | "md";
+    disabled?: boolean;
   }
 
-  const { owner, name, number, size = "md" }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    size = "md",
+    disabled = false,
+  }: Props = $props();
 
   let expanded = $state(false);
   let body = $state("");
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
+  // Reset draft state on PR identity change so an open form with
+  // PR A's body cannot submit to PR B once the route transitions.
+  $effect(() => {
+    void owner;
+    void name;
+    void number;
+    expanded = false;
+    body = "";
+    error = null;
+  });
+
   async function handleApprove(): Promise<void> {
+    if (disabled) return;
     submitting = true;
     error = null;
     try {
@@ -66,7 +85,7 @@
       <ActionButton
         class="btn btn--primary btn--green"
         onclick={() => void handleApprove()}
-        disabled={submitting}
+        disabled={submitting || disabled}
         tone="success"
         surface="solid"
         title="Submit an approving code review on this pull request"
@@ -77,7 +96,8 @@
   {:else}
     <ActionButton
       class="btn btn--approve"
-      onclick={() => { expanded = true; }}
+      onclick={() => { if (!disabled) expanded = true; }}
+      {disabled}
       tone="success"
       surface="soft"
       title="Open the approval form to submit a code review on this pull request"

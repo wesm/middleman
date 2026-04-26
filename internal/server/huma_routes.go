@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/workspace"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type listPullsInput struct {
@@ -277,6 +278,22 @@ type retryWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
+type getWorkspaceRuntimeInput struct {
+	ID string `path:"id"`
+}
+
+type launchWorkspaceRuntimeSessionInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		TargetKey string `json:"target_key"`
+	}
+}
+
+type stopWorkspaceRuntimeSessionInput struct {
+	ID         string `path:"id"`
+	SessionKey string `path:"session_key"`
+}
+
 type deleteWorkspaceInput struct {
 	ID    string `path:"id"`
 	Force bool   `query:"force"`
@@ -290,6 +307,14 @@ type listWorkspacesOutput struct {
 
 type getWorkspaceOutput struct {
 	Body workspaceResponse
+}
+
+type getWorkspaceRuntimeOutput struct {
+	Body workspaceRuntimeResponse
+}
+
+type workspaceRuntimeSessionOutput struct {
+	Body localruntime.SessionInfo
 }
 
 type createWorkspaceOutput struct {
@@ -423,6 +448,27 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces/{id}/retry",
 		DefaultStatus: http.StatusAccepted,
 	}, s.retryWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-workspace-runtime",
+		Method:      http.MethodGet,
+		Path:        "/workspaces/{id}/runtime",
+	}, s.getWorkspaceRuntime)
+	huma.Register(api, huma.Operation{
+		OperationID: "launch-workspace-runtime-session",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/sessions",
+	}, s.launchWorkspaceRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID:   "stop-workspace-runtime-session",
+		Method:        http.MethodDelete,
+		Path:          "/workspaces/{id}/runtime/sessions/{session_key}",
+		DefaultStatus: http.StatusNoContent,
+	}, s.stopWorkspaceRuntimeSession)
+	huma.Register(api, huma.Operation{
+		OperationID: "ensure-workspace-runtime-shell",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/shell",
+	}, s.ensureWorkspaceRuntimeShell)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-workspace",
 		Method:        http.MethodDelete,
@@ -2512,6 +2558,8 @@ func (s *Server) toWorkspaceResponse(
 		return resp
 	}
 
+	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
+
 	if s.tmuxActivity != nil {
 		if result, ok := s.tmuxActivity.Cached(summary.TmuxSession); ok {
 			applyTmuxActivity(&resp, result)
@@ -2580,6 +2628,42 @@ func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {
 	}
 }
 
+// worktreeDivergenceTimeout caps how long a single workspace's
+// rev-list probe can run before the workspace list response moves
+// on. Picked to be small enough that a stalled git won't hold up
+// the whole list (probes already run in parallel).
+const worktreeDivergenceTimeout = 750 * time.Millisecond
+
+func applyWorktreeDivergence(
+	ctx context.Context,
+	resp *workspaceResponse,
+	worktreePath string,
+) {
+	if worktreePath == "" {
+		return
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, worktreeDivergenceTimeout)
+	defer cancel()
+
+	div, ok, err := workspace.WorktreeDivergence(probeCtx, worktreePath)
+	if err != nil {
+		slog.Debug(
+			"worktree divergence probe failed",
+			"workspace_id", resp.ID,
+			"path", worktreePath,
+			"err", err,
+		)
+		return
+	}
+	if !ok {
+		return
+	}
+	ahead := div.Ahead
+	behind := div.Behind
+	resp.CommitsAhead = &ahead
+	resp.CommitsBehind = &behind
+}
+
 func isWorkingTmuxTitle(title string) bool {
 	normalized := strings.TrimSpace(title)
 	if normalized == "" {
@@ -2595,6 +2679,133 @@ func isWorkingTmuxTitle(title string) bool {
 	return false
 }
 
+func (s *Server) getWorkspaceRuntime(
+	ctx context.Context,
+	input *getWorkspaceRuntimeInput,
+) (*getWorkspaceRuntimeOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &getWorkspaceRuntimeOutput{
+		Body: workspaceRuntimeResponse{
+			LaunchTargets: s.runtime.LaunchTargets(),
+			Sessions:      s.runtime.ListSessions(summary.ID),
+			ShellSession:  s.runtime.ShellSession(summary.ID),
+		},
+	}, nil
+}
+
+func (s *Server) launchWorkspaceRuntimeSession(
+	ctx context.Context,
+	input *launchWorkspaceRuntimeSessionInput,
+) (*workspaceRuntimeSessionOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	targetKey := strings.TrimSpace(input.Body.TargetKey)
+	if targetKey == "" {
+		return nil, huma.Error400BadRequest("target_key is required")
+	}
+
+	if targetKey == string(localruntime.LaunchTargetPlainShell) {
+		session, err := s.runtime.EnsureShell(
+			ctx, summary.ID, summary.WorktreePath,
+		)
+		if err != nil {
+			return nil, huma.Error500InternalServerError(
+				"ensure shell: " + err.Error(),
+			)
+		}
+		return &workspaceRuntimeSessionOutput{Body: session}, nil
+	}
+
+	session, err := s.runtime.Launch(
+		ctx, summary.ID, summary.WorktreePath, targetKey,
+	)
+	if err != nil {
+		return nil, workspaceRuntimeLaunchError(err)
+	}
+	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Server) stopWorkspaceRuntimeSession(
+	ctx context.Context,
+	input *stopWorkspaceRuntimeSessionInput,
+) (*struct{}, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runtime.Stop(
+		ctx, summary.ID, input.SessionKey,
+	); err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+	return nil, nil
+}
+
+func (s *Server) ensureWorkspaceRuntimeShell(
+	ctx context.Context,
+	input *getWorkspaceRuntimeInput,
+) (*workspaceRuntimeSessionOutput, error) {
+	summary, err := s.getReadyRuntimeWorkspace(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := s.runtime.EnsureShell(
+		ctx, summary.ID, summary.WorktreePath,
+	)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"ensure shell: " + err.Error(),
+		)
+	}
+	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Server) getReadyRuntimeWorkspace(
+	ctx context.Context,
+	id string,
+) (*db.WorkspaceSummary, error) {
+	if s.workspaces == nil || s.runtime == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace runtime not configured",
+		)
+	}
+
+	summary, err := s.workspaces.GetSummary(ctx, id)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(
+			"get workspace failed",
+		)
+	}
+	if summary == nil {
+		return nil, huma.Error404NotFound("workspace not found")
+	}
+	if summary.Status != "ready" {
+		return nil, huma.Error409Conflict(
+			"workspace not ready (status: " + summary.Status + ")",
+		)
+	}
+	return summary, nil
+}
+
+func workspaceRuntimeLaunchError(err error) error {
+	msg := err.Error()
+	if strings.Contains(msg, "target not found") {
+		return huma.Error404NotFound(msg)
+	}
+	if strings.Contains(msg, "not available") ||
+		strings.Contains(msg, "no command") {
+		return huma.Error400BadRequest(msg)
+	}
+	return huma.Error500InternalServerError("launch session: " + msg)
+}
+
 // deleteWorkspace tears down a middleman-managed workspace.
 //
 // This exists to remove the persisted workspace entry plus its managed local
@@ -2608,8 +2819,34 @@ func (s *Server) deleteWorkspace(
 		)
 	}
 
+	// Order of operations:
+	//   1. dirty preflight inside Delete — returns 409 without
+	//      touching anything
+	//   2. (clean) StopWorkspace via the beforeDestructive hook so
+	//      agent/shell processes can't keep writing to the worktree
+	//      between the preflight and the destructive cleanup
+	//   3. destructive cleanup + record removal
+	// Stopping sessions before the preflight would kill processes for
+	// a workspace that survives a 409 dirty rejection; stopping them
+	// only after the destructive cleanup leaves a window where running
+	// processes could write new uncommitted changes that bypass the
+	// dirty check the user requested.
+	//
+	// BeginStopping/EndStopping holds the runtime's stopping marker
+	// across the whole Delete call — including step 3 — so a Launch
+	// arriving between StopWorkspace returning and DB removal cannot
+	// spawn a process in the soon-to-be-deleted worktree.
+	if s.runtime != nil {
+		s.runtime.BeginStopping(input.ID)
+		defer s.runtime.EndStopping(input.ID)
+	}
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
+		func(stopCtx context.Context) {
+			if s.runtime != nil {
+				s.runtime.StopWorkspace(stopCtx, input.ID)
+			}
+		},
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {

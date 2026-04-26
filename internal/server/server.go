@@ -20,6 +20,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/terminal"
 	"github.com/wesm/middleman/internal/workspace"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type EmbedConfig struct {
@@ -113,6 +114,7 @@ type Server struct {
 	clones            *gitclone.Manager
 	workspaces        *workspace.Manager
 	tmuxActivity      *tmuxActivityTracker
+	runtime           *localruntime.Manager
 	cfg               *config.Config
 	cfgPath           string
 	cfgMu             sync.Mutex
@@ -220,6 +222,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// client disconnect, hanging the shutdown until ctx expires.
 	if first && s.hub != nil {
 		s.hub.Close()
+	}
+	if first && s.runtime != nil {
+		s.runtime.Shutdown()
 	}
 
 	var httpErr error
@@ -349,9 +354,14 @@ func newServer(
 		bgDeadline: bgDeadline,
 	}
 
+	// (*Config).TmuxCommand handles a nil receiver and returns the
+	// default ["tmux"]. Compute once so the workspace, runtime, and
+	// terminal handler all share the same value and the nil-safety
+	// of the call is explicit at this level.
+	tmuxCmd := cfg.TmuxCommand()
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
-		s.workspaces.SetTmuxCommand(cfg.TmuxCommand())
+		s.workspaces.SetTmuxCommand(tmuxCmd)
 		if clones != nil {
 			s.workspaces.SetClones(clones)
 		}
@@ -362,17 +372,37 @@ func newServer(
 			slog.Warn("reap orphan tmux sessions", "err", err)
 		}
 		cleanupCancel()
+		var agents []config.Agent
+		if cfg != nil {
+			agents = cfg.Agents
+		}
+		s.runtime = localruntime.NewManager(localruntime.Options{
+			Targets: localruntime.ResolveLaunchTargets(
+				agents, tmuxCmd, nil,
+			),
+			StripEnvVars: cfg.TokenEnvNames(),
+		})
 	}
 
 	if s.workspaces != nil {
 		termHandler := &terminal.Handler{
 			Workspaces:  s.workspaces,
-			TmuxCommand: cfg.TmuxCommand(),
+			TmuxCommand: tmuxCmd,
 		}
 		mux.Handle(
 			"GET /api/v1/workspaces/{id}/terminal",
 			termHandler,
 		)
+		if s.runtime != nil {
+			mux.HandleFunc(
+				"GET /api/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
+				s.handleWorkspaceRuntimeSessionTerminal,
+			)
+			mux.HandleFunc(
+				"GET /api/v1/workspaces/{id}/runtime/shell/terminal",
+				s.handleWorkspaceRuntimeShellTerminal,
+			)
+		}
 	}
 
 	healthAPI := humago.New(mux, healthAPIConfig())
@@ -415,6 +445,10 @@ func newServer(
 			idx := strings.Replace(indexTemplate, "<head>",
 				`<head><script>`+s.bootstrapScript()+`</script>`, 1)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// index.html references content-hashed bundles. Browsers
+			// must always re-fetch it so a rebuild is picked up; the
+			// hashed assets it references can still be cached forever.
+			w.Header().Set("Cache-Control", "no-store, must-revalidate")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(idx))
 		}
@@ -433,7 +467,19 @@ func newServer(
 			f, err := frontend.Open(name)
 			if err == nil {
 				f.Close()
+				if strings.HasPrefix(r.URL.Path, "/assets/") {
+					w.Header().Set("Cache-Control",
+						"public, max-age=31536000, immutable")
+				}
 				fileServer.ServeHTTP(w, r)
+				return
+			}
+			// A missing /assets/* request is a stale-bundle fetch from
+			// an old cached index.html. Returning the SPA HTML here
+			// would 200 with the wrong Content-Type and leave the page
+			// stuck on a failed module import.
+			if strings.HasPrefix(r.URL.Path, "/assets/") {
+				http.NotFound(w, r)
 				return
 			}
 			serveIndex(w)

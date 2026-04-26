@@ -10,4 +10,4 @@ mkdir -p "$log_dir"
 
 cd "$repo_root/frontend"
 bun install ${BUN_INSTALL_FLAGS:-}
-bun run dev -- "${@}" 2>&1 | tee "$log_file"
+bun run dev -- ${@:+"$@"} 2>&1 | tee "$log_file"

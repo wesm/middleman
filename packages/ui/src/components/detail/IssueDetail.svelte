@@ -27,6 +27,21 @@
 
   const { owner, name, number, platformHost }: Props = $props();
 
+  // See PullDetail.svelte: while a route change is in flight, the
+  // displayed issue may briefly belong to the previous route. Mutating
+  // actions (state change, workspace create, etc.) read the props,
+  // which point at the new route — so they must be gated until the
+  // displayed issue catches up.
+  const staleIssue = $derived.by(() => {
+    const d = issues.getIssueDetail();
+    if (d == null) return false;
+    return (
+      d.repo_owner !== owner ||
+      d.repo_name !== name ||
+      (d.issue?.Number ?? -1) !== number
+    );
+  });
+
   $effect(() => {
     void issues.loadIssueDetail(
       owner,
@@ -41,6 +56,18 @@
       platformHost,
     );
     return () => issues.stopIssueDetailPolling();
+  });
+
+  // Clear conflict/error state on route change so issue A's
+  // dialogs can't bleed into issue B's view.
+  $effect(() => {
+    void owner;
+    void name;
+    void number;
+    branchConflict = null;
+    workspaceCreating = false;
+    workspaceError = null;
+    stateError = null;
   });
 
   let copied = $state(false);
@@ -59,6 +86,7 @@
   }
 
   function handleStarClick(): void {
+    if (staleIssue) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     void issues.toggleIssueStar(
@@ -75,6 +103,7 @@
   async function handleStateChange(
     newState: "open" | "closed",
   ): Promise<void> {
+    if (staleIssue) return;
     stateSubmitting = true;
     stateError = null;
     try {
@@ -208,6 +237,7 @@
   async function createWorkspace(
     options: CreateWorkspaceOptions = {},
   ): Promise<void> {
+    if (staleIssue) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
 
@@ -292,7 +322,7 @@
   }
 </script>
 
-{#if issues.isIssueDetailLoading()}
+{#if issues.isIssueDetailLoading() && issues.getIssueDetail() === null}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
 {:else if issues.getIssueDetailError() !== null && issues.getIssueDetail() === null}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
@@ -302,6 +332,11 @@
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     <div class="issue-detail">
+      {#if staleIssue && issues.getIssueDetailError() !== null}
+        <div class="detail-load-error" data-testid="detail-load-error">
+          Couldn't load this issue: {issues.getIssueDetailError()}
+        </div>
+      {/if}
       {#if issues.isIssueStaleRefreshing()}
         <div class="refresh-banner">
           <span class="sync-dot"></span>
@@ -315,6 +350,7 @@
           <button
             class="star-btn"
             onclick={handleStarClick}
+            disabled={staleIssue}
             title={issue.Starred ? "Unstar" : "Star"}
           >
             {#if issue.Starred}
@@ -410,7 +446,7 @@
         {:else}
           <button
             class="btn--workspace"
-            disabled={workspaceCreating}
+            disabled={workspaceCreating || staleIssue}
             onclick={() => void createWorkspace()}
           >
             {workspaceCreating ? "Creating..." : "Create Workspace"}
@@ -419,7 +455,7 @@
         {#if issue.State === "open"}
           <ActionButton
             class="btn--close"
-            disabled={stateSubmitting}
+            disabled={stateSubmitting || staleIssue}
             onclick={() => handleStateChange("closed")}
             tone="danger"
             surface="outline"
@@ -430,7 +466,7 @@
         {:else}
           <ActionButton
             class="btn--reopen"
-            disabled={stateSubmitting}
+            disabled={stateSubmitting || staleIssue}
             onclick={() => handleStateChange("open")}
             tone="success"
             surface="solid"
@@ -445,7 +481,13 @@
         {#each actions.issue ?? [] as action (action.id)}
           <ActionButton
             class="btn--embedding-action"
-            onclick={() => action.handler({ surface: "issue-detail", owner, name, number })}
+            onclick={() => {
+              if (staleIssue) return;
+              action.handler({
+                surface: "issue-detail", owner, name, number,
+              });
+            }}
+            disabled={staleIssue}
             tone="neutral"
             surface="outline"
             size="sm"
@@ -460,7 +502,12 @@
 
       <!-- Comment box -->
       <div class="section">
-        <IssueCommentBox {owner} {name} {number} />
+        <IssueCommentBox
+          {owner}
+          {name}
+          {number}
+          disabled={staleIssue}
+        />
       </div>
 
       <!-- Activity -->
@@ -858,6 +905,16 @@
     border-radius: var(--radius-sm);
     font-size: 11px;
     color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .detail-load-error {
+    padding: 6px 16px;
+    background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
+    color: var(--accent-red);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 12px;
+    flex-shrink: 0;
     margin-bottom: 8px;
   }
 

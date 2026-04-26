@@ -6,7 +6,24 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
 
-  const { workspaceId }: { workspaceId: string } = $props();
+  interface TerminalPaneProps {
+    workspaceId?: string;
+    websocketPath?: string;
+    reconnectOnExit?: boolean;
+    onExit?: (code: number) => void;
+    // When the session is already exited at mount time, skip the
+    // WebSocket connect — the server's attach endpoint returns 404
+    // for non-running sessions, which would loop scheduleReconnect.
+    initialStatus?: string;
+  }
+
+  const {
+    workspaceId,
+    websocketPath,
+    reconnectOnExit = true,
+    onExit,
+    initialStatus,
+  }: TerminalPaneProps = $props();
   const { settings: settingsStore } = getStores();
 
   const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
@@ -14,6 +31,7 @@
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
   let fitAddon: FitAddon | null = null;
+  let webglAddon: WebglAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,13 +59,41 @@
     return configured || defaultTerminalFontFamily();
   });
 
-  function buildWsUrl(cols: number, rows: number): string {
+  function defaultWebsocketPath(): string {
+    if (!workspaceId) return "";
+    return (
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+      "/terminal"
+    );
+  }
+
+  function appendSizeParams(
+    url: string,
+    cols: number,
+    rows: number,
+  ): string {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}cols=${cols}&rows=${rows}`;
+  }
+
+  function buildWsUrl(
+    cols: number,
+    rows: number,
+  ): string | null {
+    const path = websocketPath ?? defaultWebsocketPath();
+    if (!path) return null;
+
+    const withSize = appendSizeParams(path, cols, rows);
+    if (/^wss?:\/\//.test(withSize)) {
+      return withSize;
+    }
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const params = `cols=${cols}&rows=${rows}`;
+    const normalizedPath = withSize.startsWith("/")
+      ? withSize
+      : `/${withSize}`;
     return (
       `${proto}://${location.host}${basePath}` +
-      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
-      `/terminal?${params}`
+      normalizedPath
     );
   }
 
@@ -63,6 +109,7 @@
     const cols = terminal.cols;
     const rows = terminal.rows;
     const url = buildWsUrl(cols, rows);
+    if (!url) return;
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
     ws = socket;
@@ -77,13 +124,23 @@
         terminal.write(new Uint8Array(ev.data));
       } else if (typeof ev.data === "string") {
         try {
-          const msg = JSON.parse(ev.data) as { type: string };
+          const msg = JSON.parse(ev.data) as {
+            type: string;
+            code?: number;
+          };
           if (msg.type === "exited") {
+            onExit?.(msg.code ?? 0);
             exited = true;
-            terminal.write(
-              "\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n",
-            );
-            scheduleSessionRestart();
+            if (reconnectOnExit) {
+              terminal.write(
+                "\r\n\x1b[90m[Process exited — reconnecting...]\x1b[0m\r\n",
+              );
+              scheduleSessionRestart();
+            } else {
+              terminal.write(
+                "\r\n\x1b[90m[Process exited]\x1b[0m\r\n",
+              );
+            }
           }
         } catch {
           // Non-JSON text frame; ignore.
@@ -163,59 +220,92 @@
   $effect(() => {
     if (!terminal) return;
     terminal.options.fontFamily = terminalFontFamily;
+    // The WebGL renderer caches glyphs per font; force a rebuild so
+    // cell widths and glyph metrics line up after the family changes.
+    webglAddon?.clearTextureAtlas();
     fitAddon?.fit();
   });
 
   onMount(() => {
-    const term = new Terminal({
-      theme: {
-        background: "#0d1117",
-        foreground: "#c9d1d9",
-        cursor: "#58a6ff",
-      },
-      cursorBlink: true,
-      fontFamily: terminalFontFamily,
-      fontSize: 14,
-    });
-    terminal = term;
+    let started = false;
 
-    const fit = new FitAddon();
-    fitAddon = fit;
-    term.loadAddon(fit);
+    function start(): void {
+      if (started || disposed) return;
+      started = true;
 
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      // WebGL unavailable; canvas renderer used as fallback.
+      const term = new Terminal({
+        theme: {
+          background: "#0d1117",
+          foreground: "#c9d1d9",
+          cursor: "#58a6ff",
+        },
+        cursorBlink: true,
+        fontFamily: terminalFontFamily,
+        fontSize: 14,
+      });
+      terminal = term;
+
+      term.open(containerEl);
+
+      const fit = new FitAddon();
+      fitAddon = fit;
+      term.loadAddon(fit);
+
+      try {
+        const wgl = new WebglAddon();
+        wgl.onContextLoss(() => {
+          wgl.dispose();
+          if (webglAddon === wgl) webglAddon = null;
+        });
+        term.loadAddon(wgl);
+        webglAddon = wgl;
+      } catch {
+        // WebGL unavailable; canvas renderer used as fallback.
+      }
+
+      fit.fit();
+
+      term.onData((data: string) => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(encoder.encode(data));
+        }
+      });
+
+      term.onBinary((data: string) => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          const buf = new Uint8Array(data.length);
+          for (let i = 0; i < data.length; i++) {
+            buf[i] = data.charCodeAt(i) & 0xff;
+          }
+          ws.send(buf.buffer);
+        }
+      });
+
+      resizeObserver = new ResizeObserver(() => {
+        if (!fitAddon || !terminal) return;
+        fitAddon.fit();
+        sendResize(terminal.cols, terminal.rows);
+      });
+      resizeObserver.observe(containerEl);
+
+      if (initialStatus === "exited") {
+        exited = true;
+        term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+        return;
+      }
+      connect();
     }
 
-    term.open(containerEl);
-    fit.fit();
-
-    term.onData((data: string) => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(encoder.encode(data));
-      }
-    });
-
-    term.onBinary((data: string) => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        const buf = new Uint8Array(data.length);
-        for (let i = 0; i < data.length; i++) {
-          buf[i] = data.charCodeAt(i) & 0xff;
-        }
-        ws.send(buf.buffer);
-      }
-    });
-
-    resizeObserver = new ResizeObserver(() => {
-      if (!fitAddon || !terminal) return;
-      fitAddon.fit();
-      sendResize(terminal.cols, terminal.rows);
-    });
-    resizeObserver.observe(containerEl);
-
-    connect();
+    // Custom fonts (JetBrains Mono, etc.) may still be loading when
+    // the pane mounts. Initializing xterm before fonts settle locks
+    // in fallback-font cell metrics, so the WebGL atlas and the
+    // measured cols/rows drift away from what gets painted — which
+    // looks like cursor/prompt overlap in the running shell.
+    if (document.fonts && typeof document.fonts.ready?.then === "function") {
+      void document.fonts.ready.then(start);
+    } else {
+      start();
+    }
 
     return cleanup;
   });

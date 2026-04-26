@@ -27,6 +27,10 @@ export type MergeParams = components["schemas"]["MergePRInputBody"];
 
 export type WorktreeLink =
   components["schemas"]["WorktreeLinkResponse"];
+export type LaunchTarget = components["schemas"]["LaunchTarget"];
+export type RuntimeSession = components["schemas"]["SessionInfo"];
+export type WorkspaceRuntime =
+  components["schemas"]["WorkspaceRuntimeResponse"];
 
 export type Label = components["schemas"]["Label"];
 export type IssueLabel = Label;

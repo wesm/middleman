@@ -169,6 +169,17 @@ type Terminal struct {
 	FontFamily string `toml:"font_family,omitempty" json:"font_family"`
 }
 
+type Agent struct {
+	Key     string   `toml:"key" json:"key"`
+	Label   string   `toml:"label,omitempty" json:"label"`
+	Command []string `toml:"command,omitempty" json:"command"`
+	Enabled *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+func (a Agent) EnabledOrDefault() bool {
+	return a.Enabled == nil || *a.Enabled
+}
+
 type Roborev struct {
 	Endpoint string `toml:"endpoint,omitempty"`
 }
@@ -188,6 +199,7 @@ type Config struct {
 	Repos             []Repo   `toml:"repos"`
 	Activity          Activity `toml:"activity"`
 	Terminal          Terminal `toml:"terminal"`
+	Agents            []Agent  `toml:"agents"`
 	Roborev           Roborev  `toml:"roborev"`
 	Tmux              Tmux     `toml:"tmux"`
 }
@@ -326,6 +338,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Repos == nil {
 		cfg.Repos = []Repo{}
 	}
+	if cfg.Agents == nil {
+		cfg.Agents = []Agent{}
+	}
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()
@@ -452,6 +467,10 @@ func (c *Config) Validate() error {
 
 	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
 
+	if err := c.validateAgents(); err != nil {
+		return err
+	}
+
 	if len(c.Tmux.Command) > 0 &&
 		strings.TrimSpace(c.Tmux.Command[0]) == "" {
 		return fmt.Errorf(
@@ -460,6 +479,53 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) validateAgents() error {
+	seen := make(map[string]struct{}, len(c.Agents))
+	for i := range c.Agents {
+		agent := &c.Agents[i]
+		agent.Key = strings.ToLower(strings.TrimSpace(agent.Key))
+		agent.Label = strings.TrimSpace(agent.Label)
+		if agent.Key == "" {
+			return fmt.Errorf("config: agents[%d]: key is required", i)
+		}
+		if agent.Label == "" {
+			agent.Label = agent.Key
+		}
+		if reservedSystemLaunchTargetKeys[agent.Key] {
+			return fmt.Errorf(
+				"config: agents[%d]: key %q is a reserved system launch target",
+				i, agent.Key,
+			)
+		}
+		if _, ok := seen[agent.Key]; ok {
+			return fmt.Errorf(
+				"config: duplicate agent %q", agent.Key,
+			)
+		}
+		seen[agent.Key] = struct{}{}
+
+		if !agent.EnabledOrDefault() {
+			continue
+		}
+		if len(agent.Command) == 0 {
+			return fmt.Errorf(
+				"config: agents[%d]: command is required when enabled", i,
+			)
+		}
+		if strings.TrimSpace(agent.Command[0]) == "" {
+			return fmt.Errorf(
+				"config: agents[%d]: command first element must be non-empty", i,
+			)
+		}
+	}
+	return nil
+}
+
+var reservedSystemLaunchTargetKeys = map[string]bool{
+	"tmux":        true,
+	"plain_shell": true,
 }
 
 var (
@@ -483,6 +549,27 @@ func (c *Config) GitHubToken() string {
 		return token
 	}
 	return ghAuthToken()
+}
+
+// TokenEnvNames returns every env var name that may hold a GitHub
+// token according to this config: the global github_token_env plus
+// any per-repo token_env overrides. Used by the runtime sanitizer
+// to strip them from launched session environments so a non-default
+// token name is not exposed to PR-controlled processes.
+func (c *Config) TokenEnvNames() []string {
+	if c == nil {
+		return nil
+	}
+	names := make([]string, 0, 1+len(c.Repos))
+	if c.GitHubTokenEnv != "" {
+		names = append(names, c.GitHubTokenEnv)
+	}
+	for _, r := range c.Repos {
+		if r.TokenEnv != "" {
+			names = append(names, r.TokenEnv)
+		}
+	}
+	return names
 }
 
 var execCommand = exec.Command
@@ -538,6 +625,7 @@ type configFile struct {
 	Repos             []Repo   `toml:"repos"`
 	Activity          Activity `toml:"activity"`
 	Terminal          Terminal `toml:"terminal,omitempty"`
+	Agents            []Agent  `toml:"agents,omitempty"`
 	Roborev           Roborev  `toml:"roborev,omitempty"`
 	Tmux              Tmux     `toml:"tmux,omitempty"`
 }
@@ -552,6 +640,7 @@ func (c *Config) Save(path string) error {
 		Repos:          c.Repos,
 		Activity:       c.Activity,
 		Terminal:       c.Terminal,
+		Agents:         c.Agents,
 		Roborev:        c.Roborev,
 		Tmux:           c.Tmux,
 	}

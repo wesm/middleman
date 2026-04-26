@@ -84,6 +84,53 @@ const roborevStatus = {
   canceled_jobs: 0,
 };
 
+const workspaceRuntime = {
+  launch_targets: [
+    {
+      key: "codex",
+      label: "Codex",
+      kind: "agent",
+      source: "builtin",
+      command: ["codex"],
+      available: true,
+    },
+    {
+      key: "tmux",
+      label: "tmux",
+      kind: "tmux",
+      source: "system",
+      command: ["tmux"],
+      available: false,
+      disabled_reason: "tmux not found",
+    },
+    {
+      key: "plain_shell",
+      label: "Plain shell",
+      kind: "plain_shell",
+      source: "system",
+      command: ["/bin/sh"],
+      available: true,
+    },
+  ],
+  sessions: [],
+  shell_session: null,
+};
+
+type RuntimeTarget = (typeof workspaceRuntime.launch_targets)[number];
+type RuntimeSession = {
+  key: string;
+  workspace_id: string;
+  target_key: string;
+  label: string;
+  kind: RuntimeTarget["kind"];
+  status: "starting" | "running" | "exited" | "error";
+  created_at: string;
+};
+type WorkspaceRuntime = Omit<typeof workspaceRuntime, "sessions" | "shell_session"> & {
+  sessions: RuntimeSession[];
+  shell_session: RuntimeSession | null;
+};
+
 /**
  * Mock all routes needed for terminal view tests.
  * Registers mockApi first (catch-all), then layers
@@ -105,6 +152,7 @@ async function setupTerminalMocks(
       status: number;
       body?: unknown;
     };
+    runtime?: WorkspaceRuntime;
   },
 ): Promise<void> {
   const ws = opts?.workspace ?? testWorkspace;
@@ -114,6 +162,9 @@ async function setupTerminalMocks(
   const detailResponses = [
     ...(opts?.workspaceDetailResponses ?? []),
   ];
+  const runtime = JSON.parse(
+    JSON.stringify(opts?.runtime ?? workspaceRuntime),
+  ) as WorkspaceRuntime;
 
   // Register catch-all first — later routes override.
   await mockApi(page);
@@ -187,6 +238,119 @@ async function setupTerminalMocks(
       }
       // DELETE
       await route.fulfill({ status: 204 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/runtime`,
+    async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(runtime),
+        });
+        return;
+      }
+      await route.fulfill({ status: 405 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/runtime/sessions`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fulfill({ status: 405 });
+        return;
+      }
+      const body = JSON.parse(
+        route.request().postData() ?? "{}",
+      ) as { target_key?: string };
+      const target = runtime.launch_targets.find(
+        (candidate) => candidate.key === body.target_key,
+      );
+      if (!target || !target.available) {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            detail: "launch target unavailable",
+          }),
+        });
+        return;
+      }
+      let session = runtime.sessions.find(
+        (candidate) => candidate.target_key === target.key,
+      );
+      if (!session) {
+        session = {
+          key: `${ws.id}:${target.key}`,
+          workspace_id: ws.id,
+          target_key: target.key,
+          label: target.label,
+          kind: target.kind,
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        };
+        runtime.sessions = [...runtime.sessions, session];
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(session),
+      });
+    },
+  );
+
+  await page.route(
+    (url) =>
+      url.pathname.startsWith(
+        `/api/v1/workspaces/${ws.id}/runtime/sessions/`,
+      ),
+    async (route) => {
+      if (route.request().method() !== "DELETE") {
+        await route.continue();
+        return;
+      }
+      const url = new URL(route.request().url());
+      const sessionKey = decodeURIComponent(
+        url.pathname.split("/").at(-1) ?? "",
+      );
+      runtime.sessions = runtime.sessions.filter(
+        (session) => session.key !== sessionKey,
+      );
+      await route.fulfill({ status: 204 });
+    },
+  );
+
+  await page.route(
+    `**/api/v1/workspaces/${ws.id}/runtime/shell`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fulfill({ status: 405 });
+        return;
+      }
+      if (
+        !runtime.shell_session ||
+        !["running", "starting"].includes(
+          runtime.shell_session.status,
+        )
+      ) {
+        runtime.shell_session = {
+          key: `${ws.id}:shell`,
+          workspace_id: ws.id,
+          target_key: "plain_shell",
+          label: "Shell",
+          kind: "plain_shell",
+          status: "running",
+          created_at: "2026-04-10T12:00:00Z",
+        };
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(runtime.shell_session),
+      });
     },
   );
 
@@ -446,7 +610,155 @@ test.describe("terminal state icons", () => {
         .getByRole("button", { name: "Delete" })
         .click();
 
-      await expect(page).toHaveURL(/\/pulls$/);
+      await expect(page).toHaveURL(/\/workspaces$/);
+    },
+  );
+});
+
+test.describe("workspace launch home", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-list-sidebar-width",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+    await setupTerminalMocks(page);
+  });
+
+  test(
+    "shows Worktree Home and does not attach a terminal by default",
+    async ({ page }) => {
+      const terminalSockets: string[] = [];
+      page.on("websocket", (socket) => {
+        const url = socket.url();
+        if (url.includes("/terminal")) {
+          terminalSockets.push(url);
+        }
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await expect(
+        page.getByRole("tab", { name: "Home" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Launch" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Codex" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "tmux" }),
+      ).toBeDisabled();
+      await expect(
+        page.getByRole("button", {
+          name: "Open shell drawer",
+        }),
+      ).toBeVisible();
+      await expect(page.getByText("Plain shell")).toHaveCount(0);
+      await expect
+        .poll(() => terminalSockets.length)
+        .toBe(0);
+    },
+  );
+
+  test(
+    "launches an agent into a compact running tab",
+    async ({ page }) => {
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .getByRole("button", { name: "Codex" })
+        .click();
+
+      const tabs = page.locator(".workspace-tabs");
+      await expect(
+        tabs.getByRole("tab", { name: "Codex" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".terminal-container"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "opens the plain shell from the bottom drawer",
+    async ({ page }) => {
+      const terminalSockets: string[] = [];
+      page.on("websocket", (socket) => {
+        terminalSockets.push(socket.url());
+      });
+
+      await page.goto("/terminal/ws-123");
+      await page
+        .getByRole("button", {
+          name: "Open shell drawer",
+        })
+        .click();
+
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          terminalSockets.some((url) =>
+            url.includes("/runtime/shell/terminal"),
+          ),
+        )
+        .toBe(true);
+    },
+  );
+
+  test(
+    "restarts an exited shell session when opening the drawer",
+    async ({ page }) => {
+      const shellEnsures: string[] = [];
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          request.url().includes("/runtime/shell")
+        ) {
+          shellEnsures.push(request.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        runtime: {
+          ...workspaceRuntime,
+          shell_session: {
+            key: "ws-123:shell",
+            workspace_id: "ws-123",
+            target_key: "plain_shell",
+            label: "Shell",
+            kind: "plain_shell",
+            status: "exited",
+            created_at: "2026-04-10T12:00:00Z",
+          },
+        },
+      });
+
+      await page.goto("/terminal/ws-123");
+      await page
+        .getByRole("button", {
+          name: "Open shell drawer",
+        })
+        .click();
+
+      await expect
+        .poll(() => shellEnsures.length)
+        .toBe(1);
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toBeVisible();
     },
   );
 });
@@ -492,11 +804,14 @@ test.describe("sidebar toggle behavior", () => {
       const row = page.locator(".ws-row", {
         hasText: "Add auth middleware",
       });
-      const badge = row.locator(".working-badge");
-      await expect(badge).toBeVisible();
-      await expect(badge).toContainText("Working");
-      await expect(badge).toHaveAttribute(
+      const pulse = row.locator(".working-pulse");
+      await expect(pulse).toBeVisible();
+      await expect(pulse).toHaveAttribute(
         "title",
+        "Working (title): ⠴ t3code-b5014b03",
+      );
+      await expect(pulse).toHaveAttribute(
+        "aria-label",
         "Working (title): ⠴ t3code-b5014b03",
       );
     },
@@ -942,6 +1257,849 @@ test.describe("sidebar PR tab", () => {
       await expect(
         page.locator(".right-sidebar .empty-state"),
       ).toContainText("No linked PR");
+    },
+  );
+});
+
+// -------------------------------------------------------
+// Group 3.5: Workspace List Bubble
+// -------------------------------------------------------
+
+test.describe("workspace list bubble opens right sidebar", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+  });
+
+  test(
+    "clicking PR bubble opens PR tab in the right sidebar",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      // Sidebar should start collapsed.
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toHaveCount(0);
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "clicking issue bubble opens Issue tab for issue workspace",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: testIssueWorkspace,
+      });
+      await page.goto("/terminal/ws-issue-7");
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toHaveCount(0);
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "Issue" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "Enter keypress on PR bubble does not navigate row",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      const bubble = page.locator(
+        ".workspace-list-sidebar .ws-row .item-bubble",
+      );
+      await bubble.focus();
+      await page.keyboard.press("Enter");
+
+      // Sidebar should open without unintended navigation
+      // (the row's Enter handler must not fire when the
+      // event originates inside the bubble button).
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+    },
+  );
+
+  test(
+    "clicking bubble from /workspaces routes and keeps sidebar populated",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/workspaces");
+
+      // The /workspaces route has no specific workspace selected
+      // but still mounts the workspace list sidebar.
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(1);
+      await expect(
+        page.locator(".terminal-main .state-message"),
+      ).toContainText("Select a workspace from the sidebar");
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      // Navigation lands on the terminal route for the clicked
+      // workspace, the sidebar stays populated rather than
+      // emptying out, and the right sidebar opens to PR.
+      await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(1);
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "clicking bubble for a different workspace from /terminal navigates and keeps sidebar populated",
+    async ({ page }) => {
+      const wsA = { ...testWorkspace, id: "ws-aaa", item_number: 1 };
+      const wsB = { ...testWorkspace, id: "ws-bbb", item_number: 2 };
+
+      // First catch-all so unmocked detail routes resolve to a valid
+      // workspace shape; specific routes below override.
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      for (const ws of [wsA, wsB]) {
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}`,
+          async (route) => {
+            if (route.request().method() === "GET") {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(ws),
+              });
+              return;
+            }
+            await route.fulfill({ status: 204 });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                launch_targets: [],
+                sessions: [],
+                shell_session: null,
+              }),
+            });
+          },
+        );
+      }
+
+      await page.goto(`/terminal/${wsA.id}`);
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(2);
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsA.id}$`),
+      );
+
+      // Click the bubble for the other workspace.
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+          { hasText: `#${wsB.item_number}` },
+        )
+        .click();
+
+      // Should route to the other workspace, sidebar stays full,
+      // right sidebar opens to PR.
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsB.id}$`),
+      );
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(2);
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "clicking bubble does not bubble up to row navigation",
+    async ({ page }) => {
+      // The row click handler must skip when the event originates
+      // inside the bubble. If it didn't, the row would navigate
+      // before the bubble could open the right sidebar — leaving
+      // the sidebar closed.
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      let routeChanges = 0;
+      page.on("framenavigated", () => {
+        routeChanges += 1;
+      });
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      // Click on the bubble for the currently selected workspace
+      // should not have triggered a frame/route navigation.
+      expect(routeChanges).toBe(0);
+    },
+  );
+
+  test(
+    "clicking bubble twice toggles the right sidebar",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      const bubble = page.locator(
+        ".workspace-list-sidebar .ws-row .item-bubble",
+      );
+
+      await bubble.click();
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+
+      await bubble.click();
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toHaveCount(0);
+    },
+  );
+
+  test(
+    "PR bubble x-position stays stable across rows with varied meta",
+    async ({ page }) => {
+      // Regression: the bubble previously sat inside .ws-row-text and
+      // its X position drifted left when the row had no push pills or
+      // diff stats. Pinning the bubble to its own right column makes
+      // the X position identical across rows regardless of meta.
+      const wsBare = {
+        ...testWorkspace,
+        id: "ws-bare",
+        item_number: 1,
+        git_head_ref: "fix/x",
+      };
+      const wsBranchOnly = {
+        ...testWorkspace,
+        id: "ws-branch-long",
+        item_number: 22,
+        git_head_ref:
+          "feature/very-long-branch-name-that-fills-the-row",
+      };
+      const wsAhead = {
+        ...testWorkspace,
+        id: "ws-ahead",
+        item_number: 333,
+        git_head_ref: "feature/ahead",
+        commits_ahead: 7,
+        commits_behind: 0,
+      };
+      const wsAheadBehindDiff = {
+        ...testWorkspace,
+        id: "ws-busy",
+        item_number: 4444,
+        git_head_ref: "feature/busy",
+        commits_ahead: 12,
+        commits_behind: 5,
+        mr_additions: 1500,
+        mr_deletions: 2400,
+      };
+      const list = [wsBare, wsBranchOnly, wsAhead, wsAheadBehindDiff];
+
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: list }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      for (const ws of list) {
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}`,
+          async (route) => {
+            if (route.request().method() === "GET") {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(ws),
+              });
+              return;
+            }
+            await route.fulfill({ status: 204 });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                launch_targets: [],
+                sessions: [],
+                shell_session: null,
+              }),
+            });
+          },
+        );
+      }
+
+      await page.goto("/workspaces");
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(list.length);
+
+      const bubbles = page.locator(
+        ".workspace-list-sidebar .ws-row .item-bubble",
+      );
+      const boxes: Array<{ right: number }> = [];
+      for (let i = 0; i < list.length; i += 1) {
+        const box = await bubbles.nth(i).boundingBox();
+        expect(box).not.toBeNull();
+        if (box != null) {
+          boxes.push({ right: box.x + box.width });
+        }
+      }
+
+      const rights = boxes.map((b) => b.right);
+      const maxRight = Math.max(...rights);
+      const minRight = Math.min(...rights);
+      // All bubbles should align to the same right column. Allow a
+      // sub-pixel tolerance for browser rounding.
+      expect(maxRight - minRight).toBeLessThanOrEqual(1);
+    },
+  );
+});
+
+// -------------------------------------------------------
+// Group 3.5: Delayed-response navigation (no flash, no
+// stale-action targets)
+// -------------------------------------------------------
+
+test.describe("delayed-response navigation", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+  });
+
+  test(
+    "switching workspaces holds previous data and blocks actions until new load resolves",
+    async ({ page }) => {
+      // Workspace A loads instantly. Workspace B's GET is held back
+      // so the UI is forced into the transition window where the
+      // previous workspace's data is still on screen and any
+      // mutating actions must target the new id but be blocked.
+      const wsA = {
+        ...testWorkspace,
+        id: "ws-aaa",
+        item_number: 1,
+        mr_title: "A title",
+      };
+      const wsB = {
+        ...testWorkspace,
+        id: "ws-bbb",
+        item_number: 2,
+        mr_title: "B title",
+      };
+
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+
+      // wsA — instant.
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsA),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              launch_targets: [],
+              sessions: [],
+              shell_session: null,
+            }),
+          });
+        },
+      );
+
+      // wsB — delayed. Resolved manually below so the test can
+      // observe the in-place transition.
+      let releaseB: () => void = () => {};
+      const bDelay = new Promise<void>((resolve) => {
+        releaseB = resolve;
+      });
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await bDelay;
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsB),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}/runtime`,
+        async (route) => {
+          await bDelay;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              launch_targets: [],
+              sessions: [],
+              shell_session: null,
+            }),
+          });
+        },
+      );
+
+      await page.goto(`/terminal/${wsA.id}`);
+
+      // Confirm wsA is visible (its title sits in the header bar).
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsA.mr_title);
+
+      // Click row B from the sidebar.
+      await page
+        .locator(".workspace-list-sidebar .ws-row", {
+          hasText: `#${wsB.item_number}`,
+        })
+        .click();
+
+      // URL has switched to B, but B's data hasn't arrived yet —
+      // the header bar should still show A's data (no flash to
+      // a loading/empty state).
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsB.id}$`),
+      );
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsA.mr_title);
+
+      // While the URL points at B but the screen still shows A,
+      // the Delete button must be disabled so a click can't
+      // delete B while the user looks at A.
+      await expect(
+        page.locator(".terminal-main .header-btn.danger"),
+      ).toBeDisabled();
+
+      // Release B's response — the UI should update in place to
+      // wsB without ever rendering a "Loading..." flash.
+      releaseB();
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsB.mr_title);
+      await expect(
+        page.locator(".terminal-main .header-btn.danger"),
+      ).toBeEnabled();
+    },
+  );
+
+  test(
+    "shell drawer closes when navigating to a different workspace",
+    async ({ page }) => {
+      // Regression: keeping the drawer open across a workspace
+      // change kept the previous workspace's shell TerminalPane
+      // mounted with its WebSocket pointing at workspace A. The
+      // user could see workspace B but type into A's shell.
+      const wsA = {
+        ...testWorkspace,
+        id: "ws-aaa",
+        item_number: 1,
+        mr_title: "A title",
+      };
+      const wsB = {
+        ...testWorkspace,
+        id: "ws-bbb",
+        item_number: 2,
+        mr_title: "B title",
+      };
+      const shellSession = (wsId: string) => ({
+        key: `${wsId}:shell`,
+        workspace_id: wsId,
+        target_key: "plain_shell",
+        label: "Shell",
+        kind: "plain_shell",
+        status: "running" as const,
+        created_at: "2026-04-10T12:00:00Z",
+      });
+
+      await mockApi(page);
+      await page.route("**/api/v1/events", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      });
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      for (const ws of [wsA, wsB]) {
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}`,
+          async (route) => {
+            if (route.request().method() === "GET") {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(ws),
+              });
+              return;
+            }
+            await route.fulfill({ status: 204 });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                ...workspaceRuntime,
+                shell_session: shellSession(ws.id),
+              }),
+            });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime/shell`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(shellSession(ws.id)),
+            });
+          },
+        );
+      }
+
+      await page.goto(`/terminal/${wsA.id}`);
+      // Open the shell drawer for A.
+      await page
+        .getByRole("button", { name: "Open shell drawer" })
+        .click();
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toBeVisible();
+
+      // Navigate to B by clicking its row.
+      await page
+        .locator(".workspace-list-sidebar .ws-row", {
+          hasText: `#${wsB.item_number}`,
+        })
+        .click();
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsB.id}$`),
+      );
+
+      // The drawer must close so the previous workspace's shell
+      // pane unmounts and its WebSocket tears down. Otherwise
+      // keystrokes from B's session would be routed to A's shell.
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toHaveCount(0);
+    },
+  );
+
+  test(
+    "previous workspace's runtime sessions are not visible while B's runtime is loading",
+    async ({ page }) => {
+      // Regression: after the workspace fetch resolved, runtime
+      // still held the previous workspace's payload until its own
+      // fetch completed. The workspace stage briefly rendered A's
+      // session tabs (and launch targets) inside B's view, with
+      // actionsBlocked already false.
+      const wsA = {
+        ...testWorkspace,
+        id: "ws-aaa",
+        item_number: 1,
+        mr_title: "A title",
+      };
+      const wsB = {
+        ...testWorkspace,
+        id: "ws-bbb",
+        item_number: 2,
+        mr_title: "B title",
+      };
+      const sessionA = {
+        key: "ws-aaa:helper",
+        workspace_id: "ws-aaa",
+        target_key: "helper",
+        label: "Helper A",
+        kind: "agent" as const,
+        status: "running" as const,
+        created_at: "2026-04-10T12:00:00Z",
+      };
+
+      await mockApi(page);
+      await page.route("**/api/v1/events", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      });
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      // wsA: instant.
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsA),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ...workspaceRuntime,
+              sessions: [sessionA],
+            }),
+          });
+        },
+      );
+      // wsB: workspace GET is fast, runtime GET is held.
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsB),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      let releaseBRuntime: () => void = () => {};
+      const bRuntimeDelay = new Promise<void>((resolve) => {
+        releaseBRuntime = resolve;
+      });
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}/runtime`,
+        async (route) => {
+          await bRuntimeDelay;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(workspaceRuntime),
+          });
+        },
+      );
+
+      await page.goto(`/terminal/${wsA.id}`);
+      // A's session tab should be visible.
+      await expect(
+        page.locator(".workspace-stage .stage-pane"),
+      ).not.toHaveCount(0);
+
+      await page
+        .locator(".workspace-list-sidebar .ws-row", {
+          hasText: `#${wsB.item_number}`,
+        })
+        .click();
+
+      // The header should have moved to B as soon as wsB's
+      // workspace GET resolves. But because B's runtime fetch is
+      // still in flight, the workspace stage must show the
+      // "Loading workspace runtime..." state, not A's session
+      // panes.
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsB.mr_title);
+      await expect(
+        page.locator(".workspace-stage .state-message"),
+      ).toContainText("Loading workspace runtime");
+
+      releaseBRuntime();
+
+      // Once B's runtime resolves, the loading state goes away.
+      await expect(
+        page.locator(".workspace-stage .state-message"),
+      ).toHaveCount(0);
     },
   );
 });

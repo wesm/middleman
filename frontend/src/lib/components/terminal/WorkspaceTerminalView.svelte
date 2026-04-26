@@ -1,8 +1,21 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import WorkspaceHome from "./WorkspaceHome.svelte";
+  import WorkspaceTabs from "./WorkspaceTabs.svelte";
+  import LaunchMenu from "./LaunchMenu.svelte";
+  import ShellDrawer from "./ShellDrawer.svelte";
+  import type { RuntimeSession } from "@middleman/ui/api/types";
+  import {
+    ensureWorkspaceShell,
+    getWorkspaceRuntime,
+    launchWorkspaceSession,
+    stopWorkspaceSession,
+    workspaceSessionWebSocketPath,
+    workspaceTmuxWebSocketPath,
+    type WorkspaceRuntimeState,
+  } from "../../api/workspace-runtime.js";
   import {
     CollapsibleResizableSidebar,
     WorkspaceRightSidebar,
@@ -36,13 +49,26 @@
   ).replace(/\/$/, "");
 
   let workspace = $state<Workspace | null>(null);
+  let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
+  // The workspace ID that `runtime` was fetched for. Stored
+  // alongside the payload so we never render or operate on
+  // sessions/targets that belong to a previous workspace
+  // (during the in-place transition between workspaces, runtime
+  // briefly outlives the workspace it was fetched for).
+  let runtimeForId = $state<string>("");
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
+  let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
     typeof setInterval
   > | null>(null);
   let eventSource = $state<EventSource | null>(null);
+  let activeTabKey = $state("home");
+  let tmuxTabOpen = $state(false);
+  let launchingKey = $state<string | null>(null);
+  let shellOpen = $state(false);
+  let shellLoading = $state(false);
 
   const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
   const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
@@ -107,6 +133,48 @@
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
+
+  // Runtime is only "live" when both the runtime fetch and the
+  // workspace fetch resolve for the current route. Without the
+  // workspace.id check, a runtime that lands first for the new
+  // workspace can render its sessions/launch targets next to the
+  // previous workspace's still-cached header/home data.
+  const runtimeLive = $derived(
+    runtime !== null &&
+      runtimeForId === workspaceId &&
+      workspace?.id === workspaceId,
+  );
+  const runtimeSessions = $derived(
+    runtimeLive ? (runtime?.sessions ?? []) : [],
+  );
+  const launchTargets = $derived(
+    runtimeLive ? (runtime?.launch_targets ?? []) : [],
+  );
+  const shellSession = $derived(
+    runtimeLive ? (runtime?.shell_session ?? null) : null,
+  );
+  const shellSessionActive = $derived(
+    shellSession?.status === "running" ||
+      shellSession?.status === "starting",
+  );
+  const activeSession = $derived.by(() => {
+    if (!activeTabKey.startsWith("session:")) return null;
+    const key = activeTabKey.slice("session:".length);
+    return runtimeSessions.find((session) => session.key === key) ?? null;
+  });
+
+  // While `workspaceId` has moved on but the previous workspace's
+  // data is still on screen (the in-place transition), mutating
+  // actions must not run — they would target the new id while the
+  // user is looking at the old one. The window is small (≤ a few
+  // hundred ms) but observable, so guard every action handler with
+  // this and disable the buttons.
+  const transitioning = $derived(
+    workspaceId !== "" &&
+      workspace !== null &&
+      workspace.id !== workspaceId,
+  );
+  const actionsBlocked = $derived(transitioning);
 
   $effect(() => {
     localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
@@ -250,16 +318,24 @@
   }
 
   async function fetchWorkspace(): Promise<void> {
+    // Capture the id at call time. With workspaceId changing across
+    // navigations, a slow in-flight fetch for the previous id could
+    // otherwise resolve after a newer fetch and overwrite the new
+    // workspace's data with stale content (causing a perceived flash
+    // back to the previous workspace).
+    const id = workspaceId;
     try {
       const url =
         `${basePath}/api/v1/workspaces` +
-        `/${encodeURIComponent(workspaceId)}`;
+        `/${encodeURIComponent(id)}`;
       const res = await fetch(url);
+      if (id !== workspaceId) return;
       if (!res.ok) {
         loadError = `Failed to load workspace (${res.status})`;
         return;
       }
       const data = (await res.json()) as Workspace;
+      if (id !== workspaceId) return;
       workspace = data;
       loadError = null;
       actionError = null;
@@ -267,11 +343,131 @@
       if (data.status !== "creating") {
         stopPolling();
       }
+      if (data.status === "ready") {
+        void fetchRuntime();
+      }
     } catch (err) {
+      if (id !== workspaceId) return;
       loadError =
         err instanceof Error
           ? err.message
           : "Network error";
+    }
+  }
+
+  async function fetchRuntime(): Promise<void> {
+    if (!workspaceId) return;
+    const id = workspaceId;
+    try {
+      const data = await getWorkspaceRuntime(id);
+      if (id !== workspaceId) return;
+      runtime = data;
+      runtimeForId = id;
+      runtimeError = null;
+      if (
+        activeTabKey.startsWith("session:") &&
+        !activeSession
+      ) {
+        activeTabKey = "home";
+      }
+    } catch (err) {
+      if (id !== workspaceId) return;
+      runtimeError =
+        err instanceof Error
+          ? err.message
+          : "Runtime load failed";
+    }
+  }
+
+  async function handleLaunch(targetKey: string): Promise<void> {
+    if (!workspaceId || launchingKey || actionsBlocked) return;
+    const target = launchTargets.find((t) => t.key === targetKey);
+    if (target?.kind === "tmux") {
+      tmuxTabOpen = true;
+      activeTabKey = "tmux";
+      return;
+    }
+
+    // Capture id so post-await steps bail if workspace changes mid-launch.
+    const id = workspaceId;
+    launchingKey = targetKey;
+    runtimeError = null;
+    try {
+      const session = await launchWorkspaceSession(
+        id,
+        targetKey,
+      );
+      if (id !== workspaceId) return;
+      await fetchRuntime();
+      if (id !== workspaceId) return;
+      activeTabKey = `session:${session.key}`;
+    } catch (err) {
+      if (id !== workspaceId) return;
+      runtimeError =
+        err instanceof Error ? err.message : "Launch failed";
+    } finally {
+      if (id === workspaceId) launchingKey = null;
+    }
+  }
+
+  function openSession(sessionKey: string): void {
+    activeTabKey = `session:${sessionKey}`;
+  }
+
+  async function closeSession(session: RuntimeSession): Promise<void> {
+    if (actionsBlocked) return;
+    if (
+      session.status === "running" &&
+      !confirm(`Stop ${session.label}?`)
+    ) {
+      return;
+    }
+    const id = workspaceId;
+    try {
+      await stopWorkspaceSession(id, session.key);
+      if (id !== workspaceId) return;
+      await fetchRuntime();
+      if (id !== workspaceId) return;
+      if (activeTabKey === `session:${session.key}`) {
+        activeTabKey = "home";
+      }
+    } catch (err) {
+      if (id !== workspaceId) return;
+      runtimeError =
+        err instanceof Error ? err.message : "Stop failed";
+    }
+  }
+
+  async function toggleShell(): Promise<void> {
+    if (shellOpen) {
+      shellOpen = false;
+      return;
+    }
+    if (actionsBlocked) return;
+    shellOpen = true;
+    if (shellLoading) return;
+
+    // Always call ensureWorkspaceShell on open. It is idempotent
+    // server-side (returns the existing session if running, starts
+    // a fresh one if exited), so trusting the locally-cached
+    // shellSessionActive flag would mount a TerminalPane against a
+    // shell the server has already torn down — yielding a 404
+    // attach + reconnect loop.
+    const id = workspaceId;
+    shellLoading = true;
+    runtimeError = null;
+    try {
+      await ensureWorkspaceShell(id);
+      if (id !== workspaceId) return;
+      await fetchRuntime();
+    } catch (err) {
+      if (id !== workspaceId) return;
+      runtimeError =
+        err instanceof Error
+          ? err.message
+          : "Shell launch failed";
+    } finally {
+      if (id === workspaceId) shellLoading = false;
     }
   }
 
@@ -290,7 +486,7 @@
   }
 
   async function handleRetrySetup(): Promise<void> {
-    if (!workspace || retryingSetup) return;
+    if (!workspace || retryingSetup || actionsBlocked) return;
 
     retryingSetup = true;
     actionError = null;
@@ -322,6 +518,7 @@
   }
 
   async function handleDelete(): Promise<void> {
+    if (actionsBlocked) return;
     actionError = null;
     const url =
       `${basePath}/api/v1/workspaces` +
@@ -363,8 +560,51 @@
     }
   });
 
-  onMount(() => {
-    if (!workspaceId) return;
+  // React to workspaceId changes (including / from "" on the
+  // bare /workspaces route) without remounting the entire view.
+  // Removing the {#key} that previously wrapped this component in
+  // App.svelte means the lifecycle is now driven entirely by this
+  // effect.
+  //
+  // Critically, this effect must NOT null out `workspace` or
+  // `runtime` between switches: the right sidebar and stage area
+  // both gate on those values being non-null, so clearing them
+  // would unmount the right sidebar and replace the stage with the
+  // "Setting up workspace…" spinner — the flash the user is trying
+  // to avoid. Instead we let the previous workspace's data stay on
+  // screen until the new fetchWorkspace() resolves and overwrites
+  // it in place.
+  $effect(() => {
+    const id = workspaceId;
+
+    // Tab state from the previous workspace can't be valid for a
+    // different workspace's runtime, so reset these even though
+    // workspace/runtime themselves are kept. shellOpen must reset
+    // too: the ShellDrawer's TerminalPane only opens its WebSocket
+    // on mount, so leaving the drawer open across a workspace
+    // change would route keystrokes to the previous workspace's
+    // shell while the user looks at the new workspace.
+    activeTabKey = "home";
+    tmuxTabOpen = false;
+    shellOpen = false;
+    launchingKey = null;
+    shellLoading = false;
+
+    // Errors/transient flags from the prior workspace should not
+    // bleed across — clear them but don't touch workspace/runtime.
+    loadError = null;
+    actionError = null;
+    runtimeError = null;
+
+    if (!id) {
+      // /workspaces route: drop workspace data so the empty-state
+      // message renders rather than continuing to show whatever
+      // the previous /terminal/{id} session left behind.
+      workspace = null;
+      runtime = null;
+      runtimeForId = "";
+      return;
+    }
 
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
@@ -377,7 +617,7 @@
           const data = JSON.parse(
             e.data as string,
           ) as { id?: string };
-          if (data.id === workspaceId) {
+          if (data.id === id) {
             void fetchWorkspace();
           }
         } catch {
@@ -387,18 +627,15 @@
     );
 
     void fetchWorkspace().then(() => {
-      if (
-        workspace &&
-        workspace.status === "creating"
-      ) {
+      if (workspace?.status === "creating") {
         startPolling();
       }
     });
 
     return () => {
       stopPolling();
-      if (eventSource) {
-        eventSource.close();
+      source.close();
+      if (eventSource === source) {
         eventSource = null;
       }
     };
@@ -421,7 +658,27 @@
     mainOverflow="hidden"
   >
     {#snippet sidebar()}
-      <WorkspaceListSidebar selectedId={workspaceId} />
+      <WorkspaceListSidebar
+        selectedId={workspaceId}
+        onOpenItemSidebar={(targetId, tab) => {
+          // Cross-workspace click: navigate first, then ensure
+          // the sidebar is open for the target tab.
+          if (targetId !== workspaceId) {
+            sidebarTab = tab;
+            sidebarOpen = true;
+            navigate(`/terminal/${targetId}`);
+            return;
+          }
+          // Same-workspace click: toggle, mirroring the seg-btn
+          // behavior in handleSegmentClick.
+          if (sidebarOpen && sidebarTab === tab) {
+            sidebarOpen = false;
+            return;
+          }
+          sidebarTab = tab;
+          sidebarOpen = true;
+        }}
+      />
     {/snippet}
     <div class="terminal-main">
       {#if !workspaceId}
@@ -525,6 +782,7 @@
             </div>
             <button
               class="header-btn danger"
+              disabled={actionsBlocked}
               onclick={() => void handleDelete()}
             >
               Delete
@@ -533,7 +791,106 @@
         </div>
         <div class="terminal-and-sidebar" bind:this={containerEl}>
           <div class="terminal-area">
-            <TerminalPane {workspaceId} />
+            <div class="workspace-surface">
+              <div class="workspace-toolbar">
+                <WorkspaceTabs
+                  activeKey={activeTabKey}
+                  sessions={runtimeSessions}
+                  tmuxOpen={tmuxTabOpen}
+                  onSelectHome={() => {
+                    activeTabKey = "home";
+                  }}
+                  onSelectTmux={() => {
+                    activeTabKey = "tmux";
+                  }}
+                  onSelectSession={openSession}
+                  onCloseTmux={() => {
+                    tmuxTabOpen = false;
+                    if (activeTabKey === "tmux") {
+                      activeTabKey = "home";
+                    }
+                  }}
+                  onCloseSession={(key) => {
+                    const session = runtimeSessions.find(
+                      (s) => s.key === key,
+                    );
+                    if (session) void closeSession(session);
+                  }}
+                />
+                <div class="workspace-actions">
+                  <LaunchMenu
+                    launchTargets={launchTargets}
+                    {launchingKey}
+                    onLaunch={(key) => void handleLaunch(key)}
+                  />
+                </div>
+              </div>
+              {#if runtimeError}
+                <div class="runtime-error">{runtimeError}</div>
+              {/if}
+              <div class="workspace-stage">
+                {#if !runtimeLive}
+                  <div class="state-message">
+                    <SpinnerIcon
+                      class="spinner"
+                      size="18"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    />
+                    <span>Loading workspace runtime...</span>
+                  </div>
+                {:else}
+                  <div
+                    class="stage-pane"
+                    class:active={activeTabKey === "home"}
+                  >
+                    <WorkspaceHome
+                      {workspace}
+                      launchTargets={launchTargets}
+                      sessions={runtimeSessions}
+                      {launchingKey}
+                      onLaunch={(key) => void handleLaunch(key)}
+                      onOpenSession={openSession}
+                    />
+                  </div>
+                  {#if tmuxTabOpen}
+                    <div
+                      class="stage-pane"
+                      class:active={activeTabKey === "tmux"}
+                    >
+                      <TerminalPane
+                        websocketPath={workspaceTmuxWebSocketPath(workspaceId)}
+                        reconnectOnExit={true}
+                      />
+                    </div>
+                  {/if}
+                  {#each runtimeSessions as session (session.key)}
+                    <div
+                      class="stage-pane"
+                      class:active={activeTabKey === `session:${session.key}`}
+                    >
+                      <TerminalPane
+                        websocketPath={workspaceSessionWebSocketPath(
+                          workspaceId,
+                          session.key,
+                        )}
+                        reconnectOnExit={false}
+                        onExit={() => void fetchRuntime()}
+                        initialStatus={session.status}
+                      />
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+              <ShellDrawer
+                {workspaceId}
+                open={shellOpen}
+                loading={shellLoading}
+                shellSession={shellSessionActive ? shellSession : null}
+                onToggle={() => void toggleShell()}
+                onExit={() => void fetchRuntime()}
+              />
+            </div>
           </div>
           {#if sidebarOpen && workspace}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -652,37 +1009,41 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 14px;
+    height: 34px;
+    padding: 0 10px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
-    gap: 12px;
+    gap: 10px;
     flex-shrink: 0;
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     overflow: hidden;
   }
 
   .header-name {
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    letter-spacing: 0.005em;
   }
 
   .header-branch {
     font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text-muted);
+    font-size: 11.5px;
+    color: var(--text-secondary);
     background: var(--bg-inset);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border-muted);
     white-space: nowrap;
+    line-height: 1.5;
   }
 
   .header-right {
@@ -693,19 +1054,23 @@
   }
 
   .header-btn {
-    padding: 4px 12px;
+    height: 22px;
+    padding: 0 10px;
     border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
+    border-radius: 3px;
     background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
     cursor: pointer;
+    transition: background-color 80ms ease, color 80ms ease,
+      border-color 80ms ease;
   }
 
   .header-btn:hover {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--text-muted) 40%, var(--border-default));
   }
 
   .header-btn.danger:hover {
@@ -719,36 +1084,101 @@
     overflow: hidden;
   }
 
-  .seg-control {
+  .workspace-surface {
     display: flex;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    background: var(--bg-primary);
+  }
+
+  .workspace-toolbar {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 10px;
+    height: 30px;
+    padding: 0 6px 0 0;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-inset);
+    flex-shrink: 0;
+  }
+
+  .workspace-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding-left: 6px;
+    border-left: 1px solid var(--border-muted);
+  }
+
+  .runtime-error {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-default);
+    background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-surface));
+    color: var(--accent-red);
+    font-size: 12px;
+  }
+
+  .workspace-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 
+  /* Tabs stay mounted across switches so xterm scrollback and the
+   * WebSocket survive — non-active panes are layered below and
+   * hidden via visibility so layout/sizing is preserved. */
+  .stage-pane {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+  }
+
+  .stage-pane.active {
+    visibility: visible;
+    z-index: 1;
+  }
+
+  .seg-control {
+    display: inline-flex;
+    height: 22px;
+    border: 1px solid var(--border-default);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--bg-surface);
+  }
+
   .seg-btn {
-    padding: 3px 10px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
     border: none;
-    background: none;
-    color: var(--text-muted);
+    background: transparent;
+    color: var(--text-secondary);
     font-size: 11px;
     font-weight: 500;
+    letter-spacing: 0.01em;
     cursor: pointer;
     font-family: inherit;
+    transition: background-color 80ms ease, color 80ms ease;
   }
 
-  .seg-btn:first-child {
-    border-right: 1px solid var(--border-default);
+  .seg-btn + .seg-btn {
+    border-left: 1px solid var(--border-default);
   }
 
-  .seg-btn:hover {
-    color: var(--text-secondary);
+  .seg-btn:hover:not(.active) {
+    color: var(--text-primary);
     background: var(--bg-surface-hover);
   }
 
   .seg-btn.active {
     background: var(--accent-blue);
     color: #fff;
+    font-weight: 600;
   }
 
   .terminal-and-sidebar {

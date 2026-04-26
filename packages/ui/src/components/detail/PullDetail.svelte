@@ -41,10 +41,40 @@
   let activeTab = $state<"conversation" | "files">("conversation");
   let ciExpanded = $state(false);
 
+  // Mutating actions (close/reopen, kanban state, star, save title/body,
+  // workspace creation, etc.) read the (owner, name, number) PROPS, but
+  // the visible detail is whatever loadDetail last produced. During a
+  // route change those drift apart for the brief window before the new
+  // load completes. `stalePR` is true in that window, and every mutation
+  // handler short-circuits on it so a click during the transition can't
+  // operate on the freshly-routed PR while showing the previous one.
+  const stalePR = $derived.by(() => {
+    const d = detailStore.getDetail();
+    if (d == null) return false;
+    return (
+      d.repo_owner !== owner ||
+      d.repo_name !== name ||
+      (d.merge_request?.Number ?? -1) !== number
+    );
+  });
+
   $effect(() => {
     void detailStore.loadDetail(owner, name, number);
     detailStore.startDetailPolling(owner, name, number);
     return () => detailStore.stopDetailPolling();
+  });
+
+  // Clear modal/edit state on route change so PR A's open modal
+  // can't reappear for PR B once `stalePR` clears.
+  $effect(() => {
+    void owner;
+    void name;
+    void number;
+    showMergeModal = false;
+    editingTitle = false;
+    editingBody = false;
+    titleDraft = "";
+    bodyDraft = "";
   });
 
   let copied = $state(false);
@@ -113,6 +143,7 @@
   }
 
   async function saveTitle(): Promise<void> {
+    if (stalePR) return;
     const mr = currentPR();
     const trimmed = titleDraft.trim();
     if (!trimmed || trimmed === mr?.Title) {
@@ -160,6 +191,7 @@
   }
 
   async function saveBody(): Promise<void> {
+    if (stalePR) return;
     const mr = currentPR();
     if (bodyDraft === mr?.Body) {
       cancelEditBody();
@@ -188,6 +220,7 @@
   async function handleStateChange(
     newState: "open" | "closed",
   ): Promise<void> {
+    if (stalePR) return;
     stateSubmitting = true;
     stateError = null;
     try {
@@ -254,6 +287,7 @@
   }
 
   function onKanbanChange(e: Event): void {
+    if (stalePR) return;
     const select = e.target as HTMLSelectElement;
     void detailStore.updateKanbanState(owner, name, number, select.value as KanbanStatus);
   }
@@ -288,6 +322,7 @@
   let wsError = $state<string | null>(null);
 
   async function createWorkspace(): Promise<void> {
+    if (stalePR) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
 
@@ -321,7 +356,7 @@
   }
 </script>
 
-{#if detailStore.isDetailLoading()}
+{#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
 {:else if detailStore.getDetailError() !== null && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
@@ -330,6 +365,11 @@
   {#if detail !== null}
     {@const pr = detail.merge_request}
     <div class="pull-detail-wrap">
+      {#if stalePR && detailStore.getDetailError() !== null}
+        <div class="detail-load-error" data-testid="detail-load-error">
+          Couldn't load this pull request: {detailStore.getDetailError()}
+        </div>
+      {/if}
       {#if !hideTabs}
         <div class="detail-tabs">
           <button
@@ -408,7 +448,11 @@
         {#if !uiConfig.hideStar}
           <button
             class="star-btn"
-            onclick={() => void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred)}
+            disabled={stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
+            }}
             title={pr.Starred ? "Unstar" : "Star"}
           >
             {#if pr.Starred}
@@ -565,9 +609,21 @@
         <div class="actions-row">
           {#if pr.State === "open"}
             {#if pr.IsDraft}
-              <ReadyForReviewButton {owner} {name} {number} size="sm" />
+              <ReadyForReviewButton
+                {owner}
+                {name}
+                {number}
+                size="sm"
+                disabled={stalePR}
+              />
             {/if}
-            <ApproveButton {owner} {name} {number} size="sm" />
+            <ApproveButton
+              {owner}
+              {name}
+              {number}
+              size="sm"
+              disabled={stalePR}
+            />
             {#if workflowApproval?.checked && workflowApproval.required}
               <ApproveWorkflowsButton
                 {owner}
@@ -575,12 +631,14 @@
                 {number}
                 count={workflowApproval.count ?? 0}
                 size="sm"
+                disabled={stalePR}
               />
             {/if}
             {#if repoSettings}
               <ActionButton
                 class="btn--merge"
-                onclick={() => { showMergeModal = true; }}
+                onclick={() => { if (!stalePR) showMergeModal = true; }}
+                disabled={stalePR}
                 tone="success"
                 surface="solid"
                 size="sm"
@@ -598,7 +656,7 @@
             {/if}
             <ActionButton
               class="btn--close"
-              disabled={stateSubmitting}
+              disabled={stateSubmitting || stalePR}
               onclick={() => handleStateChange("closed")}
               tone="danger"
               surface="outline"
@@ -609,7 +667,7 @@
           {:else if pr.State === "closed"}
             <ActionButton
               class="btn--reopen"
-              disabled={stateSubmitting}
+              disabled={stateSubmitting || stalePR}
               onclick={() => handleStateChange("open")}
               tone="success"
               surface="solid"
@@ -636,7 +694,7 @@
         {:else}
           <button
             class="btn--workspace"
-            disabled={wsCreating}
+            disabled={wsCreating || stalePR}
             onclick={() => void createWorkspace()}
           >
             {wsCreating ? "Creating..." : "Create Workspace"}
@@ -651,9 +709,13 @@
         <div class="actions-row">
           <ActionButton
             class="btn--embedding-action"
-            onclick={() => importAction.handler({
-              surface: "pull-detail", owner, name, number,
-            })}
+            onclick={() => {
+              if (stalePR) return;
+              importAction.handler({
+                surface: "pull-detail", owner, name, number,
+              });
+            }}
+            disabled={stalePR}
             tone="neutral"
             surface="outline"
             size="sm"
@@ -667,10 +729,14 @@
           {#each worktreeLinks as link (link.worktree_key)}
             <ActionButton
               class="btn--embedding-action"
-              onclick={() => navigateAction.handler({
-                surface: "pull-detail", owner, name, number,
-                meta: { worktree_key: link.worktree_key },
-              })}
+              onclick={() => {
+                if (stalePR) return;
+                navigateAction.handler({
+                  surface: "pull-detail", owner, name, number,
+                  meta: { worktree_key: link.worktree_key },
+                });
+              }}
+              disabled={stalePR}
               tone="neutral"
               surface="outline"
               size="sm"
@@ -685,9 +751,13 @@
           {#each otherActions as action (action.id)}
             <ActionButton
               class="btn--embedding-action"
-              onclick={() => action.handler({
-                surface: "pull-detail", owner, name, number,
-              })}
+              onclick={() => {
+                if (stalePR) return;
+                action.handler({
+                  surface: "pull-detail", owner, name, number,
+                });
+              }}
+              disabled={stalePR}
               tone="neutral"
               surface="outline"
               size="sm"
@@ -698,7 +768,7 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings}
+      {#if showMergeModal && repoSettings && !stalePR}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal
@@ -792,7 +862,12 @@
 
       <!-- Comment box -->
       <div class="section">
-        <CommentBox {owner} {name} {number} />
+        <CommentBox
+          {owner}
+          {name}
+          {number}
+          disabled={stalePR}
+        />
       </div>
 
       <!-- Activity -->
@@ -840,6 +915,15 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .detail-load-error {
+    padding: 6px 16px;
+    background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
+    color: var(--accent-red);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 12px;
+    flex-shrink: 0;
   }
 
   .files-layout {

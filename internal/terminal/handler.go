@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"sync"
 	"time"
 
@@ -27,12 +26,6 @@ type Handler struct {
 
 	mu     sync.Mutex
 	active map[string]bool
-}
-
-type controlMsg struct {
-	Type string `json:"type"`
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
 }
 
 func (h *Handler) ServeHTTP(
@@ -177,13 +170,7 @@ func (h *Handler) ServeHTTP(
 	// Wait for tmux exit OR bridge disconnect (whichever first).
 	cmdDone := make(chan int, 1)
 	go func() {
-		exitCode := 0
-		if waitErr := cmd.Wait(); waitErr != nil {
-			if exit, ok := waitErr.(*exec.ExitError); ok {
-				exitCode = exit.ExitCode()
-			}
-		}
-		cmdDone <- exitCode
+		cmdDone <- processExitCode(cmd.Wait())
 	}()
 
 	var exitCode int
@@ -237,89 +224,6 @@ func (h *Handler) claimTerminalSlot(
 			delete(h.active, id)
 		})
 	}, nil
-}
-
-func ptyToWS(
-	ctx context.Context,
-	ptmx *os.File,
-	conn *websocket.Conn,
-) {
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := ptmx.Read(buf)
-		if n > 0 {
-			if wErr := conn.Write(
-				ctx, websocket.MessageBinary, buf[:n],
-			); wErr != nil {
-				return
-			}
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func wsToPTY(
-	ctx context.Context,
-	ptmx *os.File,
-	conn *websocket.Conn,
-) {
-	for {
-		typ, data, err := conn.Read(ctx)
-		if err != nil {
-			return
-		}
-
-		switch typ {
-		case websocket.MessageBinary:
-			if _, wErr := ptmx.Write(data); wErr != nil {
-				return
-			}
-		case websocket.MessageText:
-			var msg controlMsg
-			if jsonErr := json.Unmarshal(data, &msg); jsonErr != nil {
-				slog.Warn("bad control message", "err", jsonErr)
-				continue
-			}
-			handleControl(ptmx, &msg)
-		}
-	}
-}
-
-func handleControl(ptmx *os.File, msg *controlMsg) {
-	if msg.Type != "resize" {
-		return
-	}
-	if msg.Cols <= 0 || msg.Rows <= 0 {
-		return
-	}
-	if err := pty.Setsize(ptmx, &pty.Winsize{
-		Rows: uint16(msg.Rows),
-		Cols: uint16(msg.Cols),
-	}); err != nil {
-		slog.Warn("pty resize", "err", err)
-	}
-}
-
-func parseSize(r *http.Request) (cols, rows int) {
-	cols = parseIntParam(r, "cols", 120)
-	rows = parseIntParam(r, "rows", 30)
-	return cols, rows
-}
-
-func parseIntParam(
-	r *http.Request, name string, fallback int,
-) int {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return fallback
-	}
-	v, err := strconv.Atoi(raw)
-	if err != nil || v <= 0 {
-		return fallback
-	}
-	return v
 }
 
 // Ensure Handler implements http.Handler.

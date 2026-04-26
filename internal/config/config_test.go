@@ -1017,3 +1017,191 @@ func TestSavePreservesTmuxCommand(t *testing.T) {
 		reloaded.Tmux.Command,
 	)
 }
+
+func TestLoadAgents(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[agents]]
+key = "codex"
+label = "Codex"
+command = ["codex", "--full-auto"]
+
+[[agents]]
+key = "claude"
+label = "Claude"
+command = ["claude"]
+enabled = false
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Agents, 2)
+	assert.Equal("codex", cfg.Agents[0].Key)
+	assert.Equal("Codex", cfg.Agents[0].Label)
+	assert.Equal(
+		[]string{"codex", "--full-auto"},
+		cfg.Agents[0].Command,
+	)
+	assert.True(cfg.Agents[0].EnabledOrDefault())
+	assert.False(cfg.Agents[1].EnabledOrDefault())
+}
+
+func TestLoadAgentDefaultsLabelAndNormalizesKey(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[agents]]
+key = "  Codex  "
+command = ["codex"]
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Agents, 1)
+	assert.Equal("codex", cfg.Agents[0].Key)
+	assert.Equal("codex", cfg.Agents[0].Label)
+}
+
+func TestLoadAgentRejectsMissingKey(t *testing.T) {
+	path := writeConfig(t, `
+[[agents]]
+label = "Codex"
+command = ["codex"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "config: agents[0]: key")
+}
+
+func TestLoadAgentRejectsEnabledMissingCommand(t *testing.T) {
+	path := writeConfig(t, `
+[[agents]]
+key = "codex"
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		"config: agents[0]: command",
+	)
+}
+
+func TestLoadAgentAllowsDisabledMissingCommand(t *testing.T) {
+	path := writeConfig(t, `
+[[agents]]
+key = "codex"
+enabled = false
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Agents, 1)
+	Assert.False(t, cfg.Agents[0].EnabledOrDefault())
+}
+
+func TestLoadAgentRejectsEmptyCommandFirstElement(t *testing.T) {
+	path := writeConfig(t, `
+[[agents]]
+key = "codex"
+command = ["   ", "extra"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		"config: agents[0]: command first element must be non-empty",
+	)
+}
+
+func TestLoadAgentRejectsDuplicateKeys(t *testing.T) {
+	path := writeConfig(t, `
+[[agents]]
+key = "codex"
+command = ["codex"]
+
+[[agents]]
+key = " CODEX "
+command = ["codex-custom"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `config: duplicate agent "codex"`)
+}
+
+func TestLoadAgentRejectsReservedSystemKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{name: "tmux", key: "tmux"},
+		{name: "plain shell", key: " plain_shell "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`
+[[agents]]
+key = %q
+command = ["codex"]
+`, tt.key))
+
+			_, err := Load(path)
+
+			require.Error(t, err)
+			require.Contains(
+				t, err.Error(),
+				"reserved system launch target",
+			)
+		})
+	}
+}
+
+func TestSavePreservesAgents(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	disabled := false
+
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		DataDir:        dir,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+		Agents: []Agent{{
+			Key:     "codex",
+			Label:   "Codex",
+			Command: []string{"codex", "--full-auto"},
+		}, {
+			Key:     "claude",
+			Label:   "Claude",
+			Enabled: &disabled,
+		}},
+	}
+	require.NoError(t, cfg.Save(path))
+
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, reloaded.Agents, 2)
+	assert.Equal("codex", reloaded.Agents[0].Key)
+	assert.Equal(
+		[]string{"codex", "--full-auto"},
+		reloaded.Agents[0].Command,
+	)
+	assert.False(reloaded.Agents[1].EnabledOrDefault())
+}
+
+func TestTokenEnvNamesIncludesGlobalAndPerRepo(t *testing.T) {
+	var nilCfg *Config
+	require.Nil(t, nilCfg.TokenEnvNames())
+
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Repos: []Repo{
+			{Owner: "acme", Name: "widget", TokenEnv: "ACME_TOKEN"},
+			{Owner: "other", Name: "thing"},
+			{Owner: "third", Name: "x", TokenEnv: "THIRD_TOKEN"},
+		},
+	}
+	Assert.Equal(
+		t,
+		[]string{"WORK_GH_BOT_TOKEN", "ACME_TOKEN", "THIRD_TOKEN"},
+		cfg.TokenEnvNames(),
+	)
+}

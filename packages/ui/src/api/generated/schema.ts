@@ -573,6 +573,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{id}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get-workspace-runtime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/runtime/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["launch-workspace-runtime-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/runtime/sessions/{session_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["stop-workspace-runtime-session"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/runtime/shell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ensure-workspace-runtime-shell"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -915,6 +979,24 @@ export interface components {
             is_default: boolean;
             name: string;
         };
+        LaunchTarget: {
+            available: boolean;
+            command?: string[] | null;
+            disabled_reason?: string;
+            key: string;
+            kind: string;
+            label: string;
+            source: string;
+        };
+        LaunchWorkspaceRuntimeSessionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/LaunchWorkspaceRuntimeSessionInputBody.json
+             */
+            readonly $schema?: string;
+            target_key: string;
+        };
         Line: {
             content: string;
             /** Format: int64 */
@@ -1213,6 +1295,26 @@ export interface components {
             number: number;
             repo_tracked: boolean;
         };
+        SessionInfo: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SessionInfo.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            exit_code?: number;
+            /** Format: date-time */
+            exited_at?: string;
+            key: string;
+            kind: string;
+            label: string;
+            status: string;
+            target_key: string;
+            workspace_id: string;
+        };
         SetKanbanStateInputBody: {
             /**
              * Format: uri
@@ -1307,6 +1409,10 @@ export interface components {
              * @example /api/v1/schemas/WorkspaceResponse.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            commits_ahead?: number;
+            /** Format: int64 */
+            commits_behind?: number;
             created_at: string;
             error_message?: string;
             git_head_ref: string;
@@ -1333,6 +1439,17 @@ export interface components {
             tmux_session: string;
             tmux_working: boolean;
             worktree_path: string;
+        };
+        WorkspaceRuntimeResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceRuntimeResponse.json
+             */
+            readonly $schema?: string;
+            launch_targets: components["schemas"]["LaunchTarget"][] | null;
+            sessions: components["schemas"]["SessionInfo"][] | null;
+            shell_session?: components["schemas"]["SessionInfo"];
         };
         WorktreeLinkResponse: {
             worktree_branch?: string;
@@ -2612,6 +2729,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-workspace-runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRuntimeResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "launch-workspace-runtime-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LaunchWorkspaceRuntimeSessionInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "stop-workspace-runtime-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                session_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "ensure-workspace-runtime-shell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
                 };
             };
             /** @description Error */
