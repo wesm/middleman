@@ -549,7 +549,17 @@
     mainOverflow="hidden"
   >
     {#snippet sidebar()}
-      <WorkspaceListSidebar selectedId={workspaceId} />
+      <WorkspaceListSidebar
+        selectedId={workspaceId}
+        onOpenItemSidebar={(targetId, tab) => {
+          if (targetId === workspaceId) {
+            sidebarTab = tab;
+            sidebarOpen = true;
+            return;
+          }
+          navigate(`/terminal/${targetId}`);
+        }}
+      />
     {/snippet}
     <div class="terminal-main">
       {#if !workspaceId}
