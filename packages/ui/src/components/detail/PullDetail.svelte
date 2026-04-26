@@ -689,6 +689,7 @@
             />
           {/if}
           {#if repoSettings}
+            {@const mergeSettings = repoSettings}
             <ActionButton
               class="btn--merge"
               disabled={stalePR}
@@ -700,13 +701,15 @@
               tone="success"
               surface="solid"
               size="sm"
-              label={mergeActionLabel(repoSettings)}
-              shortLabel={mergeActionShortLabel(repoSettings)}
+              label={mergeActionLabel(mergeSettings)}
+              shortLabel={mergeActionShortLabel(mergeSettings)}
             >
               <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-              {#if mergeActionHasMenu(repoSettings)}
-                <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
-              {/if}
+              {#snippet trailing()}
+                {#if mergeActionHasMenu(mergeSettings)}
+                  <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+                {/if}
+              {/snippet}
             </ActionButton>
           {/if}
           <ActionButton
@@ -1407,10 +1410,6 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .actions-row :global(.btn--merge svg:nth-of-type(2)) {
-    order: 3;
   }
 
   @container pull-detail (max-width: 560px) {

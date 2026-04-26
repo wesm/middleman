@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
+import { createRawSnippet } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import ActionButton from "./ActionButton.svelte";
 
@@ -54,5 +55,23 @@ describe("ActionButton", () => {
     expect(button.querySelector(".action-button__short-label")?.textContent).toBe(
       "Workflows",
     );
+  });
+
+  it("renders trailing content after responsive labels", () => {
+    render(ActionButton, {
+      props: {
+        label: "Merge",
+        shortLabel: "Merge",
+        trailing: createRawSnippet(() => ({
+          render: () => '<span data-testid="trailing">v</span>',
+        })),
+      },
+    });
+
+    const button = screen.getByRole("button", { name: "Merge" });
+    const labelsAndTrailing = Array.from(button.children).map(
+      (child) => child.textContent,
+    );
+    expect(labelsAndTrailing).toEqual(["Merge", "Merge", "v"]);
   });
 });

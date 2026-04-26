@@ -17,6 +17,7 @@
     class?: string;
     onclick?: (event: MouseEvent) => void;
     children?: Snippet;
+    trailing?: Snippet;
   }
 
   let {
@@ -31,6 +32,7 @@
     class: className = "",
     onclick = undefined,
     children,
+    trailing,
   }: Props = $props();
 
   const classes = $derived(
@@ -60,6 +62,9 @@
   {/if}
   {#if shortLabel}
     <span class="action-button__short-label">{shortLabel}</span>
+  {/if}
+  {#if trailing}
+    {@render trailing()}
   {/if}
 </button>
 
