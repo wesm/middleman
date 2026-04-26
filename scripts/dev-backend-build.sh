@@ -87,6 +87,8 @@ generate_api_artifacts() {
   tmp_backend_spec="$(mktemp "$state_dir/backend-openapi.XXXXXX")"
   frontend_changed=0
 
+  mkdir -p "$(dirname "$backend_spec")"
+
   GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_frontend_spec" -format yaml
   GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_backend_spec" -version 3.0
 

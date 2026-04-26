@@ -8,6 +8,9 @@ import (
 )
 
 func TestCheckSourceFlagsApplicationServeMuxRegistrations(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	src := `package server
 
 import "net/http"
@@ -24,13 +27,16 @@ func routes() {
 
 	diagnostics, err := checkSource("internal/server/bad.go", src)
 
-	require.NoError(t, err)
-	require.Len(t, diagnostics, 5)
-	assert.Equal(t, "internal/server/bad.go", diagnostics[0].Path)
-	assert.Equal(t, 7, diagnostics[0].Line)
+	require.NoError(err)
+	require.Len(diagnostics, 5)
+	assert.Equal("internal/server/bad.go", diagnostics[0].Path)
+	assert.Equal(7, diagnostics[0].Line)
 }
 
 func TestCheckSourceAllowsHumaAdapterAndCurrentServerWrappers(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	src := `package server
 
 import (
@@ -52,11 +58,14 @@ func newServer(basePath string) {
 
 	diagnostics, err := checkSource("/tmp/worktree/internal/server/server.go", src)
 
-	require.NoError(t, err)
-	assert.Empty(t, diagnostics)
+	require.NoError(err)
+	assert.Empty(diagnostics)
 }
 
 func TestCheckSourceIgnoresTestsAndUntrackedHttptestMuxes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
 	testSource := `package github
 
 import "net/http"
@@ -74,10 +83,10 @@ func newMux(mux interface{ HandleFunc(string, any) }) {
 `
 
 	testDiagnostics, err := checkSource("internal/github/client_test.go", testSource)
-	require.NoError(t, err)
+	require.NoError(err)
 	nonServerDiagnostics, err := checkSource("internal/github/httptest_helper.go", nonServerSource)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Empty(t, testDiagnostics)
-	assert.Empty(t, nonServerDiagnostics)
+	assert.Empty(testDiagnostics)
+	assert.Empty(nonServerDiagnostics)
 }

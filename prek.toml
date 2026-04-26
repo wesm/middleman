@@ -29,6 +29,15 @@ hooks = [
     priority = 0,
   },
   {
+    id = "script-tests",
+    name = "script regression tests",
+    language = "system",
+    entry = "make script-tests",
+    files = "^scripts/.*\\.(mjs|sh)$",
+    pass_filenames = false,
+    priority = 0,
+  },
+  {
     id = "huma-route-check",
     name = "prevent non-Huma Go routes",
     language = "system",

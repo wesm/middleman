@@ -26,7 +26,7 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check \
-        frontend-api-client-check huma-route-check guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
+        frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -83,10 +83,15 @@ frontend-api-client-check:
 
 # Prevent application HTTP routes from bypassing Huma registration
 huma-route-check:
-	go run ./tools/nohttpmux ./...
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
+
+# Run lightweight script regression tests
+script-tests:
+	bun test scripts/*.test.mjs
 
 # Run lightweight generated-client/Huma guardrails
-guardrail-check: frontend-api-client-check huma-route-check
+guardrail-check: frontend-api-client-check huma-route-check script-tests
+
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate:

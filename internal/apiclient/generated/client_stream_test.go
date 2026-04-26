@@ -15,6 +15,7 @@ import (
 
 func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
 
@@ -31,7 +32,7 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 	defer close(release)
 
 	client, err := NewClientWithResponses(server.URL)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	done := make(chan struct {
 		resp *http.Response
@@ -48,30 +49,31 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		require.Fail(t, "server did not start streaming")
+		require.Fail("server did not start streaming")
 	}
 
 	select {
 	case result := <-done:
-		require.NoError(t, result.err)
-		require.NotNil(t, result.resp)
+		require.NoError(result.err)
+		require.NotNil(result.resp)
 		defer result.resp.Body.Close()
 
 		assert.Equal(http.StatusOK, result.resp.StatusCode)
 
 		line, err := bufio.NewReader(result.resp.Body).ReadString('\n')
-		require.NoError(t, err)
+		require.NoError(err)
 		assert.Equal(": connected\n", line)
 	case <-time.After(500 * time.Millisecond):
-		require.Fail(t, "StreamEvents did not return the live response body")
+		require.Fail("StreamEvents did not return the live response body")
 	}
 }
 
 func TestGeneratedClientOmitsStreamEventsResponseWrapper(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 
 	source, err := os.ReadFile("client.gen.go")
-	require.NoError(t, err)
+	require.NoError(err)
 	clientSource := string(source)
 
 	assert.Contains(clientSource, "StreamEvents(ctx context.Context")
