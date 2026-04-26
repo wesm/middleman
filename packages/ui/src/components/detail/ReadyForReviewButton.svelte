@@ -10,9 +10,16 @@
     name: string;
     number: number;
     size?: "sm" | "md";
+    disabled?: boolean;
   }
 
-  const { owner, name, number, size = "md" }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    size = "md",
+    disabled = false,
+  }: Props = $props();
 
   let submitting = $state(false);
   let error = $state<string | null>(null);
@@ -22,6 +29,7 @@
   }
 
   async function handleReadyForReview(): Promise<void> {
+    if (disabled) return;
     submitting = true;
     error = null;
     try {
@@ -54,7 +62,7 @@
   <ActionButton
     class="btn btn--ready"
     onclick={() => void handleReadyForReview()}
-    disabled={submitting}
+    disabled={submitting || disabled}
     tone="info"
     surface="soft"
     {size}

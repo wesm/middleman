@@ -21,9 +21,10 @@
     owner: string;
     name: string;
     number: number;
+    disabled?: boolean;
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, disabled = false }: Props = $props();
 
   const currentDraftKey = $derived(
     getCommentDraftKey("issue", owner, name, number),
@@ -39,7 +40,7 @@
   );
 
   async function handleSubmit(): Promise<void> {
-    if (isEmpty || isPostingCurrent) return;
+    if (isEmpty || isPostingCurrent || disabled) return;
     const submittedOwner = owner;
     const submittedName = name;
     const submittedNumber = number;
@@ -93,7 +94,7 @@
       {owner}
       {name}
       value={body}
-      disabled={isPostingCurrent}
+      disabled={isPostingCurrent || disabled}
       oninput={(nextBody) => {
         setCommentDraft("issue", owner, name, number, nextBody);
       }}
@@ -109,7 +110,7 @@
     <button
       class="submit-btn"
       onclick={() => void handleSubmit()}
-      disabled={isEmpty || isPostingCurrent}
+      disabled={isEmpty || isPostingCurrent || disabled}
     >
       {isPostingCurrent ? "Posting\u2026" : "Comment"}
     </button>

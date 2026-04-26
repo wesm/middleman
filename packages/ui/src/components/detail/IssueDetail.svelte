@@ -74,6 +74,7 @@
   }
 
   function handleStarClick(): void {
+    if (staleIssue) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     void issues.toggleIssueStar(
@@ -332,6 +333,7 @@
           <button
             class="star-btn"
             onclick={handleStarClick}
+            disabled={staleIssue}
             title={issue.Starred ? "Unstar" : "Star"}
           >
             {#if issue.Starred}
@@ -427,7 +429,7 @@
         {:else}
           <button
             class="btn--workspace"
-            disabled={workspaceCreating}
+            disabled={workspaceCreating || staleIssue}
             onclick={() => void createWorkspace()}
           >
             {workspaceCreating ? "Creating..." : "Create Workspace"}
@@ -436,7 +438,7 @@
         {#if issue.State === "open"}
           <ActionButton
             class="btn--close"
-            disabled={stateSubmitting}
+            disabled={stateSubmitting || staleIssue}
             onclick={() => handleStateChange("closed")}
             tone="danger"
             surface="outline"
@@ -447,7 +449,7 @@
         {:else}
           <ActionButton
             class="btn--reopen"
-            disabled={stateSubmitting}
+            disabled={stateSubmitting || staleIssue}
             onclick={() => handleStateChange("open")}
             tone="success"
             surface="solid"
@@ -462,7 +464,13 @@
         {#each actions.issue ?? [] as action (action.id)}
           <ActionButton
             class="btn--embedding-action"
-            onclick={() => action.handler({ surface: "issue-detail", owner, name, number })}
+            onclick={() => {
+              if (staleIssue) return;
+              action.handler({
+                surface: "issue-detail", owner, name, number,
+              });
+            }}
+            disabled={staleIssue}
             tone="neutral"
             surface="outline"
             size="sm"
@@ -477,7 +485,12 @@
 
       <!-- Comment box -->
       <div class="section">
-        <IssueCommentBox {owner} {name} {number} />
+        <IssueCommentBox
+          {owner}
+          {name}
+          {number}
+          disabled={staleIssue}
+        />
       </div>
 
       <!-- Activity -->

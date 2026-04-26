@@ -11,9 +11,17 @@
     number: number;
     count: number;
     size?: "sm" | "md";
+    disabled?: boolean;
   }
 
-  const { owner, name, number, count, size = "md" }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    count,
+    size = "md",
+    disabled = false,
+  }: Props = $props();
 
   let submitting = $state(false);
   let error = $state<string | null>(null);
@@ -25,6 +33,7 @@
     "Approve pending GitHub Actions runs waiting on outside contributor approval";
 
   async function handleApproveWorkflows(): Promise<void> {
+    if (disabled) return;
     submitting = true;
     error = null;
     try {
@@ -55,7 +64,7 @@
   <ActionButton
     class="btn btn--workflow-approval"
     onclick={() => void handleApproveWorkflows()}
-    disabled={submitting}
+    disabled={submitting || disabled}
     tone="workflow"
     surface="soft"
     title={tooltip}

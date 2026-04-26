@@ -309,6 +309,7 @@
   let wsError = $state<string | null>(null);
 
   async function createWorkspace(): Promise<void> {
+    if (stalePR) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
 
@@ -590,9 +591,21 @@
         <div class="actions-row">
           {#if pr.State === "open"}
             {#if pr.IsDraft}
-              <ReadyForReviewButton {owner} {name} {number} size="sm" />
+              <ReadyForReviewButton
+                {owner}
+                {name}
+                {number}
+                size="sm"
+                disabled={stalePR}
+              />
             {/if}
-            <ApproveButton {owner} {name} {number} size="sm" />
+            <ApproveButton
+              {owner}
+              {name}
+              {number}
+              size="sm"
+              disabled={stalePR}
+            />
             {#if workflowApproval?.checked && workflowApproval.required}
               <ApproveWorkflowsButton
                 {owner}
@@ -600,12 +613,14 @@
                 {number}
                 count={workflowApproval.count ?? 0}
                 size="sm"
+                disabled={stalePR}
               />
             {/if}
             {#if repoSettings}
               <ActionButton
                 class="btn--merge"
-                onclick={() => { showMergeModal = true; }}
+                onclick={() => { if (!stalePR) showMergeModal = true; }}
+                disabled={stalePR}
                 tone="success"
                 surface="solid"
                 size="sm"
@@ -623,7 +638,7 @@
             {/if}
             <ActionButton
               class="btn--close"
-              disabled={stateSubmitting}
+              disabled={stateSubmitting || stalePR}
               onclick={() => handleStateChange("closed")}
               tone="danger"
               surface="outline"
@@ -634,7 +649,7 @@
           {:else if pr.State === "closed"}
             <ActionButton
               class="btn--reopen"
-              disabled={stateSubmitting}
+              disabled={stateSubmitting || stalePR}
               onclick={() => handleStateChange("open")}
               tone="success"
               surface="solid"
@@ -661,7 +676,7 @@
         {:else}
           <button
             class="btn--workspace"
-            disabled={wsCreating}
+            disabled={wsCreating || stalePR}
             onclick={() => void createWorkspace()}
           >
             {wsCreating ? "Creating..." : "Create Workspace"}
@@ -676,9 +691,13 @@
         <div class="actions-row">
           <ActionButton
             class="btn--embedding-action"
-            onclick={() => importAction.handler({
-              surface: "pull-detail", owner, name, number,
-            })}
+            onclick={() => {
+              if (stalePR) return;
+              importAction.handler({
+                surface: "pull-detail", owner, name, number,
+              });
+            }}
+            disabled={stalePR}
             tone="neutral"
             surface="outline"
             size="sm"
@@ -692,10 +711,14 @@
           {#each worktreeLinks as link (link.worktree_key)}
             <ActionButton
               class="btn--embedding-action"
-              onclick={() => navigateAction.handler({
-                surface: "pull-detail", owner, name, number,
-                meta: { worktree_key: link.worktree_key },
-              })}
+              onclick={() => {
+                if (stalePR) return;
+                navigateAction.handler({
+                  surface: "pull-detail", owner, name, number,
+                  meta: { worktree_key: link.worktree_key },
+                });
+              }}
+              disabled={stalePR}
               tone="neutral"
               surface="outline"
               size="sm"
@@ -710,9 +733,13 @@
           {#each otherActions as action (action.id)}
             <ActionButton
               class="btn--embedding-action"
-              onclick={() => action.handler({
-                surface: "pull-detail", owner, name, number,
-              })}
+              onclick={() => {
+                if (stalePR) return;
+                action.handler({
+                  surface: "pull-detail", owner, name, number,
+                });
+              }}
+              disabled={stalePR}
               tone="neutral"
               surface="outline"
               size="sm"
@@ -723,7 +750,7 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings}
+      {#if showMergeModal && repoSettings && !stalePR}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal
@@ -817,7 +844,12 @@
 
       <!-- Comment box -->
       <div class="section">
-        <CommentBox {owner} {name} {number} />
+        <CommentBox
+          {owner}
+          {name}
+          {number}
+          disabled={stalePR}
+        />
       </div>
 
       <!-- Activity -->
