@@ -619,6 +619,14 @@
         />
       </div>
 
+      <SelectDropdown
+        class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+        value={pr.KanbanStatus}
+        options={kanbanOptions}
+        onchange={onKanbanChange}
+        title="Change workflow status"
+      />
+
       {#if labels.length > 0}
         <GitHubLabels {labels} mode="full" />
       {/if}
@@ -1334,6 +1342,10 @@
     margin-left: auto;
   }
 
+  :global(.kanban-select--below-chips) {
+    display: none;
+  }
+
   :global(.kanban-select--new .select-dropdown-trigger) {
     color: var(--kanban-new);
   }
@@ -1350,15 +1362,19 @@
     color: var(--accent-green);
   }
 
-  @container pull-detail (max-width: 430px) {
+  @container pull-detail (max-width: 640px) {
     .detail-header {
       flex-wrap: wrap;
     }
 
     :global(.kanban-select--header) {
-      flex: 1;
-      min-width: 0;
-      margin-left: 0;
+      display: none;
+    }
+
+    :global(.kanban-select--below-chips) {
+      display: block;
+      min-width: min(100%, 150px);
+      width: fit-content;
     }
   }
 
