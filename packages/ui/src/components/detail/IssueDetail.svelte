@@ -27,6 +27,21 @@
 
   const { owner, name, number, platformHost }: Props = $props();
 
+  // See PullDetail.svelte: while a route change is in flight, the
+  // displayed issue may briefly belong to the previous route. Mutating
+  // actions (state change, workspace create, etc.) read the props,
+  // which point at the new route — so they must be gated until the
+  // displayed issue catches up.
+  const staleIssue = $derived.by(() => {
+    const d = issues.getIssueDetail();
+    if (d == null) return false;
+    return (
+      d.repo_owner !== owner ||
+      d.repo_name !== name ||
+      (d.issue?.Number ?? -1) !== number
+    );
+  });
+
   $effect(() => {
     void issues.loadIssueDetail(
       owner,
@@ -75,6 +90,7 @@
   async function handleStateChange(
     newState: "open" | "closed",
   ): Promise<void> {
+    if (staleIssue) return;
     stateSubmitting = true;
     stateError = null;
     try {
@@ -208,6 +224,7 @@
   async function createWorkspace(
     options: CreateWorkspaceOptions = {},
   ): Promise<void> {
+    if (staleIssue) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
 

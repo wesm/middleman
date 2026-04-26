@@ -1540,6 +1540,305 @@ test.describe("workspace list bubble opens right sidebar", () => {
       ).toHaveCount(0);
     },
   );
+
+  test(
+    "PR bubble x-position stays stable across rows with varied meta",
+    async ({ page }) => {
+      // Regression: the bubble previously sat inside .ws-row-text and
+      // its X position drifted left when the row had no push pills or
+      // diff stats. Pinning the bubble to its own right column makes
+      // the X position identical across rows regardless of meta.
+      const wsBare = {
+        ...testWorkspace,
+        id: "ws-bare",
+        item_number: 1,
+        git_head_ref: "fix/x",
+      };
+      const wsBranchOnly = {
+        ...testWorkspace,
+        id: "ws-branch-long",
+        item_number: 22,
+        git_head_ref:
+          "feature/very-long-branch-name-that-fills-the-row",
+      };
+      const wsAhead = {
+        ...testWorkspace,
+        id: "ws-ahead",
+        item_number: 333,
+        git_head_ref: "feature/ahead",
+        commits_ahead: 7,
+        commits_behind: 0,
+      };
+      const wsAheadBehindDiff = {
+        ...testWorkspace,
+        id: "ws-busy",
+        item_number: 4444,
+        git_head_ref: "feature/busy",
+        commits_ahead: 12,
+        commits_behind: 5,
+        mr_additions: 1500,
+        mr_deletions: 2400,
+      };
+      const list = [wsBare, wsBranchOnly, wsAhead, wsAheadBehindDiff];
+
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: list }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      for (const ws of list) {
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}`,
+          async (route) => {
+            if (route.request().method() === "GET") {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(ws),
+              });
+              return;
+            }
+            await route.fulfill({ status: 204 });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                launch_targets: [],
+                sessions: [],
+                shell_session: null,
+              }),
+            });
+          },
+        );
+      }
+
+      await page.goto("/workspaces");
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(list.length);
+
+      const bubbles = page.locator(
+        ".workspace-list-sidebar .ws-row .item-bubble",
+      );
+      const boxes: Array<{ right: number }> = [];
+      for (let i = 0; i < list.length; i += 1) {
+        const box = await bubbles.nth(i).boundingBox();
+        expect(box).not.toBeNull();
+        if (box != null) {
+          boxes.push({ right: box.x + box.width });
+        }
+      }
+
+      const rights = boxes.map((b) => b.right);
+      const maxRight = Math.max(...rights);
+      const minRight = Math.min(...rights);
+      // All bubbles should align to the same right column. Allow a
+      // sub-pixel tolerance for browser rounding.
+      expect(maxRight - minRight).toBeLessThanOrEqual(1);
+    },
+  );
+});
+
+// -------------------------------------------------------
+// Group 3.5: Delayed-response navigation (no flash, no
+// stale-action targets)
+// -------------------------------------------------------
+
+test.describe("delayed-response navigation", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+  });
+
+  test(
+    "switching workspaces holds previous data and blocks actions until new load resolves",
+    async ({ page }) => {
+      // Workspace A loads instantly. Workspace B's GET is held back
+      // so the UI is forced into the transition window where the
+      // previous workspace's data is still on screen and any
+      // mutating actions must target the new id but be blocked.
+      const wsA = {
+        ...testWorkspace,
+        id: "ws-aaa",
+        item_number: 1,
+        mr_title: "A title",
+      };
+      const wsB = {
+        ...testWorkspace,
+        id: "ws-bbb",
+        item_number: 2,
+        mr_title: "B title",
+      };
+
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+
+      // wsA — instant.
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsA),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              launch_targets: [],
+              sessions: [],
+              shell_session: null,
+            }),
+          });
+        },
+      );
+
+      // wsB — delayed. Resolved manually below so the test can
+      // observe the in-place transition.
+      let releaseB: () => void = () => {};
+      const bDelay = new Promise<void>((resolve) => {
+        releaseB = resolve;
+      });
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await bDelay;
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsB),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}/runtime`,
+        async (route) => {
+          await bDelay;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              launch_targets: [],
+              sessions: [],
+              shell_session: null,
+            }),
+          });
+        },
+      );
+
+      await page.goto(`/terminal/${wsA.id}`);
+
+      // Confirm wsA is visible (its title sits in the header bar).
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsA.mr_title);
+
+      // Click row B from the sidebar.
+      await page
+        .locator(".workspace-list-sidebar .ws-row", {
+          hasText: `#${wsB.item_number}`,
+        })
+        .click();
+
+      // URL has switched to B, but B's data hasn't arrived yet —
+      // the header bar should still show A's data (no flash to
+      // a loading/empty state).
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsB.id}$`),
+      );
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsA.mr_title);
+
+      // While the URL points at B but the screen still shows A,
+      // the Delete button must be disabled so a click can't
+      // delete B while the user looks at A.
+      await expect(
+        page.locator(".terminal-main .header-btn.danger"),
+      ).toBeDisabled();
+
+      // Release B's response — the UI should update in place to
+      // wsB without ever rendering a "Loading..." flash.
+      releaseB();
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsB.mr_title);
+      await expect(
+        page.locator(".terminal-main .header-btn.danger"),
+      ).toBeEnabled();
+    },
+  );
 });
 
 // -------------------------------------------------------

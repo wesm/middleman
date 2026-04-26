@@ -619,7 +619,7 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	// force=true skips the dirty-files check. m.clones is nil, so
 	// Delete takes the clones==nil short-circuit after killing the
 	// tmux session — no git operations are required.
-	_, err = mgr.Delete(ctx, ws.ID, true)
+	_, err = mgr.Delete(ctx, ws.ID, true, nil)
 	require.NoError(t, err)
 
 	// Delete invokes exactly one tmux command on this path
@@ -664,7 +664,7 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
 	require.NoError(err)
 
-	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	dirty, err := mgr.Delete(ctx, ws.ID, true, nil)
 	require.NoError(err)
 	assert.Nil(dirty)
 
@@ -711,7 +711,7 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	require.NoError(err)
 	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
 
-	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	dirty, err := mgr.Delete(ctx, ws.ID, true, nil)
 	assert.Nil(dirty)
 	require.Error(err)
 	assert.Contains(err.Error(), "kill tmux session")
@@ -756,7 +756,7 @@ func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
 
-	dirty, err := mgr.Delete(ctx, ws.ID, true)
+	dirty, err := mgr.Delete(ctx, ws.ID, true, nil)
 	require.NoError(err)
 	assert.Nil(dirty)
 

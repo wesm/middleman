@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // Divergence reports how the worktree's HEAD has drifted from its
@@ -39,7 +41,22 @@ func WorktreeDivergence(
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+
+	// /api/v1/workspaces fans out a divergence probe per workspace
+	// on every poll, so the calls must respect the global git
+	// subprocess limiter (the same one cleanup, dirty-check, and
+	// tmux paths use). cmd.Run() bypasses procutil's capture/output
+	// helpers because we need stderr separately for the no-upstream
+	// detection below; gate it manually with TryAcquire instead.
+	release, err := procutil.TryAcquire(
+		ctx, "git divergence subprocess capacity",
+	)
+	if err != nil {
+		return Divergence{}, false, err
+	}
+	defer release()
+
+	err = cmd.Run()
 	if err != nil {
 		// Git emits exit code 128 with a "no upstream configured"
 		// (or "no such ref") message when the branch isn't tracking

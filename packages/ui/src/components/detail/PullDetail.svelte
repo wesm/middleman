@@ -41,6 +41,23 @@
   let activeTab = $state<"conversation" | "files">("conversation");
   let ciExpanded = $state(false);
 
+  // Mutating actions (close/reopen, kanban state, star, save title/body,
+  // workspace creation, etc.) read the (owner, name, number) PROPS, but
+  // the visible detail is whatever loadDetail last produced. During a
+  // route change those drift apart for the brief window before the new
+  // load completes. `stalePR` is true in that window, and every mutation
+  // handler short-circuits on it so a click during the transition can't
+  // operate on the freshly-routed PR while showing the previous one.
+  const stalePR = $derived.by(() => {
+    const d = detailStore.getDetail();
+    if (d == null) return false;
+    return (
+      d.repo_owner !== owner ||
+      d.repo_name !== name ||
+      (d.merge_request?.Number ?? -1) !== number
+    );
+  });
+
   $effect(() => {
     void detailStore.loadDetail(owner, name, number);
     detailStore.startDetailPolling(owner, name, number);
@@ -113,6 +130,7 @@
   }
 
   async function saveTitle(): Promise<void> {
+    if (stalePR) return;
     const mr = currentPR();
     const trimmed = titleDraft.trim();
     if (!trimmed || trimmed === mr?.Title) {
@@ -160,6 +178,7 @@
   }
 
   async function saveBody(): Promise<void> {
+    if (stalePR) return;
     const mr = currentPR();
     if (bodyDraft === mr?.Body) {
       cancelEditBody();
@@ -188,6 +207,7 @@
   async function handleStateChange(
     newState: "open" | "closed",
   ): Promise<void> {
+    if (stalePR) return;
     stateSubmitting = true;
     stateError = null;
     try {
@@ -254,6 +274,7 @@
   }
 
   function onKanbanChange(e: Event): void {
+    if (stalePR) return;
     const select = e.target as HTMLSelectElement;
     void detailStore.updateKanbanState(owner, name, number, select.value as KanbanStatus);
   }
@@ -408,7 +429,11 @@
         {#if !uiConfig.hideStar}
           <button
             class="star-btn"
-            onclick={() => void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred)}
+            disabled={stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
+            }}
             title={pr.Starred ? "Unstar" : "Star"}
           >
             {#if pr.Starred}

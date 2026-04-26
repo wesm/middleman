@@ -2819,12 +2819,25 @@ func (s *Server) deleteWorkspace(
 		)
 	}
 
-	// Run delete first: it preflights the dirty check and short-circuits
-	// without touching the worktree if the workspace is dirty. Stopping
-	// runtime sessions before the preflight would kill processes for a
-	// workspace that ultimately survives a 409 dirty rejection.
+	// Order of operations:
+	//   1. dirty preflight inside Delete — returns 409 without
+	//      touching anything
+	//   2. (clean) StopWorkspace via the beforeDestructive hook so
+	//      agent/shell processes can't keep writing to the worktree
+	//      between the preflight and the destructive cleanup
+	//   3. destructive cleanup + record removal
+	// Stopping sessions before the preflight would kill processes for
+	// a workspace that survives a 409 dirty rejection; stopping them
+	// only after the destructive cleanup leaves a window where running
+	// processes could write new uncommitted changes that bypass the
+	// dirty check the user requested.
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
+		func(stopCtx context.Context) {
+			if s.runtime != nil {
+				s.runtime.StopWorkspace(stopCtx, input.ID)
+			}
+		},
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
@@ -2839,14 +2852,6 @@ func (s *Server) deleteWorkspace(
 			"workspace has uncommitted changes: " +
 				strings.Join(dirty, ", "),
 		)
-	}
-
-	// Workspace record + worktree are gone; tear down any agent/shell
-	// processes that were launched into that workspace. The localruntime
-	// Manager keys sessions by workspace ID independently of the DB, so
-	// it can still find them after the workspace is deleted.
-	if s.runtime != nil {
-		s.runtime.StopWorkspace(ctx, input.ID)
 	}
 
 	return nil, nil

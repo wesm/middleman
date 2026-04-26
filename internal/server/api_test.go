@@ -7599,6 +7599,62 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	assert.NotNil(srv.runtime.ShellSession(ws.Id))
 }
 
+// TestWorkspaceListReportsCommitsAheadBehindE2E verifies that the
+// /api/v1/workspaces list response includes commits_ahead /
+// commits_behind for ready workspaces, computed against the worktree's
+// `@{upstream}` tracking branch. The sidebar's push-state pills depend
+// on these fields, so a regression here would silently turn the pills
+// off without any test failure at the unit-test layer.
+func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	// Add two local commits in the worktree so HEAD is ahead of
+	// origin/feature by 2.
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "ahead-1.txt"),
+		[]byte("a1\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "ahead 1")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "ahead-2.txt"),
+		[]byte("a2\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "ahead 2")
+
+	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Workspaces)
+
+	var found *generated.WorkspaceResponse
+	for i := range *listResp.JSON200.Workspaces {
+		entry := &(*listResp.JSON200.Workspaces)[i]
+		if entry.Id == ws.Id {
+			found = entry
+			break
+		}
+	}
+	require.NotNil(found, "workspace %s missing from list", ws.Id)
+	require.NotNil(
+		found.CommitsAhead,
+		"commits_ahead must be populated for a ready workspace",
+	)
+	require.NotNil(
+		found.CommitsBehind,
+		"commits_behind must be populated for a ready workspace",
+	)
+	assert.Equal(int64(2), *found.CommitsAhead)
+	assert.Equal(int64(0), *found.CommitsBehind)
+}
+
 func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

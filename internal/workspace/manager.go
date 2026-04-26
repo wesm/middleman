@@ -609,8 +609,17 @@ func validateLocalBranchName(
 // worktree and branch, and deletes the DB record.
 // If force is false and the worktree has uncommitted changes,
 // it returns the dirty file list without deleting.
+//
+// beforeDestructive is invoked after the dirty preflight passes
+// (or is skipped because force=true) and before any destructive
+// cleanup. It exists so callers can stop background processes
+// that might still write to the worktree — e.g. agent shells
+// launched into the workspace — without that cleanup running on
+// a 409 dirty rejection. Pass nil if you have nothing to do
+// between the preflight and the destructive part.
 func (m *Manager) Delete(
 	ctx context.Context, id string, force bool,
+	beforeDestructive func(context.Context),
 ) (dirty []string, err error) {
 	ws, err := m.db.GetWorkspace(ctx, id)
 	if err != nil {
@@ -632,6 +641,10 @@ func (m *Manager) Delete(
 		if len(files) > 0 {
 			return files, nil
 		}
+	}
+
+	if beforeDestructive != nil {
+		beforeDestructive(ctx)
 	}
 
 	if err := m.cleanupWorkspaceArtifactsForDelete(ctx, ws); err != nil {

@@ -141,6 +141,19 @@
     return runtimeSessions.find((session) => session.key === key) ?? null;
   });
 
+  // While `workspaceId` has moved on but the previous workspace's
+  // data is still on screen (the in-place transition), mutating
+  // actions must not run — they would target the new id while the
+  // user is looking at the old one. The window is small (≤ a few
+  // hundred ms) but observable, so guard every action handler with
+  // this and disable the buttons.
+  const transitioning = $derived(
+    workspaceId !== "" &&
+      workspace !== null &&
+      workspace.id !== workspaceId,
+  );
+  const actionsBlocked = $derived(transitioning);
+
   $effect(() => {
     localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
   });
@@ -344,7 +357,7 @@
   }
 
   async function handleLaunch(targetKey: string): Promise<void> {
-    if (!workspaceId || launchingKey) return;
+    if (!workspaceId || launchingKey || actionsBlocked) return;
     const target = launchTargets.find((t) => t.key === targetKey);
     if (target?.kind === "tmux") {
       tmuxTabOpen = true;
@@ -374,6 +387,7 @@
   }
 
   async function closeSession(session: RuntimeSession): Promise<void> {
+    if (actionsBlocked) return;
     if (
       session.status === "running" &&
       !confirm(`Stop ${session.label}?`)
@@ -397,6 +411,7 @@
       shellOpen = false;
       return;
     }
+    if (actionsBlocked) return;
     shellOpen = true;
     if (shellSessionActive || shellLoading) return;
 
@@ -430,7 +445,7 @@
   }
 
   async function handleRetrySetup(): Promise<void> {
-    if (!workspace || retryingSetup) return;
+    if (!workspace || retryingSetup || actionsBlocked) return;
 
     retryingSetup = true;
     actionError = null;
@@ -462,6 +477,7 @@
   }
 
   async function handleDelete(): Promise<void> {
+    if (actionsBlocked) return;
     actionError = null;
     const url =
       `${basePath}/api/v1/workspaces` +
@@ -719,6 +735,7 @@
             </div>
             <button
               class="header-btn danger"
+              disabled={actionsBlocked}
               onclick={() => void handleDelete()}
             >
               Delete
