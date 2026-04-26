@@ -10203,18 +10203,25 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+type rawAssociatedPRResponse struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+}
+
 type rawWorkspaceStatusResponse struct {
-	ID           string  `json:"id"`
-	PlatformHost string  `json:"platform_host"`
-	RepoOwner    string  `json:"repo_owner"`
-	RepoName     string  `json:"repo_name"`
-	ItemType     string  `json:"item_type"`
-	ItemNumber   int     `json:"item_number"`
-	GitHeadRef   string  `json:"git_head_ref"`
-	WorktreePath string  `json:"worktree_path"`
-	TmuxSession  string  `json:"tmux_session"`
-	Status       string  `json:"status"`
-	ErrorMessage *string `json:"error_message"`
+	ID           string                   `json:"id"`
+	PlatformHost string                   `json:"platform_host"`
+	RepoOwner    string                   `json:"repo_owner"`
+	RepoName     string                   `json:"repo_name"`
+	ItemType     string                   `json:"item_type"`
+	ItemNumber   int                      `json:"item_number"`
+	GitHeadRef   string                   `json:"git_head_ref"`
+	WorktreePath string                   `json:"worktree_path"`
+	TmuxSession  string                   `json:"tmux_session"`
+	Status       string                   `json:"status"`
+	ErrorMessage *string                  `json:"error_message"`
+	AssociatedPR *rawAssociatedPRResponse `json:"associated_pr"`
 }
 
 type rawIssueWorkspaceRef struct {

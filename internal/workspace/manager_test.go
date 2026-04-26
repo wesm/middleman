@@ -198,7 +198,7 @@ func TestCreateIssue(t *testing.T) {
 	mgr := NewManager(d, wtDir)
 
 	ws, err := mgr.CreateIssue(
-		ctx, "github.com", "acme", "widget", 7,
+		ctx, "github.com", "acme", "widget", 7, CreateIssueOptions{},
 	)
 	require.NoError(err)
 	require.NotNil(ws)
