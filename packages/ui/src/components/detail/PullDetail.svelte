@@ -14,6 +14,7 @@
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
+  import SelectDropdown from "../shared/SelectDropdown.svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -300,10 +301,9 @@
     return "chip--muted";
   }
 
-  function onKanbanChange(e: Event): void {
+  function onKanbanChange(value: string): void {
     if (stalePR) return;
-    const select = e.target as HTMLSelectElement;
-    void detailStore.updateKanbanState(owner, name, number, select.value as KanbanStatus);
+    void detailStore.updateKanbanState(owner, name, number, value as KanbanStatus);
   }
 
   function mergeActionLabel(settings: RepoSettings): string {
@@ -529,19 +529,13 @@
               </svg>
             </a>
           </div>
-          <div class="kanban-control kanban-control--header">
-            <label class="kanban-label" for="kanban-select">Status</label>
-            <select
-              id="kanban-select"
-              class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-              value={pr.KanbanStatus}
-              onchange={onKanbanChange}
-            >
-              {#each kanbanOptions as opt (opt.value)}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          </div>
+          <SelectDropdown
+            class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+            value={pr.KanbanStatus}
+            options={kanbanOptions}
+            onchange={onKanbanChange}
+            title="Change workflow status"
+          />
         {/if}
       </div>
 
@@ -1331,42 +1325,30 @@
     min-width: 0;
   }
 
-  .kanban-control {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 4px;
-    flex-shrink: 0;
+  :global(.kanban-select) {
+    min-width: 150px;
   }
 
-  .kanban-control--header {
+  :global(.kanban-select--header) {
     position: absolute;
     top: 0;
     right: 0;
   }
 
-  .kanban-label {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  :global(.kanban-select--new .select-dropdown-trigger) {
+    color: var(--kanban-new);
   }
 
-  .kanban-select {
-    min-width: 150px;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    cursor: pointer;
-    outline: none;
+  :global(.kanban-select--reviewing .select-dropdown-trigger) {
+    color: var(--accent-amber);
   }
 
-  .kanban-select:focus {
-    border-color: var(--accent-blue);
+  :global(.kanban-select--waiting .select-dropdown-trigger) {
+    color: var(--accent-purple);
+  }
+
+  :global(.kanban-select--awaiting-merge .select-dropdown-trigger) {
+    color: var(--accent-green);
   }
 
   @container pull-detail (max-width: 430px) {
@@ -1378,7 +1360,7 @@
       padding-right: 0;
     }
 
-    .kanban-control--header {
+    :global(.kanban-select--header) {
       position: static;
       flex: 1;
       min-width: 0;
@@ -1509,34 +1491,10 @@
     }
   }
 
-  .btn--workspace {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--accent-blue, #0969da);
-    background: var(--accent-blue, #0969da);
-    color: #fff;
-    cursor: pointer;
-    transition: filter 0.1s;
-  }
-  .btn--workspace:hover {
-    filter: brightness(1.1);
-  }
-  .btn--workspace:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .action-error {
     font-size: 11px;
     color: var(--accent-red, #d73a49);
   }
-
-  .kanban-select--new { color: var(--kanban-new); }
-  .kanban-select--reviewing { color: var(--accent-amber); }
-  .kanban-select--waiting { color: var(--accent-purple); }
-  .kanban-select--awaiting-merge { color: var(--accent-green); }
 
   .section {
     display: flex;

@@ -57,6 +57,18 @@ Intent:
 
 If a new repeated button treatment is needed, extend `ActionButton` rather than creating another local button pattern.
 
+### SelectDropdown
+
+Use `SelectDropdown` for single-value selection controls in the UI.
+
+Intent:
+
+- one custom dropdown visual language matching header controls
+- avoid mixing browser-native select styling with custom app dropdowns
+- keep selection affordances consistent across detail headers, filters, and compact command surfaces
+
+Do not add new native `<select>` controls for visible app UI unless there is a platform-specific accessibility need that cannot be met by `SelectDropdown`.
+
 ### GitHubLabels
 
 Use `GitHubLabels` for actual GitHub labels.
