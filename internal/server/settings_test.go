@@ -1095,6 +1095,89 @@ name = "widget"
 	assert.Equal("widget", cfg2.Repos[0].Name)
 }
 
+func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var apiCalls atomic.Int32
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			if repo == "api" {
+				apiCalls.Add(1)
+				return nil, errors.New("stale configured repo should not be validated")
+			}
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}, nil
+		},
+	}
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "api"
+`, mock)
+	callsAfterSetup := apiCalls.Load()
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+		"repos": []map[string]string{
+			{"owner": "acme", "name": "api"},
+			{"owner": "acme", "name": "worker"},
+		},
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+	assert.Equal(callsAfterSetup, apiCalls.Load())
+	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 2)
+	assert.Equal("worker", cfg2.Repos[1].Name)
+}
+
+func TestHandleBulkAddReposReturnsAlreadyConfiguredWhenAllSkippedBeforeValidation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var apiCalls atomic.Int32
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			if repo == "api" {
+				apiCalls.Add(1)
+			}
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "api"
+`, mock)
+	callsAfterSetup := apiCalls.Load()
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+		"repos": []map[string]string{
+			{"owner": "acme", "name": "api"},
+		},
+	})
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Contains(rr.Body.String(), "all selected repositories are already configured")
+	assert.Equal(callsAfterSetup, apiCalls.Load())
+}
+
 func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

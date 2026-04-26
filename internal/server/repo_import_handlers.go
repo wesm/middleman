@@ -293,12 +293,24 @@ func (s *Server) bulkAddRepos(
 	}
 
 	candidates := make([]config.Repo, 0, len(input.Body.Repos))
+	s.cfgMu.Lock()
+	existing := exactConfiguredRepoSet(s.cfg.Repos)
+	s.cfgMu.Unlock()
 	for _, raw := range input.Body.Repos {
 		repo, err := normalizeExactRepoInput(raw.Owner, raw.Name)
 		if err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
+		key := strings.ToLower(repo.Owner) + "/" + strings.ToLower(repo.Name)
+		if _, ok := existing[key]; ok {
+			continue
+		}
 		candidates = append(candidates, repo)
+	}
+	if len(candidates) == 0 {
+		return nil, huma.Error400BadRequest(
+			"all selected repositories are already configured",
+		)
 	}
 
 	clients := s.configuredClients(candidates)
