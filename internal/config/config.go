@@ -551,6 +551,27 @@ func (c *Config) GitHubToken() string {
 	return ghAuthToken()
 }
 
+// TokenEnvNames returns every env var name that may hold a GitHub
+// token according to this config: the global github_token_env plus
+// any per-repo token_env overrides. Used by the runtime sanitizer
+// to strip them from launched session environments so a non-default
+// token name is not exposed to PR-controlled processes.
+func (c *Config) TokenEnvNames() []string {
+	if c == nil {
+		return nil
+	}
+	names := make([]string, 0, 1+len(c.Repos))
+	if c.GitHubTokenEnv != "" {
+		names = append(names, c.GitHubTokenEnv)
+	}
+	for _, r := range c.Repos {
+		if r.TokenEnv != "" {
+			names = append(names, r.TokenEnv)
+		}
+	}
+	return names
+}
+
 var execCommand = exec.Command
 
 func ghAuthToken() string {

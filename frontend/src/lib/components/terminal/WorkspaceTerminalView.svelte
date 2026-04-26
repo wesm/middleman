@@ -386,11 +386,7 @@
       return;
     }
 
-    // Capture the workspace id at launch time. If the user
-    // navigates to a different workspace while the launch is in
-    // flight, every subsequent step (post-await) must bail rather
-    // than fetch the new workspace's runtime or activate a session
-    // tab that belongs to a workspace the user has left.
+    // Capture id so post-await steps bail if workspace changes mid-launch.
     const id = workspaceId;
     launchingKey = targetKey;
     runtimeError = null;

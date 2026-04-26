@@ -245,39 +245,11 @@ async function setupHeldIssue(
   return { release };
 }
 
-async function mockRepoSettings(page: Page): Promise<void> {
-  await page.route(
-    "**/api/v1/repos/acme/widgets",
-    async (route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            ID: 1,
-            Owner: "acme",
-            Name: "widgets",
-            AllowSquashMerge: true,
-            AllowMergeCommit: false,
-            AllowRebaseMerge: false,
-            CreatedAt: "2026-04-01T00:00:00Z",
-          }),
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
-}
-
 test.describe("PR detail merge modal route reset", () => {
   test("merge modal closes when the route changes and does not reopen for the new PR", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);
-    await mockRepoSettings(page);
 
-    // Both PRs load instantly so the merge button is interactable
-    // for each.
     for (const pr of [prA, prB]) {
       await page.route(
         `**/api/v1/repos/${pr.repo_owner}/${pr.repo_name}/pulls/${pr.Number}`,

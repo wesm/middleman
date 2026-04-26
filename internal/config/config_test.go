@@ -1186,3 +1186,22 @@ func TestSavePreservesAgents(t *testing.T) {
 	)
 	assert.False(reloaded.Agents[1].EnabledOrDefault())
 }
+
+func TestTokenEnvNamesIncludesGlobalAndPerRepo(t *testing.T) {
+	var nilCfg *Config
+	require.Nil(t, nilCfg.TokenEnvNames())
+
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Repos: []Repo{
+			{Owner: "acme", Name: "widget", TokenEnv: "ACME_TOKEN"},
+			{Owner: "other", Name: "thing"},
+			{Owner: "third", Name: "x", TokenEnv: "THIRD_TOKEN"},
+		},
+	}
+	Assert.Equal(
+		t,
+		[]string{"WORK_GH_BOT_TOKEN", "ACME_TOKEN", "THIRD_TOKEN"},
+		cfg.TokenEnvNames(),
+	)
+}

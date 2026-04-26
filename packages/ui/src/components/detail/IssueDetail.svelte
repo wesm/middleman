@@ -58,10 +58,8 @@
     return () => issues.stopIssueDetailPolling();
   });
 
-  // Reset action-local UI state on route changes so an open
-  // branch-conflict dialog or in-progress workspace-creation flag
-  // for issue A doesn't bleed into issue B's view once the new
-  // detail loads.
+  // Clear conflict/error state on route change so issue A's
+  // dialogs can't bleed into issue B's view.
   $effect(() => {
     void owner;
     void name;

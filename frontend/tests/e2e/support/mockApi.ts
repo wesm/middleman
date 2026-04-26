@@ -294,6 +294,23 @@ export async function mockApi(page: Page): Promise<void> {
       return;
     }
 
+    const singleRepoMatch = pathname.match(
+      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)$/,
+    );
+    if (method === "GET" && singleRepoMatch) {
+      const repo = repos.find(
+        (r) =>
+          r.Owner === singleRepoMatch[1] &&
+          r.Name === singleRepoMatch[2],
+      );
+      if (!repo) {
+        await fulfillJson(route, { error: "Not found" }, 404);
+        return;
+      }
+      await fulfillJson(route, repo);
+      return;
+    }
+
     if (method === "GET" && pathname === "/api/v1/sync/status") {
       await fulfillJson(route, syncStatus);
       return;

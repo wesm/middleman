@@ -42,11 +42,8 @@ type SessionInfo struct {
 type Options struct {
 	Targets      []LaunchTarget
 	ShellCommand []string
-	// StripEnvVars lists additional environment variable names that
-	// must be removed from launched runtime sessions in addition to
-	// the built-in credential prefixes. Pass the maintainer's
-	// configured GitHub token env (and any per-repo overrides) so a
-	// non-default name is also stripped.
+	// StripEnvVars names additional env vars to strip beyond the
+	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
 }
 
@@ -749,12 +746,8 @@ var sessionVarPrefixes = []string{
 }
 
 // sessionEnvironment returns a copy of env with credential-shaped
-// variables removed. The extraStrip list contains caller-provided
-// variable names (e.g. the configured GitHub token env name and any
-// per-repo overrides) that must also be stripped so a non-default
-// token name is not exposed to PR-controlled session processes.
-// Other variables are preserved so that the user's shell, language
-// toolchains, and editors continue to work.
+// variables removed (matched by the built-in prefix list and any
+// names in extraStrip). Other variables are preserved.
 func sessionEnvironment(env []string, extraStrip []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {

@@ -479,10 +479,6 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 	}
 }
 
-// TestSessionEnvironmentStripsConfiguredTokenEnv verifies that
-// names provided via Options.StripEnvVars (the maintainer's
-// configured GitHub token env, plus per-repo overrides) are
-// stripped even when they don't match the built-in prefix list.
 func TestSessionEnvironmentStripsConfiguredTokenEnv(t *testing.T) {
 	require := require.New(t)
 	in := []string{

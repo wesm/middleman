@@ -64,12 +64,9 @@
     return () => detailStore.stopDetailPolling();
   });
 
-  // Reset action-local UI state whenever the route's PR identity
-  // changes. Without this, an open merge modal or in-progress edit
-  // for PR A would persist after navigating to PR B and reappear
-  // for B once `stalePR` clears, creating a wrong-PR risk.
+  // Clear modal/edit state on route change so PR A's open modal
+  // can't reappear for PR B once `stalePR` clears.
   $effect(() => {
-    // Touch the identity props so this effect re-runs on change.
     void owner;
     void name;
     void number;
