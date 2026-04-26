@@ -178,6 +178,54 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 	require.NoError(err)
 }
 
+func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	mgr := NewManager(Options{})
+	t.Cleanup(mgr.Shutdown)
+
+	// Simulate a Launch that already passed claimInflight but has
+	// not yet returned (i.e. still inside startSession). Without
+	// the drain, StopWorkspace would snapshot empty sessions and
+	// finish; the in-flight launch would then insert a session
+	// after the workspace was supposedly stopped.
+	mgr.mu.Lock()
+	mgr.inflightWS["ws-1"] = 1
+	mgr.mu.Unlock()
+
+	stopReturned := make(chan struct{})
+	go func() {
+		mgr.StopWorkspace(context.Background(), "ws-1")
+		close(stopReturned)
+	}()
+
+	select {
+	case <-stopReturned:
+		require.FailNow(
+			"StopWorkspace returned before inflight launch drained",
+		)
+	case <-time.After(75 * time.Millisecond):
+	}
+
+	mgr.releaseInflight("ws-1")
+
+	select {
+	case <-stopReturned:
+	case <-time.After(2 * time.Second):
+		require.FailNow(
+			"StopWorkspace did not return after inflight drained",
+		)
+	}
+
+	// And the marker is cleared, so subsequent launches are not
+	// permanently rejected.
+	mgr.mu.Lock()
+	stopping := mgr.stoppingWS["ws-1"]
+	mgr.mu.Unlock()
+	assert.Equal(0, stopping)
+}
+
 func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)

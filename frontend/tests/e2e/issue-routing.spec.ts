@@ -52,7 +52,7 @@ async function mockIssueDetailAndTrackHosts(page: Page): Promise<string[]> {
     });
   });
   await page.route(
-    "**/api/v1/repos/acme/widgets/issues/7**",
+    /\/api\/v1\/repos\/acme\/widgets\/issues\/7(?:[/?]|$)/,
     async (route) => {
       const url = new URL(route.request().url());
       seenHosts.push(url.searchParams.get("platform_host") ?? "");

@@ -63,6 +63,8 @@ type Manager struct {
 	stripEnvVars []string
 	startLocks   map[string]*sync.Mutex
 	stoppingWS   map[string]int
+	inflightWS   map[string]int
+	inflightCh   map[string]chan struct{}
 	startWG      sync.WaitGroup
 	closed       bool
 }
@@ -113,6 +115,8 @@ func NewManager(options Options) *Manager {
 		stripEnvVars: dedupeStrings(options.StripEnvVars),
 		startLocks:   make(map[string]*sync.Mutex),
 		stoppingWS:   make(map[string]int),
+		inflightWS:   make(map[string]int),
+		inflightCh:   make(map[string]chan struct{}),
 	}
 }
 
@@ -181,6 +185,11 @@ func (m *Manager) Launch(
 	}
 	defer m.finishStart()
 
+	if err := m.claimInflight(workspaceID); err != nil {
+		return SessionInfo{}, err
+	}
+	defer m.releaseInflight(workspaceID)
+
 	started, err := startSession(SessionInfo{
 		Key:         key,
 		WorkspaceID: workspaceID,
@@ -196,20 +205,11 @@ func (m *Manager) Launch(
 	go started.watch()
 
 	m.mu.Lock()
-	switch {
-	case m.closed:
+	if m.closed {
 		m.mu.Unlock()
 		started.stop()
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
-	case m.stoppingWS[workspaceID] > 0:
-		// StopWorkspace ran during startSession; the workspace is
-		// being torn down. Kill the process we just spawned so it
-		// does not outlive the worktree.
-		m.mu.Unlock()
-		started.stop()
-		waitSessionDone(started)
-		return SessionInfo{}, errWorkspaceStopping
 	}
 	m.sessions[key] = started
 	m.mu.Unlock()
@@ -272,14 +272,33 @@ func (m *Manager) StopWorkspace(
 	ctx context.Context,
 	workspaceID string,
 ) {
-	// Mark the workspace as stopping under the manager mutex so a
-	// concurrent Launch/EnsureShell that has already passed its
-	// readiness checks but not yet inserted into m.sessions can see
-	// the marker, kill its just-spawned process, and bail. Without
-	// this, a new session can be inserted into the map immediately
-	// after the snapshot below and outlive the worktree.
+	// 1. Mark the workspace as stopping under the manager mutex.
+	//    New Launch/EnsureShell calls that observe this marker bail
+	//    out via claimInflight before spawning a process.
 	m.mu.Lock()
 	m.stoppingWS[workspaceID]++
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.stoppingWS[workspaceID]--
+		if m.stoppingWS[workspaceID] <= 0 {
+			delete(m.stoppingWS, workspaceID)
+		}
+		m.mu.Unlock()
+	}()
+
+	// 2. Drain any Launch/EnsureShell calls that passed claimInflight
+	//    before the marker was set. They are mid-startSession; once
+	//    they finish, their processes are in m.sessions/m.shells and
+	//    will be picked up by the snapshot below. Without this drain
+	//    a launch in flight at step 1 can insert after the snapshot
+	//    and leave a process alive for the deleted worktree.
+	if err := m.waitInflight(ctx, workspaceID); err != nil {
+		return
+	}
+
+	// 3. Snapshot and remove all sessions/shells for the workspace.
+	m.mu.Lock()
 	stopping := make([]*session, 0)
 	for key, s := range m.sessions {
 		if s.snapshot().WorkspaceID == workspaceID {
@@ -294,14 +313,6 @@ func (m *Manager) StopWorkspace(
 		}
 	}
 	m.mu.Unlock()
-	defer func() {
-		m.mu.Lock()
-		m.stoppingWS[workspaceID]--
-		if m.stoppingWS[workspaceID] <= 0 {
-			delete(m.stoppingWS, workspaceID)
-		}
-		m.mu.Unlock()
-	}()
 
 	for _, s := range stopping {
 		s.stop()
@@ -312,6 +323,59 @@ func (m *Manager) StopWorkspace(
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// claimInflight registers a starting Launch/EnsureShell so a
+// concurrent StopWorkspace can wait for it to finish inserting
+// before snapshotting. Rejects if the workspace is already being
+// stopped.
+func (m *Manager) claimInflight(workspaceID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stoppingWS[workspaceID] > 0 {
+		return errWorkspaceStopping
+	}
+	m.inflightWS[workspaceID]++
+	return nil
+}
+
+func (m *Manager) releaseInflight(workspaceID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inflightWS[workspaceID]--
+	if m.inflightWS[workspaceID] <= 0 {
+		delete(m.inflightWS, workspaceID)
+		if ch, ok := m.inflightCh[workspaceID]; ok {
+			close(ch)
+			delete(m.inflightCh, workspaceID)
+		}
+	}
+}
+
+// waitInflight blocks until every claimInflight for workspaceID
+// that completed before this call has been released. New claims
+// are rejected by the stoppingWS marker the caller already holds.
+func (m *Manager) waitInflight(
+	ctx context.Context,
+	workspaceID string,
+) error {
+	m.mu.Lock()
+	if m.inflightWS[workspaceID] == 0 {
+		m.mu.Unlock()
+		return nil
+	}
+	ch, ok := m.inflightCh[workspaceID]
+	if !ok {
+		ch = make(chan struct{})
+		m.inflightCh[workspaceID] = ch
+	}
+	m.mu.Unlock()
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -365,6 +429,11 @@ func (m *Manager) EnsureShell(
 	}
 	defer m.finishStart()
 
+	if err := m.claimInflight(workspaceID); err != nil {
+		return SessionInfo{}, err
+	}
+	defer m.releaseInflight(workspaceID)
+
 	started, err := startSession(SessionInfo{
 		Key:         key,
 		WorkspaceID: workspaceID,
@@ -380,17 +449,11 @@ func (m *Manager) EnsureShell(
 	go started.watch()
 
 	m.mu.Lock()
-	switch {
-	case m.closed:
+	if m.closed {
 		m.mu.Unlock()
 		started.stop()
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
-	case m.stoppingWS[workspaceID] > 0:
-		m.mu.Unlock()
-		started.stop()
-		waitSessionDone(started)
-		return SessionInfo{}, errWorkspaceStopping
 	}
 	m.shells[key] = started
 	m.mu.Unlock()
