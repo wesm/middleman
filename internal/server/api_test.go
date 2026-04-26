@@ -79,6 +79,7 @@ type mockGH struct {
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
 	listReposByOwnerFn        func(context.Context, string) ([]*gh.Repository, error)
+	listReleasesFn            func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listCheckRunsForRefFn     func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	getCombinedStatusFn       func(context.Context, string, string, string) (*gh.CombinedStatus, error)
@@ -147,6 +148,15 @@ func (m *mockGH) ListRepositoriesByOwner(
 ) ([]*gh.Repository, error) {
 	if m.listReposByOwnerFn != nil {
 		return m.listReposByOwnerFn(ctx, owner)
+	}
+	return nil, nil
+}
+
+func (m *mockGH) ListReleases(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryRelease, error) {
+	if m.listReleasesFn != nil {
+		return m.listReleasesFn(ctx, owner, repo, perPage)
 	}
 	return nil, nil
 }
@@ -2095,6 +2105,27 @@ func TestAPIListRepoSummaries(t *testing.T) {
 
 	_, err := testutil.SeedFixtures(context.Background(), database)
 	require.NoError(err)
+	widgetsRepo, err := database.GetRepoByOwnerName(context.Background(), "acme", "widgets")
+	require.NoError(err)
+	require.NotNil(widgetsRepo)
+	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	commitsSince := 42
+	err = database.UpsertRepoOverview(context.Background(), widgetsRepo.ID, db.RepoOverview{
+		LatestRelease: &db.RepoRelease{
+			TagName:         "v2.8.1",
+			Name:            "Version 2.8.1",
+			URL:             "https://github.com/acme/widgets/releases/tag/v2.8.1",
+			TargetCommitish: "main",
+			Prerelease:      false,
+			PublishedAt:     &publishedAt,
+		},
+		CommitsSinceRelease: &commitsSince,
+		CommitTimeline: []db.RepoCommitTimelinePoint{{
+			SHA:         "abc123",
+			CommittedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
+		}},
+	})
+	require.NoError(err)
 
 	resp, err := client.HTTP.ListRepoSummariesWithResponse(context.Background())
 	require.NoError(err)
@@ -2121,6 +2152,11 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert.Equal(int64(7), widgets.CachedPrCount)
 	assert.Equal(int64(4), widgets.CachedIssueCount)
 	assert.NotNil(widgets.MostRecentActivityAt)
+	require.NotNil(widgets.LatestRelease)
+	assert.Equal("v2.8.1", widgets.LatestRelease.TagName)
+	assert.Equal(int64(42), *widgets.CommitsSinceRelease)
+	require.NotNil(widgets.CommitTimeline)
+	assert.Len(*widgets.CommitTimeline, 1)
 	assert.Len(*widgets.ActiveAuthors, 3)
 	assert.Equal("alice", (*widgets.ActiveAuthors)[0].Login)
 	assert.Equal(int64(3), (*widgets.ActiveAuthors)[0].ItemCount)

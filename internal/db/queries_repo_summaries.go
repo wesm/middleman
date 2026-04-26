@@ -2,7 +2,10 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // ListRepoSummaries returns one summary per tracked repo. The summaries are
@@ -21,6 +24,9 @@ func (d *DB) ListRepoSummaries(ctx context.Context) ([]RepoSummary, error) {
 	}
 
 	if err := d.loadRepoSummaryStats(ctx, summaryByRepoID); err != nil {
+		return nil, err
+	}
+	if err := d.loadRepoSummaryOverviews(ctx, summaryByRepoID); err != nil {
 		return nil, err
 	}
 	if err := d.loadRepoSummaryAuthors(ctx, summaryByRepoID); err != nil {
@@ -118,6 +124,204 @@ func (d *DB) loadRepoSummaryStats(
 	}
 
 	return rows.Err()
+}
+
+type repoCommitTimelineJSON struct {
+	SHA         string `json:"sha"`
+	CommittedAt string `json:"committed_at"`
+}
+
+func (d *DB) UpsertRepoOverview(
+	ctx context.Context,
+	repoID int64,
+	overview RepoOverview,
+) error {
+	timeline := make([]repoCommitTimelineJSON, 0, len(overview.CommitTimeline))
+	for _, point := range overview.CommitTimeline {
+		timeline = append(timeline, repoCommitTimelineJSON{
+			SHA:         point.SHA,
+			CommittedAt: point.CommittedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	timelineJSON, err := json.Marshal(timeline)
+	if err != nil {
+		return fmt.Errorf("marshal repo overview timeline: %w", err)
+	}
+
+	var (
+		tagName         string
+		releaseName     string
+		releaseURL      string
+		targetCommitish string
+		prerelease      bool
+		publishedAt     *time.Time
+	)
+	if overview.LatestRelease != nil {
+		tagName = overview.LatestRelease.TagName
+		releaseName = overview.LatestRelease.Name
+		releaseURL = overview.LatestRelease.URL
+		targetCommitish = overview.LatestRelease.TargetCommitish
+		prerelease = overview.LatestRelease.Prerelease
+		publishedAt = overview.LatestRelease.PublishedAt
+	}
+
+	_, err = d.rw.ExecContext(ctx, `
+		INSERT INTO middleman_repo_overviews
+		    (repo_id, latest_release_tag, latest_release_name,
+		     latest_release_url, latest_release_target,
+		     latest_release_prerelease, latest_release_published_at,
+		     commits_since_release, commit_timeline_json,
+		     timeline_updated_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(repo_id) DO UPDATE SET
+		    latest_release_tag = excluded.latest_release_tag,
+		    latest_release_name = excluded.latest_release_name,
+		    latest_release_url = excluded.latest_release_url,
+		    latest_release_target = excluded.latest_release_target,
+		    latest_release_prerelease = excluded.latest_release_prerelease,
+		    latest_release_published_at = excluded.latest_release_published_at,
+		    commits_since_release = excluded.commits_since_release,
+		    commit_timeline_json = excluded.commit_timeline_json,
+		    timeline_updated_at = excluded.timeline_updated_at,
+		    updated_at = excluded.updated_at`,
+		repoID,
+		tagName,
+		releaseName,
+		releaseURL,
+		targetCommitish,
+		prerelease,
+		nullableTime(publishedAt),
+		overview.CommitsSinceRelease,
+		string(timelineJSON),
+		nullableTime(overview.TimelineUpdatedAt),
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert repo overview: %w", err)
+	}
+	return nil
+}
+
+func nullableTime(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC()
+}
+
+func (d *DB) loadRepoSummaryOverviews(
+	ctx context.Context,
+	summaryByRepoID map[int64]*RepoSummary,
+) error {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT repo_id,
+		       latest_release_tag,
+		       latest_release_name,
+		       latest_release_url,
+		       latest_release_target,
+		       latest_release_prerelease,
+		       latest_release_published_at,
+		       commits_since_release,
+		       commit_timeline_json,
+		       timeline_updated_at
+		FROM middleman_repo_overviews`,
+	)
+	if err != nil {
+		return fmt.Errorf("list repo summary overviews: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			repoID             int64
+			tagName            string
+			releaseName        string
+			releaseURL         string
+			targetCommitish    string
+			prerelease         bool
+			publishedAtStr     sql.NullString
+			commitsSince       sql.NullInt64
+			timelineJSON       string
+			timelineUpdatedStr sql.NullString
+		)
+		if err := rows.Scan(
+			&repoID,
+			&tagName,
+			&releaseName,
+			&releaseURL,
+			&targetCommitish,
+			&prerelease,
+			&publishedAtStr,
+			&commitsSince,
+			&timelineJSON,
+			&timelineUpdatedStr,
+		); err != nil {
+			return fmt.Errorf("scan repo summary overview: %w", err)
+		}
+
+		summary := summaryByRepoID[repoID]
+		if summary == nil {
+			continue
+		}
+
+		if tagName != "" {
+			release := &RepoRelease{
+				TagName:         tagName,
+				Name:            releaseName,
+				URL:             releaseURL,
+				TargetCommitish: targetCommitish,
+				Prerelease:      prerelease,
+			}
+			if publishedAtStr.Valid {
+				t, err := parseDBTime(publishedAtStr.String)
+				if err != nil {
+					return fmt.Errorf("parse repo release published_at %q: %w", publishedAtStr.String, err)
+				}
+				release.PublishedAt = &t
+			}
+			summary.Overview.LatestRelease = release
+		}
+		if commitsSince.Valid {
+			count := int(commitsSince.Int64)
+			summary.Overview.CommitsSinceRelease = &count
+		}
+		points, err := parseRepoTimelineJSON(timelineJSON)
+		if err != nil {
+			return fmt.Errorf("parse repo timeline json: %w", err)
+		}
+		summary.Overview.CommitTimeline = points
+		if timelineUpdatedStr.Valid {
+			t, err := parseDBTime(timelineUpdatedStr.String)
+			if err != nil {
+				return fmt.Errorf("parse repo timeline updated_at %q: %w", timelineUpdatedStr.String, err)
+			}
+			summary.Overview.TimelineUpdatedAt = &t
+		}
+	}
+
+	return rows.Err()
+}
+
+func parseRepoTimelineJSON(value string) ([]RepoCommitTimelinePoint, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var raw []repoCommitTimelineJSON
+	if err := json.Unmarshal([]byte(value), &raw); err != nil {
+		return nil, err
+	}
+	points := make([]RepoCommitTimelinePoint, 0, len(raw))
+	for _, item := range raw {
+		t, err := time.Parse(time.RFC3339, item.CommittedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse commit timeline date %q: %w", item.CommittedAt, err)
+		}
+		points = append(points, RepoCommitTimelinePoint{
+			SHA:         item.SHA,
+			CommittedAt: t,
+		})
+	}
+	return points, nil
 }
 
 func (d *DB) loadRepoSummaryAuthors(

@@ -558,6 +558,12 @@ type RepoSummaryAuthorResponse struct {
 	Login     string `json:"login"`
 }
 
+// RepoSummaryCommitPointResponse defines model for RepoSummaryCommitPointResponse.
+type RepoSummaryCommitPointResponse struct {
+	CommittedAt string `json:"committed_at"`
+	Sha         string `json:"sha"`
+}
+
 // RepoSummaryIssueResponse defines model for RepoSummaryIssueResponse.
 type RepoSummaryIssueResponse struct {
 	Author         string `json:"author"`
@@ -568,22 +574,36 @@ type RepoSummaryIssueResponse struct {
 	Url            string `json:"url"`
 }
 
+// RepoSummaryReleaseResponse defines model for RepoSummaryReleaseResponse.
+type RepoSummaryReleaseResponse struct {
+	Name            string  `json:"name"`
+	Prerelease      bool    `json:"prerelease"`
+	PublishedAt     *string `json:"published_at,omitempty"`
+	TagName         string  `json:"tag_name"`
+	TargetCommitish string  `json:"target_commitish"`
+	Url             string  `json:"url"`
+}
+
 // RepoSummaryResponse defines model for RepoSummaryResponse.
 type RepoSummaryResponse struct {
-	ActiveAuthors        *[]RepoSummaryAuthorResponse `json:"active_authors"`
-	CachedIssueCount     int64                        `json:"cached_issue_count"`
-	CachedPrCount        int64                        `json:"cached_pr_count"`
-	DraftPrCount         int64                        `json:"draft_pr_count"`
-	LastSyncCompletedAt  *string                      `json:"last_sync_completed_at,omitempty"`
-	LastSyncError        *string                      `json:"last_sync_error,omitempty"`
-	LastSyncStartedAt    *string                      `json:"last_sync_started_at,omitempty"`
-	MostRecentActivityAt *string                      `json:"most_recent_activity_at,omitempty"`
-	Name                 string                       `json:"name"`
-	OpenIssueCount       int64                        `json:"open_issue_count"`
-	OpenPrCount          int64                        `json:"open_pr_count"`
-	Owner                string                       `json:"owner"`
-	PlatformHost         string                       `json:"platform_host"`
-	RecentIssues         *[]RepoSummaryIssueResponse  `json:"recent_issues"`
+	ActiveAuthors        *[]RepoSummaryAuthorResponse      `json:"active_authors"`
+	CachedIssueCount     int64                             `json:"cached_issue_count"`
+	CachedPrCount        int64                             `json:"cached_pr_count"`
+	CommitTimeline       *[]RepoSummaryCommitPointResponse `json:"commit_timeline"`
+	CommitsSinceRelease  *int64                            `json:"commits_since_release,omitempty"`
+	DraftPrCount         int64                             `json:"draft_pr_count"`
+	LastSyncCompletedAt  *string                           `json:"last_sync_completed_at,omitempty"`
+	LastSyncError        *string                           `json:"last_sync_error,omitempty"`
+	LastSyncStartedAt    *string                           `json:"last_sync_started_at,omitempty"`
+	LatestRelease        *RepoSummaryReleaseResponse       `json:"latest_release,omitempty"`
+	MostRecentActivityAt *string                           `json:"most_recent_activity_at,omitempty"`
+	Name                 string                            `json:"name"`
+	OpenIssueCount       int64                             `json:"open_issue_count"`
+	OpenPrCount          int64                             `json:"open_pr_count"`
+	Owner                string                            `json:"owner"`
+	PlatformHost         string                            `json:"platform_host"`
+	RecentIssues         *[]RepoSummaryIssueResponse       `json:"recent_issues"`
+	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
 }
 
 // ResolveItemResponse defines model for ResolveItemResponse.

@@ -1371,6 +1371,10 @@ export interface components {
             item_count: number;
             login: string;
         };
+        RepoSummaryCommitPointResponse: {
+            committed_at: string;
+            sha: string;
+        };
         RepoSummaryIssueResponse: {
             author: string;
             last_activity_at: string;
@@ -1380,17 +1384,29 @@ export interface components {
             title: string;
             url: string;
         };
+        RepoSummaryReleaseResponse: {
+            name: string;
+            prerelease: boolean;
+            published_at?: string;
+            tag_name: string;
+            target_commitish: string;
+            url: string;
+        };
         RepoSummaryResponse: {
             active_authors: components["schemas"]["RepoSummaryAuthorResponse"][] | null;
             /** Format: int64 */
             cached_issue_count: number;
             /** Format: int64 */
             cached_pr_count: number;
+            commit_timeline: components["schemas"]["RepoSummaryCommitPointResponse"][] | null;
+            /** Format: int64 */
+            commits_since_release?: number;
             /** Format: int64 */
             draft_pr_count: number;
             last_sync_completed_at?: string;
             last_sync_error?: string;
             last_sync_started_at?: string;
+            latest_release?: components["schemas"]["RepoSummaryReleaseResponse"];
             most_recent_activity_at?: string;
             name: string;
             /** Format: int64 */
@@ -1400,6 +1416,7 @@ export interface components {
             owner: string;
             platform_host: string;
             recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;
+            timeline_updated_at?: string;
         };
         ResolveItemResponse: {
             /**

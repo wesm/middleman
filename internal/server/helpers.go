@@ -229,6 +229,34 @@ func toRepoSummaryResponse(summary db.RepoSummary) repoSummaryResponse {
 	if summary.MostRecentActivityAt != nil {
 		resp.MostRecentActivityAt = formatUTCRFC3339(*summary.MostRecentActivityAt)
 	}
+	if summary.Overview.LatestRelease != nil {
+		release := summary.Overview.LatestRelease
+		resp.LatestRelease = &repoSummaryReleaseResponse{
+			TagName:         release.TagName,
+			Name:            release.Name,
+			URL:             release.URL,
+			TargetCommitish: release.TargetCommitish,
+			Prerelease:      release.Prerelease,
+		}
+		if release.PublishedAt != nil {
+			resp.LatestRelease.PublishedAt = formatUTCRFC3339(*release.PublishedAt)
+		}
+	}
+	resp.CommitsSinceRelease = summary.Overview.CommitsSinceRelease
+	resp.CommitTimeline = make(
+		[]repoSummaryCommitPointResponse,
+		0,
+		len(summary.Overview.CommitTimeline),
+	)
+	for _, point := range summary.Overview.CommitTimeline {
+		resp.CommitTimeline = append(resp.CommitTimeline, repoSummaryCommitPointResponse{
+			SHA:         point.SHA,
+			CommittedAt: formatUTCRFC3339(point.CommittedAt),
+		})
+	}
+	if summary.Overview.TimelineUpdatedAt != nil {
+		resp.TimelineUpdatedAt = formatUTCRFC3339(*summary.Overview.TimelineUpdatedAt)
+	}
 	for _, author := range summary.ActiveAuthors {
 		resp.ActiveAuthors = append(resp.ActiveAuthors, repoSummaryAuthorResponse{
 			Login:     author.Login,

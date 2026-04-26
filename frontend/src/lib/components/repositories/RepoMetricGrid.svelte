@@ -36,7 +36,7 @@
 <style>
   .repo-metrics {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
     gap: 8px;
   }
 
@@ -101,6 +101,10 @@
 
   .repo-metric--green .repo-metric__value {
     color: var(--accent-green);
+  }
+
+  .repo-metric--red .repo-metric__value {
+    color: var(--accent-red);
   }
 
   @media (max-width: 760px) {

@@ -20,6 +20,11 @@ type Commit struct {
 	Message    string // first line only
 }
 
+type CommitTimelinePoint struct {
+	SHA         string
+	CommittedAt time.Time
+}
+
 // ListCommits returns commits between mergeBase and headSHA, newest first,
 // following only the first-parent chain. If mergeBase is the empty tree
 // sentinel (parentless root), all commits up to headSHA are returned.
@@ -66,6 +71,72 @@ func (m *Manager) ListCommits(
 		})
 	}
 	return commits, scanner.Err()
+}
+
+// CommitTimelineSinceTag returns first-parent commits on the default branch
+// after tagName. The count covers the full range; points contains the newest
+// commits up to limit for compact UI timelines.
+func (m *Manager) CommitTimelineSinceTag(
+	ctx context.Context,
+	host, owner, name, tagName string,
+	limit int,
+) (int, []CommitTimelinePoint, error) {
+	if tagName == "" {
+		return 0, nil, nil
+	}
+	if limit < 1 {
+		limit = 1
+	}
+
+	dir := m.ClonePath(host, owner, name)
+	rangeSpec := tagName + "..refs/remotes/origin/HEAD"
+	countOut, err := m.git(ctx, host, dir,
+		"rev-list", "--first-parent", "--count", rangeSpec,
+	)
+	if err != nil {
+		return 0, nil, fmt.Errorf("count commits since tag %s: %w", tagName, err)
+	}
+	countText := strings.TrimSpace(string(countOut))
+	var count int
+	if _, err := fmt.Sscanf(countText, "%d", &count); err != nil {
+		return 0, nil, fmt.Errorf("parse commit count %q: %w", countText, err)
+	}
+
+	out, err := m.git(ctx, host, dir,
+		"log", "--first-parent",
+		fmt.Sprintf("--max-count=%d", limit),
+		"--format=%H%x00%aI",
+		rangeSpec,
+	)
+	if err != nil {
+		return 0, nil, fmt.Errorf("list commit timeline since tag %s: %w", tagName, err)
+	}
+
+	var points []CommitTimelinePoint
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\x00", 2)
+		if len(parts) != 2 {
+			return 0, nil, fmt.Errorf("unexpected git log line: %q", line)
+		}
+		t, err := time.Parse(time.RFC3339, parts[1])
+		if err != nil {
+			return 0, nil, fmt.Errorf("parse commit date %q: %w", parts[1], err)
+		}
+		points = append(points, CommitTimelinePoint{
+			SHA:         parts[0],
+			CommittedAt: t,
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, nil, err
+	}
+	return count, points, nil
 }
 
 // ParentOf returns the first parent SHA of the given commit.

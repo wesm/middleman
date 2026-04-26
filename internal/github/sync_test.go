@@ -55,6 +55,9 @@ type mockClient struct {
 	getIssueFn                      func(context.Context, string, string, int) (*gh.Issue, error)
 	getUserFn                       func(context.Context, string) (*gh.User, error)
 	listReposByOwnerFn              func(context.Context, string) ([]*gh.Repository, error)
+	listReleases                    []*gh.RepositoryRelease
+	listReleasesErr                 error
+	listReleasesFn                  func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listOpenPRsFn                   func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listPullRequestsPageFn          func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
@@ -146,6 +149,19 @@ func (m *mockClient) ListRepositoriesByOwner(
 		return m.listReposByOwnerFn(ctx, owner)
 	}
 	return nil, nil
+}
+
+func (m *mockClient) ListReleases(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryRelease, error) {
+	m.trackCall()
+	if m.listReleasesFn != nil {
+		return m.listReleasesFn(ctx, owner, repo, perPage)
+	}
+	if m.listReleasesErr != nil {
+		return nil, m.listReleasesErr
+	}
+	return m.listReleases, nil
 }
 
 func (m *mockClient) GetPullRequest(

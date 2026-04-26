@@ -89,6 +89,19 @@ describe("RepoSummaryPage", () => {
         last_sync_completed_at: "2026-04-17T15:00:00Z",
         last_sync_started_at: "2026-04-17T14:59:00Z",
         last_sync_error: "",
+        latest_release: {
+          tag_name: "v2.8.1",
+          name: "Version 2.8.1",
+          url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
+          target_commitish: "main",
+          prerelease: false,
+          published_at: "2026-04-15T12:00:00Z",
+        },
+        commits_since_release: 8,
+        commit_timeline: [{
+          sha: "abc123",
+          committed_at: "2026-04-16T12:00:00Z",
+        }],
         active_authors: [
           { login: "alice", item_count: 3 },
           { login: "bob", item_count: 2 },
@@ -107,15 +120,20 @@ describe("RepoSummaryPage", () => {
 
     render(RepoSummaryPage);
 
-    expect(await screen.findByText("acme/widgets")).toBeTruthy();
-    expect(screen.getAllByText("Open PRs")).toHaveLength(2);
+    expect(
+      await screen.findByRole("button", {
+        name: /acme\s*\/\s*widgets/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Open PRs").length).toBeGreaterThan(1);
+    expect(screen.getByText("v2.8.1")).toBeTruthy();
+    expect(screen.getByText("8 commits")).toBeTruthy();
     expect(
       screen.getByText("Investigate repo summary card"),
     ).toBeTruthy();
-    expect(screen.getByText("alice")).toBeTruthy();
   });
 
-  it("shows cached output and sync errors clearly", async () => {
+  it("keeps cached output visible when a sync issue exists", async () => {
     mockGet.mockResolvedValue({
       data: [{
         owner: "acme",
@@ -138,11 +156,12 @@ describe("RepoSummaryPage", () => {
 
     render(RepoSummaryPage);
 
-    await screen.findByText("acme/widgets");
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
 
     expect(screen.getByText("Cached PRs")).toBeTruthy();
     expect(screen.getByText("Cached issues")).toBeTruthy();
-    expect(screen.getByText("rate limit exceeded")).toBeTruthy();
+    expect(screen.getByText("Sync issue")).toBeTruthy();
+    expect(screen.queryByText("rate limit exceeded")).toBeNull();
   });
 
   it("navigates from repo metric cells instead of separate view buttons", async () => {
@@ -168,7 +187,7 @@ describe("RepoSummaryPage", () => {
 
     render(RepoSummaryPage);
 
-    await screen.findByText("acme/widgets");
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
 
     expect(
       screen.queryByRole("button", { name: "View PRs" }),
@@ -192,6 +211,91 @@ describe("RepoSummaryPage", () => {
       "acme/widgets",
     );
     expect(mockNavigate).toHaveBeenCalledWith("/issues");
+  });
+
+  it("filters repositories by search and stale release state", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          owner: "acme",
+          name: "fresh",
+          platform_host: "github.com",
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 0,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+          latest_release: {
+            tag_name: "v1.0.0",
+            name: "",
+            url: "",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-16T12:00:00Z",
+          },
+          commits_since_release: 2,
+          commit_timeline: [],
+        },
+        {
+          owner: "acme",
+          name: "stale",
+          platform_host: "github.com",
+          cached_pr_count: 4,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 3,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+          latest_release: {
+            tag_name: "v0.9.0",
+            name: "",
+            url: "",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-03-01T12:00:00Z",
+          },
+          commits_since_release: 72,
+          commit_timeline: [],
+        },
+      ],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    expect(
+      await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
+    ).toBeTruthy();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Stale release\s+1/ }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
+    ).toBeTruthy();
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Filter repositories"),
+      { target: { value: "fresh" } },
+    );
+    expect(screen.getByText("No repositories match")).toBeTruthy();
   });
 
   it("creates an issue from a repo card and navigates to it", async () => {
@@ -226,7 +330,7 @@ describe("RepoSummaryPage", () => {
 
     render(RepoSummaryPage);
 
-    await screen.findByText("acme/widgets");
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
     await fireEvent.click(
       screen.getByRole("button", { name: "New issue" }),
     );
@@ -303,7 +407,7 @@ describe("RepoSummaryPage", () => {
 
     render(RepoSummaryPage);
 
-    await screen.findByText("acme/widgets");
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
     await fireEvent.click(
       screen.getByRole("button", { name: "New issue" }),
     );

@@ -7,6 +7,10 @@ export type RepoSummaryAuthor =
   components["schemas"]["RepoSummaryAuthorResponse"];
 export type RepoSummaryIssue =
   components["schemas"]["RepoSummaryIssueResponse"];
+export type RepoSummaryCommitPointResponse =
+  components["schemas"]["RepoSummaryCommitPointResponse"];
+export type RepoSummaryReleaseResponse =
+  components["schemas"]["RepoSummaryReleaseResponse"];
 export type PullRequest =
   components["schemas"]["MergeRequestResponse"];
 export type Issue =

@@ -46,8 +46,30 @@ type RepoSummary struct {
 	CachedIssueCount     int
 	OpenIssueCount       int
 	MostRecentActivityAt *time.Time
+	Overview             RepoOverview
 	ActiveAuthors        []RepoActivityAuthor
 	RecentIssues         []RepoIssueHeadline
+}
+
+type RepoOverview struct {
+	LatestRelease       *RepoRelease
+	CommitsSinceRelease *int
+	CommitTimeline      []RepoCommitTimelinePoint
+	TimelineUpdatedAt   *time.Time
+}
+
+type RepoRelease struct {
+	TagName         string
+	Name            string
+	URL             string
+	TargetCommitish string
+	Prerelease      bool
+	PublishedAt     *time.Time
+}
+
+type RepoCommitTimelinePoint struct {
+	SHA         string
+	CommittedAt time.Time
 }
 
 type RepoActivityAuthor struct {

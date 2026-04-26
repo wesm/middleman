@@ -36,6 +36,7 @@ type Client interface {
 	GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	GetUser(ctx context.Context, login string) (*gh.User, error)
 	ListRepositoriesByOwner(ctx context.Context, owner string) ([]*gh.Repository, error)
+	ListReleases(ctx context.Context, owner, repo string, perPage int) ([]*gh.RepositoryRelease, error)
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	CreateIssue(ctx context.Context, owner, repo, title, body string) (*gh.Issue, error)
@@ -139,6 +140,21 @@ func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ..
 		return
 	}
 	c.etag.invalidateRepo(owner, repo, endpoints...)
+}
+
+func (c *liveClient) ListReleases(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryRelease, error) {
+	if perPage < 1 {
+		perPage = 1
+	}
+	releases, _, err := c.gh.Repositories.ListReleases(ctx, owner, repo, &gh.ListOptions{
+		PerPage: perPage,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return releases, nil
 }
 
 func (c *liveClient) CreateIssue(

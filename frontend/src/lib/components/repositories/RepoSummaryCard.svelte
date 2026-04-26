@@ -3,8 +3,11 @@
   import { timeAgo } from "@middleman/ui/utils/time";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import {
+    displayReleaseName,
+    isStaleRelease,
     localDateTimeLabel,
     repoKey,
+    shortDateLabel,
     type RepoMetric,
     type RepoSummaryCard,
   } from "./repoSummary.js";
@@ -30,6 +33,23 @@
     summary.last_sync_completed_at
       || summary.last_sync_started_at,
   );
+  const release = $derived(summary.latest_release);
+  const staleRelease = $derived(isStaleRelease(summary));
+  const releaseDate = $derived(release?.published_at);
+  const releaseLabel = $derived(displayReleaseName(release));
+  const releaseStatus = $derived.by(() => {
+    if (!release) return "No release";
+    if (staleRelease) return "Stale";
+    return release.prerelease ? "Pre-release" : "Latest";
+  });
+  const releaseStatusClass = $derived.by(() => {
+    if (!release) return "chip--muted";
+    if (staleRelease) return "chip--red";
+    return release.prerelease ? "chip--amber" : "chip--green";
+  });
+  const activityPoints = $derived.by(() =>
+    [...summary.commit_timeline].reverse(),
+  );
   const metrics = $derived<RepoMetric[]>([
     {
       label: "Open PRs",
@@ -38,15 +58,15 @@
       onclick: onviewprs,
     },
     {
-      label: "Draft PRs",
-      value: summary.draft_pr_count,
-      tone: "amber",
-    },
-    {
       label: "Open issues",
       value: summary.open_issue_count,
       tone: "green",
       onclick: onviewissues,
+    },
+    {
+      label: "Draft PRs",
+      value: summary.draft_pr_count,
+      tone: "amber",
     },
     {
       label: "Cached PRs",
@@ -57,6 +77,22 @@
       value: summary.cached_issue_count,
     },
   ]);
+
+  function timelinePosition(committedAt: string): number {
+    if (!releaseDate) return 50;
+    const start = new Date(releaseDate).getTime();
+    const end = Date.now();
+    const current = new Date(committedAt).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(current) || end <= start) {
+      return 50;
+    }
+    const pct = ((current - start) / (end - start)) * 100;
+    return Math.max(1, Math.min(99, pct));
+  }
+
+  function authorInitial(author: string): string {
+    return (author.trim()[0] ?? "?").toUpperCase();
+  }
 </script>
 
 <article class="repo-card" aria-labelledby={`repo-${key}`}>
@@ -68,46 +104,21 @@
           class="repo-card__name"
           onclick={onviewprs}
         >
-          {summary.owner}/{summary.name}
+          <span>{summary.owner}</span>
+          <span class="repo-card__slash">/</span>
+          <span>{summary.name}</span>
         </button>
-        {#if summary.platform_host !== "github.com"}
-          <Chip size="sm" class="chip--muted" uppercase={false}>
-            {summary.platform_host}
-          </Chip>
-        {/if}
-        {#if summary.last_sync_error}
-          <Chip
-            size="sm"
-            class="chip--red"
-            uppercase={false}
-            title={summary.last_sync_error}
-          >
-            Sync error
-          </Chip>
-        {/if}
       </div>
-
-      <div class="repo-card__meta">
-        {#if summary.most_recent_activity_at}
-          <span title={localDateTimeLabel(summary.most_recent_activity_at)}>
-            Active {timeAgo(summary.most_recent_activity_at)}
-          </span>
-        {:else}
-          <span>No cached activity</span>
-        {/if}
-        {#if syncTime}
-          <span title={localDateTimeLabel(syncTime)}>
-            Synced {timeAgo(syncTime)}
-          </span>
-        {/if}
-      </div>
+      <Chip size="sm" class="chip--muted" uppercase={false}>
+        {summary.platform_host}
+      </Chip>
     </div>
 
     <div class="repo-card__actions">
       <ActionButton
         size="sm"
-        tone="info"
-        surface="soft"
+        tone="neutral"
+        surface="outline"
         onclick={onopencomposer}
       >
         New issue
@@ -117,60 +128,108 @@
 
   <RepoMetricGrid {metrics} compact />
 
-  {#if summary.last_sync_error}
-    <div class="repo-card__sync-error">
-      <span>Last sync error</span>
-      <p>{summary.last_sync_error}</p>
+  <section class="repo-card__release" aria-label="Latest release">
+    <div class="repo-card__release-head">
+      <span>Latest release</span>
+      {#if summary.commits_since_release !== undefined}
+        <strong>
+          {summary.commits_since_release} {summary.commits_since_release === 1 ? "commit" : "commits"}
+        </strong>
+      {/if}
     </div>
-  {/if}
 
-  <div class="repo-card__body">
-    <section class="repo-card__section">
-      <div class="repo-card__section-head">
-        <h2>Most active authors</h2>
-        <span>{summary.active_authors.length} tracked</span>
-      </div>
-      {#if summary.active_authors.length > 0}
-        <div class="repo-card__authors">
-          {#each summary.active_authors as author (author.login)}
-            <Chip size="sm" class="chip--muted" uppercase={false}>
-              <strong>{author.login}</strong>
-              <span>{author.item_count}</span>
-            </Chip>
-          {/each}
-        </div>
-      {:else}
-        <p class="repo-card__empty-note">No cached authors yet.</p>
+    <div class="repo-card__release-meta">
+      <Chip size="md" class="chip--release" uppercase={false}>
+        {releaseLabel}
+      </Chip>
+      <Chip
+        size="sm"
+        class={releaseStatusClass}
+        uppercase={false}
+      >
+        {releaseStatus}
+      </Chip>
+      {#if releaseDate}
+        <span title={localDateTimeLabel(releaseDate)}>
+          {timeAgo(releaseDate)}
+        </span>
       {/if}
-    </section>
+      {#if summary.commits_since_release !== undefined}
+        <span class="repo-card__commits-copy">since release</span>
+      {/if}
+    </div>
 
-    <section class="repo-card__section">
-      <div class="repo-card__section-head">
-        <h2>Recent open issues</h2>
-        <span>{summary.open_issue_count} open</span>
+    <div class="repo-card__timeline">
+      <div class="repo-card__timeline-track">
+        {#each activityPoints as point (point.sha)}
+          <span
+            class={[
+              "repo-card__timeline-point",
+              {
+                "repo-card__timeline-point--stale": staleRelease,
+                "repo-card__timeline-point--pre": release?.prerelease,
+              },
+            ]}
+            style={`--x: ${timelinePosition(point.committed_at)}%;`}
+            title={localDateTimeLabel(point.committed_at)}
+          ></span>
+        {/each}
       </div>
-      {#if summary.recent_issues.length > 0}
-        <div class="repo-card__issues">
-          {#each summary.recent_issues as issue (issue.number)}
-            <button
-              class="repo-card__issue-row"
-              onclick={() => onopenissue(issue.number)}
-            >
-              <span class="repo-card__issue-title">
-                <strong>#{issue.number}</strong>
-                {issue.title}
+      <div class="repo-card__timeline-labels">
+        <span>{releaseDate ? shortDateLabel(releaseDate) : "Release"}</span>
+        <span>Now</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="repo-card__issues" aria-label="Recent open issues">
+    <h2>Recent open issues</h2>
+    {#if summary.recent_issues.length > 0}
+      <div class="repo-card__issue-list">
+        {#each summary.recent_issues as issue (issue.number)}
+          <button
+            class="repo-card__issue-row"
+            onclick={() => onopenissue(issue.number)}
+          >
+            <span class="repo-card__issue-main">
+              <strong>#{issue.number}</strong>
+              <span>{issue.title}</span>
+            </span>
+            <span class="repo-card__issue-meta">
+              <span
+                class="repo-card__avatar"
+                title={issue.author}
+                aria-label={issue.author}
+              >
+                {authorInitial(issue.author)}
               </span>
-              <span class="repo-card__issue-meta">
-                {issue.author} · {timeAgo(issue.last_activity_at)}
-              </span>
-            </button>
-          {/each}
-        </div>
-      {:else}
-        <p class="repo-card__empty-note">No open issues in cache.</p>
-      {/if}
-    </section>
-  </div>
+              <span>{timeAgo(issue.last_activity_at)}</span>
+            </span>
+          </button>
+        {/each}
+      </div>
+    {:else}
+      <p class="repo-card__empty-note">No open issues in cache.</p>
+    {/if}
+  </section>
+
+  <footer class="repo-card__footer">
+    <span
+      class={[
+        "repo-card__status",
+        { "repo-card__status--error": summary.last_sync_error },
+      ]}
+    >
+      {summary.last_sync_error ? "Sync issue" : "Active"}
+    </span>
+    {#if syncTime}
+      <span title={localDateTimeLabel(syncTime)}>
+        Synced {timeAgo(syncTime)}
+      </span>
+    {:else}
+      <span>Not synced yet</span>
+    {/if}
+  </footer>
 </article>
 
 <style>
@@ -186,142 +245,207 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
-    padding: 14px;
+    gap: 14px;
+    padding: 14px 14px 10px;
   }
 
   .repo-card__identity {
     min-width: 0;
+    display: grid;
+    gap: 4px;
+    justify-items: start;
   }
 
   .repo-card__name-row,
-  .repo-card__meta,
-  .repo-card__actions {
+  .repo-card__actions,
+  .repo-card__release-meta,
+  .repo-card__footer,
+  .repo-card__issue-meta {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
   }
 
   .repo-card__name-row {
-    margin-bottom: 6px;
+    min-width: 0;
+    gap: 6px;
+    color: var(--text-muted);
   }
 
   .repo-card__name {
+    min-width: 0;
     color: var(--text-primary);
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 15px;
+    font-weight: 700;
     line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
   .repo-card__name:hover {
     color: var(--accent-blue);
   }
 
-  .repo-card__meta {
+  .repo-card__slash {
+    padding: 0 4px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .repo-card__actions {
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .repo-card__release {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .repo-card__release-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .repo-card__release-head strong {
+    color: var(--text-primary);
+    font-size: 12px;
+    text-align: right;
+  }
+
+  .repo-card__release-meta {
+    flex-wrap: wrap;
+    gap: 8px;
     color: var(--text-secondary);
     font-size: 12px;
   }
 
-  .repo-card__actions {
-    justify-content: flex-end;
+  .repo-card__commits-copy {
+    margin-left: -4px;
+    color: var(--text-muted);
   }
 
-  .repo-card__sync-error {
+  .repo-card__timeline {
     display: grid;
     gap: 4px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border-muted);
-    background: color-mix(in srgb, var(--accent-red) 8%, transparent);
   }
 
-  .repo-card__sync-error span {
-    color: var(--accent-red);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  .repo-card__timeline-track {
+    position: relative;
+    height: 16px;
   }
 
-  .repo-card__sync-error p {
-    color: var(--text-primary);
-    font-size: 12px;
+  .repo-card__timeline-track::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    right: 0;
+    left: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--border-muted);
   }
 
-  .repo-card__body {
-    display: grid;
-    gap: 16px;
-    padding: 14px;
+  .repo-card__timeline-point {
+    position: absolute;
+    top: 5px;
+    left: var(--x);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    transform: translateX(-50%);
+    box-shadow: 0 0 0 2px var(--bg-surface);
   }
 
-  .repo-card__section {
+  .repo-card__timeline-point--pre {
+    background: var(--accent-amber);
+  }
+
+  .repo-card__timeline-point--stale {
+    background: var(--accent-red);
+  }
+
+  .repo-card__timeline-labels {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    font-size: 11px;
   }
 
-  .repo-card__section-head {
+  .repo-card__issues {
+    display: grid;
+    gap: 8px;
+    padding: 10px 14px 12px;
+    min-height: 82px;
+  }
+
+  .repo-card__issues h2 {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .repo-card__issue-list {
+    display: grid;
+    gap: 4px;
+  }
+
+  .repo-card__issue-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-  }
-
-  .repo-card__section-head h2 {
-    color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .repo-card__section-head span {
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-
-  .repo-card__authors {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .repo-card__issues {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .repo-card__issue-row {
-    width: 100%;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 10px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    background: var(--bg-inset);
+    min-height: 24px;
     text-align: left;
   }
 
-  .repo-card__issue-row:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .repo-card__issue-title {
-    min-width: 0;
-    color: var(--text-primary);
-    overflow-wrap: anywhere;
-  }
-
-  .repo-card__issue-title strong {
-    margin-right: 6px;
+  .repo-card__issue-row:hover .repo-card__issue-main span {
     color: var(--accent-blue);
+  }
+
+  .repo-card__issue-main {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--text-primary);
+  }
+
+  .repo-card__issue-main strong {
+    flex-shrink: 0;
+    color: var(--accent-blue);
+    font-weight: 600;
+  }
+
+  .repo-card__issue-main span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .repo-card__issue-meta {
     flex-shrink: 0;
+    gap: 8px;
     color: var(--text-secondary);
     font-size: 12px;
+  }
+
+  .repo-card__avatar {
+    display: inline-grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 1px solid var(--border-default);
+    border-radius: 50%;
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
   }
 
   .repo-card__empty-note {
@@ -329,23 +453,56 @@
     font-size: 12px;
   }
 
-  @media (max-width: 960px) {
+  .repo-card__footer {
+    gap: 10px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--border-muted);
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .repo-card__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-green);
+    font-weight: 600;
+  }
+
+  .repo-card__status::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .repo-card__status--error {
+    color: var(--accent-red);
+  }
+
+  :global(.chip--release) {
+    background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
+    color: var(--accent-blue);
+  }
+
+  @media (max-width: 700px) {
     .repo-card__header {
       flex-direction: column;
     }
 
     .repo-card__actions {
-      justify-content: flex-start;
+      width: 100%;
+      justify-content: space-between;
     }
-  }
 
-  @media (max-width: 700px) {
     .repo-card__issue-row {
       align-items: flex-start;
       flex-direction: column;
+      gap: 4px;
     }
 
-    .repo-card__issue-meta {
+    .repo-card__issue-main span {
       white-space: normal;
     }
   }
