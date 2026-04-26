@@ -678,6 +678,7 @@
               {number}
               size="sm"
               disabled={stalePR}
+              oncompleted={closeActionMenu}
             />
           {/if}
           <ApproveButton
@@ -695,6 +696,7 @@
               count={workflowApproval.count ?? 0}
               size="sm"
               disabled={stalePR}
+              oncompleted={closeActionMenu}
             />
           {/if}
           {#if repoSettings}
@@ -775,10 +777,7 @@
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </button>
             {#if actionMenuOpen}
-              <div
-                class="actions-menu-popover"
-                onclickcapture={closeActionMenu}
-              >
+              <div class="actions-menu-popover">
                 {@render primaryActionButtons()}
               </div>
             {/if}

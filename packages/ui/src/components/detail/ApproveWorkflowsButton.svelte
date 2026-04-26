@@ -13,6 +13,7 @@
     count: number;
     size?: "sm" | "md";
     disabled?: boolean;
+    oncompleted?: () => void;
   }
 
   const {
@@ -22,6 +23,7 @@
     count,
     size = "md",
     disabled = false,
+    oncompleted,
   }: Props = $props();
 
   let submitting = $state(false);
@@ -56,6 +58,7 @@
       }
       await detail.refreshDetailOnly(owner, name, number);
       await pulls.loadPulls();
+      oncompleted?.();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {

@@ -12,6 +12,7 @@
     number: number;
     size?: "sm" | "md";
     disabled?: boolean;
+    oncompleted?: () => void;
   }
 
   const {
@@ -20,6 +21,7 @@
     number,
     size = "md",
     disabled = false,
+    oncompleted,
   }: Props = $props();
 
   let submitting = $state(false);
@@ -42,6 +44,7 @@
       }
       await detail.loadDetail(owner, name, number);
       await pulls.loadPulls();
+      oncompleted?.();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (shouldRefreshStaleDraftState(message)) {
