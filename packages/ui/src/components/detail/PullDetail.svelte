@@ -497,21 +497,8 @@
             </button>
           </div>
         {:else}
-          <h2 class="detail-title">{pr.Title}</h2>
-          <div class="header-command-group">
-            <div class="kanban-control kanban-control--header">
-              <label class="kanban-label" for="kanban-select">Status</label>
-              <select
-                id="kanban-select"
-                class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-                value={pr.KanbanStatus}
-                onchange={onKanbanChange}
-              >
-                {#each kanbanOptions as opt (opt.value)}
-                  <option value={opt.value}>{opt.label}</option>
-                {/each}
-              </select>
-            </div>
+          <div class="title-line">
+            <h2 class="detail-title">{pr.Title}</h2>
             <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
             {#if !uiConfig.hideStar}
               <button
@@ -541,6 +528,19 @@
                 <path d="M8 8L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
             </a>
+          </div>
+          <div class="kanban-control kanban-control--header">
+            <label class="kanban-label" for="kanban-select">Status</label>
+            <select
+              id="kanban-select"
+              class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+              value={pr.KanbanStatus}
+              onchange={onKanbanChange}
+            >
+              {#each kanbanOptions as opt (opt.value)}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
           </div>
         {/if}
       </div>
@@ -1100,24 +1100,20 @@
     gap: 10px;
   }
 
+  .title-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+    padding-right: min(300px, 42cqw);
+  }
+
   .detail-title {
     font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
-    flex: 1;
     min-width: 0;
-    padding-right: min(300px, 42cqw);
-  }
-
-  .header-command-group {
-    position: absolute;
-    top: 0;
-    right: 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    flex-shrink: 0;
   }
 
   .edit-title-btn {
@@ -1128,7 +1124,7 @@
     padding: 0;
     font-size: 0.75rem;
     flex-shrink: 0;
-    margin-top: 17px;
+    margin-top: 3px;
   }
 
   .edit-title-btn:hover {
@@ -1191,7 +1187,7 @@
     color: var(--text-muted);
     display: flex;
     align-items: center;
-    margin-top: 17px;
+    margin-top: 3px;
     transition: color 0.1s;
   }
 
@@ -1204,7 +1200,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    margin-top: 17px;
+    margin-top: 3px;
     cursor: pointer;
     background: none;
     border: none;
@@ -1343,6 +1339,12 @@
     flex-shrink: 0;
   }
 
+  .kanban-control--header {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+
   .kanban-label {
     font-size: 10px;
     font-weight: 600;
@@ -1372,17 +1374,12 @@
       flex-wrap: wrap;
     }
 
-    .detail-title {
+    .title-line {
       padding-right: 0;
     }
 
-    .header-command-group {
-      position: static;
-      width: 100%;
-      margin-left: 0;
-    }
-
     .kanban-control--header {
+      position: static;
       flex: 1;
       min-width: 0;
     }
