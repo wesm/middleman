@@ -1259,6 +1259,101 @@ test.describe("sidebar PR tab", () => {
 });
 
 // -------------------------------------------------------
+// Group 3.5: Workspace List Bubble
+// -------------------------------------------------------
+
+test.describe("workspace list bubble opens right sidebar", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-tab",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-open",
+      );
+      localStorage.removeItem(
+        "middleman-workspace-sidebar-width",
+      );
+    });
+  });
+
+  test(
+    "clicking PR bubble opens PR tab in the right sidebar",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      // Sidebar should start collapsed.
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toHaveCount(0);
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "clicking issue bubble opens Issue tab for issue workspace",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: testIssueWorkspace,
+      });
+      await page.goto("/terminal/ws-issue-7");
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toHaveCount(0);
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "Issue" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "Enter keypress on PR bubble does not navigate row",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      const bubble = page.locator(
+        ".workspace-list-sidebar .ws-row .item-bubble",
+      );
+      await bubble.focus();
+      await page.keyboard.press("Enter");
+
+      // Sidebar should open without unintended navigation
+      // (the row's Enter handler must not fire when the
+      // event originates inside the bubble button).
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+    },
+  );
+});
+
+// -------------------------------------------------------
 // Group 4: Issue Workspace Sidebar
 // -------------------------------------------------------
 

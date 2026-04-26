@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
@@ -5,6 +6,15 @@ type WorkspaceStatusResponse = {
   id: string;
   status: string;
 };
+
+function hasCommand(command: string, args: string[] = ["--version"]): boolean {
+  try {
+    execFileSync(command, args, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function waitForWorkspaceReady(
   api: APIRequestContext,
@@ -28,6 +38,11 @@ async function waitForWorkspaceReady(
 
 test.describe("workspace tab persistence", () => {
   test("opening tmux tab keeps Home pane mounted across tab switches", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {

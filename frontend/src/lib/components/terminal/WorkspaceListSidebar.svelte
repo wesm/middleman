@@ -234,8 +234,24 @@
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class={["ws-row", { selected: ws.id === selectedId }]}
-            onclick={() => navigate(`/terminal/${ws.id}`)}
+            onclick={(e) => {
+              // The PR/issue bubble is a focusable child button; let
+              // its own click handler run without the row also
+              // navigating to the terminal route.
+              if (e.target !== e.currentTarget &&
+                e.target instanceof Element &&
+                e.target.closest(".item-bubble")) {
+                return;
+              }
+              navigate(`/terminal/${ws.id}`);
+            }}
             onkeydown={(e) => {
+              // Ignore keydowns that originate inside a nested
+              // interactive element (e.g. the PR bubble button).
+              // Without this guard, pressing Enter on the bubble
+              // would navigate to the workspace before the bubble's
+              // own click handler could open the sidebar tab.
+              if (e.target !== e.currentTarget) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 navigate(`/terminal/${ws.id}`);
@@ -258,6 +274,22 @@
                   aria-label={workingTitle(ws)}
                 ></span>
               {/if}
+              <button
+                class={["item-bubble", itemStateClass(ws)]}
+                onclick={(e) => handleItemBubbleClick(e, ws)}
+                onkeydown={(e) => {
+                  // Stop Enter/Space from bubbling to the row,
+                  // since the row's keyboard handler also navigates.
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation();
+                  }
+                }}
+                title={ws.item_type === "issue"
+                  ? `Open issue #${ws.item_number}`
+                  : `Open PR #${ws.item_number}`}
+              >
+                #{ws.item_number}
+              </button>
             </div>
             <div class="ws-row-meta">
               <span class="branch-chip" title={ws.git_head_ref}>
@@ -271,15 +303,6 @@
                   {shortBranch(ws.git_head_ref)}
                 </span>
               </span>
-              <button
-                class={["item-bubble", itemStateClass(ws)]}
-                onclick={(e) => handleItemBubbleClick(e, ws)}
-                title={ws.item_type === "issue"
-                  ? `Open issue #${ws.item_number}`
-                  : `Open PR #${ws.item_number}`}
-              >
-                #{ws.item_number}
-              </button>
               {#if showPush}
                 <span
                   class="push-state"

@@ -7548,6 +7548,57 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	assert.Nil(srv.runtime.ShellSession(ws.Id))
 }
 
+// TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E covers the case where the
+// workspace is dirty and delete is rejected with 409. Runtime sessions must
+// survive — killing them on a delete that didn't actually happen would leave
+// the user with a workspace whose agent and shell were silently terminated.
+func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("sleep"),
+	}}}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	shellResp, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, shellResp.StatusCode())
+	require.Len(srv.runtime.ListSessions(ws.Id), 1)
+	require.NotNil(srv.runtime.ShellSession(ws.Id))
+
+	// Make the worktree dirty so a non-forced delete will be rejected.
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dirty.txt"),
+		[]byte("uncommitted\n"), 0o644,
+	))
+
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, delResp.StatusCode())
+
+	// The 409 must not have killed the runtime sessions.
+	assert.Len(srv.runtime.ListSessions(ws.Id), 1)
+	assert.NotNil(srv.runtime.ShellSession(ws.Id))
+}
+
 func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
