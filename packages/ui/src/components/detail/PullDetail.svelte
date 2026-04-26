@@ -775,7 +775,7 @@
             surface="soft"
             size="sm"
             label="Open Workspace"
-            shortLabel="Open"
+            shortLabel="Workspace"
           >
             <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
@@ -788,7 +788,7 @@
             surface="soft"
             size="sm"
             label={wsCreating ? "Creating..." : "Create Workspace"}
-            shortLabel={wsCreating ? "Creating..." : "Create"}
+            shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
           >
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
