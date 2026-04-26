@@ -130,6 +130,22 @@ describe("TerminalPane", () => {
     expect(url.searchParams.get("rows")).toBe("24");
   });
 
+  it("does not open a websocket when initialStatus is exited", () => {
+    render(TerminalPane, {
+      props: {
+        websocketPath:
+          "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+        reconnectOnExit: false,
+        initialStatus: "exited",
+      },
+    });
+
+    expect(sockets).toHaveLength(0);
+    expect(terminalWrite).toHaveBeenCalledWith(
+      expect.stringContaining("[Process exited]"),
+    );
+  });
+
   it("does not restart sessions when reconnectOnExit is false", () => {
     vi.useFakeTimers();
     const onExit = vi.fn();

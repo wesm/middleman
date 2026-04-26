@@ -332,6 +332,11 @@
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     <div class="issue-detail">
+      {#if staleIssue && issues.getIssueDetailError() !== null}
+        <div class="detail-load-error" data-testid="detail-load-error">
+          Couldn't load this issue: {issues.getIssueDetailError()}
+        </div>
+      {/if}
       {#if issues.isIssueStaleRefreshing()}
         <div class="refresh-banner">
           <span class="sync-dot"></span>
@@ -900,6 +905,16 @@
     border-radius: var(--radius-sm);
     font-size: 11px;
     color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .detail-load-error {
+    padding: 6px 16px;
+    background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
+    color: var(--accent-red);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 12px;
+    flex-shrink: 0;
     margin-bottom: 8px;
   }
 

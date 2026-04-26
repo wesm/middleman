@@ -365,6 +365,11 @@
   {#if detail !== null}
     {@const pr = detail.merge_request}
     <div class="pull-detail-wrap">
+      {#if stalePR && detailStore.getDetailError() !== null}
+        <div class="detail-load-error" data-testid="detail-load-error">
+          Couldn't load this pull request: {detailStore.getDetailError()}
+        </div>
+      {/if}
       {#if !hideTabs}
         <div class="detail-tabs">
           <button
@@ -910,6 +915,15 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .detail-load-error {
+    padding: 6px 16px;
+    background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
+    color: var(--accent-red);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 12px;
+    flex-shrink: 0;
   }
 
   .files-layout {

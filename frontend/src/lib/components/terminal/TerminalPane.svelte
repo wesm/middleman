@@ -11,6 +11,10 @@
     websocketPath?: string;
     reconnectOnExit?: boolean;
     onExit?: (code: number) => void;
+    // When the session is already exited at mount time, skip the
+    // WebSocket connect — the server's attach endpoint returns 404
+    // for non-running sessions, which would loop scheduleReconnect.
+    initialStatus?: string;
   }
 
   const {
@@ -18,6 +22,7 @@
     websocketPath,
     reconnectOnExit = true,
     onExit,
+    initialStatus,
   }: TerminalPaneProps = $props();
   const { settings: settingsStore } = getStores();
 
@@ -283,6 +288,11 @@
       });
       resizeObserver.observe(containerEl);
 
+      if (initialStatus === "exited") {
+        exited = true;
+        term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+        return;
+      }
       connect();
     }
 

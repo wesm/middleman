@@ -296,6 +296,118 @@ test.describe("PR detail merge modal route reset", () => {
   });
 });
 
+test.describe("detail load-error banner", () => {
+  test("PR: failing route shows banner over the previous PR", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    await page.route(
+      `**/api/v1/repos/${prA.repo_owner}/${prA.repo_name}/pulls/${prA.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(prA)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+    await page.route(
+      `**/api/v1/repos/${prB.repo_owner}/${prB.repo_name}/pulls/${prB.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: "upstream offline" }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto(
+      `/pulls/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
+    );
+    await expect(page.locator(".detail-title")).toContainText(prA.Title);
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/pulls/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+
+    const banner = page.getByTestId("detail-load-error");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("upstream offline");
+    await expect(page.locator(".detail-title")).toContainText(prA.Title);
+  });
+
+  test("issue: failing route shows banner over the previous issue", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    await page.route(
+      `**/api/v1/repos/${issueX.repo_owner}/${issueX.repo_name}/issues/${issueX.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopeIssue(issueX)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+    await page.route(
+      `**/api/v1/repos/${issueY.repo_owner}/${issueY.repo_name}/issues/${issueY.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: "upstream offline" }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto(
+      `/issues/${issueX.repo_owner}/${issueX.repo_name}/${issueX.Number}`,
+    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueX.Title,
+    );
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/issues/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
+
+    const banner = page.getByTestId("detail-load-error");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("upstream offline");
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueX.Title,
+    );
+  });
+});
+
 test.describe("PR detail stale-action gating", () => {
   test("close, comment, and create-workspace are inert while the new PR is loading", async ({ page }) => {
     const userMutations = recordUserMutations(page);

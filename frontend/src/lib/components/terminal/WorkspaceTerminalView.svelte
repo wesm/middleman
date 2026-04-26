@@ -868,6 +868,7 @@
                         )}
                         reconnectOnExit={false}
                         onExit={() => void fetchRuntime()}
+                        initialStatus={session.status}
                       />
                     </div>
                   {/each}
