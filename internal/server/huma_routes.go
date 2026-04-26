@@ -2831,6 +2831,15 @@ func (s *Server) deleteWorkspace(
 	// only after the destructive cleanup leaves a window where running
 	// processes could write new uncommitted changes that bypass the
 	// dirty check the user requested.
+	//
+	// BeginStopping/EndStopping holds the runtime's stopping marker
+	// across the whole Delete call — including step 3 — so a Launch
+	// arriving between StopWorkspace returning and DB removal cannot
+	// spawn a process in the soon-to-be-deleted worktree.
+	if s.runtime != nil {
+		s.runtime.BeginStopping(input.ID)
+		defer s.runtime.EndStopping(input.ID)
+	}
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
 		func(stopCtx context.Context) {

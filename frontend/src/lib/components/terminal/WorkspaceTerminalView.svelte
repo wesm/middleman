@@ -134,13 +134,15 @@
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
 
-  // Runtime is only "live" when its fetched workspace ID matches
-  // the route's. While the new workspace's runtime fetch is in
-  // flight, the previous workspace's runtime is still present in
-  // memory but must not be rendered or operated on — gate every
-  // runtime-derived value behind the same id check.
+  // Runtime is only "live" when both the runtime fetch and the
+  // workspace fetch resolve for the current route. Without the
+  // workspace.id check, a runtime that lands first for the new
+  // workspace can render its sessions/launch targets next to the
+  // previous workspace's still-cached header/home data.
   const runtimeLive = $derived(
-    runtime !== null && runtimeForId === workspaceId,
+    runtime !== null &&
+      runtimeForId === workspaceId &&
+      workspace?.id === workspaceId,
   );
   const runtimeSessions = $derived(
     runtimeLive ? (runtime?.sessions ?? []) : [],

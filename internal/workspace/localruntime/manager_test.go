@@ -178,6 +178,28 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 	require.NoError(err)
 }
 
+func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	require := require.New(t)
+
+	mgr := NewManager(Options{Targets: []LaunchTarget{
+		helperTarget("helper", "sleep"),
+	}})
+	t.Cleanup(mgr.Shutdown)
+
+	mgr.BeginStopping("ws-1")
+	_, err := mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.ErrorIs(err, errWorkspaceStopping)
+
+	// Other workspaces are unaffected.
+	_, err = mgr.Launch(context.Background(), "ws-2", t.TempDir(), "helper")
+	require.NoError(err)
+
+	mgr.EndStopping("ws-1")
+	_, err = mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+}
+
 func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

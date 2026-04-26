@@ -326,6 +326,30 @@ func (m *Manager) StopWorkspace(
 	}
 }
 
+// BeginStopping holds the stopping marker for workspaceID without
+// running StopWorkspace. Use it to extend the marker's lifetime
+// across higher-level operations — for example, the workspace
+// deletion handler holds it from the start of Delete through the
+// destructive cleanup and DB removal so a concurrent Launch cannot
+// spawn a process into a worktree that is about to disappear. Must
+// be paired with EndStopping.
+func (m *Manager) BeginStopping(workspaceID string) {
+	m.mu.Lock()
+	m.stoppingWS[workspaceID]++
+	m.mu.Unlock()
+}
+
+// EndStopping releases a marker held by BeginStopping. Decrementing
+// to zero unblocks new launches for the workspace.
+func (m *Manager) EndStopping(workspaceID string) {
+	m.mu.Lock()
+	m.stoppingWS[workspaceID]--
+	if m.stoppingWS[workspaceID] <= 0 {
+		delete(m.stoppingWS, workspaceID)
+	}
+	m.mu.Unlock()
+}
+
 // claimInflight registers a starting Launch/EnsureShell so a
 // concurrent StopWorkspace can wait for it to finish inserting
 // before snapshotting. Rejects if the workspace is already being
