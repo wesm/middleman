@@ -2192,6 +2192,120 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert.NotEmpty((*widgets.RecentIssues)[0].Title)
 }
 
+func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	runGit(t, dir, "clone", remote, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+
+	commitFile := func(name, message string) {
+		t.Helper()
+		require.NoError(os.WriteFile(
+			filepath.Join(work, name),
+			[]byte(message+"\n"),
+			0o644,
+		))
+		runGit(t, work, "add", ".")
+		runGit(t, work, "commit", "-m", message)
+	}
+
+	commitFile("base.txt", "release v1")
+	runGit(t, work, "tag", "v1.0.0")
+	commitFile("v2.txt", "prepare v2")
+	runGit(t, work, "tag", "v2.0.0")
+	commitFile("v3.txt", "prepare v3")
+	runGit(t, work, "tag", "v3.0.0")
+	commitFile("post-1.txt", "post latest 1")
+	commitFile("post-2.txt", "post latest 2")
+	runGit(t, work, "push", "--tags", "origin", "main")
+
+	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
+	clonePath := clones.ClonePath("github.com", "acme", "widgets")
+	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
+	runGit(t, dir, "clone", "--bare", remote, clonePath)
+
+	releaseForTag := func(tag string, publishedAt time.Time) *gh.RepositoryRelease {
+		t.Helper()
+		name := "Release " + tag
+		url := "https://github.com/acme/widgets/releases/tag/" + tag
+		targetCommitish := "main"
+		prerelease := false
+		draft := false
+		return &gh.RepositoryRelease{
+			TagName:         &tag,
+			Name:            &name,
+			HTMLURL:         &url,
+			TargetCommitish: &targetCommitish,
+			Prerelease:      &prerelease,
+			Draft:           &draft,
+			PublishedAt:     &gh.Timestamp{Time: publishedAt},
+		}
+	}
+
+	releases := []*gh.RepositoryRelease{
+		releaseForTag("v3.0.0", time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)),
+		releaseForTag("v2.0.0", time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)),
+		releaseForTag("v1.0.0", time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)),
+	}
+	mock := &mockGH{
+		listReleasesFn: func(
+			_ context.Context, owner, repo string, perPage int,
+		) ([]*gh.RepositoryRelease, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("widgets", repo)
+			assert.Equal(10, perPage)
+			return releases, nil
+		},
+	}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, clones, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	syncer.RunOnce(ctx)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+
+	widgets := (*resp.JSON200)[0]
+	require.NotNil(widgets.LatestRelease)
+	require.NotNil(widgets.Releases)
+	require.NotNil(widgets.CommitsSinceRelease)
+	require.NotNil(widgets.CommitTimeline)
+	require.NotNil(widgets.TimelineUpdatedAt)
+
+	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
+	assert.Len(*widgets.Releases, 3)
+	assert.Equal("v1.0.0", (*widgets.Releases)[2].TagName)
+	assert.Equal(int64(2), *widgets.CommitsSinceRelease)
+	assert.Len(*widgets.CommitTimeline, 4)
+	assert.Equal("post latest 2", (*widgets.CommitTimeline)[0].Message)
+	assert.Equal("post latest 1", (*widgets.CommitTimeline)[1].Message)
+	assert.Len((*widgets.CommitTimeline)[0].Sha, 40)
+}
+
 func TestAPICreateIssue(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

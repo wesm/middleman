@@ -148,9 +148,10 @@ func (c *liveClient) ListReleases(
 	if perPage < 1 {
 		perPage = 1
 	}
-	releases, _, err := c.gh.Repositories.ListReleases(ctx, owner, repo, &gh.ListOptions{
+	releases, resp, err := c.gh.Repositories.ListReleases(ctx, owner, repo, &gh.ListOptions{
 		PerPage: perPage,
 	})
+	c.trackRate(resp)
 	if err != nil {
 		return nil, err
 	}
