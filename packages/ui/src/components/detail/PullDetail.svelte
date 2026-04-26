@@ -1372,6 +1372,18 @@
     order: 3;
   }
 
+  @container pull-detail (max-width: 560px) {
+    .actions-row--primary :global(.btn--close) {
+      width: 28px;
+      padding-inline: 0;
+    }
+
+    .actions-row--primary :global(.btn--close .action-button__label),
+    .actions-row--primary :global(.btn--close .action-button__short-label) {
+      display: none;
+    }
+  }
+
   .actions-menu-wrap {
     display: none;
     position: relative;
