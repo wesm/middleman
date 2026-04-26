@@ -445,8 +445,14 @@
     }
     if (actionsBlocked) return;
     shellOpen = true;
-    if (shellSessionActive || shellLoading) return;
+    if (shellLoading) return;
 
+    // Always call ensureWorkspaceShell on open. It is idempotent
+    // server-side (returns the existing session if running, starts
+    // a fresh one if exited), so trusting the locally-cached
+    // shellSessionActive flag would mount a TerminalPane against a
+    // shell the server has already torn down — yielding a 404
+    // attach + reconnect loop.
     const id = workspaceId;
     shellLoading = true;
     runtimeError = null;

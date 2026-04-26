@@ -26,6 +26,17 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
+  // Reset draft state on PR identity change so an open form with
+  // PR A's body cannot submit to PR B once the route transitions.
+  $effect(() => {
+    void owner;
+    void name;
+    void number;
+    expanded = false;
+    body = "";
+    error = null;
+  });
+
   async function handleApprove(): Promise<void> {
     if (disabled) return;
     submitting = true;

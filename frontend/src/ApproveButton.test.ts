@@ -39,4 +39,24 @@ describe("ApproveButton tooltips", () => {
       "Submit an approving code review on this pull request",
     );
   });
+
+  it("collapses and clears the draft when the PR identity changes", async () => {
+    const { rerender } = render(ApproveButton, {
+      props: { owner: "acme", name: "widget", number: 1 },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    await fireEvent.input(textarea, { target: { value: "lgtm A" } });
+    expect(textarea.value).toBe("lgtm A");
+
+    await rerender({ owner: "acme", name: "widget", number: 2 });
+
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /approve/i }).getAttribute("title"),
+    ).toBe(
+      "Open the approval form to submit a code review on this pull request",
+    );
+  });
 });
