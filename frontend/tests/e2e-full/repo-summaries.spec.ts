@@ -4,22 +4,19 @@ test.describe("repository summaries", () => {
   test("shows repo stats and can create an issue", async ({ page }) => {
     await page.goto("/repos");
 
-    await page
-      .locator(".repo-card", { hasText: "acme/widgets" })
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
-
-    await expect(page.getByText("Tracked repos")).toBeVisible();
-    await expect(
-      page.locator(".repo-card", { hasText: "acme/widgets" }),
-    ).toContainText("Open PRs");
-    await expect(
-      page.locator(".repo-card", { hasText: "acme/widgets" }),
-    ).toContainText("Recent open issues");
-
     const widgetsCard = page
-      .locator(".repo-card", { hasText: "acme/widgets" })
+      .locator(".repo-card")
+      .filter({
+        has: page.getByRole("button", {
+          name: /acme\s*\/\s*widgets/,
+        }),
+      })
       .first();
+
+    await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.getByText("Total repos")).toBeVisible();
+    await expect(widgetsCard).toContainText("Open PRs");
+    await expect(widgetsCard).toContainText("Recent open issues");
 
     await expect(
       widgetsCard.getByRole("button", { name: "View PRs" }),
