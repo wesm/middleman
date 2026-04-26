@@ -538,9 +538,14 @@
 
     // Tab state from the previous workspace can't be valid for a
     // different workspace's runtime, so reset these even though
-    // workspace/runtime themselves are kept.
+    // workspace/runtime themselves are kept. shellOpen must reset
+    // too: the ShellDrawer's TerminalPane only opens its WebSocket
+    // on mount, so leaving the drawer open across a workspace
+    // change would route keystrokes to the previous workspace's
+    // shell while the user looks at the new workspace.
     activeTabKey = "home";
     tmuxTabOpen = false;
+    shellOpen = false;
     launchingKey = null;
     shellLoading = false;
 

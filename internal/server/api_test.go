@@ -7613,6 +7613,12 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
+	// runGit strips global/system git config, so the workspace's
+	// worktree has no committer identity. Set one locally so the
+	// commits below succeed in CI as well as on developer machines.
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
 	// Add two local commits in the worktree so HEAD is ahead of
 	// origin/feature by 2.
 	require.NoError(os.WriteFile(

@@ -1839,6 +1839,125 @@ test.describe("delayed-response navigation", () => {
       ).toBeEnabled();
     },
   );
+
+  test(
+    "shell drawer closes when navigating to a different workspace",
+    async ({ page }) => {
+      // Regression: keeping the drawer open across a workspace
+      // change kept the previous workspace's shell TerminalPane
+      // mounted with its WebSocket pointing at workspace A. The
+      // user could see workspace B but type into A's shell.
+      const wsA = {
+        ...testWorkspace,
+        id: "ws-aaa",
+        item_number: 1,
+        mr_title: "A title",
+      };
+      const wsB = {
+        ...testWorkspace,
+        id: "ws-bbb",
+        item_number: 2,
+        mr_title: "B title",
+      };
+      const shellSession = (wsId: string) => ({
+        key: `${wsId}:shell`,
+        workspace_id: wsId,
+        target_key: "plain_shell",
+        label: "Shell",
+        kind: "plain_shell",
+        status: "running" as const,
+        created_at: "2026-04-10T12:00:00Z",
+      });
+
+      await mockApi(page);
+      await page.route("**/api/v1/events", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      });
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      for (const ws of [wsA, wsB]) {
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}`,
+          async (route) => {
+            if (route.request().method() === "GET") {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(ws),
+              });
+              return;
+            }
+            await route.fulfill({ status: 204 });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                ...workspaceRuntime,
+                shell_session: shellSession(ws.id),
+              }),
+            });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime/shell`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(shellSession(ws.id)),
+            });
+          },
+        );
+      }
+
+      await page.goto(`/terminal/${wsA.id}`);
+      // Open the shell drawer for A.
+      await page
+        .getByRole("button", { name: "Open shell drawer" })
+        .click();
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toBeVisible();
+
+      // Navigate to B by clicking its row.
+      await page
+        .locator(".workspace-list-sidebar .ws-row", {
+          hasText: `#${wsB.item_number}`,
+        })
+        .click();
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsB.id}$`),
+      );
+
+      // The drawer must close so the previous workspace's shell
+      // pane unmounts and its WebSocket tears down. Otherwise
+      // keystrokes from B's session would be routed to A's shell.
+      await expect(
+        page.locator(".shell-drawer .terminal-container"),
+      ).toHaveCount(0);
+    },
+  );
 });
 
 // -------------------------------------------------------

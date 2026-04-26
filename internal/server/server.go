@@ -354,9 +354,14 @@ func newServer(
 		bgDeadline: bgDeadline,
 	}
 
+	// (*Config).TmuxCommand handles a nil receiver and returns the
+	// default ["tmux"]. Compute once so the workspace, runtime, and
+	// terminal handler all share the same value and the nil-safety
+	// of the call is explicit at this level.
+	tmuxCmd := cfg.TmuxCommand()
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
-		s.workspaces.SetTmuxCommand(cfg.TmuxCommand())
+		s.workspaces.SetTmuxCommand(tmuxCmd)
 		if clones != nil {
 			s.workspaces.SetClones(clones)
 		}
@@ -373,7 +378,7 @@ func newServer(
 		}
 		s.runtime = localruntime.NewManager(localruntime.Options{
 			Targets: localruntime.ResolveLaunchTargets(
-				agents, cfg.TmuxCommand(), nil,
+				agents, tmuxCmd, nil,
 			),
 		})
 	}
@@ -381,7 +386,7 @@ func newServer(
 	if s.workspaces != nil {
 		termHandler := &terminal.Handler{
 			Workspaces:  s.workspaces,
-			TmuxCommand: cfg.TmuxCommand(),
+			TmuxCommand: tmuxCmd,
 		}
 		mux.Handle(
 			"GET /api/v1/workspaces/{id}/terminal",
