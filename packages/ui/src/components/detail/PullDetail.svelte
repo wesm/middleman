@@ -498,36 +498,51 @@
           </div>
         {:else}
           <h2 class="detail-title">{pr.Title}</h2>
-          <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
-        {/if}
-        {#if !uiConfig.hideStar}
-          <button
-            class="star-btn"
-            disabled={stalePR}
-            onclick={() => {
-              if (stalePR) return;
-              void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
-            }}
-            title={pr.Starred ? "Unstar" : "Star"}
-          >
-            {#if pr.Starred}
-              <svg class="star-detail-icon star-detail-icon--active" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
-              </svg>
-            {:else}
-              <svg class="star-detail-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"/>
-              </svg>
+          <div class="header-command-group">
+            <div class="kanban-control kanban-control--header">
+              <label class="kanban-label" for="kanban-select">Status</label>
+              <select
+                id="kanban-select"
+                class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+                value={pr.KanbanStatus}
+                onchange={onKanbanChange}
+              >
+                {#each kanbanOptions as opt (opt.value)}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+            <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
+            {#if !uiConfig.hideStar}
+              <button
+                class="star-btn"
+                disabled={stalePR}
+                onclick={() => {
+                  if (stalePR) return;
+                  void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
+                }}
+                title={pr.Starred ? "Unstar" : "Star"}
+              >
+                {#if pr.Starred}
+                  <svg class="star-detail-icon star-detail-icon--active" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
+                  </svg>
+                {:else}
+                  <svg class="star-detail-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"/>
+                  </svg>
+                {/if}
+              </button>
             {/if}
-          </button>
+            <a class="gh-link" href={pr.URL} target="_blank" rel="noopener noreferrer" title="Open on GitHub">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M10 2h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M8 8L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </a>
+          </div>
         {/if}
-        <a class="gh-link" href={pr.URL} target="_blank" rel="noopener noreferrer" title="Open on GitHub">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M6 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M10 2h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M8 8L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </a>
       </div>
 
       <!-- Meta row -->
@@ -571,59 +586,43 @@
         {/if}
       </div>
 
-      <div class="status-band">
-        <div class="chips-row">
-          {#if pr.State === "merged"}
-            <Chip class="chip--purple">Merged</Chip>
-          {:else if pr.State === "closed"}
-            <Chip class="chip--red">Closed</Chip>
-          {:else if pr.IsDraft}
-            <Chip class="chip--amber">Draft</Chip>
-          {:else}
-            <Chip class="chip--green">Open</Chip>
-          {/if}
-          <CIStatus
-            status={pr.CIStatus}
-            checksJSON={pr.CIChecksJSON}
-            detailLoaded={detailStore.getDetailLoaded()}
-            detailSyncing={detailStore.isDetailSyncing()}
-            bind:expanded={ciExpanded}
-            showPanel={false}
-          />
-          {#if pr.ReviewDecision}
-            <Chip class={reviewColor(pr.ReviewDecision)}>
-              {pr.ReviewDecision.replace(/_/g, " ")}
-            </Chip>
-          {/if}
-          {#if pr.Additions > 0 || pr.Deletions > 0}
-            <Chip class="chip--muted">+{pr.Additions}/-{pr.Deletions}</Chip>
-          {/if}
-          {#if hasWorktreeLinks}
-            <Chip class="chip--teal">Worktree</Chip>
-          {/if}
-          <CIStatus
-            status={pr.CIStatus}
-            checksJSON={pr.CIChecksJSON}
-            detailLoaded={detailStore.getDetailLoaded()}
-            detailSyncing={detailStore.isDetailSyncing()}
-            bind:expanded={ciExpanded}
-            showButton={false}
-          />
-        </div>
-
-        <div class="kanban-control">
-          <label class="kanban-label" for="kanban-select">Status</label>
-          <select
-            id="kanban-select"
-            class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-            value={pr.KanbanStatus}
-            onchange={onKanbanChange}
-          >
-            {#each kanbanOptions as opt (opt.value)}
-              <option value={opt.value}>{opt.label}</option>
-            {/each}
-          </select>
-        </div>
+      <div class="chips-row">
+        {#if pr.State === "merged"}
+          <Chip class="chip--purple">Merged</Chip>
+        {:else if pr.State === "closed"}
+          <Chip class="chip--red">Closed</Chip>
+        {:else if pr.IsDraft}
+          <Chip class="chip--amber">Draft</Chip>
+        {:else}
+          <Chip class="chip--green">Open</Chip>
+        {/if}
+        <CIStatus
+          status={pr.CIStatus}
+          checksJSON={pr.CIChecksJSON}
+          detailLoaded={detailStore.getDetailLoaded()}
+          detailSyncing={detailStore.isDetailSyncing()}
+          bind:expanded={ciExpanded}
+          showPanel={false}
+        />
+        {#if pr.ReviewDecision}
+          <Chip class={reviewColor(pr.ReviewDecision)}>
+            {pr.ReviewDecision.replace(/_/g, " ")}
+          </Chip>
+        {/if}
+        {#if pr.Additions > 0 || pr.Deletions > 0}
+          <Chip class="chip--muted">+{pr.Additions}/-{pr.Deletions}</Chip>
+        {/if}
+        {#if hasWorktreeLinks}
+          <Chip class="chip--teal">Worktree</Chip>
+        {/if}
+        <CIStatus
+          status={pr.CIStatus}
+          checksJSON={pr.CIChecksJSON}
+          detailLoaded={detailStore.getDetailLoaded()}
+          detailSyncing={detailStore.isDetailSyncing()}
+          bind:expanded={ciExpanded}
+          showButton={false}
+        />
       </div>
 
       {#if labels.length > 0}
@@ -1109,6 +1108,14 @@
     min-width: 0;
   }
 
+  .header-command-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
   .edit-title-btn {
     background: none;
     border: none;
@@ -1117,6 +1124,7 @@
     padding: 0;
     font-size: 0.75rem;
     flex-shrink: 0;
+    margin-top: 17px;
   }
 
   .edit-title-btn:hover {
@@ -1179,7 +1187,7 @@
     color: var(--text-muted);
     display: flex;
     align-items: center;
-    margin-top: 3px;
+    margin-top: 17px;
     transition: color 0.1s;
   }
 
@@ -1192,7 +1200,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    margin-top: 3px;
+    margin-top: 17px;
     cursor: pointer;
     background: none;
     border: none;
@@ -1316,16 +1324,8 @@
     color: var(--text-muted);
   }
 
-  .status-band {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
   .chips-row {
     display: flex;
-    flex: 1;
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
@@ -1337,7 +1337,6 @@
     align-items: stretch;
     gap: 4px;
     flex-shrink: 0;
-    margin-left: auto;
   }
 
   .kanban-label {
@@ -1365,14 +1364,18 @@
   }
 
   @container pull-detail (max-width: 430px) {
-    .status-band {
-      flex-direction: column;
-      gap: 10px;
+    .detail-header {
+      flex-wrap: wrap;
     }
 
-    .kanban-control {
-      align-self: stretch;
+    .header-command-group {
+      width: 100%;
       margin-left: 0;
+    }
+
+    .kanban-control--header {
+      flex: 1;
+      min-width: 0;
     }
   }
 
