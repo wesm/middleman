@@ -1045,7 +1045,7 @@ func (s *Server) createIssue(
 			"save issue failed",
 		)
 	}
-	if err := s.db.ReplaceIssueLabels(ctx, repoID, issueID, issue.Labels); err != nil {
+	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issueID, issue.Labels); err != nil {
 		return nil, huma.Error500InternalServerError(
 			"save issue labels failed",
 		)
