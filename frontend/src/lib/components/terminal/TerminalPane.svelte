@@ -26,6 +26,7 @@
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
   let fitAddon: FitAddon | null = null;
+  let webglAddon: WebglAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -214,59 +215,87 @@
   $effect(() => {
     if (!terminal) return;
     terminal.options.fontFamily = terminalFontFamily;
+    // The WebGL renderer caches glyphs per font; force a rebuild so
+    // cell widths and glyph metrics line up after the family changes.
+    webglAddon?.clearTextureAtlas();
     fitAddon?.fit();
   });
 
   onMount(() => {
-    const term = new Terminal({
-      theme: {
-        background: "#0d1117",
-        foreground: "#c9d1d9",
-        cursor: "#58a6ff",
-      },
-      cursorBlink: true,
-      fontFamily: terminalFontFamily,
-      fontSize: 14,
-    });
-    terminal = term;
+    let started = false;
 
-    const fit = new FitAddon();
-    fitAddon = fit;
-    term.loadAddon(fit);
+    function start(): void {
+      if (started || disposed) return;
+      started = true;
 
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      // WebGL unavailable; canvas renderer used as fallback.
+      const term = new Terminal({
+        theme: {
+          background: "#0d1117",
+          foreground: "#c9d1d9",
+          cursor: "#58a6ff",
+        },
+        cursorBlink: true,
+        fontFamily: terminalFontFamily,
+        fontSize: 14,
+      });
+      terminal = term;
+
+      term.open(containerEl);
+
+      const fit = new FitAddon();
+      fitAddon = fit;
+      term.loadAddon(fit);
+
+      try {
+        const wgl = new WebglAddon();
+        wgl.onContextLoss(() => {
+          wgl.dispose();
+          if (webglAddon === wgl) webglAddon = null;
+        });
+        term.loadAddon(wgl);
+        webglAddon = wgl;
+      } catch {
+        // WebGL unavailable; canvas renderer used as fallback.
+      }
+
+      fit.fit();
+
+      term.onData((data: string) => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(encoder.encode(data));
+        }
+      });
+
+      term.onBinary((data: string) => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          const buf = new Uint8Array(data.length);
+          for (let i = 0; i < data.length; i++) {
+            buf[i] = data.charCodeAt(i) & 0xff;
+          }
+          ws.send(buf.buffer);
+        }
+      });
+
+      resizeObserver = new ResizeObserver(() => {
+        if (!fitAddon || !terminal) return;
+        fitAddon.fit();
+        sendResize(terminal.cols, terminal.rows);
+      });
+      resizeObserver.observe(containerEl);
+
+      connect();
     }
 
-    term.open(containerEl);
-    fit.fit();
-
-    term.onData((data: string) => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(encoder.encode(data));
-      }
-    });
-
-    term.onBinary((data: string) => {
-      if (ws?.readyState === WebSocket.OPEN) {
-        const buf = new Uint8Array(data.length);
-        for (let i = 0; i < data.length; i++) {
-          buf[i] = data.charCodeAt(i) & 0xff;
-        }
-        ws.send(buf.buffer);
-      }
-    });
-
-    resizeObserver = new ResizeObserver(() => {
-      if (!fitAddon || !terminal) return;
-      fitAddon.fit();
-      sendResize(terminal.cols, terminal.rows);
-    });
-    resizeObserver.observe(containerEl);
-
-    connect();
+    // Custom fonts (JetBrains Mono, etc.) may still be loading when
+    // the pane mounts. Initializing xterm before fonts settle locks
+    // in fallback-font cell metrics, so the WebGL atlas and the
+    // measured cols/rows drift away from what gets painted — which
+    // looks like cursor/prompt overlap in the running shell.
+    if (document.fonts && typeof document.fonts.ready?.then === "function") {
+      void document.fonts.ready.then(start);
+    } else {
+      start();
+    }
 
     return cleanup;
   });

@@ -699,34 +699,7 @@
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
               <div class="workspace-stage">
-                {#if activeTabKey === "tmux" && tmuxTabOpen}
-                  {#key "tmux"}
-                    <TerminalPane
-                      websocketPath={workspaceTmuxWebSocketPath(workspaceId)}
-                      reconnectOnExit={true}
-                    />
-                  {/key}
-                {:else if activeSession}
-                  {#key activeSession.key}
-                    <TerminalPane
-                      websocketPath={workspaceSessionWebSocketPath(
-                        workspaceId,
-                        activeSession.key,
-                      )}
-                      reconnectOnExit={false}
-                      onExit={() => void fetchRuntime()}
-                    />
-                  {/key}
-                {:else if runtime}
-                  <WorkspaceHome
-                    {workspace}
-                    launchTargets={launchTargets}
-                    sessions={runtimeSessions}
-                    {launchingKey}
-                    onLaunch={(key) => void handleLaunch(key)}
-                    onOpenSession={openSession}
-                  />
-                {:else}
+                {#if !runtime}
                   <div class="state-message">
                     <SpinnerIcon
                       class="spinner"
@@ -736,6 +709,46 @@
                     />
                     <span>Loading workspace runtime...</span>
                   </div>
+                {:else}
+                  <div
+                    class="stage-pane"
+                    class:active={activeTabKey === "home"}
+                  >
+                    <WorkspaceHome
+                      {workspace}
+                      launchTargets={launchTargets}
+                      sessions={runtimeSessions}
+                      {launchingKey}
+                      onLaunch={(key) => void handleLaunch(key)}
+                      onOpenSession={openSession}
+                    />
+                  </div>
+                  {#if tmuxTabOpen}
+                    <div
+                      class="stage-pane"
+                      class:active={activeTabKey === "tmux"}
+                    >
+                      <TerminalPane
+                        websocketPath={workspaceTmuxWebSocketPath(workspaceId)}
+                        reconnectOnExit={true}
+                      />
+                    </div>
+                  {/if}
+                  {#each runtimeSessions as session (session.key)}
+                    <div
+                      class="stage-pane"
+                      class:active={activeTabKey === `session:${session.key}`}
+                    >
+                      <TerminalPane
+                        websocketPath={workspaceSessionWebSocketPath(
+                          workspaceId,
+                          session.key,
+                        )}
+                        reconnectOnExit={false}
+                        onExit={() => void fetchRuntime()}
+                      />
+                    </div>
+                  {/each}
                 {/if}
               </div>
               <ShellDrawer
@@ -978,9 +991,24 @@
   }
 
   .workspace-stage {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: hidden;
+  }
+
+  /* Tabs stay mounted across switches so xterm scrollback and the
+   * WebSocket survive — non-active panes are layered below and
+   * hidden via visibility so layout/sizing is preserved. */
+  .stage-pane {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+  }
+
+  .stage-pane.active {
+    visibility: visible;
+    z-index: 1;
   }
 
   .seg-control {
