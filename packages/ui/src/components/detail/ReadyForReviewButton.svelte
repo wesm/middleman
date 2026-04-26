@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -65,9 +66,11 @@
     disabled={submitting || disabled}
     tone="info"
     surface="soft"
+    label={submitting ? "Publishing…" : "Ready for review"}
+    shortLabel={submitting ? "Publishing…" : "Ready"}
     {size}
   >
-    {submitting ? "Publishing…" : "Ready for review"}
+    <SendHorizontalIcon size="14" strokeWidth="2.2" aria-hidden="true" />
   </ActionButton>
   {#if error}
     <p class="ready-error">{error}</p>

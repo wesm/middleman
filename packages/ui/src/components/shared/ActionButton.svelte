@@ -13,6 +13,7 @@
     disabled?: boolean;
     title?: string;
     label?: string;
+    shortLabel?: string;
     class?: string;
     onclick?: (event: MouseEvent) => void;
     children?: Snippet;
@@ -26,6 +27,7 @@
     disabled = false,
     title = undefined,
     label = undefined,
+    shortLabel = undefined,
     class: className = "",
     onclick = undefined,
     children,
@@ -42,12 +44,22 @@
   );
 </script>
 
-<button {type} class={classes} {disabled} {title} onclick={onclick}>
-  {#if label}
-    <span>{label}</span>
-  {/if}
+<button
+  {type}
+  class={classes}
+  {disabled}
+  {title}
+  aria-label={label && shortLabel ? label : undefined}
+  onclick={onclick}
+>
   {#if children}
     {@render children()}
+  {/if}
+  {#if label}
+    <span class="action-button__label">{label}</span>
+  {/if}
+  {#if shortLabel}
+    <span class="action-button__short-label">{shortLabel}</span>
   {/if}
 </button>
 
@@ -83,6 +95,10 @@
 
   .action-button :global(svg) {
     flex-shrink: 0;
+  }
+
+  .action-button__short-label {
+    display: none;
   }
 
   /* Neutral outline — cancel / secondary */

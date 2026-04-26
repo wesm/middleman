@@ -14,6 +14,12 @@
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import GitMergeIcon from "@lucide/svelte/icons/git-merge";
+  import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
+  import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import XIcon from "@lucide/svelte/icons/x";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
@@ -249,11 +255,13 @@
     }
   }
 
-  let repoSettings = $state<{
+  type RepoSettings = {
     allowSquash: boolean;
     allowMerge: boolean;
     allowRebase: boolean;
-  } | null>(null);
+  };
+
+  let repoSettings = $state<RepoSettings | null>(null);
   let showMergeModal = $state(false);
 
   $effect(() => {
@@ -292,6 +300,29 @@
     void detailStore.updateKanbanState(owner, name, number, select.value as KanbanStatus);
   }
 
+  function mergeActionLabel(settings: RepoSettings): string {
+    if (settings.allowSquash && !settings.allowMerge && !settings.allowRebase) {
+      return "Squash and merge";
+    }
+    if (!settings.allowSquash && settings.allowMerge && !settings.allowRebase) {
+      return "Merge";
+    }
+    if (!settings.allowSquash && !settings.allowMerge && settings.allowRebase) {
+      return "Rebase and merge";
+    }
+    return "Merge menu";
+  }
+
+  function mergeActionShortLabel(settings: RepoSettings): string {
+    if (settings.allowSquash && !settings.allowMerge && !settings.allowRebase) {
+      return "Squash";
+    }
+    if (!settings.allowSquash && !settings.allowMerge && settings.allowRebase) {
+      return "Rebase";
+    }
+    return "Merge";
+  }
+
   const worktreeLinks = $derived(
     detailStore.getDetail()?.worktree_links ?? [],
   );
@@ -320,6 +351,17 @@
   const workspace = $derived(detailStore.getDetail()?.workspace);
   let wsCreating = $state(false);
   let wsError = $state<string | null>(null);
+  let actionMenuOpen = $state(false);
+
+  function closeActionMenu(): void {
+    actionMenuOpen = false;
+  }
+
+  function onActionMenuKeydown(e: KeyboardEvent): void {
+    if (actionMenuOpen && e.key === "Escape") {
+      actionMenuOpen = false;
+    }
+  }
 
   async function createWorkspace(): Promise<void> {
     if (stalePR) return;
@@ -355,6 +397,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={onActionMenuKeydown} />
 
 {#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
@@ -597,108 +641,157 @@
 
       <!-- Diff sync warnings (stale or unavailable diff data) -->
       {#if detail.warnings && detail.warnings.length > 0}
-        {#each detail.warnings as warning}
+        {#each detail.warnings as warning (warning)}
           <div class="merge-warning merge-warning--info">
             <span>{warning}</span>
           </div>
         {/each}
       {/if}
 
-      <!-- Approve / Merge / Close / Reopen actions -->
-      {#if pr.State !== "merged"}
-        <div class="actions-row">
-          {#if pr.State === "open"}
-            {#if pr.IsDraft}
-              <ReadyForReviewButton
-                {owner}
-                {name}
-                {number}
-                size="sm"
-                disabled={stalePR}
-              />
-            {/if}
-            <ApproveButton
+      {#snippet primaryActionButtons()}
+        {#if pr.State === "open"}
+          {#if pr.IsDraft}
+            <ReadyForReviewButton
               {owner}
               {name}
               {number}
               size="sm"
               disabled={stalePR}
             />
-            {#if workflowApproval?.checked && workflowApproval.required}
-              <ApproveWorkflowsButton
-                {owner}
-                {name}
-                {number}
-                count={workflowApproval.count ?? 0}
-                size="sm"
-                disabled={stalePR}
-              />
-            {/if}
-            {#if repoSettings}
-              <ActionButton
-                class="btn--merge"
-                onclick={() => { if (!stalePR) showMergeModal = true; }}
-                disabled={stalePR}
-                tone="success"
-                surface="solid"
-                size="sm"
-              >
-                {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
-                  Squash and merge
-                {:else if !repoSettings.allowSquash && repoSettings.allowMerge && !repoSettings.allowRebase}
-                  Merge
-                {:else if !repoSettings.allowSquash && !repoSettings.allowMerge && repoSettings.allowRebase}
-                  Rebase and merge
-                {:else}
-                  Merge &#9662;
-                {/if}
-              </ActionButton>
-            {/if}
-            <ActionButton
-              class="btn--close"
-              disabled={stateSubmitting || stalePR}
-              onclick={() => handleStateChange("closed")}
-              tone="danger"
-              surface="outline"
+          {/if}
+          <ApproveButton
+            {owner}
+            {name}
+            {number}
+            size="sm"
+            disabled={stalePR}
+          />
+          {#if workflowApproval?.checked && workflowApproval.required}
+            <ApproveWorkflowsButton
+              {owner}
+              {name}
+              {number}
+              count={workflowApproval.count ?? 0}
               size="sm"
-            >
-              {stateSubmitting ? "Closing..." : "Close"}
-            </ActionButton>
-          {:else if pr.State === "closed"}
+              disabled={stalePR}
+            />
+          {/if}
+          {#if repoSettings}
             <ActionButton
-              class="btn--reopen"
-              disabled={stateSubmitting || stalePR}
-              onclick={() => handleStateChange("open")}
+              class="btn--merge"
+              disabled={stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                showMergeModal = true;
+                closeActionMenu();
+              }}
               tone="success"
               surface="solid"
               size="sm"
+              label={mergeActionLabel(repoSettings)}
+              shortLabel={mergeActionShortLabel(repoSettings)}
             >
-              {stateSubmitting ? "Reopening..." : "Reopen"}
+              <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              {#if mergeActionLabel(repoSettings) === "Merge menu"}
+                <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+              {/if}
             </ActionButton>
           {/if}
-          {#if stateError}
-            <span class="action-error">{stateError}</span>
-          {/if}
+          <ActionButton
+            class="btn--close"
+            disabled={stateSubmitting || stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              closeActionMenu();
+              handleStateChange("closed");
+            }}
+            tone="danger"
+            surface="outline"
+            size="sm"
+            label={stateSubmitting ? "Closing..." : "Close"}
+            shortLabel={stateSubmitting ? "Closing..." : "Close"}
+          >
+            <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {:else if pr.State === "closed"}
+          <ActionButton
+            class="btn--reopen"
+            disabled={stateSubmitting || stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              closeActionMenu();
+              handleStateChange("open");
+            }}
+            tone="success"
+            surface="solid"
+            size="sm"
+            label={stateSubmitting ? "Reopening..." : "Reopen"}
+            shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
+          >
+            <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {/if}
+      {/snippet}
+
+      <!-- Approve / Merge / Close / Reopen actions -->
+      {#if pr.State !== "merged"}
+        <div class="primary-actions-wrap">
+          <div class="actions-row actions-row--primary">
+            {@render primaryActionButtons()}
+            {#if stateError}
+              <span class="action-error">{stateError}</span>
+            {/if}
+          </div>
+          <div class="actions-menu-wrap">
+            <button
+              type="button"
+              class="actions-menu-trigger"
+              aria-haspopup="true"
+              aria-expanded={actionMenuOpen}
+              onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+            >
+              <span>Actions</span>
+              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </button>
+            {#if actionMenuOpen}
+              <div class="actions-menu-popover">
+                {@render primaryActionButtons()}
+                {#if stateError}
+                  <span class="action-error">{stateError}</span>
+                {/if}
+              </div>
+            {/if}
+          </div>
         </div>
       {/if}
 
       <!-- Workspace actions -->
-      <div class="actions-row">
+      <div class="actions-row actions-row--workspace">
         {#if workspace}
-          <button
+          <ActionButton
             class="btn--workspace"
             onclick={() => navigate(`/terminal/${workspace.id}`)}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label="Open Workspace"
+            shortLabel="Open"
           >
-            Open Workspace
-          </button>
+            <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
         {:else}
-          <button
+          <ActionButton
             class="btn--workspace"
             disabled={wsCreating || stalePR}
             onclick={() => void createWorkspace()}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label={wsCreating ? "Creating..." : "Create Workspace"}
+            shortLabel={wsCreating ? "Creating..." : "Create"}
           >
-            {wsCreating ? "Creating..." : "Create Workspace"}
-          </button>
+            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
         {/if}
         {#if wsError}
           <span class="action-error">{wsError}</span>
@@ -973,6 +1066,7 @@
   }
 
   .pull-detail {
+    container: pull-detail / inline-size;
     padding: 20px 24px;
     max-width: 800px;
     display: flex;
@@ -980,7 +1074,9 @@
     gap: 16px;
     flex: 1;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     width: 100%;
     margin-inline: auto;
   }
@@ -1241,10 +1337,118 @@
     border-color: var(--accent-blue);
   }
 
+  .primary-actions-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
   .actions-row {
     display: flex;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .actions-row :global(.approve-section),
+  .actions-row :global(.ready-section),
+  .actions-row :global(.workflow-approval-section) {
+    min-width: 0;
+  }
+
+  .actions-row :global(.action-button) {
+    max-width: 100%;
+  }
+
+  .actions-row :global(.action-button__label),
+  .actions-row :global(.action-button__short-label) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .actions-menu-wrap {
+    display: none;
+    position: relative;
+  }
+
+  .actions-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 5px 11px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .actions-menu-trigger:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .actions-menu-popover {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: min(240px, calc(100cqw - 48px));
+    max-width: calc(100cqw - 48px);
+    padding: 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-surface);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  }
+
+  .actions-menu-popover :global(.action-button) {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .actions-menu-popover :global(.approve-section),
+  .actions-menu-popover :global(.ready-section),
+  .actions-menu-popover :global(.workflow-approval-section) {
+    width: 100%;
+  }
+
+  .actions-menu-popover :global(.approve-actions) {
+    flex-wrap: wrap;
+  }
+
+  .actions-menu-popover :global(.action-button__short-label) {
+    display: none;
+  }
+
+  @container pull-detail (max-width: 520px) {
+    .actions-row--primary :global(.action-button__label),
+    .actions-row--workspace :global(.action-button__label) {
+      display: none;
+    }
+
+    .actions-row--primary :global(.action-button__short-label),
+    .actions-row--workspace :global(.action-button__short-label) {
+      display: inline;
+    }
+  }
+
+  @container pull-detail (max-width: 340px) {
+    .actions-row--primary {
+      display: none;
+    }
+
+    .actions-menu-wrap {
+      display: block;
+    }
   }
 
   .btn--workspace {

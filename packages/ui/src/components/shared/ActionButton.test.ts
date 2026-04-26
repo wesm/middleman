@@ -38,4 +38,21 @@ describe("ActionButton", () => {
     expect(button.classList.contains("action-button--success")).toBe(true);
     expect(button.classList.contains("action-button--solid")).toBe(true);
   });
+
+  it("renders full and short labels for responsive action rows", () => {
+    render(ActionButton, {
+      props: {
+        label: "Approve workflows",
+        shortLabel: "Workflows",
+      },
+    });
+
+    const button = screen.getByRole("button", { name: "Approve workflows" });
+    expect(button.querySelector(".action-button__label")?.textContent).toBe(
+      "Approve workflows",
+    );
+    expect(button.querySelector(".action-button__short-label")?.textContent).toBe(
+      "Workflows",
+    );
+  });
 });
