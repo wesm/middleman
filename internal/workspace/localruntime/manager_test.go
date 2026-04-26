@@ -2,11 +2,15 @@ package localruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -126,6 +130,56 @@ func TestManagerStopRemovesSession(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Empty(mgr.ListSessions("ws-1"))
 	assert.Error(mgr.Stop(ctx, "ws-1", session.Key))
+}
+
+func TestManagerStopKillsDescendantProcesses(t *testing.T) {
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	record := filepath.Join(t.TempDir(), "pids")
+	ctx := context.Background()
+	mgr := NewManager(Options{Targets: []LaunchTarget{{
+		Key: "helper", Label: "helper", Kind: LaunchTargetAgent,
+		Source: "config", Available: true,
+		Command: []string{
+			os.Args[0],
+			"-test.run=TestHelperProcess",
+			"--",
+			"spawn-child",
+			record,
+		},
+	}}})
+	t.Cleanup(mgr.Shutdown)
+
+	session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+
+	var parentPID, childPID int
+	require.Eventually(func() bool {
+		data, err := os.ReadFile(record)
+		if err != nil {
+			return false
+		}
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		if len(lines) < 2 {
+			return false
+		}
+		parentPID, _ = strconv.Atoi(lines[0])
+		childPID, _ = strconv.Atoi(lines[1])
+		return parentPID > 0 && childPID > 0
+	}, 5*time.Second, 25*time.Millisecond, "helper should record both pids")
+
+	require.NoError(syscall.Kill(parentPID, 0), "parent should be alive")
+	require.NoError(syscall.Kill(childPID, 0), "child should be alive")
+
+	require.NoError(mgr.Stop(ctx, "ws-1", session.Key))
+
+	assert.Eventually(func() bool {
+		return errors.Is(syscall.Kill(parentPID, 0), syscall.ESRCH) &&
+			errors.Is(syscall.Kill(childPID, 0), syscall.ESRCH)
+	}, 5*time.Second, 25*time.Millisecond,
+		"descendant child should die with the session leader")
 }
 
 func TestManagerReportsExitedProcess(t *testing.T) {
@@ -441,6 +495,35 @@ func TestResolveExecutableRejectsRelativePaths(t *testing.T) {
 	require.Error(err)
 }
 
+func TestResolveExecutableForcesAbsoluteFromRelativePATH(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	require.NoError(os.MkdirAll(binDir, 0o755))
+	exe := filepath.Join(binDir, "fake-runtime-tool")
+	require.NoError(os.WriteFile(exe, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+	t.Chdir(dir)
+	t.Setenv("PATH", "bin")
+	// Recent Go versions wrap LookPath results from relative PATH
+	// entries with ErrDot. With execerrdot=0 they're returned with
+	// no error — that's exactly the case where the worktree-cwd
+	// rebinding is dangerous, so verify the absolute fallback runs.
+	t.Setenv("GODEBUG", "execerrdot=0")
+
+	got, err := resolveExecutable("fake-runtime-tool")
+	require.NoError(err)
+	assert.True(
+		filepath.IsAbs(got),
+		"expected absolute path, got %q (relative would resolve "+
+			"inside cmd.Dir = the workspace worktree)",
+		got,
+	)
+	assert.Equal(exe, got)
+}
+
 // TestSessionEnvironmentStripsCredentials verifies that the
 // environment passed to runtime sessions has GitHub-token-shaped
 // variables removed so that launched agents cannot exfiltrate
@@ -510,7 +593,7 @@ func TestHelperProcess(t *testing.T) {
 	mode := helperArgs[0]
 	switch mode {
 	case "sleep":
-		select {}
+		time.Sleep(time.Hour)
 	case "sleep-record":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -525,7 +608,30 @@ func TestHelperProcess(t *testing.T) {
 		}
 		_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
 		_ = f.Close()
-		select {}
+		time.Sleep(time.Hour)
+	case "spawn-child":
+		if len(helperArgs) < 2 {
+			os.Exit(2)
+		}
+		child := exec.Command(
+			os.Args[0], "-test.run=TestHelperProcess", "--", "sleep",
+		)
+		if err := child.Start(); err != nil {
+			os.Exit(2)
+		}
+		f, err := os.OpenFile(
+			helperArgs[1],
+			os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+			0o644,
+		)
+		if err != nil {
+			os.Exit(2)
+		}
+		_, _ = fmt.Fprintf(
+			f, "%d\n%d\n", os.Getpid(), child.Process.Pid,
+		)
+		_ = f.Close()
+		time.Sleep(time.Hour)
 	case "exit":
 		os.Exit(3)
 	default:

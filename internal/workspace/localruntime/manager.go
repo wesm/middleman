@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty/v2"
@@ -682,7 +683,17 @@ func (s *session) closeSubscribers() {
 func (s *session) stop() {
 	s.stopOnce.Do(func() {
 		if s.cmd.Process != nil {
-			_ = s.cmd.Process.Kill()
+			// pty.StartWithSize sets Setsid, so the launched
+			// process is a session/pgid leader. Send SIGKILL to
+			// -pid to reach every descendant in the group;
+			// otherwise an agent's detached children would
+			// outlive the session. Fall back to single-process
+			// kill if the group call fails.
+			if err := syscall.Kill(
+				-s.cmd.Process.Pid, syscall.SIGKILL,
+			); err != nil {
+				_ = s.cmd.Process.Kill()
+			}
 		}
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
@@ -720,6 +731,21 @@ func resolveExecutable(name string) (string, error) {
 				"resolve session command %q via PATH: %w",
 				name, err,
 			)
+		}
+		// LookPath joins the matched PATH entry with name; a
+		// relative entry like "bin" or "." yields a relative
+		// result, which would re-resolve inside cmd.Dir (the
+		// worktree). Bind it to an absolute path now, while we
+		// are still in middleman's working directory.
+		if !filepath.IsAbs(path) {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				return "", fmt.Errorf(
+					"resolve session command %q via PATH: %w",
+					name, err,
+				)
+			}
+			path = abs
 		}
 		return path, nil
 	}
