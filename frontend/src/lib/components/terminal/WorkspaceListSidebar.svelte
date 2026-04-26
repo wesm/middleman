@@ -3,6 +3,8 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
+  import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
+  import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 
   interface Workspace {
     id: string;
@@ -33,6 +35,8 @@
     mr_review_decision?: string | null;
     mr_additions?: number | null;
     mr_deletions?: number | null;
+    commits_ahead?: number | null;
+    commits_behind?: number | null;
   }
 
   interface Props {
@@ -224,6 +228,9 @@
           {@const showDiff =
             ws.item_type === "pull_request" &&
             ((adds ?? 0) > 0 || (dels ?? 0) > 0)}
+          {@const ahead = ws.commits_ahead ?? 0}
+          {@const behind = ws.commits_behind ?? 0}
+          {@const showPush = ahead > 0 || behind > 0}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class={["ws-row", { selected: ws.id === selectedId }]}
@@ -273,6 +280,31 @@
               >
                 #{ws.item_number}
               </button>
+              {#if showPush}
+                <span
+                  class="push-state"
+                  title={`${ahead} ahead, ${behind} behind upstream`}
+                >
+                  {#if ahead > 0}
+                    <span class="push-ahead">
+                      <ArrowUpIcon
+                        size="9"
+                        strokeWidth="2.5"
+                        aria-hidden="true"
+                      />{ahead}
+                    </span>
+                  {/if}
+                  {#if behind > 0}
+                    <span class="push-behind">
+                      <ArrowDownIcon
+                        size="9"
+                        strokeWidth="2.5"
+                        aria-hidden="true"
+                      />{behind}
+                    </span>
+                  {/if}
+                </span>
+              {/if}
               {#if showDiff}
                 <span class="diff-stats">
                   {#if adds != null}
@@ -303,6 +335,11 @@
      * default, so the rail reads as a tool window rather than a
      * loosely-styled page section. */
     font-feature-settings: "tnum" 1, "calt" 1;
+    /* Drive width-aware hiding (diff stats first, then push counts)
+     * off the rail's own width rather than the viewport. The rail
+     * is user-resizable, so a viewport media query would lie. */
+    container-type: inline-size;
+    container-name: workspace-rail;
   }
 
   .sidebar-header {
@@ -549,45 +586,83 @@
   }
 
   .item-bubble {
+    /* GitHub-style state pill: a soft solid pastel fill with a
+     * near-black foreground for legibility. The bg is mostly the
+     * accent color but blended toward white so the swatch reads as
+     * "soft solid"; the fg is the same accent darkened toward black
+     * so the number always has high contrast against the bg. The
+     * literal white/black anchors keep the look identical across
+     * light and dark themes (matching GitHub label semantics). */
     flex-shrink: 0;
     height: 16px;
-    padding: 0 5px;
-    border: 1px solid currentColor;
+    padding: 0 6px;
+    border: 1px solid transparent;
     border-radius: 8px;
-    background: transparent;
+    background: var(--bubble-bg);
+    color: var(--bubble-fg);
     font-family: var(--font-mono);
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     line-height: 1;
+    letter-spacing: 0.01em;
     cursor: pointer;
-    transition: background-color 80ms ease, color 80ms ease;
-    /* `currentColor` borders mean each item-state class only sets
-     * color: and the outline + glyph follow automatically. */
+    transition: background-color 80ms ease, border-color 80ms ease,
+      color 80ms ease;
   }
 
   .item-bubble.open {
-    color: var(--accent-green);
+    --bubble-bg: color-mix(in srgb, var(--accent-green) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--accent-green) 25%, #0a0d14);
   }
 
   .item-bubble.merged {
-    color: var(--accent-purple);
+    --bubble-bg: color-mix(in srgb, var(--accent-purple) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--accent-purple) 25%, #0a0d14);
   }
 
   .item-bubble.closed {
-    color: var(--accent-red);
+    --bubble-bg: color-mix(in srgb, var(--accent-red) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--accent-red) 25%, #0a0d14);
   }
 
   .item-bubble.draft {
-    color: var(--text-muted);
+    --bubble-bg: color-mix(in srgb, var(--text-muted) 55%, #ffffff);
+    --bubble-fg: #0a0d14;
   }
 
   .item-bubble:hover {
-    background: color-mix(in srgb, currentColor 12%, transparent);
+    border-color: color-mix(in srgb, var(--bubble-fg) 50%, transparent);
   }
 
   .item-bubble:focus-visible {
     outline: 2px solid var(--accent-blue);
     outline-offset: 1px;
+  }
+
+  .push-state {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+
+  .push-ahead,
+  .push-behind {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+  }
+
+  .push-ahead {
+    color: var(--accent-green);
+  }
+
+  .push-behind {
+    color: var(--accent-amber);
   }
 
   .diff-stats {
@@ -606,5 +681,21 @@
 
   .diff-stats .del {
     color: var(--accent-red);
+  }
+
+  /* Width-aware hiding: shed least-critical chrome first as the
+   * rail narrows. Push state outranks diff stats because branch
+   * hygiene matters more for "should I open this workspace?" than
+   * line counts. */
+  @container workspace-rail (max-width: 260px) {
+    .diff-stats {
+      display: none;
+    }
+  }
+
+  @container workspace-rail (max-width: 220px) {
+    .push-state {
+      display: none;
+    }
   }
 </style>

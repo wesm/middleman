@@ -167,6 +167,8 @@ type workspaceResponse struct {
 	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MRAdditions        *int    `json:"mr_additions,omitempty"`
 	MRDeletions        *int    `json:"mr_deletions,omitempty"`
+	CommitsAhead       *int    `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int    `json:"commits_behind,omitempty"`
 }
 
 type workspaceRuntimeResponse struct {

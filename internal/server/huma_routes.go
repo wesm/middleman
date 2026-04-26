@@ -2558,6 +2558,8 @@ func (s *Server) toWorkspaceResponse(
 		return resp
 	}
 
+	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
+
 	if s.tmuxActivity != nil {
 		if result, ok := s.tmuxActivity.Cached(summary.TmuxSession); ok {
 			applyTmuxActivity(&resp, result)
@@ -2624,6 +2626,42 @@ func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {
 		lastOutputAt := activity.LastOutputAt.UTC().Format(time.RFC3339)
 		resp.TmuxLastOutputAt = &lastOutputAt
 	}
+}
+
+// worktreeDivergenceTimeout caps how long a single workspace's
+// rev-list probe can run before the workspace list response moves
+// on. Picked to be small enough that a stalled git won't hold up
+// the whole list (probes already run in parallel).
+const worktreeDivergenceTimeout = 750 * time.Millisecond
+
+func applyWorktreeDivergence(
+	ctx context.Context,
+	resp *workspaceResponse,
+	worktreePath string,
+) {
+	if worktreePath == "" {
+		return
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, worktreeDivergenceTimeout)
+	defer cancel()
+
+	div, ok, err := workspace.WorktreeDivergence(probeCtx, worktreePath)
+	if err != nil {
+		slog.Debug(
+			"worktree divergence probe failed",
+			"workspace_id", resp.ID,
+			"path", worktreePath,
+			"err", err,
+		)
+		return
+	}
+	if !ok {
+		return
+	}
+	ahead := div.Ahead
+	behind := div.Behind
+	resp.CommitsAhead = &ahead
+	resp.CommitsBehind = &behind
 }
 
 func isWorkingTmuxTitle(title string) bool {

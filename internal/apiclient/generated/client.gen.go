@@ -645,6 +645,8 @@ type WorkspaceRef struct {
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema             *string `json:"$schema,omitempty"`
+	CommitsAhead       *int64  `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int64  `json:"commits_behind,omitempty"`
 	CreatedAt          string  `json:"created_at"`
 	ErrorMessage       *string `json:"error_message,omitempty"`
 	GitHeadRef         string  `json:"git_head_ref"`

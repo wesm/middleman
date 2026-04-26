@@ -1409,6 +1409,10 @@ export interface components {
              * @example /api/v1/schemas/WorkspaceResponse.json
              */
             readonly $schema?: string;
+            /** Format: int64 */
+            commits_ahead?: number;
+            /** Format: int64 */
+            commits_behind?: number;
             created_at: string;
             error_message?: string;
             git_head_ref: string;
