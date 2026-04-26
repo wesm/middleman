@@ -506,20 +506,28 @@ test.describe("detail action buttons", () => {
   });
 
   test("self-contained actions close the narrow actions menu after success", async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 720 });
-    await page.goto("/pulls/acme/widgets/6");
-    await expect(page.locator(".pull-detail")).toBeVisible();
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
 
-    await page.locator(".actions-menu-trigger").click();
-    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+      await page.setViewportSize({ width: 320, height: 720 });
+      await page.goto(`${baseURL}/pulls/acme/widgets/6`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
 
-    const readyResponse = page.waitForResponse((response) => {
-      return response.request().method() === "POST"
-        && response.url().endsWith("/api/v1/repos/acme/widgets/pulls/6/ready-for-review");
-    });
-    await page.locator(".actions-menu-popover .btn--ready").click();
-    expect((await readyResponse).status()).toBe(200);
-    await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+      await page.locator(".actions-menu-trigger").click();
+      await expect(page.locator(".actions-menu-popover")).toBeVisible();
+
+      const readyResponse = page.waitForResponse((response) => {
+        return response.request().method() === "POST"
+          && response.url() === `${baseURL}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+      });
+      await page.locator(".actions-menu-popover .btn--ready").click();
+      expect((await readyResponse).status()).toBe(200);
+      await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
   });
 
   test("draft pull request actions keep exactly the same height", async ({ page }) => {
