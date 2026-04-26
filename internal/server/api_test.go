@@ -2109,6 +2109,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
 	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	previousPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	commitsSince := 42
 	err = database.UpsertRepoOverview(context.Background(), widgetsRepo.ID, db.RepoOverview{
 		LatestRelease: &db.RepoRelease{
@@ -2119,9 +2120,28 @@ func TestAPIListRepoSummaries(t *testing.T) {
 			Prerelease:      false,
 			PublishedAt:     &publishedAt,
 		},
+		Releases: []db.RepoRelease{
+			{
+				TagName:         "v2.8.1",
+				Name:            "Version 2.8.1",
+				URL:             "https://github.com/acme/widgets/releases/tag/v2.8.1",
+				TargetCommitish: "main",
+				Prerelease:      false,
+				PublishedAt:     &publishedAt,
+			},
+			{
+				TagName:         "v2.7.0",
+				Name:            "Version 2.7.0",
+				URL:             "https://github.com/acme/widgets/releases/tag/v2.7.0",
+				TargetCommitish: "main",
+				Prerelease:      true,
+				PublishedAt:     &previousPublishedAt,
+			},
+		},
 		CommitsSinceRelease: &commitsSince,
 		CommitTimeline: []db.RepoCommitTimelinePoint{{
 			SHA:         "abc123",
+			Message:     "Ship repo overview",
 			CommittedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
 		}},
 	})
@@ -2154,9 +2174,18 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert.NotNil(widgets.MostRecentActivityAt)
 	require.NotNil(widgets.LatestRelease)
 	assert.Equal("v2.8.1", widgets.LatestRelease.TagName)
+	require.NotNil(widgets.Releases)
+	assert.Len(*widgets.Releases, 2)
+	assert.Equal("v2.7.0", (*widgets.Releases)[1].TagName)
+	assert.True((*widgets.Releases)[1].Prerelease)
+	assert.Equal(
+		formatUTCRFC3339(previousPublishedAt),
+		*(*widgets.Releases)[1].PublishedAt,
+	)
 	assert.Equal(int64(42), *widgets.CommitsSinceRelease)
 	require.NotNil(widgets.CommitTimeline)
 	assert.Len(*widgets.CommitTimeline, 1)
+	assert.Equal("Ship repo overview", (*widgets.CommitTimeline)[0].Message)
 	assert.Len(*widgets.ActiveAuthors, 3)
 	assert.Equal("alice", (*widgets.ActiveAuthors)[0].Login)
 	assert.Equal(int64(3), (*widgets.ActiveAuthors)[0].ItemCount)

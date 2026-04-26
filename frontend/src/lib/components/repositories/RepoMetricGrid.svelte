@@ -4,12 +4,21 @@
   interface Props {
     metrics: RepoMetric[];
     compact?: boolean;
+    strip?: boolean;
   }
 
-  let { metrics, compact = false }: Props = $props();
+  let { metrics, compact = false, strip = false }: Props = $props();
 </script>
 
-<div class={["repo-metrics", { "repo-metrics--compact": compact }]}>
+<div
+  class={[
+    "repo-metrics",
+    {
+      "repo-metrics--compact": compact,
+      "repo-metrics--strip": strip,
+    },
+  ]}
+>
   {#each metrics as metric (metric.label)}
     {#if metric.onclick}
       <button
@@ -41,10 +50,20 @@
   }
 
   .repo-metrics--compact {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(54px, 1fr));
     gap: 0;
     border-top: 1px solid var(--border-muted);
     border-bottom: 1px solid var(--border-muted);
+  }
+
+  .repo-metrics--strip {
+    grid-template-columns: repeat(5, minmax(92px, 1fr));
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-sm);
   }
 
   .repo-metric {
@@ -57,9 +76,21 @@
   }
 
   .repo-metrics--compact .repo-metric {
+    display: grid;
+    min-height: 44px;
+    align-content: center;
     border: 0;
     border-radius: 0;
     background: transparent;
+    padding: 6px;
+    text-align: center;
+  }
+
+  .repo-metrics--strip .repo-metric {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 14px 16px;
   }
 
   .repo-metric--action {
@@ -72,6 +103,10 @@
   }
 
   .repo-metrics--compact .repo-metric:not(:last-child) {
+    border-right: 1px solid var(--border-muted);
+  }
+
+  .repo-metrics--strip .repo-metric:not(:last-child) {
     border-right: 1px solid var(--border-muted);
   }
 
@@ -91,6 +126,10 @@
     line-height: 1.2;
   }
 
+  .repo-metrics--compact .repo-metric__label {
+    min-height: 0;
+  }
+
   .repo-metric--blue .repo-metric__value {
     color: var(--accent-blue);
   }
@@ -108,16 +147,21 @@
   }
 
   @media (max-width: 760px) {
-    .repo-metrics,
-    .repo-metrics--compact {
+    .repo-metrics:not(.repo-metrics--strip) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 620px) {
+    .repo-metrics--strip {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .repo-metrics--compact .repo-metric {
+    .repo-metrics--strip .repo-metric {
       border-bottom: 1px solid var(--border-muted);
     }
 
-    .repo-metrics--compact .repo-metric:nth-child(2n) {
+    .repo-metrics--strip .repo-metric:nth-child(2n) {
       border-right: 0;
     }
   }

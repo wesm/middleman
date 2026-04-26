@@ -137,6 +137,7 @@ func TestCommitTimelineSinceTag(t *testing.T) {
 	assert.Equal(3, count)
 	require.Len(points, 2)
 	assert.Len(points[0].SHA, 40)
+	assert.Equal("main 3", points[0].Message)
 	assert.False(points[0].CommittedAt.IsZero())
 }
 

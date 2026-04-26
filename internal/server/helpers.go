@@ -242,6 +242,20 @@ func toRepoSummaryResponse(summary db.RepoSummary) repoSummaryResponse {
 			resp.LatestRelease.PublishedAt = formatUTCRFC3339(*release.PublishedAt)
 		}
 	}
+	resp.Releases = make([]repoSummaryReleaseResponse, 0, len(summary.Overview.Releases))
+	for _, release := range summary.Overview.Releases {
+		item := repoSummaryReleaseResponse{
+			TagName:         release.TagName,
+			Name:            release.Name,
+			URL:             release.URL,
+			TargetCommitish: release.TargetCommitish,
+			Prerelease:      release.Prerelease,
+		}
+		if release.PublishedAt != nil {
+			item.PublishedAt = formatUTCRFC3339(*release.PublishedAt)
+		}
+		resp.Releases = append(resp.Releases, item)
+	}
 	resp.CommitsSinceRelease = summary.Overview.CommitsSinceRelease
 	resp.CommitTimeline = make(
 		[]repoSummaryCommitPointResponse,
@@ -251,6 +265,7 @@ func toRepoSummaryResponse(summary db.RepoSummary) repoSummaryResponse {
 	for _, point := range summary.Overview.CommitTimeline {
 		resp.CommitTimeline = append(resp.CommitTimeline, repoSummaryCommitPointResponse{
 			SHA:         point.SHA,
+			Message:     point.Message,
 			CommittedAt: formatUTCRFC3339(point.CommittedAt),
 		})
 	}

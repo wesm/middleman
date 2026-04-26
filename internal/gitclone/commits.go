@@ -22,6 +22,7 @@ type Commit struct {
 
 type CommitTimelinePoint struct {
 	SHA         string
+	Message     string
 	CommittedAt time.Time
 }
 
@@ -105,7 +106,7 @@ func (m *Manager) CommitTimelineSinceTag(
 	out, err := m.git(ctx, host, dir,
 		"log", "--first-parent",
 		fmt.Sprintf("--max-count=%d", limit),
-		"--format=%H%x00%aI",
+		"--format=%H%x00%aI%x00%s",
 		rangeSpec,
 	)
 	if err != nil {
@@ -120,8 +121,8 @@ func (m *Manager) CommitTimelineSinceTag(
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\x00", 2)
-		if len(parts) != 2 {
+		parts := strings.SplitN(line, "\x00", 3)
+		if len(parts) != 3 {
 			return 0, nil, fmt.Errorf("unexpected git log line: %q", line)
 		}
 		t, err := time.Parse(time.RFC3339, parts[1])
@@ -131,6 +132,7 @@ func (m *Manager) CommitTimelineSinceTag(
 		points = append(points, CommitTimelinePoint{
 			SHA:         parts[0],
 			CommittedAt: t,
+			Message:     parts[2],
 		})
 	}
 	if err := scanner.Err(); err != nil {

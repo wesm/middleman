@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getStores } from "@middleman/ui";
+  import { FilterDropdown, getStores } from "@middleman/ui";
   import type { RepoSummary } from "@middleman/ui/api/types";
 
   import {
-    ChevronDownIcon,
     RefreshIcon,
     SearchIcon,
   } from "../../icons.js";
@@ -80,18 +79,35 @@
       tone: "amber",
     },
     {
-      label: "Stale releases",
+      label: "Stale",
       value: totals.staleReleases,
       tone: "red",
     },
   ]);
 
-  const filterCounts = $derived({
-    all: summaries.length,
-    prs: summaries.filter((summary) => summary.open_pr_count > 0).length,
-    issues: summaries.filter((summary) => summary.open_issue_count > 0).length,
-    stale: summaries.filter((summary) => isStaleRelease(summary)).length,
-  });
+  const sortOptions: { value: RepoSort; label: string }[] = [
+    { value: "name", label: "Name" },
+    { value: "open-prs", label: "Open PRs" },
+    { value: "open-issues", label: "Open issues" },
+    { value: "activity", label: "Recent activity" },
+    { value: "stale", label: "Stale" },
+  ];
+
+  const sortDetail = $derived(
+    sortOptions.find((option) => option.value === sortMode)?.label ?? "Name",
+  );
+
+  const sortSections = $derived.by(() => [
+    {
+      items: sortOptions.map((option) => ({
+        id: option.value,
+        label: option.label,
+        active: sortMode === option.value,
+        closeOnSelect: true,
+        onSelect: () => setSort(option.value),
+      })),
+    },
+  ]);
 
   const filteredSummaries = $derived.by(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -160,8 +176,8 @@
     searchQuery = (event.currentTarget as HTMLInputElement).value;
   }
 
-  function updateSort(event: Event): void {
-    sortMode = (event.currentTarget as HTMLSelectElement).value as RepoSort;
+  function setSort(sort: RepoSort): void {
+    sortMode = sort;
   }
 
   function filterAndNavigate(
@@ -278,7 +294,7 @@
         Summary of your tracked GitHub repositories
       </p>
     </div>
-    <RepoMetricGrid metrics={overviewMetrics} />
+    <RepoMetricGrid metrics={overviewMetrics} strip />
   </header>
 
   {#if stores.settings.isSettingsLoaded() && !stores.settings.hasConfiguredRepos()}
@@ -326,7 +342,7 @@
           ]}
           onclick={() => setFilter("all")}
         >
-          All <span>{filterCounts.all}</span>
+          All
         </button>
         <button
           type="button"
@@ -336,7 +352,7 @@
           ]}
           onclick={() => setFilter("prs")}
         >
-          Has PRs <span>{filterCounts.prs}</span>
+          Has PRs
         </button>
         <button
           type="button"
@@ -346,7 +362,7 @@
           ]}
           onclick={() => setFilter("issues")}
         >
-          Has issues <span>{filterCounts.issues}</span>
+          Has issues
         </button>
         <button
           type="button"
@@ -356,22 +372,21 @@
           ]}
           onclick={() => setFilter("stale")}
         >
-          Stale release <span>{filterCounts.stale}</span>
+          Stale
         </button>
       </div>
 
       <div class="repo-page__sort">
-        <label>
-          <span>Sort by:</span>
-          <select value={sortMode} onchange={updateSort}>
-            <option value="name">Name</option>
-            <option value="open-prs">Open PRs</option>
-            <option value="open-issues">Open issues</option>
-            <option value="activity">Recent activity</option>
-            <option value="stale">Stale release</option>
-          </select>
-          <ChevronDownIcon size={14} aria-hidden="true" />
-        </label>
+        <div class="repo-page__sort-dropdown">
+          <FilterDropdown
+            label={sortDetail}
+            showBadge={false}
+            sections={sortSections}
+            title="Sort repositories"
+            minWidth="180px"
+            icon="sort"
+          />
+        </div>
         <span class="repo-page__results">
           {filteredSummaries.length} {filteredSummaries.length === 1 ? "result" : "results"}
         </span>
@@ -465,7 +480,7 @@
 
   .repo-page__toolbar {
     display: grid;
-    grid-template-columns: minmax(220px, 360px) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(220px, 1fr) max-content max-content;
     gap: 12px;
     align-items: center;
   }
@@ -498,29 +513,38 @@
   }
 
   .repo-page__filters,
-  .repo-page__sort,
-  .repo-page__sort label {
+  .repo-page__sort {
     display: flex;
     align-items: center;
   }
 
   .repo-page__filters {
-    flex-wrap: wrap;
-    gap: 8px;
+    overflow: hidden;
+    width: max-content;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-sm);
   }
 
   .repo-page__filter {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
-    gap: 8px;
     height: 34px;
-    padding: 0 12px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
+    padding: 0 14px;
+    border: 0;
+    border-right: 1px solid var(--border-muted);
+    background: transparent;
     color: var(--text-primary);
     font-size: 13px;
     font-weight: 500;
+    min-width: max-content;
+    white-space: nowrap;
+  }
+
+  .repo-page__filter:last-child {
+    border-right: 0;
   }
 
   .repo-page__filter:hover {
@@ -528,61 +552,36 @@
   }
 
   .repo-page__filter--active {
-    border-color: var(--accent-blue);
     background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-surface));
     color: var(--accent-blue);
-  }
-
-  .repo-page__filter span {
-    display: inline-grid;
-    min-width: 20px;
-    height: 18px;
-    place-items: center;
-    padding: 0 5px;
-    border-radius: 9px;
-    background: var(--bg-inset);
-    color: inherit;
-    font-size: 11px;
-    font-weight: 700;
   }
 
   .repo-page__sort {
     justify-content: flex-end;
     gap: 12px;
+    justify-self: end;
   }
 
-  .repo-page__sort label {
-    position: relative;
-    gap: 6px;
-    height: 34px;
-    padding: 0 30px 0 12px;
-    border: 1px solid var(--border-default);
+  .repo-page__sort-dropdown :global(.filter-btn) {
+    width: 148px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-color: var(--border-default);
     border-radius: var(--radius-md);
     background: var(--bg-surface);
-    color: var(--text-primary);
     box-shadow: var(--shadow-sm);
-  }
-
-  .repo-page__sort label > span {
-    color: var(--text-secondary);
-    font-size: 12px;
-  }
-
-  .repo-page__sort select {
-    appearance: none;
-    border: 0;
-    background: transparent;
     color: var(--text-primary);
-    font: inherit;
-    font-weight: 600;
-    outline: 0;
+    font-size: 13px;
   }
 
-  .repo-page__sort label :global(svg) {
-    position: absolute;
-    right: 10px;
-    color: var(--text-secondary);
-    pointer-events: none;
+  .repo-page__sort-dropdown :global(.filter-trigger-label) {
+    flex: 1;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .repo-page__results {

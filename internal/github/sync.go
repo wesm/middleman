@@ -1256,43 +1256,50 @@ func (s *Syncer) syncRepoOverview(
 		return
 	}
 
-	release := latestDisplayRelease(releases)
+	selectedReleases := displayReleases(releases, 3)
 	overview := db.RepoOverview{}
-	if release != nil {
-		publishedAt := release.GetPublishedAt().Time
-		overview.LatestRelease = &db.RepoRelease{
-			TagName:         release.GetTagName(),
-			Name:            release.GetName(),
-			URL:             release.GetHTMLURL(),
-			TargetCommitish: release.GetTargetCommitish(),
-			Prerelease:      release.GetPrerelease(),
-		}
-		if !publishedAt.IsZero() {
-			publishedAt = publishedAt.UTC()
-			overview.LatestRelease.PublishedAt = &publishedAt
-		}
+	for _, release := range selectedReleases {
+		overview.Releases = append(overview.Releases, repoReleaseFromGitHub(release))
+	}
+	if len(overview.Releases) > 0 {
+		overview.LatestRelease = &overview.Releases[0]
 	}
 
-	if release != nil && s.clones != nil && cloneFetchOK {
+	if len(selectedReleases) > 0 && s.clones != nil && cloneFetchOK {
 		host := repo.PlatformHost
 		if host == "" {
 			host = "github.com"
 		}
-		count, points, err := s.clones.CommitTimelineSinceTag(
+		latestRelease := selectedReleases[0]
+		count, _, countErr := s.clones.CommitTimelineSinceTag(
 			ctx, host, repo.Owner, repo.Name,
-			release.GetTagName(), repoOverviewTimelineLimit,
+			latestRelease.GetTagName(), 1,
+		)
+		if countErr != nil {
+			slog.Warn("count commits since latest release failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"tag", latestRelease.GetTagName(), "err", countErr,
+			)
+		} else {
+			overview.CommitsSinceRelease = &count
+		}
+
+		timelineRelease := selectedReleases[len(selectedReleases)-1]
+		_, points, err := s.clones.CommitTimelineSinceTag(
+			ctx, host, repo.Owner, repo.Name,
+			timelineRelease.GetTagName(), repoOverviewTimelineLimit,
 		)
 		if err != nil {
 			slog.Warn("build repo commit timeline failed",
 				"repo", repo.Owner+"/"+repo.Name,
-				"tag", release.GetTagName(), "err", err,
+				"tag", timelineRelease.GetTagName(), "err", err,
 			)
 		} else {
-			overview.CommitsSinceRelease = &count
 			overview.CommitTimeline = make([]db.RepoCommitTimelinePoint, 0, len(points))
 			for _, point := range points {
 				overview.CommitTimeline = append(overview.CommitTimeline, db.RepoCommitTimelinePoint{
 					SHA:         point.SHA,
+					Message:     point.Message,
 					CommittedAt: point.CommittedAt.UTC(),
 				})
 			}
@@ -1308,16 +1315,40 @@ func (s *Syncer) syncRepoOverview(
 	}
 }
 
-func latestDisplayRelease(
+func displayReleases(
 	releases []*gh.RepositoryRelease,
-) *gh.RepositoryRelease {
+	limit int,
+) []*gh.RepositoryRelease {
+	if limit < 1 {
+		limit = 1
+	}
+	out := make([]*gh.RepositoryRelease, 0, limit)
 	for _, release := range releases {
 		if release == nil || release.GetDraft() || release.GetTagName() == "" {
 			continue
 		}
-		return release
+		out = append(out, release)
+		if len(out) == limit {
+			return out
+		}
 	}
-	return nil
+	return out
+}
+
+func repoReleaseFromGitHub(release *gh.RepositoryRelease) db.RepoRelease {
+	out := db.RepoRelease{
+		TagName:         release.GetTagName(),
+		Name:            release.GetName(),
+		URL:             release.GetHTMLURL(),
+		TargetCommitish: release.GetTargetCommitish(),
+		Prerelease:      release.GetPrerelease(),
+	}
+	publishedAt := release.GetPublishedAt().Time
+	if !publishedAt.IsZero() {
+		publishedAt = publishedAt.UTC()
+		out.PublishedAt = &publishedAt
+	}
+	return out
 }
 
 // indexSyncRepo performs the cheap index scan: list endpoints only,

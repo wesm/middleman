@@ -97,9 +97,36 @@ describe("RepoSummaryPage", () => {
           prerelease: false,
           published_at: "2026-04-15T12:00:00Z",
         },
+        releases: [
+          {
+            tag_name: "v2.8.1",
+            name: "Version 2.8.1",
+            url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-15T12:00:00Z",
+          },
+          {
+            tag_name: "v2.8.0",
+            name: "Version 2.8.0",
+            url: "https://github.com/acme/widgets/releases/tag/v2.8.0",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-10T12:00:00Z",
+          },
+          {
+            tag_name: "v2.7.0",
+            name: "Version 2.7.0",
+            url: "https://github.com/acme/widgets/releases/tag/v2.7.0",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-05T12:00:00Z",
+          },
+        ],
         commits_since_release: 8,
         commit_timeline: [{
           sha: "abc123",
+          message: "Ship repo overview timeline",
           committed_at: "2026-04-16T12:00:00Z",
         }],
         active_authors: [
@@ -131,6 +158,25 @@ describe("RepoSummaryPage", () => {
     expect(
       screen.getByText("Investigate repo summary card"),
     ).toBeTruthy();
+    expect(screen.getByTitle("alice").getAttribute("src")).toContain(
+      "https://github.com/alice.png?size=40",
+    );
+    expect(
+      screen.getByRole("button", { name: "Release v2.8.0" }),
+    ).toBeTruthy();
+
+    const commitDot = screen.getByRole("button", {
+      name: "Commit abc123",
+    });
+    await fireEvent.mouseEnter(commitDot);
+    expect(screen.getByText("Ship repo overview timeline")).toBeTruthy();
+    await fireEvent.click(commitDot);
+    await fireEvent.mouseLeave(commitDot);
+    expect(screen.getByText("Ship repo overview timeline")).toBeTruthy();
+    await fireEvent.click(document.body);
+    expect(
+      screen.queryByText("Ship repo overview timeline"),
+    ).toBeNull();
   });
 
   it("keeps cached output visible when a sync issue exists", async () => {
@@ -282,7 +328,7 @@ describe("RepoSummaryPage", () => {
     ).toBeTruthy();
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /Stale release\s+1/ }),
+      screen.getByRole("button", { name: "Stale" }),
     );
     expect(
       screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),

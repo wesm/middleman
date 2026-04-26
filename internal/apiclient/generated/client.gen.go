@@ -561,6 +561,7 @@ type RepoSummaryAuthorResponse struct {
 // RepoSummaryCommitPointResponse defines model for RepoSummaryCommitPointResponse.
 type RepoSummaryCommitPointResponse struct {
 	CommittedAt string `json:"committed_at"`
+	Message     string `json:"message"`
 	Sha         string `json:"sha"`
 }
 
@@ -603,6 +604,7 @@ type RepoSummaryResponse struct {
 	Owner                string                            `json:"owner"`
 	PlatformHost         string                            `json:"platform_host"`
 	RecentIssues         *[]RepoSummaryIssueResponse       `json:"recent_issues"`
+	Releases             *[]RepoSummaryReleaseResponse     `json:"releases"`
 	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
 }
 

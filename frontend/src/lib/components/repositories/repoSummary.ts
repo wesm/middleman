@@ -8,11 +8,12 @@ import type {
 
 export type RepoSummaryCard = Omit<
   RepoSummary,
-  "active_authors" | "recent_issues" | "commit_timeline"
+  "active_authors" | "recent_issues" | "commit_timeline" | "releases"
 > & {
   active_authors: RepoSummaryAuthor[];
   recent_issues: RepoSummaryIssue[];
   commit_timeline: RepoSummaryCommitPointResponse[];
+  releases: RepoSummaryReleaseResponse[];
 };
 
 export interface RepoMetric {
@@ -67,5 +68,6 @@ export function normalizeSummaries(
     active_authors: summary.active_authors ?? [],
     recent_issues: summary.recent_issues ?? [],
     commit_timeline: summary.commit_timeline ?? [],
+    releases: summary.releases ?? [],
   }));
 }

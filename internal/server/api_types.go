@@ -101,6 +101,7 @@ type repoSummaryReleaseResponse struct {
 
 type repoSummaryCommitPointResponse struct {
 	SHA         string `json:"sha"`
+	Message     string `json:"message"`
 	CommittedAt string `json:"committed_at"`
 }
 
@@ -118,6 +119,7 @@ type repoSummaryResponse struct {
 	OpenIssueCount       int                              `json:"open_issue_count"`
 	MostRecentActivityAt string                           `json:"most_recent_activity_at,omitempty"`
 	LatestRelease        *repoSummaryReleaseResponse      `json:"latest_release,omitempty"`
+	Releases             []repoSummaryReleaseResponse     `json:"releases"`
 	CommitsSinceRelease  *int                             `json:"commits_since_release,omitempty"`
 	CommitTimeline       []repoSummaryCommitPointResponse `json:"commit_timeline"`
 	TimelineUpdatedAt    string                           `json:"timeline_updated_at,omitempty"`

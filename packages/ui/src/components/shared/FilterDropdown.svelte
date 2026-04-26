@@ -1,5 +1,6 @@
 <script lang="ts">
   import FunnelIcon from "@lucide/svelte/icons/funnel";
+  import ArrowUpDownIcon from "@lucide/svelte/icons/arrow-up-down";
 
   interface FilterDropdownItem {
     id: string;
@@ -28,6 +29,7 @@
     resetLabel?: string;
     onReset?: () => void;
     minWidth?: string;
+    icon?: "filter" | "sort";
   }
 
   let {
@@ -42,6 +44,7 @@
     resetLabel,
     onReset,
     minWidth = "200px",
+    icon = "filter",
   }: Props = $props();
 
   let isOpen = $state(false);
@@ -116,7 +119,11 @@
     {disabled}
     type="button"
   >
-    <FunnelIcon size={12} strokeWidth={2} aria-hidden="true" />
+    {#if icon === "sort"}
+      <ArrowUpDownIcon size={12} strokeWidth={2} aria-hidden="true" />
+    {:else}
+      <FunnelIcon size={12} strokeWidth={2} aria-hidden="true" />
+    {/if}
     <span class="filter-trigger-label">{label}</span>
     {#if detail}
       <span class="filter-trigger-detail">{detail}</span>

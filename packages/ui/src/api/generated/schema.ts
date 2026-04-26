@@ -1373,6 +1373,7 @@ export interface components {
         };
         RepoSummaryCommitPointResponse: {
             committed_at: string;
+            message: string;
             sha: string;
         };
         RepoSummaryIssueResponse: {
@@ -1416,6 +1417,7 @@ export interface components {
             owner: string;
             platform_host: string;
             recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;
+            releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
             timeline_updated_at?: string;
         };
         ResolveItemResponse: {

@@ -53,6 +53,7 @@ type RepoSummary struct {
 
 type RepoOverview struct {
 	LatestRelease       *RepoRelease
+	Releases            []RepoRelease
 	CommitsSinceRelease *int
 	CommitTimeline      []RepoCommitTimelinePoint
 	TimelineUpdatedAt   *time.Time
@@ -69,6 +70,7 @@ type RepoRelease struct {
 
 type RepoCommitTimelinePoint struct {
 	SHA         string
+	Message     string
 	CommittedAt time.Time
 }
 
