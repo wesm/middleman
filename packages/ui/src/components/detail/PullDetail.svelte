@@ -310,7 +310,12 @@
     if (!settings.allowSquash && !settings.allowMerge && settings.allowRebase) {
       return "Rebase and merge";
     }
-    return "Merge menu";
+    return "Merge";
+  }
+
+  function mergeActionHasMenu(settings: RepoSettings): boolean {
+    return [settings.allowSquash, settings.allowMerge, settings.allowRebase]
+      .filter(Boolean).length > 1;
   }
 
   function mergeActionShortLabel(settings: RepoSettings): string {
@@ -692,7 +697,7 @@
               shortLabel={mergeActionShortLabel(repoSettings)}
             >
               <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-              {#if mergeActionLabel(repoSettings) === "Merge menu"}
+              {#if mergeActionHasMenu(repoSettings)}
                 <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
               {/if}
             </ActionButton>
