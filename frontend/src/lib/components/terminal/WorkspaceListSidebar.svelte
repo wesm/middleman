@@ -248,65 +248,69 @@
             role="button"
           >
             <div class="ws-row-text">
-              <span
-                class={statusDotClass(ws)}
-                class:spinning={ws.status === "creating"}
-                aria-hidden="true"
-              ></span>
-              <span class="ws-name">{displayName(ws)}</span>
-              {#if ws.tmux_working}
+              <div class="ws-row-title">
                 <span
-                  class="working-pulse"
-                  title={workingTitle(ws)}
-                  aria-label={workingTitle(ws)}
-                ></span>
-              {/if}
-              <span class="branch-chip" title={ws.git_head_ref}>
-                <GitBranchIcon
-                  class="branch-icon"
-                  size="10"
-                  strokeWidth="2"
+                  class={statusDotClass(ws)}
+                  class:spinning={ws.status === "creating"}
                   aria-hidden="true"
-                />
-                <span class="branch-name">
-                  {shortBranch(ws.git_head_ref)}
+                ></span>
+                <span class="ws-name">{displayName(ws)}</span>
+                {#if ws.tmux_working}
+                  <span
+                    class="working-pulse"
+                    title={workingTitle(ws)}
+                    aria-label={workingTitle(ws)}
+                  ></span>
+                {/if}
+              </div>
+              <div class="ws-row-meta">
+                <span class="branch-chip" title={ws.git_head_ref}>
+                  <GitBranchIcon
+                    class="branch-icon"
+                    size="10"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  />
+                  <span class="branch-name">
+                    {shortBranch(ws.git_head_ref)}
+                  </span>
                 </span>
-              </span>
-              {#if showPush}
-                <span
-                  class="push-state"
-                  title={`${ahead} ahead, ${behind} behind upstream`}
-                >
-                  {#if ahead > 0}
-                    <span class="push-ahead">
-                      <ArrowUpIcon
-                        size="9"
-                        strokeWidth="2.5"
-                        aria-hidden="true"
-                      />{ahead}
-                    </span>
-                  {/if}
-                  {#if behind > 0}
-                    <span class="push-behind">
-                      <ArrowDownIcon
-                        size="9"
-                        strokeWidth="2.5"
-                        aria-hidden="true"
-                      />{behind}
-                    </span>
-                  {/if}
-                </span>
-              {/if}
-              {#if showDiff}
-                <span class="diff-stats">
-                  {#if adds != null}
-                    <span class="add">+{formatDiff(adds)}</span>
-                  {/if}
-                  {#if dels != null}
-                    <span class="del">−{formatDiff(dels)}</span>
-                  {/if}
-                </span>
-              {/if}
+                {#if showPush}
+                  <span
+                    class="push-state"
+                    title={`${ahead} ahead, ${behind} behind upstream`}
+                  >
+                    {#if ahead > 0}
+                      <span class="push-ahead">
+                        <ArrowUpIcon
+                          size="9"
+                          strokeWidth="2.5"
+                          aria-hidden="true"
+                        />{ahead}
+                      </span>
+                    {/if}
+                    {#if behind > 0}
+                      <span class="push-behind">
+                        <ArrowDownIcon
+                          size="9"
+                          strokeWidth="2.5"
+                          aria-hidden="true"
+                        />{behind}
+                      </span>
+                    {/if}
+                  </span>
+                {/if}
+                {#if showDiff}
+                  <span class="diff-stats">
+                    {#if adds != null}
+                      <span class="add">+{formatDiff(adds)}</span>
+                    {/if}
+                    {#if dels != null}
+                      <span class="del">−{formatDiff(dels)}</span>
+                    {/if}
+                  </span>
+                {/if}
+              </div>
             </div>
             <button
               class={["item-bubble", itemStateClass(ws)]}
@@ -449,14 +453,16 @@
   }
 
   .ws-row {
-    /* Two columns: a flex-shrinking text region on the left and a
-     * fixed-width bubble pinned to the right. The bubble's column
-     * is independent of the text region's content, so push counts
-     * or diff stats can never push it left or off-screen. */
+    /* Two columns: a flex-shrinking text region on the left (which
+     * holds two lines — title + meta) and a fixed-width bubble
+     * pinned to the right. The bubble lives outside .ws-row-text,
+     * so push counts or diff stats in the meta line can never
+     * shift it left or off-screen — its X is anchored to the rail's
+     * right edge for every row. */
     display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px 4px 14px;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 8px 5px 14px;
     border-left: 2px solid transparent;
     cursor: pointer;
     position: relative;
@@ -482,16 +488,28 @@
   }
 
   .ws-row-text {
-    /* All text-side content (status, title, branch, push, diff)
-     * shares one row and competes for the available width. The
-     * title gets flex:1 and shrinks first via ellipsis; everything
-     * after it is flex-shrink:0 so they keep their natural size
-     * until container queries hide them. */
+    /* Stacks the title and meta lines inside the left column. Has
+     * to set min-width:0 so its own content can shrink rather than
+     * pushing the bubble off-screen. */
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ws-row-title {
+    display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
+  }
+
+  .ws-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
 
   .status-dot {
@@ -567,20 +585,18 @@
   }
 
   .branch-chip {
-    /* Sits inline with the title; allowed to shrink (so push/diff
-     * stats remain readable), but never grows past its content
-     * width and truncates with ellipsis when squeezed. */
+    /* Lives on the meta line; takes whatever width is left after
+     * push state and diff stats and truncates with ellipsis. */
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
-    max-width: 50%;
     overflow: hidden;
     font-family: var(--font-mono);
     font-size: 10.5px;
     font-weight: 500;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     letter-spacing: 0;
     /* Tabular numerals + slightly tighter tracking turn the branch
      * line into a JetBrains-style "ref chip" rather than soft prose. */
@@ -606,8 +622,13 @@
      * "soft solid"; the fg is the same accent darkened toward black
      * so the number always has high contrast against the bg. The
      * literal white/black anchors keep the look identical across
-     * light and dark themes (matching GitHub label semantics). */
+     * light and dark themes (matching GitHub label semantics).
+     * Sits in its own flex column with align-self:flex-start so
+     * it pins to the row's top edge regardless of the meta line's
+     * height. */
     flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 1px;
     height: 16px;
     padding: 0 6px;
     border: 1px solid transparent;
