@@ -292,7 +292,7 @@
   }
 </script>
 
-{#if issues.isIssueDetailLoading()}
+{#if issues.isIssueDetailLoading() && issues.getIssueDetail() === null}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
 {:else if issues.getIssueDetailError() !== null && issues.getIssueDetail() === null}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>

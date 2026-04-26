@@ -321,7 +321,7 @@
   }
 </script>
 
-{#if detailStore.isDetailLoading()}
+{#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
 {:else if detailStore.getDetailError() !== null && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>

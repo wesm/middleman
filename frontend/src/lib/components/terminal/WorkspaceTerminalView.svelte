@@ -283,16 +283,24 @@
   }
 
   async function fetchWorkspace(): Promise<void> {
+    // Capture the id at call time. With workspaceId changing across
+    // navigations, a slow in-flight fetch for the previous id could
+    // otherwise resolve after a newer fetch and overwrite the new
+    // workspace's data with stale content (causing a perceived flash
+    // back to the previous workspace).
+    const id = workspaceId;
     try {
       const url =
         `${basePath}/api/v1/workspaces` +
-        `/${encodeURIComponent(workspaceId)}`;
+        `/${encodeURIComponent(id)}`;
       const res = await fetch(url);
+      if (id !== workspaceId) return;
       if (!res.ok) {
         loadError = `Failed to load workspace (${res.status})`;
         return;
       }
       const data = (await res.json()) as Workspace;
+      if (id !== workspaceId) return;
       workspace = data;
       loadError = null;
       actionError = null;
@@ -304,6 +312,7 @@
         void fetchRuntime();
       }
     } catch (err) {
+      if (id !== workspaceId) return;
       loadError =
         err instanceof Error
           ? err.message
@@ -313,8 +322,11 @@
 
   async function fetchRuntime(): Promise<void> {
     if (!workspaceId) return;
+    const id = workspaceId;
     try {
-      runtime = await getWorkspaceRuntime(workspaceId);
+      const data = await getWorkspaceRuntime(id);
+      if (id !== workspaceId) return;
+      runtime = data;
       runtimeError = null;
       if (
         activeTabKey.startsWith("session:") &&
@@ -323,6 +335,7 @@
         activeTabKey = "home";
       }
     } catch (err) {
+      if (id !== workspaceId) return;
       runtimeError =
         err instanceof Error
           ? err.message
@@ -494,26 +507,41 @@
   // bare /workspaces route) without remounting the entire view.
   // Removing the {#key} that previously wrapped this component in
   // App.svelte means the lifecycle is now driven entirely by this
-  // effect, so it must both clean up the previous workspace's
-  // subscriptions and tear down per-workspace state when the id
-  // changes (or clears).
+  // effect.
+  //
+  // Critically, this effect must NOT null out `workspace` or
+  // `runtime` between switches: the right sidebar and stage area
+  // both gate on those values being non-null, so clearing them
+  // would unmount the right sidebar and replace the stage with the
+  // "Setting up workspace…" spinner — the flash the user is trying
+  // to avoid. Instead we let the previous workspace's data stay on
+  // screen until the new fetchWorkspace() resolves and overwrites
+  // it in place.
   $effect(() => {
     const id = workspaceId;
 
-    // Reset per-workspace state so a switch never shows stale
-    // data from the previous workspace before the new fetch lands.
-    workspace = null;
-    runtime = null;
-    loadError = null;
-    actionError = null;
-    runtimeError = null;
+    // Tab state from the previous workspace can't be valid for a
+    // different workspace's runtime, so reset these even though
+    // workspace/runtime themselves are kept.
     activeTabKey = "home";
     tmuxTabOpen = false;
     launchingKey = null;
-    shellOpen = false;
     shellLoading = false;
 
-    if (!id) return;
+    // Errors/transient flags from the prior workspace should not
+    // bleed across — clear them but don't touch workspace/runtime.
+    loadError = null;
+    actionError = null;
+    runtimeError = null;
+
+    if (!id) {
+      // /workspaces route: drop workspace data so the empty-state
+      // message renders rather than continuing to show whatever
+      // the previous /terminal/{id} session left behind.
+      workspace = null;
+      runtime = null;
+      return;
+    }
 
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
