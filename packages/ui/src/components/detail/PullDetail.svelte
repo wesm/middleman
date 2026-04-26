@@ -1094,6 +1094,7 @@
   }
 
   .detail-header {
+    position: relative;
     display: flex;
     align-items: flex-start;
     gap: 10px;
@@ -1106,14 +1107,17 @@
     line-height: 1.35;
     flex: 1;
     min-width: 0;
+    padding-right: min(300px, 42cqw);
   }
 
   .header-command-group {
+    position: absolute;
+    top: 0;
+    right: 0;
     display: flex;
     align-items: flex-start;
     gap: 10px;
     flex-shrink: 0;
-    margin-left: auto;
   }
 
   .edit-title-btn {
@@ -1368,7 +1372,12 @@
       flex-wrap: wrap;
     }
 
+    .detail-title {
+      padding-right: 0;
+    }
+
     .header-command-group {
+      position: static;
       width: 100%;
       margin-left: 0;
     }
