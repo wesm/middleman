@@ -439,6 +439,10 @@ func newServer(
 			idx := strings.Replace(indexTemplate, "<head>",
 				`<head><script>`+s.bootstrapScript()+`</script>`, 1)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// index.html references content-hashed bundles. Browsers
+			// must always re-fetch it so a rebuild is picked up; the
+			// hashed assets it references can still be cached forever.
+			w.Header().Set("Cache-Control", "no-store, must-revalidate")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(idx))
 		}
@@ -457,6 +461,10 @@ func newServer(
 			f, err := frontend.Open(name)
 			if err == nil {
 				f.Close()
+				if strings.HasPrefix(r.URL.Path, "/assets/") {
+					w.Header().Set("Cache-Control",
+						"public, max-age=31536000, immutable")
+				}
 				fileServer.ServeHTTP(w, r)
 				return
 			}

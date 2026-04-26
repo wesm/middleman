@@ -2,7 +2,7 @@
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import PanelBottomIcon from "@lucide/svelte/icons/panel-bottom";
   import TerminalPane from "./TerminalPane.svelte";
-  import { workspaceShellWebSocketPath } from "../../api/workspace-runtime.ts";
+  import { workspaceShellWebSocketPath } from "../../api/workspace-runtime.js";
 
   interface ShellDrawerProps {
     workspaceId: string;

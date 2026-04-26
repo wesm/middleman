@@ -16,7 +16,7 @@
     workspaceSessionWebSocketPath,
     workspaceTmuxWebSocketPath,
     type WorkspaceRuntimeState,
-  } from "../../api/workspace-runtime.ts";
+  } from "../../api/workspace-runtime.js";
   import {
     CollapsibleResizableSidebar,
     WorkspaceRightSidebar,

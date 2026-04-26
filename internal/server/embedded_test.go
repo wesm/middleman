@@ -144,3 +144,57 @@ func TestBootstrapNoEmbedConfig(t *testing.T) {
 	assert.NotContains(body, `__middleman_config`)
 	assert.Contains(body, `window.__BASE_PATH__="/app/"`)
 }
+
+func TestSPACacheHeaders(t *testing.T) {
+	frontend := fstest.MapFS{
+		"index.html": &fstest.MapFile{
+			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
+		},
+		"assets/index-DEADBEEF.js": &fstest.MapFile{
+			Data: []byte(`console.log("bundle");`),
+		},
+		"favicon.ico": &fstest.MapFile{
+			Data: []byte(`icon`),
+		},
+	}
+
+	srv := setupEmbeddedServer(t, "/", frontend, ServerOptions{})
+
+	cases := []struct {
+		name         string
+		path         string
+		wantCacheHdr string
+	}{
+		{
+			name:         "index served at root must not be cached",
+			path:         "/",
+			wantCacheHdr: "no-store, must-revalidate",
+		},
+		{
+			name:         "spa fallback must not be cached",
+			path:         "/some/spa/route",
+			wantCacheHdr: "no-store, must-revalidate",
+		},
+		{
+			name:         "hashed assets are immutable",
+			path:         "/assets/index-DEADBEEF.js",
+			wantCacheHdr: "public, max-age=31536000, immutable",
+		},
+		{
+			name:         "non-hashed top-level files are not given immutable headers",
+			path:         "/favicon.ico",
+			wantCacheHdr: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			assert := Assert.New(t)
+			assert.Equal(http.StatusOK, rr.Code)
+			assert.Equal(tc.wantCacheHdr, rr.Header().Get("Cache-Control"))
+		})
+	}
+}
