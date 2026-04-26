@@ -100,13 +100,17 @@ func TestRoborevProxyForwarding(t *testing.T) {
 
 func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 
 	var mu sync.Mutex
 	var receivedMethod, receivedPath, receivedQuery, receivedBody string
 	daemon := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
 			mu.Lock()
 			receivedMethod = r.Method
@@ -130,16 +134,16 @@ func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 		middleman.URL+"/api/roborev/api/jobs/123/retry?force=1",
 		strings.NewReader(`{"reason":"retry"}`),
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
+	require.NoError(err)
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode, string(respBody))
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode, string(respBody))
 
 	mu.Lock()
 	gotMethod := receivedMethod
