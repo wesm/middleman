@@ -118,8 +118,9 @@ type createIssueInput struct {
 	Owner string `path:"owner"`
 	Name  string `path:"name"`
 	Body  struct {
-		Title string `json:"title"`
-		Body  string `json:"body"`
+		Title        string `json:"title"`
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host,omitempty"`
 	}
 }
 
@@ -1006,17 +1007,38 @@ func (s *Server) createIssue(
 		return nil, huma.Error400BadRequest("issue title must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
-	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
+
+	if platformHost == "" {
+		repos, err := s.db.ListRepos(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("repo lookup failed")
+		}
+		matches := 0
+		for _, candidate := range repos {
+			if strings.EqualFold(candidate.Owner, input.Owner) &&
+				strings.EqualFold(candidate.Name, input.Name) {
+				matches++
+			}
+		}
+		if matches > 1 {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 	}
 
-	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, "")
+	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
 			return nil, huma.Error404NotFound("repo not found")
 		}
 		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
 	}
 
 	ghIssue, err := client.CreateIssue(

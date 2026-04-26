@@ -800,6 +800,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            platform_host?: string;
             title: string;
         };
         CreateIssueWorkspaceInputBody: {

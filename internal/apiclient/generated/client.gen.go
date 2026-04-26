@@ -101,9 +101,10 @@ type CommitsResponse struct {
 // CreateIssueInputBody defines model for CreateIssueInputBody.
 type CreateIssueInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Body   string  `json:"body"`
-	Title  string  `json:"title"`
+	Schema       *string `json:"$schema,omitempty"`
+	Body         string  `json:"body"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Title        string  `json:"title"`
 }
 
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.

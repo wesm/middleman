@@ -222,6 +222,8 @@
     summary: RepoSummaryCardData,
   ): Promise<void> {
     const key = repoKey(summary);
+    if (issueSubmittingByRepo[key]) return;
+
     const title = (issueTitleByRepo[key] ?? "").trim();
     if (title === "") {
       issueErrorByRepo[key] = "Title is required.";
@@ -243,6 +245,7 @@
         body: {
           title,
           body: issueBodyByRepo[key] ?? "",
+          platform_host: summary.platform_host,
         },
       },
     );
@@ -260,8 +263,11 @@
     issueBodyByRepo[key] = "";
     composerSummary = null;
     setGlobalRepo(key);
+    const platformQuery = summary.platform_host
+      ? `?platform_host=${encodeURIComponent(summary.platform_host)}`
+      : "";
     navigate(
-      `/issues/${summary.owner}/${summary.name}/${data.Number}`,
+      `/issues/${summary.owner}/${summary.name}/${data.Number}${platformQuery}`,
     );
   }
 
@@ -420,7 +426,7 @@
           onopenissue={(number) =>
             filterAndNavigate(
               summary,
-              `/issues/${summary.owner}/${summary.name}/${number}`,
+              `/issues/${summary.owner}/${summary.name}/${number}?platform_host=${encodeURIComponent(summary.platform_host)}`,
             )}
         />
       {/each}

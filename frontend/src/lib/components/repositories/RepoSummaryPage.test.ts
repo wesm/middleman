@@ -418,6 +418,7 @@ describe("RepoSummaryPage", () => {
           body: {
             title: "Ship repo summaries",
             body: "Need a compact repo dashboard.",
+            platform_host: "github.com",
           },
         }),
       );
@@ -425,7 +426,68 @@ describe("RepoSummaryPage", () => {
         "acme/widgets",
       );
       expect(mockNavigate).toHaveBeenCalledWith(
-        "/issues/acme/widgets/27",
+        "/issues/acme/widgets/27?platform_host=github.com",
+      );
+    });
+  });
+
+  it("does not send duplicate issue create requests while submitting", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 2,
+        open_pr_count: 1,
+        draft_pr_count: 0,
+        cached_issue_count: 1,
+        open_issue_count: 1,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+    let resolvePost:
+      | ((value: { data: { Number: number }; error: undefined }) => void)
+      | undefined;
+    mockPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      {
+        target: { value: "Ship repo summaries" },
+      },
+    );
+
+    const createButton = screen.getByRole("button", {
+      name: "Create issue",
+    });
+    await fireEvent.submit(createButton);
+    await fireEvent.submit(createButton);
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    resolvePost?.({
+      data: { Number: 27 },
+      error: undefined,
+    });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/issues/acme/widgets/27?platform_host=github.com",
       );
     });
   });

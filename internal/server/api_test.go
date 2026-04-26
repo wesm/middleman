@@ -2391,6 +2391,96 @@ func TestAPICreateIssue(t *testing.T) {
 	assert.Equal("a2eeef", issue.Labels[0].Color)
 }
 
+func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	githubCalled := false
+	enterpriseCalled := false
+	githubClient := &mockGH{
+		createIssueFn: func(_ context.Context, _, _, _, _ string) (*gh.Issue, error) {
+			githubCalled = true
+			return nil, errors.New("wrong host")
+		},
+	}
+	enterpriseClient := &mockGH{
+		createIssueFn: func(_ context.Context, owner, repo, title, body string) (*gh.Issue, error) {
+			enterpriseCalled = true
+			number := 44
+			state := "open"
+			url := fmt.Sprintf("https://ghe.example.com/%s/%s/issues/%d", owner, repo, number)
+			login := "issue-bot"
+			ts := gh.Timestamp{Time: time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)}
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				Body:      &body,
+				State:     &state,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &login},
+				CreatedAt: &ts,
+				UpdatedAt: &ts,
+			}, nil
+		},
+	}
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widgets", PlatformHost: "ghe.example.com"},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": enterpriseClient,
+		},
+		database,
+		nil,
+		repos,
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	_, err = database.UpsertRepo(context.Background(), "github.com", "acme", "widgets")
+	require.NoError(err)
+	enterpriseRepoID, err := database.UpsertRepo(context.Background(), "ghe.example.com", "acme", "widgets")
+	require.NoError(err)
+
+	body := strings.NewReader(`{
+		"title": "Ship enterprise issue",
+		"body": "Route to the selected host.",
+		"platform_host": "ghe.example.com"
+	}`)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/repos/acme/widgets/issues",
+		body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusCreated, rec.Code)
+	assert.False(githubCalled)
+	assert.True(enterpriseCalled)
+	issue, err := database.GetIssueByRepoIDAndNumber(
+		context.Background(),
+		enterpriseRepoID,
+		44,
+	)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("Ship enterprise issue", issue.Title)
+}
+
 func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(
