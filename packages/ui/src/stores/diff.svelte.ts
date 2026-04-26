@@ -1,4 +1,11 @@
-import type { DiffResult, FilesResult, CommitInfo } from "../api/types.js";
+import type {
+  DiffResult,
+  FilesResult,
+  CommitInfo,
+} from "../api/types.js";
+import { createAPIClient } from "../api/generated/client.js";
+import type { components } from "../api/generated/schema.js";
+import type { MiddlemanClient } from "../types.js";
 
 export type DiffScope =
   | { kind: "head" }
@@ -6,7 +13,40 @@ export type DiffScope =
   | { kind: "range"; fromSha: string; toSha: string };
 
 export interface DiffStoreOptions {
+  client?: MiddlemanClient;
   getBasePath?: () => string;
+}
+
+function apiErrorMessage(
+  error: { detail?: string; title?: string } | undefined,
+  fallback: string,
+): string {
+  return error?.detail ?? error?.title ?? fallback;
+}
+
+type DiffResponse = components["schemas"]["DiffResponse"];
+type FilesResponse = components["schemas"]["FilesResponse"];
+
+function normalizeDiffResult(data: DiffResponse): DiffResult {
+  return {
+    ...data,
+    files: data.files ?? [],
+  } as DiffResult;
+}
+
+function normalizeFilesResult(data: FilesResponse): FilesResult {
+  return {
+    ...data,
+    files: data.files ?? [],
+  } as FilesResult;
+}
+
+function apiBaseURL(basePath: string): string {
+  const path = `${basePath.replace(/\/$/, "")}/api/v1`;
+  if (typeof window !== "undefined") {
+    return new URL(path, window.location.origin).toString();
+  }
+  return `http://localhost${path}`;
 }
 
 function safeGetItem(key: string): string | null {
@@ -71,6 +111,11 @@ function saveCollapsedFiles(
 
 export function createDiffStore(opts?: DiffStoreOptions) {
   const getBasePath = opts?.getBasePath ?? (() => "/");
+  const apiClient =
+    opts?.client ??
+    createAPIClient(apiBaseURL(getBasePath()), {
+      fetch: globalThis.fetch.bind(globalThis),
+    });
 
   let diff = $state<DiffResult | null>(null);
   let loading = $state(false);
@@ -203,25 +248,27 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     loading = true;
     storeError = null;
     try {
-      const basePath = getBasePath();
-      const reloadParams = new URLSearchParams();
-      if (hideWhitespace) reloadParams.set("whitespace", "hide");
-      if (scope.kind === "commit") reloadParams.set("commit", scope.sha);
-      if (scope.kind === "range") {
-        reloadParams.set("from", scope.fromSha);
-        reloadParams.set("to", scope.toSha);
-      }
-      const reloadQs = reloadParams.toString();
-      const url =
-        `${basePath}api/v1/repos/` +
-        `${encodeURIComponent(currentOwner)}/` +
-        `${encodeURIComponent(currentName)}/` +
-        `pulls/${currentNumber}/diff` +
-        (reloadQs ? `?${reloadQs}` : "");
-      const data = await fetchJSON(url, ac.signal);
+      const { data, error, response } = await apiClient.GET(
+        "/repos/{owner}/{name}/pulls/{number}/diff",
+        {
+          params: {
+            path: {
+              owner: currentOwner,
+              name: currentName,
+              number: currentNumber,
+            },
+            query: diffQuery(),
+          },
+          signal: ac.signal,
+        },
+      );
       if (abortController !== ac) return;
-      diff = data as DiffResult;
-      setActiveIfNeeded((data as DiffResult).files);
+      if (!data) {
+        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+      }
+      const result = normalizeDiffResult(data);
+      diff = result;
+      setActiveIfNeeded(result.files);
     } catch (err) {
       if (ac.signal.aborted) return;
       if (abortController !== ac) return;
@@ -257,21 +304,20 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     saveCollapsedFiles(collapsedFiles);
   }
 
-  function fetchJSON(
-    url: string,
-    signal: AbortSignal,
-  ): Promise<unknown> {
-    return fetch(url, { signal }).then(async (r) => {
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error(
-          (body as Record<string, string>).detail ??
-            (body as Record<string, string>).title ??
-            `HTTP ${r.status}`,
-        );
-      }
-      return r.json();
-    });
+  function diffQuery(): {
+    whitespace?: string;
+    commit?: string;
+    from?: string;
+    to?: string;
+  } {
+    return {
+      ...(hideWhitespace && { whitespace: "hide" }),
+      ...(scope.kind === "commit" && { commit: scope.sha }),
+      ...(scope.kind === "range" && {
+        from: scope.fromSha,
+        to: scope.toSha,
+      }),
+    };
   }
 
   function setActiveIfNeeded(
@@ -316,22 +362,20 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     fileListLoading = true;
     storeError = null;
 
-    const basePath = getBasePath();
-    const prefix =
-      `${basePath}api/v1/repos/` +
-      `${encodeURIComponent(owner)}/` +
-      `${encodeURIComponent(name)}/` +
-      `pulls/${number}`;
-
     const filesPromise = (async () => {
       try {
-        const data = await fetchJSON(
-          `${prefix}/files`,
-          filesAc.signal,
+        const { data } = await apiClient.GET(
+          "/repos/{owner}/{name}/pulls/{number}/files",
+          {
+            params: { path: { owner, name, number } },
+            signal: filesAc.signal,
+          },
         );
         if (fileListAbortController !== filesAc) return;
-        fileList = data as FilesResult;
-        setActiveIfNeeded((data as FilesResult).files);
+        if (!data) return;
+        const result = normalizeFilesResult(data);
+        fileList = result;
+        setActiveIfNeeded(result.files);
       } catch {
         if (filesAc.signal.aborted) return;
         if (fileListAbortController !== filesAc) return;
@@ -348,19 +392,23 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     const diffPromise = (async () => {
       try {
-        const params = new URLSearchParams();
-        if (hideWhitespace) params.set("whitespace", "hide");
-        if (scope.kind === "commit") params.set("commit", scope.sha);
-        if (scope.kind === "range") {
-          params.set("from", scope.fromSha);
-          params.set("to", scope.toSha);
-        }
-        const qs = params.toString();
-        const url = `${prefix}/diff${qs ? `?${qs}` : ""}`;
-        const data = await fetchJSON(url, diffAc.signal);
+        const { data, error, response } = await apiClient.GET(
+          "/repos/{owner}/{name}/pulls/{number}/diff",
+          {
+            params: {
+              path: { owner, name, number },
+              query: diffQuery(),
+            },
+            signal: diffAc.signal,
+          },
+        );
         if (abortController !== diffAc) return;
-        diff = data as DiffResult;
-        setActiveIfNeeded((data as DiffResult).files);
+        if (!data) {
+          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+        }
+        const result = normalizeDiffResult(data);
+        diff = result;
+        setActiveIfNeeded(result.files);
       } catch (_err) {
         if (diffAc.signal.aborted) return;
         if (abortController !== diffAc) return;
@@ -417,25 +465,18 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const name = currentName;
     const number = currentNumber;
     try {
-      const basePath = getBasePath();
-      const url =
-        `${basePath}api/v1/repos/` +
-        `${encodeURIComponent(owner)}/` +
-        `${encodeURIComponent(name)}/` +
-        `pulls/${number}/commits`;
-      const response = await fetch(url);
+      const { data, error, response } = await apiClient.GET(
+        "/repos/{owner}/{name}/pulls/{number}/commits",
+        {
+          params: { path: { owner, name, number } },
+        },
+      );
       if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(
-          (body as Record<string, string>).detail ??
-            (body as Record<string, string>).title ??
-            `HTTP ${response.status}`,
-        );
+      if (!data) {
+        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
-      const data = (await response.json()) as { commits: CommitInfo[] };
       if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
-      commits = data.commits;
+      commits = data.commits ?? [];
     } catch (err) {
       if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
       commitsError = err instanceof Error ? err.message : String(err);

@@ -1,10 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { navigate } from "../../stores/router.svelte.ts";
+  import {
+    navigate,
+    buildItemRoute,
+  } from "../../stores/router.svelte.ts";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
+  import { client } from "../../api/runtime.js";
 
   interface Workspace {
     id: string;
@@ -73,14 +77,9 @@
 
   async function fetchWorkspaces(): Promise<void> {
     try {
-      const res = await fetch(
-        `${basePath}/api/v1/workspaces`,
-      );
-      if (!res.ok) return;
-      const data = (await res.json()) as {
-        workspaces: Workspace[];
-      };
-      workspaces = data.workspaces ?? [];
+      const { data } = await client.GET("/workspaces");
+      if (!data) return;
+      workspaces = (data.workspaces ?? []) as Workspace[];
     } catch {
       // Network error; keep stale list.
     }

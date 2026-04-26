@@ -2,17 +2,15 @@
   import { getStores } from "@middleman/ui";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
+  import { client } from "../../api/runtime.js";
 
   const { pulls, issues, sync } = getStores();
-
-  const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
 
   let appVersion = $state("");
 
   $effect(() => {
-    fetch(`${basePath}/api/v1/version`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data?.version) appVersion = data.version; })
+    void client.GET("/version")
+      .then(({ data }) => { if (data?.version) appVersion = data.version; })
       .catch(() => {});
   });
 

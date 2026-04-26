@@ -1,8 +1,9 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
+import type { MiddlemanClient } from "../../types.js";
 
 export interface DaemonStoreOptions {
   client: RoborevClient;
-  healthBaseUrl: string;
+  middlemanClient: MiddlemanClient;
   onRecover?: () => void;
 }
 
@@ -28,11 +29,10 @@ export function createDaemonStore(
     const prevAvailable = available;
     loading = true;
     try {
-      const base = opts.healthBaseUrl.replace(/\/$/, "");
-      const resp = await fetch(
-        `${base}/roborev/status`,
+      const { data, error } = await opts.middlemanClient.GET(
+        "/roborev/status",
       );
-      if (!resp.ok) {
+      if (error || !data) {
         available = false;
         queuedJobs = 0;
         runningJobs = 0;
@@ -43,10 +43,9 @@ export function createDaemonStore(
         maxWorkers = 0;
         return;
       }
-      const data = await resp.json();
-      available = data.available ?? false;
-      version = data.version ?? "";
-      endpoint = data.endpoint ?? "";
+      available = data.available;
+      version = data.version;
+      endpoint = data.endpoint;
     } catch {
       available = false;
       queuedJobs = 0;

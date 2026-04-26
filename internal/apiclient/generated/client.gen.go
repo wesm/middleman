@@ -5115,9 +5115,6 @@ type ClientWithResponsesInterface interface {
 	// GetActivityWithResponse request
 	GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
 
-	// StreamEventsWithResponse request
-	StreamEventsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StreamEventsResponse, error)
-
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
 
@@ -5334,28 +5331,6 @@ func (r GetActivityResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetActivityResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type StreamEventsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r StreamEventsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r StreamEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -6604,15 +6579,6 @@ func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, param
 	return ParseGetActivityResponse(rsp)
 }
 
-// StreamEventsWithResponse request returning *StreamEventsResponse
-func (c *ClientWithResponses) StreamEventsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StreamEventsResponse, error) {
-	rsp, err := c.StreamEvents(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseStreamEventsResponse(rsp)
-}
-
 // ListIssuesWithResponse request returning *ListIssuesResponse
 func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error) {
 	rsp, err := c.ListIssues(ctx, params, reqEditors...)
@@ -7264,32 +7230,6 @@ func ParseGetActivityResponse(rsp *http.Response) (*GetActivityResponse, error) 
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseStreamEventsResponse parses an HTTP response from a StreamEventsWithResponse call
-func ParseStreamEventsResponse(rsp *http.Response) (*StreamEventsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &StreamEventsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

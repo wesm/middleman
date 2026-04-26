@@ -1,9 +1,25 @@
 import type { Settings } from "@middleman/ui/api/types";
+import type { components } from "@middleman/ui/api/schema";
 
-const basePath = ((globalThis as typeof globalThis & {
-  window?: { __BASE_PATH__?: string };
-}).window?.__BASE_PATH__ ?? "/").replace(/\/$/, "");
-const BASE = `${basePath}/api/v1`;
+import { apiErrorMessage, client } from "./runtime.js";
+
+type SettingsResponse = components["schemas"]["SettingsResponse"];
+type RepoPreviewGeneratedResponse =
+  components["schemas"]["RepoPreviewResponse"];
+
+function requestErrorMessage(
+  error: { detail?: string; title?: string } | undefined,
+  fallback: string,
+): string {
+  return apiErrorMessage(error, fallback);
+}
+
+function normalizeSettings(data: SettingsResponse): Settings {
+  return {
+    ...data,
+    repos: data.repos ?? [],
+  } as Settings;
+}
 
 export interface RepoPreviewRow {
   owner: string;
@@ -25,24 +41,26 @@ interface RepoInput {
   name: string;
 }
 
-async function errorFromResponse(res: Response, fallback: string): Promise<Error> {
-  const cloned = res.clone();
-  try {
-    const data = await res.json() as { error?: string; detail?: string; title?: string };
-    if (data.error) return new Error(data.error);
-    if (data.detail) return new Error(data.detail);
-    if (data.title) return new Error(data.title);
-  } catch {
-    // Fall through to text fallback.
-  }
-  const text = await cloned.text().catch(() => res.statusText);
-  return new Error(text || fallback);
+function normalizePreviewResponse(
+  data: RepoPreviewGeneratedResponse,
+): RepoPreviewResponse {
+  return {
+    ...data,
+    repos: data.repos ?? [],
+  } as RepoPreviewResponse;
 }
 
 export async function getSettings(): Promise<Settings> {
-  const res = await fetch(`${BASE}/settings`);
-  if (!res.ok) throw new Error(`GET /settings → ${res.status}`);
-  return res.json() as Promise<Settings>;
+  const { data, error, response } = await client.GET("/settings");
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(
+        error,
+        `GET /settings -> ${response.status}`,
+      ),
+    );
+  }
+  return normalizeSettings(data);
 }
 
 export async function updateSettings(
@@ -51,70 +69,99 @@ export async function updateSettings(
     terminal?: Settings["terminal"];
   },
 ): Promise<Settings> {
-  const res = await fetch(`${BASE}/settings`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(settings),
+  const { data, error, response } = await client.PUT("/settings", {
+    body: settings,
   });
-  if (!res.ok) throw new Error(`PUT /settings → ${res.status}`);
-  return res.json() as Promise<Settings>;
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(
+        error,
+        `PUT /settings -> ${response.status}`,
+      ),
+    );
+  }
+  return normalizeSettings(data);
 }
 
 export async function addRepo(
   owner: string,
   name: string,
 ): Promise<Settings> {
-  const res = await fetch(`${BASE}/repos`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, name }),
+  const { data, error, response } = await client.POST("/repos", {
+    body: { owner, name },
   });
-  if (!res.ok) throw await errorFromResponse(res, `POST /repos → ${res.status}`);
-  return res.json() as Promise<Settings>;
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(error, `POST /repos -> ${response.status}`),
+    );
+  }
+  return normalizeSettings(data);
 }
 
 export async function removeRepo(
   owner: string,
   name: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
-    { method: "DELETE", headers: { "Content-Type": "application/json" } },
+  const { error, response } = await client.DELETE(
+    "/repos/{owner}/{name}",
+    {
+      params: { path: { owner, name } },
+    },
   );
-  if (!res.ok) throw await errorFromResponse(res, `DELETE /repos → ${res.status}`);
+  if (!response.ok) {
+    throw new Error(
+      requestErrorMessage(
+        error,
+        `DELETE /repos/{owner}/{name} -> ${response.status}`,
+      ),
+    );
+  }
 }
 
 export async function refreshRepo(
   owner: string,
   name: string,
 ): Promise<Settings> {
-  const res = await fetch(
-    `${BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/refresh`,
-    { method: "POST", headers: { "Content-Type": "application/json" } },
+  const { data, error, response } = await client.POST(
+    "/repos/{owner}/{name}/refresh",
+    {
+      params: { path: { owner, name } },
+    },
   );
-  if (!res.ok) throw await errorFromResponse(res, `POST /repos/refresh → ${res.status}`);
-  return res.json() as Promise<Settings>;
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(
+        error,
+        `POST /repos/{owner}/{name}/refresh -> ${response.status}`,
+      ),
+    );
+  }
+  return normalizeSettings(data);
 }
 
 export async function previewRepos(
   owner: string,
   pattern: string,
 ): Promise<RepoPreviewResponse> {
-  const res = await fetch(`${BASE}/repos/preview`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, pattern }),
+  const { data, error, response } = await client.POST("/repos/preview", {
+    body: { owner, pattern },
   });
-  if (!res.ok) throw await errorFromResponse(res, `POST /repos/preview → ${res.status}`);
-  return res.json() as Promise<RepoPreviewResponse>;
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(error, `POST /repos/preview -> ${response.status}`),
+    );
+  }
+  return normalizePreviewResponse(data);
 }
 
 export async function bulkAddRepos(repos: RepoInput[]): Promise<Settings> {
-  const res = await fetch(`${BASE}/repos/bulk`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repos }),
+  const { data, error, response } = await client.POST("/repos/bulk", {
+    body: { repos },
   });
-  if (!res.ok) throw await errorFromResponse(res, `POST /repos/bulk → ${res.status}`);
-  return res.json() as Promise<Settings>;
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(error, `POST /repos/bulk -> ${response.status}`),
+    );
+  }
+  return normalizeSettings(data);
 }

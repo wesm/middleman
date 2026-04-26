@@ -8,11 +8,22 @@ vi.stubGlobal("localStorage", {
   clear: () => storage.clear(),
 });
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
-
 import { createDiffStore } from "@middleman/ui/stores/diff";
-import type { DiffScope } from "@middleman/ui/stores/diff";
+import type {
+  DiffScope,
+  DiffStoreOptions,
+} from "@middleman/ui/stores/diff";
+
+type TestClient = NonNullable<DiffStoreOptions["client"]>;
+
+interface TestGetOptions {
+  params?: {
+    query?: Record<string, string | number | boolean | undefined>;
+  };
+}
+
+let mockGet: ReturnType<typeof vi.fn>;
+let store: ReturnType<typeof createDiffStore>;
 
 function makeDiffResponse() {
   return {
@@ -30,45 +41,52 @@ function makeCommitsResponse(n: number = 3) {
   return { commits };
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
+function installClient(commitCount = 3): void {
+  mockGet = vi.fn(async (path: string) => {
+    if (path.includes("/commits")) {
+      return {
+        data: makeCommitsResponse(commitCount),
+        response: new Response(null),
+      };
+    }
+    if (path.includes("/files")) {
+      return {
+        data: {
+          stale: false,
+          files: makeDiffResponse().files,
+        },
+        response: new Response(null),
+      };
+    }
+    if (path.includes("/diff")) {
+      return {
+        data: makeDiffResponse(),
+        response: new Response(null),
+      };
+    }
+
+    throw new Error(`unexpected client path: ${path}`);
+  });
+  store = createDiffStore({
+    client: { GET: mockGet } as unknown as TestClient,
   });
 }
 
-function installFetchMocks(commitCount = 3): void {
-  mockFetch.mockImplementation((input: string | URL | Request) => {
-    const url = typeof input === "string"
-      ? input
-      : input instanceof URL
-        ? input.toString()
-        : input.url;
-
-    if (url.includes("/commits")) {
-      return Promise.resolve(jsonResponse(makeCommitsResponse(commitCount)));
-    }
-    if (url.includes("/files")) {
-      return Promise.resolve(jsonResponse({
-        stale: false,
-        files: makeDiffResponse().files,
-      }));
-    }
-    if (url.includes("/diff")) {
-      return Promise.resolve(jsonResponse(makeDiffResponse()));
-    }
-
-    throw new Error(`unexpected fetch URL: ${url}`);
-  });
+function lastQuery(): URLSearchParams {
+  const options = mockGet.mock.calls.at(-1)?.[1] as
+    | TestGetOptions
+    | undefined;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  return query;
 }
 
 describe("diff store scope", () => {
-  let store: ReturnType<typeof createDiffStore>;
-
   beforeEach(() => {
     storage.clear();
-    mockFetch.mockReset();
-    store = createDiffStore();
+    installClient();
   });
 
   it("starts at HEAD scope", () => {
@@ -76,7 +94,7 @@ describe("diff store scope", () => {
   });
 
   it("loadCommits fetches and stores commits", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -86,17 +104,17 @@ describe("diff store scope", () => {
   });
 
   it("loadCommits is a no-op if already loaded", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
     await store.loadCommits();
 
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockGet).toHaveBeenCalledTimes(3);
   });
 
   it("selectCommit sets scope and refetches diff", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -106,7 +124,7 @@ describe("diff store scope", () => {
   });
 
   it("selectRange orders SHAs by commit index", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -119,7 +137,7 @@ describe("diff store scope", () => {
   });
 
   it("resetToHead returns to HEAD and refetches", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -130,7 +148,7 @@ describe("diff store scope", () => {
   });
 
   it("stepPrev from HEAD goes to newest commit", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -140,7 +158,7 @@ describe("diff store scope", () => {
   });
 
   it("stepNext from HEAD is a no-op", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -150,7 +168,7 @@ describe("diff store scope", () => {
   });
 
   it("stepNext from newest commit returns to HEAD", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -161,7 +179,7 @@ describe("diff store scope", () => {
   });
 
   it("stepPrev from oldest commit is a no-op", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -172,7 +190,7 @@ describe("diff store scope", () => {
   });
 
   it("stepPrev from range collapses to fromSha", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -183,7 +201,7 @@ describe("diff store scope", () => {
   });
 
   it("stepNext from range collapses to toSha", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
@@ -194,36 +212,33 @@ describe("diff store scope", () => {
   });
 
   it("diff fetch includes commit param when scope is single commit", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
     store.selectCommit("sha2");
 
     await vi.waitFor(() => {
-      const lastCall = mockFetch.mock.calls.at(-1);
-      const url = lastCall![0] as string;
-      expect(url).toContain("commit=sha2");
+      expect(lastQuery().get("commit")).toBe("sha2");
     });
   });
 
   it("diff fetch includes from+to params when scope is range", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();
     store.selectRange("sha1", "sha3");
 
     await vi.waitFor(() => {
-      const lastCall = mockFetch.mock.calls.at(-1);
-      const url = lastCall![0] as string;
-      expect(url).toContain("from=sha1");
-      expect(url).toContain("to=sha3");
+      const query = lastQuery();
+      expect(query.get("from")).toBe("sha1");
+      expect(query.get("to")).toBe("sha3");
     });
   });
 
   it("clearDiff resets scope and commits", async () => {
-    installFetchMocks();
+    installClient();
 
     await store.loadDiff("o", "n", 1);
     await store.loadCommits();

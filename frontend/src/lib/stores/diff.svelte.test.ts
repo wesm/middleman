@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDiffStore } from "@middleman/ui/stores/diff";
+import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
 import type { DiffResult, FilesResult } from "@middleman/ui/api/types";
+
+type TestClient = NonNullable<DiffStoreOptions["client"]>;
+
+interface TestGetOptions {
+  params?: {
+    path?: Record<string, string | number>;
+    query?: Record<string, string | number | boolean | undefined>;
+  };
+  signal?: AbortSignal;
+}
 
 function makeDiffResult(files: string[]): DiffResult {
   return {
@@ -33,6 +44,48 @@ function makeFilesResult(files: string[]): FilesResult {
       hunks: [],
     })),
   };
+}
+
+function testClient(): TestClient {
+  return {
+    GET: vi.fn(
+      async (path: string, options?: TestGetOptions) => {
+        const response = await globalThis.fetch(
+          testURL(path, options),
+          options?.signal ? { signal: options.signal } : undefined,
+        );
+        if (!response.ok) {
+          return {
+            error: await response.json().catch(() => ({})),
+            response,
+          };
+        }
+        return {
+          data: await response.json(),
+          response,
+        };
+      },
+    ),
+  } as unknown as TestClient;
+}
+
+function testURL(
+  path: string,
+  options?: TestGetOptions,
+): string {
+  let url = `/api/v1${path}`;
+  for (const [key, value] of Object.entries(options?.params?.path ?? {})) {
+    url = url.replace(
+      `{${key}}`,
+      encodeURIComponent(String(value)),
+    );
+  }
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  const qs = query.toString();
+  return qs ? `${url}?${qs}` : url;
 }
 
 afterEach(() => {
@@ -84,7 +137,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
 
     // Load PR A fully.
     await store.loadDiff("owner", "repo", 1);
@@ -129,11 +182,12 @@ describe("createDiffStore loadDiff", () => {
             ? input
             : input instanceof URL
               ? input.href
-              : input.url;
+            : input.url;
+        const signal = input instanceof Request ? input.signal : init?.signal;
 
         if (url.includes("pulls/1/files")) {
           return new Promise((_resolve, reject) => {
-            init?.signal?.addEventListener("abort", () => {
+            signal?.addEventListener("abort", () => {
               filesAAborted = true;
               reject(new DOMException("Aborted", "AbortError"));
             });
@@ -141,7 +195,7 @@ describe("createDiffStore loadDiff", () => {
         }
         if (url.includes("pulls/1/diff")) {
           return new Promise((_resolve, reject) => {
-            init?.signal?.addEventListener("abort", () => {
+            signal?.addEventListener("abort", () => {
               diffAAborted = true;
               reject(new DOMException("Aborted", "AbortError"));
             });
@@ -157,7 +211,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
 
     // Start loading PR A (will hang).
     void store.loadDiff("owner", "repo", 1);
@@ -195,7 +249,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     const loadP = store.loadDiff("owner", "repo", 1);
 
     // Wait for /files to fail.
@@ -250,7 +304,7 @@ describe("createDiffStore loadDiff", () => {
 
     // Enable whitespace hiding before loading.
     localStorage.setItem("diff-hide-whitespace", "true");
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     const loadP = store.loadDiff("owner", "repo", 1);
 
     // Verify /diff request includes whitespace=hide query param.
@@ -302,7 +356,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1);
     expect(store.getFileList()?.files).toHaveLength(2);
 
@@ -339,7 +393,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1);
 
     // /diff failed — sidebar must not show stale /files data.
@@ -373,7 +427,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     const loadP = store.loadDiff("owner", "repo", 1);
 
     // /diff fails fast, /files still pending — release it.
@@ -410,7 +464,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1);
 
     // getFileList must return [] not null, even when API sends null.

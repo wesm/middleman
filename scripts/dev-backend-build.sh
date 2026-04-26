@@ -106,11 +106,7 @@ generate_api_artifacts() {
     generate_frontend_client
   fi
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" \
-    "$GO_BIN" tool oapi-codegen \
-    --config internal/apiclient/generated/config.yaml \
-    -o internal/apiclient/generated/client.gen.go \
-    internal/apiclient/spec/openapi.json
+  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" generate ./internal/apiclient/generated
 }
 
 current_inputs_hash="$(compute_inputs_hash)"

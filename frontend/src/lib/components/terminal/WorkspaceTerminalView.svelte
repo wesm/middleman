@@ -21,6 +21,7 @@
     WorkspaceRightSidebar,
   } from "@middleman/ui";
   import { AlertIcon, SpinnerIcon } from "../../icons.ts";
+  import { apiErrorMessage, client } from "../../api/runtime.js";
 
   interface Workspace {
     id: string;
@@ -367,18 +368,21 @@
     // back to the previous workspace).
     const id = workspaceId;
     try {
-      const url =
-        `${basePath}/api/v1/workspaces` +
-        `/${encodeURIComponent(id)}`;
-      const res = await fetch(url);
+      const { data, error, response } = await client.GET(
+        "/workspaces/{id}",
+        {
+          params: { path: { id } },
+        },
+      );
       if (id !== workspaceId) return;
-      if (!res.ok) {
-        loadError = `Failed to load workspace (${res.status})`;
+      if (!data) {
+        loadError = apiErrorMessage(
+          error,
+          `Failed to load workspace (${response.status})`,
+        );
         return;
       }
-      const data = (await res.json()) as Workspace;
-      if (id !== workspaceId) return;
-      workspace = data;
+      workspace = data as Workspace;
       loadError = null;
       actionError = null;
 
@@ -541,18 +545,20 @@
     retryingSetup = true;
     actionError = null;
     try {
-      const url =
-        `${basePath}/api/v1/workspaces` +
-        `/${encodeURIComponent(workspaceId)}/retry`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) {
-        actionError = `Retry failed (${res.status})`;
+      const { data, error, response } = await client.POST(
+        "/workspaces/{id}/retry",
+        {
+          params: { path: { id: workspaceId } },
+        },
+      );
+      if (!data) {
+        actionError = apiErrorMessage(
+          error,
+          `Retry failed (${response.status})`,
+        );
         return;
       }
-      workspace = (await res.json()) as Workspace;
+      workspace = data as Workspace;
       if (workspace.status === "creating") {
         startPolling();
         await fetchWorkspace();
@@ -570,34 +576,35 @@
   async function handleDelete(): Promise<void> {
     if (actionsBlocked) return;
     actionError = null;
-    const url =
-      `${basePath}/api/v1/workspaces` +
-      `/${encodeURIComponent(workspaceId)}`;
-    const res = await fetch(url, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (res.status === 409) {
-      const body = await res.json().catch(() => ({})) as {
-        detail?: string;
-      };
+    const { error, response } = await client.DELETE(
+      "/workspaces/{id}",
+      {
+        params: { path: { id: workspaceId } },
+      },
+    );
+    if (response.status === 409) {
       const msg =
-        body.detail ??
+        error?.detail ??
         "Workspace has uncommitted changes.";
       if (!confirm(`${msg}\n\nForce delete?`)) return;
-      const forceRes = await fetch(
-        `${url}?force=true`,
-        {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+      const force = await client.DELETE("/workspaces/{id}", {
+        params: {
+          path: { id: workspaceId },
+          query: { force: true },
         },
-      );
-      if (!forceRes.ok && forceRes.status !== 204) {
-        actionError = `Delete failed (${forceRes.status})`;
+      });
+      if (!force.response.ok && force.response.status !== 204) {
+        actionError = apiErrorMessage(
+          force.error,
+          `Delete failed (${force.response.status})`,
+        );
         return;
       }
-    } else if (!res.ok && res.status !== 204) {
-      actionError = `Delete failed (${res.status})`;
+    } else if (!response.ok && response.status !== 204) {
+      actionError = apiErrorMessage(
+        error,
+        `Delete failed (${response.status})`,
+      );
       return;
     }
     navigate("/workspaces");
