@@ -26,7 +26,12 @@ const (
 	SessionStatusError    SessionStatus = "error"
 )
 
-var errManagerShutdown = errors.New("runtime manager is shut down")
+var (
+	errManagerShutdown   = errors.New("runtime manager is shut down")
+	errWorkspaceStopping = errors.New(
+		"workspace is being stopped",
+	)
+)
 
 type SessionInfo struct {
 	Key         string           `json:"key"`
@@ -57,6 +62,7 @@ type Manager struct {
 	shellCommand []string
 	stripEnvVars []string
 	startLocks   map[string]*sync.Mutex
+	stoppingWS   map[string]int
 	startWG      sync.WaitGroup
 	closed       bool
 }
@@ -106,6 +112,7 @@ func NewManager(options Options) *Manager {
 		shellCommand: append([]string(nil), options.ShellCommand...),
 		stripEnvVars: dedupeStrings(options.StripEnvVars),
 		startLocks:   make(map[string]*sync.Mutex),
+		stoppingWS:   make(map[string]int),
 	}
 }
 
@@ -189,11 +196,20 @@ func (m *Manager) Launch(
 	go started.watch()
 
 	m.mu.Lock()
-	if m.closed {
+	switch {
+	case m.closed:
 		m.mu.Unlock()
 		started.stop()
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
+	case m.stoppingWS[workspaceID] > 0:
+		// StopWorkspace ran during startSession; the workspace is
+		// being torn down. Kill the process we just spawned so it
+		// does not outlive the worktree.
+		m.mu.Unlock()
+		started.stop()
+		waitSessionDone(started)
+		return SessionInfo{}, errWorkspaceStopping
 	}
 	m.sessions[key] = started
 	m.mu.Unlock()
@@ -256,7 +272,14 @@ func (m *Manager) StopWorkspace(
 	ctx context.Context,
 	workspaceID string,
 ) {
+	// Mark the workspace as stopping under the manager mutex so a
+	// concurrent Launch/EnsureShell that has already passed its
+	// readiness checks but not yet inserted into m.sessions can see
+	// the marker, kill its just-spawned process, and bail. Without
+	// this, a new session can be inserted into the map immediately
+	// after the snapshot below and outlive the worktree.
 	m.mu.Lock()
+	m.stoppingWS[workspaceID]++
 	stopping := make([]*session, 0)
 	for key, s := range m.sessions {
 		if s.snapshot().WorkspaceID == workspaceID {
@@ -271,6 +294,14 @@ func (m *Manager) StopWorkspace(
 		}
 	}
 	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.stoppingWS[workspaceID]--
+		if m.stoppingWS[workspaceID] <= 0 {
+			delete(m.stoppingWS, workspaceID)
+		}
+		m.mu.Unlock()
+	}()
 
 	for _, s := range stopping {
 		s.stop()
@@ -349,11 +380,17 @@ func (m *Manager) EnsureShell(
 	go started.watch()
 
 	m.mu.Lock()
-	if m.closed {
+	switch {
+	case m.closed:
 		m.mu.Unlock()
 		started.stop()
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
+	case m.stoppingWS[workspaceID] > 0:
+		m.mu.Unlock()
+		started.stop()
+		waitSessionDone(started)
+		return SessionInfo{}, errWorkspaceStopping
 	}
 	m.shells[key] = started
 	m.mu.Unlock()

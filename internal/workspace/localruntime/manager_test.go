@@ -132,6 +132,52 @@ func TestManagerStopRemovesSession(t *testing.T) {
 	assert.Error(mgr.Stop(ctx, "ws-1", session.Key))
 }
 
+func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	record := filepath.Join(t.TempDir(), "pids")
+	mgr := NewManager(Options{Targets: []LaunchTarget{{
+		Key: "helper", Label: "helper", Kind: LaunchTargetAgent,
+		Source: "config", Available: true,
+		Command: helperRecordCommand(record),
+	}}})
+	t.Cleanup(mgr.Shutdown)
+
+	mgr.mu.Lock()
+	mgr.stoppingWS["ws-1"] = 1
+	mgr.mu.Unlock()
+
+	_, err := mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.ErrorIs(err, errWorkspaceStopping)
+	assert.Empty(mgr.ListSessions("ws-1"))
+
+	// Whatever PID the helper recorded before being killed must be
+	// gone — no orphan from the rejected launch.
+	assert.Eventually(func() bool {
+		data, err := os.ReadFile(record)
+		if err != nil || len(data) == 0 {
+			return true // helper died before recording
+		}
+		for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+			pid, _ := strconv.Atoi(line)
+			if pid > 0 && syscall.Kill(pid, 0) == nil {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 25*time.Millisecond,
+		"rejected launch's helper process must be reaped")
+
+	// Launches succeed again once the marker clears.
+	mgr.mu.Lock()
+	delete(mgr.stoppingWS, "ws-1")
+	mgr.mu.Unlock()
+	_, err = mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+}
+
 func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
