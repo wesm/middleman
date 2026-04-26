@@ -1098,8 +1098,8 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
+    flex: 1;
     min-width: 0;
-    padding-right: min(300px, 42cqw);
   }
 
   .detail-title {
@@ -1330,9 +1330,8 @@
   }
 
   :global(.kanban-select--header) {
-    position: absolute;
-    top: 0;
-    right: 0;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   :global(.kanban-select--new .select-dropdown-trigger) {
@@ -1356,14 +1355,10 @@
       flex-wrap: wrap;
     }
 
-    .title-line {
-      padding-right: 0;
-    }
-
     :global(.kanban-select--header) {
-      position: static;
       flex: 1;
       min-width: 0;
+      margin-left: 0;
     }
   }
 
