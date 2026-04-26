@@ -38,10 +38,16 @@
     number: number;
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
+    hideWorkspaceAction?: boolean;
   }
 
   const {
-    owner, name, number, onPullsRefresh, hideTabs = false,
+    owner,
+    name,
+    number,
+    onPullsRefresh,
+    hideTabs = false,
+    hideWorkspaceAction = false,
   }: Props = $props();
 
   let activeTab = $state<"conversation" | "files">("conversation");
@@ -565,64 +571,64 @@
         {/if}
       </div>
 
-      <!-- Chips row -->
-      <div class="chips-row">
-        {#if pr.State === "merged"}
-          <Chip class="chip--purple">Merged</Chip>
-        {:else if pr.State === "closed"}
-          <Chip class="chip--red">Closed</Chip>
-        {:else if pr.IsDraft}
-          <Chip class="chip--amber">Draft</Chip>
-        {:else}
-          <Chip class="chip--green">Open</Chip>
-        {/if}
-        <CIStatus
-          status={pr.CIStatus}
-          checksJSON={pr.CIChecksJSON}
-          detailLoaded={detailStore.getDetailLoaded()}
-          detailSyncing={detailStore.isDetailSyncing()}
-          bind:expanded={ciExpanded}
-          showPanel={false}
-        />
-        {#if pr.ReviewDecision}
-          <Chip class={reviewColor(pr.ReviewDecision)}>
-            {pr.ReviewDecision.replace(/_/g, " ")}
-          </Chip>
-        {/if}
-        {#if pr.Additions > 0 || pr.Deletions > 0}
-          <Chip class="chip--muted">+{pr.Additions}/-{pr.Deletions}</Chip>
-        {/if}
-        {#if hasWorktreeLinks}
-          <Chip class="chip--teal">Worktree</Chip>
-        {/if}
-        <CIStatus
-          status={pr.CIStatus}
-          checksJSON={pr.CIChecksJSON}
-          detailLoaded={detailStore.getDetailLoaded()}
-          detailSyncing={detailStore.isDetailSyncing()}
-          bind:expanded={ciExpanded}
-          showButton={false}
-        />
+      <div class="status-band">
+        <div class="chips-row">
+          {#if pr.State === "merged"}
+            <Chip class="chip--purple">Merged</Chip>
+          {:else if pr.State === "closed"}
+            <Chip class="chip--red">Closed</Chip>
+          {:else if pr.IsDraft}
+            <Chip class="chip--amber">Draft</Chip>
+          {:else}
+            <Chip class="chip--green">Open</Chip>
+          {/if}
+          <CIStatus
+            status={pr.CIStatus}
+            checksJSON={pr.CIChecksJSON}
+            detailLoaded={detailStore.getDetailLoaded()}
+            detailSyncing={detailStore.isDetailSyncing()}
+            bind:expanded={ciExpanded}
+            showPanel={false}
+          />
+          {#if pr.ReviewDecision}
+            <Chip class={reviewColor(pr.ReviewDecision)}>
+              {pr.ReviewDecision.replace(/_/g, " ")}
+            </Chip>
+          {/if}
+          {#if pr.Additions > 0 || pr.Deletions > 0}
+            <Chip class="chip--muted">+{pr.Additions}/-{pr.Deletions}</Chip>
+          {/if}
+          {#if hasWorktreeLinks}
+            <Chip class="chip--teal">Worktree</Chip>
+          {/if}
+          <CIStatus
+            status={pr.CIStatus}
+            checksJSON={pr.CIChecksJSON}
+            detailLoaded={detailStore.getDetailLoaded()}
+            detailSyncing={detailStore.isDetailSyncing()}
+            bind:expanded={ciExpanded}
+            showButton={false}
+          />
+        </div>
+
+        <div class="kanban-control">
+          <label class="kanban-label" for="kanban-select">Status</label>
+          <select
+            id="kanban-select"
+            class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+            value={pr.KanbanStatus}
+            onchange={onKanbanChange}
+          >
+            {#each kanbanOptions as opt (opt.value)}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
       </div>
 
       {#if labels.length > 0}
         <GitHubLabels {labels} mode="full" />
       {/if}
-
-      <!-- Kanban state -->
-      <div class="kanban-row">
-        <label class="kanban-label" for="kanban-select">Status</label>
-        <select
-          id="kanban-select"
-          class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-          value={pr.KanbanStatus}
-          onchange={onKanbanChange}
-        >
-          {#each kanbanOptions as opt (opt.value)}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
-      </div>
 
       <!-- Mergeable state warnings -->
       {#if pr.State === "open" && pr.MergeableState === "dirty"}
@@ -770,38 +776,40 @@
         </div>
       {/if}
 
-      <!-- Workspace actions -->
-      <div class="actions-row actions-row--workspace">
-        {#if workspace}
-          <ActionButton
-            class="btn--workspace"
-            onclick={() => navigate(`/terminal/${workspace.id}`)}
-            tone="info"
-            surface="soft"
-            size="sm"
-            label="Open Workspace"
-            shortLabel="Workspace"
-          >
-            <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
-        {:else}
-          <ActionButton
-            class="btn--workspace"
-            disabled={wsCreating || stalePR}
-            onclick={() => void createWorkspace()}
-            tone="info"
-            surface="soft"
-            size="sm"
-            label={wsCreating ? "Creating..." : "Create Workspace"}
-            shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
-          >
-            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
-        {/if}
-        {#if wsError}
-          <span class="action-error">{wsError}</span>
-        {/if}
-      </div>
+      {#if !hideWorkspaceAction}
+        <!-- Workspace actions -->
+        <div class="actions-row actions-row--workspace">
+          {#if workspace}
+            <ActionButton
+              class="btn--workspace"
+              onclick={() => navigate(`/terminal/${workspace.id}`)}
+              tone="info"
+              surface="soft"
+              size="sm"
+              label="Open Workspace"
+              shortLabel="Workspace"
+            >
+              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {:else}
+            <ActionButton
+              class="btn--workspace"
+              disabled={wsCreating || stalePR}
+              onclick={() => void createWorkspace()}
+              tone="info"
+              surface="soft"
+              size="sm"
+              label={wsCreating ? "Creating..." : "Create Workspace"}
+              shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
+            >
+              <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {/if}
+          {#if wsError}
+            <span class="action-error">{wsError}</span>
+          {/if}
+        </div>
+      {/if}
 
       {#if !hasWorktreeLinks && importAction}
         <div class="actions-row">
@@ -1308,26 +1316,40 @@
     color: var(--text-muted);
   }
 
-  .chips-row {
+  .status-band {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
   }
 
-  .kanban-row {
+  .chips-row {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .kanban-control {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .kanban-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
   .kanban-select {
+    min-width: 150px;
     font-size: 12px;
     font-weight: 600;
     padding: 4px 10px;
@@ -1340,6 +1362,18 @@
 
   .kanban-select:focus {
     border-color: var(--accent-blue);
+  }
+
+  @container pull-detail (max-width: 430px) {
+    .status-band {
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .kanban-control {
+      align-self: stretch;
+      margin-left: 0;
+    }
   }
 
   .primary-actions-wrap {
