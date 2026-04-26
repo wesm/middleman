@@ -468,6 +468,14 @@ func newServer(
 				fileServer.ServeHTTP(w, r)
 				return
 			}
+			// A missing /assets/* request is a stale-bundle fetch from
+			// an old cached index.html. Returning the SPA HTML here
+			// would 200 with the wrong Content-Type and leave the page
+			// stuck on a failed module import.
+			if strings.HasPrefix(r.URL.Path, "/assets/") {
+				http.NotFound(w, r)
+				return
+			}
 			serveIndex(w)
 		})
 	}

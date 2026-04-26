@@ -53,6 +53,13 @@ type Manager struct {
 	closed       bool
 }
 
+// maxSessionOutputReplay caps how many bytes of recent PTY output
+// the session retains for replay when a new subscriber attaches.
+// Sized to comfortably hold an agent boot banner plus the first
+// prompt — without it, a fast subscribe-after-launch flow can miss
+// startup output entirely.
+const maxSessionOutputReplay = 64 * 1024
+
 type session struct {
 	mu           sync.Mutex
 	info         SessionInfo
@@ -60,6 +67,7 @@ type session struct {
 	ptmx         *os.File
 	done         chan struct{}
 	subscribers  map[chan []byte]struct{}
+	outputBuffer []byte
 	outputClosed bool
 	stopOnce     sync.Once
 }
@@ -209,6 +217,42 @@ func (m *Manager) Stop(
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// StopWorkspace stops every running agent session and shell that
+// belongs to workspaceID. It is intended to be called when a
+// workspace is deleted so launched processes do not survive the
+// worktree they were started in.
+func (m *Manager) StopWorkspace(
+	ctx context.Context,
+	workspaceID string,
+) {
+	m.mu.Lock()
+	stopping := make([]*session, 0)
+	for key, s := range m.sessions {
+		if s.snapshot().WorkspaceID == workspaceID {
+			delete(m.sessions, key)
+			stopping = append(stopping, s)
+		}
+	}
+	for key, s := range m.shells {
+		if s.snapshot().WorkspaceID == workspaceID {
+			delete(m.shells, key)
+			stopping = append(stopping, s)
+		}
+	}
+	m.mu.Unlock()
+
+	for _, s := range stopping {
+		s.stop()
+	}
+	for _, s := range stopping {
+		select {
+		case <-s.done:
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -533,6 +577,12 @@ func (s *session) broadcast(data []byte) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.outputBuffer = append(s.outputBuffer, chunk...)
+	if extra := len(s.outputBuffer) - maxSessionOutputReplay; extra > 0 {
+		s.outputBuffer = append([]byte(nil), s.outputBuffer[extra:]...)
+	}
+
 	for ch := range s.subscribers {
 		select {
 		case ch <- chunk:
@@ -547,6 +597,10 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 	ch := make(chan []byte, 64)
 
 	s.mu.Lock()
+	if len(s.outputBuffer) > 0 {
+		replay := append([]byte(nil), s.outputBuffer...)
+		ch <- replay
+	}
 	if s.outputClosed {
 		close(ch)
 		s.mu.Unlock()

@@ -268,9 +268,13 @@
     display: grid;
     grid-template-columns: 16px 1fr auto;
     align-items: center;
-    gap: 8px;
-    height: 32px;
-    padding: 0 10px;
+    gap: 4px 8px;
+    /* min-height instead of fixed height: when a card flips into the
+     * launching state it adds .card-status as a second grid row; a
+     * fixed height clipped that row, leaving "starting…" overlapping
+     * the label. */
+    min-height: 32px;
+    padding: 5px 10px;
     border: 1px solid var(--border-muted);
     border-radius: 3px;
     background: var(--bg-surface);

@@ -7503,6 +7503,51 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 	assert.Empty(*afterStopResp.JSON200.Sessions)
 }
 
+func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("sleep"),
+	}}}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+
+	shellResp, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, shellResp.StatusCode())
+
+	require.Len(srv.runtime.ListSessions(ws.Id), 1)
+	require.NotNil(srv.runtime.ShellSession(ws.Id))
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	assert.Empty(srv.runtime.ListSessions(ws.Id))
+	assert.Nil(srv.runtime.ShellSession(ws.Id))
+}
+
 func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

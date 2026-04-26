@@ -19,6 +19,7 @@
   }: LaunchMenuProps = $props();
 
   let open = $state(false);
+  let rootEl = $state<HTMLDivElement | null>(null);
 
   const visibleTargets = $derived(
     launchTargets.filter((target) => target.kind !== "plain_shell"),
@@ -34,12 +35,35 @@
     if (target.source === "config") return "configured";
     return target.source;
   }
+
+  $effect(() => {
+    if (!open) return;
+
+    function onPointerDown(ev: PointerEvent): void {
+      if (rootEl && ev.target instanceof Node && rootEl.contains(ev.target)) {
+        return;
+      }
+      open = false;
+    }
+    function onKeydown(ev: KeyboardEvent): void {
+      if (ev.key === "Escape") {
+        open = false;
+      }
+    }
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeydown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeydown);
+    };
+  });
 </script>
 
-<div class="launch-menu">
+<div class="launch-menu" bind:this={rootEl}>
   <button
     class="launch-trigger"
     aria-label="Launch"
+    aria-haspopup="true"
     aria-expanded={open}
     onclick={() => {
       open = !open;
@@ -60,14 +84,13 @@
     />
   </button>
   {#if open}
-    <div class="launch-popover" role="menu">
+    <div class="launch-popover">
       <div class="popover-heading">Run configurations</div>
       {#each visibleTargets as target (target.key)}
         {@const isTmux = target.kind === "tmux"}
         {@const isAgent = target.kind === "agent"}
         <button
           class="launch-option"
-          role="menuitem"
           disabled={!target.available || launchingKey === target.key}
           title={target.disabled_reason ?? target.label}
           onclick={() => launch(target.key)}

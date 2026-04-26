@@ -229,13 +229,20 @@
   }
 
   .tab-with-close:hover .tab-close,
-  .tab-with-close.active .tab-close {
+  .tab-with-close.active .tab-close,
+  .tab-close:focus-visible {
     color: var(--text-muted);
   }
 
-  .tab-close:hover {
+  .tab-close:hover,
+  .tab-close:focus-visible {
     background: var(--bg-inset);
     color: var(--text-primary);
+  }
+
+  .tab-close:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
   }
 
   .status-dot {

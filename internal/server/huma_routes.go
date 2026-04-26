@@ -2781,6 +2781,14 @@ func (s *Server) deleteWorkspace(
 		)
 	}
 
+	// Tear down any running runtime sessions before removing the
+	// worktree they were launched in; otherwise the agent/shell
+	// processes outlive the workspace and the runtime stop endpoints
+	// can no longer find them by workspace id.
+	if s.runtime != nil {
+		s.runtime.StopWorkspace(ctx, input.ID)
+	}
+
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
 	)

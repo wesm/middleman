@@ -267,6 +267,111 @@ func TestSessionBroadcastClosesSlowSubscriber(t *testing.T) {
 	assert.False(subscribed)
 }
 
+func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
+	s := &session{
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	s.broadcast([]byte("startup-banner\r\n"))
+	s.broadcast([]byte("$ "))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	assert := Assert.New(t)
+	select {
+	case data := <-ch:
+		assert.Equal("startup-banner\r\n$ ", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive replay")
+	}
+
+	s.broadcast([]byte("ls\r\n"))
+	select {
+	case data := <-ch:
+		assert.Equal("ls\r\n", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive new output after replay")
+	}
+}
+
+func TestSessionSubscribeAfterCloseStillReplays(t *testing.T) {
+	s := &session{
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	s.broadcast([]byte("hello\r\nbye\r\n"))
+	s.closeSubscribers()
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	assert := Assert.New(t)
+	select {
+	case data, ok := <-ch:
+		assert.True(ok)
+		assert.Equal("hello\r\nbye\r\n", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("expected replay before channel close")
+	}
+	select {
+	case _, ok := <-ch:
+		assert.False(ok)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("expected channel to close after replay")
+	}
+}
+
+func TestSessionOutputBufferIsBounded(t *testing.T) {
+	s := &session{
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	chunk := make([]byte, 8*1024)
+	for i := range chunk {
+		chunk[i] = 'x'
+	}
+	for range 12 {
+		s.broadcast(chunk)
+	}
+
+	s.mu.Lock()
+	bufLen := len(s.outputBuffer)
+	s.mu.Unlock()
+	Assert.New(t).LessOrEqual(bufLen, maxSessionOutputReplay)
+}
+
+func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	ctx := context.Background()
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			helperTarget("agent-a", "sleep"),
+			helperTarget("agent-b", "sleep"),
+		},
+		ShellCommand: helperCommand("sleep"),
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	_, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "agent-a")
+	require.NoError(err)
+	_, err = mgr.Launch(ctx, "ws-1", t.TempDir(), "agent-b")
+	require.NoError(err)
+	_, err = mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+
+	// A second workspace's sessions must survive.
+	_, err = mgr.Launch(ctx, "ws-2", t.TempDir(), "agent-a")
+	require.NoError(err)
+
+	mgr.StopWorkspace(ctx, "ws-1")
+
+	assert.Empty(mgr.ListSessions("ws-1"))
+	assert.Nil(mgr.ShellSession("ws-1"))
+	assert.Len(mgr.ListSessions("ws-2"), 1)
+}
+
 func helperTarget(key, mode string) LaunchTarget {
 	return LaunchTarget{
 		Key: key, Label: key, Kind: LaunchTargetAgent,

@@ -163,26 +163,37 @@ func TestSPACacheHeaders(t *testing.T) {
 	cases := []struct {
 		name         string
 		path         string
+		wantStatus   int
 		wantCacheHdr string
 	}{
 		{
 			name:         "index served at root must not be cached",
 			path:         "/",
+			wantStatus:   http.StatusOK,
 			wantCacheHdr: "no-store, must-revalidate",
 		},
 		{
 			name:         "spa fallback must not be cached",
 			path:         "/some/spa/route",
+			wantStatus:   http.StatusOK,
 			wantCacheHdr: "no-store, must-revalidate",
 		},
 		{
 			name:         "hashed assets are immutable",
 			path:         "/assets/index-DEADBEEF.js",
+			wantStatus:   http.StatusOK,
 			wantCacheHdr: "public, max-age=31536000, immutable",
+		},
+		{
+			name:         "missing hashed asset returns 404",
+			path:         "/assets/index-MISSING.js",
+			wantStatus:   http.StatusNotFound,
+			wantCacheHdr: "",
 		},
 		{
 			name:         "non-hashed top-level files are not given immutable headers",
 			path:         "/favicon.ico",
+			wantStatus:   http.StatusOK,
 			wantCacheHdr: "",
 		},
 	}
@@ -193,7 +204,7 @@ func TestSPACacheHeaders(t *testing.T) {
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
 			assert := Assert.New(t)
-			assert.Equal(http.StatusOK, rr.Code)
+			assert.Equal(tc.wantStatus, rr.Code)
 			assert.Equal(tc.wantCacheHdr, rr.Header().Get("Cache-Control"))
 		})
 	}
