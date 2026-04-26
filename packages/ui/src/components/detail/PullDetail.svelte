@@ -1368,6 +1368,10 @@
     text-overflow: ellipsis;
   }
 
+  .actions-row :global(.btn--merge svg:nth-of-type(2)) {
+    order: 3;
+  }
+
   .actions-menu-wrap {
     display: none;
     position: relative;
