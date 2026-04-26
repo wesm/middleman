@@ -386,20 +386,29 @@
       return;
     }
 
+    // Capture the workspace id at launch time. If the user
+    // navigates to a different workspace while the launch is in
+    // flight, every subsequent step (post-await) must bail rather
+    // than fetch the new workspace's runtime or activate a session
+    // tab that belongs to a workspace the user has left.
+    const id = workspaceId;
     launchingKey = targetKey;
     runtimeError = null;
     try {
       const session = await launchWorkspaceSession(
-        workspaceId,
+        id,
         targetKey,
       );
+      if (id !== workspaceId) return;
       await fetchRuntime();
+      if (id !== workspaceId) return;
       activeTabKey = `session:${session.key}`;
     } catch (err) {
+      if (id !== workspaceId) return;
       runtimeError =
         err instanceof Error ? err.message : "Launch failed";
     } finally {
-      launchingKey = null;
+      if (id === workspaceId) launchingKey = null;
     }
   }
 
@@ -415,13 +424,17 @@
     ) {
       return;
     }
+    const id = workspaceId;
     try {
-      await stopWorkspaceSession(workspaceId, session.key);
+      await stopWorkspaceSession(id, session.key);
+      if (id !== workspaceId) return;
       await fetchRuntime();
+      if (id !== workspaceId) return;
       if (activeTabKey === `session:${session.key}`) {
         activeTabKey = "home";
       }
     } catch (err) {
+      if (id !== workspaceId) return;
       runtimeError =
         err instanceof Error ? err.message : "Stop failed";
     }
@@ -436,18 +449,21 @@
     shellOpen = true;
     if (shellSessionActive || shellLoading) return;
 
+    const id = workspaceId;
     shellLoading = true;
     runtimeError = null;
     try {
-      await ensureWorkspaceShell(workspaceId);
+      await ensureWorkspaceShell(id);
+      if (id !== workspaceId) return;
       await fetchRuntime();
     } catch (err) {
+      if (id !== workspaceId) return;
       runtimeError =
         err instanceof Error
           ? err.message
           : "Shell launch failed";
     } finally {
-      shellLoading = false;
+      if (id === workspaceId) shellLoading = false;
     }
   }
 

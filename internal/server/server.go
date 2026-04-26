@@ -376,10 +376,16 @@ func newServer(
 		if cfg != nil {
 			agents = cfg.Agents
 		}
+		// Strip the maintainer's configured GitHub token env (and
+		// any per-repo overrides) from runtime sessions. With a
+		// non-default github_token_env the built-in credential
+		// prefix list won't match it, but it still grants API
+		// access — a launched agent must not see it.
 		s.runtime = localruntime.NewManager(localruntime.Options{
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),
+			StripEnvVars: configuredTokenEnvNames(cfg),
 		})
 	}
 
@@ -539,6 +545,27 @@ func (s *Server) bootstrapScript() string {
 // containing "</script>" cannot close the tag early.
 func scriptSafe(s string) string {
 	return strings.ReplaceAll(s, "</", `<\/`)
+}
+
+// configuredTokenEnvNames collects every env var name that may
+// hold a GitHub token according to the maintainer's config: the
+// global github_token_env plus any per-repo token_env overrides.
+// Used to strip them from runtime sessions launched into
+// PR-controlled worktrees.
+func configuredTokenEnvNames(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	names := make([]string, 0, 1+len(cfg.Repos))
+	if cfg.GitHubTokenEnv != "" {
+		names = append(names, cfg.GitHubTokenEnv)
+	}
+	for _, r := range cfg.Repos {
+		if r.TokenEnv != "" {
+			names = append(names, r.TokenEnv)
+		}
+	}
+	return names
 }
 
 // ServeHTTP implements http.Handler so Server can be used directly.

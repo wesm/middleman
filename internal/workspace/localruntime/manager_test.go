@@ -460,9 +460,12 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 		"GITHUB_ENTERPRISE_TOKEN=secret-6",
 		"GH_ENTERPRISE_TOKEN=secret-7",
 		"GITHUB_TOKEN_GHE=secret-8",
+		"MAINTAINER_PERSONAL_GH_PAT=secret-9",
 		"NOTSECRET=ok",
 	}
-	out := sessionEnvironment(in)
+	out := sessionEnvironment(in, []string{
+		"MAINTAINER_PERSONAL_GH_PAT",
+	})
 
 	require.Contains(out, "PATH=/usr/bin")
 	require.Contains(out, "HOME=/home/me")
@@ -472,6 +475,26 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 		assert.NotContains(
 			kv, "secret-",
 			"credential leaked through sessionEnvironment: %q", kv,
+		)
+	}
+}
+
+// TestSessionEnvironmentStripsConfiguredTokenEnv verifies that
+// names provided via Options.StripEnvVars (the maintainer's
+// configured GitHub token env, plus per-repo overrides) are
+// stripped even when they don't match the built-in prefix list.
+func TestSessionEnvironmentStripsConfiguredTokenEnv(t *testing.T) {
+	require := require.New(t)
+	in := []string{
+		"PATH=/usr/bin",
+		"WORK_GH_BOT_TOKEN=top-secret",
+	}
+	out := sessionEnvironment(in, []string{"WORK_GH_BOT_TOKEN"})
+	require.Contains(out, "PATH=/usr/bin")
+	for _, kv := range out {
+		require.NotContains(
+			kv, "top-secret",
+			"configured token env leaked: %q", kv,
 		)
 	}
 }

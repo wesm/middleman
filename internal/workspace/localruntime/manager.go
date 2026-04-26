@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +42,12 @@ type SessionInfo struct {
 type Options struct {
 	Targets      []LaunchTarget
 	ShellCommand []string
+	// StripEnvVars lists additional environment variable names that
+	// must be removed from launched runtime sessions in addition to
+	// the built-in credential prefixes. Pass the maintainer's
+	// configured GitHub token env (and any per-repo overrides) so a
+	// non-default name is also stripped.
+	StripEnvVars []string
 }
 
 type Manager struct {
@@ -50,6 +57,7 @@ type Manager struct {
 	sessions     map[string]*session
 	shells       map[string]*session
 	shellCommand []string
+	stripEnvVars []string
 	startLocks   map[string]*sync.Mutex
 	startWG      sync.WaitGroup
 	closed       bool
@@ -98,8 +106,28 @@ func NewManager(options Options) *Manager {
 		sessions:     make(map[string]*session),
 		shells:       make(map[string]*session),
 		shellCommand: append([]string(nil), options.ShellCommand...),
+		stripEnvVars: dedupeStrings(options.StripEnvVars),
 		startLocks:   make(map[string]*sync.Mutex),
 	}
+}
+
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 func (m *Manager) Launch(
@@ -156,7 +184,7 @@ func (m *Manager) Launch(
 		Kind:        target.Kind,
 		Status:      SessionStatusStarting,
 		CreatedAt:   time.Now().UTC(),
-	}, target.Command, cwd)
+	}, target.Command, cwd, m.stripEnvVars)
 	if err != nil {
 		return SessionInfo{}, err
 	}
@@ -316,7 +344,7 @@ func (m *Manager) EnsureShell(
 		Kind:        LaunchTargetPlainShell,
 		Status:      SessionStatusStarting,
 		CreatedAt:   time.Now().UTC(),
-	}, command, cwd)
+	}, command, cwd, m.stripEnvVars)
 	if err != nil {
 		return SessionInfo{}, err
 	}
@@ -499,6 +527,7 @@ func startSession(
 	info SessionInfo,
 	command []string,
 	cwd string,
+	extraStripVars []string,
 ) (*session, error) {
 	if len(command) == 0 || command[0] == "" {
 		return nil, errors.New("session command is empty")
@@ -524,7 +553,10 @@ func startSession(
 	// Pass through a sanitized environment so launched shells and
 	// agents do not inherit middleman's GitHub credentials. See
 	// sessionEnvironment for the allow/deny rules.
-	cmd.Env = append(sessionEnvironment(os.Environ()), "TERM=xterm-256color")
+	cmd.Env = append(
+		sessionEnvironment(os.Environ(), extraStripVars),
+		"TERM=xterm-256color",
+	)
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: 30,
@@ -717,9 +749,13 @@ var sessionVarPrefixes = []string{
 }
 
 // sessionEnvironment returns a copy of env with credential-shaped
-// variables removed. Other variables are preserved so that the
-// user's shell, language toolchains, and editors continue to work.
-func sessionEnvironment(env []string) []string {
+// variables removed. The extraStrip list contains caller-provided
+// variable names (e.g. the configured GitHub token env name and any
+// per-repo overrides) that must also be stripped so a non-default
+// token name is not exposed to PR-controlled session processes.
+// Other variables are preserved so that the user's shell, language
+// toolchains, and editors continue to work.
+func sessionEnvironment(env []string, extraStrip []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
 		eq := strings.IndexByte(kv, '=')
@@ -728,7 +764,7 @@ func sessionEnvironment(env []string) []string {
 			continue
 		}
 		key := kv[:eq]
-		if shouldStripSessionVar(key) {
+		if shouldStripSessionVar(key, extraStrip) {
 			continue
 		}
 		out = append(out, kv)
@@ -736,13 +772,13 @@ func sessionEnvironment(env []string) []string {
 	return out
 }
 
-func shouldStripSessionVar(key string) bool {
+func shouldStripSessionVar(key string, extraStrip []string) bool {
 	for _, prefix := range sessionVarPrefixes {
 		if key == prefix || strings.HasPrefix(key, prefix+"_") {
 			return true
 		}
 	}
-	return false
+	return slices.Contains(extraStrip, key)
 }
 
 func defaultShellCommand() []string {

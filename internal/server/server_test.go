@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 )
 
@@ -327,4 +328,28 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 
 	// Deadline failed before event write — body must be empty
 	assert.Empty(t, rec.Body.String(), "no output should be written after deadline failure")
+}
+
+// TestConfiguredTokenEnvNamesIncludesGlobalAndPerRepo collects the
+// global github_token_env plus every per-repo token_env override so
+// the runtime-session sanitizer can strip them.
+func TestConfiguredTokenEnvNamesIncludesGlobalAndPerRepo(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	require.Nil(configuredTokenEnvNames(nil))
+
+	cfg := &config.Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget", TokenEnv: "ACME_TOKEN"},
+			{Owner: "other", Name: "thing"}, // no override → skipped
+			{Owner: "third", Name: "x", TokenEnv: "THIRD_TOKEN"},
+		},
+	}
+	got := configuredTokenEnvNames(cfg)
+	assert.Equal(
+		[]string{"WORK_GH_BOT_TOKEN", "ACME_TOKEN", "THIRD_TOKEN"},
+		got,
+	)
 }

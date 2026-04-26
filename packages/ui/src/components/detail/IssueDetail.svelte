@@ -58,6 +58,20 @@
     return () => issues.stopIssueDetailPolling();
   });
 
+  // Reset action-local UI state on route changes so an open
+  // branch-conflict dialog or in-progress workspace-creation flag
+  // for issue A doesn't bleed into issue B's view once the new
+  // detail loads.
+  $effect(() => {
+    void owner;
+    void name;
+    void number;
+    branchConflict = null;
+    workspaceCreating = false;
+    workspaceError = null;
+    stateError = null;
+  });
+
   let copied = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
