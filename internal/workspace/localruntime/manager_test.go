@@ -399,6 +399,83 @@ func helperCommand(mode string) []string {
 	}
 }
 
+// TestResolveExecutableRejectsRelativePaths ensures startSession
+// refuses commands that would resolve inside the workspace worktree
+// (PR-controlled content). Absolute paths and PATH-resolvable
+// names are accepted; relative names with separators are rejected.
+func TestResolveExecutableRejectsRelativePaths(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	// Absolute path: pass through unchanged.
+	got, err := resolveExecutable("/usr/local/bin/codex")
+	require.NoError(err)
+	assert.Equal("/usr/local/bin/codex", got)
+
+	// PATH-resolvable: returns the full path. /bin/sh is present
+	// on every supported platform.
+	got, err = resolveExecutable("sh")
+	require.NoError(err)
+	assert.True(filepath.IsAbs(got), "expected absolute path, got %q", got)
+
+	// Relative paths must be rejected.
+	for _, rel := range []string{
+		"./agent",
+		"../scripts/codex",
+		"scripts/codex",
+		"a/b",
+	} {
+		_, err := resolveExecutable(rel)
+		require.Error(err, "expected error for %q", rel)
+		assert.Contains(err.Error(), "absolute path")
+	}
+
+	// Empty name.
+	_, err = resolveExecutable("")
+	require.Error(err)
+
+	// Bare name not on PATH should surface a LookPath error.
+	_, err = resolveExecutable(
+		"middleman-localruntime-bogus-name-zzz",
+	)
+	require.Error(err)
+}
+
+// TestSessionEnvironmentStripsCredentials verifies that the
+// environment passed to runtime sessions has GitHub-token-shaped
+// variables removed so that launched agents cannot exfiltrate
+// the maintainer's credentials.
+func TestSessionEnvironmentStripsCredentials(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	in := []string{
+		"PATH=/usr/bin",
+		"HOME=/home/me",
+		"MIDDLEMAN_GITHUB_TOKEN=secret-1",
+		"GITHUB_TOKEN=secret-2",
+		"GH_TOKEN=secret-3",
+		"GITHUB_PAT=secret-4",
+		"GH_PAT=secret-5",
+		"GITHUB_ENTERPRISE_TOKEN=secret-6",
+		"GH_ENTERPRISE_TOKEN=secret-7",
+		"GITHUB_TOKEN_GHE=secret-8",
+		"NOTSECRET=ok",
+	}
+	out := sessionEnvironment(in)
+
+	require.Contains(out, "PATH=/usr/bin")
+	require.Contains(out, "HOME=/home/me")
+	require.Contains(out, "NOTSECRET=ok")
+
+	for _, kv := range out {
+		assert.NotContains(
+			kv, "secret-",
+			"credential leaked through sessionEnvironment: %q", kv,
+		)
+	}
+}
+
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("MIDDLEMAN_LOCALRUNTIME_HELPER") != "1" {
 		return

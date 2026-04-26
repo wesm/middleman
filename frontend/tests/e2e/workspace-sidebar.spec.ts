@@ -1958,6 +1958,150 @@ test.describe("delayed-response navigation", () => {
       ).toHaveCount(0);
     },
   );
+
+  test(
+    "previous workspace's runtime sessions are not visible while B's runtime is loading",
+    async ({ page }) => {
+      // Regression: after the workspace fetch resolved, runtime
+      // still held the previous workspace's payload until its own
+      // fetch completed. The workspace stage briefly rendered A's
+      // session tabs (and launch targets) inside B's view, with
+      // actionsBlocked already false.
+      const wsA = {
+        ...testWorkspace,
+        id: "ws-aaa",
+        item_number: 1,
+        mr_title: "A title",
+      };
+      const wsB = {
+        ...testWorkspace,
+        id: "ws-bbb",
+        item_number: 2,
+        mr_title: "B title",
+      };
+      const sessionA = {
+        key: "ws-aaa:helper",
+        workspace_id: "ws-aaa",
+        target_key: "helper",
+        label: "Helper A",
+        kind: "agent" as const,
+        status: "running" as const,
+        created_at: "2026-04-10T12:00:00Z",
+      };
+
+      await mockApi(page);
+      await page.route("**/api/v1/events", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      });
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      // wsA: instant.
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsA),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/${wsA.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ...workspaceRuntime,
+              sessions: [sessionA],
+            }),
+          });
+        },
+      );
+      // wsB: workspace GET is fast, runtime GET is held.
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(wsB),
+            });
+            return;
+          }
+          await route.fulfill({ status: 204 });
+        },
+      );
+      let releaseBRuntime: () => void = () => {};
+      const bRuntimeDelay = new Promise<void>((resolve) => {
+        releaseBRuntime = resolve;
+      });
+      await page.route(
+        `**/api/v1/workspaces/${wsB.id}/runtime`,
+        async (route) => {
+          await bRuntimeDelay;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(workspaceRuntime),
+          });
+        },
+      );
+
+      await page.goto(`/terminal/${wsA.id}`);
+      // A's session tab should be visible.
+      await expect(
+        page.locator(".workspace-stage .stage-pane"),
+      ).not.toHaveCount(0);
+
+      await page
+        .locator(".workspace-list-sidebar .ws-row", {
+          hasText: `#${wsB.item_number}`,
+        })
+        .click();
+
+      // The header should have moved to B as soon as wsB's
+      // workspace GET resolves. But because B's runtime fetch is
+      // still in flight, the workspace stage must show the
+      // "Loading workspace runtime..." state, not A's session
+      // panes.
+      await expect(
+        page.locator(".terminal-main .header-name"),
+      ).toContainText(wsB.mr_title);
+      await expect(
+        page.locator(".workspace-stage .state-message"),
+      ).toContainText("Loading workspace runtime");
+
+      releaseBRuntime();
+
+      // Once B's runtime resolves, the loading state goes away.
+      await expect(
+        page.locator(".workspace-stage .state-message"),
+      ).toHaveCount(0);
+    },
+  );
 });
 
 // -------------------------------------------------------

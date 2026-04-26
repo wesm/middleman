@@ -50,6 +50,12 @@
 
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
+  // The workspace ID that `runtime` was fetched for. Stored
+  // alongside the payload so we never render or operate on
+  // sessions/targets that belong to a previous workspace
+  // (during the in-place transition between workspaces, runtime
+  // briefly outlives the workspace it was fetched for).
+  let runtimeForId = $state<string>("");
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
@@ -128,9 +134,23 @@
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
 
-  const runtimeSessions = $derived(runtime?.sessions ?? []);
-  const launchTargets = $derived(runtime?.launch_targets ?? []);
-  const shellSession = $derived(runtime?.shell_session ?? null);
+  // Runtime is only "live" when its fetched workspace ID matches
+  // the route's. While the new workspace's runtime fetch is in
+  // flight, the previous workspace's runtime is still present in
+  // memory but must not be rendered or operated on — gate every
+  // runtime-derived value behind the same id check.
+  const runtimeLive = $derived(
+    runtime !== null && runtimeForId === workspaceId,
+  );
+  const runtimeSessions = $derived(
+    runtimeLive ? (runtime?.sessions ?? []) : [],
+  );
+  const launchTargets = $derived(
+    runtimeLive ? (runtime?.launch_targets ?? []) : [],
+  );
+  const shellSession = $derived(
+    runtimeLive ? (runtime?.shell_session ?? null) : null,
+  );
   const shellSessionActive = $derived(
     shellSession?.status === "running" ||
       shellSession?.status === "starting",
@@ -340,6 +360,7 @@
       const data = await getWorkspaceRuntime(id);
       if (id !== workspaceId) return;
       runtime = data;
+      runtimeForId = id;
       runtimeError = null;
       if (
         activeTabKey.startsWith("session:") &&
@@ -561,6 +582,7 @@
       // the previous /terminal/{id} session left behind.
       workspace = null;
       runtime = null;
+      runtimeForId = "";
       return;
     }
 
@@ -787,7 +809,7 @@
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
               <div class="workspace-stage">
-                {#if !runtime}
+                {#if !runtimeLive}
                   <div class="state-message">
                     <SpinnerIcon
                       class="spinner"

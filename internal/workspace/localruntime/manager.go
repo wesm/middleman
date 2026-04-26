@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -502,11 +504,27 @@ func startSession(
 		return nil, errors.New("session command is empty")
 	}
 
-	cmd := exec.Command(command[0], command[1:]...)
+	// Resolve the executable to an absolute path BEFORE setting
+	// cmd.Dir to the workspace worktree. exec.Command treats names
+	// without separators as PATH lookups but treats names like
+	// "./agent" or "scripts/codex" as paths relative to cmd.Dir,
+	// which would let a malicious PR drop an executable into the
+	// worktree and gain code execution when the maintainer launches
+	// the agent. Reject relative paths and require all other names
+	// to resolve via PATH.
+	resolvedPath, err := resolveExecutable(command[0])
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(resolvedPath, command[1:]...)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	// Pass through a sanitized environment so launched shells and
+	// agents do not inherit middleman's GitHub credentials. See
+	// sessionEnvironment for the allow/deny rules.
+	cmd.Env = append(sessionEnvironment(os.Environ()), "TERM=xterm-256color")
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: 30,
@@ -652,6 +670,79 @@ func waitSessionDone(s *session) {
 
 func sessionKey(workspaceID string, targetKey string) string {
 	return workspaceID + ":" + targetKey
+}
+
+// resolveExecutable returns an absolute path for name. Names that
+// are already absolute are accepted as-is; names without a path
+// separator are looked up via PATH; relative names with separators
+// (e.g. "./agent", "scripts/codex") are rejected because cmd.Dir
+// is set to the workspace worktree, which is PR-controlled content.
+func resolveExecutable(name string) (string, error) {
+	if name == "" {
+		return "", errors.New("session command is empty")
+	}
+	if filepath.IsAbs(name) {
+		return name, nil
+	}
+	if !strings.ContainsRune(name, filepath.Separator) {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			return "", fmt.Errorf(
+				"resolve session command %q via PATH: %w",
+				name, err,
+			)
+		}
+		return path, nil
+	}
+	return "", fmt.Errorf(
+		"session command %q must be an absolute path or a "+
+			"PATH-resolvable name; relative paths resolve inside "+
+			"the workspace worktree, which is untrusted",
+		name,
+	)
+}
+
+// sessionVarPrefixes name prefixes whose env vars are stripped from
+// launched runtime sessions. These tend to carry server credentials
+// or API keys that an agent process running inside an untrusted
+// workspace must not be able to read.
+var sessionVarPrefixes = []string{
+	"MIDDLEMAN_GITHUB_TOKEN",
+	"GITHUB_TOKEN",
+	"GH_TOKEN",
+	"GITHUB_PAT",
+	"GH_PAT",
+	"GITHUB_ENTERPRISE_TOKEN",
+	"GH_ENTERPRISE_TOKEN",
+}
+
+// sessionEnvironment returns a copy of env with credential-shaped
+// variables removed. Other variables are preserved so that the
+// user's shell, language toolchains, and editors continue to work.
+func sessionEnvironment(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		eq := strings.IndexByte(kv, '=')
+		if eq <= 0 {
+			out = append(out, kv)
+			continue
+		}
+		key := kv[:eq]
+		if shouldStripSessionVar(key) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+func shouldStripSessionVar(key string) bool {
+	for _, prefix := range sessionVarPrefixes {
+		if key == prefix || strings.HasPrefix(key, prefix+"_") {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultShellCommand() []string {
