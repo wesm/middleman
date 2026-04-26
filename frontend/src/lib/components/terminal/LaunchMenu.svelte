@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { LaunchTarget } from "@middleman/ui/api/types";
-  import PlusIcon from "@lucide/svelte/icons/plus";
+  import PlayIcon from "@lucide/svelte/icons/play";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import TerminalIcon from "@lucide/svelte/icons/terminal";
+  import SparklesIcon from "@lucide/svelte/icons/sparkles";
+  import BoxIcon from "@lucide/svelte/icons/box";
 
   interface LaunchMenuProps {
     launchTargets: LaunchTarget[];
@@ -24,6 +28,12 @@
     open = false;
     onLaunch?.(targetKey);
   }
+
+  function sourceLabel(target: LaunchTarget): string {
+    if (target.kind === "tmux") return "tmux";
+    if (target.source === "config") return "configured";
+    return target.source;
+  }
 </script>
 
 <div class="launch-menu">
@@ -35,20 +45,44 @@
       open = !open;
     }}
   >
-    <PlusIcon size="15" strokeWidth="2" aria-hidden="true" />
+    <PlayIcon
+      class="launch-trigger-icon"
+      size="11"
+      strokeWidth="2.5"
+      aria-hidden="true"
+    />
     <span>Launch</span>
+    <ChevronDownIcon
+      class="launch-trigger-chevron"
+      size="12"
+      strokeWidth="2"
+      aria-hidden="true"
+    />
   </button>
   {#if open}
-    <div class="launch-popover">
+    <div class="launch-popover" role="menu">
+      <div class="popover-heading">Run configurations</div>
       {#each visibleTargets as target (target.key)}
+        {@const isTmux = target.kind === "tmux"}
+        {@const isAgent = target.kind === "agent"}
         <button
           class="launch-option"
+          role="menuitem"
           disabled={!target.available || launchingKey === target.key}
           title={target.disabled_reason ?? target.label}
           onclick={() => launch(target.key)}
         >
-          <span>{target.label}</span>
-          <small>{target.kind === "tmux" ? "tmux" : target.source}</small>
+          <span class="option-icon" aria-hidden="true">
+            {#if isTmux}
+              <TerminalIcon size="13" strokeWidth="2" />
+            {:else if isAgent}
+              <SparklesIcon size="13" strokeWidth="2" />
+            {:else}
+              <BoxIcon size="13" strokeWidth="2" />
+            {/if}
+          </span>
+          <span class="option-label">{target.label}</span>
+          <span class="option-source">{sourceLabel(target)}</span>
         </button>
       {/each}
     </div>
@@ -64,46 +98,77 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 28px;
-    padding: 0 9px;
+    height: 22px;
+    padding: 0 7px 0 8px;
     border: 1px solid var(--border-default);
-    border-radius: 6px;
+    border-radius: 3px;
     background: var(--bg-surface);
-    color: var(--text-secondary);
+    color: var(--text-primary);
     font: inherit;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
+    letter-spacing: 0.01em;
     cursor: pointer;
+    transition: background-color 80ms ease, border-color 80ms ease;
   }
 
   .launch-trigger:hover {
     background: var(--bg-surface-hover);
-    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--text-muted) 40%, var(--border-default));
+  }
+
+  .launch-trigger[aria-expanded="true"] {
+    background: var(--bg-surface-hover);
+    border-color: var(--accent-blue);
+  }
+
+  :global(.launch-trigger-icon) {
+    color: var(--accent-green);
+    flex-shrink: 0;
+  }
+
+  :global(.launch-trigger-chevron) {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-left: 1px;
   }
 
   .launch-popover {
     position: absolute;
     right: 0;
-    top: calc(100% + 6px);
+    top: calc(100% + 4px);
     z-index: 20;
-    min-width: 190px;
-    padding: 5px;
+    min-width: 220px;
+    padding: 4px;
     border: 1px solid var(--border-default);
-    border-radius: 6px;
+    border-radius: 4px;
     background: var(--bg-surface);
-    box-shadow: var(--shadow-lg);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+
+  .popover-heading {
+    padding: 4px 8px 6px;
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border-muted);
+    margin-bottom: 3px;
   }
 
   .launch-option {
-    display: flex;
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     width: 100%;
-    min-height: 30px;
-    padding: 5px 7px;
+    height: 26px;
+    padding: 0 8px;
     border: 0;
-    border-radius: 4px;
+    border-radius: 3px;
     background: transparent;
     color: var(--text-primary);
     font: inherit;
@@ -112,18 +177,51 @@
     cursor: pointer;
   }
 
-  .launch-option:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
+  .launch-option + .launch-option {
+    margin-top: 1px;
+  }
+
+  .launch-option:hover:not(:disabled),
+  .launch-option:focus-visible {
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--accent-blue);
+    outline: none;
+  }
+
+  .launch-option:hover:not(:disabled) .option-icon,
+  .launch-option:focus-visible .option-icon {
+    color: var(--accent-blue);
   }
 
   .launch-option:disabled {
     cursor: not-allowed;
     color: var(--text-muted);
-    opacity: 0.7;
+    opacity: 0.6;
   }
 
-  .launch-option small {
+  .option-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: var(--text-muted);
-    font-size: 11px;
+  }
+
+  .option-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .option-source {
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    text-transform: lowercase;
+    letter-spacing: 0;
+  }
+
+  .launch-option:hover:not(:disabled) .option-source {
+    color: color-mix(in srgb, var(--accent-blue) 80%, var(--text-muted));
   }
 </style>

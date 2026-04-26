@@ -865,37 +865,41 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 14px;
+    height: 34px;
+    padding: 0 10px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
-    gap: 12px;
+    gap: 10px;
     flex-shrink: 0;
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     overflow: hidden;
   }
 
   .header-name {
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    letter-spacing: 0.005em;
   }
 
   .header-branch {
     font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text-muted);
+    font-size: 11.5px;
+    color: var(--text-secondary);
     background: var(--bg-inset);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border-muted);
     white-space: nowrap;
+    line-height: 1.5;
   }
 
   .header-right {
@@ -906,19 +910,23 @@
   }
 
   .header-btn {
-    padding: 4px 12px;
+    height: 22px;
+    padding: 0 10px;
     border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
+    border-radius: 3px;
     background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
     cursor: pointer;
+    transition: background-color 80ms ease, color 80ms ease,
+      border-color 80ms ease;
   }
 
   .header-btn:hover {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--text-muted) 40%, var(--border-default));
   }
 
   .header-btn.danger:hover {
@@ -942,21 +950,23 @@
 
   .workspace-toolbar {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
     gap: 10px;
-    min-height: 36px;
-    padding: 4px 8px;
+    height: 30px;
+    padding: 0 6px 0 0;
     border-bottom: 1px solid var(--border-default);
-    background: var(--bg-surface);
+    background: var(--bg-inset);
     flex-shrink: 0;
   }
 
   .workspace-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     flex-shrink: 0;
+    padding-left: 6px;
+    border-left: 1px solid var(--border-muted);
   }
 
   .runtime-error {
@@ -974,35 +984,42 @@
   }
 
   .seg-control {
-    display: flex;
+    display: inline-flex;
+    height: 22px;
     border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
+    border-radius: 3px;
     overflow: hidden;
+    background: var(--bg-surface);
   }
 
   .seg-btn {
-    padding: 3px 10px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
     border: none;
-    background: none;
-    color: var(--text-muted);
+    background: transparent;
+    color: var(--text-secondary);
     font-size: 11px;
     font-weight: 500;
+    letter-spacing: 0.01em;
     cursor: pointer;
     font-family: inherit;
+    transition: background-color 80ms ease, color 80ms ease;
   }
 
-  .seg-btn:first-child {
-    border-right: 1px solid var(--border-default);
+  .seg-btn + .seg-btn {
+    border-left: 1px solid var(--border-default);
   }
 
-  .seg-btn:hover {
-    color: var(--text-secondary);
+  .seg-btn:hover:not(.active) {
+    color: var(--text-primary);
     background: var(--bg-surface-hover);
   }
 
   .seg-btn.active {
     background: var(--accent-blue);
     color: #fff;
+    font-weight: 600;
   }
 
   .terminal-and-sidebar {

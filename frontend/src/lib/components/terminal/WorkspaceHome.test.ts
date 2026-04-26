@@ -78,7 +78,7 @@ describe("WorkspaceHome", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Codex" }));
     expect(onLaunch).toHaveBeenCalledWith("codex");
 
-    await fireEvent.click(screen.getByRole("button", { name: "Codex running" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Codex\s+Running/ }));
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:codex");
   });
 });

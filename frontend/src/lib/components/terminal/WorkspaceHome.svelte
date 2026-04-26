@@ -3,6 +3,12 @@
     LaunchTarget,
     RuntimeSession,
   } from "@middleman/ui/api/types";
+  import GitBranchIcon from "@lucide/svelte/icons/git-branch";
+  import FolderIcon from "@lucide/svelte/icons/folder";
+  import PlayIcon from "@lucide/svelte/icons/play";
+  import TerminalIcon from "@lucide/svelte/icons/terminal";
+  import SparklesIcon from "@lucide/svelte/icons/sparkles";
+  import BoxIcon from "@lucide/svelte/icons/box";
 
   interface WorkspaceHomeWorkspace {
     id: string;
@@ -45,33 +51,71 @@
     if (target.kind === "tmux") return "tmux";
     return "detected";
   }
+
+  function statusLabel(status: string): string {
+    if (status === "running") return "Running";
+    if (status === "starting") return "Starting";
+    if (status === "exited") return "Exited";
+    return status;
+  }
 </script>
 
 <section class="workspace-home" aria-label="Worktree Home">
-  <div class="home-header">
-    <div class="home-title-block">
-      <h2>{title()}</h2>
-      <div class="home-meta">
-        <span>{workspace.repo_owner}/{workspace.repo_name} #{workspace.item_number}</span>
-        <span>{workspace.git_head_ref}</span>
-      </div>
+  <header class="home-header">
+    <h2 class="home-title">{title()}</h2>
+    <div class="home-meta">
+      <span class="meta-chip">
+        {workspace.repo_owner}/{workspace.repo_name}
+        <span class="meta-chip-num">#{workspace.item_number}</span>
+      </span>
+      <span class="meta-chip mono">
+        <GitBranchIcon size="11" strokeWidth="2" aria-hidden="true" />
+        {workspace.git_head_ref}
+      </span>
+      <span class="meta-chip mono path" title={workspace.worktree_path}>
+        <FolderIcon size="11" strokeWidth="2" aria-hidden="true" />
+        {workspace.worktree_path}
+      </span>
     </div>
-    <code class="worktree-path">{workspace.worktree_path}</code>
-  </div>
+  </header>
 
   <div class="home-section">
-    <div class="section-title">Launch</div>
+    <div class="section-bar">
+      <PlayIcon
+        class="section-icon"
+        size="12"
+        strokeWidth="2.25"
+        aria-hidden="true"
+      />
+      <span class="section-title">Launch</span>
+      <span class="section-count">{visibleTargets.length}</span>
+    </div>
     <div class="launch-grid">
       {#each visibleTargets as target (target.key)}
+        {@const isTmux = target.kind === "tmux"}
+        {@const isAgent = target.kind === "agent"}
+        {@const isLaunching = launchingKey === target.key}
         <button
           class="launch-card"
-          disabled={!target.available || launchingKey === target.key}
+          disabled={!target.available || isLaunching}
           title={target.disabled_reason ?? target.label}
           aria-label={target.label}
           onclick={() => onLaunch?.(target.key)}
         >
-          <span class="launch-label">{target.label}</span>
-          <span class="launch-source">{sourceLabel(target)}</span>
+          <span class="card-icon" aria-hidden="true">
+            {#if isTmux}
+              <TerminalIcon size="14" strokeWidth="2" />
+            {:else if isAgent}
+              <SparklesIcon size="14" strokeWidth="2" />
+            {:else}
+              <BoxIcon size="14" strokeWidth="2" />
+            {/if}
+          </span>
+          <span class="card-label">{target.label}</span>
+          <span class="card-source">{sourceLabel(target)}</span>
+          {#if isLaunching}
+            <span class="card-status">starting…</span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -79,15 +123,22 @@
 
   {#if sessions.length > 0}
     <div class="home-section">
-      <div class="section-title">Running</div>
+      <div class="section-bar">
+        <span class="section-title">Active sessions</span>
+        <span class="section-count">{sessions.length}</span>
+      </div>
       <div class="session-list">
         {#each sessions as session (session.key)}
           <button
             class="session-row"
             onclick={() => onOpenSession?.(session.key)}
           >
-            <span class="session-dot"></span>
-            <span>{session.label} {session.status}</span>
+            <span
+              class={["session-dot", session.status]}
+              aria-hidden="true"
+            ></span>
+            <span class="session-label">{session.label}</span>
+            <span class="session-status">{statusLabel(session.status)}</span>
           </button>
         {/each}
       </div>
@@ -99,136 +150,225 @@
   .workspace-home {
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    padding: 18px;
+    gap: 14px;
+    padding: 14px 16px 18px;
     min-width: 0;
     height: 100%;
     overflow: auto;
     background: var(--bg-primary);
+    color: var(--text-primary);
   }
 
   .home-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-muted);
   }
 
-  .home-title-block {
-    min-width: 0;
-  }
-
-  h2 {
+  .home-title {
     margin: 0;
-    font-size: 16px;
+    font-size: 15px;
     line-height: 1.3;
-    font-weight: 650;
+    font-weight: 600;
     color: var(--text-primary);
+    letter-spacing: -0.005em;
   }
 
   .home-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 4px;
-    font-size: 12px;
-    color: var(--text-muted);
+    gap: 4px;
+    font-size: 11px;
   }
 
-  .worktree-path {
-    width: fit-content;
+  .meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 7px;
+    border: 1px solid var(--border-muted);
+    border-radius: 3px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    line-height: 1;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .meta-chip.mono {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+  }
+
+  .meta-chip.path {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 4px 7px;
-    border: 1px solid var(--border-muted);
-    border-radius: 6px;
-    background: var(--bg-inset);
-    color: var(--text-secondary);
+  }
+
+  .meta-chip-num {
+    color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 10.5px;
+    font-weight: 500;
   }
 
   .home-section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
+  }
+
+  .section-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 18px;
+    color: var(--text-muted);
+  }
+
+  :global(.section-icon) {
+    color: var(--accent-green);
   }
 
   .section-title {
-    font-size: 11px;
-    font-weight: 650;
+    font-size: 10.5px;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0;
+    letter-spacing: 0.08em;
+  }
+
+  .section-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--bg-inset);
     color: var(--text-muted);
+    font-size: 9.5px;
+    font-weight: 600;
+    font-family: var(--font-mono);
   }
 
   .launch-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 4px;
   }
 
   .launch-card {
-    display: flex;
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    min-height: 42px;
-    padding: 9px 10px;
-    border: 1px solid var(--border-default);
-    border-radius: 6px;
+    gap: 8px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border-muted);
+    border-radius: 3px;
     background: var(--bg-surface);
     color: var(--text-primary);
     font: inherit;
+    font-size: 12px;
+    text-align: left;
     cursor: pointer;
+    transition: border-color 80ms ease, background-color 80ms ease,
+      color 80ms ease;
   }
 
   .launch-card:hover:not(:disabled) {
     border-color: var(--accent-blue);
-    background: var(--bg-surface-hover);
+    background: color-mix(
+      in srgb,
+      var(--accent-blue) 6%,
+      var(--bg-surface)
+    );
+  }
+
+  .launch-card:hover:not(:disabled) .card-icon {
+    color: var(--accent-blue);
   }
 
   .launch-card:disabled {
     cursor: not-allowed;
     color: var(--text-muted);
-    opacity: 0.68;
+    opacity: 0.6;
   }
 
-  .launch-label {
+  .card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: color 80ms ease;
+  }
+
+  .card-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
     font-weight: 600;
+    letter-spacing: 0.005em;
   }
 
-  .launch-source {
-    flex-shrink: 0;
+  .card-source {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    letter-spacing: 0;
+  }
+
+  .card-status {
+    grid-column: 1 / -1;
+    margin-top: -2px;
+    color: var(--accent-amber);
+    font-size: 10.5px;
+    font-family: var(--font-mono);
   }
 
   .session-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
   }
 
   .session-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
     align-items: center;
-    gap: 8px;
-    min-height: 34px;
-    padding: 6px 9px;
+    gap: 10px;
+    height: 28px;
+    padding: 0 10px;
     border: 1px solid var(--border-muted);
-    border-radius: 6px;
     background: var(--bg-surface);
     color: var(--text-secondary);
     font: inherit;
-    font-size: 13px;
+    font-size: 12px;
     text-align: left;
     cursor: pointer;
+    transition: background-color 80ms ease, color 80ms ease;
+  }
+
+  .session-row + .session-row {
+    border-top: 0;
+  }
+
+  .session-row:first-child {
+    border-radius: 3px 3px 0 0;
+  }
+
+  .session-row:last-child {
+    border-radius: 0 0 3px 3px;
+  }
+
+  .session-row:only-child {
+    border-radius: 3px;
   }
 
   .session-row:hover {
@@ -242,5 +382,38 @@
     border-radius: 50%;
     background: var(--accent-green);
     flex-shrink: 0;
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--accent-green) 25%, transparent);
+  }
+
+  .session-dot.starting {
+    background: var(--accent-amber);
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--accent-amber) 25%, transparent);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .session-dot.exited {
+    background: var(--text-muted);
+    box-shadow: none;
+  }
+
+  .session-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .session-status {
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    letter-spacing: 0;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
   }
 </style>
