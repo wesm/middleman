@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
@@ -491,8 +490,30 @@
     }
   });
 
-  onMount(() => {
-    if (!workspaceId) return;
+  // React to workspaceId changes (including / from "" on the
+  // bare /workspaces route) without remounting the entire view.
+  // Removing the {#key} that previously wrapped this component in
+  // App.svelte means the lifecycle is now driven entirely by this
+  // effect, so it must both clean up the previous workspace's
+  // subscriptions and tear down per-workspace state when the id
+  // changes (or clears).
+  $effect(() => {
+    const id = workspaceId;
+
+    // Reset per-workspace state so a switch never shows stale
+    // data from the previous workspace before the new fetch lands.
+    workspace = null;
+    runtime = null;
+    loadError = null;
+    actionError = null;
+    runtimeError = null;
+    activeTabKey = "home";
+    tmuxTabOpen = false;
+    launchingKey = null;
+    shellOpen = false;
+    shellLoading = false;
+
+    if (!id) return;
 
     const evtUrl = `${basePath}/api/v1/events`;
     const source = new EventSource(evtUrl);
@@ -505,7 +526,7 @@
           const data = JSON.parse(
             e.data as string,
           ) as { id?: string };
-          if (data.id === workspaceId) {
+          if (data.id === id) {
             void fetchWorkspace();
           }
         } catch {
@@ -515,18 +536,15 @@
     );
 
     void fetchWorkspace().then(() => {
-      if (
-        workspace &&
-        workspace.status === "creating"
-      ) {
+      if (workspace?.status === "creating") {
         startPolling();
       }
     });
 
     return () => {
       stopPolling();
-      if (eventSource) {
-        eventSource.close();
+      source.close();
+      if (eventSource === source) {
         eventSource = null;
       }
     };
@@ -552,12 +570,22 @@
       <WorkspaceListSidebar
         selectedId={workspaceId}
         onOpenItemSidebar={(targetId, tab) => {
-          if (targetId === workspaceId) {
+          // Cross-workspace click: navigate first, then ensure
+          // the sidebar is open for the target tab.
+          if (targetId !== workspaceId) {
             sidebarTab = tab;
             sidebarOpen = true;
+            navigate(`/terminal/${targetId}`);
             return;
           }
-          navigate(`/terminal/${targetId}`);
+          // Same-workspace click: toggle, mirroring the seg-btn
+          // behavior in handleSegmentClick.
+          if (sidebarOpen && sidebarTab === tab) {
+            sidebarOpen = false;
+            return;
+          }
+          sidebarTab = tab;
+          sidebarOpen = true;
         }}
       />
     {/snippet}

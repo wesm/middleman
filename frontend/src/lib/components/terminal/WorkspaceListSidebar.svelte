@@ -46,9 +46,6 @@
 
   const { selectedId, onOpenItemSidebar }: Props = $props();
 
-  const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
-  const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
-
   const basePath = (
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
@@ -161,16 +158,6 @@
     e.preventDefault();
     const tab = ws.item_type === "issue" ? "issue" : "pr";
 
-    // Persist the desired sidebar state so the terminal view picks
-    // it up on mount; navigation across workspaces remounts the
-    // view, so plain props don't survive the trip.
-    try {
-      localStorage.setItem(SIDEBAR_TAB_KEY, tab);
-      localStorage.setItem(SIDEBAR_OPEN_KEY, "true");
-    } catch {
-      // localStorage unavailable; the fallback callback still works.
-    }
-
     if (onOpenItemSidebar) {
       onOpenItemSidebar(ws.id, tab);
       return;
@@ -260,7 +247,7 @@
             tabindex="0"
             role="button"
           >
-            <div class="ws-row-title">
+            <div class="ws-row-text">
               <span
                 class={statusDotClass(ws)}
                 class:spinning={ws.status === "creating"}
@@ -274,24 +261,6 @@
                   aria-label={workingTitle(ws)}
                 ></span>
               {/if}
-              <button
-                class={["item-bubble", itemStateClass(ws)]}
-                onclick={(e) => handleItemBubbleClick(e, ws)}
-                onkeydown={(e) => {
-                  // Stop Enter/Space from bubbling to the row,
-                  // since the row's keyboard handler also navigates.
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.stopPropagation();
-                  }
-                }}
-                title={ws.item_type === "issue"
-                  ? `Open issue #${ws.item_number}`
-                  : `Open PR #${ws.item_number}`}
-              >
-                #{ws.item_number}
-              </button>
-            </div>
-            <div class="ws-row-meta">
               <span class="branch-chip" title={ws.git_head_ref}>
                 <GitBranchIcon
                   class="branch-icon"
@@ -339,6 +308,22 @@
                 </span>
               {/if}
             </div>
+            <button
+              class={["item-bubble", itemStateClass(ws)]}
+              onclick={(e) => handleItemBubbleClick(e, ws)}
+              onkeydown={(e) => {
+                // Stop Enter/Space from bubbling to the row,
+                // since the row's keyboard handler also navigates.
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                }
+              }}
+              title={ws.item_type === "issue"
+                ? `Open issue #${ws.item_number}`
+                : `Open PR #${ws.item_number}`}
+            >
+              #{ws.item_number}
+            </button>
           </div>
         {/each}
       {/if}
@@ -464,10 +449,14 @@
   }
 
   .ws-row {
+    /* Two columns: a flex-shrinking text region on the left and a
+     * fixed-width bubble pinned to the right. The bubble's column
+     * is independent of the text region's content, so push counts
+     * or diff stats can never push it left or off-screen. */
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px 8px 5px 14px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 4px 14px;
     border-left: 2px solid transparent;
     cursor: pointer;
     position: relative;
@@ -492,19 +481,17 @@
     background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
   }
 
-  .ws-row-title {
+  .ws-row-text {
+    /* All text-side content (status, title, branch, push, diff)
+     * shares one row and competes for the available width. The
+     * title gets flex:1 and shrinks first via ellipsis; everything
+     * after it is flex-shrink:0 so they keep their natural size
+     * until container queries hide them. */
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 6px;
-    min-width: 0;
-  }
-
-  .ws-row-meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    padding-left: 12px;
   }
 
   .status-dot {
@@ -580,16 +567,20 @@
   }
 
   .branch-chip {
+    /* Sits inline with the title; allowed to shrink (so push/diff
+     * stats remain readable), but never grows past its content
+     * width and truncates with ellipsis when squeezed. */
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
+    max-width: 50%;
     overflow: hidden;
     font-family: var(--font-mono);
     font-size: 10.5px;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: var(--text-muted);
     letter-spacing: 0;
     /* Tabular numerals + slightly tighter tracking turn the branch
      * line into a JetBrains-style "ref chip" rather than soft prose. */

@@ -610,7 +610,7 @@ test.describe("terminal state icons", () => {
         .getByRole("button", { name: "Delete" })
         .click();
 
-      await expect(page).toHaveURL(/\/pulls$/);
+      await expect(page).toHaveURL(/\/workspaces$/);
     },
   );
 });
@@ -804,11 +804,14 @@ test.describe("sidebar toggle behavior", () => {
       const row = page.locator(".ws-row", {
         hasText: "Add auth middleware",
       });
-      const badge = row.locator(".working-badge");
-      await expect(badge).toBeVisible();
-      await expect(badge).toContainText("Working");
-      await expect(badge).toHaveAttribute(
+      const pulse = row.locator(".working-pulse");
+      await expect(pulse).toBeVisible();
+      await expect(pulse).toHaveAttribute(
         "title",
+        "Working (title): ⠴ t3code-b5014b03",
+      );
+      await expect(pulse).toHaveAttribute(
+        "aria-label",
         "Working (title): ⠴ t3code-b5014b03",
       );
     },
@@ -1349,6 +1352,192 @@ test.describe("workspace list bubble opens right sidebar", () => {
         page.locator(".right-sidebar"),
       ).toBeVisible();
       await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+    },
+  );
+
+  test(
+    "clicking bubble from /workspaces routes and keeps sidebar populated",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/workspaces");
+
+      // The /workspaces route has no specific workspace selected
+      // but still mounts the workspace list sidebar.
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(1);
+      await expect(
+        page.locator(".terminal-main .state-message"),
+      ).toContainText("Select a workspace from the sidebar");
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      // Navigation lands on the terminal route for the clicked
+      // workspace, the sidebar stays populated rather than
+      // emptying out, and the right sidebar opens to PR.
+      await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(1);
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "clicking bubble for a different workspace from /terminal navigates and keeps sidebar populated",
+    async ({ page }) => {
+      const wsA = { ...testWorkspace, id: "ws-aaa", item_number: 1 };
+      const wsB = { ...testWorkspace, id: "ws-bbb", item_number: 2 };
+
+      // First catch-all so unmocked detail routes resolve to a valid
+      // workspace shape; specific routes below override.
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: [wsA, wsB] }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+      for (const ws of [wsA, wsB]) {
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}`,
+          async (route) => {
+            if (route.request().method() === "GET") {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(ws),
+              });
+              return;
+            }
+            await route.fulfill({ status: 204 });
+          },
+        );
+        await page.route(
+          `**/api/v1/workspaces/${ws.id}/runtime`,
+          async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                launch_targets: [],
+                sessions: [],
+                shell_session: null,
+              }),
+            });
+          },
+        );
+      }
+
+      await page.goto(`/terminal/${wsA.id}`);
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(2);
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsA.id}$`),
+      );
+
+      // Click the bubble for the other workspace.
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+          { hasText: `#${wsB.item_number}` },
+        )
+        .click();
+
+      // Should route to the other workspace, sidebar stays full,
+      // right sidebar opens to PR.
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${wsB.id}$`),
+      );
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row"),
+      ).toHaveCount(2);
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveClass(/\bactive\b/);
+    },
+  );
+
+  test(
+    "clicking bubble does not bubble up to row navigation",
+    async ({ page }) => {
+      // The row click handler must skip when the event originates
+      // inside the bubble. If it didn't, the row would navigate
+      // before the bubble could open the right sidebar — leaving
+      // the sidebar closed.
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      let routeChanges = 0;
+      page.on("framenavigated", () => {
+        routeChanges += 1;
+      });
+
+      await page
+        .locator(
+          ".workspace-list-sidebar .ws-row .item-bubble",
+        )
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+      // Click on the bubble for the currently selected workspace
+      // should not have triggered a frame/route navigation.
+      expect(routeChanges).toBe(0);
+    },
+  );
+
+  test(
+    "clicking bubble twice toggles the right sidebar",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+      await page.goto("/terminal/ws-123");
+
+      const bubble = page.locator(
+        ".workspace-list-sidebar .ws-row .item-bubble",
+      );
+
+      await bubble.click();
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toBeVisible();
+
+      await bubble.click();
+      await expect(
+        page.locator(".right-sidebar"),
+      ).toHaveCount(0);
     },
   );
 });

@@ -555,15 +555,14 @@
         {:else}
           <ReviewsView />
         {/if}
-      {:else if getPage() === "workspaces"}
-        <WorkspaceTerminalView workspaceId="" />
-      {:else if getPage() === "terminal"}
+      {:else if getPage() === "workspaces" || getPage() === "terminal"}
         {@const r = getRoute()}
-        {#if r.page === "terminal"}
-          {#key r.workspaceId}
-            <WorkspaceTerminalView workspaceId={r.workspaceId} />
-          {/key}
-        {/if}
+        {@const wsId =
+          r.page === "terminal" ? r.workspaceId : ""}
+        <!-- Single mount across /workspaces and /terminal/{id};
+             WorkspaceTerminalView reacts to workspaceId changes
+             internally so the page doesn't flash on navigation. -->
+        <WorkspaceTerminalView workspaceId={wsId} />
       {/if}
     </main>
 
