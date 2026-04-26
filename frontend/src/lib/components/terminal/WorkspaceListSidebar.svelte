@@ -414,18 +414,22 @@
     outline: none;
   }
 
+  .ws-row:hover {
+    background: var(--bg-surface-hover);
+  }
+
   .ws-row:focus-visible {
     background: var(--bg-surface-hover);
     box-shadow: inset 0 0 0 1px var(--accent-blue);
   }
 
-  .ws-row:hover:not(.selected) {
-    background: color-mix(in srgb, var(--bg-surface) 50%, transparent);
-  }
-
   .ws-row.selected {
     background: var(--bg-surface);
     border-left-color: var(--accent-blue);
+  }
+
+  .ws-row.selected:hover {
+    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
   }
 
   .ws-row-title {
