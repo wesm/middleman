@@ -5,6 +5,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
+  import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
 
   interface TerminalPaneProps {
     workspaceId?: string;
@@ -63,10 +64,7 @@
 
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
-    return (
-      `/ws/v1/workspaces/${encodeURIComponent(workspaceId)}` +
-      "/terminal"
-    );
+    return workspaceTmuxWebSocketPath(workspaceId);
   }
 
   function appendSizeParams(
