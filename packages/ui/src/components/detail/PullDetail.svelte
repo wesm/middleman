@@ -363,6 +363,7 @@
   let wsCreating = $state(false);
   let wsError = $state<string | null>(null);
   let actionMenuOpen = $state(false);
+  let actionMenuWrapEl = $state<HTMLDivElement>();
 
   function closeActionMenu(): void {
     actionMenuOpen = false;
@@ -372,6 +373,13 @@
     if (actionMenuOpen && e.key === "Escape") {
       actionMenuOpen = false;
     }
+  }
+
+  function onActionMenuDocumentMousedown(e: MouseEvent): void {
+    if (!actionMenuOpen) return;
+    const target = e.target as Node;
+    if (actionMenuWrapEl?.contains(target)) return;
+    closeActionMenu();
   }
 
   async function createWorkspace(): Promise<void> {
@@ -410,6 +418,7 @@
 </script>
 
 <svelte:window onkeydown={onActionMenuKeydown} />
+<svelte:document onmousedown={onActionMenuDocumentMousedown} />
 
 {#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
@@ -753,11 +762,8 @@
         <div class="primary-actions-wrap">
           <div class="actions-row actions-row--primary">
             {@render primaryActionButtons()}
-            {#if stateError}
-              <span class="action-error">{stateError}</span>
-            {/if}
           </div>
-          <div class="actions-menu-wrap">
+          <div class="actions-menu-wrap" bind:this={actionMenuWrapEl}>
             <button
               type="button"
               class="actions-menu-trigger"
@@ -769,14 +775,17 @@
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </button>
             {#if actionMenuOpen}
-              <div class="actions-menu-popover">
+              <div
+                class="actions-menu-popover"
+                onclickcapture={closeActionMenu}
+              >
                 {@render primaryActionButtons()}
-                {#if stateError}
-                  <span class="action-error">{stateError}</span>
-                {/if}
               </div>
             {/if}
           </div>
+          {#if stateError}
+            <span class="action-error action-error--state">{stateError}</span>
+          {/if}
         </div>
       {/if}
 
@@ -1504,6 +1513,11 @@
   .action-error {
     font-size: 11px;
     color: var(--accent-red, #d73a49);
+  }
+
+  .action-error--state {
+    display: block;
+    margin-top: 6px;
   }
 
   .section {

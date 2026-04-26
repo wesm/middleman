@@ -1,3 +1,12 @@
+<script module lang="ts">
+  let nextSelectDropdownID = 0;
+
+  function allocateSelectDropdownID(): string {
+    nextSelectDropdownID += 1;
+    return `select-dropdown-${nextSelectDropdownID}`;
+  }
+</script>
+
 <script lang="ts">
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -31,8 +40,16 @@
   let containerEl = $state<HTMLDivElement>();
   let buttonEl = $state<HTMLButtonElement>();
 
+  const dropdownID = allocateSelectDropdownID();
+  const listboxID = `${dropdownID}-listbox`;
+
   const selectedOption = $derived(
     options.find((option) => option.value === value) ?? options[0],
+  );
+  const triggerLabel = $derived(
+    title
+      ? `${title}: ${selectedOption?.label ?? value}`
+      : (selectedOption?.label ?? value),
   );
 
   $effect(() => {
@@ -87,6 +104,16 @@
     }
   }
 
+  function optionID(index: number): string {
+    return `${dropdownID}-option-${index}`;
+  }
+
+  function onFocusout(event: FocusEvent): void {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && containerEl?.contains(nextTarget)) return;
+    open = false;
+  }
+
   function onButtonKeydown(event: KeyboardEvent): void {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -114,15 +141,23 @@
   }
 </script>
 
-<div class={["select-dropdown", className]} bind:this={containerEl}>
+<div
+  class={["select-dropdown", className]}
+  bind:this={containerEl}
+  onfocusout={onFocusout}
+>
   <button
     bind:this={buttonEl}
     class="select-dropdown-trigger"
     type="button"
+    role="combobox"
     onclick={openDropdown}
     onkeydown={onButtonKeydown}
     aria-haspopup="listbox"
     aria-expanded={open}
+    aria-controls={listboxID}
+    aria-activedescendant={open ? optionID(highlightedIndex) : undefined}
+    aria-label={triggerLabel}
     {title}
     {disabled}
   >
@@ -136,10 +171,12 @@
   </button>
 
   {#if open}
-    <div class="select-dropdown-list" role="listbox">
+    <div id={listboxID} class="select-dropdown-list" role="listbox">
       {#each options as option, index (option.value)}
         <button
+          id={optionID(index)}
           type="button"
+          tabindex="-1"
           class="select-dropdown-option"
           class:highlighted={index === highlightedIndex}
           class:selected={option.value === value}
