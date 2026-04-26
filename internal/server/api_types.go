@@ -292,8 +292,6 @@ func toWorkspaceResponse(
 		MRReviewDecision:   s.MRReviewDecision,
 		MRAdditions:        s.MRAdditions,
 		MRDeletions:        s.MRDeletions,
-		CommitsAhead:       s.CommitsAhead,
-		CommitsBehind:      s.CommitsBehind,
 		AssociatedPR:       associatedPR,
 	}
 }

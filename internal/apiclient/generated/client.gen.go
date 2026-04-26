@@ -74,6 +74,16 @@ type ApprovePRInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// AssociatedPRResponse defines model for AssociatedPRResponse.
+type AssociatedPRResponse struct {
+	CiStatus       *string `json:"ci_status,omitempty"`
+	IsDraft        bool    `json:"is_draft"`
+	Number         int64   `json:"number"`
+	ReviewDecision *string `json:"review_decision,omitempty"`
+	State          string  `json:"state"`
+	Title          string  `json:"title"`
+}
+
 // BulkAddRepoRequest defines model for BulkAddRepoRequest.
 type BulkAddRepoRequest struct {
 	Name  string `json:"name"`
@@ -85,16 +95,6 @@ type BulkAddReposRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string               `json:"$schema,omitempty"`
 	Repos  *[]BulkAddRepoRequest `json:"repos"`
-}
-
-// AssociatedPRResponse defines model for AssociatedPRResponse.
-type AssociatedPRResponse struct {
-	CiStatus       *string `json:"ci_status,omitempty"`
-	IsDraft        bool    `json:"is_draft"`
-	Number         int64   `json:"number"`
-	ReviewDecision *string `json:"review_decision,omitempty"`
-	State          string  `json:"state"`
-	Title          string  `json:"title"`
 }
 
 // CommentAutocompleteReference defines model for CommentAutocompleteReference.

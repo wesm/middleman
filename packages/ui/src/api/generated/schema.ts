@@ -880,6 +880,15 @@ export interface components {
             readonly $schema?: string;
             body: string;
         };
+        AssociatedPRResponse: {
+            ci_status?: string;
+            is_draft: boolean;
+            /** Format: int64 */
+            number: number;
+            review_decision?: string;
+            state: string;
+            title: string;
+        };
         BulkAddRepoRequest: {
             name: string;
             owner: string;
@@ -892,15 +901,6 @@ export interface components {
              */
             readonly $schema?: string;
             repos: components["schemas"]["BulkAddRepoRequest"][] | null;
-        };
-        AssociatedPRResponse: {
-            ci_status?: string;
-            is_draft: boolean;
-            /** Format: int64 */
-            number: number;
-            review_decision?: string;
-            state: string;
-            title: string;
         };
         CommentAutocompleteReference: {
             kind: string;

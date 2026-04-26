@@ -10773,7 +10773,7 @@ func prepareIssueWorkspaceAssociationFixture(
 	t.Helper()
 	require := require.New(t)
 
-	fixture := setupWorkspaceServerFixture(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := context.Background()
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
