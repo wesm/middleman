@@ -776,11 +776,11 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa\nmiddleman-notes\nother-session\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa-0123456789abcdef\nmiddleman-aaaaaaaaaaaaaaaa-claude\nmiddleman-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		`  if [ "$a" = "show-options" ]; then` + "\n" +
-		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa" ]; then` + "\n" +
+		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa-0123456789abcdef" ] || [ "$5" = "middleman-aaaaaaaaaaaaaaaa-claude" ]; then` + "\n" +
 		`      printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
 		`      exit 0` + "\n" +
 		`    fi` + "\n" +
@@ -828,14 +828,328 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	assert.Equal(
 		[]string{
 			"wrap", "show-options", "-qv", "-t",
-			"middleman-aaaaaaaaaaaaaaaa", "@middleman_owner",
+			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
+			"@middleman_owner",
 		},
 		argvs[2],
 	)
 	assert.Equal(
-		[]string{"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa"},
+		[]string{
+			"wrap", "kill-session", "-t",
+			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
+		},
 		argvs[3],
 	)
+	assert.NotContains(argvs, []string{
+		"wrap", "show-options", "-qv", "-t",
+		"middleman-aaaaaaaaaaaaaaaa-claude", "@middleman_owner",
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t",
+		"middleman-aaaaaaaaaaaaaaaa-claude",
+	})
+}
+
+func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-57de4cf40144bdf7\nmiddleman-aaaaaaaaaaaaaaaa-c857d09db23e6822\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "show-options" ]; then` + "\n" +
+		`    printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "0000000000000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
+			TargetKey:   "codex",
+		},
+	))
+
+	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{
+		"wrap", "kill-session", "-t",
+		"middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822",
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t",
+		"middleman-0000000000000001-57de4cf40144bdf7",
+	})
+}
+
+func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "0000000000000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-c857d09db23e6822",
+			TargetKey:   "claude",
+		},
+	))
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "0000000000000002",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "gadget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   2,
+		GitHeadRef:   "feature/other",
+		WorktreePath: filepath.Join(t.TempDir(), "other"),
+		TmuxSession:  "middleman-0000000000000002",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000002",
+			SessionName: "middleman-0000000000000002-57de4cf40144bdf7",
+			TargetKey:   "codex",
+		},
+	))
+
+	sessions, err := mgr.TmuxSessionsForWorkspace(
+		context.Background(),
+		"0000000000000001",
+		"middleman-0000000000000001",
+	)
+	require.NoError(err)
+
+	assert.Equal([]string{
+		"middleman-0000000000000001",
+		"middleman-0000000000000001-c857d09db23e6822",
+		"middleman-0000000000000001-57de4cf40144bdf7",
+	}, sessions)
+
+	sessions, err = mgr.TmuxSessionsForWorkspace(
+		context.Background(),
+		"0000000000000001",
+		"",
+	)
+	require.NoError(err)
+	assert.Equal([]string{
+		"middleman-0000000000000001-c857d09db23e6822",
+		"middleman-0000000000000001-57de4cf40144bdf7",
+	}, sessions)
+}
+
+func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	ws := &Workspace{
+		ID:           "0000000000000001",
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+	}
+	require.NoError(d.InsertWorkspace(context.Background(), ws))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.ID,
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.ID,
+			SessionName: "middleman-0000000000000001-c857d09db23e6822",
+			TargetKey:   "claude",
+		},
+	))
+
+	require.NoError(mgr.cleanupTmuxSession(context.Background(), ws))
+
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{
+		"kill-session", "-t", "middleman-0000000000000001",
+	})
+	assert.Contains(argvs, []string{
+		"kill-session", "-t",
+		"middleman-0000000000000001-c857d09db23e6822",
+	})
+	assert.Contains(argvs, []string{
+		"kill-session", "-t",
+		"middleman-0000000000000001-57de4cf40144bdf7",
+	})
+	assert.NotContains(argvs, []string{
+		"kill-session", "-t",
+		"middleman-0000000000000002-57de4cf40144bdf7",
+	})
+	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)
+	require.NoError(err)
+	assert.Empty(stored)
+}
+
+func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`target=""` + "\n" +
+		`prev=""` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$prev" = "-t" ]; then target="$a"; fi` + "\n" +
+		`  prev="$a"` + "\n" +
+		`done` + "\n" +
+		`if [ "$1" = "kill-session" ]; then` + "\n" +
+		`  case "$target" in` + "\n" +
+		`    middleman-0000000000000001)` + "\n" +
+		`      echo "can't find session: $target" >&2` + "\n" +
+		`      exit 1` + "\n" +
+		`      ;;` + "\n" +
+		`    middleman-0000000000000001-57de4cf40144bdf7)` + "\n" +
+		`      echo "permission denied" >&2` + "\n" +
+		`      exit 42` + "\n" +
+		`      ;;` + "\n" +
+		`  esac` + "\n" +
+		`fi` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	ws := &Workspace{
+		ID:           "0000000000000001",
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "error",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+	}
+	require.NoError(d.InsertWorkspace(context.Background(), ws))
+	for _, targetKey := range []string{"codex", "claude"} {
+		require.NoError(d.UpsertWorkspaceTmuxSession(
+			context.Background(),
+			&db.WorkspaceTmuxSession{
+				WorkspaceID: ws.ID,
+				SessionName: map[string]string{
+					"codex":  "middleman-0000000000000001-57de4cf40144bdf7",
+					"claude": "middleman-0000000000000001-c857d09db23e6822",
+				}[targetKey],
+				TargetKey: targetKey,
+			},
+		))
+	}
+
+	err := mgr.cleanupTmuxSession(context.Background(), ws)
+	require.Error(err)
+	assert.Contains(err.Error(), "middleman-0000000000000001-57de4cf40144bdf7")
+
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{
+		"kill-session", "-t", "middleman-0000000000000001",
+	})
+	assert.Contains(argvs, []string{
+		"kill-session", "-t",
+		"middleman-0000000000000001-57de4cf40144bdf7",
+	})
+	assert.Contains(argvs, []string{
+		"kill-session", "-t",
+		"middleman-0000000000000001-c857d09db23e6822",
+	})
+
+	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)
+	require.NoError(err)
+	require.Len(stored, 2)
 }
 
 func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {

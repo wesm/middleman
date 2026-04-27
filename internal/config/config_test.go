@@ -932,6 +932,7 @@ func TestLoadTmuxCommandOmitted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(cfg.Tmux.Command)
 	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+	assert.True(cfg.TmuxAgentSessionsEnabled())
 }
 
 func TestLoadTmuxCommandEmptyArray(t *testing.T) {
@@ -943,6 +944,41 @@ command = []
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.Equal([]string{"tmux"}, cfg.TmuxCommand())
+}
+
+func TestLoadTmuxAgentSessionsDisabled(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[tmux]
+agent_sessions = false
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(cfg.TmuxAgentSessionsEnabled())
+}
+
+func TestSavePreservesTmuxAgentSessionsDisabled(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	disabled := false
+
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		DataDir:        dir,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+		Tmux: Tmux{
+			AgentSessions: &disabled,
+		},
+	}
+	require.NoError(t, cfg.Save(path))
+
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	assert.False(reloaded.TmuxAgentSessionsEnabled())
 }
 
 func TestTmuxCommandDefensiveCopy(t *testing.T) {

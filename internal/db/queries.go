@@ -2525,6 +2525,123 @@ func (d *DB) ListWorkspaceSetupEvents(
 	return out, rows.Err()
 }
 
+// UpsertWorkspaceTmuxSession records a tmux session owned by a
+// runtime launch inside a workspace. Re-launching the same target
+// keeps the original row fresh without duplicating it.
+func (d *DB) UpsertWorkspaceTmuxSession(
+	ctx context.Context,
+	session *WorkspaceTmuxSession,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO middleman_workspace_tmux_sessions
+		    (workspace_id, session_name, target_key)
+		VALUES (?, ?, ?)
+		ON CONFLICT(workspace_id, session_name) DO UPDATE SET
+		    target_key = excluded.target_key`,
+		session.WorkspaceID, session.SessionName, session.TargetKey,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert workspace tmux session: %w", err)
+	}
+	return nil
+}
+
+// ListWorkspaceTmuxSessions returns stored runtime tmux sessions for
+// a workspace ordered by target key and creation time.
+func (d *DB) ListWorkspaceTmuxSessions(
+	ctx context.Context,
+	workspaceID string,
+) ([]WorkspaceTmuxSession, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT workspace_id, session_name, target_key, created_at
+		FROM middleman_workspace_tmux_sessions
+		WHERE workspace_id = ?
+		ORDER BY target_key, created_at, session_name`, workspaceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace tmux sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WorkspaceTmuxSession
+	for rows.Next() {
+		var session WorkspaceTmuxSession
+		if err := rows.Scan(
+			&session.WorkspaceID, &session.SessionName,
+			&session.TargetKey, &session.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan workspace tmux session: %w", err)
+		}
+		session.CreatedAt = session.CreatedAt.UTC()
+		out = append(out, session)
+	}
+	return out, rows.Err()
+}
+
+// ListAllWorkspaceTmuxSessions returns every stored runtime tmux
+// session. It is used by startup cleanup to distinguish live owned
+// sessions from stale managed sessions left behind by crashes.
+func (d *DB) ListAllWorkspaceTmuxSessions(
+	ctx context.Context,
+) ([]WorkspaceTmuxSession, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT workspace_id, session_name, target_key, created_at
+		FROM middleman_workspace_tmux_sessions
+		ORDER BY workspace_id, target_key, created_at, session_name`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list all workspace tmux sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WorkspaceTmuxSession
+	for rows.Next() {
+		var session WorkspaceTmuxSession
+		if err := rows.Scan(
+			&session.WorkspaceID, &session.SessionName,
+			&session.TargetKey, &session.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan workspace tmux session: %w", err)
+		}
+		session.CreatedAt = session.CreatedAt.UTC()
+		out = append(out, session)
+	}
+	return out, rows.Err()
+}
+
+// DeleteWorkspaceTmuxSession removes one stored runtime tmux session.
+func (d *DB) DeleteWorkspaceTmuxSession(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		DELETE FROM middleman_workspace_tmux_sessions
+		WHERE workspace_id = ? AND session_name = ?`,
+		workspaceID, sessionName,
+	)
+	if err != nil {
+		return fmt.Errorf("delete workspace tmux session: %w", err)
+	}
+	return nil
+}
+
+// DeleteWorkspaceTmuxSessions removes every stored runtime tmux
+// session for a workspace.
+func (d *DB) DeleteWorkspaceTmuxSessions(
+	ctx context.Context,
+	workspaceID string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		DELETE FROM middleman_workspace_tmux_sessions
+		WHERE workspace_id = ?`, workspaceID,
+	)
+	if err != nil {
+		return fmt.Errorf("delete workspace tmux sessions: %w", err)
+	}
+	return nil
+}
+
 // DeleteWorkspace removes a workspace by ID.
 func (d *DB) DeleteWorkspace(
 	ctx context.Context, id string,

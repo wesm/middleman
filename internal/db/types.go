@@ -301,6 +301,13 @@ type WorkspaceSetupEvent struct {
 	CreatedAt   time.Time
 }
 
+type WorkspaceTmuxSession struct {
+	WorkspaceID string
+	SessionName string
+	TargetKey   string
+	CreatedAt   time.Time
+}
+
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
 	Repo   string     // "owner/name" filter

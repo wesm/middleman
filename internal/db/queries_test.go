@@ -1889,6 +1889,46 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Equal("ensure clone: clone failed", events[0].Message)
 	assert.False(events[0].CreatedAt.IsZero())
 
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		ctx,
+		&WorkspaceTmuxSession{
+			WorkspaceID: "ws-abc-123",
+			SessionName: "middleman-ws-abc-123-codex",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		ctx,
+		&WorkspaceTmuxSession{
+			WorkspaceID: "ws-abc-123",
+			SessionName: "middleman-ws-abc-123-claude",
+			TargetKey:   "claude",
+		},
+	))
+	tmuxSessions, err := d.ListWorkspaceTmuxSessions(ctx, "ws-abc-123")
+	require.NoError(err)
+	require.Len(tmuxSessions, 2)
+	assert.Equal("middleman-ws-abc-123-claude", tmuxSessions[0].SessionName)
+	assert.Equal("claude", tmuxSessions[0].TargetKey)
+	assert.False(tmuxSessions[0].CreatedAt.IsZero())
+
+	allTmuxSessions, err := d.ListAllWorkspaceTmuxSessions(ctx)
+	require.NoError(err)
+	require.Len(allTmuxSessions, 2)
+
+	require.NoError(d.DeleteWorkspaceTmuxSession(
+		ctx, "ws-abc-123", "middleman-ws-abc-123-claude",
+	))
+	tmuxSessions, err = d.ListWorkspaceTmuxSessions(ctx, "ws-abc-123")
+	require.NoError(err)
+	require.Len(tmuxSessions, 1)
+	assert.Equal("middleman-ws-abc-123-codex", tmuxSessions[0].SessionName)
+
+	require.NoError(d.DeleteWorkspaceTmuxSessions(ctx, "ws-abc-123"))
+	tmuxSessions, err = d.ListWorkspaceTmuxSessions(ctx, "ws-abc-123")
+	require.NoError(err)
+	assert.Empty(tmuxSessions)
+
 	// Clear error message
 	require.NoError(d.UpdateWorkspaceStatus(
 		ctx, "ws-abc-123", "ready", nil,

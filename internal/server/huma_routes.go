@@ -2553,66 +2553,136 @@ func (s *Server) toWorkspaceResponse(
 ) workspaceResponse {
 	resp := toWorkspaceResponse(summary)
 	if s.workspaces == nil ||
-		summary.Status != "ready" ||
-		summary.TmuxSession == "" {
+		summary.Status != "ready" {
 		return resp
 	}
 
 	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
+	if activity, ok := s.probeWorkspaceTmuxActivity(
+		ctx, summary.ID, s.workspaceTmuxActivitySessions(ctx, summary),
+	); ok {
+		applyTmuxActivity(&resp, activity)
+	}
+	return resp
+}
 
-	if s.tmuxActivity != nil {
-		if result, ok := s.tmuxActivity.Cached(summary.TmuxSession); ok {
-			applyTmuxActivity(&resp, result)
-			return resp
+func (s *Server) workspaceTmuxActivitySessions(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) []string {
+	sessions := make([]string, 0, 1)
+	seen := map[string]bool{}
+	if s.workspaces != nil {
+		stored, err := s.workspaces.TmuxSessionsForWorkspace(
+			ctx, summary.ID, summary.TmuxSession,
+		)
+		if err != nil {
+			slog.Debug(
+				"list workspace tmux sessions",
+				"workspace_id", summary.ID,
+				"tmux_session", summary.TmuxSession,
+				"err", err,
+			)
+		}
+		for _, session := range stored {
+			if session == "" || seen[session] {
+				continue
+			}
+			sessions = append(sessions, session)
+			seen[session] = true
 		}
 	}
+	if summary.TmuxSession != "" && !seen[summary.TmuxSession] {
+		sessions = append(sessions, summary.TmuxSession)
+		seen[summary.TmuxSession] = true
+	}
+	if s.runtime == nil {
+		return sessions
+	}
+	for _, session := range s.runtime.TmuxSessions(summary.ID) {
+		if session == "" || seen[session] {
+			continue
+		}
+		sessions = append(sessions, session)
+		seen[session] = true
+	}
+	return sessions
+}
 
+func (s *Server) probeWorkspaceTmuxActivity(
+	ctx context.Context,
+	workspaceID string,
+	sessions []string,
+) (tmuxActivityResult, bool) {
+	if len(sessions) == 0 {
+		return tmuxActivityResult{}, false
+	}
 	tracker := s.tmuxActivity
 	if tracker == nil {
 		tracker = newTmuxActivityTracker(nil)
 	}
 	probeCtx, cancelProbe := context.WithTimeout(ctx, tmuxActivityProbeTimeout)
 	defer cancelProbe()
-	probe := tracker.StartProbe(probeCtx, summary.TmuxSession)
+
+	results := make([]tmuxActivityResult, 0, len(sessions))
+	for _, session := range sessions {
+		if s.tmuxActivity != nil {
+			if result, ok := tracker.Cached(session); ok {
+				results = append(results, result)
+				continue
+			}
+		}
+		result, ok := s.probeOneTmuxSession(
+			probeCtx, tracker, workspaceID, session,
+		)
+		if ok {
+			results = append(results, result)
+		}
+	}
+	return mergeTmuxActivityResults(results)
+}
+
+func (s *Server) probeOneTmuxSession(
+	ctx context.Context,
+	tracker *tmuxActivityTracker,
+	workspaceID string,
+	session string,
+) (tmuxActivityResult, bool) {
+	probe := tracker.StartProbe(ctx, session)
 	if !probe.Started {
 		if probe.HasFallback {
-			applyTmuxActivity(&resp, probe.Fallback)
-			return resp
+			return probe.Fallback, true
 		}
 		if probe.Wait != nil {
 			select {
 			case <-probe.Wait:
-				if result, ok := tracker.Cached(summary.TmuxSession); ok {
-					applyTmuxActivity(&resp, result)
-				}
-			case <-probeCtx.Done():
+				return tracker.Cached(session)
+			case <-ctx.Done():
 			}
 		}
-		return resp
+		return tmuxActivityResult{}, false
 	}
 
-	snapshot, err := s.workspaces.TmuxPaneSnapshot(probeCtx, summary.TmuxSession)
+	snapshot, err := s.workspaces.TmuxPaneSnapshot(ctx, session)
 	if err != nil {
 		probe.Probe.Cancel()
 		slog.Debug(
 			"read tmux pane snapshot",
-			"workspace_id", summary.ID,
-			"tmux_session", summary.TmuxSession,
+			"workspace_id", workspaceID,
+			"tmux_session", session,
 			"err", err,
 		)
 		if probe.HasFallback {
-			applyTmuxActivity(&resp, probe.Fallback)
+			return probe.Fallback, true
 		}
-		return resp
+		return tmuxActivityResult{}, false
 	}
 
-	activity := probe.Probe.Finish(tmuxActivityObservation{
+	return probe.Probe.Finish(tmuxActivityObservation{
 		PaneTitle: snapshot.Title,
 		Output:    snapshot.Output,
 		HasOutput: true,
-	})
-	applyTmuxActivity(&resp, activity)
-	return resp
+	}), true
 }
 
 func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {
@@ -2728,6 +2798,16 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	if err != nil {
 		return nil, workspaceRuntimeLaunchError(err)
 	}
+	if session.TmuxSession != "" {
+		if err := s.workspaces.RecordRuntimeTmuxSession(
+			ctx, summary.ID, session.TmuxSession, session.TargetKey,
+		); err != nil {
+			_ = s.runtime.Stop(ctx, summary.ID, session.Key)
+			return nil, huma.Error500InternalServerError(
+				"record runtime tmux session: " + err.Error(),
+			)
+		}
+	}
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
 }
 
@@ -2739,12 +2819,65 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	if err != nil {
 		return nil, err
 	}
+	tmuxSession := runtimeSessionTmuxSession(
+		s.runtime.ListSessions(summary.ID), input.SessionKey,
+	)
 	if err := s.runtime.Stop(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		if errors.Is(err, localruntime.ErrSessionNotFound) {
+			if targetKey, ok := runtimeTargetKeyFromSessionKey(
+				summary.ID, input.SessionKey,
+			); ok {
+				stopped, stopErr := s.workspaces.StopStoredRuntimeTmuxSession(
+					ctx, summary.ID, targetKey,
+				)
+				if stopErr != nil {
+					return nil, huma.Error500InternalServerError(
+						"stop stored runtime tmux session: " +
+							stopErr.Error(),
+					)
+				}
+				if stopped {
+					return nil, nil
+				}
+			}
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(
+			"stop runtime session: " + err.Error(),
+		)
+	}
+	if tmuxSession != "" {
+		if err := s.workspaces.ForgetRuntimeTmuxSession(
+			ctx, summary.ID, tmuxSession,
+		); err != nil {
+			return nil, huma.Error500InternalServerError(
+				"forget runtime tmux session: " + err.Error(),
+			)
+		}
 	}
 	return nil, nil
+}
+
+func runtimeSessionTmuxSession(
+	sessions []localruntime.SessionInfo,
+	key string,
+) string {
+	for _, session := range sessions {
+		if session.Key == key {
+			return session.TmuxSession
+		}
+	}
+	return ""
+}
+
+func runtimeTargetKeyFromSessionKey(
+	workspaceID string,
+	key string,
+) (string, bool) {
+	targetKey, ok := strings.CutPrefix(key, workspaceID+":")
+	return targetKey, ok && targetKey != ""
 }
 
 func (s *Server) ensureWorkspaceRuntimeShell(
