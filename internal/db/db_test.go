@@ -814,8 +814,7 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 func TestOpenRepairsAssociatedPRWorkspaceUniqueness(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "workspace-broken-v12.db")
+	path := filepath.Join(t.TempDir(), "workspace-broken-v13.db")
 
 	d, err := Open(path)
 	require.NoError(err)
@@ -843,7 +842,7 @@ func TestOpenRepairsAssociatedPRWorkspaceUniqueness(t *testing.T) {
 	require.NoError(err)
 	_, err = raw.Exec(`UPDATE middleman_workspaces SET associated_pr_number = mr_number`)
 	require.NoError(err)
-	_, err = raw.Exec(`UPDATE schema_migrations SET version = 12, dirty = FALSE`)
+	_, err = raw.Exec(`UPDATE schema_migrations SET version = 13, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
 
@@ -856,6 +855,13 @@ func TestOpenRepairsAssociatedPRWorkspaceUniqueness(t *testing.T) {
 	require.NotNil(prWS)
 	require.NotNil(prWS.AssociatedPRNumber)
 	require.Equal(7, *prWS.AssociatedPRNumber)
+	require.True(
+		tableExistsForTest(
+			t,
+			reopened.ReadDB(),
+			"middleman_workspace_tmux_sessions",
+		),
+	)
 
 	issueWS := workspaceWithSharedNumberForTest("ws-issue")
 	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
@@ -1061,6 +1067,8 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000011_add_workspace_setup_events.up.sql"
 	case 12:
 		return "000012_workspace_item_types.up.sql"
+	case 13:
+		return "000013_workspace_tmux_sessions.up.sql"
 	default:
 		return ""
 	}
@@ -1074,11 +1082,15 @@ func TestOpenMigratesWorkspaceAssociatedPRBackfill(t *testing.T) {
 
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
-	_, err = raw.Exec(legacySchemaSQLForTest(t, 12))
+	_, err = raw.Exec(
+		legacySchemaSQLForTest(t, workspaceTmuxSessionsMigrationVersion),
+	)
 	require.NoError(err)
 	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
 	require.NoError(err)
-	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (12, FALSE)`)
+	_, err = raw.Exec(`
+		INSERT INTO schema_migrations (version, dirty) VALUES (13, FALSE)
+	`)
 	require.NoError(err)
 	_, err = raw.Exec(`
 		INSERT INTO middleman_workspaces (

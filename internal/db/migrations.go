@@ -23,7 +23,8 @@ const (
 	recreateDatabaseInstruction           = "delete the database file and let middleman recreate it"
 	timestampRepairGateVersion            = 10
 	workspaceSetupMigrationVersion        = 11
-	workspaceAssociatedPRMigrationVersion = 13
+	workspaceTmuxSessionsMigrationVersion = 13
+	workspaceAssociatedPRMigrationVersion = 14
 )
 
 //go:embed migrations/*.sql
@@ -368,6 +369,22 @@ func reconcileWorkspaceAssociatedPRMigrationVersion12(
 		return false, err
 	}
 
+	hasTmuxSessionsTable := hasTable(
+		rw,
+		"middleman_workspace_tmux_sessions",
+	)
+	hasTmuxSessionsIndex := hasIndex(
+		rw,
+		"middleman_workspace_tmux_sessions_workspace_id_idx",
+	)
+	if err := ensureWorkspaceTmuxSessionsMigrationArtifacts(
+		rw,
+		hasTmuxSessionsTable,
+		hasTmuxSessionsIndex,
+	); err != nil {
+		return false, err
+	}
+
 	if err := driver.SetVersion(
 		workspaceAssociatedPRMigrationVersion, false,
 	); err != nil {
@@ -375,6 +392,38 @@ func reconcileWorkspaceAssociatedPRMigrationVersion12(
 	}
 
 	return true, nil
+}
+
+func ensureWorkspaceTmuxSessionsMigrationArtifacts(
+	rw *sql.DB,
+	hasTmuxSessionsTable bool,
+	hasTmuxSessionsIndex bool,
+) error {
+	if !hasTmuxSessionsTable {
+		if _, err := rw.Exec(`
+			CREATE TABLE IF NOT EXISTS middleman_workspace_tmux_sessions (
+			    workspace_id TEXT NOT NULL REFERENCES middleman_workspaces(id) ON DELETE CASCADE,
+			    session_name TEXT NOT NULL,
+			    target_key   TEXT NOT NULL,
+			    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+			    PRIMARY KEY (workspace_id, session_name),
+			    UNIQUE (session_name)
+			)
+		`); err != nil {
+			return err
+		}
+	}
+
+	if !hasTmuxSessionsIndex {
+		if _, err := rw.Exec(`
+			CREATE INDEX IF NOT EXISTS middleman_workspace_tmux_sessions_workspace_id_idx
+			    ON middleman_workspace_tmux_sessions(workspace_id)
+		`); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func rebuildWorkspacesWithItemTypeUniqueness(rw *sql.DB) error {
