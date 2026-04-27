@@ -21,10 +21,17 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
     disabled?: boolean;
   }
 
-  const { owner, name, number, disabled = false }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    platformHost,
+    disabled = false,
+  }: Props = $props();
 
   const currentDraftKey = $derived(
     getCommentDraftKey("pull", owner, name, number),
@@ -93,6 +100,7 @@
     <CommentEditor
       {owner}
       {name}
+      {platformHost}
       value={body}
       disabled={isPostingCurrent || disabled}
       oninput={(nextBody) => {

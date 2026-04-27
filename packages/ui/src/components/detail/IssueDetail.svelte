@@ -533,6 +533,7 @@
           {owner}
           {name}
           {number}
+          platformHost={detail.platform_host}
           disabled={staleIssue}
         />
       </div>

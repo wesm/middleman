@@ -565,6 +565,42 @@ describe("comment draft persistence", () => {
     });
   });
 
+  it.each(["pull", "issue"] as const)(
+    "passes the platform host to %s comment autocomplete",
+    async (kind) => {
+      const autocompleteQueries: Array<Record<string, unknown> | undefined> = [];
+
+      render(CommentBoxContextHarness, {
+        props: {
+          kind,
+          platformHost: "ghe.example.com",
+          autocompleteResponse: {
+            users: ["alice"],
+            references: [],
+          },
+          onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {
+            autocompleteQueries.push(query);
+          },
+        },
+      });
+
+      setCommentDraft(kind, "octo", "repo", 1, "@al");
+      await waitFor(() => {
+        expect(getCommentEditorText()).toBe("@al");
+      });
+
+      await fireEvent.focus(getCommentEditor());
+
+      await waitFor(() => {
+        expect(screen.getByRole("option", { name: /@alice/i })).toBeTruthy();
+      });
+
+      expect(autocompleteQueries.at(-1)).toMatchObject({
+        platform_host: "ghe.example.com",
+      });
+    },
+  );
+
   it("does not accept an autocomplete suggestion while IME composition is active", async () => {
     render(CommentBoxContextHarness, {
       props: {

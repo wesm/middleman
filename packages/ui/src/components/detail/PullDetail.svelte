@@ -1043,6 +1043,7 @@
           {owner}
           {name}
           {number}
+          platformHost={detail.platform_host}
           disabled={stalePR}
         />
       </div>

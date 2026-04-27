@@ -24,7 +24,7 @@
   interface Props {
     owner: string;
     name: string;
-    platformHost?: string;
+    platformHost?: string | undefined;
     value: string;
     disabled?: boolean;
     placeholder?: string;

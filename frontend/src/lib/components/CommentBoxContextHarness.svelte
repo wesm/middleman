@@ -22,6 +22,7 @@
   export let owner = "octo";
   export let name = "repo";
   export let number = 1;
+  export let platformHost: string | undefined = undefined;
   export let submitComment: (
     owner: string,
     name: string,
@@ -30,6 +31,9 @@
   ) => Promise<void> = async () => {};
   export let getError: () => string | null = () => null;
   export let autocompleteResponse: AutocompleteResponse = { users: [], references: [] };
+  export let onAutocompleteQuery:
+    | ((query: Record<string, unknown> | undefined) => void)
+    | undefined = undefined;
 
   setContext(STORES_KEY, {
     detail: {
@@ -43,8 +47,12 @@
   });
 
   setContext(API_CLIENT_KEY, {
-    GET: async (path: string) => {
+    GET: async (
+      path: string,
+      options?: { params?: { query?: Record<string, unknown> } },
+    ) => {
       if (path === "/repos/{owner}/{name}/comment-autocomplete") {
+        onAutocompleteQuery?.(options?.params?.query);
         return { data: autocompleteResponse };
       }
       return { data: undefined, error: { title: "not mocked" } };
@@ -53,7 +61,7 @@
 </script>
 
 {#if kind === "pull"}
-  <CommentBox {owner} {name} {number} />
+  <CommentBox {owner} {name} {number} {platformHost} />
 {:else}
-  <IssueCommentBox {owner} {name} {number} />
+  <IssueCommentBox {owner} {name} {number} {platformHost} />
 {/if}
