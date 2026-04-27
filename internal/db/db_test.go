@@ -807,20 +807,74 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	require.Equal("success", events[0].Outcome)
 	require.Equal("cloned bare repository", events[0].Message)
 
-	issueWS := &Workspace{
-		ID:              "ws-preserve-issue",
+	issueWS := workspaceWithSharedNumberForTest("ws-preserve-issue")
+	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
+}
+
+func TestOpenRepairsAssociatedPRWorkspaceUniqueness(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workspace-broken-v12.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+
+	ws := &Workspace{
+		ID:              "ws-pr",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      7,
+		GitHeadRef:      "feat/pr-7",
+		WorktreePath:    "/tmp/ws-pr",
+		TmuxSession:     "ws-pr",
+		Status:          "ready",
+		WorkspaceBranch: "feat/pr-7",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	_, err = raw.Exec(`ALTER TABLE middleman_workspaces ADD COLUMN associated_pr_number INTEGER`)
+	require.NoError(err)
+	_, err = raw.Exec(`UPDATE middleman_workspaces SET associated_pr_number = mr_number`)
+	require.NoError(err)
+	_, err = raw.Exec(`UPDATE schema_migrations SET version = 12, dirty = FALSE`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	prWS, err := reopened.GetWorkspace(ctx, "ws-pr")
+	require.NoError(err)
+	require.NotNil(prWS)
+	require.NotNil(prWS.AssociatedPRNumber)
+	require.Equal(7, *prWS.AssociatedPRNumber)
+
+	issueWS := workspaceWithSharedNumberForTest("ws-issue")
+	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
+}
+
+func workspaceWithSharedNumberForTest(id string) *Workspace {
+	return &Workspace{
+		ID:              id,
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeIssue,
 		ItemNumber:      7,
 		GitHeadRef:      "middleman/issue-7",
-		WorktreePath:    "/tmp/ws-preserve-issue",
-		TmuxSession:     "ws-preserve-issue",
+		WorktreePath:    "/tmp/" + id,
+		TmuxSession:     id,
 		Status:          "creating",
 		WorkspaceBranch: "middleman/issue-7",
 	}
-	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
 }
 
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {

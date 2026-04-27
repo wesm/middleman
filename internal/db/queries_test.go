@@ -635,6 +635,41 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	Assert.Equal(t, repo1, prs[0].RepoID)
 }
 
+func TestListPullRequestsFilterByRepoIncludesAllHostsByDefault(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	githubRepo := insertTestRepo(t, d, "owner", "repo")
+	enterpriseRepo := insertTestRepoWithHost(
+		t, d, "owner", "repo", "ghe.example.com",
+	)
+	insertTestMR(t, d, githubRepo, 1, "github pr", base)
+	insertTestMR(t, d, enterpriseRepo, 2, "enterprise pr", base.Add(time.Hour))
+
+	allHosts, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		RepoOwner: "owner",
+		RepoName:  "repo",
+	})
+	require.NoError(err)
+	require.Len(allHosts, 2)
+	assert.Equal([]int64{enterpriseRepo, githubRepo}, []int64{
+		allHosts[0].RepoID,
+		allHosts[1].RepoID,
+	})
+
+	enterpriseOnly, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		PlatformHost: "ghe.example.com",
+		RepoOwner:    "owner",
+		RepoName:     "repo",
+	})
+	require.NoError(err)
+	require.Len(enterpriseOnly, 1)
+	assert.Equal(enterpriseRepo, enterpriseOnly[0].RepoID)
+}
+
 func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

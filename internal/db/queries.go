@@ -784,8 +784,11 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		host, owner, name := canonicalRepoIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
-		if host != "" {
+		_, owner, name := canonicalRepoIdentifier(
+			"", opts.RepoOwner, opts.RepoName,
+		)
+		if opts.PlatformHost != "" {
+			host, _, _ := canonicalRepoIdentifier(opts.PlatformHost, "", "")
 			conds = append(conds, "r.platform_host = ?")
 			args = append(args, host)
 		}
