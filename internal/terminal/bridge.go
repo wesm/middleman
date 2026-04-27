@@ -41,10 +41,12 @@ func ptyToWS(
 			if wErr := conn.Write(
 				ctx, websocket.MessageBinary, buf[:n],
 			); wErr != nil {
+				slog.Debug("terminal websocket write ended", "err", wErr)
 				return
 			}
 		}
 		if err != nil {
+			slog.Debug("terminal pty read ended", "err", err)
 			return
 		}
 	}
@@ -58,12 +60,14 @@ func wsToPTY(
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
+			slog.Debug("terminal websocket read ended", "err", err)
 			return
 		}
 
 		switch typ {
 		case websocket.MessageBinary:
 			if _, wErr := ptmx.Write(data); wErr != nil {
+				slog.Debug("terminal pty write ended", "err", wErr)
 				return
 			}
 		case websocket.MessageText:
@@ -84,6 +88,11 @@ func handleControl(ptmx *os.File, msg *controlMsg) {
 	if msg.Cols <= 0 || msg.Rows <= 0 {
 		return
 	}
+	slog.Debug(
+		"terminal resize requested",
+		"cols", msg.Cols,
+		"rows", msg.Rows,
+	)
 	if err := pty.Setsize(ptmx, &pty.Winsize{
 		Rows: uint16(msg.Rows),
 		Cols: uint16(msg.Cols),

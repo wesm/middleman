@@ -1567,7 +1567,7 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	// httptest baseURL (the generated client cannot upgrade to
 	// WebSocket, so we dial directly with coder/websocket).
 	wsURL := strings.Replace(baseURL, "http://", "ws://", 1) +
-		"/api/v1/workspaces/" + wsID + "/terminal"
+		"/ws/v1/workspaces/" + wsID + "/terminal"
 	dialCtx, dialCancel := context.WithTimeout(
 		ctx, 3*time.Second,
 	)
@@ -1969,7 +1969,7 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 	)
 
 	wsURL := strings.Replace(baseURL, "http://", "ws://", 1) +
-		"/api/v1/workspaces/" + wsID + "/terminal"
+		"/ws/v1/workspaces/" + wsID + "/terminal"
 	dialCtx, dialCancel := context.WithTimeout(
 		ctx, 3*time.Second,
 	)

@@ -8594,7 +8594,7 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/api/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.Id +
 		"/runtime/sessions/" + session.Key + "/terminal"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
@@ -8620,6 +8620,91 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 		}
 	}
 	require.Contains(got.String(), "echo:ping")
+}
+
+func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("altscreen"),
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+	time.Sleep(100 * time.Millisecond)
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key + "/terminal"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	type terminalRead struct {
+		typ  websocket.MessageType
+		data []byte
+		err  error
+	}
+	reads := make(chan terminalRead, 1)
+	readOnce := func() {
+		go func() {
+			typ, data, readErr := conn.Read(context.Background())
+			reads <- terminalRead{typ: typ, data: data, err: readErr}
+		}()
+	}
+	readOnce()
+	select {
+	case read := <-reads:
+		require.NoError(read.err)
+		require.Empty(
+			string(read.data),
+			"late attach must not replay stale alternate-screen output",
+		)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary, []byte("paint\n"),
+	))
+	var got strings.Builder
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case read := <-reads:
+			require.NoError(read.err)
+			if read.typ == websocket.MessageBinary {
+				got.WriteString(string(read.data))
+			}
+			if strings.Contains(got.String(), "live:paint") {
+				break
+			}
+			readOnce()
+			continue
+		case <-deadline:
+			require.Contains(got.String(), "live:paint")
+		}
+		break
+	}
+	assert.NotContains(got.String(), "codex screen")
+	require.Contains(got.String(), "live:paint")
 }
 
 func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
@@ -8650,7 +8735,7 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/api/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.Id +
 		"/runtime/sessions/" + session.Key +
 		"/terminal?cols=177&rows=41"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -8729,7 +8814,7 @@ printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/api/v1/workspaces/" + ws.Id +
+		"/ws/v1/workspaces/" + ws.Id +
 		"/runtime/sessions/" + session.Key +
 		"/terminal?cols=177&rows=41"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -8820,6 +8905,13 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err == nil {
 			fmt.Print("echo:" + line)
+		}
+		select {}
+	case "altscreen":
+		fmt.Print("\x1b[?1049h\x1b[Hcodex screen")
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err == nil {
+			fmt.Print("\x1b[Hlive:" + line)
 		}
 		select {}
 	case "size":

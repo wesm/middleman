@@ -109,13 +109,13 @@ describe("workspace-runtime api", () => {
     expect(
       workspaceSessionWebSocketPath("ws-1", "ws-1:helper"),
     ).toBe(
-      "/api/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
+      "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );
     expect(workspaceShellWebSocketPath("ws-1")).toBe(
-      "/api/v1/workspaces/ws-1/runtime/shell/terminal",
+      "/ws/v1/workspaces/ws-1/runtime/shell/terminal",
     );
     expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
-      "/api/v1/workspaces/ws-1/terminal",
+      "/ws/v1/workspaces/ws-1/terminal",
     );
   });
 });

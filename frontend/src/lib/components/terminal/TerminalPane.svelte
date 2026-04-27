@@ -62,7 +62,7 @@
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
     return (
-      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+      `/ws/v1/workspaces/${encodeURIComponent(workspaceId)}` +
       "/terminal"
     );
   }
@@ -87,6 +87,8 @@
     if (/^wss?:\/\//.test(withSize)) {
       return withSize;
     }
+    const devUrl = buildDevApiWsUrl(withSize);
+    if (devUrl) return devUrl;
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const normalizedPath = withSize.startsWith("/")
       ? withSize
@@ -95,6 +97,25 @@
       `${proto}://${location.host}${basePath}` +
       normalizedPath
     );
+  }
+
+  function buildDevApiWsUrl(path: string): string | null {
+    if (!import.meta.env.DEV) return null;
+    const apiUrl = window.__MIDDLEMAN_DEV_API_URL__?.trim();
+    if (!apiUrl || !path.startsWith("/api/")) return null;
+
+    try {
+      const base = new URL(apiUrl);
+      const requested = new URL(path, "http://middleman.local");
+      const basePath = base.pathname.replace(/\/$/, "");
+      base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+      base.pathname = `${basePath}${requested.pathname}`;
+      base.search = requested.search;
+      base.hash = "";
+      return base.toString();
+    } catch {
+      return null;
+    }
   }
 
   function sendResize(cols: number, rows: number): void {

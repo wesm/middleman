@@ -17,6 +17,7 @@ export type RuntimeFetch = typeof fetch;
 const basePath =
   typeof window !== "undefined" ? window.__BASE_PATH__ ?? "/" : "/";
 const baseUrl = `${basePath.replace(/\/$/, "")}/api/v1`;
+const wsBaseUrl = "/ws/v1";
 
 function workspaceRuntimeURL(workspaceId: string): string {
   return `${baseUrl}/workspaces/${encodeURIComponent(workspaceId)}/runtime`;
@@ -113,7 +114,7 @@ export function workspaceSessionWebSocketPath(
   sessionKey: string,
 ): string {
   return (
-    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+    `${wsBaseUrl}/workspaces/${encodeURIComponent(workspaceId)}` +
     `/runtime/sessions/${encodeURIComponent(sessionKey)}` +
     "/terminal"
   );
@@ -123,7 +124,7 @@ export function workspaceShellWebSocketPath(
   workspaceId: string,
 ): string {
   return (
-    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+    `${wsBaseUrl}/workspaces/${encodeURIComponent(workspaceId)}` +
     "/runtime/shell/terminal"
   );
 }
@@ -132,7 +133,7 @@ export function workspaceTmuxWebSocketPath(
   workspaceId: string,
 ): string {
   return (
-    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+    `${wsBaseUrl}/workspaces/${encodeURIComponent(workspaceId)}` +
     "/terminal"
   );
 }

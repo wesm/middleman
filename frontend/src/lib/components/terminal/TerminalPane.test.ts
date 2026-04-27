@@ -76,6 +76,7 @@ import TerminalPane from "./TerminalPane.svelte";
 describe("TerminalPane", () => {
   beforeEach(() => {
     configuredFontFamily = "";
+    window.__MIDDLEMAN_DEV_API_URL__ = "http://127.0.0.1:8091";
     terminalCtor.mockReset();
     mockFit.mockReset();
     mockOpen.mockReset();
@@ -113,6 +114,17 @@ describe("TerminalPane", () => {
     );
   });
 
+  it("uses the /ws terminal route for the default workspace socket", () => {
+    render(TerminalPane, {
+      props: { workspaceId: "ws-123" },
+    });
+
+    expect(sockets).toHaveLength(1);
+    const url = new URL(socketAt(0).url);
+    expect(url.origin).toBe("ws://localhost:3000");
+    expect(url.pathname).toBe("/ws/v1/workspaces/ws-123/terminal");
+  });
+
   it("connects to an explicit websocket path", () => {
     render(TerminalPane, {
       props: {
@@ -123,11 +135,28 @@ describe("TerminalPane", () => {
 
     expect(sockets).toHaveLength(1);
     const url = new URL(socketAt(0).url);
+    expect(url.origin).toBe("ws://127.0.0.1:8091");
     expect(url.pathname).toBe(
       "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
     );
     expect(url.searchParams.get("cols")).toBe("80");
     expect(url.searchParams.get("rows")).toBe("24");
+  });
+
+  it("keeps /ws paths on the current dev origin for Vite proxying", () => {
+    render(TerminalPane, {
+      props: {
+        websocketPath:
+          "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      },
+    });
+
+    expect(sockets).toHaveLength(1);
+    const url = new URL(socketAt(0).url);
+    expect(url.origin).toBe("ws://localhost:3000");
+    expect(url.pathname).toBe(
+      "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+    );
   });
 
   it("does not open a websocket when initialStatus is exited", () => {

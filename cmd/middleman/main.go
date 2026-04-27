@@ -32,9 +32,79 @@ var (
 )
 
 func main() {
+	closeLog, err := configureLogging(os.Stderr)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "configure logging: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := closeLog(); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "close log file: %v\n", err)
+		}
+	}()
+
 	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
+	}
+}
+
+func configureLogging(stderr io.Writer) (func() error, error) {
+	level, err := parseLogLevel(os.Getenv("MIDDLEMAN_LOG_LEVEL"))
+	if err != nil {
+		return nil, err
+	}
+
+	var writer = stderr
+	var file *os.File
+	logFile := strings.TrimSpace(os.Getenv("MIDDLEMAN_LOG_FILE"))
+	if logFile != "" {
+		if err := os.MkdirAll(filepath.Dir(logFile), 0o700); err != nil {
+			return nil, fmt.Errorf("create log directory: %w", err)
+		}
+		file, err = os.OpenFile(
+			logFile,
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+			0o600,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("open log file: %w", err)
+		}
+		writer = io.MultiWriter(stderr, file)
+	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(
+		writer,
+		&slog.HandlerOptions{Level: level},
+	)))
+	slog.Debug(
+		"logging configured",
+		"level", level.String(),
+		"file", logFile,
+	)
+
+	return func() error {
+		if file == nil {
+			return nil
+		}
+		return file.Close()
+	}, nil
+}
+
+func parseLogLevel(raw string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf(
+			"unsupported MIDDLEMAN_LOG_LEVEL %q", raw,
+		)
 	}
 }
 
@@ -118,6 +188,14 @@ func run(configPath string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	slog.Debug(
+		"config loaded",
+		"config_path", configPath,
+		"data_dir", cfg.DataDir,
+		"db_path", cfg.DBPath(),
+		"listen_addr", cfg.ListenAddr(),
+		"repo_count", len(cfg.Repos),
+	)
 
 	globalToken := cfg.GitHubToken()
 	if globalToken == "" {
@@ -200,6 +278,7 @@ func run(configPath string) error {
 	repos := resolveStartupRepos(
 		context.Background(), cfg, clients, database,
 	)
+	slog.Debug("startup repos resolved", "count", len(repos))
 
 	cloneMgr := gitclone.New(
 		filepath.Join(cfg.DataDir, "clones"), cloneTokens,
@@ -231,6 +310,11 @@ func run(configPath string) error {
 		cfg, configPath, server.ServerOptions{
 			WorktreeDir: filepath.Join(cfg.DataDir, "worktrees"),
 		},
+	)
+	slog.Debug(
+		"server initialized",
+		"base_path", cfg.BasePath,
+		"worktree_dir", filepath.Join(cfg.DataDir, "worktrees"),
 	)
 
 	// Wire status callback and prime the SSE event hub so clients

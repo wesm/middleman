@@ -188,6 +188,7 @@ interface MiddlemanNavigateEvent {
 
 interface Window {
   __BASE_PATH__?: string;
+  __MIDDLEMAN_DEV_API_URL__?: string;
   __middleman_config?: MiddlemanConfig;
   __middleman_notify_config_changed?: () => void;
   __middleman_update_workspace?: (data: WorkspaceData) => void;

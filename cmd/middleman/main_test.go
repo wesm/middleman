@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -229,4 +230,32 @@ func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 	content, err := os.ReadFile(cfgPath)
 	require.NoError(err)
 	assert.Contains(string(content), "port = 8091")
+}
+
+func TestConfigureLoggingWritesDebugLogsToFile(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	orig := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	logPath := filepath.Join(t.TempDir(), "middleman.log")
+	t.Setenv("MIDDLEMAN_LOG_LEVEL", "debug")
+	t.Setenv("MIDDLEMAN_LOG_FILE", logPath)
+
+	var stderr bytes.Buffer
+	closeLog, err := configureLogging(&stderr)
+	require.NoError(err)
+
+	slog.Debug("debug marker", "workspace_id", "ws-1")
+	slog.Info("info marker")
+	require.NoError(closeLog())
+
+	content, err := os.ReadFile(logPath)
+	require.NoError(err)
+	logs := string(content)
+	assert.Contains(logs, "debug marker")
+	assert.Contains(logs, "workspace_id=ws-1")
+	assert.Contains(logs, "info marker")
+	assert.Contains(stderr.String(), "debug marker")
 }

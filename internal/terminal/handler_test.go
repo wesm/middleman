@@ -108,7 +108,7 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 	assert.Contains(rec.Body.String(), "not ready")
 }
 
-func TestHandlerClaimWorkspaceTerminal(t *testing.T) {
+func TestHandlerAllowsConcurrentWorkspaceTerminals(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -118,9 +118,10 @@ func TestHandlerClaimWorkspaceTerminal(t *testing.T) {
 	assert.NotNil(release)
 
 	release2, err := h.claimTerminalSlot("ws-1")
-	require.Error(err)
-	assert.Nil(release2)
+	require.NoError(err)
+	assert.NotNil(release2)
 
+	release2()
 	release()
 
 	release3, err := h.claimTerminalSlot("ws-1")

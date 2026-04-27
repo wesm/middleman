@@ -94,17 +94,38 @@ type Manager struct {
 // startup output entirely.
 const maxSessionOutputReplay = 64 * 1024
 
+var (
+	alternateScreenEnterSequences = [][]byte{
+		[]byte("\x1b[?47h"),
+		[]byte("\x1b[?1047h"),
+		[]byte("\x1b[?1049h"),
+	}
+	alternateScreenExitSequences = [][]byte{
+		[]byte("\x1b[?47l"),
+		[]byte("\x1b[?1047l"),
+		[]byte("\x1b[?1049l"),
+	}
+	maxAlternateScreenSequenceLen = maxByteSliceLen(
+		append(
+			slices.Clone(alternateScreenEnterSequences),
+			alternateScreenExitSequences...,
+		),
+	)
+)
+
 type session struct {
-	mu           sync.Mutex
-	info         SessionInfo
-	cmd          *exec.Cmd
-	ptmx         *os.File
-	tmuxSession  string
-	done         chan struct{}
-	subscribers  map[chan []byte]struct{}
-	outputBuffer []byte
-	outputClosed bool
-	stopOnce     sync.Once
+	mu                    sync.Mutex
+	info                  SessionInfo
+	cmd                   *exec.Cmd
+	ptmx                  *os.File
+	tmuxSession           string
+	done                  chan struct{}
+	subscribers           map[chan []byte]struct{}
+	outputBuffer          []byte
+	outputClosed          bool
+	alternateScreenActive bool
+	alternateScreenTail   []byte
+	stopOnce              sync.Once
 }
 
 type Attachment struct {
@@ -161,12 +182,28 @@ func dedupeStrings(in []string) []string {
 	return out
 }
 
+func maxByteSliceLen(slices [][]byte) int {
+	maxLen := 0
+	for _, slice := range slices {
+		if len(slice) > maxLen {
+			maxLen = len(slice)
+		}
+	}
+	return maxLen
+}
+
 func (m *Manager) Launch(
 	ctx context.Context,
 	workspaceID string,
 	cwd string,
 	targetKey string,
 ) (SessionInfo, error) {
+	slog.Debug(
+		"runtime launch requested",
+		"workspace_id", workspaceID,
+		"target_key", targetKey,
+		"cwd", cwd,
+	)
 	if err := ctx.Err(); err != nil {
 		return SessionInfo{}, err
 	}
@@ -199,6 +236,12 @@ func (m *Manager) Launch(
 		return SessionInfo{}, err
 	}
 	if existing := m.runningSession(m.sessions, key); existing != nil {
+		slog.Debug(
+			"runtime launch reused existing session",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"target_key", targetKey,
+		)
 		return existing.snapshot(), nil
 	}
 
@@ -214,8 +257,23 @@ func (m *Manager) Launch(
 
 	launch, err := m.launchCommand(target, workspaceID, cwd)
 	if err != nil {
+		slog.Debug(
+			"runtime launch command failed",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"target_key", targetKey,
+			"err", err,
+		)
 		return SessionInfo{}, err
 	}
+	slog.Debug(
+		"runtime launch starting session",
+		"workspace_id", workspaceID,
+		"session_key", key,
+		"target_key", targetKey,
+		"kind", target.Kind,
+		"tmux_session", launch.TmuxSession,
+	)
 
 	started, err := startSession(SessionInfo{
 		Key:         key,
@@ -227,6 +285,13 @@ func (m *Manager) Launch(
 		CreatedAt:   time.Now().UTC(),
 	}, launch.Command, cwd, m.stripEnvVars)
 	if err != nil {
+		slog.Debug(
+			"runtime launch start failed",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"target_key", targetKey,
+			"err", err,
+		)
 		return SessionInfo{}, err
 	}
 	started.tmuxSession = launch.TmuxSession
@@ -237,10 +302,21 @@ func (m *Manager) Launch(
 		m.mu.Unlock()
 		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
+		slog.Debug(
+			"runtime launch discarded session after shutdown",
+			"workspace_id", workspaceID,
+			"session_key", key,
+		)
 		return SessionInfo{}, errManagerShutdown
 	}
 	m.sessions[key] = started
 	m.mu.Unlock()
+	slog.Debug(
+		"runtime launch session stored",
+		"workspace_id", workspaceID,
+		"session_key", key,
+		"target_key", targetKey,
+	)
 
 	return started.snapshot(), nil
 }
@@ -522,20 +598,60 @@ func (m *Manager) AttachSession(
 	workspaceID string,
 	key string,
 ) (*Attachment, error) {
+	slog.Debug(
+		"runtime terminal attach requested",
+		"workspace_id", workspaceID,
+		"session_key", key,
+	)
 	m.mu.Lock()
 	s := m.sessions[key]
 	m.mu.Unlock()
-	return attachToSession(s, workspaceID, key)
+	attachment, err := attachToSession(s, workspaceID, key)
+	if err != nil {
+		slog.Debug(
+			"runtime terminal attach rejected",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"err", err,
+		)
+		return nil, err
+	}
+	slog.Debug(
+		"runtime terminal attach accepted",
+		"workspace_id", workspaceID,
+		"session_key", key,
+	)
+	return attachment, nil
 }
 
 func (m *Manager) AttachShell(
 	workspaceID string,
 ) (*Attachment, error) {
 	key := sessionKey(workspaceID, "shell")
+	slog.Debug(
+		"runtime shell attach requested",
+		"workspace_id", workspaceID,
+		"session_key", key,
+	)
 	m.mu.Lock()
 	s := m.shells[key]
 	m.mu.Unlock()
-	return attachToSession(s, workspaceID, key)
+	attachment, err := attachToSession(s, workspaceID, key)
+	if err != nil {
+		slog.Debug(
+			"runtime shell attach rejected",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"err", err,
+		)
+		return nil, err
+	}
+	slog.Debug(
+		"runtime shell attach accepted",
+		"workspace_id", workspaceID,
+		"session_key", key,
+	)
+	return attachment, nil
 }
 
 func (m *Manager) EnsureShell(
@@ -543,6 +659,11 @@ func (m *Manager) EnsureShell(
 	workspaceID string,
 	cwd string,
 ) (SessionInfo, error) {
+	slog.Debug(
+		"runtime shell ensure requested",
+		"workspace_id", workspaceID,
+		"cwd", cwd,
+	)
 	if err := ctx.Err(); err != nil {
 		return SessionInfo{}, err
 	}
@@ -556,6 +677,11 @@ func (m *Manager) EnsureShell(
 		return SessionInfo{}, err
 	}
 	if existing := m.runningSession(m.shells, key); existing != nil {
+		slog.Debug(
+			"runtime shell ensure reused existing session",
+			"workspace_id", workspaceID,
+			"session_key", key,
+		)
 		return existing.snapshot(), nil
 	}
 
@@ -583,6 +709,12 @@ func (m *Manager) EnsureShell(
 		CreatedAt:   time.Now().UTC(),
 	}, command, cwd, m.stripEnvVars)
 	if err != nil {
+		slog.Debug(
+			"runtime shell start failed",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"err", err,
+		)
 		return SessionInfo{}, err
 	}
 	go started.watch()
@@ -592,10 +724,20 @@ func (m *Manager) EnsureShell(
 		m.mu.Unlock()
 		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
+		slog.Debug(
+			"runtime shell discarded session after shutdown",
+			"workspace_id", workspaceID,
+			"session_key", key,
+		)
 		return SessionInfo{}, errManagerShutdown
 	}
 	m.shells[key] = started
 	m.mu.Unlock()
+	slog.Debug(
+		"runtime shell session stored",
+		"workspace_id", workspaceID,
+		"session_key", key,
+	)
 
 	return started.snapshot(), nil
 }
@@ -1010,6 +1152,15 @@ func startSession(
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug(
+		"runtime session resolving command",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+		"program", resolvedPath,
+		"argc", len(command),
+		"cwd", cwd,
+	)
 
 	cmd := exec.Command(resolvedPath, command[1:]...)
 	if cwd != "" {
@@ -1030,6 +1181,13 @@ func startSession(
 	if err != nil {
 		return nil, fmt.Errorf("start pty: %w", err)
 	}
+	slog.Debug(
+		"runtime session pty started",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+		"pid", cmd.Process.Pid,
+	)
 
 	info.Status = SessionStatusRunning
 	s := &session{
@@ -1068,10 +1226,18 @@ func (s *session) watch() {
 	s.info.Status = SessionStatusExited
 	s.info.ExitedAt = &now
 	s.info.ExitCode = &exitCode
+	info := s.info
 	s.mu.Unlock()
 
 	_ = s.ptmx.Close()
 	close(s.done)
+	slog.Debug(
+		"runtime session exited",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+		"exit_code", exitCode,
+	)
 }
 
 func (s *session) drainOutput() {
@@ -1094,10 +1260,7 @@ func (s *session) broadcast(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.outputBuffer = append(s.outputBuffer, chunk...)
-	if extra := len(s.outputBuffer) - maxSessionOutputReplay; extra > 0 {
-		s.outputBuffer = append([]byte(nil), s.outputBuffer[extra:]...)
-	}
+	s.appendReplayOutputLocked(chunk)
 
 	for ch := range s.subscribers {
 		select {
@@ -1109,13 +1272,107 @@ func (s *session) broadcast(data []byte) {
 	}
 }
 
+type alternateScreenEvent struct {
+	start  int
+	end    int
+	active bool
+}
+
+func (s *session) appendReplayOutputLocked(chunk []byte) {
+	// Alternate-screen TUIs are stateful. Replaying a suffix of their
+	// screen history into a fresh terminal can corrupt the attach, so
+	// keep only normal-screen output for future subscribers.
+	scan := append(slices.Clone(s.alternateScreenTail), chunk...)
+	events := alternateScreenEvents(scan)
+	tailLen := len(s.alternateScreenTail)
+	active := s.alternateScreenActive
+	normalStart := 0
+
+	for _, event := range events {
+		if event.end <= tailLen {
+			continue
+		}
+		chunkStart := max(event.start-tailLen, 0)
+		chunkEnd := min(event.end-tailLen, len(chunk))
+		if !active && chunkStart > normalStart {
+			s.appendOutputBufferLocked(chunk[normalStart:chunkStart])
+		}
+		if event.active {
+			s.outputBuffer = nil
+		}
+		active = event.active
+		normalStart = chunkEnd
+	}
+
+	if !active && normalStart < len(chunk) {
+		s.appendOutputBufferLocked(chunk[normalStart:])
+	}
+	s.alternateScreenActive = active
+	s.alternateScreenTail = trailingBytes(scan, maxAlternateScreenSequenceLen-1)
+}
+
+func (s *session) appendOutputBufferLocked(chunk []byte) {
+	s.outputBuffer = append(s.outputBuffer, chunk...)
+	if extra := len(s.outputBuffer) - maxSessionOutputReplay; extra > 0 {
+		s.outputBuffer = append([]byte(nil), s.outputBuffer[extra:]...)
+	}
+}
+
+func alternateScreenEvents(data []byte) []alternateScreenEvent {
+	events := make([]alternateScreenEvent, 0, 2)
+	for i := range data {
+		if seq, ok := matchingSequence(data[i:], alternateScreenEnterSequences); ok {
+			events = append(events, alternateScreenEvent{
+				start:  i,
+				end:    i + len(seq),
+				active: true,
+			})
+			continue
+		}
+		if seq, ok := matchingSequence(data[i:], alternateScreenExitSequences); ok {
+			events = append(events, alternateScreenEvent{
+				start:  i,
+				end:    i + len(seq),
+				active: false,
+			})
+		}
+	}
+	return events
+}
+
+func matchingSequence(data []byte, sequences [][]byte) ([]byte, bool) {
+	for _, seq := range sequences {
+		if bytes.HasPrefix(data, seq) {
+			return seq, true
+		}
+	}
+	return nil, false
+}
+
+func trailingBytes(data []byte, maxLen int) []byte {
+	if maxLen <= 0 || len(data) == 0 {
+		return nil
+	}
+	if len(data) > maxLen {
+		data = data[len(data)-maxLen:]
+	}
+	return slices.Clone(data)
+}
+
 func (s *session) subscribe() (<-chan []byte, func()) {
 	ch := make(chan []byte, 64)
 
 	s.mu.Lock()
-	if len(s.outputBuffer) > 0 {
+	info := s.info
+	if len(s.outputBuffer) > 0 && !s.alternateScreenActive {
 		replay := append([]byte(nil), s.outputBuffer...)
 		ch <- replay
+		slog.Debug(
+			"runtime terminal replay queued",
+			"workspace_id", info.WorkspaceID,
+			"session_key", info.Key,
+			"bytes", len(replay),
+		)
 	}
 	if s.outputClosed {
 		close(ch)
@@ -1123,15 +1380,30 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 		return ch, func() {}
 	}
 	s.subscribers[ch] = struct{}{}
+	subscriberCount := len(s.subscribers)
 	s.mu.Unlock()
+	slog.Debug(
+		"runtime terminal subscriber added",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"subscribers", subscriberCount,
+	)
 
 	return ch, func() {
 		s.mu.Lock()
+		info := s.info
 		if _, ok := s.subscribers[ch]; ok {
 			delete(s.subscribers, ch)
 			close(ch)
 		}
+		subscriberCount := len(s.subscribers)
 		s.mu.Unlock()
+		slog.Debug(
+			"runtime terminal subscriber removed",
+			"workspace_id", info.WorkspaceID,
+			"session_key", info.Key,
+			"subscribers", subscriberCount,
+		)
 	}
 }
 

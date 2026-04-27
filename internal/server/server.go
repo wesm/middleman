@@ -396,13 +396,25 @@ func newServer(
 			"GET /api/v1/workspaces/{id}/terminal",
 			termHandler,
 		)
+		mux.Handle(
+			"GET /ws/v1/workspaces/{id}/terminal",
+			termHandler,
+		)
 		if s.runtime != nil {
 			mux.HandleFunc(
 				"GET /api/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
 				s.handleWorkspaceRuntimeSessionTerminal,
 			)
 			mux.HandleFunc(
+				"GET /ws/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
+				s.handleWorkspaceRuntimeSessionTerminal,
+			)
+			mux.HandleFunc(
 				"GET /api/v1/workspaces/{id}/runtime/shell/terminal",
+				s.handleWorkspaceRuntimeShellTerminal,
+			)
+			mux.HandleFunc(
+				"GET /ws/v1/workspaces/{id}/runtime/shell/terminal",
 				s.handleWorkspaceRuntimeShellTerminal,
 			)
 		}
@@ -547,6 +559,23 @@ func scriptSafe(s string) string {
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	slog.Debug(
+		"http request started",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+		"remote_addr", r.RemoteAddr,
+		"user_agent", r.UserAgent(),
+	)
+	defer func() {
+		slog.Debug(
+			"http request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"duration", time.Since(start).String(),
+		)
+	}()
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
 		if !checkCSRF(w, r) {
 			return
