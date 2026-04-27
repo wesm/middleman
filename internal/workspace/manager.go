@@ -886,29 +886,47 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 func (m *Manager) cleanupTmuxSession(
 	ctx context.Context, ws *Workspace,
 ) error {
-	sessions := []string{ws.TmuxSession}
+	type cleanupTarget struct {
+		session string
+		main    bool
+	}
+	sessions := []cleanupTarget{{session: ws.TmuxSession, main: true}}
 	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, ws.ID)
 	if err != nil {
 		return err
 	}
 	for _, storedSession := range stored {
-		sessions = append(sessions, storedSession.SessionName)
+		sessions = append(sessions, cleanupTarget{
+			session: storedSession.SessionName,
+		})
 	}
 
-	for _, session := range sessions {
-		if session == "" {
+	var cleanupErrs []error
+	for _, target := range sessions {
+		if target.session == "" {
 			continue
 		}
-		if err := m.killTmuxSession(ctx, session); err != nil &&
-			!isTmuxSessionAbsent([]byte(err.Error()), err) {
+		err := m.killTmuxSession(ctx, target.session)
+		if err == nil || isTmuxSessionAbsent([]byte(err.Error()), err) {
+			continue
+		}
+		if target.main {
 			hasSession, checkErr := m.workspaceHasCreatedTmuxSession(ctx, ws)
 			if checkErr != nil {
-				return checkErr
+				cleanupErrs = append(cleanupErrs, checkErr)
+				continue
 			}
-			if hasSession {
-				return fmt.Errorf("kill tmux session %q: %w", session, err)
+			if !hasSession {
+				continue
 			}
 		}
+		cleanupErrs = append(
+			cleanupErrs,
+			fmt.Errorf("kill tmux session %q: %w", target.session, err),
+		)
+	}
+	if err := errors.Join(cleanupErrs...); err != nil {
+		return err
 	}
 	if err := m.db.DeleteWorkspaceTmuxSessions(ctx, ws.ID); err != nil {
 		return err
@@ -1051,6 +1069,12 @@ func (m *Manager) tmuxOwnerMarker() string {
 	}
 	sum := sha256.Sum256([]byte(abs))
 	return "middleman:" + hex.EncodeToString(sum[:8])
+}
+
+// TmuxOwnerMarker returns the marker used to tag tmux sessions owned by this
+// workspace manager.
+func (m *Manager) TmuxOwnerMarker() string {
+	return m.tmuxOwnerMarker()
 }
 
 func (m *Manager) tmuxSessionOwnedByThisManager(

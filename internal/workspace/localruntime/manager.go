@@ -53,6 +53,10 @@ type Options struct {
 	Targets      []LaunchTarget
 	ShellCommand []string
 	TmuxCommand  []string
+	// TmuxOwnerMarker tags tmux-backed agent sessions so workspace startup
+	// cleanup can identify middleman-owned runtime sessions that were created
+	// before their durable DB row was written.
+	TmuxOwnerMarker string
 	// WrapAgentSessionsInTmux starts agent targets under tmux when
 	// the tmux launch target is available. When tmux is unavailable
 	// or this is false, agents run directly in the runtime PTY.
@@ -70,6 +74,7 @@ type Manager struct {
 	shells           map[string]*session
 	shellCommand     []string
 	tmuxCommand      []string
+	tmuxOwnerMarker  string
 	wrapAgentsInTmux bool
 	stripEnvVars     []string
 	startLocks       map[string]*sync.Mutex
@@ -125,6 +130,7 @@ func NewManager(options Options) *Manager {
 		shells:           make(map[string]*session),
 		shellCommand:     append([]string(nil), options.ShellCommand...),
 		tmuxCommand:      append([]string(nil), options.TmuxCommand...),
+		tmuxOwnerMarker:  options.TmuxOwnerMarker,
 		wrapAgentsInTmux: options.WrapAgentSessionsInTmux,
 		stripEnvVars:     dedupeStrings(options.StripEnvVars),
 		startLocks:       make(map[string]*sync.Mutex),
@@ -753,6 +759,20 @@ func (m *Manager) launchCommand(
 
 	tmuxSession := tmuxSessionName(workspaceID, target.Key)
 
+	agentEnv := append(
+		sessionEnvironment(tmuxAgentEnvironment(os.Environ()), m.stripEnvVars),
+		"TERM=xterm-256color",
+	)
+	agentCommand := "exec " + shellEnvCommand(agentEnv, resolvedAgentCommand)
+	if m.tmuxOwnerMarker != "" {
+		return launchCommand{
+			Command: m.launchTmuxOwnedCommand(
+				tmuxCommand, tmuxSession, cwd, agentCommand,
+			),
+			TmuxSession: tmuxSession,
+		}, nil
+	}
+
 	wrapped := append(
 		tmuxCommand,
 		"new-session",
@@ -763,15 +783,49 @@ func (m *Manager) launchCommand(
 	if cwd != "" {
 		wrapped = append(wrapped, "-c", cwd)
 	}
-	agentEnv := append(
-		sessionEnvironment(os.Environ(), m.stripEnvVars),
-		"TERM=xterm-256color",
-	)
-	wrapped = append(
-		wrapped,
-		"exec "+shellEnvCommand(agentEnv, resolvedAgentCommand),
-	)
+	wrapped = append(wrapped, agentCommand)
 	return launchCommand{Command: wrapped, TmuxSession: tmuxSession}, nil
+}
+
+func (m *Manager) launchTmuxOwnedCommand(
+	tmuxCommand []string,
+	tmuxSession string,
+	cwd string,
+	agentCommand string,
+) []string {
+	hasSession := shellCommand(append(
+		append([]string(nil), tmuxCommand...),
+		"has-session", "-t", tmuxSession,
+	))
+	newSessionArgs := append(
+		append([]string(nil), tmuxCommand...),
+		"new-session", "-d", "-s", tmuxSession,
+	)
+	if cwd != "" {
+		newSessionArgs = append(newSessionArgs, "-c", cwd)
+	}
+	newSessionArgs = append(
+		newSessionArgs,
+		agentCommand,
+		";",
+		"set-option", "-q", "-t", tmuxSession,
+		"@middleman_owner", m.tmuxOwnerMarker,
+	)
+	newSession := shellCommand(newSessionArgs)
+	setOwner := shellCommand(append(
+		append([]string(nil), tmuxCommand...),
+		"set-option", "-q", "-t", tmuxSession,
+		"@middleman_owner", m.tmuxOwnerMarker,
+	))
+	attachSession := shellCommand(append(
+		append([]string(nil), tmuxCommand...),
+		"attach-session", "-t", tmuxSession,
+	))
+	script := fmt.Sprintf(
+		"if ! %s >/dev/null 2>&1; then\n  %s\nfi\n%s\nexec %s",
+		hasSession, newSession, setOwner, attachSession,
+	)
+	return []string{"/bin/sh", "-lc", script}
 }
 
 func tmuxSessionName(workspaceID string, targetKey string) string {
@@ -814,6 +868,32 @@ func shellEnvCommand(env []string, command []string) string {
 	}
 	args = append(args, command...)
 	return "env -i " + shellCommand(args)
+}
+
+func tmuxAgentEnvironment(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		eq := strings.IndexByte(kv, '=')
+		if eq <= 0 {
+			continue
+		}
+		key := kv[:eq]
+		if isTmuxAgentEnvironmentKey(key) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+func isTmuxAgentEnvironmentKey(key string) bool {
+	switch key {
+	case "HOME", "PATH", "SHELL", "USER", "LOGNAME", "LANG",
+		"LC_ALL", "LC_CTYPE", "TMPDIR", "SSH_AUTH_SOCK",
+		"XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME":
+		return true
+	default:
+		return strings.HasPrefix(key, "LC_")
+	}
 }
 
 func shellQuote(s string) string {

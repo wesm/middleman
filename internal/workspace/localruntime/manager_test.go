@@ -190,6 +190,42 @@ func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
 	assert.Equal("middleman-ws-alpha-codex", launch.TmuxSession)
 }
 
+func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	agent := helperTarget("codex", "sleep")
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			agent,
+			{
+				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Source: "system", Command: []string{"/usr/bin/tmux"},
+				Available: true,
+			},
+		},
+		TmuxCommand:             []string{"/usr/bin/tmux"},
+		TmuxOwnerMarker:         "middleman:test-owner",
+		WrapAgentSessionsInTmux: true,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	launch, err := mgr.launchCommand(agent, "ws-1", "/tmp/work tree")
+	require.NoError(err)
+
+	require.Len(launch.Command, 3)
+	assert.Equal([]string{"/bin/sh", "-lc"}, launch.Command[:2])
+	script := launch.Command[2]
+	assert.Contains(script, "has-session")
+	assert.Contains(script, "new-session")
+	assert.Contains(script, "set-option")
+	assert.Contains(script, "@middleman_owner")
+	assert.Contains(script, "middleman:test-owner")
+	assert.Contains(script, "attach-session")
+	assert.Contains(script, "middleman-ws-1-codex")
+	assert.Contains(script, shellQuote(agent.Command[0]))
+	assert.Equal("middleman-ws-1-codex", launch.TmuxSession)
+}
+
 func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T) {
 	agent := helperTarget("codex", "sleep")
 	agent.Command = []string{"./codex"}
@@ -215,6 +251,8 @@ func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T
 
 func TestManagerLaunchCommandUsesSanitizedEnvForWrappedAgent(t *testing.T) {
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-token")
+	t.Setenv("CONTEXT7_API_KEY", "context7-secret")
+	t.Setenv("MIDDLEMAN_SAFE_FOR_TEST", "not-carried")
 	assert := Assert.New(t)
 	agent := helperTarget("codex", "sleep")
 	agent.Command = []string{"sh", "-c", "echo ok"}
@@ -238,7 +276,10 @@ func TestManagerLaunchCommandUsesSanitizedEnvForWrappedAgent(t *testing.T) {
 	tmuxCommand := strings.Join(launch.Command, "\n")
 	assert.Contains(tmuxCommand, "env -i")
 	assert.Contains(tmuxCommand, "TERM=xterm-256color")
+	assert.Contains(tmuxCommand, "HOME=")
 	assert.NotContains(tmuxCommand, "secret-token")
+	assert.NotContains(tmuxCommand, "context7-secret")
+	assert.NotContains(tmuxCommand, "not-carried")
 	assert.NotContains(tmuxCommand, "'sh'")
 }
 

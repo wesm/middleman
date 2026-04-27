@@ -381,6 +381,7 @@ func newServer(
 				agents, tmuxCmd, nil,
 			),
 			TmuxCommand:             tmuxCmd,
+			TmuxOwnerMarker:         s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
 			StripEnvVars:            cfg.TokenEnvNames(),
 		})
