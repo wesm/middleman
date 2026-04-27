@@ -7,7 +7,6 @@
     clearCommentDraft,
     finishCommentSubmit,
     getCommentDraft,
-    getCommentDraftByKey,
     getCommentDraftKey,
     getCommentSubmitError,
     isCommentSubmitPending,
@@ -34,16 +33,18 @@
   }: Props = $props();
 
   const currentDraftKey = $derived(
-    getCommentDraftKey("pull", owner, name, number),
+    getCommentDraftKey("pull", owner, name, number, platformHost),
   );
-  const body = $derived(getCommentDraftByKey(currentDraftKey));
+  const body = $derived(
+    getCommentDraft("pull", owner, name, number, platformHost),
+  );
 
   const isEmpty = $derived(body.trim() === "");
   const visibleError = $derived(
-    getCommentSubmitError("pull", owner, name, number),
+    getCommentSubmitError("pull", owner, name, number, platformHost),
   );
   const isPostingCurrent = $derived(
-    isCommentSubmitPending("pull", owner, name, number),
+    isCommentSubmitPending("pull", owner, name, number, platformHost),
   );
 
   async function handleSubmit(): Promise<void> {
@@ -52,8 +53,21 @@
     const submittedName = name;
     const submittedNumber = number;
     const submittedBody = body.trim();
-    beginCommentSubmit("pull", submittedOwner, submittedName, submittedNumber);
-    clearCommentSubmitError("pull", submittedOwner, submittedName, submittedNumber);
+    const submittedPlatformHost = platformHost;
+    beginCommentSubmit(
+      "pull",
+      submittedOwner,
+      submittedName,
+      submittedNumber,
+      submittedPlatformHost,
+    );
+    clearCommentSubmitError(
+      "pull",
+      submittedOwner,
+      submittedName,
+      submittedNumber,
+      submittedPlatformHost,
+    );
     try {
       await detail.submitComment(
         submittedOwner,
@@ -69,6 +83,7 @@
           submittedName,
           submittedNumber,
           storeError,
+          submittedPlatformHost,
         );
       } else {
         clearCommentDraft(
@@ -76,12 +91,14 @@
           submittedOwner,
           submittedName,
           submittedNumber,
+          submittedPlatformHost,
         );
         clearCommentSubmitError(
           "pull",
           submittedOwner,
           submittedName,
           submittedNumber,
+          submittedPlatformHost,
         );
       }
     } finally {
@@ -90,6 +107,7 @@
         submittedOwner,
         submittedName,
         submittedNumber,
+        submittedPlatformHost,
       );
     }
   }
@@ -104,7 +122,7 @@
       value={body}
       disabled={isPostingCurrent || disabled}
       oninput={(nextBody) => {
-        setCommentDraft("pull", owner, name, number, nextBody);
+        setCommentDraft("pull", owner, name, number, nextBody, platformHost);
       }}
       onsubmit={() => {
         void handleSubmit();

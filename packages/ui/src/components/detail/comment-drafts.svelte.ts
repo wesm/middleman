@@ -9,8 +9,37 @@ export function getCommentDraftKey(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): string {
-  return `${target}:${owner}/${name}/${number}`;
+  const repoKey = platformHost ? `${platformHost}/${owner}/${name}` : `${owner}/${name}`;
+  return `${target}:${repoKey}/${number}`;
+}
+
+function getLegacyCommentDraftKey(
+  target: CommentDraftTarget,
+  owner: string,
+  name: string,
+  number: number,
+): string {
+  return getCommentDraftKey(target, owner, name, number);
+}
+
+function getCommentDraftKeys(
+  target: CommentDraftTarget,
+  owner: string,
+  name: string,
+  number: number,
+  platformHost?: string | undefined,
+): {
+  primary: string;
+  legacy: string | undefined;
+} {
+  return {
+    primary: getCommentDraftKey(target, owner, name, number, platformHost),
+    legacy: platformHost
+      ? getLegacyCommentDraftKey(target, owner, name, number)
+      : undefined,
+  };
 }
 
 export function getCommentDraft(
@@ -18,8 +47,10 @@ export function getCommentDraft(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): string {
-  return drafts[getCommentDraftKey(target, owner, name, number)] ?? "";
+  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
+  return drafts[keys.primary] ?? (keys.legacy ? drafts[keys.legacy] : undefined) ?? "";
 }
 
 export function getCommentDraftByKey(key: string): string {
@@ -32,17 +63,21 @@ export function setCommentDraft(
   name: string,
   number: number,
   body: string,
+  platformHost?: string | undefined,
 ): void {
-  const key = getCommentDraftKey(target, owner, name, number);
+  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
   if (body === "") {
     const next = { ...drafts };
-    delete next[key];
+    delete next[keys.primary];
+    if (keys.legacy) {
+      delete next[keys.legacy];
+    }
     drafts = next;
     return;
   }
   drafts = {
     ...drafts,
-    [key]: body,
+    [keys.primary]: body,
   };
 }
 
@@ -51,10 +86,14 @@ export function clearCommentDraft(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): void {
-  const key = getCommentDraftKey(target, owner, name, number);
+  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
   const next = { ...drafts };
-  delete next[key];
+  delete next[keys.primary];
+  if (keys.legacy) {
+    delete next[keys.legacy];
+  }
   drafts = next;
 }
 
@@ -63,8 +102,14 @@ export function isCommentSubmitPending(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): boolean {
-  return (pendingSubmitCounts[getCommentDraftKey(target, owner, name, number)] ?? 0) > 0;
+  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
+  return (
+    (pendingSubmitCounts[keys.primary]
+      ?? (keys.legacy ? pendingSubmitCounts[keys.legacy] : undefined)
+      ?? 0) > 0
+  );
 }
 
 export function beginCommentSubmit(
@@ -72,8 +117,9 @@ export function beginCommentSubmit(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): void {
-  const key = getCommentDraftKey(target, owner, name, number);
+  const key = getCommentDraftKey(target, owner, name, number, platformHost);
   pendingSubmitCounts = {
     ...pendingSubmitCounts,
     [key]: (pendingSubmitCounts[key] ?? 0) + 1,
@@ -85,8 +131,9 @@ export function finishCommentSubmit(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): void {
-  const key = getCommentDraftKey(target, owner, name, number);
+  const key = getCommentDraftKey(target, owner, name, number, platformHost);
   const nextCount = (pendingSubmitCounts[key] ?? 0) - 1;
   if (nextCount <= 0) {
     const next = { ...pendingSubmitCounts };
@@ -105,8 +152,14 @@ export function getCommentSubmitError(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): string | null {
-  return submitErrors[getCommentDraftKey(target, owner, name, number)] ?? null;
+  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
+  return (
+    submitErrors[keys.primary]
+      ?? (keys.legacy ? submitErrors[keys.legacy] : undefined)
+      ?? null
+  );
 }
 
 export function setCommentSubmitError(
@@ -115,8 +168,9 @@ export function setCommentSubmitError(
   name: string,
   number: number,
   error: string,
+  platformHost?: string | undefined,
 ): void {
-  const key = getCommentDraftKey(target, owner, name, number);
+  const key = getCommentDraftKey(target, owner, name, number, platformHost);
   submitErrors = {
     ...submitErrors,
     [key]: error,
@@ -128,9 +182,13 @@ export function clearCommentSubmitError(
   owner: string,
   name: string,
   number: number,
+  platformHost?: string | undefined,
 ): void {
-  const key = getCommentDraftKey(target, owner, name, number);
+  const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
   const next = { ...submitErrors };
-  delete next[key];
+  delete next[keys.primary];
+  if (keys.legacy) {
+    delete next[keys.legacy];
+  }
   submitErrors = next;
 }

@@ -113,14 +113,26 @@ describe("comment draft persistence", () => {
     setCommentDraft("pull", "octo", "repo", 2, "");
     setCommentDraft("issue", "octo", "repo", 1, "");
     setCommentDraft("issue", "octo", "repo", 2, "");
+    setCommentDraft("pull", "octo", "repo", 1, "", "github.com");
+    setCommentDraft("pull", "octo", "repo", 1, "", "ghe.example.com");
+    setCommentDraft("issue", "octo", "repo", 1, "", "github.com");
+    setCommentDraft("issue", "octo", "repo", 1, "", "ghe.example.com");
     clearCommentSubmitError("pull", "octo", "repo", 1);
     clearCommentSubmitError("pull", "octo", "repo", 2);
     clearCommentSubmitError("issue", "octo", "repo", 1);
     clearCommentSubmitError("issue", "octo", "repo", 2);
+    clearCommentSubmitError("pull", "octo", "repo", 1, "github.com");
+    clearCommentSubmitError("pull", "octo", "repo", 1, "ghe.example.com");
+    clearCommentSubmitError("issue", "octo", "repo", 1, "github.com");
+    clearCommentSubmitError("issue", "octo", "repo", 1, "ghe.example.com");
     finishCommentSubmit("pull", "octo", "repo", 1);
     finishCommentSubmit("pull", "octo", "repo", 2);
     finishCommentSubmit("issue", "octo", "repo", 1);
     finishCommentSubmit("issue", "octo", "repo", 2);
+    finishCommentSubmit("pull", "octo", "repo", 1, "github.com");
+    finishCommentSubmit("pull", "octo", "repo", 1, "ghe.example.com");
+    finishCommentSubmit("issue", "octo", "repo", 1, "github.com");
+    finishCommentSubmit("issue", "octo", "repo", 1, "ghe.example.com");
     cleanup();
   });
 
@@ -155,6 +167,78 @@ describe("comment draft persistence", () => {
       expect(getCommentEditorText()).toBe("draft issue note");
     });
   });
+
+  it.each(["pull", "issue"] as const)(
+    "keeps %s comment drafts isolated by platform host",
+    async (kind) => {
+      const { rerender } = render(CommentBoxContextHarness, {
+        props: {
+          kind,
+          owner: "octo",
+          name: "repo",
+          number: 1,
+          platformHost: "github.com",
+        },
+      });
+
+      setCommentDraft(kind, "octo", "repo", 1, "github draft", "github.com");
+      await waitFor(() => {
+        expect(getCommentEditorText()).toBe("github draft");
+      });
+
+      await rerender({
+        kind,
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        platformHost: "ghe.example.com",
+      });
+
+      setCommentDraft(kind, "octo", "repo", 1, "ghe draft", "ghe.example.com");
+      await waitFor(() => {
+        expect(getCommentEditorText()).toBe("ghe draft");
+      });
+
+      await rerender({
+        kind,
+        owner: "octo",
+        name: "repo",
+        number: 1,
+        platformHost: "github.com",
+      });
+
+      await waitFor(() => {
+        expect(getCommentEditorText()).toBe("github draft");
+      });
+      expect(getCommentDraft(kind, "octo", "repo", 1, "github.com")).toBe(
+        "github draft",
+      );
+      expect(getCommentDraft(kind, "octo", "repo", 1, "ghe.example.com")).toBe(
+        "ghe draft",
+      );
+    },
+  );
+
+  it.each(["pull", "issue"] as const)(
+    "reads a legacy %s comment draft before a host-specific draft exists",
+    async (kind) => {
+      setCommentDraft(kind, "octo", "repo", 1, "legacy draft");
+
+      render(CommentBoxContextHarness, {
+        props: {
+          kind,
+          owner: "octo",
+          name: "repo",
+          number: 1,
+          platformHost: "ghe.example.com",
+        },
+      });
+
+      await waitFor(() => {
+        expect(getCommentEditorText()).toBe("legacy draft");
+      });
+    },
+  );
 
   it("does not clear the newly selected pull request draft when an earlier submit resolves", async () => {
     const submit = deferred();
