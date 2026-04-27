@@ -280,6 +280,73 @@ func tmuxActivityResultFromSample(
 	return result
 }
 
+func mergeTmuxActivityResults(
+	results []tmuxActivityResult,
+) (tmuxActivityResult, bool) {
+	var merged tmuxActivityResult
+	for _, result := range results {
+		merged = mergeTmuxActivityResult(merged, result)
+	}
+	if merged.PaneTitle == "" &&
+		merged.Source == "" &&
+		merged.LastOutputAt == nil &&
+		!merged.Working {
+		return tmuxActivityResult{}, false
+	}
+	if merged.Source == "" {
+		merged.Source = tmuxActivitySourceNone
+	}
+	return merged, true
+}
+
+func mergeTmuxActivityResult(
+	current tmuxActivityResult,
+	next tmuxActivityResult,
+) tmuxActivityResult {
+	if current.Source == "" {
+		return next
+	}
+	if next.Source == "" {
+		return current
+	}
+	lastOutputAt := current.LastOutputAt
+	if lastOutputAt == nil ||
+		(next.LastOutputAt != nil && next.LastOutputAt.After(*lastOutputAt)) {
+		lastOutputAt = next.LastOutputAt
+	}
+
+	switch {
+	case !current.Working && next.Working:
+		next.LastOutputAt = lastOutputAt
+		return next
+	case current.Working && !next.Working:
+		current.LastOutputAt = lastOutputAt
+		return current
+	case activitySourceRank(next.Source) > activitySourceRank(current.Source):
+		next.LastOutputAt = lastOutputAt
+		return next
+	case activitySourceRank(next.Source) == activitySourceRank(current.Source) &&
+		next.PaneTitle != "" &&
+		current.PaneTitle == "":
+		current.PaneTitle = next.PaneTitle
+	}
+	current.LastOutputAt = lastOutputAt
+	return current
+}
+
+func activitySourceRank(source string) int {
+	switch source {
+	case tmuxActivitySourceTitle:
+		return 3
+	case tmuxActivitySourceOutput:
+		return 2
+	case tmuxActivitySourceNone:
+		return 1
+	default:
+		return 0
+	}
+}
+
 func normalizeTmuxOutput(output string) string {
 	output = strings.ReplaceAll(output, "\r\n", "\n")
 	output = strings.ReplaceAll(output, "\r", "\n")

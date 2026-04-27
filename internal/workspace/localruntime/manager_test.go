@@ -114,6 +114,130 @@ func TestManagerLaunchMissingTarget(t *testing.T) {
 	require.Contains(t, err.Error(), "target not found")
 }
 
+func TestManagerTmuxSessionsReturnsWrappedAgentSessions(t *testing.T) {
+	assert := Assert.New(t)
+	mgr := NewManager(Options{})
+	mgr.sessions["ws-1:codex"] = &session{
+		info: SessionInfo{
+			Key:         "ws-1:codex",
+			WorkspaceID: "ws-1",
+			TargetKey:   "codex",
+			Kind:        LaunchTargetAgent,
+		},
+		tmuxSession: "middleman-ws-1-codex",
+	}
+	mgr.sessions["ws-1:direct"] = &session{
+		info: SessionInfo{
+			Key:         "ws-1:direct",
+			WorkspaceID: "ws-1",
+			TargetKey:   "direct",
+			Kind:        LaunchTargetAgent,
+		},
+	}
+	mgr.sessions["ws-2:codex"] = &session{
+		info: SessionInfo{
+			Key:         "ws-2:codex",
+			WorkspaceID: "ws-2",
+			TargetKey:   "codex",
+			Kind:        LaunchTargetAgent,
+		},
+		tmuxSession: "middleman-ws-2-codex",
+	}
+
+	assert.Equal(
+		[]string{"middleman-ws-1-codex"},
+		mgr.TmuxSessions("ws-1"),
+	)
+}
+
+func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
+	assert := Assert.New(t)
+	agent := helperTarget("codex", "sleep")
+	agent.Label = "Codex"
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			agent,
+			{
+				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Source: "system", Command: []string{"/usr/bin/tmux"},
+				Available: true,
+			},
+		},
+		TmuxCommand:             []string{"/usr/bin/tmux"},
+		WrapAgentSessionsInTmux: true,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	launch, err := mgr.launchCommand(
+		agent, "ws:alpha", "/tmp/work tree",
+	)
+	require.NoError(t, err)
+
+	assert.Equal("/usr/bin/tmux", launch.Command[0])
+	assert.Equal(
+		[]string{
+			"new-session",
+			"-A",
+			"-s",
+			"middleman-ws-alpha-codex",
+			"-c",
+			"/tmp/work tree",
+		},
+		launch.Command[1:7],
+	)
+	assert.Contains(launch.Command[7], "exec ")
+	assert.Contains(launch.Command[7], shellQuote(agent.Command[0]))
+	assert.Equal("middleman-ws-alpha-codex", launch.TmuxSession)
+}
+
+func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
+	assert := Assert.New(t)
+	agent := helperTarget("codex", "sleep")
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			agent,
+			{
+				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Source: "system", Command: []string{"tmux"},
+				Available: false, DisabledReason: "tmux not found",
+			},
+		},
+		TmuxCommand:             []string{"tmux"},
+		WrapAgentSessionsInTmux: true,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	launch, err := mgr.launchCommand(agent, "ws-1", t.TempDir())
+	require.NoError(t, err)
+
+	assert.Equal(agent.Command, launch.Command)
+	assert.Empty(launch.TmuxSession)
+}
+
+func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
+	assert := Assert.New(t)
+	agent := helperTarget("codex", "sleep")
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			agent,
+			{
+				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Source: "system", Command: []string{"/usr/bin/tmux"},
+				Available: true,
+			},
+		},
+		TmuxCommand:             []string{"/usr/bin/tmux"},
+		WrapAgentSessionsInTmux: false,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	launch, err := mgr.launchCommand(agent, "ws-1", t.TempDir())
+	require.NoError(t, err)
+
+	assert.Equal(agent.Command, launch.Command)
+	assert.Empty(launch.TmuxSession)
+}
+
 func TestManagerStopRemovesSession(t *testing.T) {
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 

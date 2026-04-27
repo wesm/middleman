@@ -2559,60 +2559,110 @@ func (s *Server) toWorkspaceResponse(
 	}
 
 	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
-
-	if s.tmuxActivity != nil {
-		if result, ok := s.tmuxActivity.Cached(summary.TmuxSession); ok {
-			applyTmuxActivity(&resp, result)
-			return resp
-		}
+	if activity, ok := s.probeWorkspaceTmuxActivity(
+		ctx, summary.ID, s.workspaceTmuxActivitySessions(summary),
+	); ok {
+		applyTmuxActivity(&resp, activity)
 	}
+	return resp
+}
 
+func (s *Server) workspaceTmuxActivitySessions(
+	summary *db.WorkspaceSummary,
+) []string {
+	sessions := make([]string, 0, 1)
+	seen := map[string]bool{}
+	if summary.TmuxSession != "" {
+		sessions = append(sessions, summary.TmuxSession)
+		seen[summary.TmuxSession] = true
+	}
+	if s.runtime == nil {
+		return sessions
+	}
+	for _, session := range s.runtime.TmuxSessions(summary.ID) {
+		if session == "" || seen[session] {
+			continue
+		}
+		sessions = append(sessions, session)
+		seen[session] = true
+	}
+	return sessions
+}
+
+func (s *Server) probeWorkspaceTmuxActivity(
+	ctx context.Context,
+	workspaceID string,
+	sessions []string,
+) (tmuxActivityResult, bool) {
+	if len(sessions) == 0 {
+		return tmuxActivityResult{}, false
+	}
 	tracker := s.tmuxActivity
 	if tracker == nil {
 		tracker = newTmuxActivityTracker(nil)
 	}
 	probeCtx, cancelProbe := context.WithTimeout(ctx, tmuxActivityProbeTimeout)
 	defer cancelProbe()
-	probe := tracker.StartProbe(probeCtx, summary.TmuxSession)
+
+	results := make([]tmuxActivityResult, 0, len(sessions))
+	for _, session := range sessions {
+		if s.tmuxActivity != nil {
+			if result, ok := tracker.Cached(session); ok {
+				results = append(results, result)
+				continue
+			}
+		}
+		result, ok := s.probeOneTmuxSession(
+			probeCtx, tracker, workspaceID, session,
+		)
+		if ok {
+			results = append(results, result)
+		}
+	}
+	return mergeTmuxActivityResults(results)
+}
+
+func (s *Server) probeOneTmuxSession(
+	ctx context.Context,
+	tracker *tmuxActivityTracker,
+	workspaceID string,
+	session string,
+) (tmuxActivityResult, bool) {
+	probe := tracker.StartProbe(ctx, session)
 	if !probe.Started {
 		if probe.HasFallback {
-			applyTmuxActivity(&resp, probe.Fallback)
-			return resp
+			return probe.Fallback, true
 		}
 		if probe.Wait != nil {
 			select {
 			case <-probe.Wait:
-				if result, ok := tracker.Cached(summary.TmuxSession); ok {
-					applyTmuxActivity(&resp, result)
-				}
-			case <-probeCtx.Done():
+				return tracker.Cached(session)
+			case <-ctx.Done():
 			}
 		}
-		return resp
+		return tmuxActivityResult{}, false
 	}
 
-	snapshot, err := s.workspaces.TmuxPaneSnapshot(probeCtx, summary.TmuxSession)
+	snapshot, err := s.workspaces.TmuxPaneSnapshot(ctx, session)
 	if err != nil {
 		probe.Probe.Cancel()
 		slog.Debug(
 			"read tmux pane snapshot",
-			"workspace_id", summary.ID,
-			"tmux_session", summary.TmuxSession,
+			"workspace_id", workspaceID,
+			"tmux_session", session,
 			"err", err,
 		)
 		if probe.HasFallback {
-			applyTmuxActivity(&resp, probe.Fallback)
+			return probe.Fallback, true
 		}
-		return resp
+		return tmuxActivityResult{}, false
 	}
 
-	activity := probe.Probe.Finish(tmuxActivityObservation{
+	return probe.Probe.Finish(tmuxActivityObservation{
 		PaneTitle: snapshot.Title,
 		Output:    snapshot.Output,
 		HasOutput: true,
-	})
-	applyTmuxActivity(&resp, activity)
-	return resp
+	}), true
 }
 
 func applyTmuxActivity(resp *workspaceResponse, activity tmuxActivityResult) {

@@ -380,7 +380,9 @@ func newServer(
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),
-			StripEnvVars: cfg.TokenEnvNames(),
+			TmuxCommand:             tmuxCmd,
+			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
+			StripEnvVars:            cfg.TokenEnvNames(),
 		})
 	}
 

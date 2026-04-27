@@ -185,7 +185,8 @@ type Roborev struct {
 }
 
 type Tmux struct {
-	Command []string `toml:"command,omitempty"`
+	Command       []string `toml:"command,omitempty"`
+	AgentSessions *bool    `toml:"agent_sessions,omitempty"`
 }
 
 type Config struct {
@@ -265,6 +266,9 @@ port = 8091
 [activity]
 view_mode = "threaded"
 time_range = "7d"
+
+[tmux]
+agent_sessions = true
 `
 	if _, err := tmp.WriteString(defaultConfig); err != nil {
 		tmp.Close()
@@ -611,6 +615,15 @@ func (c *Config) TmuxCommand() []string {
 		return []string{"tmux"}
 	}
 	return append([]string(nil), c.Tmux.Command...)
+}
+
+// TmuxAgentSessionsEnabled reports whether runtime agent launches
+// should prefer tmux-backed sessions. Defaults to true so agent
+// activity is visible to tmux-based workspace fingerprinting.
+func (c *Config) TmuxAgentSessionsEnabled() bool {
+	return c == nil ||
+		c.Tmux.AgentSessions == nil ||
+		*c.Tmux.AgentSessions
 }
 
 // configFile is the subset of Config written to disk.

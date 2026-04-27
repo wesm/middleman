@@ -7675,6 +7675,103 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 	assert.Empty(*afterStopResp.JSON200.Sessions)
 }
 
+func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+target=""
+mode=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-t" ]; then target="$a"; fi
+  if [ "$a" = "display-message" ]; then mode="display-message"; fi
+  if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
+  prev="$a"
+done
+if [ "$mode" = "display-message" ]; then
+  case "$target" in
+    *-helper) printf '⠴ t3code-b5014b03\n' ;;
+    *) printf 'idle\n' ;;
+  esac
+  exit 0
+fi
+if [ "$mode" = "capture-pane" ]; then
+  printf 'stable\n'
+  exit 0
+fi
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: []string{"helper-agent", "--flag"},
+		}},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+
+	var newSession []string
+	require.Eventually(func() bool {
+		for _, argv := range readTmuxRecord(t, record) {
+			if len(argv) > 0 &&
+				argv[0] == "new-session" &&
+				strings.Contains(strings.Join(argv, "\n"), "helper-agent") {
+				newSession = argv
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 20*time.Millisecond)
+
+	session, ok := argAfter(newSession, "-s")
+	require.True(ok, "new-session should name a tmux session")
+	assert.Equal("middleman-"+ws.Id+"-helper", session)
+	assert.Contains(newSession, "-A")
+	assert.Contains(newSession, "-c")
+	assert.Contains(strings.Join(newSession, "\n"), "helper-agent")
+	assert.Contains(strings.Join(newSession, "\n"), "--flag")
+
+	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Workspaces)
+
+	var listed *generated.WorkspaceResponse
+	for i := range *listResp.JSON200.Workspaces {
+		if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
+			listed = &(*listResp.JSON200.Workspaces)[i]
+			break
+		}
+	}
+	require.NotNil(listed)
+	assert.True(listed.TmuxWorking)
+	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)
+	require.NotNil(listed.TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *listed.TmuxPaneTitle)
+	assert.Contains(readTmuxRecord(t, record), []string{
+		"display-message", "-p", "-t", session, "#{pane_title}",
+	})
+}
+
 func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
@@ -7866,11 +7963,12 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
 	require := require.New(t)
+	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("echo"),
-	}}}
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
@@ -7921,11 +8019,12 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
 	require := require.New(t)
+	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("size"),
-	}}}
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)

@@ -48,25 +48,32 @@ type SessionInfo struct {
 type Options struct {
 	Targets      []LaunchTarget
 	ShellCommand []string
+	TmuxCommand  []string
+	// WrapAgentSessionsInTmux starts agent targets under tmux when
+	// the tmux launch target is available. When tmux is unavailable
+	// or this is false, agents run directly in the runtime PTY.
+	WrapAgentSessionsInTmux bool
 	// StripEnvVars names additional env vars to strip beyond the
 	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
 }
 
 type Manager struct {
-	mu           sync.Mutex
-	targets      map[string]LaunchTarget
-	targetsList  []LaunchTarget
-	sessions     map[string]*session
-	shells       map[string]*session
-	shellCommand []string
-	stripEnvVars []string
-	startLocks   map[string]*sync.Mutex
-	stoppingWS   map[string]int
-	inflightWS   map[string]int
-	inflightCh   map[string]chan struct{}
-	startWG      sync.WaitGroup
-	closed       bool
+	mu               sync.Mutex
+	targets          map[string]LaunchTarget
+	targetsList      []LaunchTarget
+	sessions         map[string]*session
+	shells           map[string]*session
+	shellCommand     []string
+	tmuxCommand      []string
+	wrapAgentsInTmux bool
+	stripEnvVars     []string
+	startLocks       map[string]*sync.Mutex
+	stoppingWS       map[string]int
+	inflightWS       map[string]int
+	inflightCh       map[string]chan struct{}
+	startWG          sync.WaitGroup
+	closed           bool
 }
 
 // maxSessionOutputReplay caps how many bytes of recent PTY output
@@ -81,6 +88,7 @@ type session struct {
 	info         SessionInfo
 	cmd          *exec.Cmd
 	ptmx         *os.File
+	tmuxSession  string
 	done         chan struct{}
 	subscribers  map[chan []byte]struct{}
 	outputBuffer []byte
@@ -107,16 +115,18 @@ func NewManager(options Options) *Manager {
 		targetsList = append(targetsList, cloneTarget(cloned))
 	}
 	return &Manager{
-		targets:      targets,
-		targetsList:  targetsList,
-		sessions:     make(map[string]*session),
-		shells:       make(map[string]*session),
-		shellCommand: append([]string(nil), options.ShellCommand...),
-		stripEnvVars: dedupeStrings(options.StripEnvVars),
-		startLocks:   make(map[string]*sync.Mutex),
-		stoppingWS:   make(map[string]int),
-		inflightWS:   make(map[string]int),
-		inflightCh:   make(map[string]chan struct{}),
+		targets:          targets,
+		targetsList:      targetsList,
+		sessions:         make(map[string]*session),
+		shells:           make(map[string]*session),
+		shellCommand:     append([]string(nil), options.ShellCommand...),
+		tmuxCommand:      append([]string(nil), options.TmuxCommand...),
+		wrapAgentsInTmux: options.WrapAgentSessionsInTmux,
+		stripEnvVars:     dedupeStrings(options.StripEnvVars),
+		startLocks:       make(map[string]*sync.Mutex),
+		stoppingWS:       make(map[string]int),
+		inflightWS:       make(map[string]int),
+		inflightCh:       make(map[string]chan struct{}),
 	}
 }
 
@@ -190,6 +200,11 @@ func (m *Manager) Launch(
 	}
 	defer m.releaseInflight(workspaceID)
 
+	launch, err := m.launchCommand(target, workspaceID, cwd)
+	if err != nil {
+		return SessionInfo{}, err
+	}
+
 	started, err := startSession(SessionInfo{
 		Key:         key,
 		WorkspaceID: workspaceID,
@@ -198,16 +213,17 @@ func (m *Manager) Launch(
 		Kind:        target.Kind,
 		Status:      SessionStatusStarting,
 		CreatedAt:   time.Now().UTC(),
-	}, target.Command, cwd, m.stripEnvVars)
+	}, launch.Command, cwd, m.stripEnvVars)
 	if err != nil {
 		return SessionInfo{}, err
 	}
+	started.tmuxSession = launch.TmuxSession
 	go started.watch()
 
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
-		started.stop()
+		m.stopSession(ctx, started)
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
 	}
@@ -245,6 +261,25 @@ func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
 	return sessions
 }
 
+// TmuxSessions returns runtime-owned tmux sessions associated with
+// a workspace. These sessions are additional activity sources for
+// the workspace sidebar; the persisted workspace tmux session remains
+// owned by internal/workspace.Manager.
+func (m *Manager) TmuxSessions(workspaceID string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sessions := make([]string, 0)
+	for _, s := range m.sessions {
+		info := s.snapshot()
+		if info.WorkspaceID == workspaceID && s.tmuxSession != "" {
+			sessions = append(sessions, s.tmuxSession)
+		}
+	}
+	sort.Strings(sessions)
+	return sessions
+}
+
 func (m *Manager) Stop(
 	ctx context.Context,
 	workspaceID string,
@@ -255,7 +290,7 @@ func (m *Manager) Stop(
 		return fmt.Errorf("session %q not found", sessionKey)
 	}
 
-	s.stop()
+	m.stopSession(ctx, s)
 	select {
 	case <-s.done:
 		return nil
@@ -315,7 +350,7 @@ func (m *Manager) StopWorkspace(
 	m.mu.Unlock()
 
 	for _, s := range stopping {
-		s.stop()
+		m.stopSession(ctx, s)
 	}
 	for _, s := range stopping {
 		select {
@@ -324,6 +359,34 @@ func (m *Manager) StopWorkspace(
 			return
 		}
 	}
+}
+
+func (m *Manager) stopSession(ctx context.Context, s *session) {
+	if s == nil {
+		return
+	}
+	if s.tmuxSession != "" {
+		_ = m.killTmuxSession(ctx, s.tmuxSession)
+	}
+	s.stop()
+}
+
+func (m *Manager) killTmuxSession(
+	ctx context.Context,
+	session string,
+) error {
+	if session == "" {
+		return nil
+	}
+	command := append([]string(nil), m.tmuxCommand...)
+	if len(command) == 0 {
+		command = []string{"tmux"}
+	}
+	if len(command) == 0 || command[0] == "" {
+		return nil
+	}
+	args := append(command[1:], "kill-session", "-t", session)
+	return exec.CommandContext(ctx, command[0], args...).Run()
 }
 
 // BeginStopping holds the stopping marker for workspaceID without
@@ -475,7 +538,7 @@ func (m *Manager) EnsureShell(
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
-		started.stop()
+		m.stopSession(ctx, started)
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
 	}
@@ -548,7 +611,7 @@ func (m *Manager) Shutdown() {
 	m.mu.Unlock()
 
 	for _, s := range sessions {
-		s.stop()
+		m.stopSession(ctx, s)
 	}
 	for _, s := range sessions {
 		select {
@@ -603,6 +666,86 @@ func (m *Manager) target(key string) (LaunchTarget, error) {
 		return LaunchTarget{}, fmt.Errorf("target not found: %s", key)
 	}
 	return cloneTarget(target), nil
+}
+
+type launchCommand struct {
+	Command     []string
+	TmuxSession string
+}
+
+func (m *Manager) launchCommand(
+	target LaunchTarget,
+	workspaceID string,
+	cwd string,
+) (launchCommand, error) {
+	command := append([]string(nil), target.Command...)
+	if target.Kind != LaunchTargetAgent || !m.wrapAgentsInTmux {
+		return launchCommand{Command: command}, nil
+	}
+
+	tmux, err := m.target(string(LaunchTargetTmux))
+	if err != nil || !tmux.Available {
+		return launchCommand{Command: command}, nil
+	}
+	tmuxCommand := append([]string(nil), m.tmuxCommand...)
+	if len(tmuxCommand) == 0 {
+		tmuxCommand = append([]string(nil), tmux.Command...)
+	}
+	if len(tmuxCommand) == 0 {
+		tmuxCommand = []string{"tmux"}
+	}
+	tmuxSession := tmuxSessionName(workspaceID, target.Key)
+
+	wrapped := append(
+		tmuxCommand,
+		"new-session",
+		"-A",
+		"-s",
+		tmuxSession,
+	)
+	if cwd != "" {
+		wrapped = append(wrapped, "-c", cwd)
+	}
+	wrapped = append(wrapped, "exec "+shellCommand(command))
+	return launchCommand{Command: wrapped, TmuxSession: tmuxSession}, nil
+}
+
+func tmuxSessionName(workspaceID string, targetKey string) string {
+	name := "middleman-" + workspaceID + "-" + targetKey
+	var b strings.Builder
+	b.Grow(len(name))
+	lastDash := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_' || r == '-':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func shellCommand(command []string) string {
+	parts := make([]string, 0, len(command)+1)
+	for _, arg := range command {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func (m *Manager) runningSession(

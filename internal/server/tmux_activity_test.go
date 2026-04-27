@@ -157,3 +157,47 @@ func TestNormalizeTmuxOutputForFingerprinting(t *testing.T) {
 		tmuxOutputFingerprint("one  \r\ntwo  \n"),
 	)
 }
+
+func TestMergeTmuxActivityPrefersWorkingSession(t *testing.T) {
+	assert := Assert.New(t)
+	lastOutput := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	merged, ok := mergeTmuxActivityResults([]tmuxActivityResult{
+		{
+			PaneTitle: "idle",
+			Source:    tmuxActivitySourceNone,
+		},
+		{
+			PaneTitle:    "codex",
+			Working:      true,
+			Source:       tmuxActivitySourceOutput,
+			LastOutputAt: &lastOutput,
+		},
+	})
+
+	assert.True(ok)
+	assert.True(merged.Working)
+	assert.Equal(tmuxActivitySourceOutput, merged.Source)
+	assert.Equal("codex", merged.PaneTitle)
+	assert.Equal(&lastOutput, merged.LastOutputAt)
+}
+
+func TestMergeTmuxActivityPrefersTitleOverOutput(t *testing.T) {
+	assert := Assert.New(t)
+	merged, ok := mergeTmuxActivityResults([]tmuxActivityResult{
+		{
+			PaneTitle: "agent output",
+			Working:   true,
+			Source:    tmuxActivitySourceOutput,
+		},
+		{
+			PaneTitle: "⠴ t3code-b5014b03",
+			Working:   true,
+			Source:    tmuxActivitySourceTitle,
+		},
+	})
+
+	assert.True(ok)
+	assert.True(merged.Working)
+	assert.Equal(tmuxActivitySourceTitle, merged.Source)
+	assert.Equal("⠴ t3code-b5014b03", merged.PaneTitle)
+}
