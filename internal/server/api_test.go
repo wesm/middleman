@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -7854,6 +7855,114 @@ exit 0
 	})
 	assert.NotContains(argvs, []string{
 		"kill-session", "-t", "middleman-0000000000000001",
+	})
+}
+
+func TestWorkspaceRuntimeLaunchTmuxOwnerMarkerFailureCleansSessionE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	agentPath := filepath.Join(dir, "helper-agent")
+	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+target=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-t" ]; then target="$a"; fi
+  prev="$a"
+done
+case "$1" in
+  has-session)
+    exit 1
+    ;;
+  new-session)
+    exit 0
+    ;;
+  set-option)
+    case "$target" in
+      *-helper)
+        echo "owner marker denied" >&2
+        exit 42
+        ;;
+    esac
+    exit 0
+    ;;
+  kill-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: []string{agentPath},
+		}},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	sessionName := "middleman-" + ws.Id + "-helper"
+
+	require.Eventually(func() bool {
+		return tmuxRecordContains(readTmuxRecord(t, record), []string{
+			"kill-session", "-t", sessionName,
+		})
+	}, 2*time.Second, 20*time.Millisecond)
+	assert.Contains(readTmuxRecord(t, record), []string{
+		"set-option", "-q", "-t", sessionName,
+		"@middleman_owner", srv.workspaces.TmuxOwnerMarker(),
+	})
+
+	var runtimeResp *generated.GetWorkspaceRuntimeResponse
+	require.Eventually(func() bool {
+		runtimeResp, err = client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+		if err != nil ||
+			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.JSON200 == nil ||
+			runtimeResp.JSON200.Sessions == nil ||
+			len(*runtimeResp.JSON200.Sessions) != 1 {
+			return false
+		}
+		return (*runtimeResp.JSON200.Sessions)[0].Status == "exited"
+	}, 2*time.Second, 20*time.Millisecond)
+
+	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(sessionName, stored[0].SessionName)
+
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, launchResp.JSON200.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	stored, err = database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(stored)
+}
+
+func tmuxRecordContains(argvs [][]string, want []string) bool {
+	return slices.ContainsFunc(argvs, func(argv []string) bool {
+		return slices.Equal(argv, want)
 	})
 }
 

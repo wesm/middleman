@@ -241,6 +241,9 @@ case "$1" in
     exit 1
     ;;
   new-session)
+    exit 0
+    ;;
+  set-option)
     exit 42
     ;;
   kill-session)
