@@ -7858,6 +7858,93 @@ exit 0
 	})
 }
 
+func TestWorkspaceResponseProbesStoredRuntimeTmuxSessionWithoutBaseE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+target=""
+mode=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-t" ]; then target="$a"; fi
+  if [ "$a" = "display-message" ]; then mode="display-message"; fi
+  if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
+  prev="$a"
+done
+case "$1" in
+  list-sessions)
+    exit 0
+    ;;
+esac
+if [ "$mode" = "display-message" ]; then
+  case "$target" in
+    *-helper) printf '⠴ t3code-b5014b03\n' ;;
+    *) printf 'idle\n' ;;
+  esac
+  exit 0
+fi
+if [ "$mode" = "capture-pane" ]; then
+  printf 'stable\n'
+  exit 0
+fi
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+	seedPR(t, database, "acme", "widget", 1)
+
+	worktreeDir := filepath.Join(dir, "worktrees")
+	ws := &workspace.Workspace{
+		ID:              "0000000000000001",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "feature",
+		WorktreePath:    filepath.Join(worktreeDir, "acme-widget-1"),
+		Status:          "ready",
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), ws))
+	require.NoError(database.UpsertWorkspaceTmuxSession(
+		t.Context(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.ID,
+			SessionName: "middleman-0000000000000001-helper",
+			TargetKey:   "helper",
+		},
+	))
+
+	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
+	srv := New(database, nil, nil, "/", cfg, ServerOptions{
+		WorktreeDir: worktreeDir,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetWorkspacesByIdWithResponse(t.Context(), ws.ID)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.True(resp.JSON200.TmuxWorking)
+	assert.Equal(tmuxActivitySourceTitle, resp.JSON200.TmuxActivitySource)
+	require.NotNil(resp.JSON200.TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *resp.JSON200.TmuxPaneTitle)
+	assert.Contains(readTmuxRecord(t, record), []string{
+		"display-message", "-p", "-t",
+		"middleman-0000000000000001-helper", "#{pane_title}",
+	})
+}
+
 func TestWorkspaceRuntimeLaunchTmuxOwnerMarkerFailureCleansSessionE2E(
 	t *testing.T,
 ) {

@@ -2553,8 +2553,7 @@ func (s *Server) toWorkspaceResponse(
 ) workspaceResponse {
 	resp := toWorkspaceResponse(summary)
 	if s.workspaces == nil ||
-		summary.Status != "ready" ||
-		summary.TmuxSession == "" {
+		summary.Status != "ready" {
 		return resp
 	}
 
@@ -2573,7 +2572,7 @@ func (s *Server) workspaceTmuxActivitySessions(
 ) []string {
 	sessions := make([]string, 0, 1)
 	seen := map[string]bool{}
-	if s.workspaces != nil && summary.TmuxSession != "" {
+	if s.workspaces != nil {
 		stored, err := s.workspaces.TmuxSessionsForWorkspace(
 			ctx, summary.ID, summary.TmuxSession,
 		)
@@ -2878,7 +2877,7 @@ func runtimeTargetKeyFromSessionKey(
 	key string,
 ) (string, bool) {
 	targetKey, ok := strings.CutPrefix(key, workspaceID+":")
-	return targetKey, ok && targetKey != "" && targetKey != "shell"
+	return targetKey, ok && targetKey != ""
 }
 
 func (s *Server) ensureWorkspaceRuntimeShell(
