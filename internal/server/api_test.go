@@ -7881,6 +7881,12 @@ case "$1" in
     exit 1
     ;;
   new-session)
+    for a in "$@"; do
+      if [ "$a" = "@middleman_owner" ]; then
+        echo "owner marker denied" >&2
+        exit 42
+      fi
+    done
     exit 0
     ;;
   set-option)
@@ -7927,10 +7933,18 @@ exit 0
 			"kill-session", "-t", sessionName,
 		})
 	}, 2*time.Second, 20*time.Millisecond)
-	assert.Contains(readTmuxRecord(t, record), []string{
-		"set-option", "-q", "-t", sessionName,
-		"@middleman_owner", srv.workspaces.TmuxOwnerMarker(),
-	})
+	var runtimeNewSession []string
+	for _, argv := range readTmuxRecord(t, record) {
+		if len(argv) > 0 &&
+			argv[0] == "new-session" &&
+			slices.Contains(argv, sessionName) {
+			runtimeNewSession = argv
+			break
+		}
+	}
+	require.NotNil(runtimeNewSession)
+	assert.Contains(runtimeNewSession, "@middleman_owner")
+	assert.Contains(runtimeNewSession, srv.workspaces.TmuxOwnerMarker())
 
 	var runtimeResp *generated.GetWorkspaceRuntimeResponse
 	require.Eventually(func() bool {

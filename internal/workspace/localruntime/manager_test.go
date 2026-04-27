@@ -241,10 +241,12 @@ case "$1" in
     exit 1
     ;;
   new-session)
+    for a in "$@"; do
+      if [ "$a" = "@middleman_owner" ]; then
+        exit 42
+      fi
+    done
     exit 0
-    ;;
-  set-option)
-    exit 42
     ;;
   kill-session)
     exit 0
