@@ -5,7 +5,11 @@
     Chip,
     CommentEditor,
   } from "@middleman/ui";
-  import { repoKey, type RepoSummaryCard } from "./repoSummary.js";
+  import {
+    repoKey,
+    repoStateKey,
+    type RepoSummaryCard,
+  } from "./repoSummary.js";
 
   interface Props {
     summary: RepoSummaryCard;
@@ -32,8 +36,9 @@
   }: Props = $props();
 
   const key = $derived(repoKey(summary));
+  const stateKey = $derived(repoStateKey(summary));
   const titleId = $derived(
-    `repo-issue-modal-title-${summary.owner}-${summary.name}`,
+    `repo-issue-modal-title-${stateKey}`,
   );
 
   let titleInput = $state<HTMLInputElement | null>(null);

@@ -20,6 +20,7 @@
   import {
     normalizeSummaries,
     repoKey,
+    repoStateKey,
     isStaleRelease,
     type RepoFilter,
     type RepoMetric,
@@ -189,7 +190,7 @@
   }
 
   function openComposer(summary: RepoSummaryCardData): void {
-    const key = repoKey(summary);
+    const key = repoStateKey(summary);
     composerSummary = summary;
     issueErrorByRepo[key] = null;
     if (issueTitleByRepo[key] === undefined) {
@@ -201,7 +202,7 @@
   }
 
   function closeComposer(key: string): void {
-    if (composerSummary && repoKey(composerSummary) === key) {
+    if (composerSummary && repoStateKey(composerSummary) === key) {
       composerSummary = null;
     }
     issueErrorByRepo[key] = null;
@@ -221,7 +222,7 @@
   async function submitIssue(
     summary: RepoSummaryCardData,
   ): Promise<void> {
-    const key = repoKey(summary);
+    const key = repoStateKey(summary);
     if (issueSubmittingByRepo[key]) return;
 
     const title = (issueTitleByRepo[key] ?? "").trim();
@@ -262,7 +263,7 @@
     issueTitleByRepo[key] = "";
     issueBodyByRepo[key] = "";
     composerSummary = null;
-    setGlobalRepo(key);
+    setGlobalRepo(repoKey(summary));
     const platformQuery = summary.platform_host
       ? `?platform_host=${encodeURIComponent(summary.platform_host)}`
       : "";
@@ -415,7 +416,7 @@
       />
     {:else}
     <div class="repo-grid">
-      {#each filteredSummaries as summary (repoKey(summary))}
+      {#each filteredSummaries as summary (repoStateKey(summary))}
         <RepoSummaryCard
           {summary}
           onviewprs={() =>
@@ -435,7 +436,7 @@
   {/if}
 
   {#if composerSummary}
-    {@const key = repoKey(composerSummary)}
+    {@const key = repoStateKey(composerSummary)}
     <RepoIssueModal
       summary={composerSummary}
       title={issueTitleByRepo[key] ?? ""}

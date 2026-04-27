@@ -35,6 +35,14 @@ export function repoKey(summary: {
   return `${summary.owner}/${summary.name}`;
 }
 
+export function repoStateKey(summary: {
+  platform_host: string;
+  owner: string;
+  name: string;
+}): string {
+  return `${summary.platform_host}/${summary.owner}/${summary.name}`;
+}
+
 export function localDateTimeLabel(dateStr: string): string {
   return new Date(dateStr).toLocaleString();
 }

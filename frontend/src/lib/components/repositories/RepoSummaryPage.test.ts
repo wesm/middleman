@@ -492,6 +492,113 @@ describe("RepoSummaryPage", () => {
     });
   });
 
+  it("keeps issue composer state separate for duplicate repos on different hosts", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          owner: "acme",
+          name: "widgets",
+          platform_host: "github.com",
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+        },
+        {
+          owner: "acme",
+          name: "widgets",
+          platform_host: "ghe.example.com",
+          cached_pr_count: 1,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+        },
+      ],
+      error: undefined,
+    });
+    mockPost.mockResolvedValue({
+      data: {
+        Number: 42,
+        repo_owner: "acme",
+        repo_name: "widgets",
+        detail_loaded: false,
+      },
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findAllByRole("button", {
+      name: /acme\s*\/\s*widgets/,
+    });
+    const issueButtons = screen.getAllByRole("button", {
+      name: "New issue",
+    });
+    const firstIssueButton = issueButtons[0];
+    const secondIssueButton = issueButtons[1];
+    if (!firstIssueButton || !secondIssueButton) {
+      throw new Error("expected issue buttons for both repo hosts");
+    }
+
+    await fireEvent.click(firstIssueButton);
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      { target: { value: "GitHub.com draft" } },
+    );
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
+
+    await fireEvent.click(secondIssueButton);
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
+        .value,
+    ).toBe("");
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      { target: { value: "Enterprise draft" } },
+    );
+    await fireEvent.submit(
+      screen.getByRole("button", { name: "Create issue" }),
+    );
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repos/{owner}/{name}/issues",
+        expect.objectContaining({
+          params: {
+            path: { owner: "acme", name: "widgets" },
+          },
+          body: expect.objectContaining({
+            title: "Enterprise draft",
+            platform_host: "ghe.example.com",
+          }),
+        }),
+      );
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+        "acme/widgets",
+      );
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/issues/acme/widgets/42?platform_host=ghe.example.com",
+      );
+    });
+  });
+
   it("retains modal issue drafts when dismissed", async () => {
     mockGet.mockResolvedValue({
       data: [{

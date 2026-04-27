@@ -7,6 +7,7 @@
     isStaleRelease,
     localDateTimeLabel,
     repoKey,
+    repoStateKey,
     type RepoMetric,
     type RepoSummaryCard,
   } from "./repoSummary.js";
@@ -37,6 +38,7 @@
   }: Props = $props();
 
   const key = $derived(repoKey(summary));
+  const stateKey = $derived(repoStateKey(summary));
   const syncTime = $derived(
     summary.last_sync_completed_at
       || summary.last_sync_started_at,
@@ -169,12 +171,12 @@
 
 <svelte:document onclick={handleDocumentClick} />
 
-<article class="repo-card" aria-labelledby={`repo-${key}`} bind:this={cardElement}>
+<article class="repo-card" aria-labelledby={`repo-${stateKey}`} bind:this={cardElement}>
   <div class="repo-card__header">
     <div class="repo-card__identity">
       <div class="repo-card__name-row">
         <button
-          id={`repo-${key}`}
+          id={`repo-${stateKey}`}
           class="repo-card__name"
           onclick={onviewprs}
         >
