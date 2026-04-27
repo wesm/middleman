@@ -2826,7 +2826,12 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	if err := s.runtime.Stop(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		if errors.Is(err, localruntime.ErrSessionNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(
+			"stop runtime session: " + err.Error(),
+		)
 	}
 	if tmuxSession != "" {
 		if err := s.workspaces.ForgetRuntimeTmuxSession(

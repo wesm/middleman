@@ -7779,6 +7779,77 @@ exit 0
 	assert.Equal("helper", stored[0].TargetKey)
 }
 
+func TestWorkspaceRuntimeStopTmuxCleanupFailureKeepsSessionE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	agentPath := filepath.Join(dir, "helper-agent")
+	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+target=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-t" ]; then target="$a"; fi
+  prev="$a"
+done
+if [ "$1" = "kill-session" ]; then
+  case "$target" in
+    *-helper)
+      echo "permission denied" >&2
+      exit 42
+      ;;
+  esac
+fi
+exit 0
+`), 0o755))
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: []string{agentPath},
+		}},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+	t.Cleanup(func() {
+		_ = database.DeleteWorkspaceTmuxSessions(context.Background(), ws.Id)
+	})
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, launchResp.JSON200.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusInternalServerError, stopResp.StatusCode())
+
+	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	require.NotNil(getResp.JSON200.Sessions)
+	require.Len(*getResp.JSON200.Sessions, 1)
+	assert.Equal(launchResp.JSON200.Key, (*getResp.JSON200.Sessions)[0].Key)
+
+	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal("middleman-"+ws.Id+"-helper", stored[0].SessionName)
+}
+
 func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
 	t *testing.T,
 ) {

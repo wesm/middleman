@@ -291,8 +291,9 @@ func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 }
 
 func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
+	require := require.New(t)
 	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
-	require.NoError(t, os.WriteFile(
+	require.NoError(os.WriteFile(
 		tmuxPath,
 		[]byte("#!/bin/sh\nexit 42\n"),
 		0o755,
@@ -314,8 +315,9 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 
 	err := mgr.Stop(context.Background(), "ws-1", "ws-1:codex")
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "kill tmux session")
+	require.Error(err)
+	require.Contains(err.Error(), "kill tmux session")
+	require.Len(mgr.ListSessions("ws-1"), 1)
 }
 
 func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {

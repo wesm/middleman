@@ -30,6 +30,7 @@ const (
 
 var (
 	errManagerShutdown   = errors.New("runtime manager is shut down")
+	ErrSessionNotFound   = errors.New("runtime session not found")
 	errWorkspaceStopping = errors.New(
 		"workspace is being stopped",
 	)
@@ -288,15 +289,19 @@ func (m *Manager) Stop(
 	workspaceID string,
 	sessionKey string,
 ) error {
-	s, ok := m.remove(workspaceID, sessionKey)
+	s, ok := m.session(workspaceID, sessionKey)
 	if !ok {
-		return fmt.Errorf("session %q not found", sessionKey)
+		return fmt.Errorf("%w: %q", ErrSessionNotFound, sessionKey)
 	}
 
 	cleanupErr := m.stopSession(ctx, s)
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	m.removeIfSame(workspaceID, sessionKey, s)
 	select {
 	case <-s.done:
-		return cleanupErr
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -838,7 +843,7 @@ func (m *Manager) runningSession(
 	return nil
 }
 
-func (m *Manager) remove(
+func (m *Manager) session(
 	workspaceID string,
 	key string,
 ) (*session, bool) {
@@ -847,15 +852,34 @@ func (m *Manager) remove(
 
 	if s, ok := m.sessions[key]; ok &&
 		s.snapshot().WorkspaceID == workspaceID {
-		delete(m.sessions, key)
 		return s, true
 	}
 	if s, ok := m.shells[key]; ok &&
 		s.snapshot().WorkspaceID == workspaceID {
-		delete(m.shells, key)
 		return s, true
 	}
 	return nil, false
+}
+
+func (m *Manager) removeIfSame(
+	workspaceID string,
+	key string,
+	s *session,
+) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if current, ok := m.sessions[key]; ok &&
+		current == s &&
+		current.snapshot().WorkspaceID == workspaceID {
+		delete(m.sessions, key)
+		return
+	}
+	if current, ok := m.shells[key]; ok &&
+		current == s &&
+		current.snapshot().WorkspaceID == workspaceID {
+		delete(m.shells, key)
+	}
 }
 
 func startSession(
