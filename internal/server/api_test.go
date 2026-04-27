@@ -34,6 +34,7 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/stacks"
+	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
@@ -7284,6 +7285,11 @@ func setupWorkspaceServerFixture(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
+	// Cleanup callbacks run LIFO. Drain the server first so async
+	// workspace setup cannot create a tmux session after fixture
+	// artifact cleanup has listed workspaces. The DB cleanup was
+	// registered earlier, so it remains open for artifact cleanup.
+	t.Cleanup(func() { cleanupWorkspaceServerFixtureArtifacts(t, srv, database) })
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	seedPR(t, database, "acme", "widget", 1)
@@ -7296,6 +7302,57 @@ func setupWorkspaceServerFixture(
 		bare:     bare,
 		remote:   remote,
 	}
+}
+
+func cleanupWorkspaceServerFixtureArtifacts(
+	t *testing.T,
+	srv *Server,
+	database *db.DB,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(
+		t,
+		cleanupWorkspaceServerFixtureArtifactsWithContext(ctx, srv, database),
+	)
+}
+
+func cleanupWorkspaceServerFixtureArtifactsWithContext(
+	ctx context.Context,
+	srv *Server,
+	database *db.DB,
+) error {
+	if srv.workspaces == nil {
+		return nil
+	}
+
+	workspaces, err := database.ListWorkspaces(ctx)
+	if err != nil {
+		return fmt.Errorf("list workspaces: %w", err)
+	}
+	var errs []error
+	for _, ws := range workspaces {
+		_, err := func() ([]string, error) {
+			beforeDestructive := func(stopCtx context.Context) {
+				if srv.runtime != nil {
+					srv.runtime.StopWorkspace(stopCtx, ws.ID)
+				}
+			}
+			if srv.runtime != nil {
+				srv.runtime.BeginStopping(ws.ID)
+				defer srv.runtime.EndStopping(ws.ID)
+			}
+			return srv.workspaces.Delete(ctx, ws.ID, true, beforeDestructive)
+		}()
+		if err != nil {
+			errs = append(
+				errs,
+				fmt.Errorf("delete workspace %s: %w", ws.ID, err),
+			)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func waitForWorkspaceReady(
@@ -7324,6 +7381,121 @@ func waitForWorkspaceReady(
 
 	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
 	return ready
+}
+
+func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
+	require := require.New(t)
+	if testing.Short() {
+		t.Skip("workspace e2e tests skipped in short mode")
+	}
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	t.Run("fixture", func(t *testing.T) {
+		t.Setenv("TMUX_RECORD", record)
+		cfg := &config.Config{
+			Tmux: config.Tmux{Command: []string{script}},
+		}
+		client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+
+		createReadyWorkspace(t, context.Background(), client)
+	})
+
+	var killed bool
+	for _, argv := range readTmuxRecord(t, record) {
+		if len(argv) >= 3 &&
+			argv[0] == "kill-session" &&
+			argv[1] == "-t" &&
+			strings.HasPrefix(argv[2], "middleman-") {
+			killed = true
+			break
+		}
+	}
+	require.True(killed, "fixture cleanup did not kill workspace tmux session")
+}
+
+func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
+	t *testing.T,
+) {
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`if [ "$1" = "kill-session" ] && [ "$3" = "middleman-fails" ]; then` + "\n" +
+		`  echo "permission denied" >&2` + "\n" +
+		`  exit 1` + "\n" +
+		`fi` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
+	manager.SetTmuxCommand([]string{script})
+	srv := &Server{workspaces: manager}
+	ctx := context.Background()
+	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
+		ID:              "ws-succeeds",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature/succeeds",
+		WorkspaceBranch: "middleman/pr-1",
+		WorktreePath:    filepath.Join(dir, "succeeds"),
+		TmuxSession:     "middleman-succeeds",
+		Status:          "ready",
+	}))
+	time.Sleep(time.Millisecond)
+	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
+		ID:              "ws-fails",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      2,
+		GitHeadRef:      "feature/fails",
+		WorkspaceBranch: "middleman/pr-2",
+		WorktreePath:    filepath.Join(dir, "fails"),
+		TmuxSession:     "middleman-fails",
+		Status:          "ready",
+	}))
+
+	err = cleanupWorkspaceServerFixtureArtifactsWithContext(ctx, srv, database)
+	require.Error(err)
+	require.Contains(err.Error(), "ws-fails")
+	require.Contains(err.Error(), "permission denied")
+
+	killedSessions := map[string]bool{}
+	for _, argv := range readTmuxRecord(t, record) {
+		if len(argv) >= 3 &&
+			argv[0] == "kill-session" {
+			killedSessions[argv[2]] = true
+		}
+	}
+	require.True(
+		killedSessions["middleman-succeeds"],
+		"cleanup stopped before later workspace tmux session",
+	)
 }
 
 func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
