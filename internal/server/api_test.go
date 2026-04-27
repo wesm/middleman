@@ -7284,6 +7284,9 @@ func setupWorkspaceServerFixture(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
+	t.Cleanup(func() {
+		cleanupWorkspaceServerFixtureArtifacts(t, srv, database)
+	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	seedPR(t, database, "acme", "widget", 1)
@@ -7295,6 +7298,26 @@ func setupWorkspaceServerFixture(
 		database: database,
 		bare:     bare,
 		remote:   remote,
+	}
+}
+
+func cleanupWorkspaceServerFixtureArtifacts(
+	t *testing.T,
+	srv *Server,
+	database *db.DB,
+) {
+	t.Helper()
+	if srv.workspaces == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	workspaces, err := database.ListWorkspaces(ctx)
+	require.NoError(t, err)
+	for _, ws := range workspaces {
+		_, err := srv.workspaces.Delete(ctx, ws.ID, true, nil)
+		require.NoError(t, err)
 	}
 }
 
@@ -7324,6 +7347,49 @@ func waitForWorkspaceReady(
 
 	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
 	return ready
+}
+
+func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
+	require := require.New(t)
+	if testing.Short() {
+		t.Skip("workspace e2e tests skipped in short mode")
+	}
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	t.Run("fixture", func(t *testing.T) {
+		t.Setenv("TMUX_RECORD", record)
+		cfg := &config.Config{
+			Tmux: config.Tmux{Command: []string{script}},
+		}
+		client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+
+		createReadyWorkspace(t, context.Background(), client)
+	})
+
+	var killed bool
+	for _, argv := range readTmuxRecord(t, record) {
+		if len(argv) >= 3 &&
+			argv[0] == "kill-session" &&
+			argv[1] == "-t" &&
+			strings.HasPrefix(argv[2], "middleman-") {
+			killed = true
+			break
+		}
+	}
+	require.True(killed, "fixture cleanup did not kill workspace tmux session")
 }
 
 func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
