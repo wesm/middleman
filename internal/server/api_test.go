@@ -7619,11 +7619,12 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 
 	require := require.New(t)
 	assert := Assert.New(t)
+	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("sleep"),
-	}}}
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
@@ -8381,11 +8382,12 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 
 	require := require.New(t)
 	assert := Assert.New(t)
+	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("sleep"),
-	}}}
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
@@ -8430,11 +8432,12 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 
 	require := require.New(t)
 	assert := Assert.New(t)
+	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("sleep"),
-	}}}
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
