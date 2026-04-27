@@ -969,6 +969,17 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		"middleman-0000000000000001-claude",
 		"middleman-0000000000000001-codex",
 	}, sessions)
+
+	sessions, err = mgr.TmuxSessionsForWorkspace(
+		context.Background(),
+		"0000000000000001",
+		"",
+	)
+	require.NoError(err)
+	assert.Equal([]string{
+		"middleman-0000000000000001-claude",
+		"middleman-0000000000000001-codex",
+	}, sessions)
 }
 
 func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(

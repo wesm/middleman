@@ -7980,6 +7980,75 @@ func tmuxRecordContains(argvs [][]string, want []string) bool {
 	})
 }
 
+func TestWorkspaceRuntimeStopClearsStoredTmuxSessionAfterRuntimeForgetE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	agentPath := filepath.Join(dir, "helper-agent")
+	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+case "$1" in
+  has-session)
+    exit 1
+    ;;
+  new-session|set-option|attach-session|kill-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: []string{agentPath},
+		}},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	sessionName := "middleman-" + ws.Id + "-helper"
+
+	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(sessionName, stored[0].SessionName)
+
+	require.NoError(srv.runtime.Stop(ctx, ws.Id, launchResp.JSON200.Key))
+	stored, err = database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, launchResp.JSON200.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	stored, err = database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(stored)
+	assert.Contains(readTmuxRecord(t, record), []string{
+		"kill-session", "-t", sessionName,
+	})
+}
+
 func TestWorkspaceRuntimeStopTmuxCleanupFailureKeepsSessionE2E(
 	t *testing.T,
 ) {
