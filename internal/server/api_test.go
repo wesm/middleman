@@ -8067,7 +8067,7 @@ func tmuxRecordContains(argvs [][]string, want []string) bool {
 	})
 }
 
-func TestWorkspaceRuntimeStopClearsStoredTmuxSessionAfterRuntimeForgetE2E(
+func TestWorkspaceRuntimeStopClearsStoredShellKeyTmuxSessionAfterRuntimeForgetE2E(
 	t *testing.T,
 ) {
 	require := require.New(t)
@@ -8092,8 +8092,8 @@ exit 0
 	t.Setenv("TMUX_RECORD", record)
 	cfg := &config.Config{
 		Agents: []config.Agent{{
-			Key:     "helper",
-			Label:   "Helper",
+			Key:     "shell",
+			Label:   "Shell Agent",
 			Command: []string{agentPath},
 		}},
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
@@ -8105,13 +8105,13 @@ exit 0
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id,
 		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "helper",
+			TargetKey: "shell",
 		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode())
 	require.NotNil(launchResp.JSON200)
-	sessionName := "middleman-" + ws.Id + "-helper"
+	sessionName := "middleman-" + ws.Id + "-shell"
 
 	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
