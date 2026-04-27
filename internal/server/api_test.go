@@ -8077,6 +8077,90 @@ func runtimeTmuxSessionNameForTest(workspaceID string, targetKey string) string 
 	return "middleman-" + workspaceID + "-" + hex.EncodeToString(sum[:8])
 }
 
+func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	agentPath := filepath.Join(dir, "helper-agent")
+	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+case "$1" in
+  has-session)
+    exit 1
+    ;;
+  new-session|set-option|attach-session|kill-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+	cfg := &config.Config{
+		Agents: []config.Agent{
+			{Key: "foo/bar", Label: "Foo Slash", Command: []string{agentPath}},
+			{Key: "foo:bar", Label: "Foo Colon", Command: []string{agentPath}},
+		},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	var launched []generated.SessionInfo
+	for _, targetKey := range []string{"foo/bar", "foo:bar"} {
+		resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+			ctx, ws.Id,
+			generated.LaunchWorkspaceRuntimeSessionInputBody{
+				TargetKey: targetKey,
+			},
+		)
+		require.NoError(err)
+		require.Equal(http.StatusOK, resp.StatusCode())
+		require.NotNil(resp.JSON200)
+		launched = append(launched, *resp.JSON200)
+	}
+
+	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 2)
+	sessionsByTarget := map[string]string{}
+	for _, session := range stored {
+		sessionsByTarget[session.TargetKey] = session.SessionName
+	}
+	slashSession := runtimeTmuxSessionNameForTest(ws.Id, "foo/bar")
+	colonSession := runtimeTmuxSessionNameForTest(ws.Id, "foo:bar")
+	assert.Equal(slashSession, sessionsByTarget["foo/bar"])
+	assert.Equal(colonSession, sessionsByTarget["foo:bar"])
+	assert.NotEqual(slashSession, colonSession)
+	for _, sessionName := range []string{slashSession, colonSession} {
+		assert.NotContains(sessionName, "foo")
+		assert.NotContains(sessionName, "/")
+		assert.NotContains(sessionName, ":")
+	}
+
+	for _, session := range launched {
+		stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+			ctx, ws.Id, session.Key,
+		)
+		require.NoError(err)
+		require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	}
+	stored, err = database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(stored)
+	assert.Contains(readTmuxRecord(t, record), []string{
+		"kill-session", "-t", slashSession,
+	})
+	assert.Contains(readTmuxRecord(t, record), []string{
+		"kill-session", "-t", colonSession,
+	})
+}
+
 func TestWorkspaceRuntimeStopClearsStoredShellKeyTmuxSessionAfterRuntimeForgetE2E(
 	t *testing.T,
 ) {
