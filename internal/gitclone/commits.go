@@ -90,7 +90,8 @@ func (m *Manager) CommitTimelineSinceTag(
 	}
 
 	dir := m.ClonePath(host, owner, name)
-	rangeSpec := tagName + "..refs/remotes/origin/HEAD"
+	defaultRef := m.defaultTimelineRef(ctx, host, dir)
+	rangeSpec := tagName + ".." + defaultRef
 	countOut, err := m.git(ctx, host, dir,
 		"rev-list", "--first-parent", "--count", rangeSpec,
 	)
@@ -139,6 +140,37 @@ func (m *Manager) CommitTimelineSinceTag(
 		return 0, nil, err
 	}
 	return count, points, nil
+}
+
+func (m *Manager) defaultTimelineRef(
+	ctx context.Context,
+	host, dir string,
+) string {
+	if _, err := m.git(ctx, host, dir,
+		"rev-parse", "--verify", "refs/remotes/origin/HEAD",
+	); err == nil {
+		return "refs/remotes/origin/HEAD"
+	}
+
+	out, err := m.git(ctx, host, dir, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil {
+		return "HEAD"
+	}
+	branch, ok := strings.CutPrefix(
+		strings.TrimSpace(string(out)),
+		"refs/heads/",
+	)
+	if !ok || branch == "" {
+		return "HEAD"
+	}
+
+	remoteRef := "refs/remotes/origin/" + branch
+	if _, err := m.git(ctx, host, dir,
+		"rev-parse", "--verify", remoteRef,
+	); err == nil {
+		return remoteRef
+	}
+	return "HEAD"
 }
 
 // ParentOf returns the first parent SHA of the given commit.

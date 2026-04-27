@@ -548,7 +548,8 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		Limit:       input.Limit,
 		Offset:      input.Offset,
 	}
-	if owner, name := parseRepoFilter(input.Repo); owner != "" {
+	if platformHost, owner, name := parseRepoFilter(input.Repo); owner != "" {
+		opts.PlatformHost = platformHost
 		opts.RepoOwner = owner
 		opts.RepoName = name
 	}
@@ -962,7 +963,8 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		Limit:   input.Limit,
 		Offset:  input.Offset,
 	}
-	if owner, name := parseRepoFilter(input.Repo); owner != "" {
+	if platformHost, owner, name := parseRepoFilter(input.Repo); owner != "" {
+		opts.PlatformHost = platformHost
 		opts.RepoOwner = owner
 		opts.RepoName = name
 	}

@@ -246,7 +246,7 @@ describe("RepoSummaryPage", () => {
       screen.getByRole("button", { name: /3\s+Open PRs/ }),
     );
     expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-      "acme/widgets",
+      "github.com/acme/widgets",
     );
     expect(mockNavigate).toHaveBeenCalledWith("/pulls");
 
@@ -254,7 +254,7 @@ describe("RepoSummaryPage", () => {
       screen.getByRole("button", { name: /2\s+Open issues/ }),
     );
     expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-      "acme/widgets",
+      "github.com/acme/widgets",
     );
     expect(mockNavigate).toHaveBeenCalledWith("/issues");
   });
@@ -423,7 +423,7 @@ describe("RepoSummaryPage", () => {
         }),
       );
       expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-        "acme/widgets",
+        "github.com/acme/widgets",
       );
       expect(mockNavigate).toHaveBeenCalledWith(
         "/issues/acme/widgets/27?platform_host=github.com",
@@ -591,7 +591,7 @@ describe("RepoSummaryPage", () => {
         }),
       );
       expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-        "acme/widgets",
+        "ghe.example.com/acme/widgets",
       );
       expect(mockNavigate).toHaveBeenCalledWith(
         "/issues/acme/widgets/42?platform_host=ghe.example.com",

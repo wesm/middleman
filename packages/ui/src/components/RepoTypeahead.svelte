@@ -28,7 +28,7 @@
 
   const options = $derived.by(() => {
     return repos.map((r) => ({
-      value: `${r.Owner}/${r.Name}`,
+      value: `${r.PlatformHost}/${r.Owner}/${r.Name}`,
       owner: r.Owner,
       name: r.Name,
     }));

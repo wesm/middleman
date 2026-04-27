@@ -185,7 +185,7 @@
     summary: RepoSummaryCardData,
     path: string,
   ): void {
-    setGlobalRepo(repoKey(summary));
+    setGlobalRepo(repoStateKey(summary));
     navigate(path);
   }
 
@@ -263,7 +263,7 @@
     issueTitleByRepo[key] = "";
     issueBodyByRepo[key] = "";
     composerSummary = null;
-    setGlobalRepo(repoKey(summary));
+    setGlobalRepo(repoStateKey(summary));
     const platformQuery = summary.platform_host
       ? `?platform_host=${encodeURIComponent(summary.platform_host)}`
       : "";

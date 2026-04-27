@@ -184,14 +184,19 @@ func (s *Server) lookupIssue(
 	return repo, issue, nil
 }
 
-// parseRepoFilter splits the repo query parameter when it is in owner/name
-// form and otherwise returns empty parts so callers can ignore invalid input.
-func parseRepoFilter(repo string) (owner, name string) {
-	parts := strings.SplitN(repo, "/", 2)
-	if len(parts) != 2 {
-		return "", ""
+// parseRepoFilter splits the repo query parameter when it is in owner/name or
+// platform_host/owner/name form and otherwise returns empty parts so callers
+// can ignore invalid input.
+func parseRepoFilter(repo string) (platformHost, owner, name string) {
+	parts := strings.Split(repo, "/")
+	switch len(parts) {
+	case 2:
+		return "", parts[0], parts[1]
+	case 3:
+		return parts[0], parts[1], parts[2]
+	default:
+		return "", "", ""
 	}
-	return parts[0], parts[1]
 }
 
 func validateStarredRequest(body starredRequest) bool {

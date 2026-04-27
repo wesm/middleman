@@ -156,14 +156,15 @@ type KanbanState struct {
 }
 
 type ListMergeRequestsOpts struct {
-	RepoOwner   string
-	RepoName    string
-	State       string
-	KanbanState string
-	Starred     bool
-	Search      string
-	Limit       int
-	Offset      int
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	State        string
+	KanbanState  string
+	Starred      bool
+	Search       string
+	Limit        int
+	Offset       int
 }
 
 type Issue struct {
@@ -208,13 +209,14 @@ type CommentAutocompleteReference struct {
 }
 
 type ListIssuesOpts struct {
-	RepoOwner string
-	RepoName  string
-	State     string
-	Starred   bool
-	Search    string
-	Limit     int
-	Offset    int
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	State        string
+	Starred      bool
+	Search       string
+	Limit        int
+	Offset       int
 }
 
 type StarredItem struct {

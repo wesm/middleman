@@ -141,6 +141,42 @@ func TestCommitTimelineSinceTag(t *testing.T) {
 	assert.False(points[0].CommittedAt.IsZero())
 }
 
+func TestCommitTimelineSinceTagWithoutOriginHEAD(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@test.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "release commit")
+	commitTestRun(t, work, "git", "tag", "v1.0.0")
+	require.NoError(os.WriteFile(filepath.Join(work, "main1.txt"), []byte("content\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "main 1")
+	commitTestRun(t, work, "git", "push", "--tags", "origin", "main")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	clonePath := mgr.ClonePath("github.com", "acme", "widgets")
+	commitTestRun(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+
+	count, points, err := mgr.CommitTimelineSinceTag(
+		t.Context(), "github.com", "acme", "widgets", "v1.0.0", 2,
+	)
+	require.NoError(err)
+	assert.Equal(1, count)
+	require.Len(points, 1)
+	assert.Equal("main 1", points[0].Message)
+}
+
 func TestListCommits_FirstParent(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

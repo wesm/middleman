@@ -857,6 +857,29 @@ func TestAPIListPullsAcceptsMixedCaseRepoFilter(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
 }
 
+func TestAPIListPullsAcceptsHostQualifiedRepoFilter(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
+	client := setupTestClient(t, srv)
+
+	repo := "ghe.example.com/acme/widget"
+	resp, err := client.HTTP.ListPullsWithResponse(
+		t.Context(), &generated.ListPullsParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
+	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
+	assert.EqualValues(2, (*resp.JSON200)[0].Number)
+}
+
 func TestAPIGetPullIncludesBranches(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -3926,6 +3949,29 @@ func TestAPIListIssuesAcceptsMixedCaseRepoFilter(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
+}
+
+func TestAPIListIssuesAcceptsHostQualifiedRepoFilter(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 5, "open", "GitHub issue")
+	seedIssueOnHost(t, database, "ghe.example.com", "acme", "widget", 7, "open", "Enterprise issue")
+	client := setupTestClient(t, srv)
+
+	repo := "ghe.example.com/acme/widget"
+	resp, err := client.HTTP.ListIssuesWithResponse(
+		t.Context(), &generated.ListIssuesParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
+	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
+	assert.EqualValues(7, (*resp.JSON200)[0].Number)
 }
 
 func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
