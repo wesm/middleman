@@ -776,11 +776,11 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa\nmiddleman-notes\nother-session\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa-0123456789abcdef\nmiddleman-aaaaaaaaaaaaaaaa-claude\nmiddleman-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		`  if [ "$a" = "show-options" ]; then` + "\n" +
-		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa" ]; then` + "\n" +
+		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa-0123456789abcdef" ] || [ "$5" = "middleman-aaaaaaaaaaaaaaaa-claude" ]; then` + "\n" +
 		`      printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
 		`      exit 0` + "\n" +
 		`    fi` + "\n" +
@@ -828,14 +828,26 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	assert.Equal(
 		[]string{
 			"wrap", "show-options", "-qv", "-t",
-			"middleman-aaaaaaaaaaaaaaaa", "@middleman_owner",
+			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
+			"@middleman_owner",
 		},
 		argvs[2],
 	)
 	assert.Equal(
-		[]string{"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa"},
+		[]string{
+			"wrap", "kill-session", "-t",
+			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
+		},
 		argvs[3],
 	)
+	assert.NotContains(argvs, []string{
+		"wrap", "show-options", "-qv", "-t",
+		"middleman-aaaaaaaaaaaaaaaa-claude", "@middleman_owner",
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t",
+		"middleman-aaaaaaaaaaaaaaaa-claude",
+	})
 }
 
 func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
@@ -851,7 +863,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-codex\nmiddleman-aaaaaaaaaaaaaaaa-claude\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-57de4cf40144bdf7\nmiddleman-aaaaaaaaaaaaaaaa-c857d09db23e6822\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		`  if [ "$a" = "show-options" ]; then` + "\n" +
@@ -884,7 +896,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		context.Background(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-codex",
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
 			TargetKey:   "codex",
 		},
 	))
@@ -893,10 +905,12 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
-		"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa-claude",
+		"wrap", "kill-session", "-t",
+		"middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822",
 	})
 	assert.NotContains(argvs, []string{
-		"wrap", "kill-session", "-t", "middleman-0000000000000001-codex",
+		"wrap", "kill-session", "-t",
+		"middleman-0000000000000001-57de4cf40144bdf7",
 	})
 }
 
@@ -924,7 +938,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		context.Background(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-codex",
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
 			TargetKey:   "codex",
 		},
 	))
@@ -932,7 +946,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		context.Background(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-claude",
+			SessionName: "middleman-0000000000000001-c857d09db23e6822",
 			TargetKey:   "claude",
 		},
 	))
@@ -952,7 +966,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		context.Background(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: "0000000000000002",
-			SessionName: "middleman-0000000000000002-codex",
+			SessionName: "middleman-0000000000000002-57de4cf40144bdf7",
 			TargetKey:   "codex",
 		},
 	))
@@ -966,8 +980,8 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 
 	assert.Equal([]string{
 		"middleman-0000000000000001",
-		"middleman-0000000000000001-claude",
-		"middleman-0000000000000001-codex",
+		"middleman-0000000000000001-c857d09db23e6822",
+		"middleman-0000000000000001-57de4cf40144bdf7",
 	}, sessions)
 
 	sessions, err = mgr.TmuxSessionsForWorkspace(
@@ -977,8 +991,8 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 	)
 	require.NoError(err)
 	assert.Equal([]string{
-		"middleman-0000000000000001-claude",
-		"middleman-0000000000000001-codex",
+		"middleman-0000000000000001-c857d09db23e6822",
+		"middleman-0000000000000001-57de4cf40144bdf7",
 	}, sessions)
 }
 
@@ -1017,7 +1031,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		context.Background(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: ws.ID,
-			SessionName: "middleman-0000000000000001-codex",
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
 			TargetKey:   "codex",
 		},
 	))
@@ -1025,7 +1039,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		context.Background(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: ws.ID,
-			SessionName: "middleman-0000000000000001-claude",
+			SessionName: "middleman-0000000000000001-c857d09db23e6822",
 			TargetKey:   "claude",
 		},
 	))
@@ -1037,13 +1051,16 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		"kill-session", "-t", "middleman-0000000000000001",
 	})
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001-claude",
+		"kill-session", "-t",
+		"middleman-0000000000000001-c857d09db23e6822",
 	})
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001-codex",
+		"kill-session", "-t",
+		"middleman-0000000000000001-57de4cf40144bdf7",
 	})
 	assert.NotContains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000002-codex",
+		"kill-session", "-t",
+		"middleman-0000000000000002-57de4cf40144bdf7",
 	})
 	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)
 	require.NoError(err)
@@ -1073,7 +1090,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		`      echo "can't find session: $target" >&2` + "\n" +
 		`      exit 1` + "\n" +
 		`      ;;` + "\n" +
-		`    middleman-0000000000000001-codex)` + "\n" +
+		`    middleman-0000000000000001-57de4cf40144bdf7)` + "\n" +
 		`      echo "permission denied" >&2` + "\n" +
 		`      exit 42` + "\n" +
 		`      ;;` + "\n" +
@@ -1104,25 +1121,30 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 			context.Background(),
 			&db.WorkspaceTmuxSession{
 				WorkspaceID: ws.ID,
-				SessionName: "middleman-0000000000000001-" + targetKey,
-				TargetKey:   targetKey,
+				SessionName: map[string]string{
+					"codex":  "middleman-0000000000000001-57de4cf40144bdf7",
+					"claude": "middleman-0000000000000001-c857d09db23e6822",
+				}[targetKey],
+				TargetKey: targetKey,
 			},
 		))
 	}
 
 	err := mgr.cleanupTmuxSession(context.Background(), ws)
 	require.Error(err)
-	assert.Contains(err.Error(), "middleman-0000000000000001-codex")
+	assert.Contains(err.Error(), "middleman-0000000000000001-57de4cf40144bdf7")
 
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
 		"kill-session", "-t", "middleman-0000000000000001",
 	})
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001-codex",
+		"kill-session", "-t",
+		"middleman-0000000000000001-57de4cf40144bdf7",
 	})
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001-claude",
+		"kill-session", "-t",
+		"middleman-0000000000000001-c857d09db23e6822",
 	})
 
 	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)

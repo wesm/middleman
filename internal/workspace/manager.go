@@ -1036,12 +1036,7 @@ func isWorkspaceTmuxSessionName(session string) bool {
 		!strings.HasPrefix(session, prefix) {
 		return false
 	}
-	for _, ch := range session[len(prefix):] {
-		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
-			return false
-		}
-	}
-	return true
+	return isLowerHex(session[len(prefix):])
 }
 
 func isMiddlemanWorkspaceTmuxSessionName(session string) bool {
@@ -1049,12 +1044,24 @@ func isMiddlemanWorkspaceTmuxSessionName(session string) bool {
 		return true
 	}
 	const prefix = "middleman-"
-	if len(session) <= len(prefix)+16 ||
+	// Runtime session names intentionally only match the current opaque
+	// middleman-<workspace-id>-<target-key-hash> shape. Old readable
+	// target suffixes are not supported; stored DB rows are authoritative
+	// for restart activity and cleanup.
+	if len(session) != len(prefix)+16+1+16 ||
 		!strings.HasPrefix(session, prefix) ||
 		session[len(prefix)+16] != '-' {
 		return false
 	}
-	for _, ch := range session[len(prefix) : len(prefix)+16] {
+	return isLowerHex(session[len(prefix):len(prefix)+16]) &&
+		isLowerHex(session[len(prefix)+17:])
+}
+
+func isLowerHex(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, ch := range value {
 		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
