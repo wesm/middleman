@@ -7285,6 +7285,10 @@ func setupWorkspaceServerFixture(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
+	// Cleanup callbacks run LIFO. Drain the server first so async
+	// workspace setup cannot create a tmux session after fixture
+	// artifact cleanup has listed workspaces. The DB cleanup was
+	// registered earlier, so it remains open for artifact cleanup.
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureArtifacts(t, srv, database) })
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
@@ -7329,7 +7333,18 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 	}
 	var errs []error
 	for _, ws := range workspaces {
-		_, err := srv.workspaces.Delete(ctx, ws.ID, true, nil)
+		_, err := func() ([]string, error) {
+			beforeDestructive := func(stopCtx context.Context) {
+				if srv.runtime != nil {
+					srv.runtime.StopWorkspace(stopCtx, ws.ID)
+				}
+			}
+			if srv.runtime != nil {
+				srv.runtime.BeginStopping(ws.ID)
+				defer srv.runtime.EndStopping(ws.ID)
+			}
+			return srv.workspaces.Delete(ctx, ws.ID, true, beforeDestructive)
+		}()
 		if err != nil {
 			errs = append(
 				errs,
