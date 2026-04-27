@@ -817,13 +817,32 @@ func (m *Manager) launchTmuxOwnedCommand(
 		"set-option", "-q", "-t", tmuxSession,
 		"@middleman_owner", m.tmuxOwnerMarker,
 	))
+	killSession := shellCommand(append(
+		append([]string(nil), tmuxCommand...),
+		"kill-session", "-t", tmuxSession,
+	))
 	attachSession := shellCommand(append(
 		append([]string(nil), tmuxCommand...),
 		"attach-session", "-t", tmuxSession,
 	))
 	script := fmt.Sprintf(
-		"if ! %s >/dev/null 2>&1; then\n  %s\nfi\n%s\nexec %s",
-		hasSession, newSession, setOwner, attachSession,
+		"created=0\n"+
+			"if ! %s >/dev/null 2>&1; then\n"+
+			"  created=1\n"+
+			"  if ! %s; then\n"+
+			"    %s >/dev/null 2>&1 || true\n"+
+			"    exit 1\n"+
+			"  fi\n"+
+			"fi\n"+
+			"if ! %s; then\n"+
+			"  if [ \"$created\" = \"1\" ]; then\n"+
+			"    %s >/dev/null 2>&1 || true\n"+
+			"  fi\n"+
+			"  exit 1\n"+
+			"fi\n"+
+			"exec %s",
+		hasSession, newSession, killSession, setOwner, killSession,
+		attachSession,
 	)
 	return []string{"/bin/sh", "-lc", script}
 }

@@ -218,12 +218,68 @@ func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
 	assert.Contains(script, "has-session")
 	assert.Contains(script, "new-session")
 	assert.Contains(script, "set-option")
+	assert.Contains(script, "kill-session")
+	assert.Contains(script, "exit 1")
 	assert.Contains(script, "@middleman_owner")
 	assert.Contains(script, "middleman:test-owner")
 	assert.Contains(script, "attach-session")
 	assert.Contains(script, "middleman-ws-1-codex")
 	assert.Contains(script, shellQuote(agent.Command[0]))
 	assert.Equal("middleman-ws-1-codex", launch.TmuxSession)
+}
+
+func TestManagerLaunchCommandCleansUpWhenOwnerMarkingFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	tmuxPath := filepath.Join(dir, "tmux-fails-set-option")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$@" >> "$TMUX_RECORD"
+case "$1" in
+  has-session)
+    exit 1
+    ;;
+  new-session)
+    exit 42
+    ;;
+  kill-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	agent := helperTarget("codex", "sleep")
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			agent,
+			{
+				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Source: "system", Command: []string{tmuxPath},
+				Available: true,
+			},
+		},
+		TmuxCommand:             []string{tmuxPath},
+		TmuxOwnerMarker:         "middleman:test-owner",
+		WrapAgentSessionsInTmux: true,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	launch, err := mgr.launchCommand(agent, "ws-1", t.TempDir())
+	require.NoError(err)
+	cmd := exec.Command(launch.Command[0], launch.Command[1:]...)
+	cmd.Env = append(os.Environ(), "TMUX_RECORD="+record)
+
+	err = cmd.Run()
+	require.Error(err)
+	data, err := os.ReadFile(record)
+	require.NoError(err)
+	recorded := string(data)
+	assert.Contains(recorded, "new-session")
+	assert.Contains(recorded, "@middleman_owner")
+	assert.Contains(recorded, "kill-session")
 }
 
 func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T) {
