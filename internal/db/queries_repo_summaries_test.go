@@ -81,3 +81,54 @@ func TestListRepoSummariesIncludesOverviewSnapshot(t *testing.T) {
 	assert.Equal("Ship repo overview", overview.CommitTimeline[0].Message)
 	assert.Equal(timelineUpdatedAt, *overview.TimelineUpdatedAt)
 }
+
+func TestUpsertRepoOverviewClearsTimelineWhenReleaseChangesWithoutCloneData(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	oldPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	newPublishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	timelineUpdatedAt := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
+	commitsSince := 12
+
+	err := d.UpsertRepoOverview(ctx, repoID, RepoOverview{
+		LatestRelease: &RepoRelease{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/acme/widgets/releases/tag/v1.0.0",
+			PublishedAt: &oldPublishedAt,
+		},
+		CommitsSinceRelease: &commitsSince,
+		CommitTimeline: []RepoCommitTimelinePoint{{
+			SHA:         "abc123",
+			Message:     "Old release commit",
+			CommittedAt: time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+		}},
+		TimelineUpdatedAt: &timelineUpdatedAt,
+	})
+	require.NoError(err)
+
+	err = d.UpsertRepoOverview(ctx, repoID, RepoOverview{
+		LatestRelease: &RepoRelease{
+			TagName:     "v2.0.0",
+			Name:        "Version 2.0.0",
+			URL:         "https://github.com/acme/widgets/releases/tag/v2.0.0",
+			PublishedAt: &newPublishedAt,
+		},
+	})
+	require.NoError(err)
+
+	summaries, err := d.ListRepoSummaries(ctx)
+	require.NoError(err)
+	require.Len(summaries, 1)
+	overview := summaries[0].Overview
+	require.NotNil(overview.LatestRelease)
+
+	assert.Equal("v2.0.0", overview.LatestRelease.TagName)
+	assert.Nil(overview.CommitsSinceRelease)
+	assert.Empty(overview.CommitTimeline)
+	assert.Nil(overview.TimelineUpdatedAt)
+}

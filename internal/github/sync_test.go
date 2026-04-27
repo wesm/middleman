@@ -520,16 +520,15 @@ func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
 	})
 	require.NoError(err)
 
-	newPublishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
-	tagName := "v2.0.0"
-	releaseName := "Version 2.0.0"
-	releaseURL := "https://github.com/owner/repo/releases/tag/v2.0.0"
+	tagName := "v1.0.0"
+	releaseName := "Version 1.0.0"
+	releaseURL := "https://github.com/owner/repo/releases/tag/v1.0.0"
 	client := &mockClient{
 		listReleases: []*gh.RepositoryRelease{{
 			TagName:     &tagName,
 			Name:        &releaseName,
 			HTMLURL:     &releaseURL,
-			PublishedAt: &gh.Timestamp{Time: newPublishedAt},
+			PublishedAt: &gh.Timestamp{Time: oldPublishedAt},
 		}},
 	}
 	syncer := NewSyncer(
@@ -559,8 +558,8 @@ func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
 	require.Len(overview.CommitTimeline, 1)
 	require.NotNil(overview.TimelineUpdatedAt)
 
-	assert.Equal("v2.0.0", overview.LatestRelease.TagName)
-	assert.Equal(newPublishedAt, *overview.LatestRelease.PublishedAt)
+	assert.Equal("v1.0.0", overview.LatestRelease.TagName)
+	assert.Equal(oldPublishedAt, *overview.LatestRelease.PublishedAt)
 	assert.Equal(oldCommitsSince, *overview.CommitsSinceRelease)
 	assert.Equal("abc123", overview.CommitTimeline[0].SHA)
 	assert.Equal("Keep cached timeline", overview.CommitTimeline[0].Message)

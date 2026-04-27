@@ -25,14 +25,23 @@ func (d *DB) ListActivity(
 	var args []any
 
 	if opts.Repo != "" {
-		owner, name, ok := strings.Cut(opts.Repo, "/")
-		if ok {
-			_, owner, name = canonicalRepoIdentifier("", owner, name)
-			opts.Repo = owner + "/" + name
+		parts := strings.Split(opts.Repo, "/")
+		switch len(parts) {
+		case 2:
+			_, owner, name := canonicalRepoIdentifier("", parts[0], parts[1])
+			whereClauses = append(whereClauses,
+				"repo_owner || '/' || repo_name = ?")
+			args = append(args, owner+"/"+name)
+		case 3:
+			host, owner, name := canonicalRepoIdentifier(parts[0], parts[1], parts[2])
+			whereClauses = append(whereClauses,
+				"platform_host = ? AND repo_owner = ? AND repo_name = ?")
+			args = append(args, host, owner, name)
+		default:
+			whereClauses = append(whereClauses,
+				"repo_owner || '/' || repo_name = ?")
+			args = append(args, opts.Repo)
 		}
-		whereClauses = append(whereClauses,
-			"repo_owner || '/' || repo_name = ?")
-		args = append(args, opts.Repo)
 	}
 
 	if len(opts.Types) > 0 {

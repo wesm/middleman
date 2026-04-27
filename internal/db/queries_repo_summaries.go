@@ -209,20 +209,30 @@ func (d *DB) UpsertRepoOverview(
 		    latest_release_target = excluded.latest_release_target,
 		    latest_release_prerelease = excluded.latest_release_prerelease,
 		    latest_release_published_at = excluded.latest_release_published_at,
-		    commits_since_release = COALESCE(
-		        excluded.commits_since_release,
-		        middleman_repo_overviews.commits_since_release
-		    ),
+		    commits_since_release = CASE
+		        WHEN excluded.timeline_updated_at IS NOT NULL
+		        THEN excluded.commits_since_release
+		        WHEN middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
+		        THEN COALESCE(
+		            excluded.commits_since_release,
+		            middleman_repo_overviews.commits_since_release
+		        )
+		        ELSE excluded.commits_since_release
+		    END,
 		    commit_timeline_json = CASE
 		        WHEN excluded.timeline_updated_at IS NULL
+		             AND middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
 		        THEN middleman_repo_overviews.commit_timeline_json
 		        ELSE excluded.commit_timeline_json
 		    END,
 		    releases_json = excluded.releases_json,
-		    timeline_updated_at = COALESCE(
-		        excluded.timeline_updated_at,
-		        middleman_repo_overviews.timeline_updated_at
-		    ),
+		    timeline_updated_at = CASE
+		        WHEN excluded.timeline_updated_at IS NOT NULL
+		        THEN excluded.timeline_updated_at
+		        WHEN middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
+		        THEN middleman_repo_overviews.timeline_updated_at
+		        ELSE excluded.timeline_updated_at
+		    END,
 		    updated_at = excluded.updated_at`,
 		repoID,
 		tagName,

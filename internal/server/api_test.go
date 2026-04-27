@@ -7536,6 +7536,32 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
 }
 
+func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	repo := "ghe.example.com/acme/widget"
+	resp, err := client.HTTP.GetActivityWithResponse(
+		t.Context(), &generated.GetActivityParams{Since: &since, Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.NotEmpty(*resp.JSON200.Items)
+	for _, item := range *resp.JSON200.Items {
+		assert.Equal("ghe.example.com", item.PlatformHost)
+		assert.Equal("acme", item.RepoOwner)
+		assert.Equal("widget", item.RepoName)
+	}
+}
+
 // --- Stacks E2E ---
 
 func seedStackedPR(
