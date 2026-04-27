@@ -60,7 +60,9 @@ test.describe("repository summaries", () => {
 
     await dialog.getByRole("button", { name: "Create issue" }).click();
 
-    await expect(page).toHaveURL(/\/issues\/acme\/widgets\/\d+$/);
+    await expect(page).toHaveURL(
+      /\/issues\/acme\/widgets\/\d+\?platform_host=github\.com$/,
+    );
     await page.locator(".issue-detail").waitFor({
       state: "visible",
       timeout: 10_000,
