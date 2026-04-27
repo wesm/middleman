@@ -838,6 +838,207 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	)
 }
 
+func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-codex\nmiddleman-aaaaaaaaaaaaaaaa-claude\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "show-options" ]; then` + "\n" +
+		`    printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "0000000000000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-codex",
+			TargetKey:   "codex",
+		},
+	))
+
+	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{
+		"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa-claude",
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t", "middleman-0000000000000001-codex",
+	})
+}
+
+func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "0000000000000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-codex",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-claude",
+			TargetKey:   "claude",
+		},
+	))
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "0000000000000002",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "gadget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   2,
+		GitHeadRef:   "feature/other",
+		WorktreePath: filepath.Join(t.TempDir(), "other"),
+		TmuxSession:  "middleman-0000000000000002",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000002",
+			SessionName: "middleman-0000000000000002-codex",
+			TargetKey:   "codex",
+		},
+	))
+
+	sessions, err := mgr.TmuxSessionsForWorkspace(
+		context.Background(),
+		"0000000000000001",
+		"middleman-0000000000000001",
+	)
+	require.NoError(err)
+
+	assert.Equal([]string{
+		"middleman-0000000000000001",
+		"middleman-0000000000000001-claude",
+		"middleman-0000000000000001-codex",
+	}, sessions)
+}
+
+func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	ws := &Workspace{
+		ID:           "0000000000000001",
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+	}
+	require.NoError(d.InsertWorkspace(context.Background(), ws))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.ID,
+			SessionName: "middleman-0000000000000001-codex",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		context.Background(),
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.ID,
+			SessionName: "middleman-0000000000000001-claude",
+			TargetKey:   "claude",
+		},
+	))
+
+	require.NoError(mgr.cleanupTmuxSession(context.Background(), ws))
+
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{
+		"kill-session", "-t", "middleman-0000000000000001",
+	})
+	assert.Contains(argvs, []string{
+		"kill-session", "-t", "middleman-0000000000000001-claude",
+	})
+	assert.Contains(argvs, []string{
+		"kill-session", "-t", "middleman-0000000000000001-codex",
+	})
+	assert.NotContains(argvs, []string{
+		"kill-session", "-t", "middleman-0000000000000002-codex",
+	})
+	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)
+	require.NoError(err)
+	assert.Empty(stored)
+}
+
 func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

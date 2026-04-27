@@ -886,15 +886,32 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 func (m *Manager) cleanupTmuxSession(
 	ctx context.Context, ws *Workspace,
 ) error {
-	if err := m.killTmuxSession(ctx, ws.TmuxSession); err != nil &&
-		!isTmuxSessionAbsent([]byte(err.Error()), err) {
-		hasSession, checkErr := m.workspaceHasCreatedTmuxSession(ctx, ws)
-		if checkErr != nil {
-			return checkErr
+	sessions := []string{ws.TmuxSession}
+	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, ws.ID)
+	if err != nil {
+		return err
+	}
+	for _, storedSession := range stored {
+		sessions = append(sessions, storedSession.SessionName)
+	}
+
+	for _, session := range sessions {
+		if session == "" {
+			continue
 		}
-		if hasSession {
-			return fmt.Errorf("kill tmux session: %w", err)
+		if err := m.killTmuxSession(ctx, session); err != nil &&
+			!isTmuxSessionAbsent([]byte(err.Error()), err) {
+			hasSession, checkErr := m.workspaceHasCreatedTmuxSession(ctx, ws)
+			if checkErr != nil {
+				return checkErr
+			}
+			if hasSession {
+				return fmt.Errorf("kill tmux session %q: %w", session, err)
+			}
 		}
+	}
+	if err := m.db.DeleteWorkspaceTmuxSessions(ctx, ws.ID); err != nil {
+		return err
 	}
 	return nil
 }
@@ -952,7 +969,19 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 	}
 	live := make(map[string]bool, len(workspaces))
 	for _, ws := range workspaces {
+		if ws.TmuxSession == "" {
+			continue
+		}
 		live[ws.TmuxSession] = true
+	}
+	storedSessions, err := m.db.ListAllWorkspaceTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, stored := range storedSessions {
+		if stored.SessionName != "" {
+			live[stored.SessionName] = true
+		}
 	}
 
 	sessions, err := m.listTmuxSessions(ctx)
@@ -960,7 +989,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		return err
 	}
 	for _, session := range sessions {
-		if !isWorkspaceTmuxSessionName(session) {
+		if !isMiddlemanWorkspaceTmuxSessionName(session) {
 			continue
 		}
 		if live[session] {
@@ -990,6 +1019,24 @@ func isWorkspaceTmuxSessionName(session string) bool {
 		return false
 	}
 	for _, ch := range session[len(prefix):] {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func isMiddlemanWorkspaceTmuxSessionName(session string) bool {
+	if isWorkspaceTmuxSessionName(session) {
+		return true
+	}
+	const prefix = "middleman-"
+	if len(session) <= len(prefix)+16 ||
+		!strings.HasPrefix(session, prefix) ||
+		session[len(prefix)+16] != '-' {
+		return false
+	}
+	for _, ch := range session[len(prefix) : len(prefix)+16] {
 		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
@@ -1091,6 +1138,68 @@ func (m *Manager) listTmuxSessions(
 		}
 	}
 	return sessions, nil
+}
+
+// RecordRuntimeTmuxSession records a tmux-backed runtime launch so
+// activity probing and cleanup survive an application restart.
+func (m *Manager) RecordRuntimeTmuxSession(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+	targetKey string,
+) error {
+	if sessionName == "" {
+		return nil
+	}
+	return m.db.UpsertWorkspaceTmuxSession(ctx, &db.WorkspaceTmuxSession{
+		WorkspaceID: workspaceID,
+		SessionName: sessionName,
+		TargetKey:   targetKey,
+	})
+}
+
+// ForgetRuntimeTmuxSession removes a stored tmux-backed runtime
+// launch after an explicit stop succeeds.
+func (m *Manager) ForgetRuntimeTmuxSession(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+) error {
+	if sessionName == "" {
+		return nil
+	}
+	return m.db.DeleteWorkspaceTmuxSession(ctx, workspaceID, sessionName)
+}
+
+// TmuxSessionsForWorkspace returns the persisted workspace tmux
+// session plus stored per-agent sessions. Runtime tmux sessions are
+// stored rather than discovered by naming convention so restart
+// recovery follows explicit ownership state.
+func (m *Manager) TmuxSessionsForWorkspace(
+	ctx context.Context,
+	workspaceID string,
+	baseSession string,
+) ([]string, error) {
+	if baseSession == "" {
+		return nil, nil
+	}
+	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, 1)
+	seen[baseSession] = true
+	out = append(out, baseSession)
+	for _, storedSession := range stored {
+		session := storedSession.SessionName
+		if session == "" || seen[session] {
+			continue
+		}
+		seen[session] = true
+		out = append(out, session)
+	}
+	return out, nil
 }
 
 // TmuxPaneTitle returns the active pane title for a session. Agents

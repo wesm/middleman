@@ -1,9 +1,11 @@
 package localruntime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +45,7 @@ type SessionInfo struct {
 	CreatedAt   time.Time        `json:"created_at"`
 	ExitedAt    *time.Time       `json:"exited_at,omitempty"`
 	ExitCode    *int             `json:"exit_code,omitempty"`
+	TmuxSession string           `json:"-"`
 }
 
 type Options struct {
@@ -223,7 +226,7 @@ func (m *Manager) Launch(
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
-		m.stopSession(ctx, started)
+		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
 	}
@@ -290,10 +293,10 @@ func (m *Manager) Stop(
 		return fmt.Errorf("session %q not found", sessionKey)
 	}
 
-	m.stopSession(ctx, s)
+	cleanupErr := m.stopSession(ctx, s)
 	select {
 	case <-s.done:
-		return nil
+		return cleanupErr
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -350,7 +353,14 @@ func (m *Manager) StopWorkspace(
 	m.mu.Unlock()
 
 	for _, s := range stopping {
-		m.stopSession(ctx, s)
+		if err := m.stopSession(ctx, s); err != nil {
+			slog.Warn(
+				"stop workspace runtime session",
+				"workspace_id", workspaceID,
+				"session_key", s.snapshot().Key,
+				"err", err,
+			)
+		}
 	}
 	for _, s := range stopping {
 		select {
@@ -361,14 +371,20 @@ func (m *Manager) StopWorkspace(
 	}
 }
 
-func (m *Manager) stopSession(ctx context.Context, s *session) {
+func (m *Manager) stopSession(ctx context.Context, s *session) error {
 	if s == nil {
-		return
+		return nil
 	}
+	var cleanupErr error
 	if s.tmuxSession != "" {
-		_ = m.killTmuxSession(ctx, s.tmuxSession)
+		if err := m.killTmuxSession(ctx, s.tmuxSession); err != nil {
+			cleanupErr = fmt.Errorf(
+				"kill tmux session %q: %w", s.tmuxSession, err,
+			)
+		}
 	}
 	s.stop()
+	return cleanupErr
 }
 
 func (m *Manager) killTmuxSession(
@@ -386,7 +402,30 @@ func (m *Manager) killTmuxSession(
 		return nil
 	}
 	args := append(command[1:], "kill-session", "-t", session)
-	return exec.CommandContext(ctx, command[0], args...).Run()
+	cmd := exec.CommandContext(ctx, command[0], args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil || isTmuxSessionAbsent(stderr.Bytes(), err) {
+		return nil
+	}
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, msg)
+}
+
+func isTmuxSessionAbsent(stderr []byte, err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		return false
+	}
+	msg := string(stderr)
+	return strings.Contains(msg, "can't find session") ||
+		strings.Contains(msg, "no server running") ||
+		(strings.Contains(msg, "error connecting to") &&
+			strings.Contains(msg, "No such file or directory"))
 }
 
 // BeginStopping holds the stopping marker for workspaceID without
@@ -538,7 +577,7 @@ func (m *Manager) EnsureShell(
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
-		m.stopSession(ctx, started)
+		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
 	}
@@ -610,10 +649,16 @@ func (m *Manager) Shutdown() {
 	m.shells = make(map[string]*session)
 	m.mu.Unlock()
 
+	waiting := make([]*session, 0, len(sessions))
 	for _, s := range sessions {
-		m.stopSession(ctx, s)
+		if s.tmuxSession != "" {
+			s.detach()
+			continue
+		}
+		s.stop()
+		waiting = append(waiting, s)
 	}
-	for _, s := range sessions {
+	for _, s := range waiting {
 		select {
 		case <-s.done:
 		case <-ctx.Done():
@@ -694,6 +739,13 @@ func (m *Manager) launchCommand(
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = []string{"tmux"}
 	}
+	resolvedAgentCommand := append([]string(nil), command...)
+	resolvedPath, err := resolveExecutable(resolvedAgentCommand[0])
+	if err != nil {
+		return launchCommand{}, err
+	}
+	resolvedAgentCommand[0] = resolvedPath
+
 	tmuxSession := tmuxSessionName(workspaceID, target.Key)
 
 	wrapped := append(
@@ -706,7 +758,14 @@ func (m *Manager) launchCommand(
 	if cwd != "" {
 		wrapped = append(wrapped, "-c", cwd)
 	}
-	wrapped = append(wrapped, "exec "+shellCommand(command))
+	agentEnv := append(
+		sessionEnvironment(os.Environ(), m.stripEnvVars),
+		"TERM=xterm-256color",
+	)
+	wrapped = append(
+		wrapped,
+		"exec "+shellEnvCommand(agentEnv, resolvedAgentCommand),
+	)
 	return launchCommand{Command: wrapped, TmuxSession: tmuxSession}, nil
 }
 
@@ -739,6 +798,17 @@ func shellCommand(command []string) string {
 		parts = append(parts, shellQuote(arg))
 	}
 	return strings.Join(parts, " ")
+}
+
+func shellEnvCommand(env []string, command []string) string {
+	args := make([]string, 0, len(env)+len(command))
+	for _, kv := range env {
+		if strings.Contains(kv, "=") {
+			args = append(args, kv)
+		}
+	}
+	args = append(args, command...)
+	return "env -i " + shellCommand(args)
 }
 
 func shellQuote(s string) string {
@@ -848,6 +918,7 @@ func (s *session) snapshot() SessionInfo {
 	defer s.mu.Unlock()
 
 	info := s.info
+	info.TmuxSession = s.tmuxSession
 	if s.info.ExitedAt != nil {
 		exitedAt := *s.info.ExitedAt
 		info.ExitedAt = &exitedAt
@@ -962,6 +1033,14 @@ func (s *session) stop() {
 				_ = s.cmd.Process.Kill()
 			}
 		}
+		if s.ptmx != nil {
+			_ = s.ptmx.Close()
+		}
+	})
+}
+
+func (s *session) detach() {
+	s.stopOnce.Do(func() {
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
 		}

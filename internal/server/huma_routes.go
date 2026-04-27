@@ -2560,7 +2560,7 @@ func (s *Server) toWorkspaceResponse(
 
 	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
 	if activity, ok := s.probeWorkspaceTmuxActivity(
-		ctx, summary.ID, s.workspaceTmuxActivitySessions(summary),
+		ctx, summary.ID, s.workspaceTmuxActivitySessions(ctx, summary),
 	); ok {
 		applyTmuxActivity(&resp, activity)
 	}
@@ -2568,11 +2568,32 @@ func (s *Server) toWorkspaceResponse(
 }
 
 func (s *Server) workspaceTmuxActivitySessions(
+	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) []string {
 	sessions := make([]string, 0, 1)
 	seen := map[string]bool{}
-	if summary.TmuxSession != "" {
+	if s.workspaces != nil && summary.TmuxSession != "" {
+		stored, err := s.workspaces.TmuxSessionsForWorkspace(
+			ctx, summary.ID, summary.TmuxSession,
+		)
+		if err != nil {
+			slog.Debug(
+				"list workspace tmux sessions",
+				"workspace_id", summary.ID,
+				"tmux_session", summary.TmuxSession,
+				"err", err,
+			)
+		}
+		for _, session := range stored {
+			if session == "" || seen[session] {
+				continue
+			}
+			sessions = append(sessions, session)
+			seen[session] = true
+		}
+	}
+	if summary.TmuxSession != "" && !seen[summary.TmuxSession] {
 		sessions = append(sessions, summary.TmuxSession)
 		seen[summary.TmuxSession] = true
 	}
@@ -2778,6 +2799,16 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	if err != nil {
 		return nil, workspaceRuntimeLaunchError(err)
 	}
+	if session.TmuxSession != "" {
+		if err := s.workspaces.RecordRuntimeTmuxSession(
+			ctx, summary.ID, session.TmuxSession, session.TargetKey,
+		); err != nil {
+			_ = s.runtime.Stop(ctx, summary.ID, session.Key)
+			return nil, huma.Error500InternalServerError(
+				"record runtime tmux session: " + err.Error(),
+			)
+		}
+	}
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
 }
 
@@ -2789,12 +2820,36 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	if err != nil {
 		return nil, err
 	}
+	tmuxSession := runtimeSessionTmuxSession(
+		s.runtime.ListSessions(summary.ID), input.SessionKey,
+	)
 	if err := s.runtime.Stop(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
+	if tmuxSession != "" {
+		if err := s.workspaces.ForgetRuntimeTmuxSession(
+			ctx, summary.ID, tmuxSession,
+		); err != nil {
+			return nil, huma.Error500InternalServerError(
+				"forget runtime tmux session: " + err.Error(),
+			)
+		}
+	}
 	return nil, nil
+}
+
+func runtimeSessionTmuxSession(
+	sessions []localruntime.SessionInfo,
+	key string,
+) string {
+	for _, session := range sessions {
+		if session.Key == key {
+			return session.TmuxSession
+		}
+	}
+	return ""
 }
 
 func (s *Server) ensureWorkspaceRuntimeShell(

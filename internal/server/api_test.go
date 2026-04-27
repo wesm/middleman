@@ -7681,6 +7681,8 @@ func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "fake-tmux")
+	agentPath := filepath.Join(dir, "helper-agent")
+	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
 target=""
@@ -7710,11 +7712,11 @@ exit 0
 		Agents: []config.Agent{{
 			Key:     "helper",
 			Label:   "Helper",
-			Command: []string{"helper-agent", "--flag"},
+			Command: []string{agentPath, "--flag"},
 		}},
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -7733,7 +7735,7 @@ exit 0
 		for _, argv := range readTmuxRecord(t, record) {
 			if len(argv) > 0 &&
 				argv[0] == "new-session" &&
-				strings.Contains(strings.Join(argv, "\n"), "helper-agent") {
+				strings.Contains(strings.Join(argv, "\n"), agentPath) {
 				newSession = argv
 				return true
 			}
@@ -7746,7 +7748,7 @@ exit 0
 	assert.Equal("middleman-"+ws.Id+"-helper", session)
 	assert.Contains(newSession, "-A")
 	assert.Contains(newSession, "-c")
-	assert.Contains(strings.Join(newSession, "\n"), "helper-agent")
+	assert.Contains(strings.Join(newSession, "\n"), agentPath)
 	assert.Contains(strings.Join(newSession, "\n"), "--flag")
 
 	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
@@ -7770,6 +7772,83 @@ exit 0
 	assert.Contains(readTmuxRecord(t, record), []string{
 		"display-message", "-p", "-t", session, "#{pane_title}",
 	})
+	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(session, stored[0].SessionName)
+	assert.Equal("helper", stored[0].TargetKey)
+}
+
+func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+target=""
+mode=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-t" ]; then target="$a"; fi
+  if [ "$a" = "display-message" ]; then mode="display-message"; fi
+  if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
+  prev="$a"
+done
+if [ "$mode" = "display-message" ]; then
+  case "$target" in
+    *-claude) printf '⠴ claude-activity\n' ;;
+    *) printf 'idle\n' ;;
+  esac
+  exit 0
+fi
+if [ "$mode" = "capture-pane" ]; then
+  printf 'stable\n'
+  exit 0
+fi
+exit 0
+`), 0o755))
+	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+	require.NotEmpty(ws.TmuxSession)
+	require.NoError(database.UpsertWorkspaceTmuxSession(
+		ctx,
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.Id,
+			SessionName: ws.TmuxSession + "-codex",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(database.UpsertWorkspaceTmuxSession(
+		ctx,
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.Id,
+			SessionName: ws.TmuxSession + "-claude",
+			TargetKey:   "claude",
+		},
+	))
+
+	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Workspaces)
+
+	var listed *generated.WorkspaceResponse
+	for i := range *listResp.JSON200.Workspaces {
+		if (*listResp.JSON200.Workspaces)[i].Id == ws.Id {
+			listed = &(*listResp.JSON200.Workspaces)[i]
+			break
+		}
+	}
+	require.NotNil(listed)
+	assert.True(listed.TmuxWorking)
+	assert.Equal(tmuxActivitySourceTitle, listed.TmuxActivitySource)
+	require.NotNil(listed.TmuxPaneTitle)
+	assert.Equal("⠴ claude-activity", *listed.TmuxPaneTitle)
 }
 
 func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
