@@ -8298,7 +8298,10 @@ exit 0
 	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
 	require.Len(stored, 1)
-	assert.Equal(runtimeTmuxSessionNameForTest(ws.Id, "helper"), stored[0].SessionName)
+	assert.Equal(
+		runtimeTmuxSessionNameForTest(ws.Id, "helper"),
+		stored[0].SessionName,
+	)
 }
 
 func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
@@ -8671,6 +8674,88 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 		}
 	}
 	require.Contains(got.String(), "size:41:177")
+}
+
+func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
+	t *testing.T,
+) {
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux not available")
+	}
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "size-agent")
+	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
+IFS= read -r line
+set -- $(stty size 2>/dev/null || printf '0 0')
+printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
+`), 0o755))
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: []string{agentPath},
+		}},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(
+		runtimeTmuxSessionNameForTest(ws.Id, "helper"),
+		stored[0].SessionName,
+	)
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/api/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key +
+		"/terminal?cols=177&rows=41"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary, []byte("size\n"),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ != websocket.MessageBinary {
+			continue
+		}
+		got.WriteString(string(data))
+		// tmux keeps one row for its status line by default, so the
+		// pane sees one fewer row than the attached terminal while
+		// preserving the requested column count.
+		if strings.Contains(got.String(), "size:40:177:size") {
+			return
+		}
+	}
+	require.Contains(got.String(), "size:40:177:size")
 }
 
 func createReadyWorkspace(
