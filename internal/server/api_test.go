@@ -2606,6 +2606,24 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
+	githubRepoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         githubRepoID,
+		PlatformID:     12001,
+		Number:         12,
+		URL:            "https://github.com/acme/widget/pull/12",
+		Title:          "Wrong host mention",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature-12",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Add(-4 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-4 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-4 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+
 	repoID, err := database.UpsertRepo(ctx, "ghe.example.com", "acme", "widget")
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -2624,7 +2642,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	})
 	require.NoError(err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?platform_host=ghe.example.com&trigger=%23&q=1&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())

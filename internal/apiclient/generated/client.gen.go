@@ -791,9 +791,10 @@ type ListPullsParams struct {
 
 // GetReposByOwnerByNameCommentAutocompleteParams defines parameters for GetReposByOwnerByNameCommentAutocomplete.
 type GetReposByOwnerByNameCommentAutocompleteParams struct {
-	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
-	Q       *string `form:"q,omitempty" json:"q,omitempty"`
-	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	Trigger      *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+	Q            *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit        *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // GetReposByOwnerByNameIssuesByNumberParams defines parameters for GetReposByOwnerByNameIssuesByNumber.
@@ -2381,6 +2382,22 @@ func NewGetReposByOwnerByNameCommentAutocompleteRequest(server string, owner str
 
 	if params != nil {
 		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
 
 		if params.Trigger != nil {
 

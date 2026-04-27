@@ -1834,6 +1834,7 @@ export interface operations {
     "get-repos-by-owner-by-name-comment-autocomplete": {
         parameters: {
             query?: {
+                platform_host?: string;
                 trigger?: string;
                 q?: string;
                 limit?: number;

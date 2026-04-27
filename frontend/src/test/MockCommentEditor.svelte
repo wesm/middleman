@@ -2,6 +2,7 @@
   interface Props {
     owner: string;
     name: string;
+    platformHost?: string;
     value: string;
     disabled?: boolean;
     placeholder?: string;
@@ -12,6 +13,7 @@
   let {
     owner,
     name,
+    platformHost,
     value,
     disabled = false,
     placeholder = "Write a comment...",
@@ -24,6 +26,7 @@
   data-testid="mock-comment-editor"
   data-owner={owner}
   data-name={name}
+  data-platform-host={platformHost ?? ""}
   aria-label={placeholder}
   {placeholder}
   {disabled}

@@ -143,11 +143,12 @@ type getRepoOutput struct {
 }
 
 type commentAutocompleteInput struct {
-	Owner   string `path:"owner"`
-	Name    string `path:"name"`
-	Trigger string `query:"trigger"`
-	Q       string `query:"q"`
-	Limit   int    `query:"limit"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	PlatformHost string `query:"platform_host"`
+	Trigger      string `query:"trigger"`
+	Q            string `query:"q"`
+	Limit        int    `query:"limit"`
 }
 
 type commentAutocompleteOutput struct {
@@ -1218,8 +1219,8 @@ func (s *Server) unsetStarred(ctx context.Context, input *starredInput) (*status
 }
 
 func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutput, error) {
-	repo, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
-	if err != nil || repo == nil {
+	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, "")
+	if err != nil {
 		return nil, huma.Error404NotFound("repo not found")
 	}
 	return &getRepoOutput{Body: *repo}, nil
@@ -1229,8 +1230,8 @@ func (s *Server) getCommentAutocomplete(
 	ctx context.Context,
 	input *commentAutocompleteInput,
 ) (*commentAutocompleteOutput, error) {
-	repo, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
-	if err != nil || repo == nil {
+	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, input.PlatformHost)
+	if err != nil {
 		return nil, huma.Error404NotFound("repo not found")
 	}
 

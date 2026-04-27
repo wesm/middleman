@@ -389,6 +389,7 @@ describe("RepoSummaryPage", () => {
     const bodyEditor = screen.getByTestId("mock-comment-editor");
     expect(bodyEditor.getAttribute("data-owner")).toBe("acme");
     expect(bodyEditor.getAttribute("data-name")).toBe("widgets");
+    expect(bodyEditor.getAttribute("data-platform-host")).toBe("github.com");
 
     await fireEvent.input(
       screen.getByPlaceholderText("Issue title"),

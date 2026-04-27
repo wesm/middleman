@@ -109,6 +109,7 @@
           <CommentEditor
             owner={summary.owner}
             name={summary.name}
+            platformHost={summary.platform_host}
             value={body}
             disabled={submitting}
             placeholder="Describe the problem, context, or follow-up work"
