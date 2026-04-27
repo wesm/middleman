@@ -172,6 +172,7 @@ func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
 		agent, "ws:alpha", "/tmp/work tree",
 	)
 	require.NoError(t, err)
+	sessionName := tmuxSessionName("ws:alpha", "codex")
 
 	assert.Equal("/usr/bin/tmux", launch.Command[0])
 	assert.Equal(
@@ -179,7 +180,7 @@ func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
 			"new-session",
 			"-A",
 			"-s",
-			"middleman-ws-alpha-codex",
+			sessionName,
 			"-c",
 			"/tmp/work tree",
 		},
@@ -187,7 +188,7 @@ func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
 	)
 	assert.Contains(launch.Command[7], "exec ")
 	assert.Contains(launch.Command[7], shellQuote(agent.Command[0]))
-	assert.Equal("middleman-ws-alpha-codex", launch.TmuxSession)
+	assert.Equal(sessionName, launch.TmuxSession)
 }
 
 func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
@@ -211,6 +212,7 @@ func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
 
 	launch, err := mgr.launchCommand(agent, "ws-1", "/tmp/work tree")
 	require.NoError(err)
+	sessionName := tmuxSessionName("ws-1", "codex")
 
 	require.Len(launch.Command, 3)
 	assert.Equal([]string{"/bin/sh", "-lc"}, launch.Command[:2])
@@ -223,9 +225,22 @@ func TestManagerLaunchCommandMarksWrappedAgentTmuxSession(t *testing.T) {
 	assert.Contains(script, "@middleman_owner")
 	assert.Contains(script, "middleman:test-owner")
 	assert.Contains(script, "attach-session")
-	assert.Contains(script, "middleman-ws-1-codex")
+	assert.Contains(script, sessionName)
 	assert.Contains(script, shellQuote(agent.Command[0]))
-	assert.Equal("middleman-ws-1-codex", launch.TmuxSession)
+	assert.Equal(sessionName, launch.TmuxSession)
+}
+
+func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
+	assert := Assert.New(t)
+
+	fooSlash := tmuxSessionName("ws:alpha", "foo/bar")
+	fooColon := tmuxSessionName("ws:alpha", "foo:bar")
+
+	assert.NotEqual(fooSlash, fooColon)
+	assert.NotContains(fooSlash, "foo")
+	assert.NotContains(fooSlash, "/")
+	assert.NotContains(fooColon, ":")
+	assert.Contains(fooSlash, "middleman-ws-alpha-")
 }
 
 func TestManagerLaunchCommandCleansUpWhenOwnerMarkingFails(t *testing.T) {

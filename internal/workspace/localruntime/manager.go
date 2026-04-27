@@ -3,6 +3,8 @@ package localruntime
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -848,11 +850,16 @@ func (m *Manager) launchTmuxOwnedCommand(
 }
 
 func tmuxSessionName(workspaceID string, targetKey string) string {
-	name := "middleman-" + workspaceID + "-" + targetKey
+	sum := sha256.Sum256([]byte(targetKey))
+	return "middleman-" + tmuxSessionSafeComponent(workspaceID) + "-" +
+		hex.EncodeToString(sum[:8])
+}
+
+func tmuxSessionSafeComponent(value string) string {
 	var b strings.Builder
-	b.Grow(len(name))
+	b.Grow(len(value))
 	lastDash := false
-	for _, r := range name {
+	for _, r := range value {
 		switch {
 		case r >= 'a' && r <= 'z',
 			r >= 'A' && r <= 'Z',

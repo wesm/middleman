@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -7697,7 +7699,7 @@ for a in "$@"; do
 done
 if [ "$mode" = "display-message" ]; then
   case "$target" in
-    *-helper) printf '⠴ t3code-b5014b03\n' ;;
+    middleman-????????????????-*) printf '⠴ t3code-b5014b03\n' ;;
     *) printf 'idle\n' ;;
   esac
   exit 0
@@ -7749,7 +7751,7 @@ exit 0
 
 	session, ok := argAfter(newSession, "-s")
 	require.True(ok, "new-session should name a tmux session")
-	assert.Equal("middleman-"+ws.Id+"-helper", session)
+	assert.Equal(runtimeTmuxSessionNameForTest(ws.Id, "helper"), session)
 	assert.Contains(newSession, "-d")
 	assert.Contains(newSession, "-c")
 	assert.Contains(strings.Join(newSession, "\n"), agentPath)
@@ -7801,7 +7803,7 @@ for a in "$@"; do
 done
 case "$1" in
   list-sessions)
-    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-helper\n'
+    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-0123456789abcdef\n'
     exit 0
     ;;
   show-options)
@@ -7851,7 +7853,7 @@ exit 0
 
 	argvs := readTmuxRecord(t, record)
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001-helper",
+		"kill-session", "-t", "middleman-0000000000000001-0123456789abcdef",
 	})
 	assert.NotContains(argvs, []string{
 		"kill-session", "-t", "middleman-0000000000000001",
@@ -7884,7 +7886,7 @@ case "$1" in
 esac
 if [ "$mode" = "display-message" ]; then
   case "$target" in
-    *-helper) printf '⠴ t3code-b5014b03\n' ;;
+    middleman-????????????????-*) printf '⠴ t3code-b5014b03\n' ;;
     *) printf 'idle\n' ;;
   esac
   exit 0
@@ -7920,10 +7922,13 @@ exit 0
 		t.Context(),
 		&db.WorkspaceTmuxSession{
 			WorkspaceID: ws.ID,
-			SessionName: "middleman-0000000000000001-helper",
-			TargetKey:   "helper",
+			SessionName: runtimeTmuxSessionNameForTest(
+				"0000000000000001", "helper",
+			),
+			TargetKey: "helper",
 		},
 	))
+	sessionName := runtimeTmuxSessionNameForTest("0000000000000001", "helper")
 
 	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
 	srv := New(database, nil, nil, "/", cfg, ServerOptions{
@@ -7941,7 +7946,7 @@ exit 0
 	assert.Equal("⠴ t3code-b5014b03", *resp.JSON200.TmuxPaneTitle)
 	assert.Contains(readTmuxRecord(t, record), []string{
 		"display-message", "-p", "-t",
-		"middleman-0000000000000001-helper", "#{pane_title}",
+		sessionName, "#{pane_title}",
 	})
 }
 
@@ -7978,7 +7983,7 @@ case "$1" in
     ;;
   set-option)
     case "$target" in
-      *-helper)
+      middleman-????????????????-*)
         echo "owner marker denied" >&2
         exit 42
         ;;
@@ -8013,7 +8018,7 @@ exit 0
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode())
 	require.NotNil(launchResp.JSON200)
-	sessionName := "middleman-" + ws.Id + "-helper"
+	sessionName := runtimeTmuxSessionNameForTest(ws.Id, "helper")
 
 	require.Eventually(func() bool {
 		return tmuxRecordContains(readTmuxRecord(t, record), []string{
@@ -8067,6 +8072,11 @@ func tmuxRecordContains(argvs [][]string, want []string) bool {
 	})
 }
 
+func runtimeTmuxSessionNameForTest(workspaceID string, targetKey string) string {
+	sum := sha256.Sum256([]byte(targetKey))
+	return "middleman-" + workspaceID + "-" + hex.EncodeToString(sum[:8])
+}
+
 func TestWorkspaceRuntimeStopClearsStoredShellKeyTmuxSessionAfterRuntimeForgetE2E(
 	t *testing.T,
 ) {
@@ -8111,7 +8121,7 @@ exit 0
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode())
 	require.NotNil(launchResp.JSON200)
-	sessionName := "middleman-" + ws.Id + "-shell"
+	sessionName := runtimeTmuxSessionNameForTest(ws.Id, "shell")
 
 	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
@@ -8154,7 +8164,7 @@ for a in "$@"; do
 done
 if [ "$1" = "kill-session" ]; then
   case "$target" in
-    *-helper)
+    middleman-????????????????-*)
       echo "permission denied" >&2
       exit 42
       ;;
@@ -8204,7 +8214,7 @@ exit 0
 	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
 	require.Len(stored, 1)
-	assert.Equal("middleman-"+ws.Id+"-helper", stored[0].SessionName)
+	assert.Equal(runtimeTmuxSessionNameForTest(ws.Id, "helper"), stored[0].SessionName)
 }
 
 func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
