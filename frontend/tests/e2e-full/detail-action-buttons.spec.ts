@@ -454,6 +454,82 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("narrow actions menu closes when clicking outside", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto("/pulls/acme/widgets/1");
+    await expect(page.locator(".pull-detail")).toBeVisible();
+
+    await page.locator(".actions-menu-trigger").click();
+    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+
+    await page.locator(".detail-title").click();
+    await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+  });
+
+  test("narrow actions menu shows state change failures after closing", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/github-state", async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "backend down" }),
+      });
+    });
+
+    await page.goto("/pulls/acme/widgets/1");
+    await expect(page.locator(".pull-detail")).toBeVisible();
+
+    await page.locator(".actions-menu-trigger").click();
+    await page.locator(".actions-menu-popover .btn--close").click();
+
+    await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+    await expect(page.locator(".primary-actions-wrap .action-error"))
+      .toHaveText("backend down");
+    await expect(page.locator(".primary-actions-wrap .action-error"))
+      .toBeVisible();
+  });
+
+  test("approve form stays visible in the narrow actions menu", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto("/pulls/acme/widgets/1");
+    await expect(page.locator(".pull-detail")).toBeVisible();
+
+    await page.locator(".actions-menu-trigger").click();
+    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+
+    await page.locator(".actions-menu-popover .btn--approve").click();
+    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+    await expect(page.locator(".actions-menu-popover .approve-comment"))
+      .toBeVisible();
+    await expect(page.locator(".actions-menu-popover .btn--green"))
+      .toHaveText("Approve");
+  });
+
+  test("self-contained actions close the narrow actions menu after success", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.setViewportSize({ width: 320, height: 720 });
+      await page.goto(`${baseURL}/pulls/acme/widgets/6`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      await page.locator(".actions-menu-trigger").click();
+      await expect(page.locator(".actions-menu-popover")).toBeVisible();
+
+      const readyResponse = page.waitForResponse((response) => {
+        return response.request().method() === "POST"
+          && response.url() === `${baseURL}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+      });
+      await page.locator(".actions-menu-popover .btn--ready").click();
+      expect((await readyResponse).status()).toBe(200);
+      await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("draft pull request actions keep exactly the same height", async ({ page }) => {
     await page.goto("/pulls/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();

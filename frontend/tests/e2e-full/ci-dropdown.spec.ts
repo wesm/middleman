@@ -36,7 +36,7 @@ test.describe("CI dropdown", () => {
     const diffStatsChip = detail.locator(".chip--muted", {
       hasText: /^\+\d+\/-\d+$/,
     });
-    const statusRow = detail.locator(".kanban-row");
+    const actionRow = detail.locator(".primary-actions-wrap");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
     const chipStylesBefore = await chip.evaluate((node) => {
       const styles = getComputedStyle(node);
@@ -48,7 +48,7 @@ test.describe("CI dropdown", () => {
     });
     const chipBox = await chip.boundingBox();
     const diffStatsBox = await diffStatsChip.boundingBox();
-    const statusRowBox = await statusRow.boundingBox();
+    const actionRowBox = await actionRow.boundingBox();
     await chip.click();
 
     const checks = detail.locator(".ci-checks");
@@ -57,14 +57,14 @@ test.describe("CI dropdown", () => {
 
     const checksBox = await checks.boundingBox();
     const expandedDiffStatsBox = await diffStatsChip.boundingBox();
-    const expandedStatusRowBox = await statusRow.boundingBox();
+    const expandedActionRowBox = await actionRow.boundingBox();
 
     expect(chipBox).not.toBeNull();
     expect(diffStatsBox).not.toBeNull();
-    expect(statusRowBox).not.toBeNull();
+    expect(actionRowBox).not.toBeNull();
     expect(checksBox).not.toBeNull();
     expect(expandedDiffStatsBox).not.toBeNull();
-    expect(expandedStatusRowBox).not.toBeNull();
+    expect(expandedActionRowBox).not.toBeNull();
     expect(chipStylesBefore.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(chipStylesBefore.paddingRight).not.toBe("0px");
     expect(chipStylesBefore.lineHeight).not.toBe("normal");
@@ -73,7 +73,7 @@ test.describe("CI dropdown", () => {
     expect(ciGap).toBeLessThan(11);
     expect(expandedDiffStatsBox!.height).toBeLessThan(40);
     expect(expandedDiffStatsBox!.y).toBe(diffStatsBox!.y);
-    expect(expandedStatusRowBox!.y).toBeGreaterThan(statusRowBox!.y);
+    expect(expandedActionRowBox!.y).toBeGreaterThan(actionRowBox!.y);
 
     await expect(detail.locator(".ci-name")).toHaveText([
       "build",

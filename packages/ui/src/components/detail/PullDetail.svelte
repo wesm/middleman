@@ -14,6 +14,13 @@
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ActionButton from "../shared/ActionButton.svelte";
+  import SelectDropdown from "../shared/SelectDropdown.svelte";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import GitMergeIcon from "@lucide/svelte/icons/git-merge";
+  import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
+  import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import XIcon from "@lucide/svelte/icons/x";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
@@ -32,10 +39,16 @@
     number: number;
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
+    hideWorkspaceAction?: boolean;
   }
 
   const {
-    owner, name, number, onPullsRefresh, hideTabs = false,
+    owner,
+    name,
+    number,
+    onPullsRefresh,
+    hideTabs = false,
+    hideWorkspaceAction = false,
   }: Props = $props();
 
   let activeTab = $state<"conversation" | "files">("conversation");
@@ -249,11 +262,13 @@
     }
   }
 
-  let repoSettings = $state<{
+  type RepoSettings = {
     allowSquash: boolean;
     allowMerge: boolean;
     allowRebase: boolean;
-  } | null>(null);
+  };
+
+  let repoSettings = $state<RepoSettings | null>(null);
   let showMergeModal = $state(false);
 
   $effect(() => {
@@ -286,10 +301,37 @@
     return "chip--muted";
   }
 
-  function onKanbanChange(e: Event): void {
+  function onKanbanChange(value: string): void {
     if (stalePR) return;
-    const select = e.target as HTMLSelectElement;
-    void detailStore.updateKanbanState(owner, name, number, select.value as KanbanStatus);
+    void detailStore.updateKanbanState(owner, name, number, value as KanbanStatus);
+  }
+
+  function mergeActionLabel(settings: RepoSettings): string {
+    if (settings.allowSquash && !settings.allowMerge && !settings.allowRebase) {
+      return "Squash and merge";
+    }
+    if (!settings.allowSquash && settings.allowMerge && !settings.allowRebase) {
+      return "Merge";
+    }
+    if (!settings.allowSquash && !settings.allowMerge && settings.allowRebase) {
+      return "Rebase and merge";
+    }
+    return "Merge";
+  }
+
+  function mergeActionHasMenu(settings: RepoSettings): boolean {
+    return [settings.allowSquash, settings.allowMerge, settings.allowRebase]
+      .filter(Boolean).length > 1;
+  }
+
+  function mergeActionShortLabel(settings: RepoSettings): string {
+    if (settings.allowSquash && !settings.allowMerge && !settings.allowRebase) {
+      return "Squash";
+    }
+    if (!settings.allowSquash && !settings.allowMerge && settings.allowRebase) {
+      return "Rebase";
+    }
+    return "Merge";
   }
 
   const worktreeLinks = $derived(
@@ -320,6 +362,25 @@
   const workspace = $derived(detailStore.getDetail()?.workspace);
   let wsCreating = $state(false);
   let wsError = $state<string | null>(null);
+  let actionMenuOpen = $state(false);
+  let actionMenuWrapEl = $state<HTMLDivElement>();
+
+  function closeActionMenu(): void {
+    actionMenuOpen = false;
+  }
+
+  function onActionMenuKeydown(e: KeyboardEvent): void {
+    if (actionMenuOpen && e.key === "Escape") {
+      actionMenuOpen = false;
+    }
+  }
+
+  function onActionMenuDocumentMousedown(e: MouseEvent): void {
+    if (!actionMenuOpen) return;
+    const target = e.target as Node;
+    if (actionMenuWrapEl?.contains(target)) return;
+    closeActionMenu();
+  }
 
   async function createWorkspace(): Promise<void> {
     if (stalePR) return;
@@ -355,6 +416,9 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={onActionMenuKeydown} />
+<svelte:document onmousedown={onActionMenuDocumentMousedown} />
 
 {#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
@@ -442,37 +506,46 @@
             </button>
           </div>
         {:else}
-          <h2 class="detail-title">{pr.Title}</h2>
-          <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
-        {/if}
-        {#if !uiConfig.hideStar}
-          <button
-            class="star-btn"
-            disabled={stalePR}
-            onclick={() => {
-              if (stalePR) return;
-              void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
-            }}
-            title={pr.Starred ? "Unstar" : "Star"}
-          >
-            {#if pr.Starred}
-              <svg class="star-detail-icon star-detail-icon--active" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
-              </svg>
-            {:else}
-              <svg class="star-detail-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"/>
-              </svg>
+          <div class="title-line">
+            <h2 class="detail-title">{pr.Title}</h2>
+            <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
+            {#if !uiConfig.hideStar}
+              <button
+                class="star-btn"
+                disabled={stalePR}
+                onclick={() => {
+                  if (stalePR) return;
+                  void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
+                }}
+                title={pr.Starred ? "Unstar" : "Star"}
+              >
+                {#if pr.Starred}
+                  <svg class="star-detail-icon star-detail-icon--active" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
+                  </svg>
+                {:else}
+                  <svg class="star-detail-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"/>
+                  </svg>
+                {/if}
+              </button>
             {/if}
-          </button>
+            <a class="gh-link" href={pr.URL} target="_blank" rel="noopener noreferrer" title="Open on GitHub">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M10 2h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M8 8L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </a>
+          </div>
+          <SelectDropdown
+            class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+            value={pr.KanbanStatus}
+            options={kanbanOptions}
+            onchange={onKanbanChange}
+            title="Change workflow status"
+          />
         {/if}
-        <a class="gh-link" href={pr.URL} target="_blank" rel="noopener noreferrer" title="Open on GitHub">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M6 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M10 2h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M8 8L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </a>
       </div>
 
       <!-- Meta row -->
@@ -516,7 +589,6 @@
         {/if}
       </div>
 
-      <!-- Chips row -->
       <div class="chips-row">
         {#if pr.State === "merged"}
           <Chip class="chip--purple">Merged</Chip>
@@ -556,24 +628,17 @@
         />
       </div>
 
+      <SelectDropdown
+        class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+        value={pr.KanbanStatus}
+        options={kanbanOptions}
+        onchange={onKanbanChange}
+        title="Change workflow status"
+      />
+
       {#if labels.length > 0}
         <GitHubLabels {labels} mode="full" />
       {/if}
-
-      <!-- Kanban state -->
-      <div class="kanban-row">
-        <label class="kanban-label" for="kanban-select">Status</label>
-        <select
-          id="kanban-select"
-          class="kanban-select kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-          value={pr.KanbanStatus}
-          onchange={onKanbanChange}
-        >
-          {#each kanbanOptions as opt (opt.value)}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
-      </div>
 
       <!-- Mergeable state warnings -->
       {#if pr.State === "open" && pr.MergeableState === "dirty"}
@@ -597,113 +662,166 @@
 
       <!-- Diff sync warnings (stale or unavailable diff data) -->
       {#if detail.warnings && detail.warnings.length > 0}
-        {#each detail.warnings as warning}
+        {#each detail.warnings as warning (warning)}
           <div class="merge-warning merge-warning--info">
             <span>{warning}</span>
           </div>
         {/each}
       {/if}
 
-      <!-- Approve / Merge / Close / Reopen actions -->
-      {#if pr.State !== "merged"}
-        <div class="actions-row">
-          {#if pr.State === "open"}
-            {#if pr.IsDraft}
-              <ReadyForReviewButton
-                {owner}
-                {name}
-                {number}
-                size="sm"
-                disabled={stalePR}
-              />
-            {/if}
-            <ApproveButton
+      {#snippet primaryActionButtons()}
+        {#if pr.State === "open"}
+          {#if pr.IsDraft}
+            <ReadyForReviewButton
               {owner}
               {name}
               {number}
               size="sm"
               disabled={stalePR}
+              oncompleted={closeActionMenu}
             />
-            {#if workflowApproval?.checked && workflowApproval.required}
-              <ApproveWorkflowsButton
-                {owner}
-                {name}
-                {number}
-                count={workflowApproval.count ?? 0}
-                size="sm"
-                disabled={stalePR}
-              />
-            {/if}
-            {#if repoSettings}
-              <ActionButton
-                class="btn--merge"
-                onclick={() => { if (!stalePR) showMergeModal = true; }}
-                disabled={stalePR}
-                tone="success"
-                surface="solid"
-                size="sm"
-              >
-                {#if repoSettings.allowSquash && !repoSettings.allowMerge && !repoSettings.allowRebase}
-                  Squash and merge
-                {:else if !repoSettings.allowSquash && repoSettings.allowMerge && !repoSettings.allowRebase}
-                  Merge
-                {:else if !repoSettings.allowSquash && !repoSettings.allowMerge && repoSettings.allowRebase}
-                  Rebase and merge
-                {:else}
-                  Merge &#9662;
-                {/if}
-              </ActionButton>
-            {/if}
-            <ActionButton
-              class="btn--close"
-              disabled={stateSubmitting || stalePR}
-              onclick={() => handleStateChange("closed")}
-              tone="danger"
-              surface="outline"
+          {/if}
+          <ApproveButton
+            {owner}
+            {name}
+            {number}
+            size="sm"
+            disabled={stalePR}
+          />
+          {#if workflowApproval?.checked && workflowApproval.required}
+            <ApproveWorkflowsButton
+              {owner}
+              {name}
+              {number}
+              count={workflowApproval.count ?? 0}
               size="sm"
-            >
-              {stateSubmitting ? "Closing..." : "Close"}
-            </ActionButton>
-          {:else if pr.State === "closed"}
+              disabled={stalePR}
+              oncompleted={closeActionMenu}
+            />
+          {/if}
+          {#if repoSettings}
+            {@const mergeSettings = repoSettings}
             <ActionButton
-              class="btn--reopen"
-              disabled={stateSubmitting || stalePR}
-              onclick={() => handleStateChange("open")}
+              class="btn--merge"
+              disabled={stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                showMergeModal = true;
+                closeActionMenu();
+              }}
               tone="success"
               surface="solid"
               size="sm"
+              label={mergeActionLabel(mergeSettings)}
+              shortLabel={mergeActionShortLabel(mergeSettings)}
             >
-              {stateSubmitting ? "Reopening..." : "Reopen"}
+              <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              {#snippet trailing()}
+                {#if mergeActionHasMenu(mergeSettings)}
+                  <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+                {/if}
+              {/snippet}
             </ActionButton>
           {/if}
+          <ActionButton
+            class="btn--close"
+            disabled={stateSubmitting || stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              closeActionMenu();
+              handleStateChange("closed");
+            }}
+            tone="danger"
+            surface="outline"
+            size="sm"
+            label={stateSubmitting ? "Closing..." : "Close"}
+            shortLabel={stateSubmitting ? "Closing..." : "Close"}
+          >
+            <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {:else if pr.State === "closed"}
+          <ActionButton
+            class="btn--reopen"
+            disabled={stateSubmitting || stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              closeActionMenu();
+              handleStateChange("open");
+            }}
+            tone="success"
+            surface="solid"
+            size="sm"
+            label={stateSubmitting ? "Reopening..." : "Reopen"}
+            shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
+          >
+            <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {/if}
+      {/snippet}
+
+      <!-- Approve / Merge / Close / Reopen actions -->
+      {#if pr.State !== "merged"}
+        <div class="primary-actions-wrap">
+          <div class="actions-row actions-row--primary">
+            {@render primaryActionButtons()}
+          </div>
+          <div class="actions-menu-wrap" bind:this={actionMenuWrapEl}>
+            <button
+              type="button"
+              class="actions-menu-trigger"
+              aria-haspopup="true"
+              aria-expanded={actionMenuOpen}
+              onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+            >
+              <span>Actions</span>
+              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </button>
+            {#if actionMenuOpen}
+              <div class="actions-menu-popover">
+                {@render primaryActionButtons()}
+              </div>
+            {/if}
+          </div>
           {#if stateError}
-            <span class="action-error">{stateError}</span>
+            <span class="action-error action-error--state">{stateError}</span>
           {/if}
         </div>
       {/if}
 
-      <!-- Workspace actions -->
-      <div class="actions-row">
-        {#if workspace}
-          <button
-            class="btn--workspace"
-            onclick={() => navigate(`/terminal/${workspace.id}`)}
-          >
-            Open Workspace
-          </button>
-        {:else}
-          <button
-            class="btn--workspace"
-            disabled={wsCreating || stalePR}
-            onclick={() => void createWorkspace()}
-          >
-            {wsCreating ? "Creating..." : "Create Workspace"}
-          </button>
-        {/if}
-        {#if wsError}
-          <span class="action-error">{wsError}</span>
-        {/if}
-      </div>
+      {#if !hideWorkspaceAction}
+        <!-- Workspace actions -->
+        <div class="actions-row actions-row--workspace">
+          {#if workspace}
+            <ActionButton
+              class="btn--workspace"
+              onclick={() => navigate(`/terminal/${workspace.id}`)}
+              tone="info"
+              surface="soft"
+              size="sm"
+              label="Open Workspace"
+              shortLabel="Workspace"
+            >
+              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {:else}
+            <ActionButton
+              class="btn--workspace"
+              disabled={wsCreating || stalePR}
+              onclick={() => void createWorkspace()}
+              tone="info"
+              surface="soft"
+              size="sm"
+              label={wsCreating ? "Creating..." : "Create Workspace"}
+              shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
+            >
+              <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {/if}
+          {#if wsError}
+            <span class="action-error">{wsError}</span>
+          {/if}
+        </div>
+      {/if}
 
       {#if !hasWorktreeLinks && importAction}
         <div class="actions-row">
@@ -973,6 +1091,7 @@
   }
 
   .pull-detail {
+    container: pull-detail / inline-size;
     padding: 20px 24px;
     max-width: 800px;
     display: flex;
@@ -980,15 +1099,26 @@
     gap: 16px;
     flex: 1;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     width: 100%;
     margin-inline: auto;
   }
 
   .detail-header {
+    position: relative;
     display: flex;
     align-items: flex-start;
     gap: 10px;
+  }
+
+  .title-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
   }
 
   .detail-title {
@@ -996,7 +1126,6 @@
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
-    flex: 1;
     min-width: 0;
   }
 
@@ -1008,6 +1137,7 @@
     padding: 0;
     font-size: 0.75rem;
     flex-shrink: 0;
+    margin-top: 3px;
   }
 
   .edit-title-btn:hover {
@@ -1211,59 +1341,172 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    min-width: 0;
   }
 
-  .kanban-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  :global(.kanban-select) {
+    min-width: 150px;
   }
 
-  .kanban-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
+  :global(.kanban-select--header) {
     flex-shrink: 0;
+    margin-left: auto;
   }
 
-  .kanban-select {
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    cursor: pointer;
-    outline: none;
+  :global(.kanban-select--below-chips) {
+    display: none;
   }
 
-  .kanban-select:focus {
-    border-color: var(--accent-blue);
+  :global(.kanban-select--new .select-dropdown-trigger) {
+    color: var(--kanban-new);
+  }
+
+  :global(.kanban-select--reviewing .select-dropdown-trigger) {
+    color: var(--accent-amber);
+  }
+
+  :global(.kanban-select--waiting .select-dropdown-trigger) {
+    color: var(--accent-purple);
+  }
+
+  :global(.kanban-select--awaiting-merge .select-dropdown-trigger) {
+    color: var(--accent-green);
+  }
+
+  @container pull-detail (max-width: 640px) {
+    .detail-header {
+      flex-wrap: wrap;
+    }
+
+    :global(.kanban-select--header) {
+      display: none;
+    }
+
+    :global(.kanban-select--below-chips) {
+      display: block;
+      min-width: min(100%, 150px);
+      width: fit-content;
+    }
+  }
+
+  .primary-actions-wrap {
+    position: relative;
+    min-width: 0;
   }
 
   .actions-row {
     display: flex;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 8px;
+    min-width: 0;
+    max-width: 100%;
   }
 
-  .btn--workspace {
-    padding: 4px 12px;
-    border-radius: 6px;
+  .actions-row :global(.approve-section),
+  .actions-row :global(.ready-section),
+  .actions-row :global(.workflow-approval-section) {
+    min-width: 0;
+  }
+
+  .actions-row :global(.action-button) {
+    max-width: 100%;
+  }
+
+  .actions-row :global(.action-button__label),
+  .actions-row :global(.action-button__short-label) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @container pull-detail (max-width: 560px) {
+    .actions-row--primary :global(.btn--close svg) {
+      display: none;
+    }
+  }
+
+  .actions-menu-wrap {
+    display: none;
+    position: relative;
+  }
+
+  .actions-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 5px 11px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
     font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--accent-blue, #0969da);
-    background: var(--accent-blue, #0969da);
-    color: #fff;
+    font-weight: 600;
     cursor: pointer;
-    transition: filter 0.1s;
   }
-  .btn--workspace:hover {
-    filter: brightness(1.1);
+
+  .actions-menu-trigger:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
   }
-  .btn--workspace:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+
+  .actions-menu-popover {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: min(240px, calc(100cqw - 48px));
+    max-width: calc(100cqw - 48px);
+    padding: 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-surface);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  }
+
+  .actions-menu-popover :global(.action-button) {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .actions-menu-popover :global(.approve-section),
+  .actions-menu-popover :global(.ready-section),
+  .actions-menu-popover :global(.workflow-approval-section) {
+    width: 100%;
+  }
+
+  .actions-menu-popover :global(.approve-actions) {
+    flex-wrap: wrap;
+  }
+
+  .actions-menu-popover :global(.action-button__short-label) {
+    display: none;
+  }
+
+  @container pull-detail (max-width: 520px) {
+    .actions-row--primary :global(.action-button__label),
+    .actions-row--workspace :global(.action-button__label) {
+      display: none;
+    }
+
+    .actions-row--primary :global(.action-button__short-label),
+    .actions-row--workspace :global(.action-button__short-label) {
+      display: inline;
+    }
+  }
+
+  @container pull-detail (max-width: 340px) {
+    .actions-row--primary {
+      display: none;
+    }
+
+    .actions-menu-wrap {
+      display: block;
+    }
   }
 
   .action-error {
@@ -1271,10 +1514,10 @@
     color: var(--accent-red, #d73a49);
   }
 
-  .kanban-select--new { color: var(--kanban-new); }
-  .kanban-select--reviewing { color: var(--accent-amber); }
-  .kanban-select--waiting { color: var(--accent-purple); }
-  .kanban-select--awaiting-merge { color: var(--accent-green); }
+  .action-error--state {
+    display: block;
+    margin-top: 6px;
+  }
 
   .section {
     display: flex;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -11,6 +12,7 @@
     number: number;
     size?: "sm" | "md";
     disabled?: boolean;
+    oncompleted?: () => void;
   }
 
   const {
@@ -19,6 +21,7 @@
     number,
     size = "md",
     disabled = false,
+    oncompleted,
   }: Props = $props();
 
   let submitting = $state(false);
@@ -41,6 +44,7 @@
       }
       await detail.loadDetail(owner, name, number);
       await pulls.loadPulls();
+      oncompleted?.();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (shouldRefreshStaleDraftState(message)) {
@@ -65,9 +69,11 @@
     disabled={submitting || disabled}
     tone="info"
     surface="soft"
+    label={submitting ? "Publishing…" : "Ready for review"}
+    shortLabel={submitting ? "Publishing…" : "Ready"}
     {size}
   >
-    {submitting ? "Publishing…" : "Ready for review"}
+    <SendHorizontalIcon size="14" strokeWidth="2.2" aria-hidden="true" />
   </ActionButton>
   {#if error}
     <p class="ready-error">{error}</p>

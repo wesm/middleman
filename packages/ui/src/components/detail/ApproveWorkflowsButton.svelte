@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WorkflowIcon from "@lucide/svelte/icons/workflow";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -12,6 +13,7 @@
     count: number;
     size?: "sm" | "md";
     disabled?: boolean;
+    oncompleted?: () => void;
   }
 
   const {
@@ -21,6 +23,7 @@
     count,
     size = "md",
     disabled = false,
+    oncompleted,
   }: Props = $props();
 
   let submitting = $state(false);
@@ -28,6 +31,9 @@
 
   const label = $derived(
     count > 1 ? `Approve workflows (${count})` : "Approve workflows",
+  );
+  const shortLabel = $derived(
+    count > 1 ? `Workflows (${count})` : "Workflows",
   );
   const tooltip =
     "Approve pending GitHub Actions runs waiting on outside contributor approval";
@@ -52,6 +58,7 @@
       }
       await detail.refreshDetailOnly(owner, name, number);
       await pulls.loadPulls();
+      oncompleted?.();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -68,9 +75,11 @@
     tone="workflow"
     surface="soft"
     title={tooltip}
+    label={submitting ? "Approving workflows…" : label}
+    shortLabel={submitting ? "Approving…" : shortLabel}
     {size}
   >
-    {submitting ? "Approving workflows…" : label}
+    <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
   </ActionButton>
   {#if error}
     <p class="workflow-approval-error">{error}</p>

@@ -275,6 +275,7 @@
           name={repoName}
           number={itemNumber}
           hideTabs={true}
+          hideWorkspaceAction={true}
         />
       </div>
     {:else}

@@ -122,5 +122,8 @@ export {
   default as FilterDropdown,
 } from "./components/shared/FilterDropdown.svelte";
 export {
+  default as SelectDropdown,
+} from "./components/shared/SelectDropdown.svelte";
+export {
   default as WorkspaceRightSidebar,
 } from "./components/workspace/WorkspaceRightSidebar.svelte";
