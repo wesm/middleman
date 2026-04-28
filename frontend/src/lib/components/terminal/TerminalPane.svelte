@@ -33,7 +33,6 @@
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
   let fitAddon: FitAddon | null = null;
-  let webglAddon: WebglAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,14 +121,20 @@
   }
 
   function sendResize(cols: number, rows: number): void {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "resize", cols, rows }));
-    }
+    sendControl("resize", cols, rows);
   }
 
   function sendRefresh(cols: number, rows: number): void {
+    sendControl("refresh", cols, rows);
+  }
+
+  function sendControl(
+    type: "resize" | "refresh",
+    cols: number,
+    rows: number,
+  ): void {
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "refresh", cols, rows }));
+      ws.send(JSON.stringify({ type, cols, rows }));
     }
   }
 
@@ -137,13 +142,8 @@
     if (!terminal) return;
 
     fitAddon?.fit();
-    try {
-      terminal.clearTextureAtlas();
-    } catch {
-      // Some renderer fallbacks do not maintain a texture atlas.
-    }
+    terminal.clearTextureAtlas();
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
-    sendResize(terminal.cols, terminal.rows);
     sendRefresh(terminal.cols, terminal.rows);
   }
 
@@ -281,7 +281,7 @@
     terminal.options.fontFamily = terminalFontFamily;
     // The WebGL renderer caches glyphs per font; force a rebuild so
     // cell widths and glyph metrics line up after the family changes.
-    webglAddon?.clearTextureAtlas();
+    terminal.clearTextureAtlas();
     fitAddon?.fit();
   });
 
@@ -319,10 +319,8 @@
         const wgl = new WebglAddon();
         wgl.onContextLoss(() => {
           wgl.dispose();
-          if (webglAddon === wgl) webglAddon = null;
         });
         term.loadAddon(wgl);
-        webglAddon = wgl;
       } catch {
         // WebGL unavailable; canvas renderer used as fallback.
       }

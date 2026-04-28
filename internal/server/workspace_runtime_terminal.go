@@ -284,11 +284,9 @@ func handleRuntimeTerminalControl(
 		slog.Warn("bad runtime terminal control message", "err", err)
 		return
 	}
-	if msg.Type != "resize" && msg.Type != "refresh" {
-		return
-	}
 	info := attachment.Info()
-	if msg.Type == "refresh" {
+	switch msg.Type {
+	case "refresh":
 		slog.Debug(
 			"runtime terminal refresh requested",
 			"workspace_id", info.WorkspaceID,
@@ -307,16 +305,17 @@ func handleRuntimeTerminalControl(
 			slog.Warn("runtime terminal refresh", "err", err)
 		}
 		return
-	}
-	slog.Debug(
-		"runtime terminal resize requested",
-		"workspace_id", info.WorkspaceID,
-		"session_key", info.Key,
-		"cols", msg.Cols,
-		"rows", msg.Rows,
-	)
-	if err := attachment.Resize(msg.Cols, msg.Rows); err != nil {
-		slog.Warn("runtime terminal resize", "err", err)
+	case "resize":
+		slog.Debug(
+			"runtime terminal resize requested",
+			"workspace_id", info.WorkspaceID,
+			"session_key", info.Key,
+			"cols", msg.Cols,
+			"rows", msg.Rows,
+		)
+		if err := attachment.Resize(msg.Cols, msg.Rows); err != nil {
+			slog.Warn("runtime terminal resize", "err", err)
+		}
 	}
 }
 
