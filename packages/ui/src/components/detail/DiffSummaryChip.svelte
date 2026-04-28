@@ -99,10 +99,6 @@
           {error}
         </div>
       {:else if summary}
-        <div class="diff-summary-total">
-          <span>Total</span>
-          <span>{formatTotals(summary.total)}</span>
-        </div>
         <div class="diff-summary-rows">
           {#each rows as row (row.key)}
             <div class="diff-summary-row">
@@ -186,20 +182,12 @@
     text-transform: uppercase;
   }
 
-  .diff-summary-total,
   .diff-summary-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 16px;
     align-items: center;
     font-size: 12px;
-  }
-
-  .diff-summary-total {
-    padding-bottom: 7px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid var(--border-muted);
-    font-weight: 700;
   }
 
   .diff-summary-rows {
@@ -212,8 +200,7 @@
     color: var(--text-secondary);
   }
 
-  .diff-summary-row span:last-child,
-  .diff-summary-total span:last-child {
+  .diff-summary-row span:last-child {
     font-family: var(--font-mono);
     color: var(--text-primary);
     white-space: nowrap;

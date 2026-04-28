@@ -46,6 +46,7 @@ describe("DiffSummaryChip", () => {
     );
 
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
+    expect(screen.queryByText("Total")).toBeNull();
     expect(screen.getByText("+10 / -2")).toBeTruthy();
     expect(screen.getByText("Code")).toBeTruthy();
     expect(screen.getByText("+40 / -6")).toBeTruthy();
