@@ -36,7 +36,7 @@ func (h *Handler) ServeHTTP(
 		http.Error(w, "missing workspace id", http.StatusBadRequest)
 		return
 	}
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal websocket request",
 		"workspace_id", id,
 		"path", r.URL.Path,
@@ -55,7 +55,7 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 	if ws == nil {
-		slog.Debug(
+		logWebsocketDebug(
 			"workspace terminal rejected: workspace not found",
 			"workspace_id", id,
 		)
@@ -63,7 +63,7 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 	if ws.Status != "ready" {
-		slog.Debug(
+		logWebsocketDebug(
 			"workspace terminal rejected: workspace not ready",
 			"workspace_id", id,
 			"status", ws.Status,
@@ -77,7 +77,7 @@ func (h *Handler) ServeHTTP(
 	}
 
 	cols, rows := parseSize(r)
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal attaching",
 		"workspace_id", id,
 		"tmux_session", ws.TmuxSession,
@@ -87,7 +87,7 @@ func (h *Handler) ServeHTTP(
 
 	releaseTerminal, err := h.claimTerminalSlot(id)
 	if err != nil {
-		slog.Debug(
+		logWebsocketDebug(
 			"workspace terminal rejected: slot unavailable",
 			"workspace_id", id,
 			"err", err,
@@ -104,7 +104,7 @@ func (h *Handler) ServeHTTP(
 		slog.Error("websocket accept", "err", err)
 		return
 	}
-	slog.Debug("workspace terminal websocket accepted", "workspace_id", id)
+	logWebsocketDebug("workspace terminal websocket accepted", "workspace_id", id)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -123,7 +123,7 @@ func (h *Handler) ServeHTTP(
 		)
 		return
 	}
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal tmux ready",
 		"workspace_id", id,
 		"tmux_session", ws.TmuxSession,
@@ -138,7 +138,7 @@ func (h *Handler) ServeHTTP(
 	argv = append(argv, "attach-session", "-t", ws.TmuxSession)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal starting tmux attach",
 		"workspace_id", id,
 		"program", argv[0],
@@ -177,7 +177,7 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 	defer ptmx.Close()
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal pty started",
 		"workspace_id", id,
 		"pid", cmd.Process.Pid,
@@ -224,14 +224,14 @@ func (h *Handler) ServeHTTP(
 	select {
 	case exitCode = <-cmdDone:
 		// tmux exited normally.
-		slog.Debug(
+		logWebsocketDebug(
 			"workspace terminal tmux attach exited",
 			"workspace_id", id,
 			"exit_code", exitCode,
 		)
 	case <-bridgeDone:
 		// Browser disconnected. Cancel context to kill tmux attach.
-		slog.Debug(
+		logWebsocketDebug(
 			"workspace terminal bridge disconnected",
 			"workspace_id", id,
 		)
@@ -258,7 +258,7 @@ func (h *Handler) ServeHTTP(
 	cancel()
 	wg.Wait()
 	conn.Close(websocket.StatusNormalClosure, "session ended")
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal websocket closed",
 		"workspace_id", id,
 		"exit_code", exitCode,
@@ -275,7 +275,7 @@ func (h *Handler) claimTerminalSlot(
 	}
 	h.active[id]++
 	active := h.active[id]
-	slog.Debug(
+	logWebsocketDebug(
 		"workspace terminal slot claimed",
 		"workspace_id", id,
 		"active", active,
@@ -291,7 +291,7 @@ func (h *Handler) claimTerminalSlot(
 				delete(h.active, id)
 				active = 0
 			}
-			slog.Debug(
+			logWebsocketDebug(
 				"workspace terminal slot released",
 				"workspace_id", id,
 				"active", active,

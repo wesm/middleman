@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import config, {
   resolveViteServerPort,
+  webSocketDebugEnabled,
 } from "../../../vite.config";
 
 describe("vite config", () => {
@@ -64,6 +65,16 @@ describe("vite config", () => {
       changeOrigin: true,
       ws: true,
     });
+    expect(proxy["/ws"]).not.toHaveProperty("configure");
+  });
+
+  it("requires explicit opt-in for websocket proxy diagnostics", () => {
+    expect(webSocketDebugEnabled({})).toBe(false);
+    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "0" })).toBe(false);
+    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "false" })).toBe(false);
+    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "1" })).toBe(true);
+    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "true" })).toBe(true);
+    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "yes" })).toBe(true);
   });
 
   it("uses the Vite CLI port for dev server HMR settings", () => {

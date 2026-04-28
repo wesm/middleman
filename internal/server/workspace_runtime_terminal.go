@@ -24,7 +24,7 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	slog.Debug(
+	logWebsocketDebug(
 		"runtime terminal websocket request",
 		"workspace_id", r.PathValue("id"),
 		"session_key", r.PathValue("session_key"),
@@ -42,7 +42,7 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 		summary.ID, r.PathValue("session_key"),
 	)
 	if err != nil {
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime terminal attach failed",
 			"workspace_id", summary.ID,
 			"session_key", r.PathValue("session_key"),
@@ -58,7 +58,7 @@ func (s *Server) handleWorkspaceRuntimeShellTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	slog.Debug(
+	logWebsocketDebug(
 		"runtime shell websocket request",
 		"workspace_id", r.PathValue("id"),
 		"path", r.URL.Path,
@@ -73,7 +73,7 @@ func (s *Server) handleWorkspaceRuntimeShellTerminal(
 
 	attachment, err := s.runtime.AttachShell(summary.ID)
 	if err != nil {
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime shell attach failed",
 			"workspace_id", summary.ID,
 			"err", err,
@@ -98,14 +98,14 @@ func (s *Server) serveRuntimeTerminal(
 		return
 	}
 	info := attachment.Info()
-	slog.Debug(
+	logWebsocketDebug(
 		"runtime terminal websocket accepted",
 		"workspace_id", info.WorkspaceID,
 		"session_key", info.Key,
 		"target_key", info.TargetKey,
 	)
 	if cols, rows, ok := parseRuntimeTerminalSize(r); ok {
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime terminal initial resize",
 			"workspace_id", info.WorkspaceID,
 			"session_key", info.Key,
@@ -119,14 +119,14 @@ func (s *Server) serveRuntimeTerminal(
 
 	exited := bridgeRuntimeAttachment(r.Context(), conn, attachment)
 	if exited {
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime terminal websocket closing after session exit",
 			"workspace_id", info.WorkspaceID,
 			"session_key", info.Key,
 		)
 		conn.Close(websocket.StatusNormalClosure, "session ended")
 	} else {
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime terminal websocket closing after detach",
 			"workspace_id", info.WorkspaceID,
 			"session_key", info.Key,
@@ -158,7 +158,7 @@ func (s *Server) readyRuntimeWorkspaceForHTTP(
 		return nil, false
 	}
 	if summary.Status != "ready" {
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime websocket rejected: workspace not ready",
 			"workspace_id", id,
 			"status", summary.Status,
@@ -209,13 +209,13 @@ func bridgeRuntimeAttachment(
 		for {
 			typ, data, err := conn.Read(ctx)
 			if err != nil {
-				slog.Debug("runtime terminal websocket read ended", "err", err)
+				logWebsocketDebug("runtime terminal websocket read ended", "err", err)
 				return
 			}
 			switch typ {
 			case websocket.MessageBinary:
 				if err := attachment.Write(data); err != nil {
-					slog.Debug(
+					logWebsocketDebug(
 						"runtime terminal pty write ended",
 						"err", err,
 					)
@@ -239,7 +239,7 @@ func bridgeRuntimeAttachment(
 				if err := conn.Write(
 					ctx, websocket.MessageBinary, data,
 				); err != nil {
-					slog.Debug(
+					logWebsocketDebug(
 						"runtime terminal websocket write ended",
 						"err", err,
 					)
@@ -287,7 +287,7 @@ func handleRuntimeTerminalControl(
 	info := attachment.Info()
 	switch msg.Type {
 	case "refresh":
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime terminal refresh requested",
 			"workspace_id", info.WorkspaceID,
 			"session_key", info.Key,
@@ -306,7 +306,7 @@ func handleRuntimeTerminalControl(
 		}
 		return
 	case "resize":
-		slog.Debug(
+		logWebsocketDebug(
 			"runtime terminal resize requested",
 			"workspace_id", info.WorkspaceID,
 			"session_key", info.Key,

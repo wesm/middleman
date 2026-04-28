@@ -106,6 +106,32 @@ function logWebSocketProxyRequests(): NonNullable<
   };
 }
 
+export function webSocketDebugEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  switch (env.MIDDLEMAN_WS_DEBUG?.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function terminalWebSocketProxy(url: string): ProxyOptions {
+  const proxy: ProxyOptions = {
+    target: url,
+    changeOrigin: true,
+    ws: true,
+  };
+  if (webSocketDebugEnabled()) {
+    proxy.configure = logWebSocketProxyRequests();
+  }
+  return proxy;
+}
+
 const config = {
   base: "/",
   plugins: [
@@ -199,12 +225,7 @@ const config = {
         timeout: 0,
         proxyTimeout: 0,
       },
-      "/ws": {
-        target: apiUrl,
-        changeOrigin: true,
-        ws: true,
-        configure: logWebSocketProxyRequests(),
-      },
+      "/ws": terminalWebSocketProxy(apiUrl),
     },
   },
   test: {
