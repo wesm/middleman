@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
@@ -128,6 +128,92 @@ describe("ensureEmbeddedFrontend", () => {
     await expect(readFile(path.join(embeddedDist, "index.html"), "utf8")).resolves.toContain("<body>ok</body>");
     await expect(readFile(path.join(embeddedDist, "assets", "app.js"), "utf8")).resolves.toContain("console.log");
     await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
+  });
+
+  it("refreshes embedded assets when frontend/dist is newer", async () => {
+    const ensureEmbeddedFrontend = (
+      e2eServerModule as {
+        ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
+      }
+    ).ensureEmbeddedFrontend;
+
+    expect(ensureEmbeddedFrontend).toBeTypeOf("function");
+    if (!ensureEmbeddedFrontend) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const frontendDist = path.join(dir, "frontend", "dist");
+    const embeddedDist = path.join(dir, "internal", "web", "dist");
+
+    mkdirSync(frontendDist, { recursive: true });
+    mkdirSync(embeddedDist, { recursive: true });
+
+    const embeddedIndex = path.join(embeddedDist, "index.html");
+    const frontendIndex = path.join(frontendDist, "index.html");
+    writeFileSync(embeddedIndex, "<html><body>old</body></html>", { flag: "wx" });
+    writeFileSync(frontendIndex, "<html><body>new</body></html>", { flag: "wx" });
+
+    const oldTime = new Date("2026-01-01T00:00:00Z");
+    const newTime = new Date("2026-01-01T00:00:10Z");
+    utimesSync(embeddedIndex, oldTime, oldTime);
+    utimesSync(frontendIndex, newTime, newTime);
+
+    await ensureEmbeddedFrontend(dir);
+
+    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>new</body>");
+    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
+  });
+
+  it("rebuilds frontend/dist when frontend sources are newer", async () => {
+    const ensureEmbeddedFrontend = (
+      e2eServerModule as {
+        ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
+      }
+    ).ensureEmbeddedFrontend;
+
+    expect(ensureEmbeddedFrontend).toBeTypeOf("function");
+    if (!ensureEmbeddedFrontend) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const binDir = path.join(dir, "bin");
+    const frontendDir = path.join(dir, "frontend");
+    const frontendSrc = path.join(frontendDir, "src");
+    const frontendDist = path.join(frontendDir, "dist");
+    const embeddedDist = path.join(dir, "internal", "web", "dist");
+
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(frontendSrc, { recursive: true });
+    mkdirSync(frontendDist, { recursive: true });
+    mkdirSync(embeddedDist, { recursive: true });
+
+    writeFileSync(
+      path.join(binDir, "bun"),
+      "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p dist\nprintf '<html><body>rebuilt</body></html>' > dist/index.html\n",
+      { mode: 0o755 },
+    );
+
+    const frontendIndex = path.join(frontendDist, "index.html");
+    const embeddedIndex = path.join(embeddedDist, "index.html");
+    const sourceFile = path.join(frontendSrc, "App.svelte");
+    writeFileSync(frontendIndex, "<html><body>old dist</body></html>", { flag: "wx" });
+    writeFileSync(embeddedIndex, "<html><body>old embed</body></html>", { flag: "wx" });
+    writeFileSync(sourceFile, "<script></script>", { flag: "wx" });
+
+    const oldTime = new Date("2026-01-01T00:00:00Z");
+    const newTime = new Date("2026-01-01T00:00:10Z");
+    utimesSync(frontendIndex, oldTime, oldTime);
+    utimesSync(embeddedIndex, oldTime, oldTime);
+    utimesSync(sourceFile, newTime, newTime);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+
+    await ensureEmbeddedFrontend(dir);
+
+    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
   });
 });
 

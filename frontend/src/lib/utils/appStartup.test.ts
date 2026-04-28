@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runAppStartup } from "./appStartup.js";
 import type { StoreInstances } from "@middleman/ui";
 import type { Settings } from "@middleman/ui/api/types";
@@ -51,6 +51,11 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe("runAppStartup", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it("runs post-settings side effects on the happy path", async () => {
     const stores = makeStores();
     const settings = makeSettings();
@@ -129,6 +134,34 @@ describe("runAppStartup", () => {
     expect(stores.events.connect).toHaveBeenCalledTimes(1);
 
     warn.mockRestore();
+  });
+
+  it("continues startup with defaults when getSettings never settles", async () => {
+    vi.useFakeTimers();
+    const stores = makeStores();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const onReady = vi.fn();
+
+    runAppStartup({
+      getSettings: () => new Promise<Settings>(() => {}),
+      getStores: () => stores,
+      onReady,
+    });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(stores.settings.setConfiguredRepos).not.toHaveBeenCalled();
+    expect(stores.settings.setTerminalFontFamily).not.toHaveBeenCalled();
+    expect(stores.activity.hydrateDefaults).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      "Failed to load settings, using defaults:",
+      expect.any(Error),
+    );
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
+    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
+    expect(stores.issues.loadIssues).toHaveBeenCalledTimes(1);
+    expect(stores.events.connect).toHaveBeenCalledTimes(1);
   });
 
   it("skips post-await side effects when cancelled after a rejected getSettings", async () => {
