@@ -199,14 +199,7 @@
     }
   });
 
-  let drawerItem = $state<{
-    itemType: "pr" | "issue";
-    platformHost?: string | undefined;
-    owner: string;
-    name: string;
-    number: number;
-    detailTab: "conversation" | "files";
-  } | null>(null);
+  let drawerItem = $state<ActivitySelection | null>(null);
 
   function sameActivitySelection(
     left: ActivitySelection | null,
