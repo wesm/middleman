@@ -22,6 +22,17 @@ function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
   } as PREvent;
 }
 
+function findTimelineWrapperRule(): string {
+  for (const sheet of Array.from(document.styleSheets)) {
+    for (const rule of Array.from(sheet.cssRules)) {
+      if (rule instanceof CSSStyleRule && rule.selectorText.includes(".event-card")) {
+        return rule.cssText;
+      }
+    }
+  }
+  return "";
+}
+
 describe("EventTimeline", () => {
   afterEach(() => {
     cleanup();
@@ -39,5 +50,22 @@ describe("EventTimeline", () => {
     expect(label.getAttribute("style")).toContain("var(--accent-red)");
     expect(screen.getByText("alice")).toBeTruthy();
     expect(screen.getByText("aaaaaaa -> bbbbbbb")).toBeTruthy();
+  });
+
+  it("uses the event wrapper for spacing without adding a nested card surface", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [makeEvent()],
+      },
+    });
+
+    const wrapper = container.querySelector(".event-card");
+    expect(wrapper).toBeInstanceOf(HTMLElement);
+
+    const eventCardRule = findTimelineWrapperRule();
+
+    expect(eventCardRule).not.toContain("background:");
+    expect(eventCardRule).not.toContain("border:");
+    expect(eventCardRule).not.toContain("border-radius:");
   });
 });

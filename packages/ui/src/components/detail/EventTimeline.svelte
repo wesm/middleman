@@ -160,13 +160,10 @@
     display: none;
   }
 
-  /* Right side: card */
+  /* Right side: spacing wrapper */
   .event-card {
     flex: 1;
     min-width: 0;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
     padding: 10px 12px;
     margin: 4px 0 4px 8px;
   }
