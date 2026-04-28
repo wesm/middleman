@@ -44,6 +44,19 @@ const prB = {
   HeadBranch: "feature/b",
 };
 
+const prSquashOnly = {
+  ...prA,
+  ID: 23,
+  RepoID: 2,
+  GitHubID: 1103,
+  Number: 300,
+  URL: "https://github.com/acme/squash-only/pull/300",
+  Title: "Squash-only PR title",
+  Body: "Body C",
+  HeadBranch: "feature/c",
+  repo_name: "squash-only",
+};
+
 const issueX = {
   ID: 31,
   RepoID: 1,
@@ -293,6 +306,98 @@ test.describe("PR detail merge modal route reset", () => {
     await expect(
       page.locator(".modal-title", { hasText: "Merge Pull Request" }),
     ).toHaveCount(0);
+  });
+
+  test("merge actions wait for settings that match the selected repo", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    for (const pr of [prA, prSquashOnly]) {
+      await page.route(
+        `**/api/v1/repos/${pr.repo_owner}/${pr.repo_name}/pulls/${pr.Number}`,
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify(detailEnvelopePR(pr)),
+            });
+            return;
+          }
+          await route.fallback();
+        },
+      );
+    }
+
+    let releaseSquashSettings!: () => void;
+    const squashSettingsReady = new Promise<void>((resolve) => {
+      releaseSquashSettings = resolve;
+    });
+
+    await page.route(
+      `**/api/v1/repos/${prSquashOnly.repo_owner}/${prSquashOnly.repo_name}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await squashSettingsReady;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ID: prSquashOnly.RepoID,
+              Owner: prSquashOnly.repo_owner,
+              Name: prSquashOnly.repo_name,
+              AllowSquashMerge: true,
+              AllowMergeCommit: false,
+              AllowRebaseMerge: false,
+              LastSyncStartedAt: "2026-04-01T12:00:00Z",
+              LastSyncCompletedAt: "2026-04-01T12:00:30Z",
+              LastSyncError: "",
+              CreatedAt: "2026-03-01T00:00:00Z",
+            }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto(
+      `/pulls/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
+    );
+    await expect(page.locator(".detail-title")).toContainText(prA.Title);
+    await expect(page.locator(".btn--merge")).toBeVisible();
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/pulls/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [prSquashOnly.repo_owner, prSquashOnly.repo_name, prSquashOnly.Number] as const);
+
+    await expect(page.locator(".detail-title")).toContainText(
+      prSquashOnly.Title,
+    );
+    await expect(page.locator(".btn--merge")).toHaveCount(0);
+
+    releaseSquashSettings();
+
+    const mergeButton = page.locator(".btn--merge").first();
+    await expect(mergeButton).toBeVisible();
+    await mergeButton.click();
+
+    await expect(
+      page.locator(".modal-title", { hasText: "Merge Pull Request" }),
+    ).toBeVisible();
+    await expect(page.locator(".method-option")).toHaveCount(0);
+    await expect(
+      page.locator(".modal-footer").getByRole("button", {
+        name: "Squash and merge",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Create a merge commit")).toHaveCount(0);
+    await expect(page.getByText("Rebase and merge")).toHaveCount(0);
   });
 });
 

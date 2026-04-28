@@ -269,19 +269,27 @@
   };
 
   let repoSettings = $state<RepoSettings | null>(null);
+  let repoSettingsRequestID = 0;
   let showMergeModal = $state(false);
 
   $effect(() => {
+    const requestID = ++repoSettingsRequestID;
+    repoSettings = null;
     client.GET("/repos/{owner}/{name}", {
       params: { path: { owner, name } },
     }).then(({ data, error }) => {
+      if (requestID !== repoSettingsRequestID) return;
       if (error || !data) return;
       repoSettings = {
         allowSquash: data.AllowSquashMerge,
         allowMerge: data.AllowMergeCommit,
         allowRebase: data.AllowRebaseMerge,
       };
-    }).catch(() => {});
+    }).catch(() => {
+      if (requestID === repoSettingsRequestID) {
+        repoSettings = null;
+      }
+    });
   });
 
   const workflowApproval = $derived(
