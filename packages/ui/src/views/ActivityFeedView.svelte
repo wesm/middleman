@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PanelLeftCloseIcon from "@lucide/svelte/icons/panel-left-close";
+  import PanelLeftOpenIcon from "@lucide/svelte/icons/panel-left-open";
   import type { ActivityItem } from "../api/types.js";
   import ActivityFeed
     from "../components/ActivityFeed.svelte";
@@ -34,6 +36,7 @@
   // provided (standalone usage).
   let internalDrawer = $state<DrawerItem | null>(null);
   let activityPaneWidth = $state(360);
+  let activityPaneCollapsed = $state(false);
 
   const minActivityPaneWidth = 280;
   const maxActivityPaneWidth = 560;
@@ -105,6 +108,14 @@
       activityPaneWidth = clampActivityPaneWidth(activityPaneWidth + 24);
     }
   }
+
+  function collapseActivityPane(): void {
+    activityPaneCollapsed = true;
+  }
+
+  function expandActivityPane(): void {
+    activityPaneCollapsed = false;
+  }
 </script>
 
 <div
@@ -114,21 +125,51 @@
 >
   <section
     class="activity-pane"
+    class:activity-pane--collapsed={activityPaneCollapsed}
     style:--activity-pane-width={`${activityPaneWidth}px`}
   >
-    {#if activeDrawer}
+    {#if activeDrawer && activityPaneCollapsed}
+      <div class="activity-collapsed-strip">
+        <button
+          class="activity-sidebar-toggle"
+          onclick={expandActivityPane}
+          title="Expand Activity sidebar"
+          type="button"
+        >
+          <PanelLeftOpenIcon
+            size="14"
+            strokeWidth="1.5"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    {:else if activeDrawer}
       <div class="activity-rail-header">
         <span>Activity</span>
+        <button
+          class="activity-sidebar-toggle"
+          onclick={collapseActivityPane}
+          title="Collapse Activity sidebar"
+          type="button"
+        >
+          <PanelLeftCloseIcon
+            size="14"
+            strokeWidth="1.5"
+            aria-hidden="true"
+          />
+        </button>
       </div>
     {/if}
-    <ActivityFeed
-      compact={activeDrawer !== null}
-      selectedItem={activeDrawer}
-      onSelectItem={handleSelect}
-    />
+    <div class="activity-feed-wrap">
+      <ActivityFeed
+        compact={activeDrawer !== null}
+        selectedItem={activeDrawer}
+        onSelectItem={handleSelect}
+      />
+    </div>
   </section>
 
-  {#if activeDrawer}
+  {#if activeDrawer && !activityPaneCollapsed}
     <button
       class="activity-split-resize-handle"
       aria-label="Resize Activity rail"
@@ -136,7 +177,9 @@
       onkeydown={handleActivityPaneResizeKeydown}
       onmousedown={startActivityPaneResize}
     ></button>
+  {/if}
 
+  {#if activeDrawer}
     <section class="activity-detail">
       <div class="activity-detail-header">
         <span>
@@ -204,6 +247,22 @@
     border-right: 1px solid var(--border-default);
   }
 
+  .activity-shell--split .activity-pane--collapsed {
+    width: 28px;
+    flex-basis: 28px;
+  }
+
+  .activity-feed-wrap {
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .activity-pane--collapsed .activity-feed-wrap {
+    display: none;
+  }
+
   .activity-rail-header,
   .activity-detail-header {
     flex-shrink: 0;
@@ -218,6 +277,31 @@
     color: var(--text-primary);
     font-size: 12px;
     font-weight: 600;
+  }
+
+  .activity-collapsed-strip {
+    width: 28px;
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 6px;
+    background: var(--bg-surface);
+  }
+
+  .activity-sidebar-toggle {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+  }
+
+  .activity-sidebar-toggle:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
   }
 
   .activity-detail-header span {

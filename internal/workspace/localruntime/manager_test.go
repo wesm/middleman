@@ -511,6 +511,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 }
 
 func TestManagerShutdownTerminatesPTYManagedSessions(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := Assert.New(t)

@@ -554,6 +554,36 @@ test.describe("activity split view and detail drawers", () => {
     expect(resizedRailBox!.width).toBeGreaterThan(railBox!.width + 40);
   });
 
+  test("activity split view can collapse and expand the activity rail", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    await openActivityPRSplit(page);
+
+    const rail = page.locator(".activity-pane");
+    const detail = page.locator(".activity-detail");
+    const collapseButton = page.locator("button[title='Collapse Activity sidebar']");
+    await expect(collapseButton).toBeVisible();
+
+    await collapseButton.click();
+
+    await expect(detail).toBeVisible();
+    await expect(page.locator(".activity-split-resize-handle")).toBeHidden();
+    await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
+    await expect(page.locator("button[title='Expand Activity sidebar']")).toBeVisible();
+    const collapsedBox = await rail.boundingBox();
+    expect(collapsedBox).not.toBeNull();
+    expect(collapsedBox!.width).toBeLessThan(40);
+
+    await page.locator("button[title='Expand Activity sidebar']").click();
+
+    await expect(page.locator(".activity-collapsed-strip")).toBeHidden();
+    await expect(page.locator(".activity-split-resize-handle")).toBeVisible();
+    const expandedBox = await rail.boundingBox();
+    expect(expandedBox).not.toBeNull();
+    expect(Math.abs(expandedBox!.width - 360)).toBeLessThan(2);
+  });
+
   test("kanban drawer spans full viewport width", async ({ page }) => {
     await page.goto("/pulls/board");
     await page.locator(".kanban-card").first()

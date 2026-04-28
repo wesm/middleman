@@ -41,6 +41,16 @@ import (
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
+func requirePTYAvailable(t *testing.T) {
+	t.Helper()
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		t.Skipf("pty unavailable in this test environment: %v", err)
+	}
+	_ = ptmx.Close()
+	_ = tty.Close()
+}
+
 func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(context.Background(), 5*time.Second)
@@ -7697,6 +7707,7 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeIncludesStoredTmuxSessionsAfterReloadE2E(t *testing.T) {
+	requirePTYAvailable(t)
 	require := require.New(t)
 	assert := Assert.New(t)
 	dir := t.TempDir()
