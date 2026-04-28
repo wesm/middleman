@@ -133,7 +133,6 @@
       class="diff-summary-popover"
       role="status"
     >
-      <div class="diff-summary-title">Changed lines</div>
       {#if loading}
         <div class="diff-summary-state">Loading...</div>
       {:else if error}
@@ -213,15 +212,6 @@
     border-left: 1px solid var(--border-default);
     border-top: 1px solid var(--border-default);
     background: var(--bg-surface);
-  }
-
-  .diff-summary-title {
-    margin-bottom: 7px;
-    color: var(--text-muted);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
 
   .diff-summary-row {
