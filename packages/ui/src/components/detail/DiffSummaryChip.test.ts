@@ -56,4 +56,28 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("+1 / -1")).toBeTruthy();
     expect(loadFiles).toHaveBeenCalledTimes(1);
   });
+
+  it("hides categories with no changed lines", async () => {
+    render(DiffSummaryChip, {
+      props: {
+        additions: 60,
+        deletions: 14,
+        loadFiles: vi.fn(async () => [
+          file("src/App.svelte", 40, 6),
+          file("src/App.test.ts", 20, 8),
+        ]),
+      },
+    });
+
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: /\+60\/-14/i }),
+    );
+
+    expect(await screen.findByText("Code")).toBeTruthy();
+    expect(screen.getByText("+40 / -6")).toBeTruthy();
+    expect(screen.getByText("Tests")).toBeTruthy();
+    expect(screen.getByText("+20 / -8")).toBeTruthy();
+    expect(screen.queryByText("Plans/docs")).toBeNull();
+    expect(screen.queryByText("Other")).toBeNull();
+  });
 });

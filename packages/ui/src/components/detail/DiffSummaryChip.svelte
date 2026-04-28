@@ -36,6 +36,14 @@
     { key: "tests" as const, label: "Tests" },
     { key: "other" as const, label: "Other" },
   ]);
+  const visibleRows = $derived(
+    summary === null
+      ? []
+      : rows.filter((row) => {
+          const totals = summary?.[row.key];
+          return (totals?.additions ?? 0) > 0 || (totals?.deletions ?? 0) > 0;
+        }),
+  );
 
   function formatTotals(value: { additions: number; deletions: number }): string {
     return `+${value.additions} / -${value.deletions}`;
@@ -100,7 +108,7 @@
         </div>
       {:else if summary}
         <div class="diff-summary-rows">
-          {#each rows as row (row.key)}
+          {#each visibleRows as row (row.key)}
             <div class="diff-summary-row">
               <span>{row.label}</span>
               <span>{formatTotals(summary[row.key])}</span>

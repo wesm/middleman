@@ -40,7 +40,7 @@ test.describe("PR detail branch info", () => {
     await expect(headBtn).toHaveAttribute("title", "Copied!");
   });
 
-  test("summarizes changed lines by category on hover", async ({ page }) => {
+  test("summarizes changed lines by category in the popover", async ({ page }) => {
     await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
       await route.fulfill({
         status: 200,
@@ -78,16 +78,6 @@ test.describe("PR detail branch info", () => {
               deletions: 7,
               hunks: [],
             },
-            {
-              path: "bun.lock",
-              old_path: "bun.lock",
-              status: "modified",
-              is_binary: false,
-              is_whitespace_only: false,
-              additions: 1,
-              deletions: 1,
-              hunks: [],
-            },
           ],
         }),
       });
@@ -100,12 +90,13 @@ test.describe("PR detail branch info", () => {
     const trigger = page.locator(".diff-summary-trigger");
     await expect(trigger).toHaveText("+240/-30");
 
-    await trigger.hover();
+    await trigger.focus();
 
     const popover = page.locator(".diff-summary-popover");
     await expect(popover).toBeVisible();
     await expect(popover).toContainText(
-      /Plans\/docs\s+\+10 \/ -2[\s\S]*Code\s+\+180 \/ -20[\s\S]*Tests\s+\+49 \/ -7[\s\S]*Other\s+\+1 \/ -1/,
+      /Plans\/docs\s+\+10 \/ -2[\s\S]*Code\s+\+180 \/ -20[\s\S]*Tests\s+\+49 \/ -7/,
     );
+    await expect(popover).not.toContainText("Other");
   });
 });
