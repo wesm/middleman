@@ -108,7 +108,11 @@ async function mockDiffForAllPRs(
   });
 }
 
-function issueDetailFixture(platformHost: string): unknown {
+function issueDetailFixture(
+  platformHost: string,
+  issueNumber = 10,
+  title = "Fix Safari layout issue",
+): unknown {
   const now = "2026-04-27T12:00:00Z";
   return {
     detail_loaded: true,
@@ -117,15 +121,15 @@ function issueDetailFixture(platformHost: string): unknown {
     repo_owner: "acme",
     repo_name: "widgets",
     issue: {
-      ID: 10,
-      PlatformID: 10_010,
+      ID: issueNumber,
+      PlatformID: 10_000 + issueNumber,
       RepoID: 1,
-      Number: 10,
-      Title: "Fix Safari layout issue",
+      Number: issueNumber,
+      Title: title,
       Body: "The Safari layout needs attention.",
       Author: "alice",
       State: "open",
-      URL: "https://ghe.example.com/acme/widgets/issues/10",
+      URL: `https://ghe.example.com/acme/widgets/issues/${issueNumber}`,
       CreatedAt: now,
       UpdatedAt: now,
       LastActivityAt: now,
@@ -187,6 +191,56 @@ async function mockActivityWithGheIssue(page: Page): Promise<void> {
       }),
     });
   });
+}
+
+async function mockActivityWithTwoGheIssues(page: Page): Promise<void> {
+  await page.route("**/api/v1/activity**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        capped: false,
+        items: [
+          {
+            id: "ghe-issue-10-comment",
+            cursor: "2026-04-27T12:00:00Z:ghe-issue-10-comment",
+            activity_type: "comment",
+            platform_host: "ghe.example.com",
+            repo_owner: "acme",
+            repo_name: "widgets",
+            item_type: "issue",
+            item_number: 10,
+            item_title: "Fix Safari layout issue",
+            item_url: "https://ghe.example.com/acme/widgets/issues/10",
+            item_state: "open",
+            author: "alice",
+            created_at: "2026-04-27T12:00:00Z",
+            body_preview: "The Safari layout needs attention.",
+          },
+          {
+            id: "ghe-issue-11-comment",
+            cursor: "2026-04-27T11:00:00Z:ghe-issue-11-comment",
+            activity_type: "comment",
+            platform_host: "ghe.example.com",
+            repo_owner: "acme",
+            repo_name: "widgets",
+            item_type: "issue",
+            item_number: 11,
+            item_title: "Fix Firefox layout issue",
+            item_url: "https://ghe.example.com/acme/widgets/issues/11",
+            item_state: "open",
+            author: "bob",
+            created_at: "2026-04-27T11:00:00Z",
+            body_preview: "The Firefox layout needs attention.",
+          },
+        ],
+      }),
+    });
+  });
+}
+
+function maxCount(counts: Map<string, number>): number {
+  return Math.max(0, ...counts.values());
 }
 
 async function waitForActivityTable(page: Page): Promise<void> {
@@ -314,6 +368,122 @@ test.describe("activity split view and detail drawers", () => {
     expect(detailGetCount).toBeGreaterThanOrEqual(1);
   });
 
+  test("Activity PR selection hides stale detail while the next item loads", async ({ page }) => {
+    await page.route(
+      (url) =>
+        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+
+        if (!route.request().url().endsWith("/pulls/1")) {
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+        }
+        const response = await route.fetch();
+        await route.fulfill({ response });
+      },
+    );
+
+    await page.goto("/?view=flat");
+    await waitForActivityTable(page);
+
+    const detail = await openActivityPRSplit(page);
+    await expect(detail.locator(".detail-title")).toContainText(
+      "Add widget caching layer",
+    );
+
+    const nextPRRow = page
+      .locator(".activity-compact-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .filter({ hasNotText: "Add widget caching layer" })
+      .first();
+    await nextPRRow.click();
+
+    await expect(detail.locator(".detail-title", {
+      hasText: "Add widget caching layer",
+    })).toHaveCount(0);
+    await expect(detail.locator(".state-center .state-msg"))
+      .toContainText("Loading");
+  });
+
+  test("Activity PR switching does not fan out detail loads or syncs", async ({ page }) => {
+    const detailBodies = new Map<string, string>();
+    const detailGets = new Map<string, number>();
+    const syncPosts = new Map<string, number>();
+
+    await page.route(
+      (url) =>
+        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+
+        const key = route.request().url();
+        detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
+        const response = await route.fetch();
+        const body = await response.text();
+        detailBodies.set(key, body);
+        await route.fulfill({
+          status: response.status(),
+          headers: response.headers(),
+          body,
+        });
+      },
+    );
+    await page.route(
+      (url) =>
+        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/sync$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.fallback();
+          return;
+        }
+
+        const detailUrl = route.request().url().replace(/\/sync$/, "");
+        syncPosts.set(detailUrl, (syncPosts.get(detailUrl) ?? 0) + 1);
+        const body = detailBodies.get(detailUrl);
+        if (body !== undefined) {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body,
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto("/?view=flat");
+    await waitForActivityTable(page);
+
+    const detail = await openActivityPRSplit(page);
+    await expect(detail.locator(".pull-detail")).toBeVisible();
+
+    const nextPRRow = page
+      .locator(".activity-compact-row")
+      .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+      .filter({ hasNotText: "Add widget caching layer" })
+      .first();
+    await nextPRRow.click();
+
+    await expect(detail.locator(".pull-detail")).toBeVisible();
+    await expect(detail.locator(".detail-title", {
+      hasText: "Add widget caching layer",
+    })).toHaveCount(0);
+
+    // Give accidental reactive loops enough time to generate duplicate
+    // detail/sync requests without making the test depend on the real
+    // backend sync duration.
+    await page.waitForTimeout(500);
+    expect(maxCount(detailGets)).toBeLessThanOrEqual(1);
+    expect(maxCount(syncPosts)).toBeLessThanOrEqual(1);
+  });
+
   test("Activity issue selection renders detail when a duplicate load stalls", async ({ page }) => {
     await mockActivityWithGheIssue(page);
 
@@ -349,6 +519,68 @@ test.describe("activity split view and detail drawers", () => {
       timeout: 3_000,
     });
     expect(detailGetCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test("Activity issue switching does not fan out detail loads or syncs", async ({ page }) => {
+    await mockActivityWithTwoGheIssues(page);
+
+    const detailGets = new Map<string, number>();
+    const syncPosts = new Map<string, number>();
+
+    await page.route("**/api/v1/repos/acme/widgets/issues/**", async (route) => {
+      const url = new URL(route.request().url());
+      const match = url.pathname.match(/\/issues\/(\d+)(?:\/sync)?$/);
+      if (match === null) {
+        await route.fallback();
+        return;
+      }
+
+      const issueNumber = Number(match[1]);
+      const key = url.pathname.replace(/\/sync$/, "");
+      if (route.request().method() === "GET" && !url.pathname.endsWith("/sync")) {
+        detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
+      } else if (
+        route.request().method() === "POST"
+        && url.pathname.endsWith("/sync")
+      ) {
+        syncPosts.set(key, (syncPosts.get(key) ?? 0) + 1);
+      } else {
+        await route.fallback();
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(issueDetailFixture(
+          "ghe.example.com",
+          issueNumber,
+          issueNumber === 10
+            ? "Fix Safari layout issue"
+            : "Fix Firefox layout issue",
+        )),
+      });
+    });
+
+    await page.goto("/?view=flat");
+    await waitForActivityTable(page);
+
+    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" })
+      .click();
+    const detail = page.locator(".activity-detail");
+    await expect(detail.locator(".issue-detail")).toBeVisible();
+
+    await page.locator(".activity-compact-row", {
+      hasText: "Fix Firefox layout issue",
+    }).click();
+
+    await expect(detail.locator(".issue-detail")).toBeVisible();
+    await expect(detail.locator(".detail-title"))
+      .toHaveText("Fix Firefox layout issue");
+
+    await page.waitForTimeout(500);
+    expect(maxCount(detailGets)).toBeLessThanOrEqual(1);
+    expect(maxCount(syncPosts)).toBeLessThanOrEqual(1);
   });
 
   test("direct Activity PR files URL restores split view", async ({ page }) => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
@@ -43,18 +44,24 @@
   });
 
   $effect(() => {
-    void issues.loadIssueDetail(
-      owner,
-      name,
-      number,
-      platformHost,
-    );
-    issues.startIssueDetailPolling(
-      owner,
-      name,
-      number,
-      platformHost,
-    );
+    const requestOwner = owner;
+    const requestName = name;
+    const requestNumber = number;
+    const requestPlatformHost = platformHost;
+    untrack(() => {
+      void issues.loadIssueDetail(
+        requestOwner,
+        requestName,
+        requestNumber,
+        requestPlatformHost,
+      );
+      issues.startIssueDetailPolling(
+        requestOwner,
+        requestName,
+        requestNumber,
+        requestPlatformHost,
+      );
+    });
     return () => issues.stopIssueDetailPolling();
   });
 
@@ -322,13 +329,13 @@
   }
 </script>
 
-{#if issues.isIssueDetailLoading() && issues.getIssueDetail() === null}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || staleIssue)}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && issues.getIssueDetail() === null}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || staleIssue)}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
-  {#if detail !== null}
+  {#if detail !== null && !staleIssue}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     <div class="issue-detail">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { KanbanStatus } from "../../api/types.js";
   import {
     getStores, getClient, getActions,
@@ -72,8 +73,13 @@
   });
 
   $effect(() => {
-    void detailStore.loadDetail(owner, name, number);
-    detailStore.startDetailPolling(owner, name, number);
+    const requestOwner = owner;
+    const requestName = name;
+    const requestNumber = number;
+    untrack(() => {
+      void detailStore.loadDetail(requestOwner, requestName, requestNumber);
+      detailStore.startDetailPolling(requestOwner, requestName, requestNumber);
+    });
     return () => detailStore.stopDetailPolling();
   });
 
@@ -420,13 +426,13 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onActionMenuDocumentMousedown} />
 
-{#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
+{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || stalePR)}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && detailStore.getDetail() === null}
+{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || stalePR)}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
-  {#if detail !== null}
+  {#if detail !== null && !stalePR}
     {@const pr = detail.merge_request}
     <div class="pull-detail-wrap">
       {#if stalePR && detailStore.getDetailError() !== null}
