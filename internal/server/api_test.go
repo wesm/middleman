@@ -2735,6 +2735,108 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	assert.True(finalPR.UpdatedAt.After(staleUpdatedAt))
 }
 
+func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	ciRefreshStarted := make(chan struct{}, 1)
+	releaseCIRefresh := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseCIRefresh) })
+	})
+
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			id := int64(101)
+			state := "open"
+			title := "fresh sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+		listCheckRunsForRefFn: func(_ context.Context, _, _, ref string) ([]*gh.CheckRun, error) {
+			require.Equal("abc123", ref)
+			ciRefreshStarted <- struct{}{}
+			<-releaseCIRefresh
+			name := "tests"
+			status := "completed"
+			conclusion := "success"
+			return []*gh.CheckRun{{
+				Name:       &name,
+				Status:     &status,
+				Conclusion: &conclusion,
+			}}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo)
+	existingChecksJSON := `[{"name":"tests","status":"completed","conclusion":"success"}]`
+	require.NoError(database.UpdateMRCIStatus(
+		t.Context(), repo.ID, 1, "success", existingChecksJSON,
+	))
+	client := setupTestClient(t, srv)
+
+	syncDone := make(chan *generated.PostReposByOwnerByNamePullsByNumberSyncResponse, 1)
+	syncErr := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+			t.Context(), "acme", "widget", 1,
+		)
+		if err != nil {
+			syncErr <- err
+			return
+		}
+		syncDone <- resp
+	}()
+
+	select {
+	case <-ciRefreshStarted:
+	case <-time.After(2 * time.Second):
+		require.Fail("CI refresh did not start")
+	}
+
+	detailResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		t.Context(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.MergeRequest)
+	assert.Equal("success", detailResp.JSON200.MergeRequest.CIStatus)
+	assert.JSONEq(existingChecksJSON, detailResp.JSON200.MergeRequest.CIChecksJSON)
+
+	releaseOnce.Do(func() { close(releaseCIRefresh) })
+	select {
+	case err := <-syncErr:
+		require.NoError(err)
+	case resp := <-syncDone:
+		require.Equal(http.StatusOK, resp.StatusCode())
+	case <-time.After(5 * time.Second):
+		require.Fail("timed out waiting for PR sync")
+	}
+}
+
 func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 	require := require.New(t)
 

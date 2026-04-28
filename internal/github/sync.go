@@ -3635,16 +3635,34 @@ func (s *Syncer) syncMRWithHost(
 		return fmt.Errorf("normalize MR %s/%s#%d: %w", owner, name, number, err)
 	}
 
+	// Preserve derived fields that NormalizePR doesn't populate. CI is
+	// refreshed later in this sync path; keeping the previous values here
+	// prevents detail reads from briefly seeing "no CI" during refresh.
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
+		ctx, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("get existing MR #%d: %w", number, err)
+	}
+	if existing != nil {
+		normalized.CommentCount = existing.CommentCount
+		normalized.ReviewDecision = existing.ReviewDecision
+		normalized.CIStatus = existing.CIStatus
+		normalized.CIChecksJSON = existing.CIChecksJSON
+		normalized.CIHadPending = existing.CIHadPending
+		normalized.DetailFetchedAt = existing.DetailFetchedAt
+		if normalized.AuthorDisplayName == "" {
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
+		}
+	}
+
 	if normalized.Author != "" && normalized.AuthorDisplayName == "" {
 		// Resolve directly instead of using s.resolveDisplayName to
 		// preserve existing display names on failure.
 		if displayName, ok := s.resolveDisplayName(ctx, client, host, normalized.Author); ok {
 			normalized.AuthorDisplayName = displayName
-		} else {
-			existing, _ := s.db.GetMergeRequest(ctx, owner, name, number)
-			if existing != nil {
-				normalized.AuthorDisplayName = existing.AuthorDisplayName
-			}
+		} else if existing != nil {
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
 		}
 	}
 
