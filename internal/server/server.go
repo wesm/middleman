@@ -385,6 +385,9 @@ func newServer(
 			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
 			StripEnvVars:            cfg.TokenEnvNames(),
 		})
+		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
+			slog.Warn("restore runtime tmux sessions", "err", err)
+		}
 	}
 
 	if s.workspaces != nil {
@@ -517,6 +520,31 @@ func newServer(
 	}
 
 	return s
+}
+
+func (s *Server) restoreRuntimeTmuxSessions(ctx context.Context) error {
+	if s.db == nil || s.runtime == nil {
+		return nil
+	}
+	stored, err := s.db.ListAllWorkspaceTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(stored) == 0 {
+		return nil
+	}
+
+	sessions := make([]localruntime.RestoredTmuxSession, 0, len(stored))
+	for _, session := range stored {
+		sessions = append(sessions, localruntime.RestoredTmuxSession{
+			WorkspaceID: session.WorkspaceID,
+			SessionName: session.SessionName,
+			TargetKey:   session.TargetKey,
+			CreatedAt:   session.CreatedAt,
+		})
+	}
+	slog.Debug("restoring runtime tmux sessions", "count", len(sessions))
+	return s.runtime.RestoreTmuxSessions(ctx, sessions)
 }
 
 func (s *Server) bootstrapScript() string {

@@ -7679,6 +7679,89 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 	assert.Empty(*afterStopResp.JSON200.Sessions)
 }
 
+func TestWorkspaceRuntimeIncludesStoredTmuxSessionsAfterReloadE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+case "$1" in
+  list-sessions)
+    printf '%s\n' "$RESTORED_TMUX_SESSION"
+    exit 0
+    ;;
+  attach-session)
+    sleep 30
+    exit 0
+    ;;
+  kill-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+	seedPR(t, database, "acme", "widget", 1)
+	worktreeDir := filepath.Join(dir, "worktrees")
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("sleep"),
+	}}, Tmux: config.Tmux{Command: []string{tmuxPath}}}
+	ctx := context.Background()
+	ws := &workspace.Workspace{
+		ID:              "0000000000000001",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "feature",
+		WorktreePath:    filepath.Join(worktreeDir, "acme-widget-1"),
+		TmuxSession:     "middleman-0000000000000001",
+		Status:          "ready",
+	}
+	require.NoError(database.InsertWorkspace(ctx, ws))
+	tmuxSession := runtimeTmuxSessionNameForTest(ws.ID, "helper")
+	t.Setenv("RESTORED_TMUX_SESSION", tmuxSession)
+	require.NoError(database.UpsertWorkspaceTmuxSession(
+		ctx,
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: ws.ID,
+			SessionName: tmuxSession,
+			TargetKey:   "helper",
+		},
+	))
+	srv := New(database, nil, nil, "/", cfg, ServerOptions{
+		WorktreeDir: worktreeDir,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	require.Len(srv.runtime.ListSessions(ws.ID), 1)
+
+	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.ID)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Sessions)
+	require.Len(*resp.JSON200.Sessions, 1)
+
+	session := (*resp.JSON200.Sessions)[0]
+	assert.Equal(ws.ID+":helper", session.Key)
+	assert.Equal(ws.ID, session.WorkspaceId)
+	assert.Equal("helper", session.TargetKey)
+	assert.Equal("Helper", session.Label)
+	assert.Equal(string(localruntime.LaunchTargetAgent), session.Kind)
+	assert.Equal(string(localruntime.SessionStatusRunning), session.Status)
+	assert.False(session.CreatedAt.IsZero())
+	assert.Equal(time.UTC, session.CreatedAt.Location())
+}
+
 func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

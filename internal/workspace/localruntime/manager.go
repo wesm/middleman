@@ -51,6 +51,13 @@ type SessionInfo struct {
 	TmuxSession string           `json:"-"`
 }
 
+type RestoredTmuxSession struct {
+	WorkspaceID string
+	SessionName string
+	TargetKey   string
+	CreatedAt   time.Time
+}
+
 type Options struct {
 	Targets      []LaunchTarget
 	ShellCommand []string
@@ -319,6 +326,120 @@ func (m *Manager) Launch(
 	)
 
 	return started.snapshot(), nil
+}
+
+func (m *Manager) RestoreTmuxSessions(
+	ctx context.Context,
+	sessions []RestoredTmuxSession,
+) error {
+	for _, restored := range sessions {
+		if err := m.restoreTmuxSession(ctx, restored); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) restoreTmuxSession(
+	ctx context.Context,
+	restored RestoredTmuxSession,
+) error {
+	workspaceID := strings.TrimSpace(restored.WorkspaceID)
+	targetKey := strings.TrimSpace(restored.TargetKey)
+	tmuxSession := strings.TrimSpace(restored.SessionName)
+	if workspaceID == "" || targetKey == "" || tmuxSession == "" {
+		return nil
+	}
+
+	key := sessionKey(workspaceID, targetKey)
+	startMu := m.startLock(key)
+	startMu.Lock()
+	defer startMu.Unlock()
+
+	if err := m.ensureOpen(); err != nil {
+		return err
+	}
+	if existing := m.runningSession(m.sessions, key); existing != nil {
+		slog.Debug(
+			"runtime tmux restore reused existing session",
+			"workspace_id", workspaceID,
+			"session_key", key,
+			"target_key", targetKey,
+			"tmux_session", tmuxSession,
+		)
+		return nil
+	}
+
+	target, err := m.target(targetKey)
+	if err != nil {
+		target = LaunchTarget{
+			Key:    targetKey,
+			Label:  targetKey,
+			Kind:   LaunchTargetAgent,
+			Source: "stored",
+		}
+	}
+	if target.Label == "" {
+		target.Label = targetKey
+	}
+	if target.Kind == "" {
+		target.Kind = LaunchTargetAgent
+	}
+
+	createdAt := restored.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	command := append([]string(nil), m.tmuxCommand...)
+	if len(command) == 0 {
+		command = []string{"tmux"}
+	}
+	command = append(command, "attach-session", "-t", tmuxSession)
+
+	if err := m.beginStart(); err != nil {
+		return err
+	}
+	defer m.finishStart()
+
+	slog.Debug(
+		"runtime tmux restore starting attach",
+		"workspace_id", workspaceID,
+		"session_key", key,
+		"target_key", targetKey,
+		"tmux_session", tmuxSession,
+	)
+	started, err := startSession(SessionInfo{
+		Key:         key,
+		WorkspaceID: workspaceID,
+		TargetKey:   targetKey,
+		Label:       target.Label,
+		Kind:        target.Kind,
+		Status:      SessionStatusStarting,
+		CreatedAt:   createdAt,
+	}, command, "", m.stripEnvVars)
+	if err != nil {
+		return err
+	}
+	started.tmuxSession = tmuxSession
+	go started.watch()
+
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		_ = m.stopSession(ctx, started)
+		waitSessionDone(started)
+		return errManagerShutdown
+	}
+	m.sessions[key] = started
+	m.mu.Unlock()
+	slog.Debug(
+		"runtime tmux restore session stored",
+		"workspace_id", workspaceID,
+		"session_key", key,
+		"target_key", targetKey,
+		"tmux_session", tmuxSession,
+	)
+	return nil
 }
 
 func (m *Manager) LaunchTargets() []LaunchTarget {
