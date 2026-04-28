@@ -160,10 +160,13 @@
     display: none;
   }
 
-  /* Right side: spacing wrapper */
+  /* Right side: card */
   .event-card {
     flex: 1;
     min-width: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
     padding: 10px 12px;
     margin: 4px 0 4px 8px;
   }
@@ -255,9 +258,6 @@
   .event-body {
     font-size: 12px;
     color: var(--text-primary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
     padding: 8px 36px 8px 10px;
     white-space: pre-wrap;
     word-break: break-word;

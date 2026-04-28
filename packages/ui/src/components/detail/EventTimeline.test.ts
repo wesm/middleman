@@ -1,4 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import EventTimeline from "./EventTimeline.svelte";
 import type { PREvent } from "../../api/types.js";
@@ -22,15 +24,12 @@ function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
   } as PREvent;
 }
 
-function findTimelineWrapperRule(): string {
-  for (const sheet of Array.from(document.styleSheets)) {
-    for (const rule of Array.from(sheet.cssRules)) {
-      if (rule instanceof CSSStyleRule && rule.selectorText.includes(".event-card")) {
-        return rule.cssText;
-      }
-    }
-  }
-  return "";
+function findComponentStyleRule(selector: string): string {
+  const source = readFileSync(
+    resolve(process.cwd(), "../packages/ui/src/components/detail/EventTimeline.svelte"),
+    "utf8",
+  );
+  return source.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`))?.[0] ?? "";
 }
 
 describe("EventTimeline", () => {
@@ -52,20 +51,31 @@ describe("EventTimeline", () => {
     expect(screen.getByText("aaaaaaa -> bbbbbbb")).toBeTruthy();
   });
 
-  it("uses the event wrapper for spacing without adding a nested card surface", () => {
+  it("keeps the timeline entry card while rendering body content without a nested card surface", () => {
     const { container } = render(EventTimeline, {
       props: {
-        events: [makeEvent()],
+        events: [
+          makeEvent({
+            Body: "Timeline body text",
+            EventType: "issue_comment",
+          }),
+        ],
       },
     });
 
     const wrapper = container.querySelector(".event-card");
+    const body = container.querySelector(".event-body");
     expect(wrapper).toBeInstanceOf(HTMLElement);
+    expect(body).toBeInstanceOf(HTMLElement);
 
-    const eventCardRule = findTimelineWrapperRule();
+    const eventCardRule = findComponentStyleRule(".event-card");
+    const eventBodyRule = findComponentStyleRule(".event-body");
 
-    expect(eventCardRule).not.toContain("background:");
-    expect(eventCardRule).not.toContain("border:");
-    expect(eventCardRule).not.toContain("border-radius:");
+    expect(eventCardRule).toContain("background:");
+    expect(eventCardRule).toContain("border:");
+    expect(eventCardRule).toContain("border-radius:");
+    expect(eventBodyRule).not.toContain("background:");
+    expect(eventBodyRule).not.toContain("border:");
+    expect(eventBodyRule).not.toContain("border-radius:");
   });
 });
