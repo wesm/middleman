@@ -360,6 +360,15 @@ func setupTestServerWithRepos(
 
 func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 	t.Helper()
+	return setupTestClientWithBaseURL(t, srv, "http://middleman.test")
+}
+
+func setupTestClientWithBaseURL(
+	t *testing.T,
+	srv *Server,
+	baseURL string,
+) *apiclient.Client {
+	t.Helper()
 
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -387,7 +396,7 @@ func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
 		}),
 	}
 
-	client, err := apiclient.NewWithHTTPClient("http://middleman.test", httpClient)
+	client, err := apiclient.NewWithHTTPClient(baseURL, httpClient)
 	require.NoError(t, err)
 
 	return client
@@ -7284,7 +7293,11 @@ func setupWorkspaceServerFixture(
 		database, nil, repos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", cfg, ServerOptions{
+	basePath := "/"
+	if cfg != nil && cfg.BasePath != "" {
+		basePath = cfg.BasePath
+	}
+	srv := New(database, syncer, nil, basePath, cfg, ServerOptions{
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
@@ -7297,7 +7310,11 @@ func setupWorkspaceServerFixture(
 
 	seedPR(t, database, "acme", "widget", 1)
 
-	client := setupTestClient(t, srv)
+	clientBaseURL := "http://middleman.test"
+	if basePath != "/" {
+		clientBaseURL += strings.TrimSuffix(basePath, "/")
+	}
+	client := setupTestClientWithBaseURL(t, srv, clientBaseURL)
 	return workspaceServerFixture{
 		server:   srv,
 		client:   client,
@@ -8774,6 +8791,66 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key + "/terminal"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary, []byte("ping\n"),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ != websocket.MessageBinary {
+			continue
+		}
+		got.WriteString(string(data))
+		if strings.Contains(got.String(), "echo:ping") {
+			return
+		}
+	}
+	require.Contains(got.String(), "echo:ping")
+}
+
+func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{
+		BasePath: "/middleman/",
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: serverRuntimeHelperCommand("echo"),
+		}},
+		Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions},
+	}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/middleman/ws/v1/workspaces/" + ws.Id +
 		"/runtime/sessions/" + session.Key + "/terminal"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
