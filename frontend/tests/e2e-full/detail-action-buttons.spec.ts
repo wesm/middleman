@@ -456,6 +456,30 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("conflicted pull request disables the merge action", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/acme/widgets/2`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await expect(page.locator(".detail-title")).toContainText(
+        "Fix race condition in event loop",
+      );
+      await expect(page.getByText("This branch has conflicts")).toBeVisible();
+
+      const merge = page.locator(".btn--merge").first();
+      await expect(merge).toBeDisabled();
+      await merge.click({ force: true });
+      await expect(
+        page.locator(".modal-title", { hasText: "Merge Pull Request" }),
+      ).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("narrow actions menu closes when clicking outside", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/acme/widgets/1");

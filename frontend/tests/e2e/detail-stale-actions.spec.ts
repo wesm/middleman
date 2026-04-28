@@ -31,6 +31,7 @@ const prA = {
   repo_name: "widgets",
   platform_host: "github.com",
   worktree_links: [],
+  MergeableState: "",
 };
 
 const prB = {
@@ -259,6 +260,47 @@ async function setupHeldIssue(
 }
 
 test.describe("PR detail merge modal route reset", () => {
+  test("merge button is disabled when the PR has merge conflicts", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    const conflictedPR = {
+      ...prA,
+      MergeableState: "dirty",
+    };
+
+    await page.route(
+      `**/api/v1/repos/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/pulls/${conflictedPR.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(conflictedPR)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto(
+      `/pulls/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/${conflictedPR.Number}`,
+    );
+
+    await expect(page.locator(".detail-title")).toContainText(
+      conflictedPR.Title,
+    );
+    await expect(page.getByText("This branch has conflicts")).toBeVisible();
+
+    const mergeButton = page.locator(".btn--merge").first();
+    await expect(mergeButton).toBeDisabled();
+    await mergeButton.click({ force: true });
+    await expect(
+      page.locator(".modal-title", { hasText: "Merge Pull Request" }),
+    ).toHaveCount(0);
+  });
+
   test("merge modal closes when the route changes and does not reopen for the new PR", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);
