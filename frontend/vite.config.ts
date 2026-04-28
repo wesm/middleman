@@ -2,7 +2,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
-import { searchForWorkspaceRoot, type Plugin, type UserConfig } from "vite";
+import {
+  searchForWorkspaceRoot,
+  type Plugin,
+  type ProxyOptions,
+  type UserConfig,
+} from "vite";
 import type { InlineConfig } from "vitest/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
@@ -72,6 +77,33 @@ function parsePort(value: string | undefined): number | null {
     return null;
   }
   return parsed;
+}
+
+function logWebSocketProxyRequests(): NonNullable<
+  ProxyOptions["configure"]
+> {
+  return (proxy) => {
+    proxy.on("proxyReqWs", (_proxyReq, req, socket) => {
+      const url = req.url ?? "<unknown>";
+      console.info(`[vite:ws-proxy] open ${url}`);
+      socket.on("error", (err) => {
+        console.error(
+          `[vite:ws-proxy] socket error ${url}: ${err.message}`,
+        );
+      });
+    });
+    proxy.on("error", (err, req) => {
+      const url = req?.url ?? "<unknown>";
+      console.error(`[vite:ws-proxy] error ${url}: ${err.message}`);
+    });
+    proxy.on("close", (_proxyRes, _proxySocket, proxyHead) => {
+      const headLength =
+        proxyHead instanceof Buffer ? proxyHead.length : 0;
+      console.info(
+        `[vite:ws-proxy] close proxyHeadBytes=${headLength}`,
+      );
+    });
+  };
 }
 
 const config = {
@@ -171,6 +203,7 @@ const config = {
         target: apiUrl,
         changeOrigin: true,
         ws: true,
+        configure: logWebSocketProxyRequests(),
       },
     },
   },
