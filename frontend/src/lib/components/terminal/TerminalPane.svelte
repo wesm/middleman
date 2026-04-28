@@ -10,6 +10,7 @@
     workspaceId?: string;
     websocketPath?: string;
     reconnectOnExit?: boolean;
+    active?: boolean;
     onExit?: (code: number) => void;
     // When the session is already exited at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
@@ -21,6 +22,7 @@
     workspaceId,
     websocketPath,
     reconnectOnExit = true,
+    active = true,
     onExit,
     initialStatus,
   }: TerminalPaneProps = $props();
@@ -37,6 +39,7 @@
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1000;
   let resizeObserver: ResizeObserver | null = null;
+  let refreshFrame: number | null = null;
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
@@ -124,6 +127,36 @@
     }
   }
 
+  function sendRefresh(cols: number, rows: number): void {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "refresh", cols, rows }));
+    }
+  }
+
+  function refreshVisibleTerminal(): void {
+    if (!terminal) return;
+
+    fitAddon?.fit();
+    try {
+      terminal.clearTextureAtlas();
+    } catch {
+      // Some renderer fallbacks do not maintain a texture atlas.
+    }
+    terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    sendResize(terminal.cols, terminal.rows);
+    sendRefresh(terminal.cols, terminal.rows);
+  }
+
+  function scheduleTerminalRefresh(): void {
+    if (refreshFrame !== null) {
+      cancelAnimationFrame(refreshFrame);
+    }
+    refreshFrame = requestAnimationFrame(() => {
+      refreshFrame = null;
+      refreshVisibleTerminal();
+    });
+  }
+
   function connect(): void {
     if (disposed || !terminal) return;
 
@@ -137,6 +170,7 @@
 
     socket.onopen = () => {
       reconnectDelay = 1000;
+      if (active) scheduleTerminalRefresh();
     };
 
     socket.onmessage = (ev: MessageEvent) => {
@@ -225,6 +259,10 @@
       clearTimeout(restartTimer);
       restartTimer = null;
     }
+    if (refreshFrame !== null) {
+      cancelAnimationFrame(refreshFrame);
+      refreshFrame = null;
+    }
     if (ws) {
       ws.onclose = null;
       ws.onerror = null;
@@ -245,6 +283,11 @@
     // cell widths and glyph metrics line up after the family changes.
     webglAddon?.clearTextureAtlas();
     fitAddon?.fit();
+  });
+
+  $effect(() => {
+    if (!terminal || !active) return;
+    scheduleTerminalRefresh();
   });
 
   onMount(() => {

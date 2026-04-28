@@ -150,6 +150,52 @@ func TestManagerTmuxSessionsReturnsWrappedAgentSessions(t *testing.T) {
 	)
 }
 
+func TestAttachmentRefreshRefreshesTmuxClients(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "tmux.log")
+	tmuxPath := filepath.Join(dir, "tmux")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %s
+if [ "$1" = "list-clients" ]; then
+  printf '/dev/ttys001\n/dev/ttys002\n'
+fi
+`, shellQuote(logPath))
+	require.NoError(os.WriteFile(tmuxPath, []byte(script), 0o755))
+
+	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
+	s := &session{
+		info: SessionInfo{
+			Key:         "ws-1:codex",
+			WorkspaceID: "ws-1",
+			TargetKey:   "codex",
+			Status:      SessionStatusRunning,
+		},
+		tmuxSession: "middleman-ws-1-codex",
+		done:        make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	attachment, err := attachToSession(
+		s, "ws-1", "ws-1:codex", mgr.refreshSession,
+	)
+	require.NoError(err)
+	defer attachment.Close()
+
+	require.NoError(attachment.Refresh(context.Background()))
+
+	logData, err := os.ReadFile(logPath)
+	require.NoError(err)
+	log := string(logData)
+	assert.Contains(
+		log,
+		"list-clients -t middleman-ws-1-codex -F #{client_tty}",
+	)
+	assert.Contains(log, "refresh-client -t /dev/ttys001")
+	assert.Contains(log, "refresh-client -t /dev/ttys002")
+}
+
 func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
 	assert := Assert.New(t)
 	agent := helperTarget("codex", "sleep")

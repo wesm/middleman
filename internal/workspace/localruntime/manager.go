@@ -139,10 +139,11 @@ type Attachment struct {
 	Output <-chan []byte
 	Done   <-chan struct{}
 
-	info   func() SessionInfo
-	write  func([]byte) error
-	resize func(cols, rows int) error
-	close  func()
+	info    func() SessionInfo
+	write   func([]byte) error
+	resize  func(cols, rows int) error
+	refresh func(context.Context) error
+	close   func()
 }
 
 func NewManager(options Options) *Manager {
@@ -626,6 +627,77 @@ func (m *Manager) killTmuxSession(
 	return fmt.Errorf("%w: %s", err, msg)
 }
 
+func (m *Manager) refreshSession(
+	ctx context.Context,
+	s *session,
+) error {
+	if s == nil {
+		return nil
+	}
+	info := s.snapshot()
+	if info.TmuxSession == "" {
+		return nil
+	}
+	return m.refreshTmuxSessionClients(ctx, info.TmuxSession)
+}
+
+func (m *Manager) refreshTmuxSessionClients(
+	ctx context.Context,
+	session string,
+) error {
+	if session == "" {
+		return nil
+	}
+	command := append([]string(nil), m.tmuxCommand...)
+	if len(command) == 0 {
+		command = []string{"tmux"}
+	}
+	if len(command) == 0 || command[0] == "" {
+		return nil
+	}
+
+	listArgs := append(
+		command[1:],
+		"list-clients", "-t", session, "-F", "#{client_tty}",
+	)
+	listCmd := exec.CommandContext(ctx, command[0], listArgs...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	listCmd.Stdout = &stdout
+	listCmd.Stderr = &stderr
+	if err := listCmd.Run(); err != nil {
+		if isTmuxSessionAbsent(stderr.Bytes(), err) {
+			return nil
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, msg)
+	}
+
+	var errs []error
+	for client := range strings.FieldsSeq(stdout.String()) {
+		refreshArgs := append(
+			command[1:],
+			"refresh-client", "-t", client,
+		)
+		refreshCmd := exec.CommandContext(
+			ctx, command[0], refreshArgs...,
+		)
+		var refreshStderr bytes.Buffer
+		refreshCmd.Stderr = &refreshStderr
+		if err := refreshCmd.Run(); err != nil {
+			msg := strings.TrimSpace(refreshStderr.String())
+			if msg != "" {
+				err = fmt.Errorf("%w: %s", err, msg)
+			}
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
@@ -727,7 +799,9 @@ func (m *Manager) AttachSession(
 	m.mu.Lock()
 	s := m.sessions[key]
 	m.mu.Unlock()
-	attachment, err := attachToSession(s, workspaceID, key)
+	attachment, err := attachToSession(
+		s, workspaceID, key, m.refreshSession,
+	)
 	if err != nil {
 		slog.Debug(
 			"runtime terminal attach rejected",
@@ -757,7 +831,9 @@ func (m *Manager) AttachShell(
 	m.mu.Lock()
 	s := m.shells[key]
 	m.mu.Unlock()
-	attachment, err := attachToSession(s, workspaceID, key)
+	attachment, err := attachToSession(
+		s, workspaceID, key, m.refreshSession,
+	)
 	if err != nil {
 		slog.Debug(
 			"runtime shell attach rejected",
@@ -875,6 +951,13 @@ func (a *Attachment) Resize(cols, rows int) error {
 		return errors.New("attachment is closed")
 	}
 	return a.resize(cols, rows)
+}
+
+func (a *Attachment) Refresh(ctx context.Context) error {
+	if a == nil || a.refresh == nil {
+		return errors.New("attachment is closed")
+	}
+	return a.refresh(ctx)
 }
 
 func (a *Attachment) Info() SessionInfo {
@@ -1691,6 +1774,7 @@ func attachToSession(
 	s *session,
 	workspaceID string,
 	key string,
+	refresh func(context.Context, *session) error,
 ) (*Attachment, error) {
 	if s == nil {
 		return nil, fmt.Errorf("session %q not found", key)
@@ -1721,6 +1805,12 @@ func attachToSession(
 				Rows: uint16(rows),
 				Cols: uint16(cols),
 			})
+		},
+		refresh: func(ctx context.Context) error {
+			if refresh == nil {
+				return nil
+			}
+			return refresh(ctx, s)
 		},
 		close: unsubscribe,
 	}, nil

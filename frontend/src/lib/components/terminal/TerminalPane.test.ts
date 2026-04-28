@@ -7,6 +7,8 @@ const mockLoadAddon = vi.fn();
 const mockOnData = vi.fn();
 const mockOnBinary = vi.fn();
 const mockDispose = vi.fn();
+const mockRefresh = vi.fn();
+const mockClearTextureAtlas = vi.fn();
 const terminalCtor = vi.fn();
 const terminalWrite = vi.fn();
 
@@ -21,12 +23,15 @@ class MockWebSocket {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  sent: unknown[] = [];
 
   constructor(public url: string) {
     sockets.push(this);
   }
 
-  send(): void {}
+  send(data: unknown): void {
+    this.sent.push(data);
+  }
   close(): void {}
 }
 
@@ -56,6 +61,8 @@ vi.mock("@xterm/xterm", () => ({
       onBinary: mockOnBinary,
       dispose: mockDispose,
       write: terminalWrite,
+      refresh: mockRefresh,
+      clearTextureAtlas: mockClearTextureAtlas,
       options: { ...options },
     };
   }),
@@ -84,6 +91,8 @@ describe("TerminalPane", () => {
     mockOnData.mockReset();
     mockOnBinary.mockReset();
     mockDispose.mockReset();
+    mockRefresh.mockReset();
+    mockClearTextureAtlas.mockReset();
     terminalWrite.mockReset();
     sockets = [];
 
@@ -93,6 +102,14 @@ describe("TerminalPane", () => {
     });
 
     vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      },
+    );
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
   });
 
   afterEach(() => {
@@ -156,6 +173,32 @@ describe("TerminalPane", () => {
     expect(url.origin).toBe("ws://localhost:3000");
     expect(url.pathname).toBe(
       "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+    );
+  });
+
+  it("refreshes the terminal when a hidden pane becomes active", async () => {
+    const { rerender } = render(TerminalPane, {
+      props: {
+        websocketPath:
+          "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+        active: false,
+      },
+    });
+
+    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(socketAt(0).sent).toEqual([]);
+
+    await rerender({
+      websocketPath:
+        "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      active: true,
+    });
+
+    expect(mockFit).toHaveBeenCalled();
+    expect(mockClearTextureAtlas).toHaveBeenCalled();
+    expect(mockRefresh).toHaveBeenCalledWith(0, 23);
+    expect(socketAt(0).sent).toContain(
+      JSON.stringify({ type: "refresh", cols: 80, rows: 24 }),
     );
   });
 

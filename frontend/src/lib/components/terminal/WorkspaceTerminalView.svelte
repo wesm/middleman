@@ -896,6 +896,7 @@
                             workspaceId,
                           )}
                           reconnectOnExit={true}
+                          active={activeTabKey === "tmux"}
                         />
                       {/if}
                     </div>
@@ -912,6 +913,7 @@
                             session.key,
                           )}
                           reconnectOnExit={false}
+                          active={activeTabKey === `session:${session.key}`}
                           onExit={() => void fetchRuntime()}
                           initialStatus={session.status}
                         />
