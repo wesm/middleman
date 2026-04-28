@@ -280,6 +280,77 @@ test.describe("activity split view and detail drawers", () => {
     await expect(page).not.toHaveURL(/selected=/);
   });
 
+  test("Activity PR selection renders detail when a duplicate load stalls", async ({ page }) => {
+    let detailGetCount = 0;
+
+    await page.route(
+      (url) =>
+        url.pathname.endsWith("/api/v1/repos/acme/widgets/pulls/1"),
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+
+        detailGetCount++;
+        if (detailGetCount === 1) {
+          const response = await route.fetch();
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          await route.fulfill({ response });
+          return;
+        }
+
+        await new Promise(() => {});
+      },
+    );
+
+    await page.goto("/?view=flat");
+    await waitForActivityTable(page);
+
+    const detail = await openActivityPRSplit(page);
+    await expect(detail.locator(".pull-detail")).toBeVisible({
+      timeout: 3_000,
+    });
+    expect(detailGetCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test("Activity issue selection renders detail when a duplicate load stalls", async ({ page }) => {
+    await mockActivityWithGheIssue(page);
+
+    let detailGetCount = 0;
+    await page.route("**/api/v1/repos/acme/widgets/issues/10**", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
+      detailGetCount++;
+      if (detailGetCount === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(issueDetailFixture("ghe.example.com")),
+        });
+        return;
+      }
+
+      await new Promise(() => {});
+    });
+
+    await page.goto("/?view=flat");
+    await waitForActivityTable(page);
+
+    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" })
+      .click();
+
+    const detail = page.locator(".activity-detail");
+    await expect(detail.locator(".issue-detail")).toBeVisible({
+      timeout: 3_000,
+    });
+    expect(detailGetCount).toBeGreaterThanOrEqual(1);
+  });
+
   test("direct Activity PR files URL restores split view", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
 

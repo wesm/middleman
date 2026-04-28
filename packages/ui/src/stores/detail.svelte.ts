@@ -52,6 +52,10 @@ export function createDetailStore(
   let storeError = $state<string | null>(null);
   let detailLoaded = $state(false);
   let syncGeneration = 0;
+  let activeLoad: {
+    key: string;
+    promise: Promise<void> | null;
+  } | null = null;
 
   // Per-PR monotonic counters for kanban updates.
   const kanbanSeqByPR = new Map<string, number>();
@@ -195,6 +199,7 @@ export function createDetailStore(
 
   function clearDetail(): void {
     ++syncGeneration;
+    activeLoad = null;
     detail = null;
     loading = false;
     syncing = false;
@@ -207,7 +212,21 @@ export function createDetailStore(
     name: string,
     number: number,
   ): Promise<void> {
+    const key = prKey(owner, name, number);
+    if (
+      loading &&
+      activeLoad?.key === key &&
+      activeLoad.promise !== null
+    ) {
+      return activeLoad.promise;
+    }
+
     const gen = ++syncGeneration;
+    const currentLoad: {
+      key: string;
+      promise: Promise<void> | null;
+    } = { key, promise: null };
+    activeLoad = currentLoad;
 
     // Keep the previously loaded detail visible while the new one
     // is in flight. Nulling `detail` here flipped consumers to a
@@ -220,38 +239,43 @@ export function createDetailStore(
     syncing = false;
     storeError = null;
     detailLoaded = false;
-    try {
-      const { data, error: requestError } =
-        await apiClient.GET(
-          "/repos/{owner}/{name}/pulls/{number}",
-          { params: { path: { owner, name, number } } },
-        );
-      if (gen !== syncGeneration) return;
-      if (requestError) {
-        throw new Error(
-          requestError.detail ??
-            requestError.title ??
-            "failed to load pull request",
-        );
+    const promise = (async () => {
+      try {
+        const { data, error: requestError } =
+          await apiClient.GET(
+            "/repos/{owner}/{name}/pulls/{number}",
+            { params: { path: { owner, name, number } } },
+          );
+        if (gen !== syncGeneration) return;
+        if (requestError) {
+          throw new Error(
+            requestError.detail ??
+              requestError.title ??
+              "failed to load pull request",
+          );
+        }
+        detail = data
+          ? ({
+              ...data,
+              events: data.events ?? [],
+            } as PullDetail)
+          : null;
+        detailLoaded = data?.detail_loaded ?? false;
+      } catch (err) {
+        if (gen !== syncGeneration) return;
+        storeError =
+          err instanceof Error ? err.message : String(err);
+      } finally {
+        if (gen === syncGeneration) loading = false;
+        if (activeLoad === currentLoad) activeLoad = null;
       }
-      detail = data
-        ? ({
-            ...data,
-            events: data.events ?? [],
-          } as PullDetail)
-        : null;
-      detailLoaded = data?.detail_loaded ?? false;
-    } catch (err) {
-      if (gen !== syncGeneration) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
-    } finally {
-      if (gen === syncGeneration) loading = false;
-    }
 
-    if (gen === syncGeneration) {
-      void syncDetail(owner, name, number, gen);
-    }
+      if (gen === syncGeneration) {
+        void syncDetail(owner, name, number, gen);
+      }
+    })();
+    currentLoad.promise = promise;
+    return promise;
   }
 
   async function refreshDetailOnly(

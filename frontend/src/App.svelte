@@ -159,7 +159,12 @@
     } else if (!stores.settings.hasConfiguredRepos()) {
       drawerItem = null;
     } else {
-      drawerItem = parseActivitySelection(window.location.search);
+      const nextDrawer = parseActivitySelection(
+        window.location.search,
+      );
+      if (!sameActivitySelection(drawerItem, nextDrawer)) {
+        drawerItem = nextDrawer;
+      }
     }
 
     if (route.page === "pulls") {
@@ -201,6 +206,20 @@
     number: number;
     detailTab: "conversation" | "files";
   } | null>(null);
+
+  function sameActivitySelection(
+    left: ActivitySelection | null,
+    right: ActivitySelection | null,
+  ): boolean {
+    if (left === right) return true;
+    if (left === null || right === null) return false;
+    return left.itemType === right.itemType
+      && left.platformHost === right.platformHost
+      && left.owner === right.owner
+      && left.name === right.name
+      && left.number === right.number
+      && left.detailTab === right.detailTab;
+  }
 
   function updateDrawerURL(
     item: ActivitySelection | null,
