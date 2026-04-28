@@ -7773,13 +7773,20 @@ func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T)
 	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+session_file="${TMUX_RECORD}.sessions"
 target=""
 mode=""
+new_session=""
 prev=""
 for a in "$@"; do
   if [ "$prev" = "-t" ]; then target="$a"; fi
+  if [ "$prev" = "-s" ]; then new_session="$a"; fi
   if [ "$a" = "display-message" ]; then mode="display-message"; fi
   if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
+  if [ "$a" = "list-sessions" ]; then
+    [ -f "$session_file" ] && cat "$session_file"
+    exit 0
+  fi
   prev="$a"
 done
 if [ "$mode" = "display-message" ]; then
@@ -7795,6 +7802,9 @@ if [ "$mode" = "capture-pane" ]; then
 fi
 if [ "$1" = "has-session" ]; then
   exit 1
+fi
+if [ -n "$new_session" ]; then
+  printf '%s\n' "$new_session" >> "$session_file"
 fi
 exit 0
 `), 0o755))
@@ -8405,6 +8415,10 @@ for a in "$@"; do
   if [ "$prev" = "-t" ]; then target="$a"; fi
   if [ "$a" = "display-message" ]; then mode="display-message"; fi
   if [ "$a" = "capture-pane" ]; then mode="capture-pane"; fi
+  if [ "$a" = "list-sessions" ]; then
+    printf '%s\n' "$TMUX_LIVE_SESSIONS"
+    exit 0
+  fi
   prev="$a"
 done
 if [ "$mode" = "display-message" ]; then
@@ -8425,6 +8439,14 @@ exit 0
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NotEmpty(ws.TmuxSession)
+	t.Setenv(
+		"TMUX_LIVE_SESSIONS",
+		strings.Join([]string{
+			ws.TmuxSession,
+			ws.TmuxSession + "-codex",
+			ws.TmuxSession + "-claude",
+		}, "\n"),
+	)
 	require.NoError(database.UpsertWorkspaceTmuxSession(
 		ctx,
 		&db.WorkspaceTmuxSession{

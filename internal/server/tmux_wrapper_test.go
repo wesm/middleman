@@ -60,7 +60,15 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 	script = filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`session_file="${TMUX_RECORD}.sessions"` + "\n" +
+		`new_session=""` + "\n" +
+		`prev=""` + "\n" +
 		`for a in "$@"; do` + "\n" +
+		`  if [ "$prev" = "-s" ]; then new_session="$a"; fi` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    [ -f "$session_file" ] && cat "$session_file"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
@@ -73,7 +81,9 @@ func writeTmuxRecorder(t *testing.T) (script, record string) {
 		`    printf '%s\n' "$TMUX_PANE_OUTPUT"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
+		`  prev="$a"` + "\n" +
 		"done\n" +
+		`if [ -n "$new_session" ]; then printf '%s\n' "$new_session" >> "$session_file"; fi` + "\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(script, []byte(body), 0o755))
 	t.Setenv("TMUX_RECORD", record)
@@ -423,6 +433,10 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
 		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_LIVE_SESSIONS"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
@@ -508,6 +522,10 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 	script := filepath.Join(dir, "fake-tmux")
 	body := "#!/bin/sh\n" +
 		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_LIVE_SESSIONS"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
@@ -572,6 +590,13 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 	require.Equal(http.StatusAccepted, createResp2.StatusCode())
 	require.NotNil(createResp2.JSON202)
 	waitForWorkspaceReady(t, ctx, client, createResp2.JSON202.Id)
+	t.Setenv(
+		"TMUX_LIVE_SESSIONS",
+		strings.Join([]string{
+			"middleman-" + createResp1.JSON202.Id,
+			"middleman-" + createResp2.JSON202.Id,
+		}, "\n"),
+	)
 	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
 		return time.Date(2026, 4, 23, 12, 0, 5, 0, time.UTC)
 	})
@@ -667,6 +692,12 @@ func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
 	body := "#!/bin/sh\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_LIVE_SESSIONS"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`done` + "\n" +
+		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
@@ -685,6 +716,7 @@ func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	t.Setenv("TMUX_RECORD", record)
+	t.Setenv("TMUX_LIVE_SESSIONS", "middleman-ws-coalesce")
 
 	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
@@ -758,6 +790,12 @@ func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
 	body := "#!/bin/sh\n" +
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf '%s\n' "$TMUX_LIVE_SESSIONS"` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`done` + "\n" +
+		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "has-session" ]; then` + "\n" +
 		`    echo "can't find session: sim" >&2` + "\n" +
 		`    exit 1` + "\n" +
@@ -799,6 +837,11 @@ func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
 			Status:      "ready",
 		}))
 	}
+	liveSessions := make([]string, 0, len(wantSessions))
+	for session := range wantSessions {
+		liveSessions = append(liveSessions, session)
+	}
+	t.Setenv("TMUX_LIVE_SESSIONS", strings.Join(liveSessions, "\n"))
 	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
 		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	})
