@@ -61,7 +61,7 @@ func parseNumstatZ(data []byte) map[string]numstatCount {
 			i++
 			continue
 		}
-		fields := strings.Split(record, "\t")
+		fields := strings.SplitN(record, "\t", 3)
 		if len(fields) < 3 {
 			i++
 			continue
