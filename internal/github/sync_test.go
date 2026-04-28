@@ -4799,10 +4799,12 @@ func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
 		PlatformHeadSHA: "oldhead",
 		CIStatus:        "success",
 		CIChecksJSON:    `[{"name":"tests","status":"completed","conclusion":"success"}]`,
-		CIHadPending:    false,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
+		// Seed as true so the cleared assertion below catches the case
+		// where syncOpenMRFromBulk carries the stale flag forward.
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
 	})
 	require.NoError(err)
 
@@ -4858,10 +4860,12 @@ func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
 		PlatformHeadSHA: sameSHA,
 		CIStatus:        "success",
 		CIChecksJSON:    `[{"name":"tests","status":"completed","conclusion":"success"}]`,
-		CIHadPending:    false,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
+		// Seed as true so the preserved assertion below distinguishes
+		// the preserve path from a default-zero pending flag.
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
 	})
 	require.NoError(err)
 
@@ -4890,6 +4894,7 @@ func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
 	assert.Equal(sameSHA, mr.PlatformHeadSHA)
 	assert.Equal("success", mr.CIStatus)
 	assert.Contains(mr.CIChecksJSON, "tests")
+	assert.True(mr.CIHadPending)
 }
 
 func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {

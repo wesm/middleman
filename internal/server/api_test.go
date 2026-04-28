@@ -2884,6 +2884,14 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 	require.NoError(database.UpdateMRCIStatus(
 		t.Context(), repo.ID, 1, "success", existingChecksJSON,
 	))
+	// Mark the prior CI snapshot as having had pending checks so the
+	// post-sync assertion below distinguishes "cleared" from "default
+	// false". UpsertMergeRequest preserves ci_had_pending across
+	// upserts, so without an explicit clear it would survive a
+	// head-SHA change.
+	require.NoError(database.UpdateMRDetailFetched(
+		t.Context(), "github.com", "acme", "widget", 1, true,
+	))
 	client := setupTestClient(t, srv)
 
 	syncResp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
@@ -2901,6 +2909,11 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 	require.NotNil(detailResp.JSON200.MergeRequest)
 	assert.Empty(detailResp.JSON200.MergeRequest.CIStatus)
 	assert.Empty(detailResp.JSON200.MergeRequest.CIChecksJSON)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.False(mr.CIHadPending)
 }
 
 func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {

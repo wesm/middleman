@@ -1970,6 +1970,8 @@ func (s *Syncer) syncOpenMRFromBulk(
 			"get existing MR #%d: %w", number, err,
 		)
 	}
+	headChanged := existing != nil &&
+		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 		normalized.ReviewDecision = existing.ReviewDecision
@@ -1977,7 +1979,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		// the previous values; otherwise an incomplete bulk CI fetch
 		// (CIComplete=false skips the UpdateMRCIStatus write below)
 		// would leave stale checks attached to the new commit.
-		if existing.PlatformHeadSHA == normalized.PlatformHeadSHA {
+		if !headChanged {
 			normalized.CIStatus = existing.CIStatus
 			normalized.CIChecksJSON = existing.CIChecksJSON
 			normalized.CIHadPending = existing.CIHadPending
@@ -2009,6 +2011,18 @@ func (s *Syncer) syncOpenMRFromBulk(
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
+	}
+
+	// UpsertMergeRequest preserves ci_had_pending across upserts, so
+	// the head-changed reset above doesn't actually persist that field
+	// without an explicit clear. Drop the stale CI state here so it
+	// doesn't outlive the old commit.
+	if headChanged {
+		if err := s.db.ClearMRCI(ctx, repoID, number); err != nil {
+			return fmt.Errorf(
+				"clear stale CI for MR #%d: %w", number, err,
+			)
+		}
 	}
 
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
@@ -3650,13 +3664,15 @@ func (s *Syncer) syncMRWithHost(
 	if err != nil {
 		return fmt.Errorf("get existing MR #%d: %w", number, err)
 	}
+	headChanged := existing != nil &&
+		existing.PlatformHeadSHA != normalized.PlatformHeadSHA
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 		normalized.ReviewDecision = existing.ReviewDecision
 		// CI is tied to the head SHA. If the head moved we must clear the
 		// previous values; otherwise a failed CI refresh would leave stale
 		// checks attached to the new commit.
-		if existing.PlatformHeadSHA == normalized.PlatformHeadSHA {
+		if !headChanged {
 			normalized.CIStatus = existing.CIStatus
 			normalized.CIChecksJSON = existing.CIChecksJSON
 			normalized.CIHadPending = existing.CIHadPending
@@ -3680,6 +3696,14 @@ func (s *Syncer) syncMRWithHost(
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
+	}
+	// UpsertMergeRequest preserves ci_had_pending across upserts. Clear
+	// it here when the head SHA changed so a stale pending flag from
+	// the previous head doesn't survive across the refresh.
+	if headChanged {
+		if err := s.db.ClearMRCI(ctx, repoID, number); err != nil {
+			return fmt.Errorf("clear stale CI for MR #%d: %w", number, err)
+		}
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for MR #%d: %w", number, err)
