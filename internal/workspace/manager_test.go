@@ -914,6 +914,97 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	})
 }
 
+func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-57de4cf40144bdf7\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	ctx := context.Background()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "0000000000000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "0000000000000002",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "gadget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   2,
+		GitHeadRef:   "feature/stale",
+		WorktreePath: filepath.Join(t.TempDir(), "stale"),
+		TmuxSession:  "middleman-0000000000000002",
+		Status:       "ready",
+	}))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		ctx,
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
+			TargetKey:   "codex",
+		},
+	))
+	require.NoError(d.UpsertWorkspaceTmuxSession(
+		ctx,
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000001",
+			SessionName: "middleman-0000000000000001-c857d09db23e6822",
+			TargetKey:   "claude",
+		},
+	))
+
+	require.NoError(mgr.PruneMissingTmuxSessions(ctx))
+
+	stored, err := d.ListWorkspaceTmuxSessions(ctx, "0000000000000001")
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(
+		"middleman-0000000000000001-57de4cf40144bdf7",
+		stored[0].SessionName,
+	)
+
+	live, err := d.GetWorkspace(ctx, "0000000000000001")
+	require.NoError(err)
+	require.NotNil(live)
+	assert.Equal("ready", live.Status)
+
+	stale, err := d.GetWorkspace(ctx, "0000000000000002")
+	require.NoError(err)
+	require.NotNil(stale)
+	assert.Equal("error", stale.Status)
+	require.NotNil(stale.ErrorMessage)
+	assert.Contains(*stale.ErrorMessage, "tmux session is no longer running")
+	assert.Contains(*stale.ErrorMessage, "middleman-0000000000000002")
+}
+
 func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 	t *testing.T,
 ) {

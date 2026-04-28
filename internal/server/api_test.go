@@ -7687,6 +7687,7 @@ func TestWorkspaceRuntimeIncludesStoredTmuxSessionsAfterReloadE2E(t *testing.T) 
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 case "$1" in
   list-sessions)
+    printf '%s\n' middleman-0000000000000001
     printf '%s\n' "$RESTORED_TMUX_SESSION"
     exit 0
     ;;
@@ -7965,6 +7966,7 @@ for a in "$@"; do
 done
 case "$1" in
   list-sessions)
+    printf '%s\n' 'middleman-0000000000000001-e81d3b0e9d82feaa'
     exit 0
     ;;
 esac
@@ -8618,6 +8620,61 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	)
 	assert.Equal(int64(2), *found.CommitsAhead)
 	assert.Equal(int64(0), *found.CommitsBehind)
+}
+
+func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	if testing.Short() {
+		t.Skip("workspace e2e tests skipped in short mode")
+	}
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    printf 'middleman-0000000000000001\n'` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	cfg := &config.Config{
+		Tmux: config.Tmux{Command: []string{script}},
+	}
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "0000000000000002",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/stale",
+		WorktreePath: filepath.Join(dir, "stale"),
+		TmuxSession:  "middleman-0000000000000002",
+		Status:       "ready",
+	}))
+
+	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.NotNil(listResp.JSON200.Workspaces)
+	require.Len(*listResp.JSON200.Workspaces, 1)
+	got := (*listResp.JSON200.Workspaces)[0]
+	assert.Equal("0000000000000002", got.Id)
+	assert.Equal("error", got.Status)
+	require.NotNil(got.ErrorMessage)
+	assert.Contains(*got.ErrorMessage, "tmux session is no longer running")
+
+	stored, err := database.GetWorkspace(ctx, "0000000000000002")
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
 }
 
 func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
