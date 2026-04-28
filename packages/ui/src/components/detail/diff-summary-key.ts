@@ -22,7 +22,7 @@ function diffSummaryRevision(
   pr: Pick<PullRequest, "UpdatedAt" | "Additions" | "Deletions">,
 ): string {
   if (detail.diff_head_sha && detail.merge_base_sha) {
-    return `diff:${detail.merge_base_sha}:${detail.diff_head_sha}`;
+    return `platform:${detail.platform_base_sha}:${detail.platform_head_sha}:diff:${detail.merge_base_sha}:${detail.diff_head_sha}`;
   }
 
   if (detail.platform_head_sha || detail.platform_base_sha) {
