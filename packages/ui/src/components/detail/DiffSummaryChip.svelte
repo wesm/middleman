@@ -52,6 +52,7 @@
 
   async function ensureSummary(): Promise<void> {
     const requestedKey = summaryKey;
+    currentSummaryKey ??= requestedKey;
     if (loadedSummaryKey !== requestedKey) {
       summary = null;
       error = null;
@@ -97,7 +98,7 @@
     open = false;
   }
 
-  $effect(() => {
+  $effect.pre(() => {
     if (currentSummaryKey === null) {
       currentSummaryKey = summaryKey;
       return;
