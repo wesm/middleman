@@ -159,6 +159,36 @@ async function mockIssueDetailForPlatformHost(
   return seenHosts;
 }
 
+async function mockActivityWithGheIssue(page: Page): Promise<void> {
+  await page.route("**/api/v1/activity**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        capped: false,
+        items: [
+          {
+            id: "ghe-issue-10-comment",
+            cursor: "2026-04-27T12:00:00Z:ghe-issue-10-comment",
+            activity_type: "comment",
+            platform_host: "ghe.example.com",
+            repo_owner: "acme",
+            repo_name: "widgets",
+            item_type: "issue",
+            item_number: 10,
+            item_title: "Fix Safari layout issue",
+            item_url: "https://ghe.example.com/acme/widgets/issues/10",
+            item_state: "open",
+            author: "alice",
+            created_at: "2026-04-27T12:00:00Z",
+            body_preview: "The Safari layout needs attention.",
+          },
+        ],
+      }),
+    });
+  });
+}
+
 async function waitForActivityTable(page: Page): Promise<void> {
   await page.locator(".activity-table tbody .activity-row").first()
     .waitFor({ state: "visible", timeout: 10_000 });
@@ -279,6 +309,26 @@ test.describe("activity split view and detail drawers", () => {
     expect(seenHosts).not.toContain("github.com");
     await expect(detail.locator(".list-layout > .sidebar")).toHaveCount(0);
     await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
+  });
+
+  test("Activity issue row selection preserves platform host", async ({ page }) => {
+    await mockActivityWithGheIssue(page);
+    const seenHosts = await mockIssueDetailForPlatformHost(
+      page,
+      "ghe.example.com",
+    );
+
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" })
+      .click();
+
+    await expect(page).toHaveURL(/selected=issue%3Aacme%2Fwidgets%2F10/);
+    await expect(page).toHaveURL(/platform_host=ghe\.example\.com/);
+    await expect(page.locator(".activity-detail .issue-detail")).toBeVisible();
+    expect(seenHosts).toContain("ghe.example.com");
+    expect(seenHosts).not.toContain("github.com");
   });
 
   test("PR tab handoff preserves selected Activity PR files tab", async ({ page }) => {
@@ -582,6 +632,27 @@ test.describe("activity split view and detail drawers", () => {
     const expandedBox = await rail.boundingBox();
     expect(expandedBox).not.toBeNull();
     expect(Math.abs(expandedBox!.width - 360)).toBeLessThan(2);
+  });
+
+  test("closing a collapsed activity split restores the Activity feed", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    const detail = await openActivityPRSplit(page);
+
+    await page.locator("button[title='Collapse Activity sidebar']").click();
+
+    await expect(detail).toBeVisible();
+    await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
+
+    await detail.locator(".activity-detail-header .activity-rail-close").click();
+
+    await expect(page.locator(".activity-shell--split")).toHaveCount(0);
+    await expect(page.locator(".activity-collapsed-strip")).toHaveCount(0);
+    await expect(page.locator(".activity-table")).toBeVisible();
+    await expect(
+      page.locator(".activity-row", { hasText: "Add widget caching layer" }).first(),
+    ).toBeVisible();
   });
 
   test("kanban drawer spans full viewport width", async ({ page }) => {

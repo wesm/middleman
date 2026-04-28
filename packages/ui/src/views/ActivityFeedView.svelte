@@ -1,6 +1,7 @@
 <script lang="ts">
   import PanelLeftCloseIcon from "@lucide/svelte/icons/panel-left-close";
   import PanelLeftOpenIcon from "@lucide/svelte/icons/panel-left-open";
+  import { onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import ActivityFeed
     from "../components/ActivityFeed.svelte";
@@ -40,6 +41,7 @@
 
   const minActivityPaneWidth = 280;
   const maxActivityPaneWidth = 560;
+  let resizeCleanup: (() => void) | null = null;
 
   const controlled = $derived(
     controlledDrawer !== undefined || onCloseDrawer !== undefined,
@@ -66,6 +68,8 @@
   }
 
   function handleClose(): void {
+    activityPaneCollapsed = false;
+    stopActivityPaneResize();
     if (!controlled) {
       internalDrawer = null;
     }
@@ -79,8 +83,14 @@
     );
   }
 
+  function stopActivityPaneResize(): void {
+    resizeCleanup?.();
+    resizeCleanup = null;
+  }
+
   function startActivityPaneResize(event: MouseEvent): void {
     event.preventDefault();
+    stopActivityPaneResize();
     const startX = event.clientX;
     const startWidth = activityPaneWidth;
 
@@ -91,12 +101,15 @@
     }
 
     function onUp(): void {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      stopActivityPaneResize();
     }
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    resizeCleanup = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }
 
   function handleActivityPaneResizeKeydown(event: KeyboardEvent): void {
@@ -116,6 +129,10 @@
   function expandActivityPane(): void {
     activityPaneCollapsed = false;
   }
+
+  onDestroy(() => {
+    stopActivityPaneResize();
+  });
 </script>
 
 <div
@@ -125,7 +142,7 @@
 >
   <section
     class="activity-pane"
-    class:activity-pane--collapsed={activityPaneCollapsed}
+    class:activity-pane--collapsed={activeDrawer !== null && activityPaneCollapsed}
     style:--activity-pane-width={`${activityPaneWidth}px`}
   >
     {#if activeDrawer && activityPaneCollapsed}
@@ -259,7 +276,7 @@
     flex-direction: column;
   }
 
-  .activity-pane--collapsed .activity-feed-wrap {
+  .activity-shell--split .activity-pane--collapsed .activity-feed-wrap {
     display: none;
   }
 
