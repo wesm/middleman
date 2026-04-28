@@ -47,7 +47,7 @@
   );
 
   function formatTotals(value: { additions: number; deletions: number }): string {
-    return `+${value.additions} / -${value.deletions}`;
+    return `+${value.additions}/-${value.deletions}`;
   }
 
   async function ensureSummary(): Promise<void> {

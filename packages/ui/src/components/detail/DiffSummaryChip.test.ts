@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiffFile } from "../../api/types.js";
@@ -55,13 +56,13 @@ describe("DiffSummaryChip", () => {
 
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
-    expect(screen.getByText("+10 / -2")).toBeTruthy();
+    expect(screen.getByText("+10/-2")).toBeTruthy();
     expect(screen.getByText("Code")).toBeTruthy();
-    expect(screen.getByText("+40 / -6")).toBeTruthy();
+    expect(screen.getByText("+40/-6")).toBeTruthy();
     expect(screen.getByText("Tests")).toBeTruthy();
-    expect(screen.getByText("+20 / -8")).toBeTruthy();
+    expect(screen.getByText("+20/-8")).toBeTruthy();
     expect(screen.getByText("Other")).toBeTruthy();
-    expect(screen.getByText("+1 / -1")).toBeTruthy();
+    expect(screen.getByText("+1/-1")).toBeTruthy();
     expect(loadFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -86,9 +87,9 @@ describe("DiffSummaryChip", () => {
     );
 
     expect(await screen.findByText("Code")).toBeTruthy();
-    expect(screen.getByText("+40 / -6")).toBeTruthy();
+    expect(screen.getByText("+40/-6")).toBeTruthy();
     expect(screen.getByText("Tests")).toBeTruthy();
-    expect(screen.getByText("+20 / -8")).toBeTruthy();
+    expect(screen.getByText("+20/-8")).toBeTruthy();
     expect(screen.queryByText("Plans/docs")).toBeNull();
     expect(screen.queryByText("Other")).toBeNull();
   });
@@ -117,8 +118,9 @@ describe("DiffSummaryChip", () => {
     await fireEvent.mouseLeave(trigger);
     await fireEvent.mouseEnter(trigger);
 
-    expect(await screen.findByText("Code")).toBeTruthy();
-    expect(screen.getByText("+4 / -1")).toBeTruthy();
+    const popover = await screen.findByRole("status");
+    expect(within(popover).getByText("Code")).toBeTruthy();
+    expect(within(popover).getByText("+4/-1")).toBeTruthy();
     expect(loadFiles).toHaveBeenCalledTimes(2);
   });
 
@@ -165,8 +167,9 @@ describe("DiffSummaryChip", () => {
       new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]),
     );
 
-    expect(await screen.findByText("Code")).toBeTruthy();
-    expect(screen.getByText("+5 / -1")).toBeTruthy();
+    const popover = await screen.findByRole("status");
+    expect(within(popover).getByText("Code")).toBeTruthy();
+    expect(within(popover).getByText("+5/-1")).toBeTruthy();
     expect(screen.queryByText("Plans/docs")).toBeNull();
   });
 
@@ -201,8 +204,9 @@ describe("DiffSummaryChip", () => {
       loadFiles,
     });
 
-    expect(await screen.findByText("Code")).toBeTruthy();
-    expect(screen.getByText("+5 / -1")).toBeTruthy();
+    const popover = await screen.findByRole("status");
+    expect(within(popover).getByText("Code")).toBeTruthy();
+    expect(within(popover).getByText("+5/-1")).toBeTruthy();
     await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Plans/docs")).toBeNull();
   });
