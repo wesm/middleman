@@ -83,6 +83,7 @@ import TerminalPane from "./TerminalPane.svelte";
 describe("TerminalPane", () => {
   beforeEach(() => {
     configuredFontFamily = "";
+    delete window.__BASE_PATH__;
     window.__MIDDLEMAN_DEV_API_URL__ = "http://127.0.0.1:8091";
     terminalCtor.mockReset();
     mockFit.mockReset();
@@ -142,6 +143,21 @@ describe("TerminalPane", () => {
     expect(url.pathname).toBe("/ws/v1/workspaces/ws-123/terminal");
   });
 
+  it("applies the base path to the default workspace socket", () => {
+    window.__BASE_PATH__ = "/middleman/";
+
+    render(TerminalPane, {
+      props: { workspaceId: "ws-123" },
+    });
+
+    expect(sockets).toHaveLength(1);
+    const url = new URL(socketAt(0).url);
+    expect(url.origin).toBe("ws://localhost:3000");
+    expect(url.pathname).toBe(
+      "/middleman/ws/v1/workspaces/ws-123/terminal",
+    );
+  });
+
   it("connects to an explicit websocket path", () => {
     render(TerminalPane, {
       props: {
@@ -173,6 +189,24 @@ describe("TerminalPane", () => {
     expect(url.origin).toBe("ws://localhost:3000");
     expect(url.pathname).toBe(
       "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+    );
+  });
+
+  it("does not duplicate the base path for explicit websocket paths", () => {
+    window.__BASE_PATH__ = "/middleman/";
+
+    render(TerminalPane, {
+      props: {
+        websocketPath:
+          "/middleman/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      },
+    });
+
+    expect(sockets).toHaveLength(1);
+    const url = new URL(socketAt(0).url);
+    expect(url.origin).toBe("ws://localhost:3000");
+    expect(url.pathname).toBe(
+      "/middleman/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
     );
   });
 

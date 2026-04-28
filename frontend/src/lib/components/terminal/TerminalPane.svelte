@@ -92,13 +92,19 @@
     const devUrl = buildDevApiWsUrl(withSize);
     if (devUrl) return devUrl;
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const normalizedPath = withSize.startsWith("/")
-      ? withSize
-      : `/${withSize}`;
-    return (
-      `${proto}://${location.host}${basePath}` +
-      normalizedPath
-    );
+    return `${proto}://${location.host}${withBasePath(withSize)}`;
+  }
+
+  function withBasePath(path: string): string {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    if (!basePath) return normalizedPath;
+    if (
+      normalizedPath === basePath ||
+      normalizedPath.startsWith(`${basePath}/`)
+    ) {
+      return normalizedPath;
+    }
+    return `${basePath}${normalizedPath}`;
   }
 
   function buildDevApiWsUrl(path: string): string | null {

@@ -423,6 +423,8 @@ func (m *Manager) restoreTmuxSession(
 		return err
 	}
 	started.tmuxSession = tmuxSession
+	// startSession already starts drainOutput; restored tmux attach
+	// sessions only need the process watcher here.
 	go started.watch()
 
 	m.mu.Lock()
