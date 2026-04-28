@@ -38,6 +38,9 @@ type mergeRequestDetailResponse struct {
 	RepoName         string                   `json:"repo_name"`
 	PlatformHost     string                   `json:"platform_host"`
 	PlatformHeadSHA  string                   `json:"platform_head_sha"`
+	PlatformBaseSHA  string                   `json:"platform_base_sha"`
+	DiffHeadSHA      string                   `json:"diff_head_sha"`
+	MergeBaseSHA     string                   `json:"merge_base_sha"`
 	WorktreeLinks    []worktreeLinkResponse   `json:"worktree_links"`
 	WorkflowApproval workflowApprovalResponse `json:"workflow_approval"`
 	Warnings         []string                 `json:"warnings,omitempty"`

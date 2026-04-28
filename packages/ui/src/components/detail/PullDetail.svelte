@@ -30,6 +30,7 @@
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
+  import { buildDiffSummaryKey } from "./diff-summary-key.js";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -648,12 +649,10 @@
           </Chip>
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
-          {@const diffSummaryRevision = detail.platform_head_sha
-            || `${pr.UpdatedAt}:${pr.Additions}:${pr.Deletions}`}
           <DiffSummaryChip
             additions={pr.Additions}
             deletions={pr.Deletions}
-            summaryKey={`${owner}/${name}#${number}#${diffSummaryRevision}`}
+            summaryKey={buildDiffSummaryKey(owner, name, number, detail, pr)}
             loadFiles={loadDiffSummaryFiles}
           />
         {/if}

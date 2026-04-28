@@ -6530,6 +6530,47 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	assertRFC3339UTC(t, *resp2.JSON200.DetailFetchedAt, now)
 }
 
+func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
+	require := require.New(t)
+
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/acme/widget/pull/1",
+		Title:           "Test PR #1",
+		Author:          "testuser",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "platform-head",
+		PlatformBaseSHA: "platform-base",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, "diff-head", "diff-base", "merge-base"))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/repos/acme/widget/pulls/1", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	require.Contains(body, `"platform_head_sha":"platform-head"`)
+	require.Contains(body, `"platform_base_sha":"platform-base"`)
+	require.Contains(body, `"diff_head_sha":"diff-head"`)
+	require.Contains(body, `"merge_base_sha":"merge-base"`)
+}
+
 func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
