@@ -9047,6 +9047,7 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 IFS= read -r line
 set -- $(stty size 2>/dev/null || printf '0 0')
 printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
+sleep 1
 `), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{
