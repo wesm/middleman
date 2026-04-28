@@ -16,10 +16,10 @@ func terminalAPIConfig() huma.Config {
 	return config
 }
 
-func (s *Server) registerTerminalAPI(api huma.API) {
+func (s *Server) registerTerminalAPI(api huma.API, tmuxCmd []string) {
 	handler := &terminal.Handler{
 		Workspaces:  s.workspaces,
-		TmuxCommand: s.cfg.TmuxCommand(),
+		TmuxCommand: append([]string(nil), tmuxCmd...),
 	}
 	op := &huma.Operation{
 		OperationID: "connect-workspace-terminal",
