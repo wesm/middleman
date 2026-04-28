@@ -20,6 +20,8 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
 	fi)
+DEV_LOG_DIR ?= tmp/logs
+DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
@@ -112,9 +114,19 @@ air-install:
 
 # Run Go server in dev mode with live reload and API artifact refresh (use alongside `make frontend-dev`)
 dev: ensure-embed-dir check-air
+	@mkdir -p "$(DEV_LOG_DIR)"
+	@echo "backend debug log: $${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}"
+	@echo "backend console log level: $${MIDDLEMAN_LOG_STDERR_LEVEL:-info}"
+	@echo "tail with: tail -F $${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}"
 	@if [ -n "$(MIDDLEMAN_CONFIG)" ]; then \
+		MIDDLEMAN_LOG_LEVEL="$${MIDDLEMAN_LOG_LEVEL:-debug}" \
+		MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
+		MIDDLEMAN_LOG_STDERR_LEVEL="$${MIDDLEMAN_LOG_STDERR_LEVEL:-info}" \
 		"$(AIR_BIN)" -c .air.toml -- -config "$(MIDDLEMAN_CONFIG)" $(ARGS); \
 	else \
+		MIDDLEMAN_LOG_LEVEL="$${MIDDLEMAN_LOG_LEVEL:-debug}" \
+		MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
+		MIDDLEMAN_LOG_STDERR_LEVEL="$${MIDDLEMAN_LOG_STDERR_LEVEL:-info}" \
 		"$(AIR_BIN)" -c .air.toml -- $(ARGS); \
 	fi
 
@@ -203,7 +215,7 @@ help:
 	@echo "  install        - Build and install to ~/.local/bin or GOPATH"
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
-	@echo "  dev            - Run Go server with air live reload and API artifact refresh (honors MIDDLEMAN_CONFIG)"
+	@echo "  dev            - Run Go server with air live reload, debug file logs, and info-level console logs"
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server (honors MIDDLEMAN_CONFIG)"

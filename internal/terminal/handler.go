@@ -25,7 +25,7 @@ type Handler struct {
 	TmuxCommand []string
 
 	mu     sync.Mutex
-	active map[string]bool
+	active map[string]int
 }
 
 func (h *Handler) ServeHTTP(
@@ -36,6 +36,14 @@ func (h *Handler) ServeHTTP(
 		http.Error(w, "missing workspace id", http.StatusBadRequest)
 		return
 	}
+	logWebsocketDebug(
+		"workspace terminal websocket request",
+		"workspace_id", id,
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+		"remote_addr", r.RemoteAddr,
+		"user_agent", r.UserAgent(),
+	)
 
 	ws, err := h.Workspaces.Get(r.Context(), id)
 	if err != nil {
@@ -47,10 +55,19 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 	if ws == nil {
+		logWebsocketDebug(
+			"workspace terminal rejected: workspace not found",
+			"workspace_id", id,
+		)
 		http.Error(w, "workspace not found", http.StatusNotFound)
 		return
 	}
 	if ws.Status != "ready" {
+		logWebsocketDebug(
+			"workspace terminal rejected: workspace not ready",
+			"workspace_id", id,
+			"status", ws.Status,
+		)
 		http.Error(
 			w,
 			fmt.Sprintf("workspace not ready (status: %s)", ws.Status),
@@ -60,9 +77,21 @@ func (h *Handler) ServeHTTP(
 	}
 
 	cols, rows := parseSize(r)
+	logWebsocketDebug(
+		"workspace terminal attaching",
+		"workspace_id", id,
+		"tmux_session", ws.TmuxSession,
+		"cols", cols,
+		"rows", rows,
+	)
 
 	releaseTerminal, err := h.claimTerminalSlot(id)
 	if err != nil {
+		logWebsocketDebug(
+			"workspace terminal rejected: slot unavailable",
+			"workspace_id", id,
+			"err", err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -75,6 +104,7 @@ func (h *Handler) ServeHTTP(
 		slog.Error("websocket accept", "err", err)
 		return
 	}
+	logWebsocketDebug("workspace terminal websocket accepted", "workspace_id", id)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -93,6 +123,11 @@ func (h *Handler) ServeHTTP(
 		)
 		return
 	}
+	logWebsocketDebug(
+		"workspace terminal tmux ready",
+		"workspace_id", id,
+		"tmux_session", ws.TmuxSession,
+	)
 
 	prefix := h.TmuxCommand
 	if len(prefix) == 0 {
@@ -103,6 +138,13 @@ func (h *Handler) ServeHTTP(
 	argv = append(argv, "attach-session", "-t", ws.TmuxSession)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	logWebsocketDebug(
+		"workspace terminal starting tmux attach",
+		"workspace_id", id,
+		"program", argv[0],
+		"argc", len(argv),
+		"tmux_session", ws.TmuxSession,
+	)
 
 	releaseProc, err := procutil.TryAcquire(
 		ctx, "terminal attach subprocess capacity",
@@ -135,6 +177,11 @@ func (h *Handler) ServeHTTP(
 		return
 	}
 	defer ptmx.Close()
+	logWebsocketDebug(
+		"workspace terminal pty started",
+		"workspace_id", id,
+		"pid", cmd.Process.Pid,
+	)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -177,8 +224,17 @@ func (h *Handler) ServeHTTP(
 	select {
 	case exitCode = <-cmdDone:
 		// tmux exited normally.
+		logWebsocketDebug(
+			"workspace terminal tmux attach exited",
+			"workspace_id", id,
+			"exit_code", exitCode,
+		)
 	case <-bridgeDone:
 		// Browser disconnected. Cancel context to kill tmux attach.
+		logWebsocketDebug(
+			"workspace terminal bridge disconnected",
+			"workspace_id", id,
+		)
 		cancel()
 		_ = ptmx.Close()
 		// Wait briefly for cmd to finish.
@@ -202,6 +258,11 @@ func (h *Handler) ServeHTTP(
 	cancel()
 	wg.Wait()
 	conn.Close(websocket.StatusNormalClosure, "session ended")
+	logWebsocketDebug(
+		"workspace terminal websocket closed",
+		"workspace_id", id,
+		"exit_code", exitCode,
+	)
 }
 
 func (h *Handler) claimTerminalSlot(
@@ -210,18 +271,31 @@ func (h *Handler) claimTerminalSlot(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.active == nil {
-		h.active = make(map[string]bool)
+		h.active = make(map[string]int)
 	}
-	if h.active[id] {
-		return nil, fmt.Errorf("workspace terminal already attached")
-	}
-	h.active[id] = true
+	h.active[id]++
+	active := h.active[id]
+	logWebsocketDebug(
+		"workspace terminal slot claimed",
+		"workspace_id", id,
+		"active", active,
+	)
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			h.mu.Lock()
 			defer h.mu.Unlock()
-			delete(h.active, id)
+			h.active[id]--
+			active := h.active[id]
+			if active <= 0 {
+				delete(h.active, id)
+				active = 0
+			}
+			logWebsocketDebug(
+				"workspace terminal slot released",
+				"workspace_id", id,
+				"active", active,
+			)
 		})
 	}, nil
 }

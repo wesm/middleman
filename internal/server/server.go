@@ -371,6 +371,9 @@ func newServer(
 		if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
 			slog.Warn("reap orphan tmux sessions", "err", err)
 		}
+		if err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
+			slog.Warn("prune missing tmux sessions", "err", err)
+		}
 		cleanupCancel()
 		var agents []config.Agent
 		if cfg != nil {
@@ -385,6 +388,9 @@ func newServer(
 			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
 			StripEnvVars:            cfg.TokenEnvNames(),
 		})
+		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
+			slog.Warn("restore runtime tmux sessions", "err", err)
+		}
 	}
 
 	if s.workspaces != nil {
@@ -396,13 +402,25 @@ func newServer(
 			"GET /api/v1/workspaces/{id}/terminal",
 			termHandler,
 		)
+		mux.Handle(
+			"GET /ws/v1/workspaces/{id}/terminal",
+			termHandler,
+		)
 		if s.runtime != nil {
 			mux.HandleFunc(
 				"GET /api/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
 				s.handleWorkspaceRuntimeSessionTerminal,
 			)
 			mux.HandleFunc(
+				"GET /ws/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
+				s.handleWorkspaceRuntimeSessionTerminal,
+			)
+			mux.HandleFunc(
 				"GET /api/v1/workspaces/{id}/runtime/shell/terminal",
+				s.handleWorkspaceRuntimeShellTerminal,
+			)
+			mux.HandleFunc(
+				"GET /ws/v1/workspaces/{id}/runtime/shell/terminal",
 				s.handleWorkspaceRuntimeShellTerminal,
 			)
 		}
@@ -507,6 +525,31 @@ func newServer(
 	return s
 }
 
+func (s *Server) restoreRuntimeTmuxSessions(ctx context.Context) error {
+	if s.db == nil || s.runtime == nil {
+		return nil
+	}
+	stored, err := s.db.ListAllWorkspaceTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(stored) == 0 {
+		return nil
+	}
+
+	sessions := make([]localruntime.RestoredTmuxSession, 0, len(stored))
+	for _, session := range stored {
+		sessions = append(sessions, localruntime.RestoredTmuxSession{
+			WorkspaceID: session.WorkspaceID,
+			SessionName: session.SessionName,
+			TargetKey:   session.TargetKey,
+			CreatedAt:   session.CreatedAt,
+		})
+	}
+	slog.Debug("restoring runtime tmux sessions", "count", len(sessions))
+	return s.runtime.RestoreTmuxSessions(ctx, sessions)
+}
+
 func (s *Server) bootstrapScript() string {
 	safeBase, _ := json.Marshal(s.basePath)
 	var builder strings.Builder
@@ -547,6 +590,23 @@ func scriptSafe(s string) string {
 
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	slog.Debug(
+		"http request started",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+		"remote_addr", r.RemoteAddr,
+		"user_agent", r.UserAgent(),
+	)
+	defer func() {
+		slog.Debug(
+			"http request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"duration", time.Since(start).String(),
+		)
+	}()
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
 		if !checkCSRF(w, r) {
 			return

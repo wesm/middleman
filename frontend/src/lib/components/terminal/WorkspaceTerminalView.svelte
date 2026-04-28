@@ -66,6 +66,8 @@
   let eventSource = $state<EventSource | null>(null);
   let activeTabKey = $state("home");
   let tmuxTabOpen = $state(false);
+  let tmuxTerminalMounted = $state(false);
+  let mountedSessionKeys = $state<string[]>([]);
   let launchingKey = $state<string | null>(null);
   let shellOpen = $state(false);
   let shellLoading = $state(false);
@@ -301,6 +303,24 @@
     return ws.mr_title ?? ws.git_head_ref;
   }
 
+  function mountSessionTerminal(sessionKey: string): void {
+    if (!mountedSessionKeys.includes(sessionKey)) {
+      mountedSessionKeys = [...mountedSessionKeys, sessionKey];
+    }
+  }
+
+  function unmountSessionTerminal(sessionKey: string): void {
+    mountedSessionKeys = mountedSessionKeys.filter(
+      (key) => key !== sessionKey,
+    );
+  }
+
+  function isSessionTerminalMounted(
+    sessionKey: string,
+  ): boolean {
+    return mountedSessionKeys.includes(sessionKey);
+  }
+
   function defaultSidebarTab(
     ws: Workspace,
   ): SidebarTab {
@@ -370,6 +390,10 @@
       ) {
         activeTabKey = "home";
       }
+      mountedSessionKeys = mountedSessionKeys.filter(
+        (key) =>
+          data.sessions.some((session) => session.key === key),
+      );
     } catch (err) {
       if (id !== workspaceId) return;
       runtimeError =
@@ -384,6 +408,7 @@
     const target = launchTargets.find((t) => t.key === targetKey);
     if (target?.kind === "tmux") {
       tmuxTabOpen = true;
+      tmuxTerminalMounted = true;
       activeTabKey = "tmux";
       return;
     }
@@ -400,6 +425,7 @@
       if (id !== workspaceId) return;
       await fetchRuntime();
       if (id !== workspaceId) return;
+      mountSessionTerminal(session.key);
       activeTabKey = `session:${session.key}`;
     } catch (err) {
       if (id !== workspaceId) return;
@@ -411,6 +437,7 @@
   }
 
   function openSession(sessionKey: string): void {
+    mountSessionTerminal(sessionKey);
     activeTabKey = `session:${sessionKey}`;
   }
 
@@ -428,6 +455,7 @@
       if (id !== workspaceId) return;
       await fetchRuntime();
       if (id !== workspaceId) return;
+      unmountSessionTerminal(session.key);
       if (activeTabKey === `session:${session.key}`) {
         activeTabKey = "home";
       }
@@ -595,6 +623,8 @@
     loadError = null;
     actionError = null;
     runtimeError = null;
+    tmuxTerminalMounted = false;
+    mountedSessionKeys = [];
 
     if (!id) {
       // /workspaces route: drop workspace data so the empty-state
@@ -801,11 +831,13 @@
                     activeTabKey = "home";
                   }}
                   onSelectTmux={() => {
+                    tmuxTerminalMounted = true;
                     activeTabKey = "tmux";
                   }}
                   onSelectSession={openSession}
                   onCloseTmux={() => {
                     tmuxTabOpen = false;
+                    tmuxTerminalMounted = false;
                     if (activeTabKey === "tmux") {
                       activeTabKey = "home";
                     }
@@ -858,10 +890,15 @@
                       class="stage-pane"
                       class:active={activeTabKey === "tmux"}
                     >
-                      <TerminalPane
-                        websocketPath={workspaceTmuxWebSocketPath(workspaceId)}
-                        reconnectOnExit={true}
-                      />
+                      {#if tmuxTerminalMounted}
+                        <TerminalPane
+                          websocketPath={workspaceTmuxWebSocketPath(
+                            workspaceId,
+                          )}
+                          reconnectOnExit={true}
+                          active={activeTabKey === "tmux"}
+                        />
+                      {/if}
                     </div>
                   {/if}
                   {#each runtimeSessions as session (session.key)}
@@ -869,15 +906,18 @@
                       class="stage-pane"
                       class:active={activeTabKey === `session:${session.key}`}
                     >
-                      <TerminalPane
-                        websocketPath={workspaceSessionWebSocketPath(
-                          workspaceId,
-                          session.key,
-                        )}
-                        reconnectOnExit={false}
-                        onExit={() => void fetchRuntime()}
-                        initialStatus={session.status}
-                      />
+                      {#if isSessionTerminalMounted(session.key)}
+                        <TerminalPane
+                          websocketPath={workspaceSessionWebSocketPath(
+                            workspaceId,
+                            session.key,
+                          )}
+                          reconnectOnExit={false}
+                          active={activeTabKey === `session:${session.key}`}
+                          onExit={() => void fetchRuntime()}
+                          initialStatus={session.status}
+                        />
+                      {/if}
                     </div>
                   {/each}
                 {/if}

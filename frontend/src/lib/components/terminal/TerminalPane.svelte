@@ -10,6 +10,7 @@
     workspaceId?: string;
     websocketPath?: string;
     reconnectOnExit?: boolean;
+    active?: boolean;
     onExit?: (code: number) => void;
     // When the session is already exited at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
@@ -21,6 +22,7 @@
     workspaceId,
     websocketPath,
     reconnectOnExit = true,
+    active = true,
     onExit,
     initialStatus,
   }: TerminalPaneProps = $props();
@@ -31,12 +33,12 @@
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
   let fitAddon: FitAddon | null = null;
-  let webglAddon: WebglAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1000;
   let resizeObserver: ResizeObserver | null = null;
+  let refreshFrame: number | null = null;
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
@@ -62,7 +64,7 @@
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
     return (
-      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` +
+      `/ws/v1/workspaces/${encodeURIComponent(workspaceId)}` +
       "/terminal"
     );
   }
@@ -87,20 +89,78 @@
     if (/^wss?:\/\//.test(withSize)) {
       return withSize;
     }
+    const devUrl = buildDevApiWsUrl(withSize);
+    if (devUrl) return devUrl;
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const normalizedPath = withSize.startsWith("/")
-      ? withSize
-      : `/${withSize}`;
-    return (
-      `${proto}://${location.host}${basePath}` +
-      normalizedPath
-    );
+    return `${proto}://${location.host}${withBasePath(withSize)}`;
+  }
+
+  function withBasePath(path: string): string {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    if (!basePath) return normalizedPath;
+    if (
+      normalizedPath === basePath ||
+      normalizedPath.startsWith(`${basePath}/`)
+    ) {
+      return normalizedPath;
+    }
+    return `${basePath}${normalizedPath}`;
+  }
+
+  function buildDevApiWsUrl(path: string): string | null {
+    if (!import.meta.env.DEV) return null;
+    const apiUrl = window.__MIDDLEMAN_DEV_API_URL__?.trim();
+    if (!apiUrl || !path.startsWith("/api/")) return null;
+
+    try {
+      const base = new URL(apiUrl);
+      const requested = new URL(path, "http://middleman.local");
+      const basePath = base.pathname.replace(/\/$/, "");
+      base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+      base.pathname = `${basePath}${requested.pathname}`;
+      base.search = requested.search;
+      base.hash = "";
+      return base.toString();
+    } catch {
+      return null;
+    }
   }
 
   function sendResize(cols: number, rows: number): void {
+    sendControl("resize", cols, rows);
+  }
+
+  function sendRefresh(cols: number, rows: number): void {
+    sendControl("refresh", cols, rows);
+  }
+
+  function sendControl(
+    type: "resize" | "refresh",
+    cols: number,
+    rows: number,
+  ): void {
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "resize", cols, rows }));
+      ws.send(JSON.stringify({ type, cols, rows }));
     }
+  }
+
+  function refreshVisibleTerminal(): void {
+    if (!terminal) return;
+
+    fitAddon?.fit();
+    terminal.clearTextureAtlas();
+    terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    sendRefresh(terminal.cols, terminal.rows);
+  }
+
+  function scheduleTerminalRefresh(): void {
+    if (refreshFrame !== null) {
+      cancelAnimationFrame(refreshFrame);
+    }
+    refreshFrame = requestAnimationFrame(() => {
+      refreshFrame = null;
+      refreshVisibleTerminal();
+    });
   }
 
   function connect(): void {
@@ -116,6 +176,7 @@
 
     socket.onopen = () => {
       reconnectDelay = 1000;
+      if (active) scheduleTerminalRefresh();
     };
 
     socket.onmessage = (ev: MessageEvent) => {
@@ -204,6 +265,10 @@
       clearTimeout(restartTimer);
       restartTimer = null;
     }
+    if (refreshFrame !== null) {
+      cancelAnimationFrame(refreshFrame);
+      refreshFrame = null;
+    }
     if (ws) {
       ws.onclose = null;
       ws.onerror = null;
@@ -222,8 +287,13 @@
     terminal.options.fontFamily = terminalFontFamily;
     // The WebGL renderer caches glyphs per font; force a rebuild so
     // cell widths and glyph metrics line up after the family changes.
-    webglAddon?.clearTextureAtlas();
+    terminal.clearTextureAtlas();
     fitAddon?.fit();
+  });
+
+  $effect(() => {
+    if (!terminal || !active) return;
+    scheduleTerminalRefresh();
   });
 
   onMount(() => {
@@ -255,10 +325,8 @@
         const wgl = new WebglAddon();
         wgl.onContextLoss(() => {
           wgl.dispose();
-          if (webglAddon === wgl) webglAddon = null;
         });
         term.loadAddon(wgl);
-        webglAddon = wgl;
       } catch {
         // WebGL unavailable; canvas renderer used as fallback.
       }

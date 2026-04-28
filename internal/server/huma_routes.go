@@ -2429,6 +2429,10 @@ func (s *Server) listWorkspaces(
 		return out, nil
 	}
 
+	if err := s.workspaces.PruneMissingTmuxSessions(ctx); err != nil {
+		slog.Debug("prune missing tmux sessions", "err", err)
+	}
+
 	summaries, err := s.workspaces.ListSummaries(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(

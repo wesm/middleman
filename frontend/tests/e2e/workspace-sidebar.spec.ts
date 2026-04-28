@@ -672,6 +672,99 @@ test.describe("workspace launch home", () => {
   );
 
   test(
+    "does not attach restored runtime sessions until selected",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        runtime: {
+          ...workspaceRuntime,
+          sessions: [
+            {
+              key: "ws-123:codex",
+              workspace_id: "ws-123",
+              target_key: "codex",
+              label: "Codex",
+              kind: "agent",
+              status: "running",
+              created_at: "2026-04-10T12:00:00Z",
+            },
+          ],
+          shell_session: null,
+        },
+      });
+
+      await page.addInitScript(() => {
+        const OriginalWebSocket = window.WebSocket;
+        const urls: string[] = [];
+        Object.defineProperty(
+          window,
+          "__middlemanWebSocketUrls",
+          {
+            value: urls,
+          },
+        );
+        window.WebSocket = class extends OriginalWebSocket {
+          constructor(
+            url: string | URL,
+            protocols?: string | string[],
+          ) {
+            urls.push(String(url));
+            if (protocols === undefined) {
+              super(url);
+            } else {
+              super(url, protocols);
+            }
+          }
+        };
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const tabs = page.locator(".workspace-tabs");
+      await expect(
+        tabs.getByRole("tab", { name: "Codex" }),
+      ).toBeVisible();
+      const initialTerminalSockets = await page.evaluate(() =>
+        (
+          (
+            window as unknown as {
+              __middlemanWebSocketUrls: string[];
+            }
+          ).__middlemanWebSocketUrls ?? []
+        ).filter((url) =>
+          url.includes("/ws/v1/workspaces/ws-123/"),
+        ),
+      );
+      expect(initialTerminalSockets).toEqual([]);
+
+      await tabs.getByRole("tab", { name: "Codex" }).click();
+
+      await expect(
+        page.locator(".terminal-container"),
+      ).toBeVisible();
+      await expect
+        .poll(async () => {
+          const urls = await page.evaluate(() =>
+            (
+              (
+                window as unknown as {
+                  __middlemanWebSocketUrls: string[];
+                }
+              ).__middlemanWebSocketUrls ?? []
+            ).filter((url) =>
+              url.includes("/ws/v1/workspaces/ws-123/"),
+            ),
+          );
+          return urls.some((url) =>
+            url.includes(
+              "/runtime/sessions/ws-123%3Acodex/terminal",
+            ),
+          );
+        })
+        .toBe(true);
+    },
+  );
+
+  test(
     "launches an agent into a compact running tab",
     async ({ page }) => {
       await page.goto("/terminal/ws-123");

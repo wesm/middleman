@@ -881,6 +881,104 @@ func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
 	}
 }
 
+func TestSessionSubscribeSkipsReplayWhileAlternateScreenActive(t *testing.T) {
+	s := &session{
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	s.broadcast([]byte("startup-banner\r\n$ "))
+	s.broadcast([]byte("\x1b[?1049h\x1b[Hcodex screen"))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	assert := Assert.New(t)
+	select {
+	case data := <-ch:
+		assert.Failf(
+			"subscriber received alternate screen replay",
+			"unexpected replay: %q",
+			string(data),
+		)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	s.broadcast([]byte("\x1b[Hupdated screen"))
+	select {
+	case data := <-ch:
+		assert.Equal("\x1b[Hupdated screen", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive live output")
+	}
+}
+
+func TestSessionSubscribeReplaysNormalOutputAfterAlternateScreenExit(t *testing.T) {
+	s := &session{
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	s.broadcast([]byte("startup-banner\r\n$ "))
+	s.broadcast([]byte("\x1b[?1049h\x1b[Hcodex screen"))
+	s.broadcast([]byte("\x1b[?1049l\r\n$ "))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	assert := Assert.New(t)
+	select {
+	case data := <-ch:
+		assert.Equal("\r\n$ ", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive normal replay after exit")
+	}
+}
+
+func TestSessionAlternateScreenTrackingHandlesSplitEscapeSequences(t *testing.T) {
+	s := &session{
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	s.broadcast([]byte("startup-banner\r\n$ \x1b[?104"))
+	s.broadcast([]byte("9h\x1b[Hcodex screen"))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	assert := Assert.New(t)
+	select {
+	case data := <-ch:
+		assert.Failf(
+			"subscriber received split alternate screen replay",
+			"unexpected replay: %q",
+			string(data),
+		)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	s.broadcast([]byte("\x1b[?104"))
+	s.broadcast([]byte("9l\r\n$ "))
+	var live strings.Builder
+	select {
+	case data := <-ch:
+		live.Write(data)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive live split exit prefix")
+	}
+	select {
+	case data := <-ch:
+		live.Write(data)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive live split exit suffix")
+	}
+	assert.Equal("\x1b[?1049l\r\n$ ", live.String())
+
+	ch2, cancel2 := s.subscribe()
+	t.Cleanup(cancel2)
+	select {
+	case data := <-ch2:
+		assert.Equal("\r\n$ ", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive replay after split exit")
+	}
+}
+
 func TestSessionSubscribeAfterCloseStillReplays(t *testing.T) {
 	s := &session{
 		subscribers: make(map[chan []byte]struct{}),

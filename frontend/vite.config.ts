@@ -2,7 +2,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
-import { searchForWorkspaceRoot, type UserConfig } from "vite";
+import {
+  searchForWorkspaceRoot,
+  type Plugin,
+  type ProxyOptions,
+  type UserConfig,
+} from "vite";
 import type { InlineConfig } from "vitest/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
@@ -11,6 +16,7 @@ const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
 const apiUrl = resolveDevApiUrl();
+const devServerPort = resolveViteServerPort();
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 const uiPkg = path.resolve(process.cwd(), "../packages/ui");
 const uiIndex = path.resolve(process.cwd(), "../packages/ui/src/index.ts");
@@ -28,9 +34,112 @@ const uiStoreDiff = path.resolve(process.cwd(), "../packages/ui/src/stores/diff.
 const uiStoreGrouping = path.resolve(process.cwd(), "../packages/ui/src/stores/grouping.svelte.ts");
 const uiStoreSettings = path.resolve(process.cwd(), "../packages/ui/src/stores/settings.svelte.ts");
 
+function devApiUrlPlugin(url: string): Plugin {
+  return {
+    name: "middleman-dev-api-url",
+    apply: "serve",
+    transformIndexHtml() {
+      return [
+        {
+          tag: "script",
+          children:
+            `window.__MIDDLEMAN_DEV_API_URL__ = ${JSON.stringify(url)};`,
+          injectTo: "head-prepend",
+        },
+      ];
+    },
+  };
+}
+
+export function resolveViteServerPort(
+  argv: readonly string[] = process.argv,
+): number {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg) continue;
+    if (arg === "--port" && i+1 < argv.length) {
+      const next = argv[i+1];
+      const parsed = parsePort(next);
+      if (parsed !== null) return parsed;
+    }
+    if (arg.startsWith("--port=")) {
+      const parsed = parsePort(arg.slice("--port=".length));
+      if (parsed !== null) return parsed;
+    }
+  }
+  return 5174;
+}
+
+function parsePort(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    return null;
+  }
+  return parsed;
+}
+
+function logWebSocketProxyRequests(): NonNullable<
+  ProxyOptions["configure"]
+> {
+  return (proxy) => {
+    proxy.on("proxyReqWs", (_proxyReq, req, socket) => {
+      const url = req.url ?? "<unknown>";
+      console.info(`[vite:ws-proxy] open ${url}`);
+      socket.on("error", (err) => {
+        console.error(
+          `[vite:ws-proxy] socket error ${url}: ${err.message}`,
+        );
+      });
+    });
+    proxy.on("error", (err, req) => {
+      const url = req?.url ?? "<unknown>";
+      console.error(`[vite:ws-proxy] error ${url}: ${err.message}`);
+    });
+    proxy.on("close", (_proxyRes, _proxySocket, proxyHead) => {
+      const headLength =
+        proxyHead instanceof Buffer ? proxyHead.length : 0;
+      console.info(
+        `[vite:ws-proxy] close proxyHeadBytes=${headLength}`,
+      );
+    });
+  };
+}
+
+export function webSocketDebugEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  switch (env.MIDDLEMAN_WS_DEBUG?.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function terminalWebSocketProxy(url: string): ProxyOptions {
+  const proxy: ProxyOptions = {
+    target: url,
+    changeOrigin: true,
+    ws: true,
+  };
+  if (webSocketDebugEnabled()) {
+    proxy.configure = logWebSocketProxyRequests();
+  }
+  return proxy;
+}
+
 const config = {
   base: "/",
-  plugins: [healthcheckPlugin(), svelte(), svelteTesting()],
+  plugins: [
+    healthcheckPlugin(),
+    devApiUrlPlugin(apiUrl),
+    svelte(),
+    svelteTesting(),
+  ],
   resolve: {
     alias: [
       {
@@ -100,14 +209,23 @@ const config = {
   },
   server: {
     host: "127.0.0.1",
-    port: 5174,
+    port: devServerPort,
+    strictPort: true,
+    hmr: {
+      protocol: "ws",
+      host: "127.0.0.1",
+      clientPort: devServerPort,
+      path: "/__vite_hmr",
+    },
     fs: { allow: [workspaceRoot, uiPkg] },
     proxy: {
       "/api": {
         target: apiUrl,
         changeOrigin: true,
-        ws: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
+      "/ws": terminalWebSocketProxy(apiUrl),
     },
   },
   test: {

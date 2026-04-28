@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ensureWorkspaceShell,
@@ -11,6 +11,10 @@ import {
 } from "./workspace-runtime.js";
 
 describe("workspace-runtime api", () => {
+  afterEach(() => {
+    delete window.__BASE_PATH__;
+  });
+
   it("loads runtime state and normalizes nullable arrays", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(
@@ -109,13 +113,44 @@ describe("workspace-runtime api", () => {
     expect(
       workspaceSessionWebSocketPath("ws-1", "ws-1:helper"),
     ).toBe(
-      "/api/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
+      "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );
     expect(workspaceShellWebSocketPath("ws-1")).toBe(
-      "/api/v1/workspaces/ws-1/runtime/shell/terminal",
+      "/ws/v1/workspaces/ws-1/runtime/shell/terminal",
     );
     expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
-      "/api/v1/workspaces/ws-1/terminal",
+      "/ws/v1/workspaces/ws-1/terminal",
+    );
+  });
+
+  it("includes the configured base path in runtime and websocket paths", async () => {
+    window.__BASE_PATH__ = "/middleman/";
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          launch_targets: [],
+          sessions: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await getWorkspaceRuntime("ws-1", fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/middleman/api/v1/workspaces/ws-1/runtime",
+    );
+    expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
+      "/middleman/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
+    );
+    expect(workspaceShellWebSocketPath("ws-1")).toBe(
+      "/middleman/ws/v1/workspaces/ws-1/runtime/shell/terminal",
+    );
+    expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
+      "/middleman/ws/v1/workspaces/ws-1/terminal",
     );
   });
 });

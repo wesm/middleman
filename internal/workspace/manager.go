@@ -1030,6 +1030,73 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 	return nil
 }
 
+// PruneMissingTmuxSessions reconciles persisted tmux ownership state against
+// the host tmux server. Runtime-session rows whose tmux session was killed
+// outside middleman are removed. Ready workspaces whose primary tmux session is
+// missing are marked errored so list responses stop probing dead session names
+// and the UI can offer retry/delete.
+func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
+	sessions, err := m.listTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	live := make(map[string]bool, len(sessions))
+	for _, session := range sessions {
+		live[session] = true
+	}
+
+	storedSessions, err := m.db.ListAllWorkspaceTmuxSessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, stored := range storedSessions {
+		if stored.SessionName == "" {
+			continue
+		}
+		if live[stored.SessionName] {
+			continue
+		}
+		slog.Debug(
+			"prune missing runtime tmux session",
+			"workspace_id", stored.WorkspaceID,
+			"target_key", stored.TargetKey,
+			"tmux_session", stored.SessionName,
+		)
+		if err := m.db.DeleteWorkspaceTmuxSession(
+			ctx, stored.WorkspaceID, stored.SessionName,
+		); err != nil {
+			return err
+		}
+	}
+
+	workspaces, err := m.db.ListWorkspaces(ctx)
+	if err != nil {
+		return fmt.Errorf("list workspaces: %w", err)
+	}
+	for _, ws := range workspaces {
+		if ws.Status != "ready" ||
+			ws.TmuxSession == "" ||
+			live[ws.TmuxSession] {
+			continue
+		}
+		msg := fmt.Sprintf(
+			"tmux session is no longer running: %s",
+			ws.TmuxSession,
+		)
+		slog.Debug(
+			"mark workspace missing tmux session",
+			"workspace_id", ws.ID,
+			"tmux_session", ws.TmuxSession,
+		)
+		if err := m.db.UpdateWorkspaceStatus(
+			ctx, ws.ID, "error", &msg,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func isWorkspaceTmuxSessionName(session string) bool {
 	const prefix = "middleman-"
 	if len(session) != len(prefix)+16 ||
