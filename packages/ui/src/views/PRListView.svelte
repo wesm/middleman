@@ -25,6 +25,7 @@
     hideSidebar?: boolean;
     sidebarWidth?: number;
     showStackSidebar?: boolean;
+    autoSyncDetail?: boolean;
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
   }
@@ -36,6 +37,7 @@
     hideSidebar = false,
     sidebarWidth = 340,
     showStackSidebar = true,
+    autoSyncDetail = true,
     onSidebarResize,
     onDetailTabChange,
   }: Props = $props();
@@ -107,6 +109,7 @@
         owner={selectedPR.owner}
         name={selectedPR.name}
         number={selectedPR.number}
+        autoSync={autoSyncDetail}
         hideTabs={true}
       />
     {/if}

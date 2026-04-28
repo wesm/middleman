@@ -18,6 +18,7 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
+    autoSyncDetail?: boolean;
     onSidebarResize?: (width: number) => void;
   }
 
@@ -26,6 +27,7 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
+    autoSyncDetail = true,
     onSidebarResize,
   }: Props = $props();
 </script>
@@ -49,6 +51,7 @@
       name={selectedIssue.name}
       number={selectedIssue.number}
       platformHost={selectedIssue.platformHost}
+      autoSync={autoSyncDetail}
     />
   {:else}
     <div class="placeholder-content">

@@ -217,8 +217,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     platformHost?: string,
+    options?: { sync?: boolean },
   ): Promise<void> {
-    const key = `${platformHost ?? ""}:${owner}/${name}/${number}`;
+    const shouldSync = options?.sync ?? true;
+    const key = `${platformHost ?? ""}:${owner}/${name}/${number}:${shouldSync ? "sync" : "read"}`;
     if (
       detailLoading &&
       activeDetailLoad?.key === key &&
@@ -271,7 +273,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         if (activeDetailLoad === currentLoad) activeDetailLoad = null;
       }
 
-      if (gen === issueSyncGeneration) {
+      if (gen === issueSyncGeneration && shouldSync) {
         void syncIssueDetail(owner, name, number, gen, platformHost);
       }
     })();

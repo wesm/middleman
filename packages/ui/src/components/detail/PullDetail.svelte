@@ -41,6 +41,7 @@
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
+    autoSync?: boolean;
   }
 
   const {
@@ -50,6 +51,7 @@
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
+    autoSync = true,
   }: Props = $props();
 
   let activeTab = $state<"conversation" | "files">("conversation");
@@ -76,8 +78,14 @@
     const requestOwner = owner;
     const requestName = name;
     const requestNumber = number;
+    const requestAutoSync = autoSync;
     untrack(() => {
-      void detailStore.loadDetail(requestOwner, requestName, requestNumber);
+      void detailStore.loadDetail(
+        requestOwner,
+        requestName,
+        requestNumber,
+        { sync: requestAutoSync },
+      );
       detailStore.startDetailPolling(requestOwner, requestName, requestNumber);
     });
     return () => detailStore.stopDetailPolling();

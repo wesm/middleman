@@ -408,7 +408,7 @@ test.describe("activity split view and detail drawers", () => {
       .toContainText("Loading");
   });
 
-  test("Activity PR switching does not fan out detail loads or syncs", async ({ page }) => {
+  test("Activity PR switching does not fan out detail loads or start syncs", async ({ page }) => {
     const detailBodies = new Map<string, string>();
     const detailGets = new Map<string, number>();
     const syncPosts = new Map<string, number>();
@@ -481,7 +481,7 @@ test.describe("activity split view and detail drawers", () => {
     // backend sync duration.
     await page.waitForTimeout(500);
     expect(maxCount(detailGets)).toBeLessThanOrEqual(1);
-    expect(maxCount(syncPosts)).toBeLessThanOrEqual(1);
+    expect(maxCount(syncPosts)).toBe(0);
   });
 
   test("Activity issue selection renders detail when a duplicate load stalls", async ({ page }) => {
@@ -521,7 +521,7 @@ test.describe("activity split view and detail drawers", () => {
     expect(detailGetCount).toBeGreaterThanOrEqual(1);
   });
 
-  test("Activity issue switching does not fan out detail loads or syncs", async ({ page }) => {
+  test("Activity issue switching does not fan out detail loads or start syncs", async ({ page }) => {
     await mockActivityWithTwoGheIssues(page);
 
     const detailGets = new Map<string, number>();
@@ -580,7 +580,7 @@ test.describe("activity split view and detail drawers", () => {
 
     await page.waitForTimeout(500);
     expect(maxCount(detailGets)).toBeLessThanOrEqual(1);
-    expect(maxCount(syncPosts)).toBeLessThanOrEqual(1);
+    expect(maxCount(syncPosts)).toBe(0);
   });
 
   test("direct Activity PR files URL restores split view", async ({ page }) => {

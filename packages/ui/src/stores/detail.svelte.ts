@@ -211,8 +211,10 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    options?: { sync?: boolean },
   ): Promise<void> {
-    const key = prKey(owner, name, number);
+    const shouldSync = options?.sync ?? true;
+    const key = `${prKey(owner, name, number)}:${shouldSync ? "sync" : "read"}`;
     if (
       loading &&
       activeLoad?.key === key &&
@@ -270,7 +272,7 @@ export function createDetailStore(
         if (activeLoad === currentLoad) activeLoad = null;
       }
 
-      if (gen === syncGeneration) {
+      if (gen === syncGeneration && shouldSync) {
         void syncDetail(owner, name, number, gen);
       }
     })();

@@ -24,9 +24,16 @@
     name: string;
     number: number;
     platformHost?: string | undefined;
+    autoSync?: boolean;
   }
 
-  const { owner, name, number, platformHost }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    platformHost,
+    autoSync = true,
+  }: Props = $props();
 
   // See PullDetail.svelte: while a route change is in flight, the
   // displayed issue may briefly belong to the previous route. Mutating
@@ -48,12 +55,14 @@
     const requestName = name;
     const requestNumber = number;
     const requestPlatformHost = platformHost;
+    const requestAutoSync = autoSync;
     untrack(() => {
       void issues.loadIssueDetail(
         requestOwner,
         requestName,
         requestNumber,
         requestPlatformHost,
+        { sync: requestAutoSync },
       );
       issues.startIssueDetailPolling(
         requestOwner,
