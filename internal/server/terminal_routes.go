@@ -8,6 +8,14 @@ import (
 	"github.com/wesm/middleman/internal/terminal"
 )
 
+func terminalAPIConfig() huma.Config {
+	config := huma.DefaultConfig("middleman terminal websocket", "0.1.0")
+	config.OpenAPIPath = ""
+	config.DocsPath = ""
+	config.SchemasPath = ""
+	return config
+}
+
 func (s *Server) registerTerminalAPI(api huma.API) {
 	handler := &terminal.Handler{
 		Workspaces:  s.workspaces,

@@ -410,6 +410,8 @@ func newServer(
 	s.registerAPI(api)
 	if s.workspaces != nil {
 		s.registerTerminalAPI(api)
+		wsAPI := humago.NewWithPrefix(mux, "/ws/v1", terminalAPIConfig())
+		s.registerTerminalAPI(wsAPI)
 	}
 
 	// Roborev proxy
