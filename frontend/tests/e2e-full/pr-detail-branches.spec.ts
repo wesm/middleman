@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("PR detail branch info", () => {
   test.beforeEach(async ({ page }) => {
@@ -99,4 +100,39 @@ test.describe("PR detail branch info", () => {
     );
     await expect(popover).not.toContainText("Other");
   });
+});
+
+test("diff summary uses real files after the PR head advances", async ({ page }) => {
+  const server = await startIsolatedE2EServer();
+  try {
+    await page.goto(`${server.info.base_url}/pulls/acme/widgets/1`);
+    await page.locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    let trigger = page.locator(".diff-summary-trigger");
+    await expect(trigger).toHaveText("+240/-30");
+    await trigger.focus();
+
+    let popover = page.locator(".diff-summary-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(/Code\s+\+\d+ \/ -\d+/);
+
+    const response = await page.request.post(
+      `${server.info.base_url}/__e2e/pr-diff-summary/advance-head`,
+    );
+    expect(response.ok()).toBe(true);
+
+    await page.reload();
+    await page.locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
+    trigger = page.locator(".diff-summary-trigger");
+    await trigger.focus();
+
+    popover = page.locator(".diff-summary-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(/Plans\/docs\s+\+\d+ \/ -\d+/);
+    await expect(popover).toContainText(/Tests\s+\+\d+ \/ -\d+/);
+  } finally {
+    await server.stop();
+  }
 });

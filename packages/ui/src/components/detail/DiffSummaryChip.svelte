@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { DiffFile } from "../../api/types.js";
   import {
+    DiffSummaryFilesResult,
     summarizeDiffFiles,
     type DiffLineSummary,
   } from "./diff-summary.js";
@@ -9,7 +9,7 @@
     additions: number;
     deletions: number;
     summaryKey?: string;
-    loadFiles: () => Promise<DiffFile[]>;
+    loadFiles: () => Promise<DiffSummaryFilesResult>;
   }
 
   const {
@@ -50,7 +50,8 @@
   }
 
   async function ensureSummary(): Promise<void> {
-    if (loadedSummaryKey !== summaryKey) {
+    const requestedKey = summaryKey;
+    if (loadedSummaryKey !== requestedKey) {
       summary = null;
       error = null;
       loadedSummaryKey = null;
@@ -59,12 +60,30 @@
     loading = true;
     error = null;
     try {
-      summary = summarizeDiffFiles(await loadFiles());
-      loadedSummaryKey = summaryKey;
+      const result = (await loadFiles()).clone();
+      if (requestedKey !== summaryKey) {
+        return;
+      }
+      if (result.stale) {
+        summary = null;
+        loadedSummaryKey = null;
+        error = "Changed files are still refreshing.";
+        return;
+      }
+      summary = summarizeDiffFiles(result.files);
+      loadedSummaryKey = requestedKey;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (requestedKey === summaryKey) {
+        error = err instanceof Error ? err.message : String(err);
+      }
     } finally {
       loading = false;
+      if (requestedKey !== summaryKey) {
+        summary = null;
+        error = null;
+        loadedSummaryKey = null;
+        if (open) void ensureSummary();
+      }
     }
   }
 
@@ -81,7 +100,7 @@
 <span class="diff-summary">
   <button
     type="button"
-    class="diff-summary-trigger"
+    class="chip chip--muted diff-summary-trigger"
     aria-describedby={open ? popoverId : undefined}
     onmouseenter={showPopover}
     onmouseleave={hidePopover}

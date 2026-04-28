@@ -226,6 +226,41 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	)
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
+			repo, err := database.GetRepoByOwnerName(
+				r.Context(), "acme", "widgets",
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			if err := database.UpdateDiffSHAs(
+				r.Context(), repo.ID, 1,
+				diffRepo.AltHeadSHA, diffRepo.BaseSHA, diffRepo.BaseSHA,
+			); err != nil {
+				http.Error(w, "update diff shas", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdatePlatformSHAs(
+				r.Context(), repo.ID, 1,
+				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
+			); err != nil {
+				http.Error(w, "update platform shas", http.StatusInternalServerError)
+				return
+			}
+			patchFixturePRSHAs(
+				fc, "acme", "widgets", 1,
+				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
+			)
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"head_sha": diffRepo.AltHeadSHA,
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			strings.Contains(r.URL.Path, "/api/v1/repos/roborev-dev/") &&
 			strings.HasSuffix(r.URL.Path, "/refresh") {
 			r = r.WithContext(

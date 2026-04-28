@@ -18,6 +18,7 @@ import (
 type DiffRepoResult struct {
 	BaseSHA      string // merge-base / base branch tip
 	HeadSHA      string // PR head commit
+	AltHeadSHA   string // newer PR head commit used by E2E refresh tests
 	Manager      *gitclone.Manager
 	FileCount    int // number of changed files (excluding whitespace-only when hidden)
 	AddedFiles   []string
@@ -133,6 +134,27 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("rev-parse head: %w", err)
 	}
 
+	if err := writeFile(workDir,
+		"internal/cache_test.go", cacheTestGoContent); err != nil {
+		return nil, err
+	}
+	if err := writeFile(workDir,
+		"docs/cache-plan.md", cachePlanContent); err != nil {
+		return nil, err
+	}
+	if err := git(workDir, "add", "-A"); err != nil {
+		return nil, err
+	}
+	if err := git(workDir,
+		"commit", "-m", "test: cover caching layer"); err != nil {
+		return nil, err
+	}
+
+	altHeadSHA, err := revParse(workDir, "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("rev-parse alternate head: %w", err)
+	}
+
 	// Clone as bare to the path the clone manager expects.
 	if err := os.MkdirAll(
 		filepath.Dir(barePath), 0o755); err != nil {
@@ -164,6 +186,7 @@ func SetupDiffRepo(
 	return &DiffRepoResult{
 		BaseSHA:      baseSHA,
 		HeadSHA:      headSHA,
+		AltHeadSHA:   altHeadSHA,
 		Manager:      mgr,
 		FileCount:    4,
 		AddedFiles:   []string{"internal/cache.go"},
@@ -388,6 +411,28 @@ func (c *Cache) Set(key, value string) {
 		expiresAt: time.Now().Add(c.ttl),
 	}
 }
+`
+
+const cacheTestGoContent = `package internal
+
+import (
+	"testing"
+	"time"
+)
+
+func TestCacheStoresValues(t *testing.T) {
+	cache := NewCache(time.Minute)
+	cache.Set("key", "value")
+	got, ok := cache.Get("key")
+	if !ok || got != "value" {
+		t.Fatalf("Get() = %q, %v; want value, true", got, ok)
+	}
+}
+`
+
+const cachePlanContent = `# Cache refresh plan
+
+- Verify changed-file summaries refresh when the PR head moves.
 `
 
 // readmeBase and readmeHead differ only by intra-line whitespace

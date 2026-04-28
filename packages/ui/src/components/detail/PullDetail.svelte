@@ -29,6 +29,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
+  import { DiffSummaryFilesResult } from "./diff-summary.js";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -432,7 +433,7 @@
     }
   }
 
-  async function loadDiffSummaryFiles(): Promise<DiffFile[]> {
+  async function loadDiffSummaryFiles(): Promise<DiffSummaryFilesResult> {
     const { data, error } = await client.GET(
       "/repos/{owner}/{name}/pulls/{number}/files",
       {
@@ -444,7 +445,10 @@
         error.detail ?? error.title ?? "failed to load changed files",
       );
     }
-    return (data?.files ?? []) as DiffFile[];
+    return new DiffSummaryFilesResult(
+      data?.stale ?? true,
+      (data?.files ?? []) as DiffFile[],
+    );
   }
 </script>
 

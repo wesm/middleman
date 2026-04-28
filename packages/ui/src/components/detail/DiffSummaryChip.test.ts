@@ -1,7 +1,14 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiffFile } from "../../api/types.js";
 import DiffSummaryChip from "./DiffSummaryChip.svelte";
+import { DiffSummaryFilesResult } from "./diff-summary.js";
 
 function file(
   path: string,
@@ -37,7 +44,8 @@ describe("DiffSummaryChip", () => {
       props: {
         additions: 71,
         deletions: 17,
-        loadFiles,
+        loadFiles: async () =>
+          new DiffSummaryFilesResult(false, await loadFiles()),
       },
     });
 
@@ -62,10 +70,14 @@ describe("DiffSummaryChip", () => {
       props: {
         additions: 60,
         deletions: 14,
-        loadFiles: vi.fn(async () => [
-          file("src/App.svelte", 40, 6),
-          file("src/App.test.ts", 20, 8),
-        ]),
+        loadFiles: vi.fn(async () =>
+          new DiffSummaryFilesResult(
+            false,
+            [
+              file("src/App.svelte", 40, 6),
+              file("src/App.test.ts", 20, 8),
+            ],
+          )),
       },
     });
 
@@ -79,5 +91,82 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("+20 / -8")).toBeTruthy();
     expect(screen.queryByText("Plans/docs")).toBeNull();
     expect(screen.queryByText("Other")).toBeNull();
+  });
+
+  it("does not cache stale file responses", async () => {
+    const loadFiles = vi
+      .fn()
+      .mockResolvedValueOnce(new DiffSummaryFilesResult(true, []))
+      .mockResolvedValueOnce(
+        new DiffSummaryFilesResult(false, [file("src/App.svelte", 4, 1)]),
+      );
+
+    render(DiffSummaryChip, {
+      props: {
+        additions: 4,
+        deletions: 1,
+        loadFiles,
+      },
+    });
+
+    const trigger = screen.getByRole("button", { name: /\+4\/-1/i });
+    await fireEvent.mouseEnter(trigger);
+
+    expect(await screen.findByText("Changed files are still refreshing."))
+      .toBeTruthy();
+    await fireEvent.mouseLeave(trigger);
+    await fireEvent.mouseEnter(trigger);
+
+    expect(await screen.findByText("Code")).toBeTruthy();
+    expect(screen.getByText("+4 / -1")).toBeTruthy();
+    expect(loadFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards file responses for superseded summary keys", async () => {
+    let resolveFirst: ((value: DiffSummaryFilesResult) => void) | undefined;
+    let resolveSecond: ((value: DiffSummaryFilesResult) => void) | undefined;
+    const loadFiles = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise<DiffSummaryFilesResult>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<DiffSummaryFilesResult>((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+
+    const { rerender } = render(DiffSummaryChip, {
+      props: {
+        additions: 10,
+        deletions: 0,
+        summaryKey: "sha-1",
+        loadFiles,
+      },
+    });
+
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: /\+10\/-0/i }),
+    );
+    await rerender({
+      additions: 5,
+      deletions: 1,
+      summaryKey: "sha-2",
+      loadFiles,
+    });
+
+    resolveFirst?.(
+      new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]),
+    );
+    await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
+    resolveSecond?.(
+      new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]),
+    );
+
+    expect(await screen.findByText("Code")).toBeTruthy();
+    expect(screen.getByText("+5 / -1")).toBeTruthy();
+    expect(screen.queryByText("Plans/docs")).toBeNull();
   });
 });

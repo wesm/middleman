@@ -29,6 +29,11 @@ describe("diff summary categorization", () => {
     expect(categorizeDiffFile("README.md")).toBe("plansDocs");
   });
 
+  it("does not treat broad context and plan directories as documentation", () => {
+    expect(categorizeDiffFile("src/context/AuthContext.ts")).toBe("code");
+    expect(categorizeDiffFile("src/plan/PricingPlan.js")).toBe("code");
+  });
+
   it("prefers tests over code when test paths use code extensions", () => {
     expect(categorizeDiffFile("internal/server/api_test.go")).toBe("tests");
     expect(categorizeDiffFile("packages/ui/src/Button.test.ts")).toBe("tests");

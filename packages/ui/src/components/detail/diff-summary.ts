@@ -9,6 +9,26 @@ export interface DiffLineTotals {
 
 export type DiffLineSummary = Record<DiffSummaryCategory | "total", DiffLineTotals>;
 
+export class DiffSummaryFilesResult {
+  constructor(
+    readonly stale: boolean,
+    readonly files: DiffFile[],
+  ) {}
+
+  clone(): DiffSummaryFilesResult {
+    return new DiffSummaryFilesResult(
+      this.stale,
+      this.files.map((file) => ({
+        ...file,
+        hunks: file.hunks.map((hunk) => ({
+          ...hunk,
+          lines: hunk.lines.map((line) => ({ ...line })),
+        })),
+      })),
+    );
+  }
+}
+
 const ZERO_TOTALS: DiffLineTotals = { additions: 0, deletions: 0 };
 
 const codeExtensions = new Set([
@@ -54,6 +74,8 @@ const docsExtensions = new Set([
   ".txt",
 ]);
 
+const docsDirectoryNames = new Set(["doc", "docs", "documentation"]);
+
 function pathParts(path: string): string[] {
   return path.toLowerCase().split(/[\\/]+/).filter(Boolean);
 }
@@ -89,14 +111,7 @@ function hasTestSignal(parts: string[], base: string): boolean {
 
 function hasDocsSignal(parts: string[], base: string, ext: string): boolean {
   return (
-    parts.some((part) =>
-      part === "doc" ||
-      part === "docs" ||
-      part === "documentation" ||
-      part === "plan" ||
-      part === "plans" ||
-      part === "context"
-    ) ||
+    parts.some((part) => docsDirectoryNames.has(part)) ||
     docsExtensions.has(ext) ||
     [
       "changelog",
