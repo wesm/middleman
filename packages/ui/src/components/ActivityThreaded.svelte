@@ -16,9 +16,24 @@
   interface Props {
     items: ActivityItem[];
     onSelectItem: ((item: ActivityItem) => void) | undefined;
+    compact?: boolean;
+    selectedItem?: SelectedActivityRef | null;
   }
 
-  let { items, onSelectItem }: Props = $props();
+  type SelectedActivityRef = {
+    itemType: "pr" | "issue";
+    owner: string;
+    name: string;
+    number: number;
+    platformHost?: string | undefined;
+  };
+
+  let {
+    items,
+    onSelectItem,
+    compact = false,
+    selectedItem = null,
+  }: Props = $props();
 
   interface ItemGroup {
     itemType: string;
@@ -169,9 +184,20 @@
   function handleEventClick(event: ActivityItem): void {
     onSelectItem?.(event);
   }
+
+  function isSelectedItemGroup(group: ItemGroup): boolean {
+    return selectedItem?.itemType === group.itemType
+      && selectedItem.owner === group.repoOwner
+      && selectedItem.name === group.repoName
+      && selectedItem.number === group.itemNumber
+      && (group.itemType !== "issue"
+        || !selectedItem.platformHost
+        || group.events.some((event) =>
+          event.platform_host === selectedItem.platformHost));
+  }
 </script>
 
-<div class="threaded-view">
+<div class="threaded-view" class:threaded-view--compact={compact}>
   {#each grouped as repoGroup (repoGroup.repo)}
     <div class="repo-section">
       {#if grouping.getGroupByRepo()}
@@ -184,7 +210,11 @@
       {#each repoGroup.items as itemGroup (`${itemGroup.repoOwner}/${itemGroup.repoName}:${itemGroup.itemType}:${itemGroup.itemNumber}`)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="item-row" onclick={() => handleItemClick(itemGroup)}>
+        <div
+          class="item-row"
+          class:selected={isSelectedItemGroup(itemGroup)}
+          onclick={() => handleItemClick(itemGroup)}
+        >
           <span class="item-badge" class:badge-pr={itemGroup.itemType === "pr"} class:badge-issue={itemGroup.itemType === "issue"}>
             {itemGroup.itemType === "pr" ? "PR" : "Issue"}
           </span>
@@ -276,6 +306,11 @@
 
   .item-row:hover {
     background: var(--bg-surface-hover);
+  }
+
+  .item-row.selected {
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 
   .item-badge {
@@ -398,5 +433,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 40%;
+  }
+
+  .threaded-view--compact {
+    padding: 0;
+  }
+
+  .threaded-view--compact .repo-header {
+    padding: 6px 10px 4px;
+  }
+
+  .threaded-view--compact .item-row {
+    padding: 7px 10px;
+  }
+
+  .threaded-view--compact .event-row {
+    margin-left: 10px;
+    padding-left: 18px;
   }
 </style>

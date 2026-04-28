@@ -165,18 +165,24 @@ func TestSPACacheHeaders(t *testing.T) {
 		path         string
 		wantStatus   int
 		wantCacheHdr string
+		wantPragma   string
+		wantExpires  string
 	}{
 		{
 			name:         "index served at root must not be cached",
 			path:         "/",
 			wantStatus:   http.StatusOK,
-			wantCacheHdr: "no-store, must-revalidate",
+			wantCacheHdr: "no-store, no-cache, must-revalidate, max-age=0",
+			wantPragma:   "no-cache",
+			wantExpires:  "0",
 		},
 		{
 			name:         "spa fallback must not be cached",
 			path:         "/some/spa/route",
 			wantStatus:   http.StatusOK,
-			wantCacheHdr: "no-store, must-revalidate",
+			wantCacheHdr: "no-store, no-cache, must-revalidate, max-age=0",
+			wantPragma:   "no-cache",
+			wantExpires:  "0",
 		},
 		{
 			name:         "hashed assets are immutable",
@@ -206,6 +212,8 @@ func TestSPACacheHeaders(t *testing.T) {
 			assert := Assert.New(t)
 			assert.Equal(tc.wantStatus, rr.Code)
 			assert.Equal(tc.wantCacheHdr, rr.Header().Get("Cache-Control"))
+			assert.Equal(tc.wantPragma, rr.Header().Get("Pragma"))
+			assert.Equal(tc.wantExpires, rr.Header().Get("Expires"))
 		})
 	}
 }

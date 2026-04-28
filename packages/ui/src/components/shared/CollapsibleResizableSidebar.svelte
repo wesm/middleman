@@ -74,7 +74,7 @@
 </script>
 
 <div class="list-layout">
-  {#if !isCollapsed}
+  {#if !isCollapsed && !hideSidebar}
     <aside
       class="sidebar"
       style={`width: ${sidebarOnly || !hasMain ? "100%" : `${currentWidth}px`}`}

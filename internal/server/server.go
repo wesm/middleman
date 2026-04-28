@@ -469,7 +469,10 @@ func newServer(
 			// index.html references content-hashed bundles. Browsers
 			// must always re-fetch it so a rebuild is picked up; the
 			// hashed assets it references can still be cached forever.
-			w.Header().Set("Cache-Control", "no-store, must-revalidate")
+			w.Header().Set("Cache-Control",
+				"no-store, no-cache, must-revalidate, max-age=0")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(idx))
 		}

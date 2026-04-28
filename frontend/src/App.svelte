@@ -54,6 +54,11 @@
     getSelectedPRFromRoute,
   } from "./lib/stores/router.svelte.ts";
   import {
+    buildActivitySelectionSearch,
+    parseActivitySelection,
+    type ActivitySelection,
+  } from "./lib/utils/activitySelection.js";
+  import {
     getGlobalRepo,
     applyConfigRepo,
   } from "./lib/stores/filter.svelte.js";
@@ -154,23 +159,7 @@
     } else if (!stores.settings.hasConfiguredRepos()) {
       drawerItem = null;
     } else {
-      const sp = new URLSearchParams(window.location.search);
-      const sel = sp.get("selected");
-      if (sel) {
-        const match = sel.match(
-          /^(pr|issue):([^/]+)\/([^/]+)\/(\d+)$/,
-        );
-        if (match) {
-          drawerItem = {
-            itemType: match[1] as "pr" | "issue",
-            owner: match[2]!,
-            name: match[3]!,
-            number: parseInt(match[4]!, 10),
-          };
-        }
-      } else {
-        drawerItem = null;
-      }
+      drawerItem = parseActivitySelection(window.location.search);
     }
 
     if (route.page === "pulls") {
@@ -210,30 +199,19 @@
     owner: string;
     name: string;
     number: number;
+    detailTab: "conversation" | "files";
   } | null>(null);
 
   function updateDrawerURL(
-    item: typeof drawerItem,
+    item: ActivitySelection | null,
   ): void {
-    const sp = new URLSearchParams(
+    if (getPage() !== "activity") return;
+    const sp = buildActivitySelectionSearch(
       window.location.search,
+      item,
     );
-    if (item) {
-      sp.set(
-        "selected",
-        `${item.itemType}:${item.owner}/${item.name}/${item.number}`,
-      );
-    } else {
-      sp.delete("selected");
-    }
     const qs = sp.toString();
-    const base =
-      getBasePath().replace(/\/$/, "") || "";
-    history.replaceState(
-      null,
-      "",
-      (base || "/") + (qs ? `?${qs}` : ""),
-    );
+    replaceUrl(qs ? `/?${qs}` : "/");
   }
 
   function handleActivitySelect(
@@ -247,7 +225,16 @@
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,
+      detailTab: "conversation",
     };
+    updateDrawerURL(drawerItem);
+  }
+
+  function handleActivityDetailTabChange(
+    tab: "conversation" | "files",
+  ): void {
+    if (!drawerItem || drawerItem.itemType !== "pr") return;
+    drawerItem = { ...drawerItem, detailTab: tab };
     updateDrawerURL(drawerItem);
   }
 
@@ -520,6 +507,8 @@
           {drawerItem}
           onSelectItem={handleActivitySelect}
           onCloseDrawer={closeDrawer}
+          detailTab={drawerItem?.detailTab ?? "conversation"}
+          onDetailTabChange={handleActivityDetailTabChange}
         />
       {:else if getPage() === "pulls"}
         {@const route = getRoute()}

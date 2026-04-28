@@ -1,6 +1,10 @@
 <script lang="ts">
   import { getStores } from "@middleman/ui";
   import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
+  import {
+    activitySelectionToRoute,
+    parseActivitySelection,
+  } from "../../utils/activitySelection.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
   import HeaderIconButton from "./HeaderIconButton.svelte";
   import {
@@ -35,6 +39,37 @@
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
+
+  function routeForTab(
+    destination: "pulls" | "issues",
+  ): string {
+    const selected = getPage() === "activity"
+      ? parseActivitySelection(window.location.search)
+      : null;
+    return activitySelectionToRoute(selected, destination)
+      ?? `/${destination}`;
+  }
+
+  function navigateTab(
+    destination:
+      | "activity"
+      | "pulls"
+      | "issues"
+      | "board"
+      | "reviews"
+      | "workspaces"
+      | "settings"
+      | "design-system",
+  ): void {
+    if (destination === "activity") navigate("/");
+    else if (destination === "pulls" || destination === "issues") {
+      navigate(routeForTab(destination));
+    } else if (destination === "board") navigate("/pulls/board");
+    else if (destination === "reviews") navigate("/reviews");
+    else if (destination === "workspaces") navigate("/workspaces");
+    else if (destination === "settings") navigate("/settings");
+    else if (destination === "design-system") navigate("/design-system");
+  }
 </script>
 
 <header class="app-header">
@@ -68,13 +103,13 @@
         onchange={(e) => {
           const v = (e.target as HTMLSelectElement).value;
           if (v === "activity") navigate("/");
-          else if (v === "pulls") navigate("/pulls");
-          else if (v === "issues") navigate("/issues");
-          else if (v === "board") navigate("/pulls/board");
-          else if (v === "reviews") navigate("/reviews");
-          else if (v === "workspaces" || v === "terminal") navigate("/workspaces");
-          else if (v === "settings") navigate("/settings");
-          else if (v === "design-system") navigate("/design-system");
+          else if (v === "pulls") navigateTab("pulls");
+          else if (v === "issues") navigateTab("issues");
+          else if (v === "board") navigateTab("board");
+          else if (v === "reviews") navigateTab("reviews");
+          else if (v === "workspaces" || v === "terminal") navigateTab("workspaces");
+          else if (v === "settings") navigateTab("settings");
+          else if (v === "design-system") navigateTab("design-system");
         }}
       >
         <option value="activity">Activity</option>
@@ -95,21 +130,21 @@
       </select>
     {:else}
       <div class="tab-group">
-        <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigate("/"); }}>
+        <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
           Activity
         </button>
-        <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigate("/pulls")}>
+        <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
           PRs
         </button>
-        <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigate("/issues")}>
+        <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigateTab("issues")}>
           Issues
         </button>
-        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigate("/pulls/board")}>
+        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigateTab("board")}>
           Board
         </button>
         <button class="view-tab"
           class:active={getPage() === "reviews"}
-          onclick={() => navigate("/reviews")}>
+          onclick={() => navigateTab("reviews")}>
           Reviews
           {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
             <span class="daemon-indicator" title="Daemon unavailable"></span>
@@ -118,7 +153,7 @@
         <button
           class="view-tab"
           class:active={getPage() === "workspaces" || getPage() === "terminal"}
-          onclick={() => navigate("/workspaces")}
+          onclick={() => navigateTab("workspaces")}
         >Workspaces</button>
       </div>
     {/if}
