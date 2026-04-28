@@ -64,7 +64,10 @@
   mainEmpty={selectedPR === null}
 >
   {#snippet sidebar()}
-    <PullList getDetailTab={() => detailTab} />
+    <PullList
+      getDetailTab={() => detailTab}
+      showSelectedDiffSidebar={false}
+    />
   {/snippet}
 
   {#if selectedPR !== null}

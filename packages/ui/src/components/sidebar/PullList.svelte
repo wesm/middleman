@@ -28,8 +28,12 @@
 
   interface Props {
     getDetailTab?: () => string;
+    showSelectedDiffSidebar?: boolean;
   }
-  const { getDetailTab: _getDetailTab = () => "conversation" }: Props = $props();
+  const {
+    getDetailTab: _getDetailTab = () => "conversation",
+    showSelectedDiffSidebar = true,
+  }: Props = $props();
 
   let searchInput = $state(pulls.getSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -98,13 +102,18 @@
   });
 
   const isDiffFocus = $derived(
-    _getDetailTab() === "files" && selectedVisiblePR !== null,
+    showSelectedDiffSidebar
+      && _getDetailTab() === "files"
+      && selectedVisiblePR !== null,
   );
 
   // True when in files tab and selected PR isn't actually rendered in sidebar
   // (either filtered out of list, or in user-collapsed repo group).
   const needsFallbackFileList = $derived(
-    _getDetailTab() === "files" && pulls.getSelectedPR() !== null && selectedVisiblePR === null,
+    showSelectedDiffSidebar
+      && _getDetailTab() === "files"
+      && pulls.getSelectedPR() !== null
+      && selectedVisiblePR === null,
   );
 
   const isSelectedActiveWorktree = $derived.by(() => {
@@ -250,10 +259,10 @@
                   {importAction}
                   onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
                 />
-                {#if prSelected && _getDetailTab() === "files"}
+                {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                   <div class="diff-files-wrap">
-                  <DiffSidebar />
-                </div>
+                    <DiffSidebar />
+                  </div>
                 {/if}
               {/each}
             {/if}
@@ -272,7 +281,7 @@
                 {importAction}
                 onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
               />
-              {#if prSelected && _getDetailTab() === "files"}
+              {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                 <div class="diff-files-wrap">
                   <DiffSidebar />
                 </div>
@@ -290,10 +299,10 @@
             {importAction}
             onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
           />
-          {#if prSelected && _getDetailTab() === "files"}
+          {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
             <div class="diff-files-wrap">
-                  <DiffSidebar />
-                </div>
+              <DiffSidebar />
+            </div>
           {/if}
         {/each}
       {/if}
