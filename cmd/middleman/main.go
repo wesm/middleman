@@ -25,6 +25,47 @@ import (
 	"github.com/wesm/middleman/internal/web"
 )
 
+type splitLogHandler struct {
+	handlers []slog.Handler
+}
+
+func (h splitLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h splitLogHandler) Handle(ctx context.Context, r slog.Record) error {
+	for _, handler := range h.handlers {
+		if !handler.Enabled(ctx, r.Level) {
+			continue
+		}
+		if err := handler.Handle(ctx, r.Clone()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h splitLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	handlers := make([]slog.Handler, 0, len(h.handlers))
+	for _, handler := range h.handlers {
+		handlers = append(handlers, handler.WithAttrs(attrs))
+	}
+	return splitLogHandler{handlers: handlers}
+}
+
+func (h splitLogHandler) WithGroup(name string) slog.Handler {
+	handlers := make([]slog.Handler, 0, len(h.handlers))
+	for _, handler := range h.handlers {
+		handlers = append(handlers, handler.WithGroup(name))
+	}
+	return splitLogHandler{handlers: handlers}
+}
+
 var (
 	version   = "dev"
 	commit    = "unknown"
@@ -55,9 +96,25 @@ func configureLogging(stderr io.Writer) (func() error, error) {
 		return nil, err
 	}
 
-	var writer = stderr
 	var file *os.File
 	logFile := strings.TrimSpace(os.Getenv("MIDDLEMAN_LOG_FILE"))
+	stderrLevel := level
+	if logFile != "" {
+		stderrLevel = slog.LevelInfo
+	}
+	if raw := os.Getenv("MIDDLEMAN_LOG_STDERR_LEVEL"); strings.TrimSpace(raw) != "" {
+		stderrLevel, err = parseLogLevel(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	handlers := []slog.Handler{
+		slog.NewTextHandler(
+			stderr,
+			&slog.HandlerOptions{Level: stderrLevel},
+		),
+	}
 	if logFile != "" {
 		if err := os.MkdirAll(filepath.Dir(logFile), 0o700); err != nil {
 			return nil, fmt.Errorf("create log directory: %w", err)
@@ -70,16 +127,20 @@ func configureLogging(stderr io.Writer) (func() error, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open log file: %w", err)
 		}
-		writer = io.MultiWriter(stderr, file)
+		handlers = append(
+			handlers,
+			slog.NewTextHandler(
+				file,
+				&slog.HandlerOptions{Level: level},
+			),
+		)
 	}
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(
-		writer,
-		&slog.HandlerOptions{Level: level},
-	)))
+	slog.SetDefault(slog.New(splitLogHandler{handlers: handlers}))
 	slog.Debug(
 		"logging configured",
 		"level", level.String(),
+		"stderr_level", stderrLevel.String(),
 		"file", logFile,
 	)
 
