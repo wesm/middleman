@@ -334,6 +334,12 @@
     return "Merge";
   }
 
+  function hasMergeConflicts(
+    pr: { State: string; MergeableState: string },
+  ): boolean {
+    return pr.State === "open" && pr.MergeableState === "dirty";
+  }
+
   const worktreeLinks = $derived(
     detailStore.getDetail()?.worktree_links ?? [],
   );
@@ -701,11 +707,15 @@
           {/if}
           {#if repoSettings}
             {@const mergeSettings = repoSettings}
+            {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
             <ActionButton
               class="btn--merge"
-              disabled={stalePR}
+              disabled={stalePR || mergeDisabledByConflicts}
+              title={mergeDisabledByConflicts
+                ? "Resolve merge conflicts before merging"
+                : ""}
               onclick={() => {
-                if (stalePR) return;
+                if (stalePR || mergeDisabledByConflicts) return;
                 showMergeModal = true;
                 closeActionMenu();
               }}
@@ -886,7 +896,7 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings && !stalePR}
+      {#if showMergeModal && repoSettings && !stalePR && !hasMergeConflicts(pr)}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal
