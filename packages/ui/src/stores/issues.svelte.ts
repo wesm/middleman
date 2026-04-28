@@ -1,6 +1,8 @@
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
+export type IssueDetailSyncMode = boolean | "background";
+
 export interface IssueSelection {
   owner: string;
   name: string;
@@ -23,6 +25,10 @@ function apiErrorMessage(
   fallback: string,
 ): string {
   return error.detail ?? error.title ?? fallback;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
@@ -217,10 +223,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     platformHost?: string,
-    options?: { sync?: boolean },
+    options?: { sync?: IssueDetailSyncMode },
   ): Promise<void> {
-    const shouldSync = options?.sync ?? true;
-    const key = `${platformHost ?? ""}:${owner}/${name}/${number}:${shouldSync ? "sync" : "read"}`;
+    const syncMode = options?.sync ?? true;
+    const key = `${platformHost ?? ""}:${owner}/${name}/${number}:${String(syncMode)}`;
     if (
       detailLoading &&
       activeDetailLoad?.key === key &&
@@ -273,12 +279,79 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         if (activeDetailLoad === currentLoad) activeDetailLoad = null;
       }
 
-      if (gen === issueSyncGeneration && shouldSync) {
+      if (gen === issueSyncGeneration && syncMode === true) {
         void syncIssueDetail(owner, name, number, gen, platformHost);
+      } else if (gen === issueSyncGeneration && syncMode === "background") {
+        void enqueueBackgroundIssueSync(
+          owner,
+          name,
+          number,
+          gen,
+          issueDetail?.detail_fetched_at,
+          platformHost,
+        );
       }
     })();
     currentLoad.promise = promise;
     return promise;
+  }
+
+  async function enqueueBackgroundIssueSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+    platformHost?: string,
+  ): Promise<void> {
+    detailSyncing = true;
+    try {
+      const { error: requestError } = await apiClient.POST(
+        "/repos/{owner}/{name}/issues/{number}/sync/async",
+        {
+          params: {
+            path: { owner, name, number },
+            query: {
+              ...(platformHost && {
+                platform_host: platformHost,
+              }),
+            },
+          },
+        },
+      );
+      if (requestError) return;
+      await refreshAfterBackgroundIssueSync(
+        owner,
+        name,
+        number,
+        gen,
+        previousFetchedAt,
+        platformHost,
+      );
+    } finally {
+      if (gen === issueSyncGeneration) detailSyncing = false;
+      void syncDep?.refreshSyncStatus?.();
+    }
+  }
+
+  async function refreshAfterBackgroundIssueSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+    platformHost?: string,
+  ): Promise<void> {
+    for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
+      await delay(ms);
+      if (gen !== issueSyncGeneration) return;
+      await refreshIssueDetail(owner, name, number, platformHost);
+      if (gen !== issueSyncGeneration) return;
+      const fetchedAt = issueDetail?.detail_fetched_at;
+      if (fetchedAt && fetchedAt !== previousFetchedAt) {
+        return;
+      }
+    }
   }
 
   async function syncIssueDetail(

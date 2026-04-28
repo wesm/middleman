@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2732,6 +2733,66 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	assert.NotNil(finalPR.ClosedAt)
 	assert.Equal("Test PR #1", finalPR.Title)
 	assert.True(finalPR.UpdatedAt.After(staleUpdatedAt))
+}
+
+func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
+	require := require.New(t)
+
+	syncStarted := make(chan struct{}, 1)
+	releaseSync := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseSync) })
+	})
+
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+			syncStarted <- struct{}{}
+			<-releaseSync
+
+			id := int64(101)
+			state := "open"
+			title := "fresh async sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			headSHA := "abc123"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
+		ctx, "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode())
+
+	select {
+	case <-syncStarted:
+	case <-time.After(2 * time.Second):
+		require.Fail("background sync did not start")
+	}
+	releaseOnce.Do(func() { close(releaseSync) })
 }
 
 func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {

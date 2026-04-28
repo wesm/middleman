@@ -109,24 +109,26 @@ func (c shutdownAwareContext) Value(key any) any {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db                *db.DB
-	syncer            *ghclient.Syncer
-	clones            *gitclone.Manager
-	workspaces        *workspace.Manager
-	tmuxActivity      *tmuxActivityTracker
-	runtime           *localruntime.Manager
-	cfg               *config.Config
-	cfgPath           string
-	cfgMu             sync.Mutex
-	basePath          string
-	options           ServerOptions
-	version           string
-	now               func() time.Time
-	handler           http.Handler
-	hub               *EventHub
-	activeWorktreeMu  sync.Mutex
-	activeWorktreeKey string
-	activeWorktreeSet bool
+	db                 *db.DB
+	syncer             *ghclient.Syncer
+	clones             *gitclone.Manager
+	workspaces         *workspace.Manager
+	tmuxActivity       *tmuxActivityTracker
+	runtime            *localruntime.Manager
+	cfg                *config.Config
+	cfgPath            string
+	cfgMu              sync.Mutex
+	basePath           string
+	options            ServerOptions
+	version            string
+	now                func() time.Time
+	handler            http.Handler
+	hub                *EventHub
+	activeWorktreeMu   sync.Mutex
+	activeWorktreeKey  string
+	activeWorktreeSet  bool
+	detailSyncMu       sync.Mutex
+	detailSyncInFlight map[string]struct{}
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -179,11 +181,11 @@ func (s *Server) SetVersion(v string) { s.version = v }
 // context cancelled by Shutdown. If Shutdown has already started,
 // runBackground drops the task: these goroutines are best-effort
 // refreshes and starting one during drain would race with bg.Wait.
-func (s *Server) runBackground(fn func(ctx context.Context)) {
+func (s *Server) runBackground(fn func(ctx context.Context)) bool {
 	s.bgMu.Lock()
 	if s.shuttingDown {
 		s.bgMu.Unlock()
-		return
+		return false
 	}
 	s.bg.Add(1)
 	s.bgMu.Unlock()
@@ -191,6 +193,7 @@ func (s *Server) runBackground(fn func(ctx context.Context)) {
 		defer s.bg.Done()
 		fn(s.bgCtx)
 	}()
+	return true
 }
 
 // Shutdown stops the HTTP listener (if started via ListenAndServe

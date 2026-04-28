@@ -5,6 +5,7 @@
     from "../components/sidebar/IssueList.svelte";
   import IssueDetail
     from "../components/detail/IssueDetail.svelte";
+  import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
 
@@ -18,7 +19,7 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
-    autoSyncDetail?: boolean;
+    autoSyncDetail?: IssueDetailSyncMode;
     onSidebarResize?: (width: number) => void;
   }
 
@@ -27,7 +28,7 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
-    autoSyncDetail = true,
+    autoSyncDetail = "background",
     onSidebarResize,
   }: Props = $props();
 </script>

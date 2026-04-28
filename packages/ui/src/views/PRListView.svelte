@@ -10,6 +10,7 @@
   import DiffView from "../components/diff/DiffView.svelte";
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
+  import type { DetailSyncMode } from "../stores/detail.svelte.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
@@ -25,7 +26,7 @@
     hideSidebar?: boolean;
     sidebarWidth?: number;
     showStackSidebar?: boolean;
-    autoSyncDetail?: boolean;
+    autoSyncDetail?: DetailSyncMode;
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
   }
@@ -37,7 +38,7 @@
     hideSidebar = false,
     sidebarWidth = 340,
     showStackSidebar = true,
-    autoSyncDetail = true,
+    autoSyncDetail = "background",
     onSidebarResize,
     onDetailTabChange,
   }: Props = $props();

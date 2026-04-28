@@ -408,10 +408,11 @@ test.describe("activity split view and detail drawers", () => {
       .toContainText("Loading");
   });
 
-  test("Activity PR switching does not fan out detail loads or start syncs", async ({ page }) => {
+  test("Activity PR switching uses background sync without foreground fanout", async ({ page }) => {
     const detailBodies = new Map<string, string>();
     const detailGets = new Map<string, number>();
     const syncPosts = new Map<string, number>();
+    const asyncSyncPosts = new Map<string, number>();
 
     await page.route(
       (url) =>
@@ -457,6 +458,23 @@ test.describe("activity split view and detail drawers", () => {
         await route.fallback();
       },
     );
+    await page.route(
+      (url) =>
+        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/sync\/async$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.fallback();
+          return;
+        }
+
+        const detailUrl = route.request().url().replace(/\/sync\/async$/, "");
+        asyncSyncPosts.set(
+          detailUrl,
+          (asyncSyncPosts.get(detailUrl) ?? 0) + 1,
+        );
+        await route.fulfill({ status: 202, body: "" });
+      },
+    );
 
     await page.goto("/?view=flat");
     await waitForActivityTable(page);
@@ -480,8 +498,10 @@ test.describe("activity split view and detail drawers", () => {
     // detail/sync requests without making the test depend on the real
     // backend sync duration.
     await page.waitForTimeout(500);
-    expect(maxCount(detailGets)).toBeLessThanOrEqual(1);
+    expect(maxCount(detailGets)).toBeLessThanOrEqual(2);
     expect(maxCount(syncPosts)).toBe(0);
+    expect(maxCount(asyncSyncPosts)).toBeLessThanOrEqual(1);
+    expect(maxCount(asyncSyncPosts)).toBeGreaterThan(0);
   });
 
   test("Activity issue selection renders detail when a duplicate load stalls", async ({ page }) => {
@@ -521,24 +541,32 @@ test.describe("activity split view and detail drawers", () => {
     expect(detailGetCount).toBeGreaterThanOrEqual(1);
   });
 
-  test("Activity issue switching does not fan out detail loads or start syncs", async ({ page }) => {
+  test("Activity issue switching uses background sync without foreground fanout", async ({ page }) => {
     await mockActivityWithTwoGheIssues(page);
 
     const detailGets = new Map<string, number>();
     const syncPosts = new Map<string, number>();
+    const asyncSyncPosts = new Map<string, number>();
 
     await page.route("**/api/v1/repos/acme/widgets/issues/**", async (route) => {
       const url = new URL(route.request().url());
-      const match = url.pathname.match(/\/issues\/(\d+)(?:\/sync)?$/);
+      const match = url.pathname.match(/\/issues\/(\d+)(?:\/sync(?:\/async)?)?$/);
       if (match === null) {
         await route.fallback();
         return;
       }
 
       const issueNumber = Number(match[1]);
-      const key = url.pathname.replace(/\/sync$/, "");
+      const key = url.pathname.replace(/\/sync(?:\/async)?$/, "");
       if (route.request().method() === "GET" && !url.pathname.endsWith("/sync")) {
         detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
+      } else if (
+        route.request().method() === "POST"
+        && url.pathname.endsWith("/sync/async")
+      ) {
+        asyncSyncPosts.set(key, (asyncSyncPosts.get(key) ?? 0) + 1);
+        await route.fulfill({ status: 202, body: "" });
+        return;
       } else if (
         route.request().method() === "POST"
         && url.pathname.endsWith("/sync")
@@ -579,8 +607,10 @@ test.describe("activity split view and detail drawers", () => {
       .toHaveText("Fix Firefox layout issue");
 
     await page.waitForTimeout(500);
-    expect(maxCount(detailGets)).toBeLessThanOrEqual(1);
+    expect(maxCount(detailGets)).toBeLessThanOrEqual(2);
     expect(maxCount(syncPosts)).toBe(0);
+    expect(maxCount(asyncSyncPosts)).toBeLessThanOrEqual(1);
+    expect(maxCount(asyncSyncPosts)).toBeGreaterThan(0);
   });
 
   test("direct Activity PR files URL restores split view", async ({ page }) => {

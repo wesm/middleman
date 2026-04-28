@@ -223,7 +223,7 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           showStackSidebar={false}
-          autoSyncDetail={false}
+          autoSyncDetail="background"
           {...onDetailTabChange ? { onDetailTabChange } : {}}
         />
       {:else}
@@ -236,7 +236,7 @@
           }}
           isSidebarCollapsed={true}
           hideSidebar={true}
-          autoSyncDetail={false}
+          autoSyncDetail="background"
         />
       {/if}
     </section>

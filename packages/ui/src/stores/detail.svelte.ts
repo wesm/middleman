@@ -4,6 +4,8 @@ import type {
 } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
+export type DetailSyncMode = boolean | "background";
+
 export interface DetailStoreOptions {
   client: MiddlemanClient;
   getPage?: () => string;
@@ -34,6 +36,10 @@ function apiErrorMessage(
   fallback: string,
 ): string {
   return error.detail ?? error.title ?? fallback;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function createDetailStore(
@@ -211,10 +217,10 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
-    options?: { sync?: boolean },
+    options?: { sync?: DetailSyncMode },
   ): Promise<void> {
-    const shouldSync = options?.sync ?? true;
-    const key = `${prKey(owner, name, number)}:${shouldSync ? "sync" : "read"}`;
+    const syncMode = options?.sync ?? true;
+    const key = `${prKey(owner, name, number)}:${String(syncMode)}`;
     if (
       loading &&
       activeLoad?.key === key &&
@@ -272,12 +278,66 @@ export function createDetailStore(
         if (activeLoad === currentLoad) activeLoad = null;
       }
 
-      if (gen === syncGeneration && shouldSync) {
+      if (gen === syncGeneration && syncMode === true) {
         void syncDetail(owner, name, number, gen);
+      } else if (gen === syncGeneration && syncMode === "background") {
+        void enqueueBackgroundDetailSync(
+          owner,
+          name,
+          number,
+          gen,
+          detail?.detail_fetched_at,
+        );
       }
     })();
     currentLoad.promise = promise;
     return promise;
+  }
+
+  async function enqueueBackgroundDetailSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+  ): Promise<void> {
+    syncing = true;
+    try {
+      const { error: requestError } = await apiClient.POST(
+        "/repos/{owner}/{name}/pulls/{number}/sync/async",
+        { params: { path: { owner, name, number } } },
+      );
+      if (requestError) return;
+      await refreshAfterBackgroundDetailSync(
+        owner,
+        name,
+        number,
+        gen,
+        previousFetchedAt,
+      );
+    } finally {
+      if (gen === syncGeneration) syncing = false;
+      void syncDep?.refreshSyncStatus?.();
+    }
+  }
+
+  async function refreshAfterBackgroundDetailSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+  ): Promise<void> {
+    for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
+      await delay(ms);
+      if (gen !== syncGeneration) return;
+      await refreshDetail(owner, name, number);
+      if (gen !== syncGeneration) return;
+      const fetchedAt = detail?.detail_fetched_at;
+      if (fetchedAt && fetchedAt !== previousFetchedAt) {
+        return;
+      }
+    }
   }
 
   async function refreshDetailOnly(

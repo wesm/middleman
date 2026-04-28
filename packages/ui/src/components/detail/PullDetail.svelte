@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import type { KanbanStatus } from "../../api/types.js";
+  import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
@@ -41,7 +42,7 @@
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
-    autoSync?: boolean;
+    autoSync?: DetailSyncMode;
   }
 
   const {
@@ -51,7 +52,7 @@
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
-    autoSync = true,
+    autoSync = "background",
   }: Props = $props();
 
   let activeTab = $state<"conversation" | "files">("conversation");

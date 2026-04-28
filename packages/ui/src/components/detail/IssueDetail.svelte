@@ -4,6 +4,7 @@
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
+  import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -24,7 +25,7 @@
     name: string;
     number: number;
     platformHost?: string | undefined;
-    autoSync?: boolean;
+    autoSync?: IssueDetailSyncMode;
   }
 
   const {
@@ -32,7 +33,7 @@
     name,
     number,
     platformHost,
-    autoSync = true,
+    autoSync = "background",
   }: Props = $props();
 
   // See PullDetail.svelte: while a route change is in flight, the
