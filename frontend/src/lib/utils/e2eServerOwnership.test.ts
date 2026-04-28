@@ -221,6 +221,118 @@ describe("ensureEmbeddedFrontend", () => {
       }
     }
   });
+
+  it("throws when bun runs but the build fails", async () => {
+    const ensureEmbeddedFrontend = (
+      e2eServerModule as {
+        ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
+      }
+    ).ensureEmbeddedFrontend;
+
+    expect(ensureEmbeddedFrontend).toBeTypeOf("function");
+    if (!ensureEmbeddedFrontend) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const binDir = path.join(dir, "bin");
+    const frontendDir = path.join(dir, "frontend");
+    const frontendSrc = path.join(frontendDir, "src");
+    const frontendDist = path.join(frontendDir, "dist");
+    const embeddedDist = path.join(dir, "internal", "web", "dist");
+
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(frontendSrc, { recursive: true });
+    mkdirSync(frontendDist, { recursive: true });
+    mkdirSync(embeddedDist, { recursive: true });
+
+    // Fake bun that fails the build (mimics a real build error). The
+    // existing dist must not be silently reused in this case.
+    writeFileSync(
+      path.join(binDir, "bun"),
+      "#!/usr/bin/env bash\necho 'simulated build error' >&2\nexit 1\n",
+      { mode: 0o755 },
+    );
+
+    const frontendIndex = path.join(frontendDist, "index.html");
+    const embeddedIndex = path.join(embeddedDist, "index.html");
+    const sourceFile = path.join(frontendSrc, "App.svelte");
+    writeFileSync(frontendIndex, "<html><body>old dist</body></html>", { flag: "wx" });
+    writeFileSync(embeddedIndex, "<html><body>old embed</body></html>", { flag: "wx" });
+    writeFileSync(sourceFile, "<script></script>", { flag: "wx" });
+
+    const oldTime = new Date("2026-01-01T00:00:00Z");
+    const newTime = new Date("2026-01-01T00:00:10Z");
+    utimesSync(frontendIndex, oldTime, oldTime);
+    utimesSync(embeddedIndex, oldTime, oldTime);
+    utimesSync(sourceFile, newTime, newTime);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      await expect(ensureEmbeddedFrontend(dir)).rejects.toThrow(
+        /frontend build failed/,
+      );
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
+  });
+
+  it("falls back to existing dist when bun is unavailable", async () => {
+    const ensureEmbeddedFrontend = (
+      e2eServerModule as {
+        ensureEmbeddedFrontend?: (rootDir?: string) => Promise<void>;
+      }
+    ).ensureEmbeddedFrontend;
+
+    expect(ensureEmbeddedFrontend).toBeTypeOf("function");
+    if (!ensureEmbeddedFrontend) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const frontendDir = path.join(dir, "frontend");
+    const frontendSrc = path.join(frontendDir, "src");
+    const frontendDist = path.join(frontendDir, "dist");
+    const embeddedDist = path.join(dir, "internal", "web", "dist");
+
+    mkdirSync(frontendSrc, { recursive: true });
+    mkdirSync(frontendDist, { recursive: true });
+    mkdirSync(embeddedDist, { recursive: true });
+
+    const frontendIndex = path.join(frontendDist, "index.html");
+    const embeddedIndex = path.join(embeddedDist, "index.html");
+    const sourceFile = path.join(frontendSrc, "App.svelte");
+    writeFileSync(frontendIndex, "<html><body>existing dist</body></html>", { flag: "wx" });
+    writeFileSync(sourceFile, "<script></script>", { flag: "wx" });
+
+    const oldTime = new Date("2026-01-01T00:00:00Z");
+    const newTime = new Date("2026-01-01T00:00:10Z");
+    utimesSync(frontendIndex, oldTime, oldTime);
+    utimesSync(sourceFile, newTime, newTime);
+
+    // Empty PATH so the spawned `bun` triggers ENOENT (missing tool).
+    // No embedded index exists yet, so the fallback path must still
+    // copy the (stale) frontend dist into the embedded location.
+    const previousPath = process.env.PATH;
+    process.env.PATH = "";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await ensureEmbeddedFrontend(dir);
+      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>existing dist</body>");
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
+  });
 });
 
 describe("getReusableServerInfo", () => {

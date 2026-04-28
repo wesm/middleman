@@ -99,23 +99,32 @@ async function newestFrontendSourceMtime(
   return newest;
 }
 
-async function tryBuildFrontend(frontendDir: string): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
+type BuildOutcome =
+  | { kind: "ok" }
+  | { kind: "missing-tool"; cause: NodeJS.ErrnoException }
+  | { kind: "build-failed"; exitCode: number | null };
+
+async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
+  return await new Promise<BuildOutcome>((resolve) => {
     const build = spawn("bun", ["run", "build"], {
       cwd: frontendDir,
       stdio: "inherit",
       env: process.env,
     });
     let settled = false;
-    build.once("error", () => {
+    build.once("error", (err) => {
       if (settled) return;
       settled = true;
-      resolve(false);
+      resolve({ kind: "missing-tool", cause: err as NodeJS.ErrnoException });
     });
     build.once("exit", (code) => {
       if (settled) return;
       settled = true;
-      resolve(code === 0);
+      if (code === 0) {
+        resolve({ kind: "ok" });
+      } else {
+        resolve({ kind: "build-failed", exitCode: code });
+      }
     });
   });
 }
@@ -133,21 +142,26 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
     frontendMtime === null ||
     (sourceMtime !== null && sourceMtime > frontendMtime)
   ) {
-    const built = await tryBuildFrontend(frontendDir);
-    if (built) {
+    const outcome = await tryBuildFrontend(frontendDir);
+    if (outcome.kind === "ok") {
       frontendMtime = await newestMtimeUnder(frontendDist);
+    } else if (outcome.kind === "build-failed") {
+      // Real build failure (bun ran but vite/svelte rejected the
+      // sources). Falling back here would silently run e2e against
+      // stale dist while the working tree is broken.
+      throw new Error(
+        `frontend build failed with exit code ${outcome.exitCode ?? "null"}`,
+      );
     } else if (frontendMtime === null) {
       throw new Error(
-        `frontend build failed and no existing dist at ${frontendIndex}; ` +
-          `install bun or pre-build the frontend before running e2e tests`,
+        `bun is unavailable (${outcome.cause.code ?? outcome.cause.message}) ` +
+          `and no existing dist at ${frontendIndex}; install bun or ` +
+          `pre-build the frontend before running e2e tests`,
       );
-    }
-    // Otherwise fall back to the existing dist with a notice. Better to
-    // run e2e against slightly stale code than to fail the whole suite
-    // when bun is unavailable.
-    if (!built) {
+    } else {
       console.warn(
-        `[e2e] bun build failed or bun is unavailable; using existing ${frontendDist}`,
+        `[e2e] bun is unavailable (${outcome.cause.code ?? outcome.cause.message}); ` +
+          `using existing ${frontendDist}`,
       );
     }
   }
