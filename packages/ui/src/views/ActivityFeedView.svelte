@@ -36,6 +36,9 @@
   // Internal state used when no controlled props are
   // provided (standalone usage).
   let internalDrawer = $state<DrawerItem | null>(null);
+  let internalDetailTab = $state<"conversation" | "files">(
+    "conversation",
+  );
   let activityPaneWidth = $state(360);
   let activityPaneCollapsed = $state(false);
 
@@ -49,6 +52,19 @@
   const activeDrawer = $derived(
     controlled ? (controlledDrawer ?? null) : internalDrawer,
   );
+  const effectiveDetailTab = $derived(
+    controlled ? detailTab : internalDetailTab,
+  );
+
+  function handleDetailTabChange(
+    tab: "conversation" | "files",
+  ): void {
+    if (controlled) {
+      onDetailTabChange?.(tab);
+      return;
+    }
+    internalDetailTab = tab;
+  }
 
   function handleSelect(item: ActivityItem): void {
     const itemType =
@@ -63,6 +79,7 @@
     };
     if (!controlled) {
       internalDrawer = entry;
+      internalDetailTab = "conversation";
     }
     onSelectItem?.(item);
   }
@@ -132,6 +149,23 @@
 
   onDestroy(() => {
     stopActivityPaneResize();
+  });
+
+  // Escape closes the active drawer when one is open. Mirrors the
+  // behavior of the previous DetailDrawer the split view replaced.
+  $effect(() => {
+    if (activeDrawer === null) return;
+    function onKey(event: KeyboardEvent): void {
+      if (event.key !== "Escape") return;
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (target?.isContentEditable) return;
+      handleClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   });
 </script>
 
@@ -219,12 +253,12 @@
             name: activeDrawer.name,
             number: activeDrawer.number,
           }}
-          {detailTab}
+          detailTab={effectiveDetailTab}
           isSidebarCollapsed={true}
           hideSidebar={true}
           showStackSidebar={false}
           autoSyncDetail="background"
-          {...onDetailTabChange ? { onDetailTabChange } : {}}
+          onDetailTabChange={handleDetailTabChange}
         />
       {:else}
         <IssueListView

@@ -3647,9 +3647,14 @@ func (s *Syncer) syncMRWithHost(
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 		normalized.ReviewDecision = existing.ReviewDecision
-		normalized.CIStatus = existing.CIStatus
-		normalized.CIChecksJSON = existing.CIChecksJSON
-		normalized.CIHadPending = existing.CIHadPending
+		// CI is tied to the head SHA. If the head moved we must clear the
+		// previous values; otherwise a failed CI refresh would leave stale
+		// checks attached to the new commit.
+		if existing.PlatformHeadSHA == normalized.PlatformHeadSHA {
+			normalized.CIStatus = existing.CIStatus
+			normalized.CIChecksJSON = existing.CIChecksJSON
+			normalized.CIHadPending = existing.CIHadPending
+		}
 		normalized.DetailFetchedAt = existing.DetailFetchedAt
 		if normalized.AuthorDisplayName == "" {
 			normalized.AuthorDisplayName = existing.AuthorDisplayName

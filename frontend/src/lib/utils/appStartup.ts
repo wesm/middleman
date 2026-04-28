@@ -60,6 +60,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         stores.activity.hydrateDefaults(settings.activity);
       }
     } catch (err) {
+      if (cancelled) return;
       console.warn(
         "Failed to load settings, using defaults:",
         err,

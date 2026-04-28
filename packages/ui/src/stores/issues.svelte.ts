@@ -226,7 +226,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     options?: { sync?: IssueDetailSyncMode },
   ): Promise<void> {
     const syncMode = options?.sync ?? true;
-    const key = `${platformHost ?? ""}:${owner}/${name}/${number}:${String(syncMode)}`;
+    // Dedup by item identity only. A second caller with a different
+    // sync mode shouldn't issue a duplicate GET; the in-flight load's
+    // sync mode wins, since the displayed issue is the same.
+    const key = `${platformHost ?? ""}:${owner}/${name}/${number}`;
     if (
       detailLoading &&
       activeDetailLoad?.key === key &&

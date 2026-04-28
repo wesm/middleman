@@ -220,7 +220,10 @@ export function createDetailStore(
     options?: { sync?: DetailSyncMode },
   ): Promise<void> {
     const syncMode = options?.sync ?? true;
-    const key = `${prKey(owner, name, number)}:${String(syncMode)}`;
+    // Dedup by item identity only. A second caller with a different
+    // sync mode shouldn't issue a duplicate GET; the in-flight load's
+    // sync mode wins, since the displayed PR is the same.
+    const key = prKey(owner, name, number);
     if (
       loading &&
       activeLoad?.key === key &&

@@ -44,10 +44,16 @@
   const staleIssue = $derived.by(() => {
     const d = issues.getIssueDetail();
     if (d == null) return false;
-    return (
+    if (
       d.repo_owner !== owner ||
       d.repo_name !== name ||
       (d.issue?.Number ?? -1) !== number
+    ) {
+      return true;
+    }
+    return (
+      platformHost !== undefined &&
+      (d.platform_host ?? "") !== platformHost
     );
   });
 

@@ -2787,7 +2787,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("abc123"))
 	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
 	require.NoError(err)
 	require.NotNil(repo)
@@ -2835,6 +2835,72 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.Fail("timed out waiting for PR sync")
 	}
+}
+
+// When the head SHA changes, previously-recorded CI is tied to the old
+// commit and must not be carried forward. If the in-flight CI refresh
+// then fails, the detail must show "no CI" rather than stale checks
+// attached to a different commit.
+func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(101)
+			state := "open"
+			title := "fresh sync"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "alice"
+			newHeadSHA := "newhead"
+			baseSHA := "def456"
+			featureRef := "feature"
+			mainRef := "main"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				Head:      &gh.PullRequestBranch{SHA: &newHeadSHA, Ref: &featureRef},
+				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
+			}, nil
+		},
+		listCheckRunsForRefFn: func(_ context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
+			return nil, errors.New("simulated CI refresh failure")
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("oldhead"))
+	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo)
+	existingChecksJSON := `[{"name":"tests","status":"completed","conclusion":"success"}]`
+	require.NoError(database.UpdateMRCIStatus(
+		t.Context(), repo.ID, 1, "success", existingChecksJSON,
+	))
+	client := setupTestClient(t, srv)
+
+	syncResp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
+		t.Context(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp.StatusCode())
+
+	detailResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		t.Context(), "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.MergeRequest)
+	assert.Empty(detailResp.JSON200.MergeRequest.CIStatus)
+	assert.Empty(detailResp.JSON200.MergeRequest.CIChecksJSON)
 }
 
 func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
@@ -2893,6 +2959,60 @@ func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 	case <-syncStarted:
 	case <-time.After(2 * time.Second):
 		require.Fail("background sync did not start")
+	}
+	releaseOnce.Do(func() { close(releaseSync) })
+}
+
+func TestAPIEnqueueIssueSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
+	require := require.New(t)
+
+	syncStarted := make(chan struct{}, 1)
+	releaseSync := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseSync) })
+	})
+
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			syncStarted <- struct{}{}
+			<-releaseSync
+
+			id := int64(202)
+			state := "open"
+			title := "fresh async issue"
+			url := "https://github.com/acme/widget/issues/5"
+			author := "alice"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.Issue{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.HTTP.EnqueueIssueSyncWithResponse(
+		ctx, "acme", "widget", 5, &generated.EnqueueIssueSyncParams{},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode())
+
+	select {
+	case <-syncStarted:
+	case <-time.After(2 * time.Second):
+		require.Fail("background issue sync did not start")
 	}
 	releaseOnce.Do(func() { close(releaseSync) })
 }

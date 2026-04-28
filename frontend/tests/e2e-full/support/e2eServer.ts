@@ -119,7 +119,7 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
   const frontendDist = path.join(frontendDir, "dist");
   const frontendIndex = path.join(frontendDist, "index.html");
 
-  let frontendMtime = await fileMtimeMs(frontendIndex);
+  let frontendMtime = await newestMtimeUnder(frontendDist);
   const sourceMtime = await newestFrontendSourceMtime(rootDir);
   if (
     frontendMtime === null ||
@@ -131,19 +131,20 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
       env: process.env,
     });
     await waitForExit(build, "frontend build");
-    frontendMtime = await fileMtimeMs(frontendIndex);
-  }
-
-  const embeddedMtime = await fileMtimeMs(embeddedIndex);
-  if (
-    embeddedMtime !== null &&
-    (frontendMtime === null || embeddedMtime >= frontendMtime)
-  ) {
-    return;
+    frontendMtime = await newestMtimeUnder(frontendDist);
   }
 
   if (frontendMtime === null) {
     throw new Error(`frontend build did not produce ${frontendIndex}`);
+  }
+
+  // index.html must exist so the e2e server can serve the SPA shell, even
+  // if the rest of the dist tree looks fresh.
+  if ((await fileMtimeMs(embeddedIndex)) !== null) {
+    const embeddedMtime = await newestMtimeUnder(embeddedDist);
+    if (embeddedMtime !== null && embeddedMtime >= frontendMtime) {
+      return;
+    }
   }
 
   await rm(embeddedDist, { recursive: true, force: true });

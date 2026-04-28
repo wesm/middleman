@@ -43,6 +43,7 @@
     itemState: string;
     repoOwner: string;
     repoName: string;
+    platformHost: string;
     latestTime: string;
     events: ActivityItem[];
     displayEvents: ReturnType<
@@ -66,7 +67,8 @@
     const itemMap = new Map<string, ActivityItem[]>();
 
     for (const item of items) {
-      const itemKey = `${item.repo_owner}/${item.repo_name}:${item.item_type}:${item.item_number}`;
+      const host = item.platform_host ?? "";
+      const itemKey = `${host}|${item.repo_owner}/${item.repo_name}:${item.item_type}:${item.item_number}`;
 
       let events = itemMap.get(itemKey);
       if (!events) {
@@ -92,6 +94,7 @@
         itemState: first.item_state,
         repoOwner: first.repo_owner,
         repoName: first.repo_name,
+        platformHost: first.platform_host ?? "",
         latestTime: first.created_at,
         events,
         displayEvents: collapseActivityCommitRuns(events),
@@ -190,10 +193,8 @@
       && selectedItem.owner === group.repoOwner
       && selectedItem.name === group.repoName
       && selectedItem.number === group.itemNumber
-      && (group.itemType !== "issue"
-        || !selectedItem.platformHost
-        || group.events.some((event) =>
-          event.platform_host === selectedItem.platformHost));
+      && (!selectedItem.platformHost
+        || group.platformHost === selectedItem.platformHost);
   }
 </script>
 
@@ -207,7 +208,7 @@
         </div>
       {/if}
 
-      {#each repoGroup.items as itemGroup (`${itemGroup.repoOwner}/${itemGroup.repoName}:${itemGroup.itemType}:${itemGroup.itemNumber}`)}
+      {#each repoGroup.items as itemGroup (`${itemGroup.platformHost}|${itemGroup.repoOwner}/${itemGroup.repoName}:${itemGroup.itemType}:${itemGroup.itemNumber}`)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
