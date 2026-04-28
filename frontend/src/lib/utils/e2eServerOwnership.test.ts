@@ -210,10 +210,16 @@ describe("ensureEmbeddedFrontend", () => {
 
     const previousPath = process.env.PATH;
     process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
-
-    await ensureEmbeddedFrontend(dir);
-
-    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
+    try {
+      await ensureEmbeddedFrontend(dir);
+      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
   });
 });
 

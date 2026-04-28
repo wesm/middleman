@@ -177,7 +177,7 @@ test.describe("detail action buttons", () => {
     const syncResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
       return response.request().method() === "POST"
-        && url.endsWith("/api/v1/repos/acme/widgets/issues/10/sync");
+        && url.endsWith("/api/v1/repos/acme/widgets/issues/10/sync/async");
     });
     const createResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
@@ -188,10 +188,12 @@ test.describe("detail action buttons", () => {
     await page.goto("/issues/acme/widgets/10");
     await expect(page.locator(".issue-detail")).toBeVisible();
 
+    // Background sync enqueues asynchronously; the server returns 202
+    // with no body. The platform host defaults to github.com server-side
+    // when the URL has no platform_host query parameter.
     const syncResponse = await syncResponsePromise;
-    expect(syncResponse.status()).toBe(200);
-    const syncBody = await syncResponse.json();
-    expect(syncBody.platform_host).toBe("github.com");
+    expect(syncResponse.status()).toBe(202);
+    expect(new URL(syncResponse.url()).searchParams.has("platform_host")).toBe(false);
 
     await page.locator(".btn--workspace").click();
     const createResponse = await createResponsePromise;

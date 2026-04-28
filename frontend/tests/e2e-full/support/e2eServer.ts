@@ -99,15 +99,23 @@ async function newestFrontendSourceMtime(
   return newest;
 }
 
-async function waitForExit(child: ChildProcess, description: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`${description} exited with code ${code ?? "null"} signal ${signal ?? "null"}`));
+async function tryBuildFrontend(frontendDir: string): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const build = spawn("bun", ["run", "build"], {
+      cwd: frontendDir,
+      stdio: "inherit",
+      env: process.env,
+    });
+    let settled = false;
+    build.once("error", () => {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+    });
+    build.once("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      resolve(code === 0);
     });
   });
 }
@@ -125,13 +133,23 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
     frontendMtime === null ||
     (sourceMtime !== null && sourceMtime > frontendMtime)
   ) {
-    const build = spawn("bun", ["run", "build"], {
-      cwd: frontendDir,
-      stdio: "inherit",
-      env: process.env,
-    });
-    await waitForExit(build, "frontend build");
-    frontendMtime = await newestMtimeUnder(frontendDist);
+    const built = await tryBuildFrontend(frontendDir);
+    if (built) {
+      frontendMtime = await newestMtimeUnder(frontendDist);
+    } else if (frontendMtime === null) {
+      throw new Error(
+        `frontend build failed and no existing dist at ${frontendIndex}; ` +
+          `install bun or pre-build the frontend before running e2e tests`,
+      );
+    }
+    // Otherwise fall back to the existing dist with a notice. Better to
+    // run e2e against slightly stale code than to fail the whole suite
+    // when bun is unavailable.
+    if (!built) {
+      console.warn(
+        `[e2e] bun build failed or bun is unavailable; using existing ${frontendDist}`,
+      );
+    }
   }
 
   if (frontendMtime === null) {

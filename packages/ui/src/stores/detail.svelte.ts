@@ -42,6 +42,19 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function syncIntentRank(mode: DetailSyncMode): number {
+  if (mode === true) return 2;
+  if (mode === "background") return 1;
+  return 0;
+}
+
+function strongerSyncMode(
+  a: DetailSyncMode,
+  b: DetailSyncMode,
+): DetailSyncMode {
+  return syncIntentRank(b) > syncIntentRank(a) ? b : a;
+}
+
 export function createDetailStore(
   opts: DetailStoreOptions,
 ) {
@@ -61,6 +74,7 @@ export function createDetailStore(
   let activeLoad: {
     key: string;
     promise: Promise<void> | null;
+    syncMode: DetailSyncMode;
   } | null = null;
 
   // Per-PR monotonic counters for kanban updates.
@@ -140,14 +154,17 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    expectedGen: number = syncGeneration,
   ): Promise<void> {
-    const gen = syncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/pulls/{number}",
         { params: { path: { owner, name, number } } },
       );
-      if (gen !== syncGeneration) return;
+      // Re-check the generation after the awaited request: if the
+      // selected PR changed mid-flight, dropping the assignment keeps
+      // the new selection's data from being clobbered.
+      if (expectedGen !== syncGeneration) return;
       if (data !== undefined) {
         detail = {
           ...data,
@@ -221,14 +238,18 @@ export function createDetailStore(
   ): Promise<void> {
     const syncMode = options?.sync ?? true;
     // Dedup by item identity only. A second caller with a different
-    // sync mode shouldn't issue a duplicate GET; the in-flight load's
-    // sync mode wins, since the displayed PR is the same.
+    // sync mode joins the in-flight load and may promote the sync
+    // intent if its requested mode is stronger.
     const key = prKey(owner, name, number);
     if (
       loading &&
       activeLoad?.key === key &&
       activeLoad.promise !== null
     ) {
+      activeLoad.syncMode = strongerSyncMode(
+        activeLoad.syncMode,
+        syncMode,
+      );
       return activeLoad.promise;
     }
 
@@ -236,7 +257,8 @@ export function createDetailStore(
     const currentLoad: {
       key: string;
       promise: Promise<void> | null;
-    } = { key, promise: null };
+      syncMode: DetailSyncMode;
+    } = { key, promise: null, syncMode };
     activeLoad = currentLoad;
 
     // Keep the previously loaded detail visible while the new one
@@ -281,9 +303,12 @@ export function createDetailStore(
         if (activeLoad === currentLoad) activeLoad = null;
       }
 
-      if (gen === syncGeneration && syncMode === true) {
+      // Use the latest promoted sync intent so a stronger caller's
+      // request isn't lost when it joined an in-flight load.
+      const finalSyncMode = currentLoad.syncMode;
+      if (gen === syncGeneration && finalSyncMode === true) {
         void syncDetail(owner, name, number, gen);
-      } else if (gen === syncGeneration && syncMode === "background") {
+      } else if (gen === syncGeneration && finalSyncMode === "background") {
         void enqueueBackgroundDetailSync(
           owner,
           name,
@@ -334,7 +359,7 @@ export function createDetailStore(
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== syncGeneration) return;
-      await refreshDetail(owner, name, number);
+      await refreshDetail(owner, name, number, gen);
       if (gen !== syncGeneration) return;
       const fetchedAt = detail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {

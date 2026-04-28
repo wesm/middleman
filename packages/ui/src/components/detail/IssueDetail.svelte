@@ -51,10 +51,14 @@
     ) {
       return true;
     }
-    return (
-      platformHost !== undefined &&
-      (d.platform_host ?? "") !== platformHost
-    );
+    // The API treats an absent platform_host as github.com, so the
+    // comparison must normalize both sides to the same default.
+    // Otherwise, navigating from a non-default host to the same
+    // owner/repo/number without a platformHost would render the
+    // previous host's detail as current.
+    const expectedHost = platformHost ?? "github.com";
+    const actualHost = d.platform_host || "github.com";
+    return actualHost !== expectedHost;
   });
 
   $effect(() => {

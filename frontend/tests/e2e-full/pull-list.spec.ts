@@ -24,6 +24,15 @@ test.describe("PR list view", () => {
   test("sidebar status pills use the shared chip component", async ({ page }) => {
     await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^8 PRs$/);
 
+    // Seeded fixtures have no kanban_state rows; visiting a PR detail
+    // creates the row server-side via EnsureKanbanState. Without this,
+    // .status-chip never renders because PullItem hides it for empty
+    // KanbanStatus.
+    await page.locator(".pull-item").first().click();
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 5_000 });
+    await page.goto("/pulls");
+    await waitForPullList(page);
+
     await page.locator(".group-btn", { hasText: "All" }).click();
     const firstItem = page.locator(".pull-item").first();
     await expect(firstItem.locator(".repo-chip")).toBeVisible();

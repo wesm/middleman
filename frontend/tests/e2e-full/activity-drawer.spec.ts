@@ -366,6 +366,11 @@ test.describe("activity split view and detail drawers", () => {
       timeout: 3_000,
     });
     expect(detailGetCount).toBeGreaterThanOrEqual(1);
+
+    // The route handler above intentionally hangs on later requests;
+    // unroute before teardown so pending route.fetch calls don't leak
+    // "Test ended" rejections into the next test.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("Activity PR selection hides stale detail while the next item loads", async ({ page }) => {
@@ -406,6 +411,11 @@ test.describe("activity split view and detail drawers", () => {
     })).toHaveCount(0);
     await expect(detail.locator(".state-center .state-msg"))
       .toContainText("Loading");
+
+    // The 1.5s delay above intentionally outlives the test; unroute
+    // before teardown so pending route.fetch calls don't leak "Test
+    // ended" rejections into the next test.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("Activity PR switching uses background sync without foreground fanout", async ({ page }) => {
@@ -539,6 +549,11 @@ test.describe("activity split view and detail drawers", () => {
       timeout: 3_000,
     });
     expect(detailGetCount).toBeGreaterThanOrEqual(1);
+
+    // The route handler above intentionally hangs on later requests;
+    // unroute before teardown so pending route handlers don't leak
+    // "Test ended" rejections into the next test.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("Activity issue switching uses background sync without foreground fanout", async ({ page }) => {

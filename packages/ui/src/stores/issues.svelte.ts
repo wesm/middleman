@@ -31,6 +31,19 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function syncIntentRank(mode: IssueDetailSyncMode): number {
+  if (mode === true) return 2;
+  if (mode === "background") return 1;
+  return 0;
+}
+
+function strongerSyncMode(
+  a: IssueDetailSyncMode,
+  b: IssueDetailSyncMode,
+): IssueDetailSyncMode {
+  return syncIntentRank(b) > syncIntentRank(a) ? b : a;
+}
+
 export function createIssuesStore(opts: IssuesStoreOptions) {
   const apiClient = opts.client;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
@@ -66,6 +79,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let activeDetailLoad: {
     key: string;
     promise: Promise<void> | null;
+    syncMode: IssueDetailSyncMode;
   } | null = null;
 
   // --- list reads ---
@@ -227,14 +241,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): Promise<void> {
     const syncMode = options?.sync ?? true;
     // Dedup by item identity only. A second caller with a different
-    // sync mode shouldn't issue a duplicate GET; the in-flight load's
-    // sync mode wins, since the displayed issue is the same.
+    // sync mode joins the in-flight load and may promote the sync
+    // intent if its requested mode is stronger.
     const key = `${platformHost ?? ""}:${owner}/${name}/${number}`;
     if (
       detailLoading &&
       activeDetailLoad?.key === key &&
       activeDetailLoad.promise !== null
     ) {
+      activeDetailLoad.syncMode = strongerSyncMode(
+        activeDetailLoad.syncMode,
+        syncMode,
+      );
       return activeDetailLoad.promise;
     }
 
@@ -242,7 +260,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const currentLoad: {
       key: string;
       promise: Promise<void> | null;
-    } = { key, promise: null };
+      syncMode: IssueDetailSyncMode;
+    } = { key, promise: null, syncMode };
     activeDetailLoad = currentLoad;
 
     detailLoading = true;
@@ -282,9 +301,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         if (activeDetailLoad === currentLoad) activeDetailLoad = null;
       }
 
-      if (gen === issueSyncGeneration && syncMode === true) {
+      // Use the latest promoted sync intent so a stronger caller's
+      // request isn't lost when it joined an in-flight load.
+      const finalSyncMode = currentLoad.syncMode;
+      if (gen === issueSyncGeneration && finalSyncMode === true) {
         void syncIssueDetail(owner, name, number, gen, platformHost);
-      } else if (gen === issueSyncGeneration && syncMode === "background") {
+      } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
         void enqueueBackgroundIssueSync(
           owner,
           name,
@@ -348,7 +370,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== issueSyncGeneration) return;
-      await refreshIssueDetail(owner, name, number, platformHost);
+      await refreshIssueDetail(owner, name, number, platformHost, gen);
       if (gen !== issueSyncGeneration) return;
       const fetchedAt = issueDetail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {
@@ -409,8 +431,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     platformHost?: string,
+    expectedGen: number = issueSyncGeneration,
   ): Promise<void> {
-    const gen = issueSyncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/issues/{number}",
@@ -425,7 +447,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           },
         },
       );
-      if (gen !== issueSyncGeneration) return;
+      // Re-check the generation after the awaited request: if the
+      // selected issue changed mid-flight, dropping the assignment
+      // keeps the new selection's data from being clobbered.
+      if (expectedGen !== issueSyncGeneration) return;
       if (data !== undefined) {
         issueDetail = {
           ...data,
