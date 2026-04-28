@@ -77,6 +77,8 @@
   const SIDEBAR_WIDTH_KEY = "middleman-workspace-sidebar-width";
   const WORKSPACE_LIST_WIDTH_KEY =
     "middleman-workspace-list-sidebar-width";
+  const ACTIVE_WORKSPACE_TAB_KEY_PREFIX =
+    "middleman-workspace-active-tab:";
 
   type SidebarTab = "pr" | "issue" | "reviews";
 
@@ -321,6 +323,26 @@
     return mountedSessionKeys.includes(sessionKey);
   }
 
+  function rememberActiveTab(key: string): void {
+    if (!workspaceId) return;
+    localStorage.setItem(
+      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceId}`,
+      key,
+    );
+  }
+
+  function selectWorkspaceTab(key: string): void {
+    activeTabKey = key;
+    rememberActiveTab(key);
+  }
+
+  function restoreWorkspaceTab(id: string): string {
+    const remembered = localStorage.getItem(
+      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${id}`,
+    );
+    return remembered ?? "home";
+  }
+
   function defaultSidebarTab(
     ws: Workspace,
   ): SidebarTab {
@@ -388,7 +410,7 @@
         activeTabKey.startsWith("session:") &&
         !activeSession
       ) {
-        activeTabKey = "home";
+        selectWorkspaceTab("home");
       }
       mountedSessionKeys = mountedSessionKeys.filter(
         (key) =>
@@ -409,7 +431,7 @@
     if (target?.kind === "tmux") {
       tmuxTabOpen = true;
       tmuxTerminalMounted = true;
-      activeTabKey = "tmux";
+      selectWorkspaceTab("tmux");
       return;
     }
 
@@ -426,7 +448,7 @@
       await fetchRuntime();
       if (id !== workspaceId) return;
       mountSessionTerminal(session.key);
-      activeTabKey = `session:${session.key}`;
+      selectWorkspaceTab(`session:${session.key}`);
     } catch (err) {
       if (id !== workspaceId) return;
       runtimeError =
@@ -438,7 +460,7 @@
 
   function openSession(sessionKey: string): void {
     mountSessionTerminal(sessionKey);
-    activeTabKey = `session:${sessionKey}`;
+    selectWorkspaceTab(`session:${sessionKey}`);
   }
 
   async function closeSession(session: RuntimeSession): Promise<void> {
@@ -457,7 +479,7 @@
       if (id !== workspaceId) return;
       unmountSessionTerminal(session.key);
       if (activeTabKey === `session:${session.key}`) {
-        activeTabKey = "home";
+        selectWorkspaceTab("home");
       }
     } catch (err) {
       if (id !== workspaceId) return;
@@ -604,6 +626,7 @@
   // it in place.
   $effect(() => {
     const id = workspaceId;
+    const restoredTab = restoreWorkspaceTab(id);
 
     // Tab state from the previous workspace can't be valid for a
     // different workspace's runtime, so reset these even though
@@ -612,8 +635,8 @@
     // on mount, so leaving the drawer open across a workspace
     // change would route keystrokes to the previous workspace's
     // shell while the user looks at the new workspace.
-    activeTabKey = "home";
-    tmuxTabOpen = false;
+    activeTabKey = restoredTab;
+    tmuxTabOpen = restoredTab === "tmux";
     shellOpen = false;
     launchingKey = null;
     shellLoading = false;
@@ -623,8 +646,10 @@
     loadError = null;
     actionError = null;
     runtimeError = null;
-    tmuxTerminalMounted = false;
-    mountedSessionKeys = [];
+    tmuxTerminalMounted = restoredTab === "tmux";
+    mountedSessionKeys = restoredTab.startsWith("session:")
+      ? [restoredTab.slice("session:".length)]
+      : [];
 
     if (!id) {
       // /workspaces route: drop workspace data so the empty-state
@@ -828,18 +853,18 @@
                   sessions={runtimeSessions}
                   tmuxOpen={tmuxTabOpen}
                   onSelectHome={() => {
-                    activeTabKey = "home";
+                    selectWorkspaceTab("home");
                   }}
                   onSelectTmux={() => {
                     tmuxTerminalMounted = true;
-                    activeTabKey = "tmux";
+                    selectWorkspaceTab("tmux");
                   }}
                   onSelectSession={openSession}
                   onCloseTmux={() => {
                     tmuxTabOpen = false;
                     tmuxTerminalMounted = false;
                     if (activeTabKey === "tmux") {
-                      activeTabKey = "home";
+                      selectWorkspaceTab("home");
                     }
                   }}
                   onCloseSession={(key) => {

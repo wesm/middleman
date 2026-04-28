@@ -36,6 +36,24 @@ async function waitForWorkspaceReady(
   throw new Error(`workspace ${workspaceId} did not become ready`);
 }
 
+async function createIssueWorkspace(
+  api: APIRequestContext,
+  issueNumber: number,
+): Promise<WorkspaceStatusResponse> {
+  const createResponse = await api.post(
+    `/api/v1/repos/acme/widgets/issues/${issueNumber}/workspace`,
+    {
+      data: {
+        platform_host: "github.com",
+      },
+    },
+  );
+  expect(createResponse.status()).toBe(202);
+  const createdWorkspace = await createResponse.json() as WorkspaceStatusResponse;
+  await waitForWorkspaceReady(api, createdWorkspace.id);
+  return createdWorkspace;
+}
+
 test.describe("workspace tab persistence", () => {
   test("opening tmux tab keeps Home pane mounted across tab switches", async ({ page }) => {
     test.skip(
@@ -112,6 +130,55 @@ test.describe("workspace tab persistence", () => {
       await expect(panes).toHaveCount(2);
       const reactivated = stage.locator(":scope > .stage-pane.active");
       await expect(reactivated).toHaveAttribute("data-test-tmux-id", "preserved");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("returns to the most recently selected tab for each workspace", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const firstWorkspace = await createIssueWorkspace(api, 10);
+      const secondWorkspace = await createIssueWorkspace(api, 11);
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
+      );
+
+      const homeTab = page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "Home",
+      });
+      const tmuxTab = page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "tmux",
+      });
+
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+
+      await page.locator(".launch-trigger").click();
+      await page.locator(".launch-option", { hasText: "tmux" }).click();
+      await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${secondWorkspace.id}`,
+      );
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
+      );
+      await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
