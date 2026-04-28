@@ -39,4 +39,73 @@ test.describe("PR detail branch info", () => {
     await expect(headBtn).toHaveClass(/branch-name-btn--copied/);
     await expect(headBtn).toHaveAttribute("title", "Copied!");
   });
+
+  test("summarizes changed lines by category on hover", async ({ page }) => {
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          stale: false,
+          files: [
+            {
+              path: "docs/review-plan.md",
+              old_path: "docs/review-plan.md",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 10,
+              deletions: 2,
+              hunks: [],
+            },
+            {
+              path: "internal/server/api.go",
+              old_path: "internal/server/api.go",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 180,
+              deletions: 20,
+              hunks: [],
+            },
+            {
+              path: "internal/server/api_test.go",
+              old_path: "internal/server/api_test.go",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 49,
+              deletions: 7,
+              hunks: [],
+            },
+            {
+              path: "bun.lock",
+              old_path: "bun.lock",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 1,
+              deletions: 1,
+              hunks: [],
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/pulls/acme/widgets/1");
+    await page.locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const trigger = page.locator(".diff-summary-trigger");
+    await expect(trigger).toHaveText("+240/-30");
+
+    await trigger.hover();
+
+    const popover = page.locator(".diff-summary-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(
+      /Plans\/docs\s+\+10 \/ -2[\s\S]*Code\s+\+180 \/ -20[\s\S]*Tests\s+\+49 \/ -7[\s\S]*Other\s+\+1 \/ -1/,
+    );
+  });
 });

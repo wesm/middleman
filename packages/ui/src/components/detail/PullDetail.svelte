@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { KanbanStatus } from "../../api/types.js";
+  import type { DiffFile, KanbanStatus } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import {
     getStores, getClient, getActions,
@@ -28,6 +28,7 @@
   import DiffView from "../diff/DiffView.svelte";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import CIStatus from "./CIStatus.svelte";
+  import DiffSummaryChip from "./DiffSummaryChip.svelte";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -430,6 +431,21 @@
       wsCreating = false;
     }
   }
+
+  async function loadDiffSummaryFiles(): Promise<DiffFile[]> {
+    const { data, error } = await client.GET(
+      "/repos/{owner}/{name}/pulls/{number}/files",
+      {
+        params: { path: { owner, name, number } },
+      },
+    );
+    if (error) {
+      throw new Error(
+        error.detail ?? error.title ?? "failed to load changed files",
+      );
+    }
+    return (data?.files ?? []) as DiffFile[];
+  }
 </script>
 
 <svelte:window onkeydown={onActionMenuKeydown} />
@@ -628,7 +644,12 @@
           </Chip>
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
-          <Chip class="chip--muted">+{pr.Additions}/-{pr.Deletions}</Chip>
+          <DiffSummaryChip
+            additions={pr.Additions}
+            deletions={pr.Deletions}
+            summaryKey={`${owner}/${name}#${number}`}
+            loadFiles={loadDiffSummaryFiles}
+          />
         {/if}
         {#if hasWorktreeLinks}
           <Chip class="chip--teal">Worktree</Chip>
