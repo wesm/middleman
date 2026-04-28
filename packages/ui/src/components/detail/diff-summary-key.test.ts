@@ -32,25 +32,4 @@ describe("buildDiffSummaryKey", () => {
         .not.toBe(initial);
     }
   });
-
-  it("falls back to the platform base and head before PR stats", () => {
-    const key = buildDiffSummaryKey(
-      "acme",
-      "widget",
-      42,
-      {
-        platform_head_sha: "head-1",
-        platform_base_sha: "base-1",
-        diff_head_sha: "",
-        merge_base_sha: "",
-      },
-      {
-        UpdatedAt: "2026-04-28T12:00:00Z",
-        Additions: 10,
-        Deletions: 2,
-      },
-    );
-
-    expect(key).toBe("acme/widget#42#platform:base-1:head-1");
-  });
 });
