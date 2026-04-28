@@ -8656,7 +8656,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	body := "#!/bin/sh\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000002-e81d3b0e9d82feaa\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -8680,6 +8680,17 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		TmuxSession:  "middleman-0000000000000002",
 		Status:       "ready",
 	}))
+	runtimeSession := runtimeTmuxSessionNameForTest(
+		"0000000000000002", "helper",
+	)
+	require.NoError(database.UpsertWorkspaceTmuxSession(
+		ctx,
+		&db.WorkspaceTmuxSession{
+			WorkspaceID: "0000000000000002",
+			SessionName: runtimeSession,
+			TargetKey:   "helper",
+		},
+	))
 
 	listResp, err := client.HTTP.GetWorkspacesWithResponse(ctx)
 	require.NoError(err)
@@ -8697,6 +8708,12 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("error", stored.Status)
+	runtimeRows, err := database.ListWorkspaceTmuxSessions(
+		ctx, "0000000000000002",
+	)
+	require.NoError(err)
+	require.Len(runtimeRows, 1)
+	assert.Equal(runtimeSession, runtimeRows[0].SessionName)
 }
 
 func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {

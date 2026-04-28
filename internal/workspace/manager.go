@@ -1049,13 +1049,11 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	liveRuntimeWorkspaces := make(map[string]bool, len(storedSessions))
 	for _, stored := range storedSessions {
 		if stored.SessionName == "" {
 			continue
 		}
 		if live[stored.SessionName] {
-			liveRuntimeWorkspaces[stored.WorkspaceID] = true
 			continue
 		}
 		slog.Debug(
@@ -1078,8 +1076,7 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 	for _, ws := range workspaces {
 		if ws.Status != "ready" ||
 			ws.TmuxSession == "" ||
-			live[ws.TmuxSession] ||
-			liveRuntimeWorkspaces[ws.ID] {
+			live[ws.TmuxSession] {
 			continue
 		}
 		msg := fmt.Sprintf(

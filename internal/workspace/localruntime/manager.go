@@ -417,6 +417,7 @@ func (m *Manager) restoreTmuxSession(
 		Kind:        target.Kind,
 		Status:      SessionStatusStarting,
 		CreatedAt:   createdAt,
+		TmuxSession: tmuxSession,
 	}, command, "", m.stripEnvVars)
 	if err != nil {
 		return err
