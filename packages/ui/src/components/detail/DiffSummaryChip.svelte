@@ -29,6 +29,7 @@
   let error = $state<string | null>(null);
   let summary = $state<DiffLineSummary | null>(null);
   let loadedSummaryKey = $state<string | null>(null);
+  let currentSummaryKey = $state<string | null>(null);
 
   const rows = $derived([
     { key: "plansDocs" as const, label: "Plans/docs" },
@@ -95,6 +96,19 @@
   function hidePopover(): void {
     open = false;
   }
+
+  $effect(() => {
+    if (currentSummaryKey === null) {
+      currentSummaryKey = summaryKey;
+      return;
+    }
+    if (currentSummaryKey === summaryKey) return;
+    currentSummaryKey = summaryKey;
+    summary = null;
+    error = null;
+    loadedSummaryKey = null;
+    if (open) void ensureSummary();
+  });
 </script>
 
 <span class="diff-summary">

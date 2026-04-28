@@ -169,4 +169,41 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("+5 / -1")).toBeTruthy();
     expect(screen.queryByText("Plans/docs")).toBeNull();
   });
+
+  it("reloads immediately when the summary key changes while open", async () => {
+    const loadFiles = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]),
+      )
+      .mockResolvedValueOnce(
+        new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]),
+      );
+
+    const { rerender } = render(DiffSummaryChip, {
+      props: {
+        additions: 10,
+        deletions: 0,
+        summaryKey: "sha-1",
+        loadFiles,
+      },
+    });
+
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: /\+10\/-0/i }),
+    );
+    expect(await screen.findByText("Plans/docs")).toBeTruthy();
+
+    await rerender({
+      additions: 5,
+      deletions: 1,
+      summaryKey: "sha-2",
+      loadFiles,
+    });
+
+    expect(await screen.findByText("Code")).toBeTruthy();
+    expect(screen.getByText("+5 / -1")).toBeTruthy();
+    await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Plans/docs")).toBeNull();
+  });
 });
