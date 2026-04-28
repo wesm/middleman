@@ -4769,6 +4769,134 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	assert.Empty(events)
 }
 
+// buildOpenPRWithSHA mirrors buildOpenPR but lets the caller set the
+// head SHA so head-change scenarios can be exercised.
+func buildOpenPRWithSHA(number int, updatedAt time.Time, headSHA string) *gh.PullRequest {
+	pr := buildOpenPR(number, updatedAt)
+	pr.Head.SHA = &headSHA
+	return pr
+}
+
+func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	// Seed an existing MR with the old head SHA and stored CI status.
+	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      int64(1) * 1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "test PR",
+		Author:          "alice",
+		State:           "open",
+		PlatformHeadSHA: "oldhead",
+		CIStatus:        "success",
+		CIChecksJSON:    `[{"name":"tests","status":"completed","conclusion":"success"}]`,
+		// Seed as true so the cleared assertion below catches the case
+		// where syncOpenMRFromBulk carries the stale flag forward.
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	// New bulk fetch reports a new head SHA with CIComplete=false (the
+	// CI page was truncated). Without the head-SHA guard, the upsert
+	// would carry the old CI fields forward onto the new commit.
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               buildOpenPRWithSHA(1, now.Add(time.Minute), "newhead"),
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		CIComplete:       false,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("newhead", mr.PlatformHeadSHA)
+	assert.Empty(mr.CIStatus)
+	assert.Empty(mr.CIChecksJSON)
+	assert.False(mr.CIHadPending)
+}
+
+func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	// Same head SHA as buildOpenPR uses by default.
+	const sameSHA = "abc123def456"
+	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      int64(1) * 1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "test PR",
+		Author:          "alice",
+		State:           "open",
+		PlatformHeadSHA: sameSHA,
+		CIStatus:        "success",
+		CIChecksJSON:    `[{"name":"tests","status":"completed","conclusion":"success"}]`,
+		// Seed as true so the preserved assertion below distinguishes
+		// the preserve path from a default-zero pending flag.
+		CIHadPending:   true,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	// CIComplete=false would normally skip the CI write. The existing
+	// CI must be preserved because the head SHA is unchanged.
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               buildOpenPR(1, now.Add(time.Minute)),
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		CIComplete:       false,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(sameSHA, mr.PlatformHeadSHA)
+	assert.Equal("success", mr.CIStatus)
+	assert.Contains(mr.CIChecksJSON, "tests")
+	assert.True(mr.CIHadPending)
+}
+
 func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

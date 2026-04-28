@@ -14,11 +14,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty/v2"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func requirePTYAvailable(t *testing.T) {
+	t.Helper()
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		t.Skipf("pty unavailable in this test environment: %v", err)
+	}
+	_ = ptmx.Close()
+	_ = tty.Close()
+}
+
 func TestManagerLaunchesSingletonPerWorkspaceTarget(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
@@ -40,6 +52,7 @@ func TestManagerLaunchesSingletonPerWorkspaceTarget(t *testing.T) {
 }
 
 func TestManagerLaunchConcurrentStartsOneProcess(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -498,6 +511,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 }
 
 func TestManagerShutdownTerminatesPTYManagedSessions(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -532,6 +546,7 @@ func TestManagerShutdownTerminatesPTYManagedSessions(t *testing.T) {
 }
 
 func TestManagerStopRemovesSession(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
@@ -550,6 +565,7 @@ func TestManagerStopRemovesSession(t *testing.T) {
 }
 
 func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -596,6 +612,7 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 }
 
 func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 
@@ -666,6 +683,7 @@ func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 }
 
 func TestManagerStopKillsDescendantProcesses(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -716,6 +734,7 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 }
 
 func TestManagerReportsExitedProcess(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
@@ -745,6 +764,7 @@ func TestManagerReportsExitedProcess(t *testing.T) {
 }
 
 func TestManagerShellSingletonPerWorkspace(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
@@ -765,6 +785,7 @@ func TestManagerShellSingletonPerWorkspace(t *testing.T) {
 }
 
 func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -1024,6 +1045,7 @@ func TestSessionOutputBufferIsBounded(t *testing.T) {
 }
 
 func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
+	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)

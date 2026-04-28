@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -38,24 +38,93 @@ let serverPromise: Promise<E2EServerInfo> | null = null;
 let managedChild: ChildProcess | null = null;
 let cleanupInstalled = false;
 
-async function pathExists(filePath: string): Promise<boolean> {
+async function fileMtimeMs(filePath: string): Promise<number | null> {
   try {
-    await stat(filePath);
-    return true;
+    return (await stat(filePath)).mtimeMs;
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function waitForExit(child: ChildProcess, description: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
+async function newestMtimeUnder(dir: string): Promise<number | null> {
+  const ignoredDirs = new Set([
+    ".svelte-kit",
+    "dist",
+    "node_modules",
+    "playwright-report",
+    "test-results",
+  ]);
+  let newest: number | null = null;
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
+      continue;
+    }
+    const entryPath = path.join(dir, entry.name);
+    const mtime = entry.isDirectory()
+      ? await newestMtimeUnder(entryPath)
+      : await fileMtimeMs(entryPath);
+    if (mtime !== null && (newest === null || mtime > newest)) {
+      newest = mtime;
+    }
+  }
+  return newest;
+}
+
+async function newestFrontendSourceMtime(
+  rootDir: string,
+): Promise<number | null> {
+  const candidates = [
+    path.join(rootDir, "frontend", "src"),
+    path.join(rootDir, "frontend", "index.html"),
+    path.join(rootDir, "frontend", "package.json"),
+    path.join(rootDir, "frontend", "vite.config.ts"),
+    path.join(rootDir, "packages", "ui", "src"),
+  ];
+  let newest: number | null = null;
+  for (const candidate of candidates) {
+    const mtime =
+      (await newestMtimeUnder(candidate)) ??
+      (await fileMtimeMs(candidate));
+    if (mtime !== null && (newest === null || mtime > newest)) {
+      newest = mtime;
+    }
+  }
+  return newest;
+}
+
+type BuildOutcome =
+  | { kind: "ok" }
+  | { kind: "missing-tool"; cause: NodeJS.ErrnoException }
+  | { kind: "build-failed"; exitCode: number | null };
+
+async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
+  return await new Promise<BuildOutcome>((resolve) => {
+    const build = spawn("bun", ["run", "build"], {
+      cwd: frontendDir,
+      stdio: "inherit",
+      env: process.env,
+    });
+    let settled = false;
+    build.once("error", (err) => {
+      if (settled) return;
+      settled = true;
+      resolve({ kind: "missing-tool", cause: err as NodeJS.ErrnoException });
+    });
+    build.once("exit", (code) => {
+      if (settled) return;
+      settled = true;
       if (code === 0) {
-        resolve();
-        return;
+        resolve({ kind: "ok" });
+      } else {
+        resolve({ kind: "build-failed", exitCode: code });
       }
-      reject(new Error(`${description} exited with code ${code ?? "null"} signal ${signal ?? "null"}`));
     });
   });
 }
@@ -63,21 +132,51 @@ async function waitForExit(child: ChildProcess, description: string): Promise<vo
 export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promise<void> {
   const embeddedDist = path.join(rootDir, "internal", "web", "dist");
   const embeddedIndex = path.join(embeddedDist, "index.html");
-  if (await pathExists(embeddedIndex)) {
-    return;
-  }
-
   const frontendDir = path.join(rootDir, "frontend");
   const frontendDist = path.join(frontendDir, "dist");
   const frontendIndex = path.join(frontendDist, "index.html");
 
-  if (!(await pathExists(frontendIndex))) {
-    const build = spawn("bun", ["run", "build"], {
-      cwd: frontendDir,
-      stdio: "inherit",
-      env: process.env,
-    });
-    await waitForExit(build, "frontend build");
+  let frontendMtime = await newestMtimeUnder(frontendDist);
+  const sourceMtime = await newestFrontendSourceMtime(rootDir);
+  if (
+    frontendMtime === null ||
+    (sourceMtime !== null && sourceMtime > frontendMtime)
+  ) {
+    const outcome = await tryBuildFrontend(frontendDir);
+    if (outcome.kind === "ok") {
+      frontendMtime = await newestMtimeUnder(frontendDist);
+    } else if (outcome.kind === "build-failed") {
+      // Real build failure (bun ran but vite/svelte rejected the
+      // sources). Falling back here would silently run e2e against
+      // stale dist while the working tree is broken.
+      throw new Error(
+        `frontend build failed with exit code ${outcome.exitCode ?? "null"}`,
+      );
+    } else if (frontendMtime === null) {
+      throw new Error(
+        `bun is unavailable (${outcome.cause.code ?? outcome.cause.message}) ` +
+          `and no existing dist at ${frontendIndex}; install bun or ` +
+          `pre-build the frontend before running e2e tests`,
+      );
+    } else {
+      console.warn(
+        `[e2e] bun is unavailable (${outcome.cause.code ?? outcome.cause.message}); ` +
+          `using existing ${frontendDist}`,
+      );
+    }
+  }
+
+  if (frontendMtime === null) {
+    throw new Error(`frontend build did not produce ${frontendIndex}`);
+  }
+
+  // index.html must exist so the e2e server can serve the SPA shell, even
+  // if the rest of the dist tree looks fresh.
+  if ((await fileMtimeMs(embeddedIndex)) !== null) {
+    const embeddedMtime = await newestMtimeUnder(embeddedDist);
+    if (embeddedMtime !== null && embeddedMtime >= frontendMtime) {
+      return;
+    }
   }
 
   await rm(embeddedDist, { recursive: true, force: true });

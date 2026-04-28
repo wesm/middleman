@@ -22,6 +22,7 @@ vi.mock("@middleman/ui", () => ({
 import AppHeader from "./AppHeader.svelte";
 import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
 import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
+import { navigate } from "../../stores/router.svelte.ts";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
@@ -55,6 +56,7 @@ describe("AppHeader", () => {
   afterEach(() => {
     cleanupTheme();
     cleanup();
+    navigate("/");
     document.documentElement.classList.remove("dark");
     localStorage.clear();
     setSidebarCollapsed(false);
@@ -218,5 +220,39 @@ describe("AppHeader", () => {
     expect(
       container.querySelector("button[title='Expand sidebar'] svg"),
     ).toBeTruthy();
+  });
+
+  it("opens selected Activity PR in PRs tab with files tab preserved", async () => {
+    initTheme();
+    navigate("/?selected=pr:acme/widgets/1&selected_tab=files");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "PRs" }));
+
+    expect(window.location.pathname + window.location.search).toBe(
+      "/pulls/acme/widgets/1/files",
+    );
+  });
+
+  it("opens selected Activity issue in Issues tab with platform host preserved", async () => {
+    initTheme();
+    navigate("/?selected=issue:acme/widgets/10&platform_host=ghe.example.com");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
+
+    expect(window.location.pathname + window.location.search).toBe(
+      "/issues/acme/widgets/10?platform_host=ghe.example.com",
+    );
+  });
+
+  it("opens Issues list when Activity selection is a PR", async () => {
+    initTheme();
+    navigate("/?selected=pr:acme/widgets/1&selected_tab=files");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/issues");
   });
 });

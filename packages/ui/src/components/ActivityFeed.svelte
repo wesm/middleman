@@ -20,9 +20,23 @@
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
+    compact?: boolean;
+    selectedItem?: SelectedActivityRef | null;
   }
 
-  let { onSelectItem }: Props = $props();
+  type SelectedActivityRef = {
+    itemType: "pr" | "issue";
+    owner: string;
+    name: string;
+    number: number;
+    platformHost?: string | undefined;
+  };
+
+  let {
+    onSelectItem,
+    compact = false,
+    selectedItem = null,
+  }: Props = $props();
 
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -228,6 +242,57 @@
     },
   ]);
 
+  const compactFilterSections = $derived.by(() => [
+    {
+      title: "View",
+      items: [
+        {
+          id: "view-flat",
+          label: "Flat",
+          active: activity.getViewMode() === "flat",
+          onSelect: () => handleViewModeChange("flat"),
+        },
+        {
+          id: "view-threaded",
+          label: "Threaded",
+          active: activity.getViewMode() === "threaded",
+          onSelect: () => handleViewModeChange("threaded"),
+        },
+      ],
+    },
+    {
+      title: "Time range",
+      items: TIME_RANGES.map((range) => ({
+        id: `range-${range.value}`,
+        label: range.label,
+        active: activity.getTimeRange() === range.value,
+        onSelect: () => handleTimeRangeChange(range.value),
+      })),
+    },
+    ...(activity.getViewMode() === "threaded"
+      ? [
+          {
+            title: "Grouping",
+            items: [
+              {
+                id: "group-by-repo",
+                label: "By repo",
+                active: grouping.getGroupByRepo(),
+                onSelect: () => grouping.setGroupByRepo(true),
+              },
+              {
+                id: "group-all",
+                label: "All",
+                active: !grouping.getGroupByRepo(),
+                onSelect: () => grouping.setGroupByRepo(false),
+              },
+            ],
+          },
+        ]
+      : []),
+    ...activityFilterSections,
+  ]);
+
   function eventClass(type: string): string {
     switch (type) {
       case "comment": return "evt-comment";
@@ -254,13 +319,29 @@
     onSelectItem?.(item);
   }
 
+  function isSelectedActivityItem(item: ActivityItem): boolean {
+    return selectedItem?.itemType === item.item_type
+      && selectedItem.owner === item.repo_owner
+      && selectedItem.name === item.repo_name
+      && selectedItem.number === item.item_number
+      && (item.item_type !== "issue"
+        || !selectedItem.platformHost
+        || selectedItem.platformHost === item.platform_host);
+  }
+
   function handleLinkClick(e: Event, url: string): void {
     e.stopPropagation();
     window.open(url, "_blank", "noopener");
   }
 </script>
 
-<div class="activity-feed">
+<div
+  class="activity-feed"
+  class:activity-feed--compact={compact}
+  data-selected-item={selectedItem
+    ? `${selectedItem.itemType}:${selectedItem.owner}/${selectedItem.name}/${selectedItem.number}`
+    : undefined}
+>
   <div class="controls-bar">
     <div class="filter-group">
       <div class="segmented-control">
@@ -269,23 +350,25 @@
         <button class="seg-btn" class:active={activity.getItemFilter() === "issues"} onclick={() => handleItemFilterChange("issues")}>Issues</button>
       </div>
 
-      <div class="segmented-control">
-        <button class="seg-btn" class:active={activity.getViewMode() === "flat"} onclick={() => handleViewModeChange("flat")}>Flat</button>
-        <button class="seg-btn" class:active={activity.getViewMode() === "threaded"} onclick={() => handleViewModeChange("threaded")}>Threaded</button>
-      </div>
-
-      {#if activity.getViewMode() === "threaded"}
+      {#if !compact}
         <div class="segmented-control">
-          <button class="seg-btn" class:active={grouping.getGroupByRepo()} onclick={() => grouping.setGroupByRepo(true)}>By Repo</button>
-          <button class="seg-btn" class:active={!grouping.getGroupByRepo()} onclick={() => grouping.setGroupByRepo(false)}>All</button>
+          <button class="seg-btn" class:active={activity.getViewMode() === "flat"} onclick={() => handleViewModeChange("flat")}>Flat</button>
+          <button class="seg-btn" class:active={activity.getViewMode() === "threaded"} onclick={() => handleViewModeChange("threaded")}>Threaded</button>
+        </div>
+
+        {#if activity.getViewMode() === "threaded"}
+          <div class="segmented-control">
+            <button class="seg-btn" class:active={grouping.getGroupByRepo()} onclick={() => grouping.setGroupByRepo(true)}>By Repo</button>
+            <button class="seg-btn" class:active={!grouping.getGroupByRepo()} onclick={() => grouping.setGroupByRepo(false)}>All</button>
+          </div>
+        {/if}
+
+        <div class="segmented-control">
+          {#each TIME_RANGES as r (r.value)}
+            <button class="seg-btn" class:active={activity.getTimeRange() === r.value} onclick={() => handleTimeRangeChange(r.value)}>{r.label}</button>
+          {/each}
         </div>
       {/if}
-
-      <div class="segmented-control">
-        {#each TIME_RANGES as r}
-          <button class="seg-btn" class:active={activity.getTimeRange() === r.value} onclick={() => handleTimeRangeChange(r.value)}>{r.label}</button>
-        {/each}
-      </div>
     </div>
 
     <FilterDropdown
@@ -293,7 +376,8 @@
       active={hiddenFilterCount > 0}
       badgeCount={hiddenFilterCount}
       title="Filter activity types"
-      sections={activityFilterSections}
+      sections={compact ? compactFilterSections : activityFilterSections}
+      minWidth={compact ? "220px" : "200px"}
       {...hiddenFilterCount > 0
         ? {
             resetLabel: "Show all",
@@ -325,77 +409,131 @@
     {#if displayItems.length === 0 && activity.isActivityLoading()}
       <div class="table-container"><div class="empty-state">Loading...</div></div>
     {:else}
-      <ActivityThreaded items={displayItems} onSelectItem={onSelectItem} />
+      <ActivityThreaded
+        items={displayItems}
+        {onSelectItem}
+        {compact}
+        {selectedItem}
+      />
     {/if}
   {:else}
     <div class="table-container">
-      <table class="activity-table">
-        <thead>
-          <tr>
-            <th class="col-kind">Kind</th>
-            <th class="col-event">Event</th>
-            <th class="col-repo">Repository</th>
-            <th class="col-item">Item</th>
-            <th class="col-author">Author</th>
-            <th class="col-when">When</th>
-            <th class="col-link"></th>
-          </tr>
-        </thead>
-        <tbody>
+      {#if compact}
+        <div class="activity-compact-list">
           {#each flatRows as row (row.id)}
             {#if isCollapsedActivityRow(row)}
-              <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
-                <td class="col-kind">
+              <button
+                class="activity-compact-row collapsed-row"
+                class:selected={isSelectedActivityItem(row.representative)}
+                onclick={() => handleRowClick(row.representative)}
+                type="button"
+              >
+                <span class="compact-row-top">
                   <span class="badge {row.representative.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.representative.item_type === "pr" ? "PR" : "Issue"}</span>
-                </td>
-                <td class="col-event">
-                  <span class="evt-label evt-commit">{row.count} commits</span>
-                </td>
-                <td class="col-repo">{row.representative.repo_owner}/{row.representative.repo_name}</td>
-                <td class="col-item">
                   <span class="item-number">#{row.representative.item_number}</span>
-                  <span class="item-title">{row.representative.item_title}</span>
-                </td>
-                <td class="col-author">{row.author}</td>
-                <td class="col-when">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</td>
-                <td class="col-link">
-                  <button
-                    class="link-btn"
-                    title="Open on GitHub"
-                    onclick={(e) => handleLinkClick(e, row.representative.item_url)}
-                  >&#x2197;</button>
-                </td>
-              </tr>
+                  <span class="compact-time">{relativeTime(row.latest)}</span>
+                </span>
+                <span class="compact-title">{row.representative.item_title}</span>
+                <span class="compact-meta">
+                  <span>{row.representative.repo_owner}/{row.representative.repo_name}</span>
+                  <span class="evt-label evt-commit">{row.count} commits</span>
+                  <span>{row.author}</span>
+                </span>
+              </button>
             {:else}
-              <tr class="activity-row" onclick={() => handleRowClick(row)}>
-                <td class="col-kind">
+              <button
+                class="activity-compact-row"
+                class:selected={isSelectedActivityItem(row)}
+                onclick={() => handleRowClick(row)}
+                type="button"
+              >
+                <span class="compact-row-top">
                   <span class="badge {badgeClass(row)}">{itemTypeLabel(row)}</span>
+                  <span class="item-number">#{row.item_number}</span>
                   {#if stateLabel(row)}
                     <span class="state-badge state-{row.item_state}">{stateLabel(row)}</span>
                   {/if}
-                </td>
-                <td class="col-event">
+                  <span class="compact-time">{relativeTime(row.created_at)}</span>
+                </span>
+                <span class="compact-title">{row.item_title}</span>
+                <span class="compact-meta">
+                  <span>{row.repo_owner}/{row.repo_name}</span>
                   <span class="evt-label {eventClass(row.activity_type)}">{eventLabel(row)}</span>
-                </td>
-                <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
-                <td class="col-item">
-                  <span class="item-number">#{row.item_number}</span>
-                  <span class="item-title">{row.item_title}</span>
-                </td>
-                <td class="col-author">{row.author}</td>
-                <td class="col-when">{relativeTime(row.created_at)}</td>
-                <td class="col-link">
-                  <button
-                    class="link-btn"
-                    title="Open on GitHub"
-                    onclick={(e) => handleLinkClick(e, row.item_url)}
-                  >&#x2197;</button>
-                </td>
-              </tr>
+                  <span>{row.author}</span>
+                </span>
+              </button>
             {/if}
           {/each}
-        </tbody>
-      </table>
+        </div>
+      {:else}
+        <table class="activity-table">
+          <thead>
+            <tr>
+              <th class="col-kind">Kind</th>
+              <th class="col-event">Event</th>
+              <th class="col-repo">Repository</th>
+              <th class="col-item">Item</th>
+              <th class="col-author">Author</th>
+              <th class="col-when">When</th>
+              <th class="col-link"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each flatRows as row (row.id)}
+              {#if isCollapsedActivityRow(row)}
+                <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
+                  <td class="col-kind">
+                    <span class="badge {row.representative.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.representative.item_type === "pr" ? "PR" : "Issue"}</span>
+                  </td>
+                  <td class="col-event">
+                    <span class="evt-label evt-commit">{row.count} commits</span>
+                  </td>
+                  <td class="col-repo">{row.representative.repo_owner}/{row.representative.repo_name}</td>
+                  <td class="col-item">
+                    <span class="item-number">#{row.representative.item_number}</span>
+                    <span class="item-title">{row.representative.item_title}</span>
+                  </td>
+                  <td class="col-author">{row.author}</td>
+                  <td class="col-when">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</td>
+                  <td class="col-link">
+                    <button
+                      class="link-btn"
+                      title="Open on GitHub"
+                      onclick={(e) => handleLinkClick(e, row.representative.item_url)}
+                    >&#x2197;</button>
+                  </td>
+                </tr>
+              {:else}
+                <tr class="activity-row" onclick={() => handleRowClick(row)}>
+                  <td class="col-kind">
+                    <span class="badge {badgeClass(row)}">{itemTypeLabel(row)}</span>
+                    {#if stateLabel(row)}
+                      <span class="state-badge state-{row.item_state}">{stateLabel(row)}</span>
+                    {/if}
+                  </td>
+                  <td class="col-event">
+                    <span class="evt-label {eventClass(row.activity_type)}">{eventLabel(row)}</span>
+                  </td>
+                  <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                  <td class="col-item">
+                    <span class="item-number">#{row.item_number}</span>
+                    <span class="item-title">{row.item_title}</span>
+                  </td>
+                  <td class="col-author">{row.author}</td>
+                  <td class="col-when">{relativeTime(row.created_at)}</td>
+                  <td class="col-link">
+                    <button
+                      class="link-btn"
+                      title="Open on GitHub"
+                      onclick={(e) => handleLinkClick(e, row.item_url)}
+                    >&#x2197;</button>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      {/if}
 
       {#if flatRows.length === 0 && !activity.isActivityLoading()}
         <div class="empty-state">No activity found</div>
@@ -470,10 +608,112 @@
     padding: 4px 8px;
   }
 
+  .activity-feed--compact .controls-bar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .activity-feed--compact .filter-group {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .activity-feed--compact .segmented-control {
+    width: 100%;
+  }
+
+  .activity-feed--compact .seg-btn {
+    flex: 1;
+    padding-inline: 6px;
+  }
+
+  .activity-feed--compact .search-input {
+    order: 1;
+    flex: 1 0 100%;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .activity-feed--compact :global(.filter-wrap) {
+    order: 3;
+    flex-shrink: 0;
+  }
+
   .table-container {
     flex: 1;
     overflow-y: auto;
     padding: 0 16px;
+  }
+
+  .activity-feed--compact .table-container {
+    padding: 0;
+  }
+
+  .activity-compact-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .activity-compact-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    width: 100%;
+    min-height: 62px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-muted);
+    text-align: left;
+    color: inherit;
+    background: transparent;
+  }
+
+  .activity-compact-row:hover {
+    background: var(--bg-surface-hover);
+  }
+
+  .activity-compact-row.selected {
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent-blue);
+  }
+
+  .compact-row-top,
+  .compact-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .compact-title {
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compact-time {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  .compact-meta {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .compact-meta > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .activity-table {

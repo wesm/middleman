@@ -401,7 +401,19 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/merge", s.mergePR)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/sync", s.syncPR)
+	huma.Register(api, huma.Operation{
+		OperationID:   "enqueue-pr-sync",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/pulls/{number}/sync/async",
+		DefaultStatus: http.StatusAccepted,
+	}, s.enqueuePRSync)
 	huma.Post(api, "/repos/{owner}/{name}/issues/{number}/sync", s.syncIssue)
+	huma.Register(api, huma.Operation{
+		OperationID:   "enqueue-issue-sync",
+		Method:        http.MethodPost,
+		Path:          "/repos/{owner}/{name}/issues/{number}/sync/async",
+		DefaultStatus: http.StatusAccepted,
+	}, s.enqueueIssueSync)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-pr-github-state",
 		Method:        http.MethodPost,
@@ -1632,6 +1644,23 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	return &syncPROutput{Body: body}, nil
 }
 
+func (s *Server) enqueuePRSync(_ context.Context, input *repoNumberInput) (*acceptedOutput, error) {
+	key := "pr:github.com:" + input.Owner + "/" + input.Name + "#" + strconv.Itoa(input.Number)
+	s.enqueueDetailSync(
+		key,
+		[]any{
+			"type", "pr",
+			"owner", input.Owner,
+			"name", input.Name,
+			"number", input.Number,
+		},
+		func(ctx context.Context) error {
+			return s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number)
+		},
+	)
+	return &acceptedOutput{Status: http.StatusAccepted}, nil
+}
+
 func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
 	var err error
 	if input.PlatformHost != "" {
@@ -1692,6 +1721,33 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		}
 	}
 	return &syncIssueOutput{Body: syncIssueResp}, nil
+}
+
+func (s *Server) enqueueIssueSync(_ context.Context, input *issueRepoNumberInput) (*acceptedOutput, error) {
+	host := input.PlatformHost
+	if host == "" {
+		host = "github.com"
+	}
+	key := "issue:" + host + ":" + input.Owner + "/" + input.Name + "#" + strconv.Itoa(input.Number)
+	s.enqueueDetailSync(
+		key,
+		[]any{
+			"type", "issue",
+			"platform_host", host,
+			"owner", input.Owner,
+			"name", input.Name,
+			"number", input.Number,
+		},
+		func(ctx context.Context) error {
+			if input.PlatformHost != "" {
+				return s.syncer.SyncIssueOnHost(
+					ctx, input.PlatformHost, input.Owner, input.Name, input.Number,
+				)
+			}
+			return s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number)
+		},
+	)
+	return &acceptedOutput{Status: http.StatusAccepted}, nil
 }
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {

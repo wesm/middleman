@@ -1189,6 +1189,27 @@ func (d *DB) UpdateMRCIStatus(
 	return nil
 }
 
+// ClearMRCI resets ci_status, ci_checks_json, and ci_had_pending for a
+// merge request. UpsertMergeRequest preserves ci_had_pending across
+// upserts, so callers that observe a head SHA change need this to drop
+// the stale pending flag along with the rest of the CI fields.
+func (d *DB) ClearMRCI(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET ci_status = '', ci_checks_json = '', ci_had_pending = 0
+		WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("clear mr ci: %w", err)
+	}
+	return nil
+}
+
 // UpdateClosedMRState atomically updates the state, timestamps, and final
 // platform head/base SHAs for a MR that has transitioned to closed or merged.
 // updatedAt should be the MR's UpdatedAt timestamp from the platform.

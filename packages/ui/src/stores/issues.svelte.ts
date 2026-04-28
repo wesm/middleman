@@ -1,6 +1,8 @@
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
+export type IssueDetailSyncMode = boolean | "background";
+
 export interface IssueSelection {
   owner: string;
   name: string;
@@ -23,6 +25,23 @@ function apiErrorMessage(
   fallback: string,
 ): string {
   return error.detail ?? error.title ?? fallback;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function syncIntentRank(mode: IssueDetailSyncMode): number {
+  if (mode === true) return 2;
+  if (mode === "background") return 1;
+  return 0;
+}
+
+function strongerSyncMode(
+  a: IssueDetailSyncMode,
+  b: IssueDetailSyncMode,
+): IssueDetailSyncMode {
+  return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
@@ -57,6 +76,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let issueDetailLoaded = $state(false);
   let detailPollHandle: ReturnType<typeof setInterval> | null = null;
   let issueSyncGeneration = 0;
+  let activeDetailLoad: {
+    key: string;
+    promise: Promise<void> | null;
+    syncMode: IssueDetailSyncMode;
+  } | null = null;
 
   // --- list reads ---
 
@@ -213,15 +237,102 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     platformHost?: string,
+    options?: { sync?: IssueDetailSyncMode },
   ): Promise<void> {
+    const syncMode = options?.sync ?? true;
+    // Dedup by item identity only. A second caller with a different
+    // sync mode joins the in-flight load and may promote the sync
+    // intent if its requested mode is stronger.
+    const key = `${platformHost ?? ""}:${owner}/${name}/${number}`;
+    if (
+      detailLoading &&
+      activeDetailLoad?.key === key &&
+      activeDetailLoad.promise !== null
+    ) {
+      activeDetailLoad.syncMode = strongerSyncMode(
+        activeDetailLoad.syncMode,
+        syncMode,
+      );
+      return activeDetailLoad.promise;
+    }
+
     const gen = ++issueSyncGeneration;
+    const currentLoad: {
+      key: string;
+      promise: Promise<void> | null;
+      syncMode: IssueDetailSyncMode;
+    } = { key, promise: null, syncMode };
+    activeDetailLoad = currentLoad;
 
     detailLoading = true;
     detailSyncing = false;
     detailError = null;
+    const promise = (async () => {
+      try {
+        const { data, error: requestError } = await apiClient.GET(
+          "/repos/{owner}/{name}/issues/{number}",
+          {
+            params: {
+              path: { owner, name, number },
+              query: {
+                ...(platformHost && {
+                  platform_host: platformHost,
+                }),
+              },
+            },
+          },
+        );
+        if (gen !== issueSyncGeneration) return;
+        if (requestError) {
+          throw new Error(apiErrorMessage(requestError, "failed to load issue"));
+        }
+        issueDetail = data
+          ? ({
+              ...data,
+              events: data.events ?? [],
+            } as IssueDetail)
+          : null;
+        issueDetailLoaded = data?.detail_loaded ?? false;
+      } catch (err) {
+        if (gen !== issueSyncGeneration) return;
+        detailError = err instanceof Error ? err.message : String(err);
+      } finally {
+        if (gen === issueSyncGeneration) detailLoading = false;
+        if (activeDetailLoad === currentLoad) activeDetailLoad = null;
+      }
+
+      // Use the latest promoted sync intent so a stronger caller's
+      // request isn't lost when it joined an in-flight load.
+      const finalSyncMode = currentLoad.syncMode;
+      if (gen === issueSyncGeneration && finalSyncMode === true) {
+        void syncIssueDetail(owner, name, number, gen, platformHost);
+      } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
+        void enqueueBackgroundIssueSync(
+          owner,
+          name,
+          number,
+          gen,
+          issueDetail?.detail_fetched_at,
+          platformHost,
+        );
+      }
+    })();
+    currentLoad.promise = promise;
+    return promise;
+  }
+
+  async function enqueueBackgroundIssueSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+    platformHost?: string,
+  ): Promise<void> {
+    detailSyncing = true;
     try {
-      const { data, error: requestError } = await apiClient.GET(
-        "/repos/{owner}/{name}/issues/{number}",
+      const { error: requestError } = await apiClient.POST(
+        "/repos/{owner}/{name}/issues/{number}/sync/async",
         {
           params: {
             path: { owner, name, number },
@@ -233,26 +344,38 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           },
         },
       );
-      if (gen !== issueSyncGeneration) return;
-      if (requestError) {
-        throw new Error(apiErrorMessage(requestError, "failed to load issue"));
-      }
-      issueDetail = data
-        ? ({
-            ...data,
-            events: data.events ?? [],
-          } as IssueDetail)
-        : null;
-      issueDetailLoaded = data?.detail_loaded ?? false;
-    } catch (err) {
-      if (gen !== issueSyncGeneration) return;
-      detailError = err instanceof Error ? err.message : String(err);
+      if (requestError) return;
+      await refreshAfterBackgroundIssueSync(
+        owner,
+        name,
+        number,
+        gen,
+        previousFetchedAt,
+        platformHost,
+      );
     } finally {
-      if (gen === issueSyncGeneration) detailLoading = false;
+      if (gen === issueSyncGeneration) detailSyncing = false;
+      void syncDep?.refreshSyncStatus?.();
     }
+  }
 
-    if (gen === issueSyncGeneration) {
-      void syncIssueDetail(owner, name, number, gen, platformHost);
+  async function refreshAfterBackgroundIssueSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+    platformHost?: string,
+  ): Promise<void> {
+    for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
+      await delay(ms);
+      if (gen !== issueSyncGeneration) return;
+      await refreshIssueDetail(owner, name, number, platformHost, gen);
+      if (gen !== issueSyncGeneration) return;
+      const fetchedAt = issueDetail?.detail_fetched_at;
+      if (fetchedAt && fetchedAt !== previousFetchedAt) {
+        return;
+      }
     }
   }
 
@@ -308,8 +431,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     platformHost?: string,
+    expectedGen: number = issueSyncGeneration,
   ): Promise<void> {
-    const gen = issueSyncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/issues/{number}",
@@ -324,7 +447,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           },
         },
       );
-      if (gen !== issueSyncGeneration) return;
+      // Re-check the generation after the awaited request: if the
+      // selected issue changed mid-flight, dropping the assignment
+      // keeps the new selection's data from being clobbered.
+      if (expectedGen !== issueSyncGeneration) return;
       if (data !== undefined) {
         issueDetail = {
           ...data,
@@ -358,6 +484,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function clearIssueDetail(): void {
     ++issueSyncGeneration;
+    activeDetailLoad = null;
     issueDetail = null;
     detailLoading = false;
     detailSyncing = false;

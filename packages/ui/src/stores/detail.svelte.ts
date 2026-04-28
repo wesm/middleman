@@ -4,6 +4,8 @@ import type {
 } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
+export type DetailSyncMode = boolean | "background";
+
 export interface DetailStoreOptions {
   client: MiddlemanClient;
   getPage?: () => string;
@@ -36,6 +38,23 @@ function apiErrorMessage(
   return error.detail ?? error.title ?? fallback;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function syncIntentRank(mode: DetailSyncMode): number {
+  if (mode === true) return 2;
+  if (mode === "background") return 1;
+  return 0;
+}
+
+function strongerSyncMode(
+  a: DetailSyncMode,
+  b: DetailSyncMode,
+): DetailSyncMode {
+  return syncIntentRank(b) > syncIntentRank(a) ? b : a;
+}
+
 export function createDetailStore(
   opts: DetailStoreOptions,
 ) {
@@ -52,6 +71,11 @@ export function createDetailStore(
   let storeError = $state<string | null>(null);
   let detailLoaded = $state(false);
   let syncGeneration = 0;
+  let activeLoad: {
+    key: string;
+    promise: Promise<void> | null;
+    syncMode: DetailSyncMode;
+  } | null = null;
 
   // Per-PR monotonic counters for kanban updates.
   const kanbanSeqByPR = new Map<string, number>();
@@ -130,14 +154,17 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    expectedGen: number = syncGeneration,
   ): Promise<void> {
-    const gen = syncGeneration;
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/pulls/{number}",
         { params: { path: { owner, name, number } } },
       );
-      if (gen !== syncGeneration) return;
+      // Re-check the generation after the awaited request: if the
+      // selected PR changed mid-flight, dropping the assignment keeps
+      // the new selection's data from being clobbered.
+      if (expectedGen !== syncGeneration) return;
       if (data !== undefined) {
         detail = {
           ...data,
@@ -195,6 +222,7 @@ export function createDetailStore(
 
   function clearDetail(): void {
     ++syncGeneration;
+    activeLoad = null;
     detail = null;
     loading = false;
     syncing = false;
@@ -206,8 +234,32 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    options?: { sync?: DetailSyncMode },
   ): Promise<void> {
+    const syncMode = options?.sync ?? true;
+    // Dedup by item identity only. A second caller with a different
+    // sync mode joins the in-flight load and may promote the sync
+    // intent if its requested mode is stronger.
+    const key = prKey(owner, name, number);
+    if (
+      loading &&
+      activeLoad?.key === key &&
+      activeLoad.promise !== null
+    ) {
+      activeLoad.syncMode = strongerSyncMode(
+        activeLoad.syncMode,
+        syncMode,
+      );
+      return activeLoad.promise;
+    }
+
     const gen = ++syncGeneration;
+    const currentLoad: {
+      key: string;
+      promise: Promise<void> | null;
+      syncMode: DetailSyncMode;
+    } = { key, promise: null, syncMode };
+    activeLoad = currentLoad;
 
     // Keep the previously loaded detail visible while the new one
     // is in flight. Nulling `detail` here flipped consumers to a
@@ -220,37 +272,99 @@ export function createDetailStore(
     syncing = false;
     storeError = null;
     detailLoaded = false;
-    try {
-      const { data, error: requestError } =
-        await apiClient.GET(
-          "/repos/{owner}/{name}/pulls/{number}",
-          { params: { path: { owner, name, number } } },
-        );
-      if (gen !== syncGeneration) return;
-      if (requestError) {
-        throw new Error(
-          requestError.detail ??
-            requestError.title ??
-            "failed to load pull request",
+    const promise = (async () => {
+      try {
+        const { data, error: requestError } =
+          await apiClient.GET(
+            "/repos/{owner}/{name}/pulls/{number}",
+            { params: { path: { owner, name, number } } },
+          );
+        if (gen !== syncGeneration) return;
+        if (requestError) {
+          throw new Error(
+            requestError.detail ??
+              requestError.title ??
+              "failed to load pull request",
+          );
+        }
+        detail = data
+          ? ({
+              ...data,
+              events: data.events ?? [],
+            } as PullDetail)
+          : null;
+        detailLoaded = data?.detail_loaded ?? false;
+      } catch (err) {
+        if (gen !== syncGeneration) return;
+        storeError =
+          err instanceof Error ? err.message : String(err);
+      } finally {
+        if (gen === syncGeneration) loading = false;
+        if (activeLoad === currentLoad) activeLoad = null;
+      }
+
+      // Use the latest promoted sync intent so a stronger caller's
+      // request isn't lost when it joined an in-flight load.
+      const finalSyncMode = currentLoad.syncMode;
+      if (gen === syncGeneration && finalSyncMode === true) {
+        void syncDetail(owner, name, number, gen);
+      } else if (gen === syncGeneration && finalSyncMode === "background") {
+        void enqueueBackgroundDetailSync(
+          owner,
+          name,
+          number,
+          gen,
+          detail?.detail_fetched_at,
         );
       }
-      detail = data
-        ? ({
-            ...data,
-            events: data.events ?? [],
-          } as PullDetail)
-        : null;
-      detailLoaded = data?.detail_loaded ?? false;
-    } catch (err) {
-      if (gen !== syncGeneration) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
-    } finally {
-      if (gen === syncGeneration) loading = false;
-    }
+    })();
+    currentLoad.promise = promise;
+    return promise;
+  }
 
-    if (gen === syncGeneration) {
-      void syncDetail(owner, name, number, gen);
+  async function enqueueBackgroundDetailSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+  ): Promise<void> {
+    syncing = true;
+    try {
+      const { error: requestError } = await apiClient.POST(
+        "/repos/{owner}/{name}/pulls/{number}/sync/async",
+        { params: { path: { owner, name, number } } },
+      );
+      if (requestError) return;
+      await refreshAfterBackgroundDetailSync(
+        owner,
+        name,
+        number,
+        gen,
+        previousFetchedAt,
+      );
+    } finally {
+      if (gen === syncGeneration) syncing = false;
+      void syncDep?.refreshSyncStatus?.();
+    }
+  }
+
+  async function refreshAfterBackgroundDetailSync(
+    owner: string,
+    name: string,
+    number: number,
+    gen: number,
+    previousFetchedAt?: string,
+  ): Promise<void> {
+    for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
+      await delay(ms);
+      if (gen !== syncGeneration) return;
+      await refreshDetail(owner, name, number, gen);
+      if (gen !== syncGeneration) return;
+      const fetchedAt = detail?.detail_fetched_at;
+      if (fetchedAt && fetchedAt !== previousFetchedAt) {
+        return;
+      }
     }
   }
 

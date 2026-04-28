@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
+  import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -23,9 +25,16 @@
     name: string;
     number: number;
     platformHost?: string | undefined;
+    autoSync?: IssueDetailSyncMode;
   }
 
-  const { owner, name, number, platformHost }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    platformHost,
+    autoSync = "background",
+  }: Props = $props();
 
   // See PullDetail.svelte: while a route change is in flight, the
   // displayed issue may briefly belong to the previous route. Mutating
@@ -35,26 +44,44 @@
   const staleIssue = $derived.by(() => {
     const d = issues.getIssueDetail();
     if (d == null) return false;
-    return (
+    if (
       d.repo_owner !== owner ||
       d.repo_name !== name ||
       (d.issue?.Number ?? -1) !== number
-    );
+    ) {
+      return true;
+    }
+    // The API treats an absent platform_host as github.com, so the
+    // comparison must normalize both sides to the same default.
+    // Otherwise, navigating from a non-default host to the same
+    // owner/repo/number without a platformHost would render the
+    // previous host's detail as current.
+    const expectedHost = platformHost ?? "github.com";
+    const actualHost = d.platform_host || "github.com";
+    return actualHost !== expectedHost;
   });
 
   $effect(() => {
-    void issues.loadIssueDetail(
-      owner,
-      name,
-      number,
-      platformHost,
-    );
-    issues.startIssueDetailPolling(
-      owner,
-      name,
-      number,
-      platformHost,
-    );
+    const requestOwner = owner;
+    const requestName = name;
+    const requestNumber = number;
+    const requestPlatformHost = platformHost;
+    const requestAutoSync = autoSync;
+    untrack(() => {
+      void issues.loadIssueDetail(
+        requestOwner,
+        requestName,
+        requestNumber,
+        requestPlatformHost,
+        { sync: requestAutoSync },
+      );
+      issues.startIssueDetailPolling(
+        requestOwner,
+        requestName,
+        requestNumber,
+        requestPlatformHost,
+      );
+    });
     return () => issues.stopIssueDetailPolling();
   });
 
@@ -322,13 +349,13 @@
   }
 </script>
 
-{#if issues.isIssueDetailLoading() && issues.getIssueDetail() === null}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || staleIssue)}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && issues.getIssueDetail() === null}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || staleIssue)}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
-  {#if detail !== null}
+  {#if detail !== null && !staleIssue}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     <div class="issue-detail">

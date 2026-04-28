@@ -7,6 +7,30 @@ export interface AppStartupDeps {
   onReady: () => void;
 }
 
+const SETTINGS_STARTUP_TIMEOUT_MS = 8_000;
+
+async function loadSettingsWithTimeout(
+  getSettings: () => Promise<Settings>,
+): Promise<Settings> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      getSettings(),
+      new Promise<Settings>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(
+            new Error(
+              "timed out loading settings during startup",
+            ),
+          );
+        }, SETTINGS_STARTUP_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 /**
  * runAppStartup kicks off the async initialization work App.svelte
  * performs during onMount: fetching settings, hydrating store
@@ -23,7 +47,9 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
   let cancelled = false;
   void (async () => {
     try {
-      const settings = await deps.getSettings();
+      const settings = await loadSettingsWithTimeout(
+        deps.getSettings,
+      );
       if (cancelled) return;
       const stores = deps.getStores();
       if (stores) {
@@ -34,6 +60,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         stores.activity.hydrateDefaults(settings.activity);
       }
     } catch (err) {
+      if (cancelled) return;
       console.warn(
         "Failed to load settings, using defaults:",
         err,

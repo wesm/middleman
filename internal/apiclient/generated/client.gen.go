@@ -735,6 +735,11 @@ type PostReposByOwnerByNameIssuesByNumberSyncParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// EnqueueIssueSyncParams defines parameters for EnqueueIssueSync.
+type EnqueueIssueSyncParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
 type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -908,6 +913,9 @@ type ClientInterface interface {
 	// PostReposByOwnerByNameIssuesByNumberSync request
 	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// EnqueueIssueSync request
+	EnqueueIssueSync(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateIssueWorkspaceWithBody request with any body
 	CreateIssueWorkspaceWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -972,6 +980,9 @@ type ClientInterface interface {
 
 	// PostReposByOwnerByNamePullsByNumberSync request
 	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueuePrSync request
+	EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListStacks request
 	ListStacks(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1170,6 +1181,18 @@ func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name str
 
 func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostReposByOwnerByNameIssuesByNumberSyncRequest(c.Server, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueueIssueSync(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueueIssueSyncRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1458,6 +1481,18 @@ func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, 
 
 func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostReposByOwnerByNamePullsByNumberSyncRequest(c.Server, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueuePrSyncRequest(c.Server, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2523,6 +2558,76 @@ func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner str
 	return req, nil
 }
 
+// NewEnqueueIssueSyncRequest generates requests for EnqueueIssueSync
+func NewEnqueueIssueSyncRequest(server string, owner string, name string, number int64, params *EnqueueIssueSyncParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/sync/async", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateIssueWorkspaceRequest calls the generic CreateIssueWorkspace builder with application/json body
 func NewCreateIssueWorkspaceRequest(server string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3500,6 +3605,54 @@ func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner stri
 	return req, nil
 }
 
+// NewEnqueuePrSyncRequest generates requests for EnqueuePrSync
+func NewEnqueuePrSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/sync/async", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListStacksRequest generates requests for ListStacks
 func NewListStacksRequest(server string, params *ListStacksParams) (*http.Request, error) {
 	var err error
@@ -4110,6 +4263,9 @@ type ClientWithResponsesInterface interface {
 	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
 	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
 
+	// EnqueueIssueSyncWithResponse request
+	EnqueueIssueSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error)
+
 	// CreateIssueWorkspaceWithBodyWithResponse request with any body
 	CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
 
@@ -4174,6 +4330,9 @@ type ClientWithResponsesInterface interface {
 
 	// PostReposByOwnerByNamePullsByNumberSyncWithResponse request
 	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
+
+	// EnqueuePrSyncWithResponse request
+	EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
 
 	// ListStacksWithResponse request
 	ListStacksWithResponse(ctx context.Context, params *ListStacksParams, reqEditors ...RequestEditorFn) (*ListStacksResponse, error)
@@ -4473,6 +4632,28 @@ func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueueIssueSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueueIssueSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueueIssueSyncResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4863,6 +5044,28 @@ func (r PostReposByOwnerByNamePullsByNumberSyncResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostReposByOwnerByNamePullsByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueuePrSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueuePrSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueuePrSyncResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5301,6 +5504,15 @@ func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithRespon
 	return ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp)
 }
 
+// EnqueueIssueSyncWithResponse request returning *EnqueueIssueSyncResponse
+func (c *ClientWithResponses) EnqueueIssueSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error) {
+	rsp, err := c.EnqueueIssueSync(ctx, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueueIssueSyncResponse(rsp)
+}
+
 // CreateIssueWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateIssueWorkspaceResponse
 func (c *ClientWithResponses) CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
 	rsp, err := c.CreateIssueWorkspaceWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
@@ -5508,6 +5720,15 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithRespons
 		return nil, err
 	}
 	return ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp)
+}
+
+// EnqueuePrSyncWithResponse request returning *EnqueuePrSyncResponse
+func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error) {
+	rsp, err := c.EnqueuePrSync(ctx, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueuePrSyncResponse(rsp)
 }
 
 // ListStacksWithResponse request returning *ListStacksResponse
@@ -6019,6 +6240,32 @@ func ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp *http.Response) (
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueueIssueSyncResponse parses an HTTP response from a EnqueueIssueSyncWithResponse call
+func ParseEnqueueIssueSyncResponse(rsp *http.Response) (*EnqueueIssueSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueueIssueSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -6573,6 +6820,32 @@ func ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp *http.Response) (*
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueuePrSyncResponse parses an HTTP response from a EnqueuePrSyncWithResponse call
+func ParseEnqueuePrSyncResponse(rsp *http.Response) (*EnqueuePrSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueuePrSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

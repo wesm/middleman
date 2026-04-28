@@ -492,11 +492,11 @@ test.describe("diff view", () => {
     await waitForSidebarFilesLoaded(page);
 
     // PR 1 "Add widget caching layer" is selected and its file list renders
-    // inline under the pull-item.
+    // inside the PR detail files pane.
     const pr1 = page.locator(".pull-item").filter({ hasText: "caching layer" });
     await expect(pr1).toHaveCount(1);
-    const inlineFiles = pr1.locator("..").locator(".diff-files");
-    await expect(inlineFiles).toHaveCount(1);
+    const detailFiles = page.locator(".files-layout > .files-sidebar");
+    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
 
     // Filter the sidebar to exclude PR 1 by searching for a different PR.
     await page.locator(".search-input").fill("race");
@@ -505,10 +505,10 @@ test.describe("diff view", () => {
     await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
       .toHaveCount(0);
 
-    // Fallback file list renders outside .list-body (selected PR is gone).
-    const fallback = page.locator(".pull-list > .diff-files-wrap");
-    await expect(fallback).toHaveCount(1);
-    await expect(fallback.locator(".diff-file-row")).toHaveCount(4);
+    // The selected PR can disappear from the outer list, but the detail
+    // Files pane keeps its file list available.
+    await expect(page.locator(".pull-list > .diff-files-wrap")).toHaveCount(0);
+    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
   });
 
   test("inline file filter appears for large diffs and narrows list", async ({ page }) => {
@@ -621,22 +621,22 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // File list renders inline under the PR.
+    // File list renders inside the PR detail Files pane.
     const pr1 = page.locator(".pull-item").filter({ hasText: "caching layer" });
-    const inlineFiles = pr1.locator("..").locator(".diff-files");
-    await expect(inlineFiles).toHaveCount(1);
+    await expect(pr1).toHaveCount(1);
+    const detailFiles = page.locator(".files-layout > .files-sidebar");
+    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
 
     // Collapse the acme/widgets repo group (containing the selected PR).
     await page.locator(".repo-header", { hasText: "acme/widgets" }).click();
     await expect(page.locator(".repo-header", { hasText: "acme/widgets" }))
       .toHaveAttribute("aria-expanded", "false");
 
-    // PR row hidden, but fallback file list renders outside .list-body.
+    // PR row hidden, but the detail Files pane keeps the file list available.
     await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
       .toHaveCount(0);
-    const fallback = page.locator(".pull-list > .diff-files-wrap");
-    await expect(fallback).toHaveCount(1);
-    await expect(fallback.locator(".diff-file-row")).toHaveCount(4);
+    await expect(page.locator(".pull-list > .diff-files-wrap")).toHaveCount(0);
+    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
   });
 
   test("commit list resets expand state when switching PRs", async ({ page }) => {

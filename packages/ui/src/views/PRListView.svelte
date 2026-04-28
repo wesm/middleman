@@ -6,9 +6,11 @@
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail
     from "../components/detail/PullDetail.svelte";
+  import DiffSidebar from "../components/diff/DiffSidebar.svelte";
   import DiffView from "../components/diff/DiffView.svelte";
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
+  import type { DetailSyncMode } from "../stores/detail.svelte.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
@@ -23,7 +25,10 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
+    showStackSidebar?: boolean;
+    autoSyncDetail?: DetailSyncMode;
     onSidebarResize?: (width: number) => void;
+    onDetailTabChange?: (tab: "conversation" | "files") => void;
   }
 
   let {
@@ -32,8 +37,24 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
+    showStackSidebar = true,
+    autoSyncDetail = "background",
     onSidebarResize,
+    onDetailTabChange,
   }: Props = $props();
+
+  function selectDetailTab(tab: "conversation" | "files"): void {
+    if (onDetailTabChange) {
+      onDetailTabChange(tab);
+      return;
+    }
+    if (selectedPR === null) return;
+    navigate(
+      tab === "files"
+        ? `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`
+        : `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`,
+    );
+  }
 </script>
 
 <CollapsibleResizableSidebar
@@ -46,7 +67,10 @@
   mainEmpty={selectedPR === null}
 >
   {#snippet sidebar()}
-    <PullList getDetailTab={() => detailTab} />
+    <PullList
+      getDetailTab={() => detailTab}
+      showSelectedDiffSidebar={false}
+    />
   {/snippet}
 
   {#if selectedPR !== null}
@@ -54,35 +78,39 @@
       <button
         class="detail-tab"
         class:detail-tab--active={detailTab === "conversation"}
-        onclick={() => navigate(
-          `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`,
-        )}
+        onclick={() => selectDetailTab("conversation")}
       >
         Conversation
       </button>
       <button
         class="detail-tab"
         class:detail-tab--active={detailTab === "files"}
-        onclick={() => navigate(
-          `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`,
-        )}
+        onclick={() => selectDetailTab("files")}
       >
         Files changed
       </button>
     </div>
     {#if detailTab === "files"}
       {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
-        <DiffView
-          owner={selectedPR.owner}
-          name={selectedPR.name}
-          number={selectedPR.number}
-        />
+        <div class="files-layout">
+          <aside class="files-sidebar">
+            <DiffSidebar />
+          </aside>
+          <div class="files-main">
+            <DiffView
+              owner={selectedPR.owner}
+              name={selectedPR.name}
+              number={selectedPR.number}
+            />
+          </div>
+        </div>
       {/key}
     {:else}
       <PullDetail
         owner={selectedPR.owner}
         name={selectedPR.name}
         number={selectedPR.number}
+        autoSync={autoSyncDetail}
         hideTabs={true}
       />
     {/if}
@@ -96,7 +124,7 @@
   {/if}
 
   {#snippet trailing()}
-    {#if selectedPR !== null}
+    {#if showStackSidebar && selectedPR !== null}
       <StackSidebar
         owner={selectedPR.owner}
         name={selectedPR.name}
@@ -113,6 +141,49 @@
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
     flex-shrink: 0;
+  }
+
+  .files-layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .files-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .files-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  @media (max-width: 720px) {
+    .files-layout {
+      flex-direction: column;
+    }
+
+    .files-sidebar {
+      width: 100%;
+      max-height: 35vh;
+      border-right: none;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .files-main {
+      flex: 1;
+      min-height: 0;
+    }
   }
 
   .placeholder-content {
