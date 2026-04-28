@@ -1148,6 +1148,7 @@ export interface components {
             detail_loaded: boolean;
             events: components["schemas"]["MREvent"][] | null;
             merge_request: components["schemas"]["MergeRequest"];
+            platform_head_sha: string;
             platform_host: string;
             repo_name: string;
             repo_owner: string;

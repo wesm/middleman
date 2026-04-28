@@ -644,10 +644,12 @@
           </Chip>
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
+          {@const diffSummaryRevision = detail.platform_head_sha
+            || `${pr.UpdatedAt}:${pr.Additions}:${pr.Deletions}`}
           <DiffSummaryChip
             additions={pr.Additions}
             deletions={pr.Deletions}
-            summaryKey={`${owner}/${name}#${number}`}
+            summaryKey={`${owner}/${name}#${number}#${diffSummaryRevision}`}
             loadFiles={loadDiffSummaryFiles}
           />
         {/if}

@@ -410,6 +410,7 @@ type MergeRequestDetailResponse struct {
 	DetailLoaded     bool                     `json:"detail_loaded"`
 	Events           *[]MREvent               `json:"events"`
 	MergeRequest     MergeRequest             `json:"merge_request"`
+	PlatformHeadSha  string                   `json:"platform_head_sha"`
 	PlatformHost     string                   `json:"platform_host"`
 	RepoName         string                   `json:"repo_name"`
 	RepoOwner        string                   `json:"repo_owner"`

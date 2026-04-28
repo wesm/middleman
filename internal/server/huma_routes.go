@@ -618,6 +618,7 @@ func (s *Server) buildPullDetailResponse(
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,
 		PlatformHost:     repo.PlatformHost,
+		PlatformHeadSHA:  mr.PlatformHeadSHA,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
 		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr, wfMode),
 		Warnings:         s.diffWarnings(mr),

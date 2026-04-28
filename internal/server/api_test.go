@@ -772,7 +772,7 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 func TestAPIGetPull(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
+	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "abc123def456")
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
@@ -785,6 +785,7 @@ func TestAPIGetPull(t *testing.T) {
 	require.EqualValues(1, resp.JSON200.MergeRequest.Number)
 	require.Equal("acme", resp.JSON200.RepoOwner)
 	require.Equal("widget", resp.JSON200.RepoName)
+	require.Equal("abc123def456", resp.JSON200.PlatformHeadSha)
 }
 
 func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
