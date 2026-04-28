@@ -99,6 +99,8 @@ Default color intent:
 
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
 
+For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. In particular, PR/issue route and drawer state should use the shared item reference types from `frontend/src/lib/stores/router.svelte.ts` instead of repeating `{ owner; name; number }` style shapes.
+
 Before adding UI styling:
 
 1. Check whether an existing shared primitive already expresses the pattern.
