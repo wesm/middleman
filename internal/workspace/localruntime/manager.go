@@ -597,17 +597,17 @@ func (m *Manager) stopSession(ctx context.Context, s *session) error {
 	if s == nil {
 		return nil
 	}
-	s.markStopRequested()
-	var cleanupErr error
 	if s.tmuxSession != "" {
 		if err := m.killTmuxSession(ctx, s.tmuxSession); err != nil {
-			cleanupErr = fmt.Errorf(
+			s.stop()
+			return fmt.Errorf(
 				"kill tmux session %q: %w", s.tmuxSession, err,
 			)
 		}
 	}
+	s.markStopRequested()
 	s.stop()
-	return cleanupErr
+	return nil
 }
 
 func (m *Manager) killTmuxSession(

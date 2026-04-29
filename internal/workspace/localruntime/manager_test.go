@@ -450,6 +450,43 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 	require.Len(mgr.ListSessions("ws-1"), 1)
 }
 
+func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
+	require.NoError(os.WriteFile(
+		tmuxPath,
+		[]byte("#!/bin/sh\nexit 42\n"),
+		0o755,
+	))
+	ctx := context.Background()
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			helperTarget("helper", "sleep"),
+		},
+		TmuxCommand: []string{tmuxPath},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	info, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+
+	mgr.mu.Lock()
+	mgr.sessions[info.Key].tmuxSession = "middleman-ws-1-helper"
+	mgr.mu.Unlock()
+
+	err = mgr.Stop(ctx, "ws-1", info.Key)
+
+	require.Error(err)
+	require.Contains(err.Error(), "kill tmux session")
+	assert.Eventually(func() bool {
+		return len(mgr.ListSessions("ws-1")) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
 func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 	tmuxPath := filepath.Join(t.TempDir(), "tmux-absent")
 	require.NoError(t, os.WriteFile(
