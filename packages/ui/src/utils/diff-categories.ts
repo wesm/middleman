@@ -2,6 +2,7 @@ import type { DiffFile } from "../api/types.js";
 
 export type DiffFileCategory = "plansDocs" | "code" | "tests" | "other";
 export type DiffFileCategoryFilter = DiffFileCategory | "all";
+export type DiffFileCategoryCounts = Record<DiffFileCategoryFilter, number>;
 
 export const diffFileCategoryOptions: {
   value: DiffFileCategoryFilter;
@@ -125,4 +126,20 @@ export function filterDiffFilesByCategory(
 ): DiffFile[] {
   if (filter === "all") return files;
   return files.filter((file) => categorizeDiffFile(file.path) === filter);
+}
+
+export function countDiffFilesByCategory(files: DiffFile[]): DiffFileCategoryCounts {
+  const counts: DiffFileCategoryCounts = {
+    plansDocs: 0,
+    code: 0,
+    tests: 0,
+    other: 0,
+    all: files.length,
+  };
+
+  for (const file of files) {
+    counts[categorizeDiffFile(file.path)] += 1;
+  }
+
+  return counts;
 }

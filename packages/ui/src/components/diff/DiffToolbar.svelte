@@ -7,6 +7,7 @@
 
   const { diff } = getStores();
   const tabOptions = [1, 2, 4, 8] as const;
+  const categoryCounts = $derived(diff.getFileCategoryCounts());
 
   function setFileCategoryFilter(value: DiffFileCategoryFilter): void {
     diff.setFileCategoryFilter(value);
@@ -24,7 +25,7 @@
           aria-pressed={diff.getFileCategoryFilter() === option.value}
           onclick={() => setFileCategoryFilter(option.value)}
         >
-          {option.label}
+          <span>{option.label}</span> <span class="category-count">({categoryCounts[option.value]})</span>
         </button>
       {/each}
     </div>
@@ -160,6 +161,11 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .category-count {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
   }
 
   .toggle-switch {

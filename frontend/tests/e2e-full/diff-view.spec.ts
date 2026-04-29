@@ -367,10 +367,18 @@ test.describe("diff view", () => {
     const categoryFilter = page.getByRole("group", {
       name: "Filter changed files",
     });
-    await expect(categoryFilter.getByRole("button", { name: "All" }))
+    await expect(categoryFilter.getByRole("button", { name: "Plans/docs (0)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "Code (3)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "Tests (0)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "Other (1)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "All (4)" }))
       .toHaveAttribute("aria-pressed", "true");
 
-    await categoryFilter.getByRole("button", { name: "Code" }).click();
+    await categoryFilter.getByRole("button", { name: "Code (3)" }).click();
 
     await expect(page.locator(".diff-file")).toHaveCount(3);
     await expect(page.locator(".diff-file-row")).toHaveCount(3);
@@ -379,9 +387,9 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row", { hasText: "logo.png" }))
       .toHaveCount(0);
 
-    await expect(categoryFilter.getByRole("button", { name: "Code" }))
+    await expect(categoryFilter.getByRole("button", { name: "Code (3)" }))
       .toHaveAttribute("aria-pressed", "true");
-    await categoryFilter.getByRole("button", { name: "All" }).click();
+    await categoryFilter.getByRole("button", { name: "All (4)" }).click();
 
     await expect(page.locator(".diff-file")).toHaveCount(4);
     await expect(page.locator(".diff-file-row")).toHaveCount(4);

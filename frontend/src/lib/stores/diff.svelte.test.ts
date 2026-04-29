@@ -550,6 +550,13 @@ describe("createDiffStore loadDiff", () => {
       "src/App.test.ts",
       "bun.lock",
     ]);
+    expect(store.getFileCategoryCounts()).toEqual({
+      plansDocs: 1,
+      code: 1,
+      tests: 1,
+      other: 1,
+      all: 4,
+    });
 
     store.setFileCategoryFilter("tests");
 
