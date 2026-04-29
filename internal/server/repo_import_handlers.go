@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/config"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -37,6 +38,7 @@ type repoPreviewRow struct {
 	Name              string  `json:"name"`
 	Description       *string `json:"description"`
 	Private           bool    `json:"private"`
+	Fork              bool    `json:"fork"`
 	PushedAt          *string `json:"pushed_at"`
 	AlreadyConfigured bool    `json:"already_configured"`
 }
@@ -111,6 +113,39 @@ func exactConfiguredRepoSet(repos []config.Repo) map[string]struct{} {
 	return set
 }
 
+func repoImportPatternHasGlob(pattern string) bool {
+	return strings.ContainsAny(pattern, "*?[]")
+}
+
+func buildRepoPreviewRow(
+	repo *gh.Repository,
+	fallbackOwner string,
+	exactConfigured map[string]struct{},
+) repoPreviewRow {
+	name := repo.GetName()
+	canonicalOwner := repo.GetOwner().GetLogin()
+	if canonicalOwner == "" {
+		canonicalOwner = fallbackOwner
+	}
+	canonicalOwner = strings.ToLower(canonicalOwner)
+	canonicalName := strings.ToLower(name)
+	var pushedAt *string
+	if repo.PushedAt != nil {
+		formatted := repo.PushedAt.Time.UTC().Format(time.RFC3339)
+		pushedAt = &formatted
+	}
+	_, already := exactConfigured[canonicalOwner+"/"+canonicalName]
+	return repoPreviewRow{
+		Owner:             canonicalOwner,
+		Name:              canonicalName,
+		Description:       repo.Description,
+		Private:           repo.GetPrivate(),
+		Fork:              repo.GetFork(),
+		PushedAt:          pushedAt,
+		AlreadyConfigured: already,
+	}
+}
+
 func buildRepoPreviewRows(
 	ctx context.Context,
 	client ghclient.Client,
@@ -137,26 +172,13 @@ func buildRepoPreviewRows(
 		if !matched {
 			continue
 		}
-		canonicalOwner := repo.GetOwner().GetLogin()
-		if canonicalOwner == "" {
-			canonicalOwner = owner
+		rows = append(rows, buildRepoPreviewRow(repo, owner, exactConfigured))
+	}
+	if len(rows) == 0 && !repoImportPatternHasGlob(pattern) {
+		repo, err := client.GetRepository(ctx, owner, pattern)
+		if err == nil && !repo.GetArchived() {
+			rows = append(rows, buildRepoPreviewRow(repo, owner, exactConfigured))
 		}
-		canonicalOwner = strings.ToLower(canonicalOwner)
-		canonicalName := strings.ToLower(name)
-		var pushedAt *string
-		if repo.PushedAt != nil {
-			formatted := repo.PushedAt.Time.UTC().Format(time.RFC3339)
-			pushedAt = &formatted
-		}
-		_, already := exactConfigured[canonicalOwner+"/"+canonicalName]
-		rows = append(rows, repoPreviewRow{
-			Owner:             canonicalOwner,
-			Name:              canonicalName,
-			Description:       repo.Description,
-			Private:           repo.GetPrivate(),
-			PushedAt:          pushedAt,
-			AlreadyConfigured: already,
-		})
 	}
 	return rows, nil
 }

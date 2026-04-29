@@ -26,6 +26,7 @@ export interface RepoPreviewRow {
   name: string;
   description: string | null;
   private: boolean;
+  fork: boolean;
   pushed_at: string | null;
   already_configured: boolean;
 }

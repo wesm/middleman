@@ -611,6 +611,7 @@ type RepoPreviewResponse struct {
 type RepoPreviewRow struct {
 	AlreadyConfigured bool    `json:"already_configured"`
 	Description       *string `json:"description"`
+	Fork              bool    `json:"fork"`
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
 	Private           bool    `json:"private"`

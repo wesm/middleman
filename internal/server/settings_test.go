@@ -909,6 +909,8 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 	pushedOlder := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
 	privateRepo := true
 	publicRepo := false
+	regularRepo := false
+	forkRepo := true
 	mock := &mockGH{
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -917,6 +919,7 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 					Owner:       &gh.User{Login: new(owner)},
 					Description: new("already configured widget"),
 					Private:     &privateRepo,
+					Fork:        &regularRepo,
 					Archived:    new(false),
 					PushedAt:    &pushedOlder,
 				},
@@ -925,6 +928,7 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 					Owner:       &gh.User{Login: new(owner)},
 					Description: new("api service"),
 					Private:     &publicRepo,
+					Fork:        &forkRepo,
 					Archived:    new(false),
 					PushedAt:    &pushedNewer,
 				},
@@ -977,9 +981,70 @@ name = "widget-*"
 	assert.Equal(pushedOlder.Time.UTC().Format(time.RFC3339), *resp.Repos[0].PushedAt)
 	assert.Equal("widget-api", resp.Repos[1].Name)
 	assert.False(resp.Repos[1].Private)
+	assert.True(resp.Repos[1].Fork)
 	assert.False(resp.Repos[1].AlreadyConfigured)
 	assert.NotContains(rr.Body.String(), "widget-archive")
 	assert.NotContains(rr.Body.String(), "other")
+}
+
+func TestHandlePreviewReposFallsBackToExactLookupWhenListOmitsRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	privateRepo := true
+	forkRepo := false
+	pushedAt := gh.Timestamp{Time: time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)}
+	name := "dotfiles2026"
+	ownerLogin := "mariusvniekerk"
+	description := "personal dotfiles"
+	var listCalls atomic.Int32
+	var getCalls atomic.Int32
+	mock := &mockGH{
+		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+			listCalls.Add(1)
+			assert.Equal("mariusvniekerk", owner)
+			return []*gh.Repository{}, nil
+		},
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			getCalls.Add(1)
+			assert.Equal("mariusvniekerk", owner)
+			assert.Equal("dotfiles2026", repo)
+			return &gh.Repository{
+				Name:        &name,
+				Owner:       &gh.User{Login: &ownerLogin},
+				Description: &description,
+				Private:     &privateRepo,
+				Fork:        &forkRepo,
+				Archived:    new(false),
+				PushedAt:    &pushedAt,
+			}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, mock)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"owner":   "mariusvniekerk",
+		"pattern": "dotfiles2026",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp repoPreviewResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal(int32(1), listCalls.Load())
+	assert.Equal(int32(1), getCalls.Load())
+	assert.Equal("mariusvniekerk", resp.Repos[0].Owner)
+	assert.Equal("dotfiles2026", resp.Repos[0].Name)
+	assert.Equal("personal dotfiles", *resp.Repos[0].Description)
+	assert.True(resp.Repos[0].Private)
+	assert.False(resp.Repos[0].Fork)
+	assert.False(resp.Repos[0].AlreadyConfigured)
+	require.NotNil(resp.Repos[0].PushedAt)
+	assert.Equal(pushedAt.Time.UTC().Format(time.RFC3339), *resp.Repos[0].PushedAt)
 }
 
 func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {

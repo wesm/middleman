@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
@@ -128,6 +129,8 @@ type liveClient struct {
 	rateTracker     *RateTracker
 	graphQLEndpoint string
 	etag            *etagTransport
+	viewerMu        sync.Mutex
+	viewerLogin     string
 }
 
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
@@ -389,6 +392,33 @@ func (c *liveClient) ListOpenIssues(
 func (c *liveClient) ListRepositoriesByOwner(
 	ctx context.Context, owner string,
 ) ([]*gh.Repository, error) {
+	viewerLogin, viewerErr := c.authenticatedLogin(ctx)
+	if viewerErr == nil && strings.EqualFold(owner, viewerLogin) {
+		repos, err := collectPages(
+			ctx,
+			func(opts *gh.ListOptions) ([]*gh.Repository, *gh.Response, error) {
+				page, resp, err := c.gh.Repositories.ListByAuthenticatedUser(
+					ctx, &gh.RepositoryListByAuthenticatedUserOptions{
+						Affiliation: "owner",
+						ListOptions: *opts,
+					},
+				)
+				if err != nil {
+					return nil, resp, err
+				}
+				return page, resp, nil
+			},
+			c.trackRate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"listing repositories for authenticated owner %s: %w",
+				owner, err,
+			)
+		}
+		return repos, nil
+	}
+
 	orgRepos, err := collectPages(
 		ctx,
 		func(opts *gh.ListOptions) ([]*gh.Repository, *gh.Response, error) {
@@ -432,6 +462,25 @@ func (c *liveClient) ListRepositoriesByOwner(
 		)
 	}
 	return userRepos, nil
+}
+
+func (c *liveClient) authenticatedLogin(ctx context.Context) (string, error) {
+	c.viewerMu.Lock()
+	defer c.viewerMu.Unlock()
+	if c.viewerLogin != "" {
+		return c.viewerLogin, nil
+	}
+	user, resp, err := c.gh.Users.Get(ctx, "")
+	c.trackRate(resp)
+	if err != nil {
+		return "", fmt.Errorf("getting authenticated user: %w", err)
+	}
+	login := user.GetLogin()
+	if login == "" {
+		return "", fmt.Errorf("authenticated user login is empty")
+	}
+	c.viewerLogin = login
+	return login, nil
 }
 
 func (c *liveClient) GetIssue(

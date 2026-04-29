@@ -1,10 +1,12 @@
 package github
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,6 +88,101 @@ func TestListReleasesTracksRate(t *testing.T) {
 	require.Equal(1, rt.RequestsThisHour())
 	require.Equal(4998, rt.Remaining())
 	require.Equal(5000, rt.RateLimit())
+}
+
+func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T) {
+	require := require.New(t)
+	var paths []string
+	var authenticatedAffiliation string
+	var authenticatedType string
+	var publicUserEndpointUsed bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/user", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"login":"mariusvniekerk"}`))
+	})
+	mux.HandleFunc("/api/v3/user/repos", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		authenticatedAffiliation = r.URL.Query().Get("affiliation")
+		authenticatedType = r.URL.Query().Get("type")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"name":     "dotfiles2026",
+			"private":  true,
+			"fork":     false,
+			"owner":    map[string]string{"login": "mariusvniekerk"},
+			"archived": false,
+		}})
+	})
+	mux.HandleFunc("/api/v3/users/mariusvniekerk/repos", func(w http.ResponseWriter, r *http.Request) {
+		publicUserEndpointUsed = true
+		http.Error(w, "unexpected endpoint", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{gh: ghClient}
+
+	repos, err := c.ListRepositoriesByOwner(t.Context(), "mariusvniekerk")
+	require.NoError(err)
+	require.Len(repos, 1)
+	require.Equal("dotfiles2026", repos[0].GetName())
+	require.True(repos[0].GetPrivate())
+	require.Equal("owner", authenticatedAffiliation)
+	require.Empty(authenticatedType)
+	require.False(publicUserEndpointUsed)
+	require.Equal([]string{
+		"/api/v3/user",
+		"/api/v3/user/repos?affiliation=owner&per_page=100",
+	}, paths)
+}
+
+func TestListRepositoriesByOwnerUsesPublicUserEndpointForOtherUsers(t *testing.T) {
+	require := require.New(t)
+	var paths []string
+	var userRepoType string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/user", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"login":"mariusvniekerk"}`))
+	})
+	mux.HandleFunc("/api/v3/orgs/acme/repos", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		http.Error(w, "not an org", http.StatusNotFound)
+	})
+	mux.HandleFunc("/api/v3/users/acme/repos", func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		userRepoType = r.URL.Query().Get("type")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"name":  "public-repo",
+			"owner": map[string]string{"login": "acme"},
+		}})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{gh: ghClient}
+
+	repos, err := c.ListRepositoriesByOwner(t.Context(), "acme")
+	require.NoError(err)
+	require.Len(repos, 1)
+	require.Equal("public-repo", repos[0].GetName())
+	require.Equal("owner", userRepoType)
+	require.True(strings.HasPrefix(paths[1], "/api/v3/orgs/acme/repos?"))
+	require.True(strings.HasPrefix(paths[2], "/api/v3/users/acme/repos?"))
 }
 
 func TestListForcePushEvents(t *testing.T) {

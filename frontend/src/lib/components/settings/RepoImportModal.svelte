@@ -28,6 +28,8 @@
   let selected = $state<Set<string>>(new Set());
   let filterText = $state("");
   let statusFilter = $state<StatusFilter>("all");
+  let hideForks = $state(false);
+  let hidePrivate = $state(false);
   let sort = $state<SortState>({ field: "pushed_at", direction: "desc" });
   let anchorKey = $state<string | null>(null);
   let loading = $state(false);
@@ -37,9 +39,11 @@
   let inputEl = $state<HTMLInputElement | null>(null);
 
   const sortedRows = $derived(sortRows(rows, sort));
-  const visibleRows = $derived(filterRows(sortedRows, filterText, statusFilter, selected));
-  const selectedCount = $derived(rows.filter((row) => selected.has(rowKey(row)) && !row.already_configured).length);
-  const submitRows = $derived(selectedRowsForSubmit(sortedRows, selected));
+  const visibilityFilters = $derived({ hideForks, hidePrivate });
+  const visibleRows = $derived(filterRows(sortedRows, filterText, statusFilter, selected, visibilityFilters));
+  const selectableVisibleCount = $derived(visibleRows.filter((row) => !row.already_configured).length);
+  const selectedCount = $derived(visibleRows.filter((row) => selected.has(rowKey(row)) && !row.already_configured).length);
+  const submitRows = $derived(selectedRowsForSubmit(sortedRows, selected, visibilityFilters));
 
   $effect(() => {
     if (open) {
@@ -54,6 +58,8 @@
     selected = new Set();
     filterText = "";
     statusFilter = "all";
+    hideForks = false;
+    hidePrivate = false;
     sort = { field: "pushed_at", direction: "desc" };
     anchorKey = null;
   }
@@ -209,9 +215,13 @@
           {selected}
           {filterText}
           {statusFilter}
+          {hideForks}
+          {hidePrivate}
           {sort}
           onFilterText={(value) => { filterText = value; }}
           onStatusFilter={(value) => { statusFilter = value; }}
+          onHideForks={(value) => { hideForks = value; }}
+          onHidePrivate={(value) => { hidePrivate = value; }}
           onSort={toggleSort}
           onToggle={toggleRow}
           onSelectVisible={() => { selected = setAllVisible(selected, visibleRows, true); }}
@@ -222,7 +232,7 @@
       {/if}
 
       <footer class="modal-footer">
-        <span>Selected {selectedCount} of {rows.length}</span>
+        <span>Selected {selectedCount} of {selectableVisibleCount}</span>
         <div class="footer-actions">
           <button class="secondary-btn" type="button" onclick={closeIfAllowed} disabled={submitting}>Cancel</button>
           <button class="submit-btn" type="button" onclick={() => void handleSubmit()} disabled={submitting || selectedCount === 0}>

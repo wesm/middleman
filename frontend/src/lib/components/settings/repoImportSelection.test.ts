@@ -11,10 +11,10 @@ import {
 } from "./repoImportSelection.js";
 
 const rows: RepoImportRow[] = [
-  { owner: "acme", name: "worker", description: "Background jobs", private: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "api", description: "HTTP API", private: true, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "empty", description: null, private: false, pushed_at: null, already_configured: false },
-  { owner: "acme", name: "widget", description: "Configured", private: false, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  { owner: "acme", name: "worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
+  { owner: "acme", name: "api", description: "HTTP API", private: true, fork: false, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
+  { owner: "acme", name: "empty", description: null, private: false, fork: false, pushed_at: null, already_configured: false },
+  { owner: "acme", name: "widget", description: "Configured", private: false, fork: true, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
 ];
 
 describe("repo import selection helpers", () => {
@@ -35,6 +35,12 @@ describe("repo import selection helpers", () => {
     const selected = new Set([rowKey(rows[0]!)]);
     expect(filterRows(rows, "", "selected", selected).map((row) => row.name)).toEqual(["worker"]);
     expect(filterRows(rows, "", "unselected", selected).map((row) => row.name)).toEqual(["api", "empty"]);
+  });
+
+  it("filters private repositories and forks independently", () => {
+    expect(filterRows(rows, "", "all", new Set(), { hidePrivate: true }).map((row) => row.name)).toEqual(["worker", "empty", "widget"]);
+    expect(filterRows(rows, "", "all", new Set(), { hideForks: true }).map((row) => row.name)).toEqual(["worker", "api", "empty"]);
+    expect(filterRows(rows, "", "all", new Set(), { hidePrivate: true, hideForks: true }).map((row) => row.name)).toEqual(["worker", "empty"]);
   });
 
   it("sorts deterministically with null pushed_at last", () => {
@@ -78,5 +84,6 @@ describe("repo import selection helpers", () => {
     const sorted = sortRows(rows, { field: "name", direction: "asc" });
     const selected = new Set(["acme/worker", "acme/api"]);
     expect(selectedRowsForSubmit(sorted, selected).map((row) => row.name)).toEqual(["api", "worker"]);
+    expect(selectedRowsForSubmit(sorted, selected, { hidePrivate: true }).map((row) => row.name)).toEqual(["worker"]);
   });
 });
