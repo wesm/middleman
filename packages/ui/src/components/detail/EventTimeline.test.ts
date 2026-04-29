@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import type { PREvent } from "../../api/types.js";
@@ -53,6 +53,7 @@ function findCompiledStyleRule(
 describe("EventTimeline", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   it("renders force-push label, actor, and SHA transition", () => {
@@ -109,6 +110,8 @@ describe("EventTimeline", () => {
   });
 
   it("renders commit events as compact one-line commit detail rows", () => {
+    vi.spyOn(Date.prototype, "toLocaleString").mockReturnValue("Jun 1, 2024, 8:00 AM");
+
     render(EventTimeline, {
       props: {
         events: [
@@ -123,6 +126,7 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("abcdef1")).toBeTruthy();
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(screen.getByText("Jun 1, 2024, 8:00 AM")).toBeTruthy();
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeTruthy();
   });

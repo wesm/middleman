@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
-  import { timeAgo } from "../../utils/time.js";
+  import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
 
   interface Props {
@@ -117,7 +117,7 @@
               {#if event.Author}
                 <span class="event-author">{event.Author}</span>
               {/if}
-              <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+              <span class="event-time">{localDateTimeLabel(event.CreatedAt)}</span>
               {#if event.EventType === "commit"}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 <span class="commit-title">{commitTitle(event.Body)}</span>
