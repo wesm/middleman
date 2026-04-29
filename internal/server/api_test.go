@@ -10203,25 +10203,19 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-type rawAssociatedPRResponse struct {
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	State  string `json:"state"`
-}
-
 type rawWorkspaceStatusResponse struct {
-	ID           string                   `json:"id"`
-	PlatformHost string                   `json:"platform_host"`
-	RepoOwner    string                   `json:"repo_owner"`
-	RepoName     string                   `json:"repo_name"`
-	ItemType     string                   `json:"item_type"`
-	ItemNumber   int                      `json:"item_number"`
-	GitHeadRef   string                   `json:"git_head_ref"`
-	WorktreePath string                   `json:"worktree_path"`
-	TmuxSession  string                   `json:"tmux_session"`
-	Status       string                   `json:"status"`
-	ErrorMessage *string                  `json:"error_message"`
-	AssociatedPR *rawAssociatedPRResponse `json:"associated_pr"`
+	ID                 string  `json:"id"`
+	PlatformHost       string  `json:"platform_host"`
+	RepoOwner          string  `json:"repo_owner"`
+	RepoName           string  `json:"repo_name"`
+	ItemType           string  `json:"item_type"`
+	ItemNumber         int     `json:"item_number"`
+	GitHeadRef         string  `json:"git_head_ref"`
+	WorktreePath       string  `json:"worktree_path"`
+	TmuxSession        string  `json:"tmux_session"`
+	Status             string  `json:"status"`
+	ErrorMessage       *string `json:"error_message"`
+	AssociatedPRNumber *int    `json:"associated_pr_number"`
 }
 
 type rawIssueWorkspaceRef struct {
@@ -10821,67 +10815,6 @@ func prepareIssueWorkspaceAssociationFixture(
 	return fixture, created
 }
 
-func seedIssueWorkspaceAssociationPR(
-	t *testing.T,
-	database *db.DB,
-	number int,
-	title string,
-	headBranch string,
-	headRepoCloneURL string,
-) {
-	t.Helper()
-	require := require.New(t)
-	ctx := context.Background()
-
-	repo, err := database.GetRepoByHostOwnerName(
-		ctx, "github.com", "acme", "widget",
-	)
-	require.NoError(err)
-	require.NotNil(repo)
-
-	now := time.Now().UTC().Truncate(time.Second)
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:           repo.ID,
-		PlatformID:       int64(number) * 1000,
-		Number:           number,
-		URL:              fmt.Sprintf("https://github.com/acme/widget/pull/%d", number),
-		Title:            title,
-		Author:           "alice",
-		State:            "open",
-		HeadBranch:       headBranch,
-		HeadRepoCloneURL: headRepoCloneURL,
-		BaseBranch:       "main",
-		CIStatus:         "success",
-		ReviewDecision:   "APPROVED",
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		LastActivityAt:   now,
-	})
-	require.NoError(err)
-}
-
-func getRawWorkspaceStatus(
-	t *testing.T,
-	fixture workspaceServerFixture,
-	workspaceID string,
-) rawWorkspaceStatusResponse {
-	t.Helper()
-	require := require.New(t)
-
-	getRR := doJSON(
-		t,
-		fixture.server,
-		http.MethodGet,
-		"/api/v1/workspaces/"+workspaceID,
-		nil,
-	)
-	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
-
-	var got rawWorkspaceStatusResponse
-	require.NoError(json.NewDecoder(getRR.Body).Decode(&got))
-	return got
-}
-
 func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -10908,9 +10841,8 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 	require.NoError(json.NewDecoder(getRR.Body).Decode(&got))
 	assert.Equal("issue", got.ItemType)
 	assert.Equal(7, got.ItemNumber)
-	require.NotNil(got.AssociatedPR)
-	assert.Equal(42, got.AssociatedPR.Number)
-	assert.Equal("Workspace monitor association", got.AssociatedPR.Title)
+	require.NotNil(got.AssociatedPRNumber)
+	assert.Equal(42, *got.AssociatedPRNumber)
 
 	getIssueRR := doJSON(
 		t,
@@ -10925,95 +10857,6 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 	require.NoError(json.NewDecoder(getIssueRR.Body).Decode(&issueDetail))
 	require.NotNil(issueDetail.Workspace)
 	assert.Equal(created.ID, issueDetail.Workspace.ID)
-}
-
-func TestWorkspaceIssueMonitorAssociatesPRByUpstreamRemote(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	ctx := context.Background()
-
-	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
-	seedIssueWorkspaceAssociationPR(
-		t,
-		fixture.database,
-		43,
-		"Wrong fork upstream PR",
-		"shared-upstream",
-		"https://github.com/fork-one/widget.git",
-	)
-	seedIssueWorkspaceAssociationPR(
-		t,
-		fixture.database,
-		44,
-		"Matching upstream PR",
-		"shared-upstream",
-		"https://github.com/fork-two/widget.git",
-	)
-
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
-	runGit(t, ready.WorktreePath, "checkout", "-b", "local-upstream-work")
-	runGit(
-		t, ready.WorktreePath,
-		"remote", "add", "fork-two", "git@github.com:Fork-Two/Widget.git",
-	)
-	runGit(
-		t, ready.WorktreePath,
-		"config", "branch.local-upstream-work.remote", "fork-two",
-	)
-	runGit(
-		t, ready.WorktreePath,
-		"config", "branch.local-upstream-work.merge", "refs/heads/shared-upstream",
-	)
-
-	updates, err := fixture.server.workspacePRMonitor.RunOnce(ctx)
-	require.NoError(err)
-	require.Len(updates, 1)
-	assert.Equal(created.ID, updates[0].WorkspaceID)
-	assert.Equal(44, updates[0].PRNumber)
-
-	got := getRawWorkspaceStatus(t, fixture, created.ID)
-	assert.Equal("issue", got.ItemType)
-	assert.Equal(7, got.ItemNumber)
-	require.NotNil(got.AssociatedPR)
-	assert.Equal(44, got.AssociatedPR.Number)
-	assert.Equal("Matching upstream PR", got.AssociatedPR.Title)
-}
-
-func TestWorkspaceIssueMonitorSkipsUnparseableUpstreamRemote(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	ctx := context.Background()
-
-	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
-	seedIssueWorkspaceAssociationPR(
-		t,
-		fixture.database,
-		45,
-		"Blocked upstream PR",
-		"blocked-upstream",
-		"https://github.com/fork-two/widget.git",
-	)
-
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
-	runGit(t, ready.WorktreePath, "checkout", "-b", "local-invalid-upstream")
-	runGit(t, ready.WorktreePath, "remote", "set-url", "origin", "not a clone url")
-	runGit(
-		t, ready.WorktreePath,
-		"config", "branch.local-invalid-upstream.remote", "origin",
-	)
-	runGit(
-		t, ready.WorktreePath,
-		"config", "branch.local-invalid-upstream.merge", "refs/heads/blocked-upstream",
-	)
-
-	updates, err := fixture.server.workspacePRMonitor.RunOnce(ctx)
-	require.NoError(err)
-	assert.Empty(updates)
-
-	got := getRawWorkspaceStatus(t, fixture, created.ID)
-	assert.Equal("issue", got.ItemType)
-	assert.Equal(7, got.ItemNumber)
-	assert.Nil(got.AssociatedPR)
 }
 
 func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {

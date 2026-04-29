@@ -2185,12 +2185,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, associated_pr_number, git_head_ref,
+		     item_type, item_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"ws-with-mr", "github.com", "acme", "widget",
-		WorkspaceItemTypePullRequest, 42, 42, "feat/workspace",
+		WorkspaceItemTypePullRequest, 42, "feat/workspace",
 		"/tmp/ws-with-mr", "ws-with-mr", "ready",
 		base,
 	)
@@ -2248,9 +2248,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(noMR.MRAdditions)
 	assert.Nil(noMR.MRDeletions)
 	assert.Nil(noMR.AssociatedPRNumber)
-	assert.Nil(noMR.AssociatedPRTitle)
 
-	// Issue workspace keeps issue-owned header metadata.
+	// Issue workspace keeps issue-owned header metadata and the linked PR number.
 	require.NotNil(issueWithPR.MRTitle)
 	assert.Equal("Track workspace association", *issueWithPR.MRTitle)
 	require.NotNil(issueWithPR.MRState)
@@ -2262,18 +2261,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(issueWithPR.MRDeletions)
 	require.NotNil(issueWithPR.AssociatedPRNumber)
 	assert.Equal(42, *issueWithPR.AssociatedPRNumber)
-	require.NotNil(issueWithPR.AssociatedPRTitle)
-	assert.Equal("Add workspace support", *issueWithPR.AssociatedPRTitle)
-	require.NotNil(issueWithPR.AssociatedPRState)
-	assert.Equal("open", *issueWithPR.AssociatedPRState)
-	require.NotNil(issueWithPR.AssociatedPRIsDraft)
-	assert.True(*issueWithPR.AssociatedPRIsDraft)
-	require.NotNil(issueWithPR.AssociatedPRCIStatus)
-	assert.Equal("pending", *issueWithPR.AssociatedPRCIStatus)
-	require.NotNil(issueWithPR.AssociatedPRReviewDecision)
-	assert.Equal("REVIEW_REQUIRED", *issueWithPR.AssociatedPRReviewDecision)
 
-	// PR workspace exposes PR metadata in both owner and associated slots.
+	// PR workspace exposes PR metadata in the owner slots.
 	require.NotNil(withMR.MRTitle)
 	assert.Equal("Add workspace support", *withMR.MRTitle)
 	require.NotNil(withMR.MRState)
@@ -2288,10 +2277,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Equal(100, *withMR.MRAdditions)
 	require.NotNil(withMR.MRDeletions)
 	assert.Equal(20, *withMR.MRDeletions)
-	require.NotNil(withMR.AssociatedPRNumber)
-	assert.Equal(42, *withMR.AssociatedPRNumber)
-	require.NotNil(withMR.AssociatedPRTitle)
-	assert.Equal("Add workspace support", *withMR.AssociatedPRTitle)
+	assert.Nil(withMR.AssociatedPRNumber)
 
 	// GetWorkspaceSummary by ID
 	single, err := d.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
@@ -2300,8 +2286,8 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Equal("ws-issue-with-pr", single.ID)
 	require.NotNil(single.MRTitle)
 	assert.Equal("Track workspace association", *single.MRTitle)
-	require.NotNil(single.AssociatedPRTitle)
-	assert.Equal("Add workspace support", *single.AssociatedPRTitle)
+	require.NotNil(single.AssociatedPRNumber)
+	assert.Equal(42, *single.AssociatedPRNumber)
 
 	// GetWorkspaceSummary miss
 	missSum, err := d.GetWorkspaceSummary(ctx, "nonexistent")

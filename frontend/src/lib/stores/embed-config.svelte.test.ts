@@ -10,7 +10,6 @@ import {
   getIssueActions,
   invokeAction,
   getOnNavigate,
-  initWorkspaceBridge,
 } from "./embed-config.svelte.js";
 import type { ActionHook } from "./embed-config.svelte.js";
 
@@ -217,29 +216,5 @@ describe("onNavigate callback", () => {
     delete win.__middleman_config.onNavigate;
     win.__middleman_notify_config_changed();
     expect(getOnNavigate()).toBeUndefined();
-  });
-});
-
-describe("workspace bridge", () => {
-  it("updates workspace selection in config", () => {
-    win.__middleman_config = {
-      workspace: {
-        hosts: [],
-        selectedHostKey: null,
-        selectedWorktreeKey: null,
-      },
-    };
-    initWorkspaceBridge();
-
-    win.__middleman_update_selection({
-      hostKey: "host-1",
-      worktreeKey: "worktree-1",
-    });
-
-    expect(win.__middleman_config.workspace).toEqual({
-      hosts: [],
-      selectedHostKey: "host-1",
-      selectedWorktreeKey: "worktree-1",
-    });
   });
 });

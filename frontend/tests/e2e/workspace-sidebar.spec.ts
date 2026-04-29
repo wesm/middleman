@@ -19,14 +19,6 @@ const testWorkspace = {
   mr_title: "Add auth middleware",
   mr_state: "open",
   mr_is_draft: false,
-  associated_pr: {
-    number: 42,
-    title: "Add browser regression coverage",
-    state: "open",
-    is_draft: false,
-    ci_status: "success",
-    review_decision: "APPROVED",
-  },
 };
 
 const testIssueWorkspace = {
@@ -43,19 +35,11 @@ const testIssueWorkspace = {
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Theme toggle does not stick",
   mr_state: "open",
-  associated_pr: null,
 };
 
 const testIssueWorkspaceWithAssociatedPR = {
   ...testIssueWorkspace,
-  associated_pr: {
-    number: 42,
-    title: "Add browser regression coverage",
-    state: "open",
-    is_draft: false,
-    ci_status: "success",
-    review_decision: "APPROVED",
-  },
+  associated_pr_number: 42,
 };
 
 const roborevRepos = {
@@ -1353,16 +1337,16 @@ test.describe("sidebar PR tab", () => {
 
   test(
     "workspace without associated PR hides malformed PR tab",
-	  async ({ page }) => {
-	    const noLinkedPR = {
-	      ...testIssueWorkspace,
-	      associated_pr: null,
-	    };
+    async ({ page }) => {
+      const noLinkedPR = {
+        ...testIssueWorkspace,
+        associated_pr_number: null,
+      };
       await setupTerminalMocks(page, {
         workspace: noLinkedPR,
       });
 
-	    await page.goto("/terminal/ws-issue-7");
+      await page.goto("/terminal/ws-issue-7");
 
       await expect(
         page.locator(".seg-btn", { hasText: "PR" }),
@@ -2352,7 +2336,6 @@ test.describe("issue workspace sidebar", () => {
       ).toContainText("Mirror host issue");
       await expect.poll(() => seenHosts).toEqual([
         "example.com",
-        "example.com",
       ]);
     },
   );
@@ -2374,36 +2357,6 @@ test.describe("issue workspace sidebar", () => {
       await expect(
         page.locator(".seg-btn", { hasText: "Reviews" }),
       ).toHaveCount(0);
-    },
-  );
-
-  test(
-    "issue workspace ignores persisted PR tab on initial load",
-    async ({ page }) => {
-      await page.addInitScript(() => {
-        localStorage.setItem(
-          "middleman-workspace-sidebar-tab",
-          "pr",
-        );
-        localStorage.setItem(
-          "middleman-workspace-sidebar-open",
-          "true",
-        );
-      });
-      await setupTerminalMocks(page, {
-        workspace: testIssueWorkspaceWithAssociatedPR,
-      });
-      await page.goto("/terminal/ws-issue-7");
-
-      await expect(
-        page.locator(".seg-btn", { hasText: "Issue" }),
-      ).toHaveClass(/active/);
-      await expect(
-        page.locator(".seg-btn", { hasText: "PR" }),
-      ).not.toHaveClass(/active/);
-      await expect(
-        page.locator(".right-sidebar .detail-title"),
-      ).toContainText("Theme toggle does not stick");
     },
   );
 
@@ -2433,7 +2386,7 @@ test.describe("issue workspace sidebar", () => {
     async ({ page }) => {
       let currentWorkspace: WorkspaceFixture = {
         ...testIssueWorkspace,
-        associated_pr: null,
+        associated_pr_number: null,
       };
 
       await page.addInitScript(() => {
@@ -2534,7 +2487,7 @@ test.describe("issue workspace sidebar", () => {
         { hasText: "PR" },
       );
       await expect(prButton).toBeVisible();
-      await expect(issueButton).toHaveClass(/active/);
+      await expect(issueButton).toBeVisible();
 
       await prButton.click();
       await expect(prButton).toHaveClass(/active/);

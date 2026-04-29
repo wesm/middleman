@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"io/fs"
 	"os"
@@ -807,123 +806,20 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	require.Equal("success", events[0].Outcome)
 	require.Equal("cloned bare repository", events[0].Message)
 
-	issueWS := workspaceWithSharedNumberForTest("ws-preserve-issue")
-	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
-}
-
-func TestOpenRepairsAssociatedPRWorkspaceUniqueness(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "workspace-broken-v13.db")
-
-	d, err := Open(path)
-	require.NoError(err)
-
-	ws := &Workspace{
-		ID:              "ws-pr",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        WorkspaceItemTypePullRequest,
-		ItemNumber:      7,
-		GitHeadRef:      "feat/pr-7",
-		WorktreePath:    "/tmp/ws-pr",
-		TmuxSession:     "ws-pr",
-		Status:          "ready",
-		WorkspaceBranch: "feat/pr-7",
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-	require.NoError(d.Close())
-
-	raw, err := sql.Open("sqlite", path)
-	require.NoError(err)
-	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
-	_, err = raw.Exec(`ALTER TABLE middleman_workspaces ADD COLUMN associated_pr_number INTEGER`)
-	require.NoError(err)
-	_, err = raw.Exec(`UPDATE middleman_workspaces SET associated_pr_number = mr_number`)
-	require.NoError(err)
-	_, err = raw.Exec(`UPDATE schema_migrations SET version = 13, dirty = FALSE`)
-	require.NoError(err)
-	require.NoError(raw.Close())
-
-	reopened, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(reopened.Close()) })
-
-	prWS, err := reopened.GetWorkspace(ctx, "ws-pr")
-	require.NoError(err)
-	require.NotNil(prWS)
-	require.NotNil(prWS.AssociatedPRNumber)
-	require.Equal(7, *prWS.AssociatedPRNumber)
-	require.True(
-		tableExistsForTest(
-			t,
-			reopened.ReadDB(),
-			"middleman_workspace_tmux_sessions",
-		),
-	)
-
-	issueWS := workspaceWithSharedNumberForTest("ws-issue")
-	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
-}
-
-func TestOpenRepairsAssociatedPRBranchMigrationWithoutSkippingRepoOverviews(t *testing.T) {
-	require := require.New(t)
-	path := filepath.Join(t.TempDir(), "workspace-old-branch-v14.db")
-
-	d, err := Open(path)
-	require.NoError(err)
-	require.NoError(d.Close())
-
-	raw, err := sql.Open("sqlite", path)
-	require.NoError(err)
-	_, err = raw.Exec(`DROP TABLE middleman_repo_overviews`)
-	require.NoError(err)
-	_, err = raw.Exec(`UPDATE schema_migrations SET version = 14, dirty = FALSE`)
-	require.NoError(err)
-	require.NoError(raw.Close())
-
-	reopened, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(reopened.Close()) })
-
-	require.True(
-		tableExistsForTest(
-			t,
-			reopened.ReadDB(),
-			"middleman_repo_overviews",
-		),
-	)
-	hasReleasesJSON, err := hasColumn(
-		reopened.ReadDB(),
-		"middleman_repo_overviews",
-		"releases_json",
-	)
-	require.NoError(err)
-	require.True(hasReleasesJSON)
-
-	var actualVersion int
-	err = reopened.ReadDB().QueryRow(
-		`SELECT version FROM schema_migrations LIMIT 1`,
-	).Scan(&actualVersion)
-	require.NoError(err)
-	require.Equal(latestMigrationVersionForTest(t), actualVersion)
-}
-
-func workspaceWithSharedNumberForTest(id string) *Workspace {
-	return &Workspace{
-		ID:              id,
+	issueWS := &Workspace{
+		ID:              "ws-preserve-issue",
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeIssue,
 		ItemNumber:      7,
 		GitHeadRef:      "middleman/issue-7",
-		WorktreePath:    "/tmp/" + id,
-		TmuxSession:     id,
+		WorktreePath:    "/tmp/ws-preserve-issue",
+		TmuxSession:     "ws-preserve-issue",
 		Status:          "creating",
 		WorkspaceBranch: "middleman/issue-7",
 	}
+	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
 }
 
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {
@@ -1100,69 +996,9 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000006_add_stacks.up.sql"
 	case 7:
 		return "000007_add_workspaces.up.sql"
-	case 8:
-		return "000008_casefold_repo_identifiers.up.sql"
-	case 9:
-		return "000009_casefold_identifier_triggers.up.sql"
-	case 10:
-		return "000010_timestamp_repair_gate.up.sql"
-	case 11:
-		return "000011_add_workspace_setup_events.up.sql"
-	case 12:
-		return "000012_workspace_item_types.up.sql"
-	case 13:
-		return "000013_workspace_tmux_sessions.up.sql"
 	default:
 		return ""
 	}
-}
-
-func TestOpenMigratesWorkspaceAssociatedPRBackfill(t *testing.T) {
-	require := require.New(t)
-	ctx := context.Background()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "legacy.db")
-
-	raw, err := sql.Open("sqlite", path)
-	require.NoError(err)
-	_, err = raw.Exec(
-		legacySchemaSQLForTest(t, workspaceTmuxSessionsMigrationVersion),
-	)
-	require.NoError(err)
-	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
-	require.NoError(err)
-	_, err = raw.Exec(`
-		INSERT INTO schema_migrations (version, dirty) VALUES (13, FALSE)
-	`)
-	require.NoError(err)
-	_, err = raw.Exec(`
-		INSERT INTO middleman_workspaces (
-		    id, platform_host, repo_owner, repo_name,
-		    item_type, item_number, git_head_ref, mr_head_repo,
-		    workspace_branch, worktree_path, tmux_session, status
-		) VALUES
-		    ('ws-pr', 'github.com', 'acme', 'widget', 'pull_request', 42, 'feature/pr', NULL,
-		     '__middleman_unknown__', '/tmp/ws-pr', 'tmux-pr', 'ready'),
-		    ('ws-issue', 'github.com', 'acme', 'widget', 'issue', 7, 'middleman/issue-7', NULL,
-		     '__middleman_unknown__', '/tmp/ws-issue', 'tmux-issue', 'ready')
-	`)
-	require.NoError(err)
-	require.NoError(raw.Close())
-
-	d, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { d.Close() })
-
-	prWS, err := d.GetWorkspace(ctx, "ws-pr")
-	require.NoError(err)
-	require.NotNil(prWS)
-	require.NotNil(prWS.AssociatedPRNumber)
-	require.Equal(42, *prWS.AssociatedPRNumber)
-
-	issueWS, err := d.GetWorkspace(ctx, "ws-issue")
-	require.NoError(err)
-	require.NotNil(issueWS)
-	require.Nil(issueWS.AssociatedPRNumber)
 }
 
 func latestMigrationVersionForTest(t *testing.T) int {

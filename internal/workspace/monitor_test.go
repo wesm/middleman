@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,6 +62,27 @@ func insertMonitorWorkspace(
 	}
 	require.NoError(t, d.InsertWorkspace(context.Background(), ws))
 	return ws.ID
+}
+
+func seedIssue(
+	t *testing.T, d *db.DB,
+	repoID int64, number int, title string,
+) {
+	t.Helper()
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err := d.UpsertIssue(context.Background(), &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     repoID*10000 + int64(number),
+		Number:         number,
+		URL:            "https://github.com/acme/widget/issues/" + strconv.Itoa(number),
+		Title:          title,
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
 }
 
 func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
@@ -197,215 +220,109 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 	assert.Equal(42, updates[0].PRNumber)
 }
 
-func TestPRMonitorRunOnceRequiresCandidateRemoteIdentityForUpstreamMatch(t *testing.T) {
+func TestSelectPRByUpstream(t *testing.T) {
+	assert := Assert.New(t)
+	candidates := []db.MergeRequest{
+		{
+			Number:           41,
+			HeadBranch:       "shared-branch",
+			HeadRepoCloneURL: "https://github.com/fork-one/widget.git",
+		},
+		{
+			Number:           42,
+			HeadBranch:       "shared-branch",
+			HeadRepoCloneURL: "https://github.com/fork-two/widget.git",
+		},
+		{
+			Number:           43,
+			HeadBranch:       "other-branch",
+			HeadRepoCloneURL: "https://github.com/fork-two/widget.git",
+		},
+	}
+
+	number, ok := selectPRByUpstream(candidates, upstreamState{
+		branchName: "shared-branch",
+		remoteURL:  "git@github.com:Fork-Two/Widget.git",
+	})
+	assert.True(ok)
+	assert.Equal(42, number)
+
+	for _, upstream := range []upstreamState{
+		{branchName: "shared-branch", remoteURL: "not a clone url"},
+		{branchName: "missing", remoteURL: "git@github.com:Fork-Two/Widget.git"},
+		{branchName: ""},
+	} {
+		number, ok = selectPRByUpstream(candidates, upstream)
+		assert.False(ok)
+		assert.Zero(number)
+	}
+}
+
+func TestSelectPRByBranchRejectsAmbiguousMatches(t *testing.T) {
+	assert := Assert.New(t)
+	candidates := []db.MergeRequest{
+		{Number: 41, HeadBranch: "shared-local"},
+		{Number: 42, HeadBranch: "shared-local"},
+		{Number: 43, HeadBranch: "single-local"},
+	}
+
+	number, ok := selectPRByLocalBranch(candidates, "single-local")
+	assert.True(ok)
+	assert.Equal(43, number)
+
+	number, ok = selectPRByLocalBranch(candidates, "shared-local")
+	assert.False(ok)
+	assert.Zero(number)
+}
+
+func TestWorkspacePRMonitorEligible(t *testing.T) {
+	existing := 42
 	tests := []struct {
-		name     string
-		cloneURL string
+		name string
+		ws   *db.Workspace
+		want bool
 	}{
-		{name: "empty clone url", cloneURL: ""},
-		{name: "malformed clone url", cloneURL: "not a clone url"},
+		{
+			name: "ready issue workspace without association",
+			ws: &db.Workspace{
+				ItemType:     db.WorkspaceItemTypeIssue,
+				Status:       "ready",
+				WorktreePath: "/tmp/work",
+			},
+			want: true,
+		},
+		{
+			name: "pull request workspace",
+			ws: &db.Workspace{
+				ItemType:     db.WorkspaceItemTypePullRequest,
+				Status:       "ready",
+				WorktreePath: "/tmp/work",
+			},
+		},
+		{
+			name: "already associated",
+			ws: &db.Workspace{
+				ItemType:           db.WorkspaceItemTypeIssue,
+				Status:             "ready",
+				WorktreePath:       "/tmp/work",
+				AssociatedPRNumber: &existing,
+			},
+		},
+		{
+			name: "not ready",
+			ws: &db.Workspace{
+				ItemType:     db.WorkspaceItemTypeIssue,
+				Status:       "creating",
+				WorktreePath: "/tmp/work",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := Assert.New(t)
-			require := require.New(t)
-			d := openTestDB(t)
-			ctx := context.Background()
-
-			repoID := seedRepo(t, d, "github.com", "acme", "widget")
-			seedIssue(t, d, repoID, 7, "Track workspace association")
-			seedMRWithFork(
-				t, d, repoID, 42,
-				"shared-branch", tt.cloneURL,
-			)
-
-			worktreePath := setupMonitorRepo(t)
-			runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "shared-branch")
-			runWorkspaceTestGit(
-				t, worktreePath,
-				"remote", "set-url", "origin", "git@github.com:Fork-Two/Widget.git",
-			)
-			runWorkspaceTestGit(
-				t, worktreePath,
-				"config", "branch.shared-branch.remote", "origin",
-			)
-			runWorkspaceTestGit(
-				t, worktreePath,
-				"config", "branch.shared-branch.merge", "refs/heads/shared-branch",
-			)
-			insertMonitorWorkspace(t, d, worktreePath, nil)
-
-			monitor := NewPRMonitor(d)
-			updates, err := monitor.RunOnce(ctx)
-			require.NoError(err)
-			assert.Empty(updates)
-
-			ws, err := d.GetWorkspace(ctx, "ws-issue")
-			require.NoError(err)
-			require.NotNil(ws)
-			assert.Nil(ws.AssociatedPRNumber)
+			Assert.Equal(t, tt.want, workspacePRMonitorEligible(tt.ws))
 		})
 	}
-}
-
-func TestPRMonitorRunOnceRequiresParseableUpstreamRemoteIdentity(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := context.Background()
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMRWithFork(
-		t, d, repoID, 42,
-		"shared-branch", "https://github.com/fork-two/widget.git",
-	)
-
-	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "shared-branch")
-	runWorkspaceTestGit(
-		t, worktreePath,
-		"remote", "set-url", "origin", "not a clone url",
-	)
-	runWorkspaceTestGit(
-		t, worktreePath,
-		"config", "branch.shared-branch.remote", "origin",
-	)
-	runWorkspaceTestGit(
-		t, worktreePath,
-		"config", "branch.shared-branch.merge", "refs/heads/shared-branch",
-	)
-	insertMonitorWorkspace(t, d, worktreePath, nil)
-
-	monitor := NewPRMonitor(d)
-	updates, err := monitor.RunOnce(ctx)
-	require.NoError(err)
-	assert.Empty(updates)
-
-	ws, err := d.GetWorkspace(ctx, "ws-issue")
-	require.NoError(err)
-	require.NotNil(ws)
-	assert.Nil(ws.AssociatedPRNumber)
-}
-
-func TestPRMonitorRunOnceSkipsWhenConfiguredUpstreamRemoteURLFails(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := context.Background()
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMR(t, d, repoID, 42, "transient-remote")
-
-	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "transient-remote")
-	runWorkspaceTestGit(
-		t, worktreePath,
-		"config", "branch.transient-remote.remote", "missing-remote",
-	)
-	runWorkspaceTestGit(
-		t, worktreePath,
-		"config", "branch.transient-remote.merge", "refs/heads/transient-remote",
-	)
-	insertMonitorWorkspace(t, d, worktreePath, nil)
-
-	monitor := NewPRMonitor(d)
-	updates, err := monitor.RunOnce(ctx)
-	require.NoError(err)
-	assert.Empty(updates)
-
-	ws, err := d.GetWorkspace(ctx, "ws-issue")
-	require.NoError(err)
-	require.NotNil(ws)
-	assert.Nil(ws.AssociatedPRNumber)
-}
-
-func TestPRMonitorRunOnceSkipsAmbiguousLocalBranchFallback(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := context.Background()
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMRWithFork(
-		t, d, repoID, 41,
-		"shared-local", "https://github.com/fork-one/widget.git",
-	)
-	seedMRWithFork(
-		t, d, repoID, 42,
-		"shared-local", "https://github.com/fork-two/widget.git",
-	)
-
-	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "shared-local")
-	insertMonitorWorkspace(t, d, worktreePath, nil)
-
-	monitor := NewPRMonitor(d)
-	updates, err := monitor.RunOnce(ctx)
-	require.NoError(err)
-	assert.Empty(updates)
-
-	ws, err := d.GetWorkspace(ctx, "ws-issue")
-	require.NoError(err)
-	require.NotNil(ws)
-	assert.Nil(ws.AssociatedPRNumber)
-}
-
-func TestPRMonitorRunOnceScopesCandidatesByPlatformHost(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := context.Background()
-
-	githubRepoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedIssue(t, d, githubRepoID, 7, "Track workspace association")
-	gheRepoID := seedRepo(t, d, "ghe.example.com", "acme", "widget")
-	seedMR(t, d, gheRepoID, 42, "same-branch")
-
-	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "same-branch")
-	insertMonitorWorkspace(t, d, worktreePath, nil)
-
-	monitor := NewPRMonitor(d)
-	updates, err := monitor.RunOnce(ctx)
-	require.NoError(err)
-	assert.Empty(updates)
-
-	ws, err := d.GetWorkspace(ctx, "ws-issue")
-	require.NoError(err)
-	require.NotNil(ws)
-	assert.Nil(ws.AssociatedPRNumber)
-}
-
-func TestPRMonitorRunOnceDoesNotOverwriteExistingAssociation(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := context.Background()
-
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMR(t, d, repoID, 42, "feature/original")
-	seedMR(t, d, repoID, 99, "feature/new")
-
-	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/new")
-	existing := 42
-	insertMonitorWorkspace(t, d, worktreePath, &existing)
-
-	monitor := NewPRMonitor(d)
-	updates, err := monitor.RunOnce(ctx)
-	require.NoError(err)
-	assert.Empty(updates)
-
-	ws, err := d.GetWorkspace(ctx, "ws-issue")
-	require.NoError(err)
-	require.NotNil(ws)
-	require.NotNil(ws.AssociatedPRNumber)
-	assert.Equal(42, *ws.AssociatedPRNumber)
 }
 
 func TestNormalizeCloneRepoIdentity(t *testing.T) {

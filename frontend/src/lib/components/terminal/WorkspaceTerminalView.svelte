@@ -23,15 +23,6 @@
   import { AlertIcon, SpinnerIcon } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
 
-  interface AssociatedPR {
-    number: number;
-    title: string;
-    state: string;
-    is_draft: boolean;
-    ci_status?: string | null;
-    review_decision?: string | null;
-  }
-
   interface Workspace {
     id: string;
     platform_host: string;
@@ -48,7 +39,7 @@
     mr_title?: string | null;
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
-    associated_pr?: AssociatedPR | null;
+    associated_pr_number?: number | null;
   }
 
   interface ClosedShellSession {
@@ -163,7 +154,6 @@
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
-  let initializedWorkspaceId = $state("");
 
   // Runtime is only "live" when both the runtime fetch and the
   // workspace fetch resolve for the current route. Without the
@@ -449,38 +439,19 @@
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
-	if (tab === "issue") {
-	  return ws.item_type === "issue";
-	}
-	if (tab === "reviews") {
-	  return ws.item_type === "pull_request";
+    if (tab === "issue") {
+      return ws.item_type === "issue";
     }
-    return ws.item_type === "pull_request" || ws.associated_pr != null;
+    if (tab === "reviews") {
+      return ws.item_type === "pull_request";
+    }
+    return getWorkspacePRNumber(ws) !== null;
   }
 
-  function syncSidebarTabForWorkspace(
-    ws: Workspace,
-  ): void {
-    const ownerDefault = defaultSidebarTab(ws);
-    const isNewWorkspace = initializedWorkspaceId !== ws.id;
-    initializedWorkspaceId = ws.id;
-
-    if (isNewWorkspace) {
-      if (ws.item_type === "issue") {
-        sidebarTab = ownerDefault;
-        return;
-      }
-      const savedTab = loadSidebarTab();
-      sidebarTab = isSidebarTabSupported(ws, savedTab)
-        ? savedTab
-        : ownerDefault;
-      return;
-    }
-
-	if (!isSidebarTabSupported(ws, sidebarTab)) {
-	  sidebarTab = ownerDefault;
-	}
-}
+  function getWorkspacePRNumber(ws: Workspace): number | null {
+    if (ws.item_type === "pull_request") return ws.item_number;
+    return ws.associated_pr_number ?? null;
+  }
 
   async function fetchWorkspace(): Promise<void> {
     // Capture the id at call time. With workspaceId changing across
@@ -815,7 +786,6 @@
       workspace = null;
       runtime = null;
       runtimeForId = "";
-      initializedWorkspaceId = "";
       return;
     }
 
@@ -977,7 +947,7 @@
                   Issue
                 </button>
               {/if}
-              {#if workspace.item_type === "pull_request" || workspace.associated_pr}
+              {#if getWorkspacePRNumber(workspace) !== null}
                 <button
                   class="seg-btn"
                   class:active={sidebarOpen && sidebarTab === "pr"}
@@ -1136,7 +1106,7 @@
                 repoName={workspace.repo_name}
                 ownerItemType={workspace.item_type}
                 ownerItemNumber={workspace.item_number}
-                associatedPRNumber={workspace.associated_pr?.number ?? null}
+                associatedPRNumber={getWorkspacePRNumber(workspace)}
                 branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
               />

@@ -2759,9 +2759,7 @@ const workspaceSummaryColumns = `
 	    ELSE m.state
 	END,
 	m.is_draft, m.ci_status,
-	m.review_decision, m.additions, m.deletions,
-	ap.title, ap.state, ap.is_draft, ap.ci_status,
-	ap.review_decision`
+	m.review_decision, m.additions, m.deletions`
 
 // workspaceSummaryJoins is the FROM/JOIN clause shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
@@ -2778,10 +2776,7 @@ const workspaceSummaryJoins = `
 	LEFT JOIN middleman_issues i
 	    ON i.repo_id = r.id
 	   AND i.number = w.item_number
-	   AND w.item_type = 'issue'
-	LEFT JOIN middleman_merge_requests ap
-	    ON ap.repo_id = r.id
-	   AND ap.number = w.associated_pr_number`
+	   AND w.item_type = 'issue'`
 
 func scanWorkspaceSummary(
 	scanner interface{ Scan(...any) error },
@@ -2795,9 +2790,6 @@ func scanWorkspaceSummary(
 		&s.ErrorMessage, &s.CreatedAt,
 		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
-		&s.AssociatedPRTitle, &s.AssociatedPRState,
-		&s.AssociatedPRIsDraft, &s.AssociatedPRCIStatus,
-		&s.AssociatedPRReviewDecision,
 	)
 	if err != nil {
 		return nil, err

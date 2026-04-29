@@ -74,16 +74,6 @@ type ApprovePRInputBody struct {
 	Body   string  `json:"body"`
 }
 
-// AssociatedPRResponse defines model for AssociatedPRResponse.
-type AssociatedPRResponse struct {
-	CiStatus       *string `json:"ci_status,omitempty"`
-	IsDraft        bool    `json:"is_draft"`
-	Number         int64   `json:"number"`
-	ReviewDecision *string `json:"review_decision,omitempty"`
-	State          string  `json:"state"`
-	Title          string  `json:"title"`
-}
-
 // BulkAddRepoRequest defines model for BulkAddRepoRequest.
 type BulkAddRepoRequest struct {
 	Name  string `json:"name"`
@@ -827,33 +817,33 @@ type WorkspaceRef struct {
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string               `json:"$schema,omitempty"`
-	AssociatedPr       *AssociatedPRResponse `json:"associated_pr,omitempty"`
-	CommitsAhead       *int64                `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int64                `json:"commits_behind,omitempty"`
-	CreatedAt          string                `json:"created_at"`
-	ErrorMessage       *string               `json:"error_message,omitempty"`
-	GitHeadRef         string                `json:"git_head_ref"`
-	Id                 string                `json:"id"`
-	ItemNumber         int64                 `json:"item_number"`
-	ItemType           string                `json:"item_type"`
-	MrAdditions        *int64                `json:"mr_additions,omitempty"`
-	MrCiStatus         *string               `json:"mr_ci_status,omitempty"`
-	MrDeletions        *int64                `json:"mr_deletions,omitempty"`
-	MrIsDraft          *bool                 `json:"mr_is_draft,omitempty"`
-	MrReviewDecision   *string               `json:"mr_review_decision,omitempty"`
-	MrState            *string               `json:"mr_state,omitempty"`
-	MrTitle            *string               `json:"mr_title,omitempty"`
-	PlatformHost       string                `json:"platform_host"`
-	RepoName           string                `json:"repo_name"`
-	RepoOwner          string                `json:"repo_owner"`
-	Status             string                `json:"status"`
-	TmuxActivitySource string                `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string               `json:"tmux_last_output_at"`
-	TmuxPaneTitle      *string               `json:"tmux_pane_title,omitempty"`
-	TmuxSession        string                `json:"tmux_session"`
-	TmuxWorking        bool                  `json:"tmux_working"`
-	WorktreePath       string                `json:"worktree_path"`
+	Schema             *string `json:"$schema,omitempty"`
+	AssociatedPrNumber *int64  `json:"associated_pr_number,omitempty"`
+	CommitsAhead       *int64  `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int64  `json:"commits_behind,omitempty"`
+	CreatedAt          string  `json:"created_at"`
+	ErrorMessage       *string `json:"error_message,omitempty"`
+	GitHeadRef         string  `json:"git_head_ref"`
+	Id                 string  `json:"id"`
+	ItemNumber         int64   `json:"item_number"`
+	ItemType           string  `json:"item_type"`
+	MrAdditions        *int64  `json:"mr_additions,omitempty"`
+	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
+	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
+	MrState            *string `json:"mr_state,omitempty"`
+	MrTitle            *string `json:"mr_title,omitempty"`
+	PlatformHost       string  `json:"platform_host"`
+	RepoName           string  `json:"repo_name"`
+	RepoOwner          string  `json:"repo_owner"`
+	Status             string  `json:"status"`
+	TmuxActivitySource string  `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string  `json:"tmux_session"`
+	TmuxWorking        bool    `json:"tmux_working"`
+	WorktreePath       string  `json:"worktree_path"`
 }
 
 // WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.

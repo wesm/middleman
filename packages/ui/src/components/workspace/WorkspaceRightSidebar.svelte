@@ -275,10 +275,10 @@
         <PullDetail
           owner={repoOwner}
           name={repoName}
-	    number={associatedPRNumber ?? 0}
-	    hideTabs={true}
-	    hideWorkspaceAction={true}
-	  />
+          number={associatedPRNumber ?? 0}
+          hideTabs={true}
+          hideWorkspaceAction={true}
+        />
       </div>
     {:else}
       <div class="empty-state">No linked PR</div>

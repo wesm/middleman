@@ -172,16 +172,15 @@ func (m *Manager) Create(
 	}
 
 	ws := &Workspace{
-		ID:                 id,
-		PlatformHost:       platformHost,
-		RepoOwner:          owner,
-		RepoName:           name,
-		ItemType:           db.WorkspaceItemTypePullRequest,
-		ItemNumber:         mrNumber,
-		AssociatedPRNumber: &mrNumber,
-		GitHeadRef:         mr.HeadBranch,
-		MRHeadRepo:         workspaceHeadRepo(mr.HeadRepoCloneURL),
-		WorkspaceBranch:    workspaceBranchUnknown,
+		ID:              id,
+		PlatformHost:    platformHost,
+		RepoOwner:       owner,
+		RepoName:        name,
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      mrNumber,
+		GitHeadRef:      mr.HeadBranch,
+		MRHeadRepo:      workspaceHeadRepo(mr.HeadRepoCloneURL),
+		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath: filepath.Join(
 			m.worktreeDir, platformHost, owner, name,
 			fmt.Sprintf("pr-%d", mrNumber),

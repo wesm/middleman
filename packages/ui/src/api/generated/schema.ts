@@ -880,15 +880,6 @@ export interface components {
             readonly $schema?: string;
             body: string;
         };
-        AssociatedPRResponse: {
-            ci_status?: string;
-            is_draft: boolean;
-            /** Format: int64 */
-            number: number;
-            review_decision?: string;
-            state: string;
-            title: string;
-        };
         BulkAddRepoRequest: {
             name: string;
             owner: string;
@@ -1778,7 +1769,8 @@ export interface components {
              * @example /api/v1/schemas/WorkspaceResponse.json
              */
             readonly $schema?: string;
-            associated_pr?: components["schemas"]["AssociatedPRResponse"];
+            /** Format: int64 */
+            associated_pr_number?: number;
             /** Format: int64 */
             commits_ahead?: number;
             /** Format: int64 */
