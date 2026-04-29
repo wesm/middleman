@@ -133,7 +133,11 @@ func (m *PRMonitor) detectAssociatedPR(
 		}
 	}
 
-	if prNumber, ok := selectPRByLocalBranch(candidates, currentBranch); ok {
+	headSHA, err := gitHeadSHA(ctx, ws.WorktreePath)
+	if err != nil {
+		return 0, false, err
+	}
+	if prNumber, ok := selectPRByLocalBranch(candidates, currentBranch, headSHA); ok {
 		return prNumber, true, nil
 	}
 	return 0, false, nil
@@ -173,12 +177,18 @@ func selectPRByUpstream(
 
 func selectPRByLocalBranch(
 	candidates []db.MergeRequest,
-	currentBranch string,
+	currentBranch, currentHeadSHA string,
 ) (int, bool) {
+	currentHeadSHA = strings.TrimSpace(currentHeadSHA)
+	if currentBranch == "" || currentHeadSHA == "" {
+		return 0, false
+	}
+
 	matches := make([]db.MergeRequest, 0, len(candidates))
 	for i := range candidates {
 		candidate := candidates[i]
-		if candidate.HeadBranch == currentBranch {
+		if candidate.HeadBranch == currentBranch &&
+			strings.EqualFold(candidate.PlatformHeadSHA, currentHeadSHA) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -195,6 +205,17 @@ func gitBranchName(
 	out, err := gitOutput(ctx, dir, "branch", "--show-current")
 	if err != nil {
 		return "", fmt.Errorf("git branch --show-current: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func gitHeadSHA(
+	ctx context.Context,
+	dir string,
+) (string, error) {
+	out, err := gitOutput(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }

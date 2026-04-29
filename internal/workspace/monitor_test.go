@@ -126,7 +126,7 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	assert.Equal(42, *ws.AssociatedPRNumber)
 }
 
-func TestPRMonitorRunOnceFallsBackToLocalBranchName(t *testing.T) {
+func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -134,10 +134,26 @@ func TestPRMonitorRunOnceFallsBackToLocalBranchName(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMR(t, d, repoID, 42, "feature/local-only")
-
 	worktreePath := setupMonitorRepo(t)
 	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/local-only")
+	headSHA, err := gitHeadSHA(ctx, worktreePath)
+	require.NoError(err)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      repoID*10000 + 42,
+		Number:          42,
+		Title:           "Test PR",
+		Author:          "author",
+		State:           "open",
+		HeadBranch:      "feature/local-only",
+		PlatformHeadSHA: headSHA,
+		BaseBranch:      "main",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
 	insertMonitorWorkspace(t, d, worktreePath, nil)
 
 	monitor := NewPRMonitor(d)
@@ -152,6 +168,46 @@ func TestPRMonitorRunOnceFallsBackToLocalBranchName(t *testing.T) {
 	require.NotNil(ws)
 	require.NotNil(ws.AssociatedPRNumber)
 	assert.Equal(42, *ws.AssociatedPRNumber)
+}
+
+func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedHeadSHA(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      repoID*10000 + 42,
+		Number:          42,
+		Title:           "Test PR",
+		Author:          "author",
+		State:           "open",
+		HeadBranch:      "feature/local-only",
+		PlatformHeadSHA: "different-head",
+		BaseBranch:      "main",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/local-only")
+	insertMonitorWorkspace(t, d, worktreePath, nil)
+
+	monitor := NewPRMonitor(d)
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	assert.Empty(updates)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Nil(ws.AssociatedPRNumber)
 }
 
 func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
@@ -272,16 +328,21 @@ func TestSelectPRByUpstream(t *testing.T) {
 func TestSelectPRByBranchRejectsAmbiguousMatches(t *testing.T) {
 	assert := Assert.New(t)
 	candidates := []db.MergeRequest{
-		{Number: 41, HeadBranch: "shared-local"},
-		{Number: 42, HeadBranch: "shared-local"},
-		{Number: 43, HeadBranch: "single-local"},
+		{Number: 41, HeadBranch: "shared-local", PlatformHeadSHA: "abc123"},
+		{Number: 42, HeadBranch: "shared-local", PlatformHeadSHA: "abc123"},
+		{Number: 43, HeadBranch: "single-local", PlatformHeadSHA: "abc123"},
+		{Number: 44, HeadBranch: "wrong-head", PlatformHeadSHA: "def456"},
 	}
 
-	number, ok := selectPRByLocalBranch(candidates, "single-local")
+	number, ok := selectPRByLocalBranch(candidates, "single-local", "abc123")
 	assert.True(ok)
 	assert.Equal(43, number)
 
-	number, ok = selectPRByLocalBranch(candidates, "shared-local")
+	number, ok = selectPRByLocalBranch(candidates, "shared-local", "abc123")
+	assert.False(ok)
+	assert.Zero(number)
+
+	number, ok = selectPRByLocalBranch(candidates, "wrong-head", "abc123")
 	assert.False(ok)
 	assert.Zero(number)
 }

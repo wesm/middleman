@@ -10778,7 +10778,7 @@ func prepareIssueWorkspaceAssociationFixture(
 	require.NotNil(repo)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	_, err = fixture.database.UpsertMergeRequest(ctx, &db.MergeRequest{
+	mr := &db.MergeRequest{
 		RepoID:         repo.ID,
 		PlatformID:     7000,
 		Number:         42,
@@ -10793,7 +10793,8 @@ func prepareIssueWorkspaceAssociationFixture(
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastActivityAt: now,
-	})
+	}
+	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
 	require.NoError(err)
 
 	createRR := doJSON(
@@ -10811,6 +10812,9 @@ func prepareIssueWorkspaceAssociationFixture(
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	runGit(t, ready.WorktreePath, "checkout", "-b", "issue-feature-7")
+	mr.PlatformHeadSHA = testGitSHA(t, ready.WorktreePath, "HEAD")
+	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
 
 	return fixture, created
 }
