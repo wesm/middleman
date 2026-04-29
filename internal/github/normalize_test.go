@@ -286,6 +286,7 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 5, 0, 0, time.UTC)
 
@@ -298,6 +299,7 @@ func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
 		CurrentTitle:  "New title",
 	})
 
+	require.NotNil(event)
 	assert.Equal("renamed_title", event.EventType)
 	assert.Equal("bob", event.Author)
 	assert.Equal(`"Old title" -> "New title"`, event.Summary)
@@ -306,6 +308,7 @@ func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 10, 0, 0, time.UTC)
 
@@ -318,6 +321,7 @@ func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
 		CurrentRefName:  "release",
 	})
 
+	require.NotNil(event)
 	assert.Equal("base_ref_changed", event.EventType)
 	assert.Equal("carol", event.Author)
 	assert.Equal("main -> release", event.Summary)
@@ -346,10 +350,48 @@ func TestNormalizeTimelineEventForcePush(t *testing.T) {
 	assert.Equal("dana", event.Author)
 	assert.Equal("aaaaaaa -> bbbbbbb", event.Summary)
 	assert.Equal(createdAt, event.CreatedAt)
-	assert.Equal("timeline-HRFPE_1", event.DedupeKey)
+	assert.Equal("force-push-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", event.DedupeKey)
 	assert.Contains(event.MetadataJSON, `"before_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)
 	assert.Contains(event.MetadataJSON, `"after_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`)
 	assert.Contains(event.MetadataJSON, `"ref":"feature"`)
+}
+
+func TestNormalizeTimelineEventFallbackDedupeIgnoresCrossReferenceTitle(t *testing.T) {
+	require := require.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 25, 0, 0, time.UTC)
+
+	first := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		EventType:         "cross_referenced",
+		Actor:             "alice",
+		CreatedAt:         createdAt,
+		SourceType:        "Issue",
+		SourceOwner:       "other",
+		SourceRepo:        "repo",
+		SourceNumber:      77,
+		SourceTitle:       "Original title",
+		SourceURL:         "https://github.com/other/repo/issues/77",
+		IsCrossRepository: true,
+		WillCloseTarget:   false,
+	})
+	second := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		EventType:         "cross_referenced",
+		Actor:             "alice",
+		CreatedAt:         createdAt,
+		SourceType:        "Issue",
+		SourceOwner:       "other",
+		SourceRepo:        "repo",
+		SourceNumber:      77,
+		SourceTitle:       "Renamed title",
+		SourceURL:         "https://github.com/other/repo/issues/77",
+		IsCrossRepository: true,
+		WillCloseTarget:   false,
+	})
+
+	require.NotNil(first)
+	require.NotNil(second)
+	require.Equal(first.DedupeKey, second.DedupeKey)
+	require.Contains(first.MetadataJSON, `"source_title":"Original title"`)
+	require.Contains(second.MetadataJSON, `"source_title":"Renamed title"`)
 }
 
 func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
