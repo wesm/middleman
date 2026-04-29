@@ -182,7 +182,7 @@ test("repository import can hide forks and private repositories before adding", 
 
   await dialog.getByRole("button", { name: "Add selected repositories" }).click();
 
-  expect(bulkRepos).toEqual([{ owner: "import-lab", name: "public-source" }]);
+  await expect.poll(() => bulkRepos).toEqual([{ owner: "import-lab", name: "public-source" }]);
 });
 
 test("repository import traps keyboard focus inside the dialog", async ({ page }) => {
