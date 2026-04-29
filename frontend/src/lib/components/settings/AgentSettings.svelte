@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
@@ -25,6 +27,7 @@
     binary: string;
     args: string;
     enabled: boolean;
+    expanded: boolean;
   }
 
   const builtins: BuiltinAgent[] = [
@@ -91,6 +94,7 @@
       binary,
       args: stringifyArgs(command.slice(1)),
       enabled: agent?.enabled ?? true,
+      expanded: builtin === null && agent === undefined,
     };
   }
 
@@ -170,6 +174,10 @@
     return draft.label.trim() || draft.key.trim() || "Custom agent";
   }
 
+  function toggleExpanded(draft: AgentDraft): void {
+    draft.expanded = !draft.expanded;
+  }
+
   function addCustomAgent(): void {
     drafts = [
       ...drafts,
@@ -181,6 +189,7 @@
         binary: "",
         args: "",
         enabled: true,
+        expanded: true,
       },
     ];
   }
@@ -196,6 +205,7 @@
     draft.binary = builtin.binary;
     draft.args = "";
     draft.enabled = true;
+    draft.expanded = true;
   }
 
   async function save(): Promise<void> {
@@ -274,81 +284,102 @@
   <div class="agent-list">
     {#each drafts as draft (draft.id)}
       <div class={["agent-row", !draft.builtin && "agent-row--custom"]}>
-        <label class="enable-field">
-          <input type="checkbox" bind:checked={draft.enabled} disabled={saving} />
-          <span>{agentName(draft)}</span>
-        </label>
-
-        {#if !draft.builtin}
-          <label class="field">
-            <span>Key</span>
-            <input
-              type="text"
-              bind:value={draft.key}
-              aria-label="Custom agent key"
-              disabled={saving}
-              placeholder="review"
-            />
+        <div class="agent-row-header">
+          <label class="enable-field">
+            <input type="checkbox" bind:checked={draft.enabled} disabled={saving} />
+            <span>{agentName(draft)}</span>
           </label>
-          <label class="field">
-            <span>Label</span>
-            <input
-              type="text"
-              bind:value={draft.label}
-              aria-label="Custom agent label"
-              disabled={saving}
-              placeholder="Review Agent"
-            />
-          </label>
-        {/if}
 
-        <label class="field">
-          <span>Binary</span>
-          <input
-            type="text"
-            bind:value={draft.binary}
-            aria-label={`${agentName(draft)} binary`}
-            disabled={saving || !draft.enabled}
-            placeholder={draft.key || "agent"}
-          />
-        </label>
-
-        <label class="field field--args">
-          <span>Arguments</span>
-          <input
-            type="text"
-            bind:value={draft.args}
-            aria-label={`${agentName(draft)} arguments`}
-            disabled={saving || !draft.enabled}
-            placeholder="--flag value"
-          />
-        </label>
-
-        <div class="row-actions">
-          {#if draft.builtin}
+          <div class="row-actions">
             <button
               class="icon-btn"
               type="button"
-              title="Reset"
-              aria-label={`Reset ${agentName(draft)}`}
+              title={draft.expanded ? "Collapse" : "Edit"}
+              aria-label={`${draft.expanded ? "Collapse" : "Edit"} ${agentName(draft)}`}
               disabled={saving}
-              onclick={() => resetBuiltin(draft)}
+              onclick={() => toggleExpanded(draft)}
             >
-              <RotateCcwIcon size="13" strokeWidth="2" aria-hidden="true" />
+              {#if draft.expanded}
+                <ChevronDownIcon size="13" strokeWidth="2" aria-hidden="true" />
+              {:else}
+                <ChevronRightIcon size="13" strokeWidth="2" aria-hidden="true" />
+              {/if}
             </button>
-          {:else}
-            <button
-              class="icon-btn icon-btn--danger"
-              type="button"
-              title="Remove"
-              aria-label={`Remove ${agentName(draft)}`}
-              disabled={saving}
-              onclick={() => removeCustomAgent(draft.id)}
-            >
-              <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
-            </button>
-          {/if}
+
+            {#if draft.builtin}
+              <button
+                class="icon-btn"
+                type="button"
+                title="Reset"
+                aria-label={`Reset ${agentName(draft)}`}
+                disabled={saving}
+                onclick={() => resetBuiltin(draft)}
+              >
+                <RotateCcwIcon size="13" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {:else}
+              <button
+                class="icon-btn icon-btn--danger"
+                type="button"
+                title="Remove"
+                aria-label={`Remove ${agentName(draft)}`}
+                disabled={saving}
+                onclick={() => removeCustomAgent(draft.id)}
+              >
+                <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {/if}
+          </div>
         </div>
+
+        {#if draft.expanded}
+          <div class={["agent-fields", !draft.builtin && "agent-fields--custom"]}>
+            {#if !draft.builtin}
+              <label class="field">
+                <span>Key</span>
+                <input
+                  type="text"
+                  bind:value={draft.key}
+                  aria-label="Custom agent key"
+                  disabled={saving}
+                  placeholder="review"
+                />
+              </label>
+              <label class="field">
+                <span>Label</span>
+                <input
+                  type="text"
+                  bind:value={draft.label}
+                  aria-label="Custom agent label"
+                  disabled={saving}
+                  placeholder="Review Agent"
+                />
+              </label>
+            {/if}
+
+            <label class="field">
+              <span>Binary</span>
+              <input
+                type="text"
+                bind:value={draft.binary}
+                aria-label={`${agentName(draft)} binary`}
+                disabled={saving || !draft.enabled}
+                placeholder={draft.key || "agent"}
+              />
+            </label>
+
+            <label class="field field--args">
+              <span>Arguments</span>
+              <input
+                type="text"
+                bind:value={draft.args}
+                aria-label={`${agentName(draft)} arguments`}
+                disabled={saving || !draft.enabled}
+                placeholder="--flag value"
+              />
+            </label>
+          </div>
+        {/if}
       </div>
     {/each}
   </div>
@@ -392,18 +423,35 @@
   }
 
   .agent-row {
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(112px, 0.9fr) minmax(120px, 1fr) minmax(150px, 1.2fr);
-    gap: 8px;
-    align-items: end;
-    padding: 8px 40px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px;
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
   }
 
-  .agent-row--custom {
+  .agent-row-header,
+  .row-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  .agent-row-header {
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 24px;
+  }
+
+  .agent-fields {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.2fr);
+    gap: 8px;
+    align-items: end;
+  }
+
+  .agent-fields--custom {
     grid-template-columns:
       minmax(88px, 0.8fr) minmax(72px, 0.7fr) minmax(96px, 0.9fr)
       minmax(96px, 1fr) minmax(128px, 1.2fr);
@@ -421,6 +469,7 @@
     align-self: center;
     flex-direction: row;
     align-items: center;
+    flex: 1 1 auto;
     color: var(--text-primary);
     font-size: 12px;
     font-weight: 600;
@@ -441,12 +490,9 @@
   }
 
   .row-actions {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    display: flex;
+    flex: 0 0 auto;
     justify-content: flex-end;
-    align-items: center;
+    gap: 6px;
   }
 
   .icon-btn {
@@ -523,8 +569,8 @@
   }
 
   @media (max-width: 860px) {
-    .agent-row,
-    .agent-row--custom {
+    .agent-fields,
+    .agent-fields--custom {
       grid-template-columns: 1fr;
       align-items: stretch;
     }
