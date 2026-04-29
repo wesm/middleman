@@ -43,6 +43,7 @@ function makeSettings(): Settings {
     terminal: {
       font_family: "\"Fira Code\", monospace",
     },
+    agents: [],
   };
 }
 

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bulkAddRepos, previewRepos, removeRepo } from "./settings.js";
+import {
+  bulkAddRepos,
+  previewRepos,
+  removeRepo,
+  updateSettings,
+} from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -36,6 +41,34 @@ describe("settings api", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ repos: [{ owner: "acme", name: "api" }] }),
+    });
+  });
+
+  it("posts agent settings updates", async () => {
+    await updateSettings({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex", "--full-auto"],
+          enabled: true,
+        },
+      ],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agents: [
+          {
+            key: "codex",
+            label: "Codex",
+            command: ["codex", "--full-auto"],
+            enabled: true,
+          },
+        ],
+      }),
     });
   });
 

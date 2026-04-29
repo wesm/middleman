@@ -66,6 +66,13 @@ export interface TerminalSettings {
   font_family: string;
 }
 
+export interface AgentSettings {
+  key: string;
+  label: string;
+  command?: string[];
+  enabled?: boolean;
+}
+
 export interface ConfigRepo {
   owner: string;
   name: string;
@@ -77,6 +84,7 @@ export interface Settings {
   repos: ConfigRepo[];
   activity: ActivitySettings;
   terminal: TerminalSettings;
+  agents: AgentSettings[];
 }
 
 export interface DiffResult {

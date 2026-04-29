@@ -49,6 +49,7 @@ export async function updateSettings(
   settings: {
     activity?: Settings["activity"];
     terminal?: Settings["terminal"];
+    agents?: Settings["agents"];
   },
 ): Promise<Settings> {
   const res = await fetch(`${BASE}/settings`, {

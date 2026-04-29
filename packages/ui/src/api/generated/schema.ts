@@ -781,6 +781,12 @@ export interface components {
             capped: boolean;
             items: components["schemas"]["ActivityItemResponse"][] | null;
         };
+        Agent: {
+            command: string[] | null;
+            enabled?: boolean;
+            key: string;
+            label: string;
+        };
         ApprovePRInputBody: {
             /**
              * Format: uri
@@ -1558,6 +1564,7 @@ export interface components {
              */
             readonly $schema?: string;
             activity: components["schemas"]["Activity"];
+            agents: components["schemas"]["Agent"][] | null;
             repos: components["schemas"]["ConfiguredRepoStatus"][] | null;
             terminal: components["schemas"]["Terminal"];
         };

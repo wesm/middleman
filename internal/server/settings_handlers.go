@@ -10,17 +10,20 @@ import (
 
 	"github.com/wesm/middleman/internal/config"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type settingsResponse struct {
 	Repos    []ghclient.ConfiguredRepoStatus `json:"repos"`
 	Activity config.Activity                 `json:"activity"`
 	Terminal config.Terminal                 `json:"terminal"`
+	Agents   []config.Agent                  `json:"agents"`
 }
 
 type updateSettingsRequest struct {
 	Activity *config.Activity `json:"activity,omitempty"`
 	Terminal *config.Terminal `json:"terminal,omitempty"`
+	Agents   *[]config.Agent  `json:"agents,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -48,6 +51,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	repos := append([]config.Repo(nil), s.cfg.Repos...)
 	activity := s.cfg.Activity
 	terminal := s.cfg.Terminal
+	agents := cloneConfigAgents(s.cfg.Agents)
 	s.cfgMu.Unlock()
 
 	tracked := s.syncer.TrackedRepos()
@@ -66,6 +70,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Repos:    configured,
 		Activity: activity,
 		Terminal: terminal,
+		Agents:   agents,
 	}
 }
 
@@ -267,6 +272,7 @@ func (s *Server) handleUpdateSettings(
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
 	prevTerminal := s.cfg.Terminal
+	prevAgents := cloneConfigAgents(s.cfg.Agents)
 	if body.Activity != nil {
 		candidate := *body.Activity
 		if candidate.ViewMode == "" {
@@ -280,9 +286,13 @@ func (s *Server) handleUpdateSettings(
 	if body.Terminal != nil {
 		s.cfg.Terminal = *body.Terminal
 	}
+	if body.Agents != nil {
+		s.cfg.Agents = cloneConfigAgents(*body.Agents)
+	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
+		s.cfg.Agents = prevAgents
 		s.cfgMu.Unlock()
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -290,14 +300,38 @@ func (s *Server) handleUpdateSettings(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
+		s.cfg.Agents = prevAgents
 		s.cfgMu.Unlock()
 		writeError(w, http.StatusInternalServerError,
 			"save config: "+err.Error())
 		return
 	}
+	s.refreshRuntimeTargetsLocked()
 	s.cfgMu.Unlock()
 
 	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
+}
+
+func cloneConfigAgents(agents []config.Agent) []config.Agent {
+	if agents == nil {
+		return []config.Agent{}
+	}
+	cloned := make([]config.Agent, len(agents))
+	for i, agent := range agents {
+		cloned[i] = agent
+		cloned[i].Command = append([]string(nil), agent.Command...)
+	}
+	return cloned
+}
+
+func (s *Server) refreshRuntimeTargetsLocked() {
+	if s.runtime == nil || s.cfg == nil {
+		return
+	}
+	tmuxCmd := s.cfg.TmuxCommand()
+	s.runtime.UpdateTargets(localruntime.ResolveLaunchTargets(
+		s.cfg.Agents, tmuxCmd, nil,
+	))
 }
 
 func (s *Server) handleAddRepo(

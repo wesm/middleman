@@ -20,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 func setupTestServerWithConfig(
@@ -92,19 +93,37 @@ func doJSON(
 }
 
 func TestHandleGetSettings(t *testing.T) {
+	require := require.New(t)
 	assert := Assert.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[agents]]
+key = "codex"
+label = "Codex"
+command = ["codex", "--full-auto"]
+`, &mockGH{})
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp settingsResponse
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	require.Len(t, resp.Repos, 1)
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
 	assert.Empty(resp.Terminal.FontFamily)
+	require.Len(resp.Agents, 1)
+	assert.Equal("codex", resp.Agents[0].Key)
+	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
@@ -174,6 +193,104 @@ hide_bots = true
 	assert.True(cfg2.Activity.HideClosed)
 	assert.True(cfg2.Activity.HideBots)
 	assert.Equal("\"Iosevka Term\", monospace", cfg2.Terminal.FontFamily)
+}
+
+func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
+	assert := Assert.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	disabled := false
+	agents := []config.Agent{{
+		Key:     "codex",
+		Label:   "Codex with flags",
+		Command: []string{"/opt/codex", "--full-auto", "--search"},
+	}, {
+		Key:     "notes",
+		Label:   "Notes",
+		Command: []string{"/usr/local/bin/notes-agent", "--draft"},
+	}, {
+		Key:     "claude",
+		Label:   "Claude",
+		Enabled: &disabled,
+	}}
+
+	body := updateSettingsRequest{Agents: &agents}
+	rr := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings", body,
+	)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Len(t, cfg2.Agents, 3)
+	assert.Equal("codex", cfg2.Agents[0].Key)
+	assert.Equal(
+		[]string{"/opt/codex", "--full-auto", "--search"},
+		cfg2.Agents[0].Command,
+	)
+	assert.Equal("notes", cfg2.Agents[1].Key)
+	assert.False(cfg2.Agents[2].EnabledOrDefault())
+}
+
+func TestHandleUpdateSettingsRefreshesRuntimeTargets(t *testing.T) {
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "codex-custom")
+	require.NoError(t, os.WriteFile(
+		agentPath,
+		[]byte("#!/bin/sh\nexit 0\n"),
+		0o755,
+	))
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+	srv.runtime = localruntime.NewManager(localruntime.Options{
+		Targets: []localruntime.LaunchTarget{{
+			Key: "codex", Label: "Codex", Kind: localruntime.LaunchTargetAgent,
+			Source: "builtin", Command: []string{"codex"},
+			Available: false, DisabledReason: "codex not found on PATH",
+		}},
+	})
+	t.Cleanup(srv.runtime.Shutdown)
+
+	agents := []config.Agent{{
+		Key:     "codex",
+		Label:   "Custom Codex",
+		Command: []string{agentPath, "--full-auto"},
+	}}
+	rr := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings",
+		updateSettingsRequest{Agents: &agents},
+	)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	target := findRuntimeTargetForSettingsTest(
+		t, srv.runtime.LaunchTargets(), "codex",
+	)
+	assert := Assert.New(t)
+	assert.Equal("Custom Codex", target.Label)
+	assert.Equal([]string{agentPath, "--full-auto"}, target.Command)
+	assert.True(target.Available)
+}
+
+func findRuntimeTargetForSettingsTest(
+	t *testing.T,
+	targets []localruntime.LaunchTarget,
+	key string,
+) localruntime.LaunchTarget {
+	t.Helper()
+	for _, target := range targets {
+		if target.Key == key {
+			return target
+		}
+	}
+	require.Failf(t, "target not found", "key %q", key)
+	return localruntime.LaunchTarget{}
 }
 
 func TestHandleUpdateSettingsInvalid(t *testing.T) {

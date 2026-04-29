@@ -59,6 +59,14 @@ type ActivityResponse struct {
 	Items  *[]ActivityItemResponse `json:"items"`
 }
 
+// Agent defines model for Agent.
+type Agent struct {
+	Command *[]string `json:"command"`
+	Enabled *bool     `json:"enabled,omitempty"`
+	Key     string    `json:"key"`
+	Label   string    `json:"label"`
+}
+
 // ApprovePRInputBody defines model for ApprovePRInputBody.
 type ApprovePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -703,6 +711,7 @@ type SettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string                 `json:"$schema,omitempty"`
 	Activity Activity                `json:"activity"`
+	Agents   *[]Agent                `json:"agents"`
 	Repos    *[]ConfiguredRepoStatus `json:"repos"`
 	Terminal Terminal                `json:"terminal"`
 }
