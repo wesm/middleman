@@ -9,16 +9,18 @@ type RepoSummary = {
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
 
-test.beforeAll(async () => {
+test.beforeEach(async () => {
   isolatedServer = await startIsolatedE2EServer();
   api = await playwrightRequest.newContext({
     baseURL: isolatedServer.info.base_url,
   });
 });
 
-test.afterAll(async () => {
+test.afterEach(async () => {
   await api?.dispose();
   await isolatedServer?.stop();
+  api = undefined;
+  isolatedServer = undefined;
 });
 
 test("settings shows glob match counts and refresh updates tracked repos", async ({ page }) => {
@@ -62,4 +64,138 @@ test("settings shows glob match counts and refresh updates tracked repos", async
     path: "test-results/settings-globs-pr.png",
     fullPage: true,
   });
+});
+
+test("settings imports a selected subset from a repository glob", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Add repositories…" }).click();
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
+  await page.getByLabel("Repository pattern").fill("import-lab/*");
+  await page.getByRole("button", { name: "Preview" }).click();
+
+  await expect(page.getByText("import-lab/api")).toBeVisible();
+  await expect(page.getByText("import-lab/worker")).toBeVisible();
+  await expect(page.getByText("import-lab/archived")).toHaveCount(0);
+
+  await page.getByLabel("Filter repositories").fill("worker");
+  await page.getByRole("button", { name: "None" }).click();
+  await page.getByLabel("Filter repositories").fill("");
+  await page.getByRole("button", { name: "Add selected repositories" }).click();
+
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
+  await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
+  await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(0);
+
+  if (!api) throw new Error("settings-globs API context not initialized");
+  const settingsResponse = await api.get("/api/v1/settings");
+  const settings = await settingsResponse.json() as { repos: Array<{ owner: string; name: string; is_glob: boolean }> };
+  const exactNames = settings.repos
+    .filter((repo) => repo.owner === "import-lab" && !repo.is_glob)
+    .map((repo) => repo.name)
+    .sort();
+  expect(exactNames).toEqual(["api"]);
+  await expect.poll(async () => {
+    const response = await api!.get("/api/v1/repos");
+    const repos = await response.json() as RepoSummary[];
+    return repos
+      .filter((repo) => repo.Owner === "import-lab")
+      .map((repo) => repo.Name)
+      .sort()
+      .join(",");
+  }).toBe("api");
+});
+
+test("repository import traps keyboard focus inside the dialog", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Add repositories…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add repositories" });
+  await expect(dialog.getByLabel("Repository pattern")).toBeFocused();
+
+  await dialog.getByRole("button", { name: "Close" }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+});
+
+test("repository import clears stale preview results after failed preview", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Add repositories…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add repositories" });
+  await dialog.getByLabel("Repository pattern").fill("roborev-dev/*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog.getByText("roborev-dev/middleman")).toBeVisible();
+
+  await dialog.getByLabel("Repository pattern").fill("bad-owner/[invalid");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog.getByText(/invalid glob pattern|GitHub API error|glob syntax/)).toBeVisible();
+  await expect(dialog.getByText("roborev-dev/middleman")).toHaveCount(0);
+});
+
+test("repository import ignores older preview responses", async ({ page }) => {
+  let firstPreviewRelease: (() => void) | undefined;
+  let previewCalls = 0;
+  await page.route("**/api/v1/repos/preview", async (route) => {
+    previewCalls += 1;
+    const request = route.request().postDataJSON() as { owner: string; pattern: string };
+    if (previewCalls === 1) {
+      await new Promise<void>((resolve) => { firstPreviewRelease = resolve; });
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          owner: request.owner,
+          pattern: request.pattern,
+          repos: [{
+            owner: "roborev-dev",
+            name: "middleman",
+            description: "Main dashboard",
+            private: false,
+            pushed_at: "2026-04-22T10:00:00Z",
+            already_configured: false,
+          }],
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        owner: request.owner,
+        pattern: request.pattern,
+        repos: [{
+          owner: "roborev-dev",
+          name: "review-bot",
+          description: "Review automation",
+          private: false,
+          pushed_at: "2026-04-24T09:15:00Z",
+          already_configured: false,
+        }],
+      }),
+    });
+  });
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await page.getByRole("button", { name: "Add repositories…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add repositories" });
+
+  await dialog.getByLabel("Repository pattern").fill("roborev-dev/*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect.poll(() => previewCalls).toBe(1);
+
+  await dialog.getByLabel("Repository pattern").fill("roborev-dev/review-*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect.poll(() => previewCalls).toBe(2);
+  await expect(dialog.getByText("roborev-dev/review-bot")).toBeVisible();
+
+  firstPreviewRelease?.();
+  await expect(dialog.getByText("roborev-dev/review-bot")).toBeVisible();
+  await expect(dialog.getByText("roborev-dev/middleman")).toHaveCount(0);
 });

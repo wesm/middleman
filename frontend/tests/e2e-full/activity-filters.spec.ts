@@ -202,8 +202,6 @@ test.describe("activity UTC timestamp presentation", () => {
   });
 
   test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
-    await page.goto(isolatedServer.info.base_url);
-    await waitForTable(page);
     await page.locator(".seg-btn", { hasText: "30d" }).click();
     await expect(page.locator(".activity-row").first()).toBeVisible();
 

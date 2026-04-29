@@ -25,6 +25,14 @@ type ActionStatusBody struct {
 	Status        string  `json:"status"`
 }
 
+// Activity defines model for Activity.
+type Activity struct {
+	HideBots   bool   `json:"hide_bots"`
+	HideClosed bool   `json:"hide_closed"`
+	TimeRange  string `json:"time_range"`
+	ViewMode   string `json:"view_mode"`
+}
+
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
 	ActivityType string `json:"activity_type"`
@@ -56,6 +64,19 @@ type ApprovePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
+}
+
+// BulkAddRepoRequest defines model for BulkAddRepoRequest.
+type BulkAddRepoRequest struct {
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+}
+
+// BulkAddReposRequest defines model for BulkAddReposRequest.
+type BulkAddReposRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string               `json:"$schema,omitempty"`
+	Repos  *[]BulkAddRepoRequest `json:"repos"`
 }
 
 // CommentAutocompleteReference defines model for CommentAutocompleteReference.
@@ -96,6 +117,14 @@ type CommitsResponse struct {
 
 	// Commits Commits in newest-first order
 	Commits *[]CommitResponse `json:"commits"`
+}
+
+// ConfiguredRepoStatus defines model for ConfiguredRepoStatus.
+type ConfiguredRepoStatus struct {
+	IsGlob           bool   `json:"is_glob"`
+	MatchedRepoCount int64  `json:"matched_repo_count"`
+	Name             string `json:"name"`
+	Owner            string `json:"owner"`
 }
 
 // CreateIssueInputBody defines model for CreateIssueInputBody.
@@ -553,6 +582,33 @@ type Repo struct {
 	PlatformHost             string     `json:"PlatformHost"`
 }
 
+// RepoPreviewRequest defines model for RepoPreviewRequest.
+type RepoPreviewRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Owner   string  `json:"owner"`
+	Pattern string  `json:"pattern"`
+}
+
+// RepoPreviewResponse defines model for RepoPreviewResponse.
+type RepoPreviewResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string           `json:"$schema,omitempty"`
+	Owner   string            `json:"owner"`
+	Pattern string            `json:"pattern"`
+	Repos   *[]RepoPreviewRow `json:"repos"`
+}
+
+// RepoPreviewRow defines model for RepoPreviewRow.
+type RepoPreviewRow struct {
+	AlreadyConfigured bool    `json:"already_configured"`
+	Description       *string `json:"description"`
+	Name              string  `json:"name"`
+	Owner             string  `json:"owner"`
+	Private           bool    `json:"private"`
+	PushedAt          *string `json:"pushed_at"`
+}
+
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
 type RepoSummaryAuthorResponse struct {
 	ItemCount int64  `json:"item_count"`
@@ -642,6 +698,15 @@ type SetKanbanStateInputBody struct {
 	Status string  `json:"status"`
 }
 
+// SettingsResponse defines model for SettingsResponse.
+type SettingsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string                 `json:"$schema,omitempty"`
+	Activity Activity                `json:"activity"`
+	Repos    *[]ConfiguredRepoStatus `json:"repos"`
+	Terminal Terminal                `json:"terminal"`
+}
+
 // StackContextResponse defines model for StackContextResponse.
 type StackContextResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -697,6 +762,11 @@ type SyncStatus struct {
 	LastRunAt   *time.Time `json:"last_run_at,omitempty"`
 	Progress    *string    `json:"progress,omitempty"`
 	Running     bool       `json:"running"`
+}
+
+// Terminal defines model for Terminal.
+type Terminal struct {
+	FontFamily string `json:"font_family"`
 }
 
 // WorkflowApprovalResponse defines model for WorkflowApprovalResponse.
@@ -836,6 +906,12 @@ type DeleteWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
 }
 
+// BulkAddReposJSONRequestBody defines body for BulkAddRepos for application/json ContentType.
+type BulkAddReposJSONRequestBody = BulkAddReposRequest
+
+// PreviewReposJSONRequestBody defines body for PreviewRepos for application/json ContentType.
+type PreviewReposJSONRequestBody = RepoPreviewRequest
+
 // CreateIssueJSONRequestBody defines body for CreateIssue for application/json ContentType.
 type CreateIssueJSONRequestBody = CreateIssueInputBody
 
@@ -965,6 +1041,16 @@ type ClientInterface interface {
 
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BulkAddReposWithBody request with any body
+	BulkAddReposWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	BulkAddRepos(ctx context.Context, body BulkAddReposJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewReposWithBody request with any body
+	PreviewReposWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PreviewRepos(ctx context.Context, body PreviewReposJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepoSummaries request
 	ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1168,6 +1254,54 @@ func (c *Client) GetRateLimits(ctx context.Context, reqEditors ...RequestEditorF
 
 func (c *Client) ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListReposRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BulkAddReposWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBulkAddReposRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BulkAddRepos(ctx context.Context, body BulkAddReposJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBulkAddReposRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PreviewReposWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewReposRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PreviewRepos(ctx context.Context, body PreviewReposJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewReposRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2275,6 +2409,86 @@ func NewListReposRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewBulkAddReposRequest calls the generic BulkAddRepos builder with application/json body
+func NewBulkAddReposRequest(server string, body BulkAddReposJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBulkAddReposRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewBulkAddReposRequestWithBody generates requests for BulkAddRepos with any type of body
+func NewBulkAddReposRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/bulk")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPreviewReposRequest calls the generic PreviewRepos builder with application/json body
+func NewPreviewReposRequest(server string, body PreviewReposJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPreviewReposRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPreviewReposRequestWithBody generates requests for PreviewRepos with any type of body
+func NewPreviewReposRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/preview")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -4457,6 +4671,16 @@ type ClientWithResponsesInterface interface {
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
 
+	// BulkAddReposWithBodyWithResponse request with any body
+	BulkAddReposWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BulkAddReposResponse, error)
+
+	BulkAddReposWithResponse(ctx context.Context, body BulkAddReposJSONRequestBody, reqEditors ...RequestEditorFn) (*BulkAddReposResponse, error)
+
+	// PreviewReposWithBodyWithResponse request with any body
+	PreviewReposWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewReposResponse, error)
+
+	PreviewReposWithResponse(ctx context.Context, body PreviewReposJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewReposResponse, error)
+
 	// ListRepoSummariesWithResponse request
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error)
 
@@ -4718,6 +4942,52 @@ func (r ListReposResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListReposResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type BulkAddReposResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r BulkAddReposResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BulkAddReposResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PreviewReposResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoPreviewResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PreviewReposResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PreviewReposResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5704,6 +5974,40 @@ func (c *ClientWithResponses) ListReposWithResponse(ctx context.Context, reqEdit
 	return ParseListReposResponse(rsp)
 }
 
+// BulkAddReposWithBodyWithResponse request with arbitrary body returning *BulkAddReposResponse
+func (c *ClientWithResponses) BulkAddReposWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BulkAddReposResponse, error) {
+	rsp, err := c.BulkAddReposWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBulkAddReposResponse(rsp)
+}
+
+func (c *ClientWithResponses) BulkAddReposWithResponse(ctx context.Context, body BulkAddReposJSONRequestBody, reqEditors ...RequestEditorFn) (*BulkAddReposResponse, error) {
+	rsp, err := c.BulkAddRepos(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBulkAddReposResponse(rsp)
+}
+
+// PreviewReposWithBodyWithResponse request with arbitrary body returning *PreviewReposResponse
+func (c *ClientWithResponses) PreviewReposWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewReposResponse, error) {
+	rsp, err := c.PreviewReposWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewReposResponse(rsp)
+}
+
+func (c *ClientWithResponses) PreviewReposWithResponse(ctx context.Context, body PreviewReposJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewReposResponse, error) {
+	rsp, err := c.PreviewRepos(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewReposResponse(rsp)
+}
+
 // ListRepoSummariesWithResponse request returning *ListRepoSummariesResponse
 func (c *ClientWithResponses) ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error) {
 	rsp, err := c.ListRepoSummaries(ctx, reqEditors...)
@@ -6333,6 +6637,72 @@ func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest []Repo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBulkAddReposResponse parses an HTTP response from a BulkAddReposWithResponse call
+func ParseBulkAddReposResponse(rsp *http.Response) (*BulkAddReposResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BulkAddReposResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePreviewReposResponse parses an HTTP response from a PreviewReposWithResponse call
+func ParsePreviewReposResponse(rsp *http.Response) (*PreviewReposResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PreviewReposResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoPreviewResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -426,6 +426,18 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.unsetStarred)
 
 	huma.Get(api, "/repos", s.listRepos)
+	huma.Register(api, huma.Operation{
+		OperationID:   "preview-repos",
+		Method:        http.MethodPost,
+		Path:          "/repos/preview",
+		DefaultStatus: http.StatusOK,
+	}, s.previewRepos)
+	huma.Register(api, huma.Operation{
+		OperationID:   "bulk-add-repos",
+		Method:        http.MethodPost,
+		Path:          "/repos/bulk",
+		DefaultStatus: http.StatusCreated,
+	}, s.bulkAddRepos)
 	huma.Get(api, "/repos/{owner}/{name}", s.getRepo)
 	huma.Get(api, "/repos/{owner}/{name}/comment-autocomplete", s.getCommentAutocomplete)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)

@@ -89,6 +89,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bulk-add-repos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["preview-repos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/summary": {
         parameters: {
             query?: never;
@@ -716,6 +748,12 @@ export interface components {
             approved_count?: number;
             status: string;
         };
+        Activity: {
+            hide_bots: boolean;
+            hide_closed: boolean;
+            time_range: string;
+            view_mode: string;
+        };
         ActivityItemResponse: {
             activity_type: string;
             author: string;
@@ -751,6 +789,19 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        BulkAddRepoRequest: {
+            name: string;
+            owner: string;
+        };
+        BulkAddReposRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/BulkAddReposRequest.json
+             */
+            readonly $schema?: string;
+            repos: components["schemas"]["BulkAddRepoRequest"][] | null;
         };
         CommentAutocompleteReference: {
             kind: string;
@@ -791,6 +842,13 @@ export interface components {
             readonly $schema?: string;
             /** @description Commits in newest-first order */
             commits: components["schemas"]["CommitResponse"][] | null;
+        };
+        ConfiguredRepoStatus: {
+            is_glob: boolean;
+            /** Format: int64 */
+            matched_repo_count: number;
+            name: string;
+            owner: string;
         };
         CreateIssueInputBody: {
             /**
@@ -1367,6 +1425,35 @@ export interface components {
             Platform: string;
             PlatformHost: string;
         };
+        RepoPreviewRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoPreviewRequest.json
+             */
+            readonly $schema?: string;
+            owner: string;
+            pattern: string;
+        };
+        RepoPreviewResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoPreviewResponse.json
+             */
+            readonly $schema?: string;
+            owner: string;
+            pattern: string;
+            repos: components["schemas"]["RepoPreviewRow"][] | null;
+        };
+        RepoPreviewRow: {
+            already_configured: boolean;
+            description: string | null;
+            name: string;
+            owner: string;
+            private: boolean;
+            pushed_at: string | null;
+        };
         RepoSummaryAuthorResponse: {
             /** Format: int64 */
             item_count: number;
@@ -1463,6 +1550,17 @@ export interface components {
             readonly $schema?: string;
             status: string;
         };
+        SettingsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SettingsResponse.json
+             */
+            readonly $schema?: string;
+            activity: components["schemas"]["Activity"];
+            repos: components["schemas"]["ConfiguredRepoStatus"][] | null;
+            terminal: components["schemas"]["Terminal"];
+        };
         StackContextResponse: {
             /**
              * Format: uri
@@ -1530,6 +1628,9 @@ export interface components {
             last_run_at?: string;
             progress?: string;
             running: boolean;
+        };
+        Terminal: {
+            font_family: string;
         };
         WorkflowApprovalResponse: {
             checked: boolean;
@@ -1757,6 +1858,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Repo"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "bulk-add-repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkAddReposRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "preview-repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoPreviewResponse"];
                 };
             };
             /** @description Error */
