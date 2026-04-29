@@ -39,6 +39,7 @@
     mr_title?: string | null;
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
+    associated_pr_number?: number | null;
   }
 
   interface ClosedShellSession {
@@ -438,10 +439,24 @@
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
-    if (ws.item_type === "issue") {
-      return tab === "issue";
+    if (tab === "issue") {
+      return ws.item_type === "issue";
     }
-    return tab === "pr" || tab === "reviews";
+    if (tab === "reviews") {
+      return ws.item_type === "pull_request";
+    }
+    return getWorkspacePRNumber(ws) !== null;
+  }
+
+  function syncSidebarTabForWorkspace(ws: Workspace): void {
+    if (!isSidebarTabSupported(ws, sidebarTab)) {
+      sidebarTab = defaultSidebarTab(ws);
+    }
+  }
+
+  function getWorkspacePRNumber(ws: Workspace): number | null {
+    if (ws.item_type === "pull_request") return ws.item_number;
+    return ws.associated_pr_number ?? null;
   }
 
   async function fetchWorkspace(): Promise<void> {
@@ -467,6 +482,7 @@
         return;
       }
       workspace = data as Workspace;
+      syncSidebarTabForWorkspace(workspace);
       loadError = null;
       actionError = null;
 
@@ -936,7 +952,8 @@
                 >
                   Issue
                 </button>
-              {:else}
+              {/if}
+              {#if getWorkspacePRNumber(workspace) !== null}
                 <button
                   class="seg-btn"
                   class:active={sidebarOpen && sidebarTab === "pr"}
@@ -944,6 +961,8 @@
                 >
                   PR
                 </button>
+              {/if}
+              {#if workspace.item_type === "pull_request"}
                 <button
                   class="seg-btn"
                   class:active={sidebarOpen && sidebarTab === "reviews"}
@@ -1091,8 +1110,9 @@
                 platformHost={workspace.platform_host}
                 repoOwner={workspace.repo_owner}
                 repoName={workspace.repo_name}
-                itemType={workspace.item_type}
-                itemNumber={workspace.item_number}
+                ownerItemType={workspace.item_type}
+                ownerItemNumber={workspace.item_number}
+                associatedPRNumber={getWorkspacePRNumber(workspace)}
                 branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
               />

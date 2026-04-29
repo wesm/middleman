@@ -37,6 +37,11 @@ const testIssueWorkspace = {
   mr_state: "open",
 };
 
+const testIssueWorkspaceWithAssociatedPR = {
+  ...testIssueWorkspace,
+  associated_pr_number: 42,
+};
+
 const roborevRepos = {
   repos: [
     {
@@ -137,10 +142,15 @@ type WorkspaceRuntime = Omit<typeof workspaceRuntime, "sessions" | "shell_sessio
  * workspace and roborev routes on top so they take
  * priority (Playwright uses LIFO route matching).
  */
+type WorkspaceFixture =
+  | typeof testWorkspace
+  | typeof testIssueWorkspace
+  | typeof testIssueWorkspaceWithAssociatedPR;
+
 async function setupTerminalMocks(
   page: import("@playwright/test").Page,
   opts?: {
-    workspace?: typeof testWorkspace;
+    workspace?: WorkspaceFixture;
     roborevRepos?: typeof roborevRepos;
     roborevJobs?: typeof roborevJobs;
     roborevStatus?: typeof roborevStatus;
@@ -1326,30 +1336,21 @@ test.describe("sidebar PR tab", () => {
   );
 
   test(
-    "PR tab shows empty state when item_number is 0",
+    "workspace without associated PR hides malformed PR tab",
     async ({ page }) => {
       const noLinkedPR = {
-        ...testWorkspace,
-        item_number: 0,
+        ...testIssueWorkspace,
+        associated_pr_number: null,
       };
-      // Re-setup with modified workspace
       await setupTerminalMocks(page, {
         workspace: noLinkedPR,
       });
 
-      await page.goto("/terminal/ws-123");
-
-      // Open PR tab
-      await page
-        .locator(".seg-btn", { hasText: "PR" })
-        .click();
-      await expect(
-        page.locator(".right-sidebar"),
-      ).toBeVisible();
+      await page.goto("/terminal/ws-issue-7");
 
       await expect(
-        page.locator(".right-sidebar .empty-state"),
-      ).toContainText("No linked PR");
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveCount(0);
     },
   );
 });
@@ -2214,14 +2215,14 @@ test.describe("issue workspace sidebar", () => {
         "middleman-workspace-sidebar-width",
       );
     });
-    await setupTerminalMocks(page, {
-      workspace: testIssueWorkspace,
-    });
   });
 
   test(
-    "issue workspaces show an Issue segment instead of PR and Reviews",
+    "issue workspaces show an Issue segment instead of PR and Reviews when no PR is linked",
     async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: testIssueWorkspace,
+      });
       await page.goto("/terminal/ws-issue-7");
 
       await expect(
@@ -2239,6 +2240,9 @@ test.describe("issue workspace sidebar", () => {
   test(
     "issue segment opens issue detail for issue-backed workspaces",
     async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: testIssueWorkspace,
+      });
       await page.goto("/terminal/ws-issue-7");
 
       await page
@@ -2332,8 +2336,171 @@ test.describe("issue workspace sidebar", () => {
       ).toContainText("Mirror host issue");
       await expect.poll(() => seenHosts).toEqual([
         "example.com",
-        "example.com",
       ]);
+    },
+  );
+
+  test(
+    "issue workspace with associated PR shows Issue and PR tabs but no Reviews",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: testIssueWorkspaceWithAssociatedPR,
+      });
+      await page.goto("/terminal/ws-issue-7");
+
+      await expect(
+        page.locator(".seg-btn", { hasText: "Issue" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".seg-btn", { hasText: "Reviews" }),
+      ).toHaveCount(0);
+    },
+  );
+
+  test(
+    "issue workspace PR tab hides workspace create and open actions",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspace: testIssueWorkspaceWithAssociatedPR,
+      });
+      await page.goto("/terminal/ws-issue-7");
+
+      await page
+        .locator(".seg-btn", { hasText: "PR" })
+        .click();
+
+      await expect(
+        page.locator(".right-sidebar .detail-title"),
+      ).toContainText("Add browser regression coverage");
+      await expect(
+        page.locator(".right-sidebar .btn--workspace"),
+      ).toHaveCount(0);
+    },
+  );
+
+  test(
+    "issue workspace gains PR tab after workspace_status refetch and keeps manual PR selection",
+    async ({ page }) => {
+      let currentWorkspace: WorkspaceFixture = {
+        ...testIssueWorkspace,
+        associated_pr_number: null,
+      };
+
+      await page.addInitScript(() => {
+        localStorage.setItem(
+          "middleman-workspace-sidebar-open",
+          "true",
+        );
+        localStorage.setItem(
+          "middleman-workspace-sidebar-tab",
+          "pr",
+        );
+
+        const instances: Array<{
+          listeners: Map<string, Set<(event: MessageEvent) => void>>;
+        }> = [];
+
+        class FakeEventSource {
+          listeners = new Map<string, Set<(event: MessageEvent) => void>>();
+
+          constructor() {
+            instances.push(this);
+          }
+
+          addEventListener(type: string, callback: (event: MessageEvent) => void): void {
+            const bucket = this.listeners.get(type) ?? new Set();
+            bucket.add(callback);
+            this.listeners.set(type, bucket);
+          }
+
+          close(): void {}
+        }
+
+        (window as typeof window & { EventSource: typeof EventSource }).EventSource = FakeEventSource as unknown as typeof EventSource;
+        (window as typeof window & {
+          __emitWorkspaceStatus: (payload: { id: string }) => void;
+        }).__emitWorkspaceStatus = (payload) => {
+          const event = new MessageEvent("workspace_status", {
+            data: JSON.stringify(payload),
+          });
+          for (const instance of instances) {
+            const listeners = instance.listeners.get("workspace_status") ?? new Set();
+            for (const listener of listeners) {
+              listener(event);
+            }
+          }
+        };
+      });
+
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() !== "GET") {
+            await route.fulfill({ status: 200 });
+            return;
+          }
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ workspaces: [currentWorkspace] }),
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces/ws-issue-7",
+        async (route) => {
+          if (route.request().method() !== "GET") {
+            await route.fulfill({ status: 204 });
+            return;
+          }
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(currentWorkspace),
+          });
+        },
+      );
+
+      await page.goto("/terminal/ws-issue-7");
+
+      await expect(
+        page.locator(".seg-btn", { hasText: "PR" }),
+      ).toHaveCount(0);
+
+      currentWorkspace = testIssueWorkspaceWithAssociatedPR;
+      await page.evaluate(() => {
+        (window as typeof window & {
+          __emitWorkspaceStatus: (payload: { id: string }) => void;
+        }).__emitWorkspaceStatus({ id: "ws-issue-7" });
+      });
+
+      const issueButton = page.locator(
+        ".seg-btn",
+        { hasText: "Issue" },
+      );
+      const prButton = page.locator(
+        ".seg-btn",
+        { hasText: "PR" },
+      );
+      await expect(prButton).toBeVisible();
+      await expect(issueButton).toBeVisible();
+
+      await prButton.click();
+      await expect(prButton).toHaveClass(/active/);
+      await expect(
+        page.locator(".right-sidebar .detail-title"),
+      ).toContainText("Add browser regression coverage");
+
+      await page.evaluate(() => {
+        (window as typeof window & {
+          __emitWorkspaceStatus: (payload: { id: string }) => void;
+        }).__emitWorkspaceStatus({ id: "ws-issue-7" });
+      });
+      await expect(prButton).toHaveClass(/active/);
     },
   );
 });

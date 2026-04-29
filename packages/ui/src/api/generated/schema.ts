@@ -1780,6 +1780,8 @@ export interface components {
              */
             readonly $schema?: string;
             /** Format: int64 */
+            associated_pr_number?: number;
+            /** Format: int64 */
             commits_ahead?: number;
             /** Format: int64 */
             commits_behind?: number;

@@ -2136,6 +2136,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        associated_pr_number:
+          format: int64
+          type: integer
         commits_ahead:
           format: int64
           type: integer

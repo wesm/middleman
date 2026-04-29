@@ -313,14 +313,15 @@ const (
 // Workspace represents a middleman-managed git worktree linked to a
 // pull request or issue.
 type Workspace struct {
-	ID           string
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	ItemType     string
-	ItemNumber   int
-	GitHeadRef   string
-	MRHeadRepo   *string // nil for same-repo PRs
+	ID                 string
+	PlatformHost       string
+	RepoOwner          string
+	RepoName           string
+	ItemType           string
+	ItemNumber         int
+	AssociatedPRNumber *int
+	GitHeadRef         string
+	MRHeadRepo         *string // nil for same-repo PRs
 	// WorkspaceBranch is the exact branch name checked out in the
 	// worktree after setup. Before setup completes it may contain the
 	// requested branch name or workspaceBranchUnknown.

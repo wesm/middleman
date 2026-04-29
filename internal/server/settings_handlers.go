@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"path"
 	"strings"
@@ -221,6 +222,23 @@ func appendTrackedRepo(
 	}
 	seen[key] = struct{}{}
 	*dst = append(*dst, repo)
+}
+
+func (s *Server) persistResolvedRepos(
+	ctx context.Context,
+	repos []ghclient.RepoRef,
+) error {
+	for _, repo := range repos {
+		if _, err := s.db.UpsertRepo(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name,
+		); err != nil {
+			return fmt.Errorf(
+				"upsert resolved repo %s/%s: %w",
+				repo.Owner, repo.Name, err,
+			)
+		}
+	}
+	return nil
 }
 
 func samePlatformHost(left, right string) bool {
@@ -462,6 +480,11 @@ func (s *Server) refreshConfiguredRepo(
 		s.cfgMu.Unlock()
 		return nil, huma.Error404NotFound(
 			owner + "/" + name + " is no longer configured")
+	}
+	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
+		s.cfgMu.Unlock()
+		return nil, huma.Error500InternalServerError(
+			"persist resolved repos: " + err.Error())
 	}
 	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()

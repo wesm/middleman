@@ -245,7 +245,25 @@ func reconcileWorkspaceSetupMigrationVersion10(
 	if !hasEventsTable && !hasEventsIndex && !hasWorkspaceBranch {
 		return false, nil
 	}
+	if err := ensureWorkspaceSetupMigrationArtifacts(
+		rw, hasEventsTable, hasEventsIndex, hasWorkspaceBranch,
+	); err != nil {
+		return false, err
+	}
 
+	if err := driver.SetVersion(
+		workspaceSetupMigrationVersion, false,
+	); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func ensureWorkspaceSetupMigrationArtifacts(
+	rw *sql.DB,
+	hasEventsTable, hasEventsIndex, hasWorkspaceBranch bool,
+) error {
 	if !hasEventsTable {
 		if _, err := rw.Exec(`
 			CREATE TABLE IF NOT EXISTS middleman_workspace_setup_events (
@@ -257,7 +275,7 @@ func reconcileWorkspaceSetupMigrationVersion10(
 			    created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 			)
 		`); err != nil {
-			return false, err
+			return err
 		}
 	}
 
@@ -266,7 +284,7 @@ func reconcileWorkspaceSetupMigrationVersion10(
 			CREATE INDEX IF NOT EXISTS middleman_workspace_setup_events_workspace_id_idx
 			    ON middleman_workspace_setup_events (workspace_id, id)
 		`); err != nil {
-			return false, err
+			return err
 		}
 	}
 
@@ -275,17 +293,10 @@ func reconcileWorkspaceSetupMigrationVersion10(
 			ALTER TABLE middleman_workspaces
 			    ADD COLUMN workspace_branch TEXT NOT NULL DEFAULT '__middleman_unknown__'
 		`); err != nil {
-			return false, err
+			return err
 		}
 	}
-
-	if err := driver.SetVersion(
-		workspaceSetupMigrationVersion, false,
-	); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return nil
 }
 
 func readLegacySchemaVersion(db *sql.DB) (int, bool, error) {

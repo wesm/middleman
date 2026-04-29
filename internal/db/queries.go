@@ -784,8 +784,11 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		host, owner, name := canonicalRepoIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
-		if host != "" {
+		_, owner, name := canonicalRepoIdentifier(
+			"", opts.RepoOwner, opts.RepoName,
+		)
+		if opts.PlatformHost != "" {
+			host, _, _ := canonicalRepoIdentifier(opts.PlatformHost, "", "")
 			conds = append(conds, "r.platform_host = ?")
 			args = append(args, host)
 		}
@@ -2281,14 +2284,14 @@ func (d *DB) InsertWorkspace(
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, git_head_ref, mr_head_repo,
-		     workspace_branch,
+		     item_type, item_number, associated_pr_number,
+		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, status,
 		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		ws.ItemType, ws.ItemNumber, ws.GitHeadRef, ws.MRHeadRepo,
-		ws.WorkspaceBranch,
+		ws.ItemType, ws.ItemNumber, ws.AssociatedPRNumber,
+		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.Status,
 		ws.ErrorMessage,
 	)
@@ -2305,15 +2308,15 @@ func (d *DB) GetWorkspace(
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, git_head_ref, mr_head_repo,
-		       workspace_branch,
+		       item_type, item_number, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces WHERE id = ?`, id,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.GitHeadRef, &ws.MRHeadRepo,
-		&ws.WorkspaceBranch,
+		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
+		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
@@ -2338,8 +2341,8 @@ func (d *DB) GetWorkspaceByMR(
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, git_head_ref, mr_head_repo,
-		       workspace_branch,
+		       item_type, item_number, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
@@ -2348,8 +2351,8 @@ func (d *DB) GetWorkspaceByMR(
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.GitHeadRef, &ws.MRHeadRepo,
-		&ws.WorkspaceBranch,
+		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
+		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
@@ -2374,8 +2377,8 @@ func (d *DB) GetWorkspaceByIssue(
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, git_head_ref, mr_head_repo,
-		       workspace_branch,
+		       item_type, item_number, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
@@ -2384,8 +2387,8 @@ func (d *DB) GetWorkspaceByIssue(
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.GitHeadRef, &ws.MRHeadRepo,
-		&ws.WorkspaceBranch,
+		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
+		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
@@ -2406,8 +2409,8 @@ func (d *DB) ListWorkspaces(
 ) ([]Workspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, git_head_ref, mr_head_repo,
-		       workspace_branch,
+		       item_type, item_number, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
@@ -2424,6 +2427,7 @@ func (d *DB) ListWorkspaces(
 		if err := rows.Scan(
 			&ws.ID, &ws.PlatformHost, &ws.RepoOwner,
 			&ws.RepoName, &ws.ItemType, &ws.ItemNumber,
+			&ws.AssociatedPRNumber,
 			&ws.GitHeadRef, &ws.MRHeadRepo,
 			&ws.WorkspaceBranch,
 			&ws.WorktreePath, &ws.TmuxSession,
@@ -2496,6 +2500,31 @@ func (d *DB) StartWorkspaceRetry(
 		)
 	}
 	return affected == 1, nil
+}
+
+// SetWorkspaceAssociatedPRNumberIfNull stores a workspace's first detected
+// associated PR without overwriting an existing association.
+func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
+	ctx context.Context, id string, prNumber int,
+) (bool, error) {
+	res, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET associated_pr_number = ?
+		WHERE id = ? AND associated_pr_number IS NULL`,
+		prNumber, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"set workspace associated PR number: %w", err,
+		)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf(
+			"set workspace associated PR number rows affected: %w", err,
+		)
+	}
+	return rows > 0, nil
 }
 
 // InsertWorkspaceSetupEvent appends an audit event for workspace
@@ -2717,8 +2746,8 @@ func (d *DB) DeleteWorkspace(
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
 	w.id, w.platform_host, w.repo_owner, w.repo_name,
-	w.item_type, w.item_number, w.git_head_ref, w.mr_head_repo,
-	w.workspace_branch,
+	w.item_type, w.item_number, w.associated_pr_number,
+	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.status,
 	w.error_message, w.created_at,
 	CASE
@@ -2755,8 +2784,8 @@ func scanWorkspaceSummary(
 	var s WorkspaceSummary
 	err := scanner.Scan(
 		&s.ID, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
-		&s.ItemType, &s.ItemNumber, &s.GitHeadRef, &s.MRHeadRepo,
-		&s.WorkspaceBranch,
+		&s.ItemType, &s.ItemNumber, &s.AssociatedPRNumber,
+		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt,
 		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,

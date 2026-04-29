@@ -616,6 +616,66 @@ name = "*"
 	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "archived"))
 }
 
+func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	includeRefreshRepo := atomic.Bool{}
+	mock := &mockGH{
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			repos := []*gh.Repository{
+				{
+					Name:     new("middleman"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				},
+				{
+					Name:     new("archived"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(true),
+				},
+			}
+			if includeRefreshRepo.Load() {
+				repos = append(repos, &gh.Repository{
+					Name:     new("review-bot"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				})
+			}
+			return repos, nil
+		},
+	}
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "roborev-dev"
+name = "*"
+`, mock)
+	srv.syncer.Stop()
+	includeRefreshRepo.Store(true)
+
+	rr := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/repos/roborev-dev/*/refresh", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	repos, err := database.ListRepos(t.Context())
+	require.NoError(err)
+	names := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		if repo.Owner == "roborev-dev" {
+			names = append(names, repo.Name)
+		}
+	}
+	assert.ElementsMatch([]string{"middleman", "review-bot"}, names)
+}
+
 func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

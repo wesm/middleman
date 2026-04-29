@@ -225,6 +225,7 @@ type workspaceResponse struct {
 	MRDeletions        *int    `json:"mr_deletions,omitempty"`
 	CommitsAhead       *int    `json:"commits_ahead,omitempty"`
 	CommitsBehind      *int    `json:"commits_behind,omitempty"`
+	AssociatedPRNumber *int    `json:"associated_pr_number,omitempty"`
 }
 
 type workspaceRuntimeResponse struct {
@@ -269,6 +270,7 @@ func toWorkspaceResponse(
 		MRReviewDecision:   s.MRReviewDecision,
 		MRAdditions:        s.MRAdditions,
 		MRDeletions:        s.MRDeletions,
+		AssociatedPRNumber: s.AssociatedPRNumber,
 	}
 }
 
