@@ -23,21 +23,17 @@ describe("DiffToolbar", () => {
     cleanup();
   });
 
-  it("defaults the changed file category filter to all and lists all categories last", async () => {
+  it("defaults the changed file category filter to all and renders category buttons", async () => {
     const { diff } = renderToolbar();
 
     expect(diff.getFileCategoryFilter()).toBe("all");
+    expect(screen.queryByRole("combobox")).toBeNull();
 
-    const trigger = screen.getByRole("combobox", {
-      name: "Filter changed files: All",
-    });
-    expect(trigger.textContent).toContain("All");
-
-    await fireEvent.click(trigger);
-
-    const labels = within(screen.getByRole("listbox"))
-      .getAllByRole("option")
-      .map((option) => option.textContent?.trim());
+    const labels = within(screen.getByRole("group", {
+      name: "Filter changed files",
+    }))
+      .getAllByRole("button")
+      .map((button) => button.textContent?.trim());
     expect(labels).toEqual([
       "Plans/docs",
       "Code",
@@ -46,11 +42,15 @@ describe("DiffToolbar", () => {
       "All",
     ]);
 
+    expect(screen.getByRole("button", { name: "All" })
+      .getAttribute("aria-pressed")).toBe("true");
+
     await fireEvent.click(
-      within(screen.getByRole("listbox"))
-        .getByRole("option", { name: "Code" }),
+      screen.getByRole("button", { name: "Code" }),
     );
 
     expect(diff.getFileCategoryFilter()).toBe("code");
+    expect(screen.getByRole("button", { name: "Code" })
+      .getAttribute("aria-pressed")).toBe("true");
   });
 });

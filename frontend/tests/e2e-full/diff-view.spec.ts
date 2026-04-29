@@ -362,13 +362,15 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const categorySelect = page.getByRole("combobox", {
-      name: "Filter changed files: All",
-    });
-    await expect(categorySelect).toContainText("All");
+    await expect(page.locator(".files-view > .diff-toolbar")).toBeVisible();
 
-    await categorySelect.click();
-    await page.getByRole("option", { name: "Code" }).click();
+    const categoryFilter = page.getByRole("group", {
+      name: "Filter changed files",
+    });
+    await expect(categoryFilter.getByRole("button", { name: "All" }))
+      .toHaveAttribute("aria-pressed", "true");
+
+    await categoryFilter.getByRole("button", { name: "Code" }).click();
 
     await expect(page.locator(".diff-file")).toHaveCount(3);
     await expect(page.locator(".diff-file-row")).toHaveCount(3);
@@ -377,10 +379,9 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row", { hasText: "logo.png" }))
       .toHaveCount(0);
 
-    await page.getByRole("combobox", {
-      name: "Filter changed files: Code",
-    }).click();
-    await page.getByRole("option", { name: "All" }).click();
+    await expect(categoryFilter.getByRole("button", { name: "Code" }))
+      .toHaveAttribute("aria-pressed", "true");
+    await categoryFilter.getByRole("button", { name: "All" }).click();
 
     await expect(page.locator(".diff-file")).toHaveCount(4);
     await expect(page.locator(".diff-file-row")).toHaveCount(4);

@@ -3,7 +3,6 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  import DiffToolbar from "./DiffToolbar.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
 
   interface Props {
@@ -136,7 +135,6 @@
       </div>
     {:else if diff}
       <div class="diff-main">
-        <DiffToolbar />
         <div
           class="diff-area"
           bind:this={diffArea}

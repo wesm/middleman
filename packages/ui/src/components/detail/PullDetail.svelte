@@ -27,6 +27,7 @@
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import DiffView from "../diff/DiffView.svelte";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
+  import DiffToolbar from "../diff/DiffToolbar.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
@@ -512,12 +513,15 @@
         </div>
       {/if}
       {#if !hideTabs && activeTab === "files"}
-        <div class="files-layout">
-          <aside class="files-sidebar">
-            <DiffSidebar />
-          </aside>
-          <div class="files-main">
-            <DiffView {owner} {name} {number} />
+        <div class="files-view">
+          <DiffToolbar />
+          <div class="files-layout">
+            <aside class="files-sidebar">
+              <DiffSidebar />
+            </aside>
+            <div class="files-main">
+              <DiffView {owner} {name} {number} />
+            </div>
           </div>
         </div>
       {:else}
@@ -1108,6 +1112,14 @@
   .files-layout {
     display: flex;
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .files-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
