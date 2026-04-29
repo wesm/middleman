@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import type { PREvent } from "../../api/types.js";
@@ -53,6 +53,8 @@ function findCompiledStyleRule(
 describe("EventTimeline", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("renders force-push label, actor, and SHA transition", () => {
@@ -106,5 +108,150 @@ describe("EventTimeline", () => {
     expect(bodyStyle.getPropertyValue("background")).toBe("");
     expect(bodyStyle.getPropertyValue("border")).toBe("");
     expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
+  });
+
+  it("renders commit events as compact one-line commit detail rows", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
+
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "feat: add timeline filters\n\nLong body",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("abcdef1")).toBeTruthy();
+    expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(screen.getByText("Long body")).toBeTruthy();
+    expect(screen.getByText("4h ago")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).toBeTruthy();
+    expect(document.querySelector(".commit-title")).toBeTruthy();
+    expect(
+      document.querySelector(".commit-body-details")?.classList.contains("event-body"),
+    ).toBe(true);
+    expect(
+      document
+        .querySelector(".event-header--compact")
+        ?.lastElementChild
+        ?.classList.contains("event-time"),
+    ).toBe(true);
+  });
+
+  it("can hide commit body details while keeping the title row", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
+
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "feat: add timeline filters\n\nLong body",
+          }),
+        ],
+        showCommitDetails: false,
+      },
+    });
+
+    expect(screen.getByText("abcdef1")).toBeTruthy();
+    expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(screen.getByText("4h ago")).toBeTruthy();
+    expect(screen.queryByText("Long body")).toBeNull();
+    expect(
+      document
+        .querySelector(".event-header--compact")
+        ?.lastElementChild
+        ?.classList.contains("event-time"),
+    ).toBe(true);
+  });
+
+  it("renders system events as compact rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 2,
+            EventType: "renamed_title",
+            Summary: `"Old" -> "New"`,
+            MetadataJSON: JSON.stringify({
+              previous_title: "Old",
+              current_title: "New",
+            }),
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "base_ref_changed",
+            Summary: "main -> release",
+            MetadataJSON: JSON.stringify({
+              previous_ref_name: "main",
+              current_ref_name: "release",
+            }),
+          }),
+          makeEvent({
+            ID: 4,
+            EventType: "cross_referenced",
+            Summary: "Referenced from other/repo#77",
+            MetadataJSON: JSON.stringify({
+              source_owner: "other",
+              source_repo: "repo",
+              source_number: 77,
+              source_title: "Related bug",
+              source_url: "https://github.com/other/repo/issues/77",
+            }),
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Title changed")).toBeTruthy();
+    expect(screen.getByText("Base changed")).toBeTruthy();
+    expect(screen.getByText("Referenced")).toBeTruthy();
+    expect(screen.getByText("Related bug")).toBeTruthy();
+    expect(document.querySelectorAll(".event--compact").length).toBe(3);
+  });
+
+  it("falls back to non-link cross-reference text when metadata is invalid", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 5,
+            EventType: "cross_referenced",
+            Summary: "Referenced from other/repo#77",
+            MetadataJSON: "null",
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "cross_referenced",
+            Summary: "Referenced from other/repo#78",
+            MetadataJSON: JSON.stringify({
+              source_title: "Related follow-up",
+            }),
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Referenced from other/repo#77")).toBeTruthy();
+    expect(screen.getByText("Related follow-up")).toBeTruthy();
+    expect(document.querySelectorAll(".system-event-link").length).toBe(0);
+  });
+
+  it("shows filtered empty copy when filters hide all events", () => {
+    render(EventTimeline, {
+      props: {
+        events: [],
+        filtered: true,
+      },
+    });
+
+    expect(screen.getByText("No activity matches the current filters")).toBeTruthy();
   });
 });

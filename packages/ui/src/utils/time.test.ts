@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  localDateTimeLabel,
   localDateLabel,
   parseAPITimestamp,
   timeAgo,
@@ -28,6 +29,18 @@ describe("time helpers", () => {
     localDateLabel("2026-04-11T12:00:00Z");
 
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses local date-time formatting only in the presentation helper", () => {
+    const spy = vi
+      .spyOn(Date.prototype, "toLocaleString")
+      .mockReturnValue("Apr 11, 2026, 8:00 AM");
+
+    expect(localDateTimeLabel("2026-04-11T12:00:00Z")).toBe("Apr 11, 2026, 8:00 AM");
+    expect(spy).toHaveBeenCalledWith(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
   });
 
   it("computes relative time from canonical instants", () => {

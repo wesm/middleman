@@ -46,3 +46,13 @@ export function timeAgo(dateStr: string): string {
 export function localDateLabel(dateStr: string): string {
   return parseAPITimestamp(dateStr).toLocaleDateString();
 }
+
+/**
+ * Converts an API timestamp to a local date and time label for display.
+ */
+export function localDateTimeLabel(dateStr: string): string {
+  return parseAPITimestamp(dateStr).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}

@@ -10,6 +10,7 @@
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
+  import PRTimelineFilter from "./PRTimelineFilter.svelte";
   import CommentBox from "./CommentBox.svelte";
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
@@ -33,6 +34,13 @@
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
+  import {
+    activePRTimelineFilterCount,
+    filterPREvents,
+    loadPRTimelineFilter,
+    savePRTimelineFilter,
+    type PRTimelineFilterState,
+  } from "./prTimelineFilter.js";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -62,6 +70,20 @@
 
   let activeTab = $state<"conversation" | "files">("conversation");
   let ciExpanded = $state(false);
+  let timelineFilter = $state<PRTimelineFilterState>(
+    loadPRTimelineFilter(),
+  );
+  const filteredTimelineEvents = $derived.by(() =>
+    filterPREvents(detailStore.getDetail()?.events ?? [], timelineFilter),
+  );
+  const hasActiveTimelineFilters = $derived(
+    activePRTimelineFilterCount(timelineFilter) > 0,
+  );
+
+  function updateTimelineFilter(next: PRTimelineFilterState): void {
+    timelineFilter = next;
+    savePRTimelineFilter(next);
+  }
 
   // Mutating actions (close/reopen, kanban state, star, save title/body,
   // workspace creation, etc.) read the (owner, name, number) PROPS, but
@@ -1055,9 +1077,21 @@
 
       <!-- Activity -->
       <div class="section">
-        <h3 class="section-title">Activity</h3>
+        <div class="section-title-row">
+          <h3 class="section-title">Activity</h3>
+          <PRTimelineFilter
+            filter={timelineFilter}
+            onChange={updateTimelineFilter}
+          />
+        </div>
         {#if detailStore.getDetailLoaded()}
-          <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
+          <EventTimeline
+            events={filteredTimelineEvents}
+            repoOwner={owner}
+            repoName={name}
+            filtered={hasActiveTimelineFilters}
+            showCommitDetails={timelineFilter.showCommitDetails}
+          />
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">
             <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -1602,6 +1636,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   .section-title {

@@ -23,6 +23,28 @@ type ForcePushEvent struct {
 	CreatedAt time.Time
 }
 
+type PullRequestTimelineEvent struct {
+	NodeID            string
+	EventType         string
+	Actor             string
+	CreatedAt         time.Time
+	BeforeSHA         string
+	AfterSHA          string
+	Ref               string
+	PreviousTitle     string
+	CurrentTitle      string
+	PreviousRefName   string
+	CurrentRefName    string
+	SourceType        string
+	SourceOwner       string
+	SourceRepo        string
+	SourceNumber      int
+	SourceTitle       string
+	SourceURL         string
+	IsCrossRepository bool
+	WillCloseTarget   bool
+}
+
 // EditPullRequestOpts holds optional fields for editing a pull request.
 // Nil pointer fields are omitted from the GitHub API call.
 type EditPullRequestOpts struct {
@@ -46,6 +68,7 @@ type Client interface {
 	ListIssueCommentsIfChanged(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
+	ListPullRequestTimelineEvents(ctx context.Context, owner, repo string, number int) ([]PullRequestTimelineEvent, error)
 	ListForcePushEvents(ctx context.Context, owner, repo string, number int) ([]ForcePushEvent, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (*gh.CombinedStatus, error)
 	ListCheckRunsForRef(ctx context.Context, owner, repo, ref string) ([]*gh.CheckRun, error)
@@ -194,18 +217,61 @@ func (c *liveClient) CreateIssue(
 	return issue, nil
 }
 
-const forcePushTimelineQuery = `
+const pullRequestTimelineEventsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT], first: 100, after: $cursor) {
+      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100, after: $cursor) {
         nodes {
+          __typename
+          ... on Node {
+            id
+          }
           ... on HeadRefForcePushedEvent {
             actor { login }
             beforeCommit { oid }
             afterCommit { oid }
             createdAt
             ref { name }
+          }
+          ... on CrossReferencedEvent {
+            actor { login }
+            createdAt
+            isCrossRepository
+            willCloseTarget
+            source {
+              __typename
+              ... on Issue {
+                number
+                title
+                url
+                repository {
+                  owner { login }
+                  name
+                }
+              }
+              ... on PullRequest {
+                number
+                title
+                url
+                repository {
+                  owner { login }
+                  name
+                }
+              }
+            }
+          }
+          ... on RenamedTitleEvent {
+            actor { login }
+            createdAt
+            previousTitle
+            currentTitle
+          }
+          ... on BaseRefChangedEvent {
+            actor { login }
+            createdAt
+            previousRefName
+            currentRefName
           }
         }
         pageInfo {
@@ -595,23 +661,19 @@ func (c *liveClient) ListCommits(
 	return all, nil
 }
 
-func (c *liveClient) ListForcePushEvents(
+func (c *liveClient) ListPullRequestTimelineEvents(
 	ctx context.Context, owner, repo string, number int,
-) ([]ForcePushEvent, error) {
-	type graphQLRequest struct {
-		Query     string         `json:"query"`
-		Variables map[string]any `json:"variables"`
-	}
+) ([]PullRequestTimelineEvent, error) {
 	type graphQLResponse struct {
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-		Data struct {
+		Errors []graphQLError `json:"errors"`
+		Data   struct {
 			Repository *struct {
 				PullRequest *struct {
 					TimelineItems struct {
 						Nodes []struct {
-							Actor *struct {
+							TypeName string `json:"__typename"`
+							ID       string `json:"id"`
+							Actor    *struct {
 								Login string `json:"login"`
 							} `json:"actor"`
 							BeforeCommit *struct {
@@ -620,10 +682,26 @@ func (c *liveClient) ListForcePushEvents(
 							AfterCommit *struct {
 								OID string `json:"oid"`
 							} `json:"afterCommit"`
-							CreatedAt time.Time `json:"createdAt"`
-							Ref       *struct {
-								Name string `json:"name"`
-							} `json:"ref"`
+							CreatedAt       time.Time              `json:"createdAt"`
+							Ref             *struct{ Name string } `json:"ref"`
+							PreviousTitle   string                 `json:"previousTitle"`
+							CurrentTitle    string                 `json:"currentTitle"`
+							PreviousRefName string                 `json:"previousRefName"`
+							CurrentRefName  string                 `json:"currentRefName"`
+							Source          *struct {
+								TypeName   string `json:"__typename"`
+								Number     int    `json:"number"`
+								Title      string `json:"title"`
+								URL        string `json:"url"`
+								Repository *struct {
+									Owner *struct {
+										Login string `json:"login"`
+									} `json:"owner"`
+									Name string `json:"name"`
+								} `json:"repository"`
+							} `json:"source"`
+							IsCrossRepository bool `json:"isCrossRepository"`
+							WillCloseTarget   bool `json:"willCloseTarget"`
 						} `json:"nodes"`
 						PageInfo struct {
 							HasNextPage bool    `json:"hasNextPage"`
@@ -635,11 +713,11 @@ func (c *liveClient) ListForcePushEvents(
 		} `json:"data"`
 	}
 
-	var events []ForcePushEvent
+	var events []PullRequestTimelineEvent
 	var cursor *string
 	for {
 		payload, err := json.Marshal(graphQLRequest{
-			Query: forcePushTimelineQuery,
+			Query: pullRequestTimelineEventsQuery,
 			Variables: map[string]any{
 				"owner":  owner,
 				"repo":   repo,
@@ -648,7 +726,7 @@ func (c *liveClient) ListForcePushEvents(
 			},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("marshal force-push query: %w", err)
+			return nil, fmt.Errorf("marshal pull request timeline query: %w", err)
 		}
 
 		req, err := http.NewRequestWithContext(
@@ -658,7 +736,7 @@ func (c *liveClient) ListForcePushEvents(
 			bytes.NewReader(payload),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("create force-push request: %w", err)
+			return nil, fmt.Errorf("create pull request timeline request: %w", err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("Content-Type", "application/json")
@@ -666,7 +744,7 @@ func (c *liveClient) ListForcePushEvents(
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"list force-push events for %s/%s#%d: %w",
+				"list pull request timeline events for %s/%s#%d: %w",
 				owner, repo, number, err,
 			)
 		}
@@ -674,7 +752,7 @@ func (c *liveClient) ListForcePushEvents(
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
-				"list force-push events for %s/%s#%d: graphql status %s",
+				"list pull request timeline events for %s/%s#%d: graphql status %s",
 				owner, repo, number, resp.Status,
 			)
 		}
@@ -683,43 +761,55 @@ func (c *liveClient) ListForcePushEvents(
 		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
-				"decode force-push events for %s/%s#%d: %w",
+				"decode pull request timeline events for %s/%s#%d: %w",
 				owner, repo, number, err,
 			)
 		}
 		_ = resp.Body.Close()
 
 		if len(decoded.Errors) > 0 {
-			messages := make([]string, 0, len(decoded.Errors))
-			for _, graphQLError := range decoded.Errors {
-				if graphQLError.Message != "" {
-					messages = append(messages, graphQLError.Message)
-				}
-			}
-			if len(messages) == 0 {
-				messages = append(messages, "unknown GraphQL error")
-			}
 			return nil, fmt.Errorf(
-				"list force-push events for %s/%s#%d: graphql errors: %s",
-				owner, repo, number, strings.Join(messages, "; "),
+				"list pull request timeline events for %s/%s#%d: graphql errors: %s",
+				owner, repo, number, joinGraphQLErrorMessages(decoded.Errors),
 			)
 		}
 
 		if decoded.Data.Repository == nil {
 			return nil, fmt.Errorf(
-				"list force-push events for %s/%s#%d: missing repository in graphql response",
+				"list pull request timeline events for %s/%s#%d: missing repository in graphql response",
 				owner, repo, number,
 			)
 		}
 		if decoded.Data.Repository.PullRequest == nil {
 			return nil, fmt.Errorf(
-				"list force-push events for %s/%s#%d: missing pull request in graphql response",
+				"list pull request timeline events for %s/%s#%d: missing pull request in graphql response",
 				owner, repo, number,
 			)
 		}
 
 		for _, node := range decoded.Data.Repository.PullRequest.TimelineItems.Nodes {
-			event := ForcePushEvent{CreatedAt: node.CreatedAt}
+			event := PullRequestTimelineEvent{
+				NodeID:            node.ID,
+				CreatedAt:         node.CreatedAt,
+				PreviousTitle:     node.PreviousTitle,
+				CurrentTitle:      node.CurrentTitle,
+				PreviousRefName:   node.PreviousRefName,
+				CurrentRefName:    node.CurrentRefName,
+				IsCrossRepository: node.IsCrossRepository,
+				WillCloseTarget:   node.WillCloseTarget,
+			}
+			switch node.TypeName {
+			case "HeadRefForcePushedEvent":
+				event.EventType = "force_push"
+			case "CrossReferencedEvent":
+				event.EventType = "cross_referenced"
+			case "RenamedTitleEvent":
+				event.EventType = "renamed_title"
+			case "BaseRefChangedEvent":
+				event.EventType = "base_ref_changed"
+			default:
+				continue
+			}
 			if node.Actor != nil {
 				event.Actor = node.Actor.Login
 			}
@@ -732,6 +822,18 @@ func (c *liveClient) ListForcePushEvents(
 			if node.Ref != nil {
 				event.Ref = node.Ref.Name
 			}
+			if node.Source != nil {
+				event.SourceType = node.Source.TypeName
+				event.SourceNumber = node.Source.Number
+				event.SourceTitle = node.Source.Title
+				event.SourceURL = node.Source.URL
+				if node.Source.Repository != nil {
+					event.SourceRepo = node.Source.Repository.Name
+					if node.Source.Repository.Owner != nil {
+						event.SourceOwner = node.Source.Repository.Owner.Login
+					}
+				}
+			}
 			events = append(events, event)
 		}
 
@@ -742,6 +844,30 @@ func (c *liveClient) ListForcePushEvents(
 		cursor = pageInfo.EndCursor
 	}
 
+	return events, nil
+}
+
+func (c *liveClient) ListForcePushEvents(
+	ctx context.Context, owner, repo string, number int,
+) ([]ForcePushEvent, error) {
+	timelineEvents, err := c.ListPullRequestTimelineEvents(ctx, owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]ForcePushEvent, 0, len(timelineEvents))
+	for _, timelineEvent := range timelineEvents {
+		if timelineEvent.EventType != "force_push" {
+			continue
+		}
+		events = append(events, ForcePushEvent{
+			Actor:     timelineEvent.Actor,
+			BeforeSHA: timelineEvent.BeforeSHA,
+			AfterSHA:  timelineEvent.AfterSHA,
+			Ref:       timelineEvent.Ref,
+			CreatedAt: timelineEvent.CreatedAt,
+		})
+	}
 	return events, nil
 }
 

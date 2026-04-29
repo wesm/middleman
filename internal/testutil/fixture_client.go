@@ -313,6 +313,13 @@ func (c *FixtureClient) ListForcePushEvents(
 	return nil, nil
 }
 
+// ListPullRequestTimelineEvents returns nil (read-only stub).
+func (c *FixtureClient) ListPullRequestTimelineEvents(
+	_ context.Context, _, _ string, _ int,
+) ([]ghclient.PullRequestTimelineEvent, error) {
+	return nil, nil
+}
+
 // GetCombinedStatus returns a seeded combined status by repo/ref.
 func (c *FixtureClient) GetCombinedStatus(
 	_ context.Context, owner, repo, ref string,

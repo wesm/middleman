@@ -29,6 +29,7 @@
     resetLabel?: string;
     onReset?: () => void;
     minWidth?: string;
+    align?: "start" | "end";
     icon?: "filter" | "sort";
   }
 
@@ -44,6 +45,7 @@
     resetLabel,
     onReset,
     minWidth = "200px",
+    align = "start",
     icon = "filter",
   }: Props = $props();
 
@@ -136,6 +138,7 @@
   {#if isOpen}
     <div
       class="filter-dropdown"
+      class:filter-dropdown--align-end={align === "end"}
       bind:this={dropdownRef}
       style:min-width={minWidth}
     >
@@ -249,6 +252,11 @@
     box-shadow: var(--shadow-md);
     z-index: 50;
     padding: 4px 0;
+  }
+
+  .filter-dropdown--align-end {
+    left: auto;
+    right: 0;
   }
 
   .filter-section-title {

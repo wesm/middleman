@@ -505,6 +505,42 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			CreatedAt:      commitBase.Add(6 * time.Hour),
 			DedupeKey:      "w1-commit-4",
 		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "force_push",
+			Author:         "alice",
+			Summary:        "abc4444 -> def5555",
+			MetadataJSON:   `{"before_sha":"abc4444444444444444444444444444444444444","after_sha":"def5555555555555555555555555555555555555","ref":"feature/caching"}`,
+			CreatedAt:      commitBase.Add(8 * time.Hour),
+			DedupeKey:      "w1-force-push-1",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "cross_referenced",
+			Author:         "carol",
+			Summary:        "Referenced from acme/widgets#10",
+			MetadataJSON:   `{"source_type":"Issue","source_owner":"acme","source_repo":"widgets","source_number":10,"source_title":"Widget rendering broken on Safari","source_url":"https://github.com/acme/widgets/issues/10","is_cross_repository":false,"will_close_target":false}`,
+			CreatedAt:      commitBase.Add(9 * time.Hour),
+			DedupeKey:      "w1-cross-reference-1",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "renamed_title",
+			Author:         "alice",
+			Summary:        `"Add widget cache" -> "Add widget caching layer"`,
+			MetadataJSON:   `{"previous_title":"Add widget cache","current_title":"Add widget caching layer"}`,
+			CreatedAt:      commitBase.Add(10 * time.Hour),
+			DedupeKey:      "w1-renamed-title-1",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "base_ref_changed",
+			Author:         "alice",
+			Summary:        "develop -> main",
+			MetadataJSON:   `{"previous_ref_name":"develop","current_ref_name":"main"}`,
+			CreatedAt:      commitBase.Add(11 * time.Hour),
+			DedupeKey:      "w1-base-ref-changed-1",
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert widgets PR#1 events: %w", err)

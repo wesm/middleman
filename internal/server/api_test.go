@@ -219,6 +219,12 @@ func (m *mockGH) ListForcePushEvents(
 	return nil, nil
 }
 
+func (m *mockGH) ListPullRequestTimelineEvents(
+	_ context.Context, _, _ string, _ int,
+) ([]ghclient.PullRequestTimelineEvent, error) {
+	return nil, nil
+}
+
 func (m *mockGH) GetCombinedStatus(
 	ctx context.Context, owner, repo, ref string,
 ) (*gh.CombinedStatus, error) {

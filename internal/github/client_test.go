@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,16 @@ import (
 
 // Compile-time assertion that liveClient satisfies Client.
 var _ Client = (*liveClient)(nil)
+
+func (m *mockClient) ListPullRequestTimelineEvents(
+	_ context.Context, _, _ string, _ int,
+) ([]PullRequestTimelineEvent, error) {
+	m.trackCall()
+	if m.timelineEventsErr != nil {
+		return nil, m.timelineEventsErr
+	}
+	return m.timelineEvents, nil
+}
 
 func TestNewClientReturnsNonNil(t *testing.T) {
 	c, err := NewClient("fake-token", "", nil, nil)
@@ -49,6 +60,11 @@ func TestGraphQLEndpointForHost(t *testing.T) {
 
 func TestClientInterfaceIncludesListForcePushEvents(t *testing.T) {
 	_, ok := reflect.TypeFor[Client]().MethodByName("ListForcePushEvents")
+	require.True(t, ok)
+}
+
+func TestClientInterfaceIncludesListPullRequestTimelineEvents(t *testing.T) {
+	_, ok := reflect.TypeFor[Client]().MethodByName("ListPullRequestTimelineEvents")
 	require.True(t, ok)
 }
 
@@ -236,10 +252,10 @@ func TestListForcePushEvents(t *testing.T) {
 		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
 		w.Header().Set("Content-Type", "application/json")
 		if calls == 1 {
-			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"actor":{"login":"alice"},"beforeCommit":{"oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"afterCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"createdAt":"2024-06-01T12:00:00Z","ref":{"name":"feature"}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"HeadRefForcePushedEvent","id":"HFP_1","actor":{"login":"alice"},"beforeCommit":{"oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"afterCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"createdAt":"2024-06-01T12:00:00Z","ref":{"name":"feature"}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"actor":{"login":"alice"},"beforeCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"afterCommit":{"oid":"cccccccccccccccccccccccccccccccccccccccc"},"createdAt":"2024-06-01T12:05:00Z","ref":{"name":"feature"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"HeadRefForcePushedEvent","id":"HFP_2","actor":{"login":"alice"},"beforeCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"afterCommit":{"oid":"cccccccccccccccccccccccccccccccccccccccc"},"createdAt":"2024-06-01T12:05:00Z","ref":{"name":"feature"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -261,7 +277,60 @@ func TestListForcePushEvents(t *testing.T) {
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
 
-func TestListForcePushEventsReturnsGraphQLErrors(t *testing.T) {
+func TestListPullRequestTimelineEvents(t *testing.T) {
+	require := require.New(t)
+	var calls int
+	var methods []string
+	var contentTypes []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		methods = append(methods, r.Method)
+		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"HeadRefForcePushedEvent","id":"HFP_1","actor":{"login":"alice"},"beforeCommit":{"oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"afterCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"createdAt":"2024-06-01T12:00:00Z","ref":{"name":"feature"}},{"__typename":"RenamedTitleEvent","id":"RTE_1","actor":{"login":"bob"},"createdAt":"2024-06-01T12:05:00Z","previousTitle":"Old title","currentTitle":"New title"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"BaseRefChangedEvent","id":"BRC_1","actor":{"login":"carol"},"createdAt":"2024-06-01T12:10:00Z","previousRefName":"main","currentRefName":"release"},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"dave"},"createdAt":"2024-06-01T12:15:00Z","isCrossRepository":true,"willCloseTarget":false,"source":{"__typename":"Issue","number":77,"title":"Related bug","url":"https://github.com/other/repo/issues/77","repository":{"owner":{"login":"other"},"name":"repo"}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := &liveClient{
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	events, err := c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
+	require.NoError(err)
+	require.Len(events, 4)
+	require.Equal("force_push", events[0].EventType)
+	require.Equal("HFP_1", events[0].NodeID)
+	require.Equal("alice", events[0].Actor)
+	require.Equal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", events[0].BeforeSHA)
+	require.Equal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", events[0].AfterSHA)
+	require.Equal("feature", events[0].Ref)
+	require.Equal("renamed_title", events[1].EventType)
+	require.Equal("Old title", events[1].PreviousTitle)
+	require.Equal("New title", events[1].CurrentTitle)
+	require.Equal("base_ref_changed", events[2].EventType)
+	require.Equal("main", events[2].PreviousRefName)
+	require.Equal("release", events[2].CurrentRefName)
+	require.Equal("cross_referenced", events[3].EventType)
+	require.Equal("Issue", events[3].SourceType)
+	require.Equal("other", events[3].SourceOwner)
+	require.Equal("repo", events[3].SourceRepo)
+	require.Equal(77, events[3].SourceNumber)
+	require.Equal("Related bug", events[3].SourceTitle)
+	require.True(events[3].IsCrossRepository)
+	require.False(events[3].WillCloseTarget)
+	require.Equal(2, calls)
+	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
+	require.Equal([]string{"application/json", "application/json"}, contentTypes)
+}
+
+func TestListPullRequestTimelineEventsReturnsGraphQLErrors(t *testing.T) {
 	require := require.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -274,12 +343,12 @@ func TestListForcePushEventsReturnsGraphQLErrors(t *testing.T) {
 		graphQLEndpoint: srv.URL,
 	}
 
-	events, err := c.ListForcePushEvents(t.Context(), "owner", "repo", 42)
+	events, err := c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
 	require.Nil(events)
 	require.ErrorContains(err, "permission denied")
 }
 
-func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
+func TestListPullRequestTimelineEventsRejectsNullGraphQLNodes(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -311,7 +380,7 @@ func TestListForcePushEventsRejectsNullGraphQLNodes(t *testing.T) {
 				graphQLEndpoint: srv.URL,
 			}
 
-			events, err := c.ListForcePushEvents(t.Context(), "owner", "repo", 42)
+			events, err := c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
 			require.Nil(events)
 			require.ErrorContains(err, tt.want)
 		})
