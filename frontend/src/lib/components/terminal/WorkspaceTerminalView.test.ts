@@ -105,6 +105,20 @@ const runningSession = {
   created_at: "2026-04-29T00:00:00Z",
 };
 
+const workspaceResponse = {
+  id: "ws-1",
+  platform_host: "github.com",
+  repo_owner: "acme",
+  repo_name: "widget",
+  item_type: "pull_request",
+  item_number: 7,
+  git_head_ref: "feature/session-exit",
+  worktree_path: "/tmp/worktree",
+  tmux_session: "middleman-ws-1",
+  status: "ready",
+  created_at: "2026-04-29T00:00:00Z",
+};
+
 function runtimeWithSession(createdAt: string) {
   return {
     launch_targets: [],
@@ -172,22 +186,22 @@ describe("WorkspaceTerminalView", () => {
     mocks.ensureWorkspaceShell.mockReset();
     mocks.terminalWrite.mockReset();
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        id: "ws-1",
-        platform_host: "github.com",
-        repo_owner: "acme",
-        repo_name: "widget",
-        item_type: "pull_request",
-        item_number: 7,
-        git_head_ref: "feature/session-exit",
-        worktree_path: "/tmp/worktree",
-        tmux_session: "middleman-ws-1",
-        status: "ready",
-        created_at: "2026-04-29T00:00:00Z",
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const { pathname } = new URL(url);
+        if (pathname.endsWith("/api/v1/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(workspaceResponse));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({
+            workspaces: [workspaceResponse],
+          }));
+        }
+        return Promise.resolve(Response.json({}));
       }),
-    }));
+    );
     vi.stubGlobal("EventSource", class {
       addEventListener(): void {}
       close(): void {}

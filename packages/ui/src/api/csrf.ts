@@ -1,17 +1,16 @@
-export type FetchFn = (
-  input: Request,
-) => Promise<Response>;
+export type FetchFn = typeof globalThis.fetch;
 
 export function csrfFetch(inner: FetchFn): FetchFn {
-  return (input: Request) => {
-    const method = input.method.toUpperCase();
+  return (input, init) => {
+    const request = new Request(input, init);
+    const method = request.method.toUpperCase();
     if (method !== "GET" && method !== "HEAD") {
-      if (!input.headers.has("Content-Type")) {
-        const headers = new Headers(input.headers);
+      if (!request.headers.has("Content-Type")) {
+        const headers = new Headers(request.headers);
         headers.set("Content-Type", "application/json");
-        return inner(new Request(input, { headers }));
+        return inner(new Request(request, { headers }));
       }
     }
-    return inner(input);
+    return inner(request);
   };
 }
