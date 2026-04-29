@@ -15,6 +15,15 @@ async function waitForTable(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function selectActivityFilterItem(
+  page: Page,
+  label: string,
+): Promise<void> {
+  await page.locator(".filter-btn").click();
+  await page.locator(".filter-dropdown").waitFor({ state: "visible" });
+  await page.locator(".filter-item", { hasText: label }).click();
+}
+
 // Verify every badge in the activity table matches the expected text.
 // Uses auto-retrying assertions so it waits for the DOM to settle.
 async function expectAllBadges(
@@ -70,9 +79,7 @@ test.describe("activity feed filters", () => {
     ).toBeVisible();
 
     // Open filter dropdown and disable Comments.
-    await page.locator(".filter-btn").click();
-    await page.locator(".filter-dropdown").waitFor({ state: "visible" });
-    await page.locator(".filter-item", { hasText: "Comments" }).click();
+    await selectActivityFilterItem(page, "Comments");
 
     await expect(
       page.locator(".evt-label.evt-comment"),
@@ -87,10 +94,7 @@ test.describe("activity feed filters", () => {
     ).toBeVisible();
 
     // Open filter dropdown and enable "Hide closed/merged".
-    await page.locator(".filter-btn").click();
-    await page.locator(".filter-dropdown").waitFor({ state: "visible" });
-    await page.locator(".filter-item", { hasText: "Hide closed/merged" })
-      .click();
+    await selectActivityFilterItem(page, "Hide closed/merged");
 
     await expect(
       page.locator(".state-badge.state-closed"),
@@ -108,9 +112,7 @@ test.describe("activity feed filters", () => {
     await expect(botCells.first()).toBeVisible();
 
     // Open filter dropdown and enable "Hide bots".
-    await page.locator(".filter-btn").click();
-    await page.locator(".filter-dropdown").waitFor({ state: "visible" });
-    await page.locator(".filter-item", { hasText: "Hide bots" }).click();
+    await selectActivityFilterItem(page, "Hide bots");
 
     await expect(botCells).toHaveCount(0, { timeout: 5_000 });
   });
@@ -124,7 +126,7 @@ test.describe("activity feed filters", () => {
     // Use a web-first assertion that retries until the row count
     // drops below the 7d count, proving the filtered response
     // has rendered.
-    await page.locator(".seg-btn", { hasText: "24h" }).click();
+    await selectActivityFilterItem(page, "24h");
     await expect(page.locator(".activity-row"))
       .not.toHaveCount(count7d, { timeout: 10_000 });
     const count24h = await page.locator(".activity-row").count();
@@ -159,10 +161,7 @@ test.describe("activity feed filters", () => {
       await expectAllBadges(page, "PR");
 
       // Enable hide closed/merged (client-side filter).
-      await page.locator(".filter-btn").click();
-      await page.locator(".filter-dropdown").waitFor({ state: "visible" });
-      await page.locator(".filter-item", { hasText: "Hide closed/merged" })
-        .click();
+      await selectActivityFilterItem(page, "Hide closed/merged");
       await page.locator(".controls-bar")
         .click({ position: { x: 5, y: 5 } });
 
@@ -202,7 +201,7 @@ test.describe("activity UTC timestamp presentation", () => {
   });
 
   test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
-    await page.locator(".seg-btn", { hasText: "30d" }).click();
+    await selectActivityFilterItem(page, "30d");
     await expect(page.locator(".activity-row").first()).toBeVisible();
 
     const payload = await page.evaluate(async () => {
