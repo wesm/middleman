@@ -730,6 +730,53 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	)
 }
 
+func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "server exited unexpectedly" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+
+	ctx := context.Background()
+	ws, err := mgr.Create(ctx, "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true, nil)
+	assert.Nil(dirty)
+	require.NoError(err)
+
+	got, getErr := mgr.Get(ctx, ws.ID)
+	require.NoError(getErr)
+	assert.Nil(got)
+
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", ws.TmuxSession},
+		argvs[0],
+	)
+}
+
 func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
