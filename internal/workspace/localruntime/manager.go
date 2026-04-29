@@ -137,6 +137,7 @@ type session struct {
 	alternateScreenActive bool
 	alternateScreenTail   []byte
 	stopOnce              sync.Once
+	stopRequested         bool
 }
 
 type Attachment struct {
@@ -308,11 +309,11 @@ func (m *Manager) Launch(
 		return SessionInfo{}, err
 	}
 	started.tmuxSession = launch.TmuxSession
-	go m.watchSession(started, false)
 
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
+		go m.watchSession(started, false)
 		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
 		slog.Debug(
@@ -324,6 +325,7 @@ func (m *Manager) Launch(
 	}
 	m.sessions[key] = started
 	m.mu.Unlock()
+	go m.watchSession(started, false)
 	slog.Debug(
 		"runtime launch session stored",
 		"workspace_id", workspaceID,
@@ -428,19 +430,20 @@ func (m *Manager) restoreTmuxSession(
 		return err
 	}
 	started.tmuxSession = tmuxSession
-	// startSession already starts drainOutput; restored tmux attach
-	// sessions only need the process watcher here.
-	go m.watchSession(started, false)
 
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
+		go m.watchSession(started, false)
 		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
 		return errManagerShutdown
 	}
 	m.sessions[key] = started
 	m.mu.Unlock()
+	// startSession already starts drainOutput; restored tmux attach
+	// sessions only need the process watcher here.
+	go m.watchSession(started, false)
 	slog.Debug(
 		"runtime tmux restore session stored",
 		"workspace_id", workspaceID,
@@ -594,6 +597,7 @@ func (m *Manager) stopSession(ctx context.Context, s *session) error {
 	if s == nil {
 		return nil
 	}
+	s.markStopRequested()
 	var cleanupErr error
 	if s.tmuxSession != "" {
 		if err := m.killTmuxSession(ctx, s.tmuxSession); err != nil {
@@ -922,11 +926,11 @@ func (m *Manager) EnsureShell(
 		)
 		return SessionInfo{}, err
 	}
-	go m.watchSession(started, true)
 
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
+		go m.watchSession(started, true)
 		_ = m.stopSession(ctx, started)
 		waitSessionDone(started)
 		slog.Debug(
@@ -938,6 +942,7 @@ func (m *Manager) EnsureShell(
 	}
 	m.shells[key] = started
 	m.mu.Unlock()
+	go m.watchSession(started, true)
 	slog.Debug(
 		"runtime shell session stored",
 		"workspace_id", workspaceID,
@@ -1347,6 +1352,9 @@ func (m *Manager) watchSession(
 	shell bool,
 ) {
 	info := s.watch()
+	if s.wasStopRequested() {
+		return
+	}
 	if m.removeExitedSession(info, s, shell) && m.onSessionExit != nil {
 		m.onSessionExit(info)
 	}
@@ -1683,6 +1691,18 @@ func (s *session) stop() {
 			_ = s.ptmx.Close()
 		}
 	})
+}
+
+func (s *session) markStopRequested() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopRequested = true
+}
+
+func (s *session) wasStopRequested() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopRequested
 }
 
 func (s *session) detach() {

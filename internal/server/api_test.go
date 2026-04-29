@@ -8789,6 +8789,10 @@ fi
 if [ "$1" = "has-session" ]; then
   exit 1
 fi
+if [ "$1" = "attach-session" ]; then
+  cat >/dev/null
+  exit 0
+fi
 if [ -n "$new_session" ]; then
   printf '%s\n' "$new_session" >> "$session_file"
 fi
@@ -8965,6 +8969,10 @@ case "$1" in
     printf '%s\n' 'middleman-0000000000000001-e81d3b0e9d82feaa'
     exit 0
     ;;
+  attach-session)
+    cat >/dev/null
+    exit 0
+    ;;
 esac
 if [ "$mode" = "display-message" ]; then
   case "$target" in
@@ -9120,32 +9128,27 @@ exit 0
 	assert.Contains(runtimeNewSession, "@middleman_owner")
 	assert.Contains(runtimeNewSession, srv.workspaces.TmuxOwnerMarker())
 
-	var runtimeResp *generated.GetWorkspaceRuntimeResponse
 	require.Eventually(func() bool {
-		runtimeResp, err = client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+		runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
 		if err != nil ||
 			runtimeResp.StatusCode() != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil ||
-			len(*runtimeResp.JSON200.Sessions) != 1 {
+			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
-		return (*runtimeResp.JSON200.Sessions)[0].Status == "exited"
+		return len(*runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 
-	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
-	require.NoError(err)
-	require.Len(stored, 1)
-	assert.Equal(sessionName, stored[0].SessionName)
+	require.Eventually(func() bool {
+		stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+		return err == nil && len(stored) == 0
+	}, 2*time.Second, 20*time.Millisecond)
 
 	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, launchResp.JSON200.Key,
 	)
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	stored, err = database.ListWorkspaceTmuxSessions(ctx, ws.Id)
-	require.NoError(err)
-	assert.Empty(stored)
+	require.Equal(http.StatusNotFound, stopResp.StatusCode())
 }
 
 func tmuxRecordContains(argvs [][]string, want []string) bool {
@@ -9175,7 +9178,11 @@ case "$1" in
   has-session)
     exit 1
     ;;
-  new-session|set-option|attach-session|kill-session)
+  attach-session)
+    cat >/dev/null
+    exit 0
+    ;;
+  new-session|set-option|kill-session)
     exit 0
     ;;
 esac
@@ -9259,7 +9266,11 @@ case "$1" in
   has-session)
     exit 1
     ;;
-  new-session|set-option|attach-session|kill-session)
+  attach-session)
+    cat >/dev/null
+    exit 0
+    ;;
+  new-session|set-option|kill-session)
     exit 0
     ;;
 esac
@@ -9328,6 +9339,10 @@ for a in "$@"; do
   if [ "$prev" = "-t" ]; then target="$a"; fi
   prev="$a"
 done
+if [ "$1" = "attach-session" ]; then
+  cat >/dev/null
+  exit 0
+fi
 if [ "$1" = "kill-session" ]; then
   case "$target" in
     middleman-????????????????-*)
