@@ -871,6 +871,12 @@ export interface components {
             name: string;
             owner: string;
         };
+        Agent: {
+            command: string[] | null;
+            enabled?: boolean;
+            key: string;
+            label: string;
+        };
         ApprovePRInputBody: {
             /**
              * Format: uri
@@ -1659,6 +1665,7 @@ export interface components {
              */
             readonly $schema?: string;
             activity: components["schemas"]["Activity"];
+            agents: components["schemas"]["Agent"][] | null;
             repos: components["schemas"]["ConfiguredRepoStatus"][] | null;
             terminal: components["schemas"]["Terminal"];
         };
@@ -1741,6 +1748,7 @@ export interface components {
              */
             readonly $schema?: string;
             activity?: components["schemas"]["Activity"];
+            agents?: components["schemas"]["Agent"][];
             terminal?: components["schemas"]["Terminal"];
         };
         VersionOutputBody: {

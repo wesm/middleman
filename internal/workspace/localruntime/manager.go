@@ -465,6 +465,21 @@ func (m *Manager) LaunchTargets() []LaunchTarget {
 	return targets
 }
 
+func (m *Manager) UpdateTargets(targets []LaunchTarget) {
+	next := make(map[string]LaunchTarget, len(targets))
+	nextList := make([]LaunchTarget, 0, len(targets))
+	for _, target := range targets {
+		cloned := cloneTarget(target)
+		next[target.Key] = cloned
+		nextList = append(nextList, cloneTarget(cloned))
+	}
+
+	m.mu.Lock()
+	m.targets = next
+	m.targetsList = nextList
+	m.mu.Unlock()
+}
+
 func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()

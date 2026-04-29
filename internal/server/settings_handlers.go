@@ -10,17 +10,20 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/wesm/middleman/internal/config"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 type settingsResponse struct {
 	Repos    []ghclient.ConfiguredRepoStatus `json:"repos"`
 	Activity config.Activity                 `json:"activity"`
 	Terminal config.Terminal                 `json:"terminal"`
+	Agents   []config.Agent                  `json:"agents"`
 }
 
 type updateSettingsRequest struct {
 	Activity *config.Activity `json:"activity,omitempty"`
 	Terminal *config.Terminal `json:"terminal,omitempty"`
+	Agents   *[]config.Agent  `json:"agents,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -48,6 +51,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	repos := append([]config.Repo(nil), s.cfg.Repos...)
 	activity := s.cfg.Activity
 	terminal := s.cfg.Terminal
+	agents := cloneConfigAgents(s.cfg.Agents)
 	s.cfgMu.Unlock()
 
 	tracked := s.syncer.TrackedRepos()
@@ -66,6 +70,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Repos:    configured,
 		Activity: activity,
 		Terminal: terminal,
+		Agents:   agents,
 	}
 }
 
@@ -257,6 +262,7 @@ func (s *Server) updateSettings(
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
 	prevTerminal := s.cfg.Terminal
+	prevAgents := cloneConfigAgents(s.cfg.Agents)
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
@@ -270,22 +276,50 @@ func (s *Server) updateSettings(
 	if input.Body.Terminal != nil {
 		s.cfg.Terminal = *input.Body.Terminal
 	}
+	if input.Body.Agents != nil {
+		s.cfg.Agents = cloneConfigAgents(*input.Body.Agents)
+	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
+		s.cfg.Agents = prevAgents
 		s.cfgMu.Unlock()
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
+		s.cfg.Agents = prevAgents
 		s.cfgMu.Unlock()
 		return nil, huma.Error500InternalServerError(
 			"save config: " + err.Error())
 	}
+	s.refreshRuntimeTargetsLocked()
 	s.cfgMu.Unlock()
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
+}
+
+func cloneConfigAgents(agents []config.Agent) []config.Agent {
+	if agents == nil {
+		return []config.Agent{}
+	}
+	cloned := make([]config.Agent, len(agents))
+	for i, agent := range agents {
+		cloned[i] = agent
+		cloned[i].Command = append([]string(nil), agent.Command...)
+	}
+	return cloned
+}
+
+func (s *Server) refreshRuntimeTargetsLocked() {
+	if s.runtime == nil || s.cfg == nil {
+		return
+	}
+	tmuxCmd := s.cfg.TmuxCommand()
+	s.runtime.UpdateTargets(localruntime.ResolveLaunchTargets(
+		s.cfg.Agents, tmuxCmd, nil,
+	))
 }
 
 func (s *Server) addConfiguredRepo(

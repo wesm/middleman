@@ -7,6 +7,7 @@
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
+  import AgentSettings from "./AgentSettings.svelte";
 
   const { settings: settingsStore } = getStores();
 
@@ -57,6 +58,15 @@
           settingsStore.setTerminalFontFamily(
             terminal.font_family,
           );
+        }}
+      />
+    </SettingsSection>
+
+    <SettingsSection title="Workspace agents">
+      <AgentSettings
+        agents={settings.agents}
+        onUpdate={(agents) => {
+          settings = { ...settings!, agents };
         }}
       />
     </SettingsSection>

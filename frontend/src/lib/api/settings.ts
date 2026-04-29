@@ -67,6 +67,7 @@ export async function updateSettings(
   settings: {
     activity?: Settings["activity"];
     terminal?: Settings["terminal"];
+    agents?: Settings["agents"];
   },
 ): Promise<Settings> {
   const { data, error, response } = await client.PUT("/settings", {

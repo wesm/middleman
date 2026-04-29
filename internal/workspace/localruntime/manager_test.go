@@ -127,6 +127,33 @@ func TestManagerLaunchMissingTarget(t *testing.T) {
 	require.Contains(t, err.Error(), "target not found")
 }
 
+func TestManagerUpdateTargetsAffectsFutureLaunches(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	assert := Assert.New(t)
+
+	ctx := context.Background()
+	mgr := NewManager(Options{Targets: []LaunchTarget{
+		helperTarget("helper", "exit"),
+	}})
+	t.Cleanup(mgr.Shutdown)
+
+	mgr.UpdateTargets([]LaunchTarget{{
+		Key: "custom", Label: "Custom", Kind: LaunchTargetAgent,
+		Source: "config", Command: helperCommand("exit"),
+		Available: true,
+	}})
+
+	_, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+	require.Error(t, err)
+	assert.Contains(err.Error(), "target not found")
+
+	session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "custom")
+	require.NoError(t, err)
+	assert.Equal("custom", session.TargetKey)
+	assert.Equal("Custom", session.Label)
+}
+
 func TestManagerTmuxSessionsReturnsWrappedAgentSessions(t *testing.T) {
 	assert := Assert.New(t)
 	mgr := NewManager(Options{})
