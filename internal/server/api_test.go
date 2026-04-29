@@ -9324,7 +9324,7 @@ exit 0
 	})
 }
 
-func TestWorkspaceRuntimeStopTmuxCleanupFailureKeepsSessionE2E(
+func TestWorkspaceRuntimeStopTmuxCleanupFailureCleansExitedSessionE2E(
 	t *testing.T,
 ) {
 	require := require.New(t)
@@ -9385,13 +9385,18 @@ exit 0
 	require.NoError(err)
 	require.Equal(http.StatusInternalServerError, stopResp.StatusCode())
 
-	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
-	require.NotNil(getResp.JSON200)
-	require.NotNil(getResp.JSON200.Sessions)
-	require.Len(*getResp.JSON200.Sessions, 1)
-	assert.Equal(launchResp.JSON200.Key, (*getResp.JSON200.Sessions)[0].Key)
+	assert.Eventually(func() bool {
+		getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if err != nil ||
+			getResp.StatusCode() != http.StatusOK ||
+			getResp.JSON200 == nil ||
+			getResp.JSON200.Sessions == nil {
+			return false
+		}
+		return len(*getResp.JSON200.Sessions) == 0
+	}, 2*time.Second, 20*time.Millisecond)
 
 	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
