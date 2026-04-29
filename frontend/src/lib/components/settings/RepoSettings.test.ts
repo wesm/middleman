@@ -131,6 +131,7 @@ describe("RepoSettings", () => {
         hide_bots: false,
       },
       terminal: { font_family: "" },
+      agents: [],
     });
     render(RepoSettings, {
       props: {

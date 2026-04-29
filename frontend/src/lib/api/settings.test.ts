@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  bulkAddRepos,
+  previewRepos,
+  removeRepo,
+  updateSettings,
+} from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -12,8 +18,6 @@ describe("settings api", () => {
   });
 
   it("encodes repo names for delete requests", async () => {
-    const { removeRepo } = await import("./settings.js");
-
     await removeRepo("acme", "widgets-?");
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
@@ -25,8 +29,6 @@ describe("settings api", () => {
   });
 
   it("posts preview requests", async () => {
-    const { previewRepos } = await import("./settings.js");
-
     await previewRepos("acme", "widget-*");
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
@@ -42,8 +44,6 @@ describe("settings api", () => {
   });
 
   it("posts bulk add requests", async () => {
-    const { bulkAddRepos } = await import("./settings.js");
-
     await bulkAddRepos([{ owner: "acme", name: "api" }]);
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
@@ -57,6 +57,39 @@ describe("settings api", () => {
     });
   });
 
+  it("posts agent settings updates", async () => {
+    await updateSettings({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex", "--full-auto"],
+          enabled: true,
+        },
+      ],
+    });
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    expect(new URL((request as Request).url).pathname).toBe(
+      "/api/v1/settings",
+    );
+    expect((request as Request).method).toBe("PUT");
+    expect((request as Request).headers.get("Content-Type")).toBe(
+      "application/json",
+    );
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex", "--full-auto"],
+          enabled: true,
+        },
+      ],
+    });
+  });
+
   it("uses json error envelope when present", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       Response.json(
@@ -67,7 +100,6 @@ describe("settings api", () => {
         },
       ),
     );
-    const { previewRepos } = await import("./settings.js");
 
     await expect(previewRepos("acme", "[")).rejects.toThrow("invalid glob pattern");
   });

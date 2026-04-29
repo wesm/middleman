@@ -123,6 +123,26 @@ components:
         - owner
         - name
       type: object
+    Agent:
+      additionalProperties: false
+      properties:
+        command:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        enabled:
+          type: boolean
+        key:
+          type: string
+        label:
+          type: string
+      required:
+        - key
+        - label
+        - command
+      type: object
     ApprovePRInputBody:
       additionalProperties: false
       properties:
@@ -1865,6 +1885,12 @@ components:
           type: string
         activity:
           $ref: "#/components/schemas/Activity"
+        agents:
+          items:
+            $ref: "#/components/schemas/Agent"
+          type:
+            - array
+            - "null"
         repos:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
@@ -1877,6 +1903,7 @@ components:
         - repos
         - activity
         - terminal
+        - agents
       type: object
     StackContextResponse:
       additionalProperties: false
@@ -2051,6 +2078,10 @@ components:
           type: string
         activity:
           $ref: "#/components/schemas/Activity"
+        agents:
+          items:
+            $ref: "#/components/schemas/Agent"
+          type: array
         terminal:
           $ref: "#/components/schemas/Terminal"
       type: object

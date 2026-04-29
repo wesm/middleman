@@ -32,7 +32,7 @@ test("settings saves and reloads the workspace terminal font family", async ({
     .waitFor({ state: "visible", timeout: 10_000 });
 
   const input = page.getByLabel("Monospace font family");
-  const saveButton = page.getByRole("button", { name: "Save" });
+  const saveButton = page.getByRole("button", { name: "Save", exact: true });
   await expect(input).toHaveValue("");
 
   await input.click();
