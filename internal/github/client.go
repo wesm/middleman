@@ -38,6 +38,7 @@ type Client interface {
 	GetUser(ctx context.Context, login string) (*gh.User, error)
 	ListRepositoriesByOwner(ctx context.Context, owner string) ([]*gh.Repository, error)
 	ListReleases(ctx context.Context, owner, repo string, perPage int) ([]*gh.RepositoryRelease, error)
+	ListTags(ctx context.Context, owner, repo string, perPage int) ([]*gh.RepositoryTag, error)
 	ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error)
 	GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error)
 	CreateIssue(ctx context.Context, owner, repo, title, body string) (*gh.Issue, error)
@@ -159,6 +160,22 @@ func (c *liveClient) ListReleases(
 		return nil, err
 	}
 	return releases, nil
+}
+
+func (c *liveClient) ListTags(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryTag, error) {
+	if perPage < 1 {
+		perPage = 1
+	}
+	tags, resp, err := c.gh.Repositories.ListTags(ctx, owner, repo, &gh.ListOptions{
+		PerPage: perPage,
+	})
+	c.trackRate(resp)
+	if err != nil {
+		return nil, err
+	}
+	return tags, nil
 }
 
 func (c *liveClient) CreateIssue(

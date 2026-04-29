@@ -32,6 +32,7 @@ type FixtureClient struct {
 	Comments                  map[string][]*gh.IssueComment
 	ReposByOwner              map[string][]*gh.Repository
 	Releases                  map[string][]*gh.RepositoryRelease
+	Tags                      map[string][]*gh.RepositoryTag
 	CombinedStatuses          map[string]*gh.CombinedStatus
 	CheckRuns                 map[string][]*gh.CheckRun
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
@@ -49,6 +50,7 @@ func NewFixtureClient() ghclient.Client {
 		Comments:         make(map[string][]*gh.IssueComment),
 		ReposByOwner:     make(map[string][]*gh.Repository),
 		Releases:         make(map[string][]*gh.RepositoryRelease),
+		Tags:             make(map[string][]*gh.RepositoryTag),
 		CombinedStatuses: make(map[string]*gh.CombinedStatus),
 		CheckRuns:        make(map[string][]*gh.CheckRun),
 		nextID:           10_000,
@@ -113,6 +115,21 @@ func (c *FixtureClient) ListReleases(
 	}
 	out := make([]*gh.RepositoryRelease, len(releases))
 	copy(out, releases)
+	return out, nil
+}
+
+func (c *FixtureClient) ListTags(
+	_ context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryTag, error) {
+	tags := c.Tags[repoKey(owner, repo)]
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	if perPage > 0 && perPage < len(tags) {
+		tags = tags[:perPage]
+	}
+	out := make([]*gh.RepositoryTag, len(tags))
+	copy(out, tags)
 	return out, nil
 }
 

@@ -90,6 +90,45 @@ func TestListReleasesTracksRate(t *testing.T) {
 	require.Equal(5000, rt.RateLimit())
 }
 
+func TestListTagsTracksRate(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	rt := NewRateTracker(database, "github.example.com", "rest")
+	resetAt := time.Now().Add(time.Hour).Unix()
+	var gotMethod string
+	var gotPerPage string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widgets/tags", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPerPage = r.URL.Query().Get("per_page")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4997")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+		_, _ = w.Write([]byte(`[{"name":"v1.0.0","commit":{"sha":"abcdef1234567890abcdef1234567890abcdef12"}}]`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{gh: ghClient, rateTracker: rt}
+
+	tags, err := c.ListTags(t.Context(), "acme", "widgets", 2)
+	require.NoError(err)
+	require.Len(tags, 1)
+	require.Equal(http.MethodGet, gotMethod)
+	require.Equal("2", gotPerPage)
+	require.Equal("v1.0.0", tags[0].GetName())
+	require.Equal("abcdef1234567890abcdef1234567890abcdef12", tags[0].GetCommit().GetSHA())
+	require.Equal(1, rt.RequestsThisHour())
+	require.Equal(4997, rt.Remaining())
+	require.Equal(5000, rt.RateLimit())
+}
+
 func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T) {
 	require := require.New(t)
 	var paths []string

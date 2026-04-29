@@ -80,6 +80,7 @@ type mockGH struct {
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
 	listReposByOwnerFn        func(context.Context, string) ([]*gh.Repository, error)
 	listReleasesFn            func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
+	listTagsFn                func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listCheckRunsForRefFn     func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	getCombinedStatusFn       func(context.Context, string, string, string) (*gh.CombinedStatus, error)
@@ -157,6 +158,15 @@ func (m *mockGH) ListReleases(
 ) ([]*gh.RepositoryRelease, error) {
 	if m.listReleasesFn != nil {
 		return m.listReleasesFn(ctx, owner, repo, perPage)
+	}
+	return nil, nil
+}
+
+func (m *mockGH) ListTags(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryTag, error) {
+	if m.listTagsFn != nil {
+		return m.listTagsFn(ctx, owner, repo, perPage)
 	}
 	return nil, nil
 }
@@ -2360,6 +2370,169 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	assert.Equal("post latest 2", (*widgets.CommitTimeline)[0].Message)
 	assert.Equal("post latest 1", (*widgets.CommitTimeline)[1].Message)
 	assert.Len((*widgets.CommitTimeline)[0].Sha, 40)
+}
+
+func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	tagName := "v0.5.0"
+	sha := "1234567890abcdef1234567890abcdef12345678"
+	mock := &mockGH{
+		listReleasesFn: func(
+			_ context.Context, owner, repo string, perPage int,
+		) ([]*gh.RepositoryRelease, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("tagged", repo)
+			assert.Equal(10, perPage)
+			return nil, nil
+		},
+		listTagsFn: func(
+			_ context.Context, owner, repo string, perPage int,
+		) ([]*gh.RepositoryTag, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("tagged", repo)
+			assert.Equal(3, perPage)
+			return []*gh.RepositoryTag{{
+				Name: &tagName,
+				Commit: &gh.Commit{
+					SHA: &sha,
+				},
+			}}, nil
+		},
+	}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "tagged", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	syncer.RunOnce(ctx)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+
+	tagged := (*resp.JSON200)[0]
+	require.NotNil(tagged.LatestRelease)
+	require.NotNil(tagged.Releases)
+
+	assert.Equal("v0.5.0", tagged.LatestRelease.TagName)
+	assert.Equal("v0.5.0", tagged.LatestRelease.Name)
+	assert.Equal("https://github.com/acme/tagged/tree/v0.5.0", tagged.LatestRelease.Url)
+	assert.Equal(sha, tagged.LatestRelease.TargetCommitish)
+	assert.Nil(tagged.LatestRelease.PublishedAt)
+	assert.False(tagged.LatestRelease.Prerelease)
+	assert.Len(*tagged.Releases, 1)
+	assert.Equal("v0.5.0", (*tagged.Releases)[0].TagName)
+	assert.Nil(tagged.CommitsSinceRelease)
+	assert.Empty(*tagged.CommitTimeline)
+}
+
+func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "tagless")
+	require.NoError(err)
+
+	publishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	timelineUpdatedAt := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
+	commitsSince := 9
+	err = database.UpsertRepoOverview(ctx, repoID, db.RepoOverview{
+		LatestRelease: &db.RepoRelease{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/acme/tagless/releases/tag/v1.0.0",
+			PublishedAt: &publishedAt,
+		},
+		Releases: []db.RepoRelease{{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/acme/tagless/releases/tag/v1.0.0",
+			PublishedAt: &publishedAt,
+		}},
+		CommitsSinceRelease: &commitsSince,
+		CommitTimeline: []db.RepoCommitTimelinePoint{{
+			SHA:         "abc123",
+			Message:     "Old release timeline",
+			CommittedAt: time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+		}},
+		TimelineUpdatedAt: &timelineUpdatedAt,
+	})
+	require.NoError(err)
+
+	mock := &mockGH{
+		listReleasesFn: func(
+			_ context.Context, owner, repo string, perPage int,
+		) ([]*gh.RepositoryRelease, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("tagless", repo)
+			assert.Equal(10, perPage)
+			return []*gh.RepositoryRelease{}, nil
+		},
+		listTagsFn: func(
+			_ context.Context, owner, repo string, perPage int,
+		) ([]*gh.RepositoryTag, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("tagless", repo)
+			assert.Equal(3, perPage)
+			return nil, errors.New("tags unavailable")
+		},
+	}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "tagless", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	syncer.RunOnce(ctx)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+
+	tagless := (*resp.JSON200)[0]
+	require.NotNil(tagless.Releases)
+	require.NotNil(tagless.CommitTimeline)
+
+	assert.Equal("acme", tagless.Owner)
+	assert.Equal("tagless", tagless.Name)
+	assert.Nil(tagless.LatestRelease)
+	assert.Empty(*tagless.Releases)
+	assert.Nil(tagless.CommitsSinceRelease)
+	assert.Empty(*tagless.CommitTimeline)
+	assert.Nil(tagless.TimelineUpdatedAt)
 }
 
 func TestAPICreateIssue(t *testing.T) {
