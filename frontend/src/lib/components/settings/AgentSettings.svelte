@@ -401,10 +401,11 @@
     <button
       class="save-btn"
       type="button"
+      aria-label="Save workspace agents"
       disabled={!canSave}
       onclick={() => void save()}
     >
-      {saving ? "Saving..." : "Save agents"}
+      {saving ? "Saving..." : "Save"}
     </button>
   </div>
 </div>
@@ -419,7 +420,10 @@
   .agent-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
   }
 
   .agent-row {
@@ -427,9 +431,12 @@
     flex-direction: column;
     gap: 10px;
     padding: 8px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
+    border-top: 1px solid var(--border-muted);
+    background: transparent;
+  }
+
+  .agent-row:first-child {
+    border-top: 0;
   }
 
   .agent-row-header,
@@ -519,7 +526,6 @@
 
   .settings-actions {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     gap: 12px;
   }
@@ -547,6 +553,7 @@
   }
 
   .save-btn {
+    margin-left: auto;
     color: white;
     background: var(--accent-blue);
   }
@@ -573,10 +580,6 @@
     .agent-fields--custom {
       grid-template-columns: 1fr;
       align-items: stretch;
-    }
-
-    .settings-actions {
-      justify-content: flex-start;
     }
   }
 </style>
