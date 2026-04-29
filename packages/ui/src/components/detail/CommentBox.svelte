@@ -161,6 +161,7 @@
 
   .comment-editor-shell :global(.comment-editor-input) {
     min-height: 112px;
+    max-height: 75dvh;
     padding-bottom: 46px;
   }
 
