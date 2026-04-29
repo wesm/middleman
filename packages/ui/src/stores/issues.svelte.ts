@@ -537,6 +537,49 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     }
   }
 
+  async function editIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentID: number,
+    body: string,
+  ): Promise<boolean> {
+    const platformHost = currentIssuePlatformHost(owner, name, number);
+
+    detailError = null;
+    try {
+      const { error: requestError } = await apiClient.PATCH(
+        "/repos/{owner}/{name}/issues/{number}/comments/{comment_id}",
+        {
+          params: {
+            path: {
+              owner,
+              name,
+              number,
+              comment_id: commentID,
+            },
+          },
+          body: {
+            body,
+            ...(platformHost && {
+              platform_host: platformHost,
+            }),
+          },
+        },
+      );
+      if (requestError) {
+        throw new Error(
+          apiErrorMessage(requestError, "failed to edit comment"),
+        );
+      }
+    } catch (err) {
+      detailError = err instanceof Error ? err.message : String(err);
+      return false;
+    }
+    await refreshIssueDetail(owner, name, number, platformHost);
+    return true;
+  }
+
   async function toggleIssueStar(
     owner: string,
     name: string,
@@ -708,6 +751,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     stopIssueDetailPolling,
     clearIssueDetail,
     submitIssueComment,
+    editIssueComment,
     toggleIssueStar,
     selectNextIssue,
     selectPrevIssue,

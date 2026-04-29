@@ -697,6 +697,44 @@ export function createDetailStore(
     }
   }
 
+  async function editComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentID: number,
+    body: string,
+  ): Promise<boolean> {
+    storeError = null;
+    try {
+      const { error: requestError } = await apiClient.PATCH(
+        "/repos/{owner}/{name}/pulls/{number}/comments/{comment_id}",
+        {
+          params: {
+            path: {
+              owner,
+              name,
+              number,
+              comment_id: commentID,
+            },
+          },
+          body: { body },
+        },
+      );
+      if (requestError) {
+        throw new Error(
+          requestError.detail ??
+            requestError.title ??
+            "failed to edit comment",
+        );
+      }
+    } catch (err) {
+      storeError = err instanceof Error ? err.message : String(err);
+      return false;
+    }
+    await refreshDetail(owner, name, number);
+    return true;
+  }
+
   return {
     getDetail,
     isDetailLoading,
@@ -713,6 +751,7 @@ export function createDetailStore(
     stopDetailPolling,
     toggleDetailPRStar,
     submitComment,
+    editComment,
   };
 }
 

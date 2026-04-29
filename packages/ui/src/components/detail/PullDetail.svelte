@@ -80,6 +80,14 @@
     activePRTimelineFilterCount(timelineFilter) > 0,
   );
 
+  async function editTimelineComment(
+    event: { PlatformID: number | null },
+    body: string,
+  ): Promise<boolean> {
+    if (event.PlatformID === null) return false;
+    return detailStore.editComment(owner, name, number, event.PlatformID, body);
+  }
+
   function updateTimelineFilter(next: PRTimelineFilterState): void {
     timelineFilter = next;
     savePRTimelineFilter(next);
@@ -1091,6 +1099,7 @@
             repoName={name}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
+            onEditComment={editTimelineComment}
           />
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">

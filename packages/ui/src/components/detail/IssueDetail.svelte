@@ -62,6 +62,14 @@
     return actualHost !== expectedHost;
   });
 
+  async function editTimelineComment(
+    event: { PlatformID: number | null },
+    body: string,
+  ): Promise<boolean> {
+    if (event.PlatformID === null) return false;
+    return issues.editIssueComment(owner, name, number, event.PlatformID, body);
+  }
+
   $effect(() => {
     const requestOwner = owner;
     const requestName = name;
@@ -543,7 +551,12 @@
       <div class="section">
         <h3 class="section-title">Activity</h3>
         {#if issues.getIssueDetailLoaded()}
-          <EventTimeline events={detail.events ?? []} repoOwner={owner} repoName={name} />
+          <EventTimeline
+            events={detail.events ?? []}
+            repoOwner={owner}
+            repoName={name}
+            onEditComment={editTimelineComment}
+          />
         {:else if issues.isIssueDetailSyncing()}
           <div class="loading-placeholder">
             <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
