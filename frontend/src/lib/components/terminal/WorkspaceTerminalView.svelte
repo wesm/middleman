@@ -1332,7 +1332,7 @@
     overflow: hidden;
   }
 
-  /* Tabs stay mounted across switches so xterm scrollback and the
+  /* Tabs stay mounted across switches so terminal scrollback and the
    * WebSocket survive — non-active panes are layered below and
    * hidden via visibility so layout/sizing is preserved. */
   .stage-pane {

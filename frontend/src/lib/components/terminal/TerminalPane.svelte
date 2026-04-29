@@ -1,10 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
-  import { Terminal } from "@xterm/xterm";
-  import { FitAddon } from "@xterm/addon-fit";
-  import { WebglAddon } from "@xterm/addon-webgl";
-  import "@xterm/xterm/css/xterm.css";
+  import { Terminal } from "restty/xterm";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
 
   interface TerminalPaneProps {
@@ -33,7 +30,6 @@
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
-  let fitAddon: FitAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -43,8 +39,11 @@
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
+  const outputDecoder = new TextDecoder();
 
   const MAX_RECONNECT_DELAY = 30000;
+  const FALLBACK_CELL_WIDTH = 8;
+  const FALLBACK_CELL_HEIGHT = 18;
 
   function defaultTerminalFontFamily(): string {
     const rootFontFamily = getComputedStyle(
@@ -142,12 +141,64 @@
     }
   }
 
+  function normalizeTerminalInput(data: string): string {
+    return data.replaceAll("\b", "\x7f");
+  }
+
+  function sendTerminalInput(data: string): void {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(encoder.encode(normalizeTerminalInput(data)));
+    }
+  }
+
+  function measureCellSize(): { width: number; height: number } {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return {
+        width: FALLBACK_CELL_WIDTH,
+        height: FALLBACK_CELL_HEIGHT,
+      };
+    }
+
+    ctx.font = `14px ${terminalFontFamily}`;
+    const metrics = ctx.measureText("W");
+    const measuredHeight =
+      metrics.actualBoundingBoxAscent +
+      metrics.actualBoundingBoxDescent;
+    return {
+      width: metrics.width || FALLBACK_CELL_WIDTH,
+      height: measuredHeight
+        ? Math.ceil(measuredHeight * 1.35)
+        : FALLBACK_CELL_HEIGHT,
+    };
+  }
+
+  function fitTerminal(notify = true): void {
+    if (!terminal || !containerEl) return;
+    if (containerEl.clientWidth <= 0 || containerEl.clientHeight <= 0) {
+      return;
+    }
+
+    const { width, height } = measureCellSize();
+    const cols = Math.max(
+      2,
+      Math.floor(containerEl.clientWidth / width),
+    );
+    const rows = Math.max(
+      1,
+      Math.floor(containerEl.clientHeight / height),
+    );
+
+    if (cols === terminal.cols && rows === terminal.rows) return;
+    terminal.resize(cols, rows);
+    if (notify) sendResize(cols, rows);
+  }
+
   function refreshVisibleTerminal(): void {
     if (!terminal) return;
 
-    fitAddon?.fit();
-    terminal.clearTextureAtlas();
-    terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    fitTerminal(false);
     sendRefresh(terminal.cols, terminal.rows);
   }
 
@@ -180,7 +231,12 @@
     socket.onmessage = (ev: MessageEvent) => {
       if (!terminal) return;
       if (ev.data instanceof ArrayBuffer) {
-        terminal.write(new Uint8Array(ev.data));
+        terminal.write(
+          outputDecoder.decode(
+            new Uint8Array(ev.data),
+            { stream: true },
+          ),
+        );
       } else if (typeof ev.data === "string") {
         try {
           const msg = JSON.parse(ev.data) as {
@@ -282,11 +338,8 @@
 
   $effect(() => {
     if (!terminal) return;
-    terminal.options.fontFamily = terminalFontFamily;
-    // The WebGL renderer caches glyphs per font; force a rebuild so
-    // cell widths and glyph metrics line up after the family changes.
-    terminal.clearTextureAtlas();
-    fitAddon?.fit();
+    terminal.setOption("fontFamily", terminalFontFamily);
+    fitTerminal();
   });
 
   $effect(() => {
@@ -309,48 +362,21 @@
         },
         cursorBlink: true,
         fontFamily: terminalFontFamily,
-        fontSize: 14,
+        appOptions: {
+          fontSize: 14,
+        },
       });
       terminal = term;
 
       term.open(containerEl);
-
-      const fit = new FitAddon();
-      fitAddon = fit;
-      term.loadAddon(fit);
-
-      try {
-        const wgl = new WebglAddon();
-        wgl.onContextLoss(() => {
-          wgl.dispose();
-        });
-        term.loadAddon(wgl);
-      } catch {
-        // WebGL unavailable; canvas renderer used as fallback.
-      }
-
-      fit.fit();
+      fitTerminal(false);
 
       term.onData((data: string) => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(encoder.encode(data));
-        }
-      });
-
-      term.onBinary((data: string) => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          const buf = new Uint8Array(data.length);
-          for (let i = 0; i < data.length; i++) {
-            buf[i] = data.charCodeAt(i) & 0xff;
-          }
-          ws.send(buf.buffer);
-        }
+        sendTerminalInput(data);
       });
 
       resizeObserver = new ResizeObserver(() => {
-        if (!fitAddon || !terminal) return;
-        fitAddon.fit();
-        sendResize(terminal.cols, terminal.rows);
+        fitTerminal();
       });
       resizeObserver.observe(containerEl);
 
@@ -362,11 +388,8 @@
       connect();
     }
 
-    // Custom fonts (JetBrains Mono, etc.) may still be loading when
-    // the pane mounts. Initializing xterm before fonts settle locks
-    // in fallback-font cell metrics, so the WebGL atlas and the
-    // measured cols/rows drift away from what gets painted — which
-    // looks like cursor/prompt overlap in the running shell.
+    // Waiting for fonts keeps the measured cell dimensions aligned
+    // with the terminal canvas before we open the WebSocket.
     if (document.fonts && typeof document.fonts.ready?.then === "function") {
       void document.fonts.ready.then(start);
     } else {
@@ -381,7 +404,10 @@
 
 <style>
   .terminal-container {
+    position: relative;
     width: 100%;
     height: 100%;
+    overflow: hidden;
+    background: #0d1117;
   }
 </style>

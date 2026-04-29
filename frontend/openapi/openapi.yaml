@@ -1607,6 +1607,8 @@ components:
           type:
             - string
             - "null"
+        fork:
+          type: boolean
         name:
           type: string
         owner:
@@ -1622,6 +1624,7 @@ components:
         - name
         - description
         - private
+        - fork
         - pushed_at
         - already_configured
       type: object
@@ -1721,6 +1724,8 @@ components:
         commits_since_release:
           format: int64
           type: integer
+        default_platform_host:
+          type: string
         draft_pr_count:
           format: int64
           type: integer
@@ -1762,6 +1767,7 @@ components:
           type: string
       required:
         - platform_host
+        - default_platform_host
         - owner
         - name
         - cached_pr_count
