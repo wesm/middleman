@@ -126,9 +126,29 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("abcdef1")).toBeTruthy();
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(screen.getByText("Long body")).toBeTruthy();
     expect(screen.getByText("Jun 1, 2024, 8:00 AM")).toBeTruthy();
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeTruthy();
+  });
+
+  it("can hide commit body details while keeping the title row", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "feat: add timeline filters\n\nLong body",
+          }),
+        ],
+        showCommitDetails: false,
+      },
+    });
+
+    expect(screen.getByText("abcdef1")).toBeTruthy();
+    expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(screen.queryByText("Long body")).toBeNull();
   });
 
   it("renders system events as compact rows", () => {

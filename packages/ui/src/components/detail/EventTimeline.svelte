@@ -9,9 +9,16 @@
     repoOwner?: string;
     repoName?: string;
     filtered?: boolean;
+    showCommitDetails?: boolean;
   }
 
-  const { events, repoOwner, repoName, filtered = false }: Props = $props();
+  const {
+    events,
+    repoOwner,
+    repoName,
+    filtered = false,
+    showCommitDetails = true,
+  }: Props = $props();
 
   const typeLabels: Record<string, string> = {
     issue_comment: "Comment",
@@ -49,6 +56,11 @@
 
   function commitTitle(body: string): string {
     return body.split(/\r?\n/, 1)[0] ?? "";
+  }
+
+  function commitBodyDetails(body: string): string {
+    const lines = body.split(/\r?\n/);
+    return lines.slice(1).join("\n").trim();
   }
 
   function systemEventLabel(eventType: string): string {
@@ -113,6 +125,7 @@
         </div>
         {#if isCompactEvent(event.EventType)}
           {@const metadata = parseMetadata(event)}
+          {@const commitDetails = event.EventType === "commit" ? commitBodyDetails(event.Body) : ""}
           <div class="event-card event-card--compact">
             <div class="event-header event-header--compact">
               <span
@@ -147,6 +160,9 @@
                 <span class="system-event-summary">{event.Summary}</span>
               {/if}
             </div>
+            {#if event.EventType === "commit" && showCommitDetails && commitDetails}
+              <div class="commit-body-details">{commitDetails}</div>
+            {/if}
           </div>
         {:else}
           <div class="event-card">
@@ -327,6 +343,17 @@
   .commit-title {
     flex: 1;
     color: var(--text-primary);
+  }
+
+  .commit-body-details {
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px solid var(--border-muted);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .system-event-summary,

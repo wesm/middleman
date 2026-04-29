@@ -146,6 +146,23 @@ describe("prTimelineFilter", () => {
     );
   });
 
+  it("keeps commit title rows when commit details are disabled", () => {
+    const events = [
+      event({ ID: 1, EventType: "commit", Author: "alice" }),
+      event({ ID: 2, EventType: "issue_comment", Author: "alice" }),
+    ];
+
+    expect(
+      filterPREvents(events, {
+        showMessages: true,
+        showCommitDetails: false,
+        showEvents: true,
+        showForcePushes: true,
+        hideBots: false,
+      }).map((item) => item.ID),
+    ).toEqual([1, 2]);
+  });
+
   it("filters by disabled buckets and bots", () => {
     const events = [
       event({ ID: 1, EventType: "issue_comment", Author: "alice" }),
@@ -163,7 +180,7 @@ describe("prTimelineFilter", () => {
         showForcePushes: false,
         hideBots: true,
       }).map((item) => item.ID),
-    ).toEqual([1, 5]);
+    ).toEqual([1, 3, 5]);
   });
 
   it("counts active timeline filters", () => {

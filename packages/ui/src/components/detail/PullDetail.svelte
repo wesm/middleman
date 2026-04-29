@@ -1086,6 +1086,7 @@
             repoOwner={owner}
             repoName={name}
             filtered={hasActiveTimelineFilters}
+            showCommitDetails={timelineFilter.showCommitDetails}
           />
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">
