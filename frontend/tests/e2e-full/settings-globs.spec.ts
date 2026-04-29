@@ -107,6 +107,84 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   }).toBe("api");
 });
 
+test("repository import can hide forks and private repositories before adding", async ({ page }) => {
+  let bulkRepos: Array<{ owner: string; name: string }> | undefined;
+  await page.route("**/api/v1/repos/preview", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        owner: "import-lab",
+        pattern: "*",
+        repos: [
+          {
+            owner: "import-lab",
+            name: "public-source",
+            description: "Source repository",
+            private: false,
+            fork: false,
+            pushed_at: "2026-04-22T10:00:00Z",
+            already_configured: false,
+          },
+          {
+            owner: "import-lab",
+            name: "private-source",
+            description: "Private repository",
+            private: true,
+            fork: false,
+            pushed_at: "2026-04-23T10:00:00Z",
+            already_configured: false,
+          },
+          {
+            owner: "import-lab",
+            name: "public-fork",
+            description: "Forked repository",
+            private: false,
+            fork: true,
+            pushed_at: "2026-04-24T10:00:00Z",
+            already_configured: false,
+          },
+        ],
+      }),
+    });
+  });
+  await page.route("**/api/v1/repos/bulk", async (route) => {
+    const body = route.request().postDataJSON() as { repos: Array<{ owner: string; name: string }> };
+    bulkRepos = body.repos;
+    await route.fulfill({
+      contentType: "application/json",
+      status: 201,
+      body: JSON.stringify({
+        repos: [{ owner: "import-lab", name: "public-source", is_glob: false, matched_repo_count: 1 }],
+        activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false },
+        terminal: { font_family: "" },
+      }),
+    });
+  });
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Add repositories…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add repositories" });
+  await dialog.getByLabel("Repository pattern").fill("import-lab/*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+
+  await expect(dialog.getByText("import-lab/public-source")).toBeVisible();
+  await expect(dialog.getByText("import-lab/private-source")).toBeVisible();
+  await expect(dialog.getByText("import-lab/public-fork")).toBeVisible();
+
+  await dialog.getByLabel("Hide private").check();
+  await dialog.getByLabel("Hide forks").check();
+  await expect(dialog.getByText("import-lab/public-source")).toBeVisible();
+  await expect(dialog.getByText("import-lab/private-source")).toHaveCount(0);
+  await expect(dialog.getByText("import-lab/public-fork")).toHaveCount(0);
+  await expect(dialog.getByText("Selected 1 of 1")).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Add selected repositories" }).click();
+
+  expect(bulkRepos).toEqual([{ owner: "import-lab", name: "public-source" }]);
+});
+
 test("repository import traps keyboard focus inside the dialog", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
@@ -157,6 +235,7 @@ test("repository import ignores older preview responses", async ({ page }) => {
             name: "middleman",
             description: "Main dashboard",
             private: false,
+            fork: false,
             pushed_at: "2026-04-22T10:00:00Z",
             already_configured: false,
           }],
@@ -174,6 +253,7 @@ test("repository import ignores older preview responses", async ({ page }) => {
           name: "review-bot",
           description: "Review automation",
           private: false,
+          fork: false,
           pushed_at: "2026-04-24T09:15:00Z",
           already_configured: false,
         }],

@@ -7,6 +7,7 @@ export interface RepoImportRow {
   name: string;
   description: string | null;
   private: boolean;
+  fork: boolean;
   pushed_at: string | null;
   already_configured: boolean;
 }
@@ -14,6 +15,11 @@ export interface RepoImportRow {
 export interface SortState {
   field: SortField;
   direction: SortDirection;
+}
+
+export interface RepoVisibilityFilters {
+  hideForks?: boolean;
+  hidePrivate?: boolean;
 }
 
 export function rowKey(row: Pick<RepoImportRow, "owner" | "name">): string {
@@ -41,9 +47,12 @@ export function filterRows(
   query: string,
   status: StatusFilter,
   selected = new Set<string>(),
+  visibilityFilters: RepoVisibilityFilters = {},
 ): RepoImportRow[] {
   const needle = query.trim().toLowerCase();
   return rows.filter((row) => {
+    if (visibilityFilters.hidePrivate && row.private) return false;
+    if (visibilityFilters.hideForks && row.fork) return false;
     const key = rowKey(row);
     const matchesText = needle === "" ||
       key.includes(needle) ||
@@ -123,6 +132,11 @@ export function applyRangeSelection(input: {
 export function selectedRowsForSubmit(
   sortedRows: RepoImportRow[],
   selected: Set<string>,
+  visibilityFilters: RepoVisibilityFilters = {},
 ): RepoImportRow[] {
-  return sortedRows.filter((row) => selected.has(rowKey(row)) && !row.already_configured);
+  return sortedRows.filter((row) => {
+    if (visibilityFilters.hidePrivate && row.private) return false;
+    if (visibilityFilters.hideForks && row.fork) return false;
+    return selected.has(rowKey(row)) && !row.already_configured;
+  });
 }

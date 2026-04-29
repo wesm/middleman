@@ -1539,6 +1539,7 @@ export interface components {
         RepoPreviewRow: {
             already_configured: boolean;
             description: string | null;
+            fork: boolean;
             name: string;
             owner: string;
             private: boolean;

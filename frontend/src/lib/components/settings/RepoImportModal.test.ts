@@ -12,10 +12,10 @@ const preview = vi.mocked(previewRepos);
 const bulk = vi.mocked(bulkAddRepos);
 
 const rows = [
-  { owner: "acme", name: "worker", description: "Background jobs", private: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "api", description: "HTTP API", private: true, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "widget", description: "Configured", private: false, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
-  { owner: "acme", name: "empty", description: null, private: false, pushed_at: null, already_configured: false },
+  { owner: "acme", name: "worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
+  { owner: "acme", name: "api", description: "HTTP API", private: true, fork: false, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
+  { owner: "acme", name: "widget", description: "Configured", private: false, fork: true, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  { owner: "acme", name: "empty", description: null, private: false, fork: false, pushed_at: null, already_configured: false },
 ];
 
 describe("RepoImportModal", () => {
@@ -33,7 +33,7 @@ describe("RepoImportModal", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
     await screen.findByText("acme/api");
-    expect(screen.getByText("Selected 3 of 4")).toBeTruthy();
+    expect(screen.getByText("Selected 3 of 3")).toBeTruthy();
     expect((screen.getByRole("checkbox", { name: "Select acme/widget" }) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText("Never pushed")).toBeTruthy();
   });
@@ -58,6 +58,29 @@ describe("RepoImportModal", () => {
       { owner: "acme", name: "empty" },
     ]));
     expect(onImported).toHaveBeenCalled();
+  });
+
+  it("hides private repositories and forks from preview selection", async () => {
+    preview.mockResolvedValue({ owner: "acme", pattern: "*", repos: rows });
+    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "" } });
+    render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
+
+    await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await screen.findByText("acme/api");
+
+    await fireEvent.click(screen.getByLabelText("Hide private"));
+    await fireEvent.click(screen.getByLabelText("Hide forks"));
+    expect(screen.queryByText("acme/api")).toBeNull();
+    expect(screen.queryByText("acme/widget")).toBeNull();
+    expect(screen.getByText("Selected 2 of 2")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
+
+    await waitFor(() => expect(bulk).toHaveBeenCalledWith([
+      { owner: "acme", name: "worker" },
+      { owner: "acme", name: "empty" },
+    ]));
   });
 
   it("does not start duplicate previews while loading", async () => {

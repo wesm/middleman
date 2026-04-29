@@ -117,6 +117,7 @@ describe("RepoSettings", () => {
         name: "api",
         description: "HTTP API",
         private: false,
+        fork: false,
         pushed_at: null,
         already_configured: false,
       }],

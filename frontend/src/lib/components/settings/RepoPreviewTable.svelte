@@ -7,9 +7,13 @@
     selected: Set<string>;
     filterText: string;
     statusFilter: StatusFilter;
+    hideForks: boolean;
+    hidePrivate: boolean;
     sort: SortState;
     onFilterText: (value: string) => void;
     onStatusFilter: (value: StatusFilter) => void;
+    onHideForks: (value: boolean) => void;
+    onHidePrivate: (value: boolean) => void;
     onSort: (field: SortState["field"]) => void;
     onToggle: (row: RepoImportRow, checked: boolean, shiftKey: boolean) => void;
     onSelectVisible: () => void;
@@ -21,9 +25,13 @@
     selected,
     filterText,
     statusFilter,
+    hideForks,
+    hidePrivate,
     sort,
     onFilterText,
     onStatusFilter,
+    onHideForks,
+    onHidePrivate,
     onSort,
     onToggle,
     onSelectVisible,
@@ -65,6 +73,22 @@
     <option value="unselected">Unselected</option>
     <option value="already-added">Already added</option>
   </select>
+  <label class="toggle-filter">
+    <input
+      type="checkbox"
+      checked={hideForks}
+      onchange={(event) => onHideForks(event.currentTarget.checked)}
+    />
+    <span>Hide forks</span>
+  </label>
+  <label class="toggle-filter">
+    <input
+      type="checkbox"
+      checked={hidePrivate}
+      onchange={(event) => onHidePrivate(event.currentTarget.checked)}
+    />
+    <span>Hide private</span>
+  </label>
   <button type="button" class="shortcut-btn" onclick={onSelectVisible}>All</button>
   <button type="button" class="shortcut-btn" onclick={onDeselectVisible}>None</button>
 </div>
@@ -97,7 +121,10 @@
           <td class="repo-name">{row.owner}/{row.name}</td>
           <td class="description">{row.description ?? ""}</td>
           <td>{formatPushedAt(row.pushed_at)}</td>
-          <td><span class="chip chip-muted">{row.private ? "Private" : "Public"}</span></td>
+          <td>
+            <span class="chip chip-muted">{row.private ? "Private" : "Public"}</span>
+            {#if row.fork}<span class="chip chip-muted">Fork</span>{/if}
+          </td>
           <td>{#if row.already_configured}<span class="chip chip-amber">Already added</span>{/if}</td>
         </tr>
       {:else}
@@ -111,6 +138,8 @@
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .filter-input { flex: 1; min-width: 220px; font-size: 13px; padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   select { font-size: 13px; padding: 6px 8px; background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  .toggle-filter { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  .toggle-filter input { margin: 0; }
   .shortcut-btn, .sort-btn { font-size: 12px; color: var(--accent-blue); }
   .table-wrap { overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }
   .repo-preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -122,7 +151,7 @@
   .description { color: var(--text-secondary); min-width: 180px; }
   .disabled-row { opacity: 0.72; }
   .empty-cell { text-align: center; color: var(--text-muted); padding: 24px; }
-  .chip { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: 18px; padding: 0 6px; border-radius: 9px; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
+  .chip { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: 18px; margin-right: 4px; padding: 0 6px; border-radius: 9px; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
   .chip-muted { background: var(--bg-inset); color: var(--text-muted); }
   .chip-amber { background: color-mix(in srgb, var(--accent-amber) 15%, transparent); color: var(--accent-amber); }
 </style>
