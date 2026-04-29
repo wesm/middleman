@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 import { acquireExclusiveLock } from "./support/exclusiveLock";
+import { startIsolatedE2EServer } from "./support/e2eServer";
 
 // --- Fixtures ---
 
@@ -354,6 +355,45 @@ test.describe("diff view", () => {
     await segments.nth(1).click();
     await expect(segments.nth(1)).toHaveClass(/segment--active/);
     await expect(segments.nth(2)).not.toHaveClass(/segment--active/);
+  });
+
+  test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await expect(page.locator(".files-view > .diff-toolbar")).toBeVisible();
+
+    const categoryFilter = page.getByRole("group", {
+      name: "Filter changed files",
+    });
+    await expect(categoryFilter.getByRole("button", { name: "Plans/docs (0)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "Code (3)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "Tests (0)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "Other (1)" }))
+      .toBeVisible();
+    await expect(categoryFilter.getByRole("button", { name: "All (4)" }))
+      .toHaveAttribute("aria-pressed", "true");
+
+    await categoryFilter.getByRole("button", { name: "Code (3)" }).click();
+
+    await expect(page.locator(".diff-file")).toHaveCount(3);
+    await expect(page.locator(".diff-file-row")).toHaveCount(3);
+    await expect(page.locator(".diff-file", { hasText: "assets/logo.png" }))
+      .toHaveCount(0);
+    await expect(page.locator(".diff-file-row", { hasText: "logo.png" }))
+      .toHaveCount(0);
+
+    await expect(categoryFilter.getByRole("button", { name: "Code (3)" }))
+      .toHaveAttribute("aria-pressed", "true");
+    await categoryFilter.getByRole("button", { name: "All (4)" }).click();
+
+    await expect(page.locator(".diff-file")).toHaveCount(4);
+    await expect(page.locator(".diff-file-row")).toHaveCount(4);
   });
 
   test("hide whitespace toggle triggers re-fetch", async ({ page }) => {
@@ -814,6 +854,65 @@ test.describe("diff view (git-backed)", () => {
     // Should have 4 changed files from the test repo.
     await expect(page.locator(".diff-file")).toHaveCount(4);
     await expect(page.locator(".diff-file-row")).toHaveCount(4);
+  });
+
+  test("category filter counts and filtering come from the real diff API", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const response = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-diff-summary/advance-head`,
+      );
+      expect(response.ok()).toBe(true);
+
+      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await waitForSidebarFilesLoaded(page);
+
+      const categoryFilter = page.getByRole("group", {
+        name: "Filter changed files",
+      });
+      await expect(categoryFilter.getByRole("button", { name: "Plans/docs (2)" }))
+        .toBeVisible();
+      await expect(categoryFilter.getByRole("button", { name: "Code (2)" }))
+        .toBeVisible();
+      await expect(categoryFilter.getByRole("button", { name: "Tests (1)" }))
+        .toBeVisible();
+      await expect(categoryFilter.getByRole("button", { name: "Other (1)" }))
+        .toBeVisible();
+      await expect(categoryFilter.getByRole("button", { name: "All (6)" }))
+        .toHaveAttribute("aria-pressed", "true");
+
+      await categoryFilter.getByRole("button", { name: "Tests (1)" }).click();
+
+      await expect(page.locator(".diff-file")).toHaveCount(1);
+      await expect(page.locator(".diff-file-row")).toHaveCount(1);
+      await expect(page.locator('[data-file-path="internal/cache_test.go"]'))
+        .toBeVisible();
+      await expect(page.locator(".diff-file-row", { hasText: "cache_test.go" }))
+        .toBeVisible();
+      await expect(page.locator('[data-file-path="internal/cache.go"]'))
+        .toHaveCount(0);
+      await expect(page.locator(".diff-file-row", { hasText: "cache.go" }))
+        .toHaveCount(0);
+
+      await categoryFilter.getByRole("button", { name: "Plans/docs (2)" })
+        .click();
+
+      await expect(page.locator(".diff-file")).toHaveCount(2);
+      await expect(page.locator(".diff-file-row")).toHaveCount(2);
+      await expect(page.locator('[data-file-path="docs/cache-plan.md"]'))
+        .toBeVisible();
+      await expect(page.locator('[data-file-path="README.md"]'))
+        .toBeVisible();
+      await expect(page.locator(".diff-file-row", { hasText: "cache-plan.md" }))
+        .toBeVisible();
+      await expect(page.locator(".diff-file-row", { hasText: "README.md" }))
+        .toBeVisible();
+      await expect(page.locator('[data-file-path="internal/cache_test.go"]'))
+        .toHaveCount(0);
+    } finally {
+      await server.stop();
+    }
   });
 
   test("modified file has multiple hunks with correct content", async ({ page }) => {

@@ -3,7 +3,6 @@
   import { getStores } from "../../context.js";
 
   const { diff: diffStore } = getStores();
-  import DiffToolbar from "./DiffToolbar.svelte";
   import DiffFileComponent from "./DiffFile.svelte";
 
   interface Props {
@@ -27,6 +26,7 @@
   });
 
   const diff = $derived(diffStore.getDiff());
+  const visibleFiles = $derived(diffStore.getVisibleDiffFiles());
   const loading = $derived(diffStore.isDiffLoading());
   const error = $derived(diffStore.getDiffError());
   const tabWidth = $derived(diffStore.getTabWidth());
@@ -62,7 +62,7 @@
     const threshold = rect.top + 60;
 
     let current: string | null = null;
-    for (const file of diff.files) {
+    for (const file of visibleFiles) {
       const el = diffArea.querySelector(`[data-file-path="${CSS.escape(file.path)}"]`);
       if (!el) continue;
       const elRect = el.getBoundingClientRect();
@@ -82,9 +82,9 @@
     if ((e.target as HTMLElement).isContentEditable) return;
 
     if (e.key === "j" || e.key === "k") {
-      if (!diff || diff.files.length === 0) return;
+      if (!diff || visibleFiles.length === 0) return;
       e.preventDefault();
-      const paths = diff.files.map((f) => f.path);
+      const paths = visibleFiles.map((f) => f.path);
       const currentIdx = diffStore.getActiveFile() ? paths.indexOf(diffStore.getActiveFile()!) : -1;
       let nextIdx: number;
       if (e.key === "j") {
@@ -135,14 +135,18 @@
       </div>
     {:else if diff}
       <div class="diff-main">
-        <DiffToolbar />
         <div
           class="diff-area"
           bind:this={diffArea}
           onscroll={onDiffScroll}
           style:tab-size={tabWidth}
         >
-          {#each diff.files as file (file.path)}
+          {#if visibleFiles.length === 0}
+            <div class="diff-state diff-state--empty">
+              <p class="diff-state-msg">No changed files match this category.</p>
+            </div>
+          {/if}
+          {#each visibleFiles as file (file.path)}
             <DiffFileComponent
               {file}
               {owner}
@@ -199,6 +203,10 @@
     justify-content: center;
     gap: 8px;
     flex: 1;
+  }
+
+  .diff-state--empty {
+    min-height: 180px;
   }
 
   .diff-spinner {

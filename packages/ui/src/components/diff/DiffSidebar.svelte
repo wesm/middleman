@@ -65,10 +65,10 @@
     fileFilterText = "";
   });
   const showFileFilter = $derived(
-    (diff.getFileList()?.files.length ?? 0) >= 10,
+    (diff.getVisibleFileList()?.files.length ?? 0) >= 10,
   );
   const filteredDiffFiles = $derived.by(() => {
-    const list = diff.getFileList();
+    const list = diff.getVisibleFileList();
     if (!list) return null;
     // Only apply filter when the filter UI is visible to avoid
     // silent hiding when the next PR has fewer files.

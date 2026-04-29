@@ -7,6 +7,7 @@
   import PullDetail
     from "../components/detail/PullDetail.svelte";
   import DiffSidebar from "../components/diff/DiffSidebar.svelte";
+  import DiffToolbar from "../components/diff/DiffToolbar.svelte";
   import DiffView from "../components/diff/DiffView.svelte";
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
@@ -92,16 +93,19 @@
     </div>
     {#if detailTab === "files"}
       {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
-        <div class="files-layout">
-          <aside class="files-sidebar">
-            <DiffSidebar />
-          </aside>
-          <div class="files-main">
-            <DiffView
-              owner={selectedPR.owner}
-              name={selectedPR.name}
-              number={selectedPR.number}
-            />
+        <div class="files-view">
+          <DiffToolbar />
+          <div class="files-layout">
+            <aside class="files-sidebar">
+              <DiffSidebar />
+            </aside>
+            <div class="files-main">
+              <DiffView
+                owner={selectedPR.owner}
+                name={selectedPR.name}
+                number={selectedPR.number}
+              />
+            </div>
           </div>
         </div>
       {/key}
@@ -146,6 +150,14 @@
   .files-layout {
     display: flex;
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .files-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
