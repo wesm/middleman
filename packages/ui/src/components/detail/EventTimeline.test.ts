@@ -1,9 +1,14 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { compile } from "svelte/compiler";
 import { afterEach, describe, expect, it } from "vitest";
+import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import type { PREvent } from "../../api/types.js";
+
+const compiledCss = compile(
+  componentSource,
+  { filename: "EventTimeline.svelte" },
+).css?.code ?? "";
 
 function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
   return {
@@ -24,12 +29,25 @@ function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
   } as PREvent;
 }
 
-function findComponentStyleRule(selector: string): string {
-  const source = readFileSync(
-    resolve(process.cwd(), "../packages/ui/src/components/detail/EventTimeline.svelte"),
-    "utf8",
-  );
-  return source.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`))?.[0] ?? "";
+function findCompiledStyleRule(
+  selector: string,
+  exclude: string[] = [],
+): CSSStyleDeclaration {
+  const style = document.createElement("style");
+  style.textContent = compiledCss;
+  document.head.appendChild(style);
+
+  for (const rule of Array.from(style.sheet?.cssRules ?? [])) {
+    if (!("selectorText" in rule) || !("style" in rule)) continue;
+    const selectorText = String(rule.selectorText);
+    if (
+      selectorText.includes(selector)
+      && exclude.every((part) => !selectorText.includes(part))
+    ) {
+      return rule.style as CSSStyleDeclaration;
+    }
+  }
+  throw new Error(`Could not find compiled style rule for ${selector}`);
 }
 
 describe("EventTimeline", () => {
@@ -63,19 +81,30 @@ describe("EventTimeline", () => {
       },
     });
 
-    const wrapper = container.querySelector(".event-card");
+    const cards = container.querySelectorAll(".event-card");
+    const wrapper = cards[0];
     const body = container.querySelector(".event-body");
+    const bodyWrap = container.querySelector(".event-body-wrap");
+    expect(cards).toHaveLength(1);
     expect(wrapper).toBeInstanceOf(HTMLElement);
     expect(body).toBeInstanceOf(HTMLElement);
+    expect(bodyWrap).toBeInstanceOf(HTMLElement);
 
-    const eventCardRule = findComponentStyleRule(".event-card");
-    const eventBodyRule = findComponentStyleRule(".event-body");
+    expect(wrapper!.contains(bodyWrap)).toBe(true);
+    expect(bodyWrap!.contains(body)).toBe(true);
+    expect(body!.classList.contains("event-card")).toBe(false);
 
-    expect(eventCardRule).toContain("background:");
-    expect(eventCardRule).toContain("border:");
-    expect(eventCardRule).toContain("border-radius:");
-    expect(eventBodyRule).not.toContain("background:");
-    expect(eventBodyRule).not.toContain("border:");
-    expect(eventBodyRule).not.toContain("border-radius:");
+    const cardStyle = findCompiledStyleRule(".event-card");
+    const bodyStyle = findCompiledStyleRule(".event-body", [
+      ".event-body-wrap",
+      ".markdown-body",
+    ]);
+
+    expect(cardStyle.getPropertyValue("background")).toBe("var(--bg-surface)");
+    expect(cardStyle.getPropertyValue("border")).toBe("1px solid var(--border-muted)");
+    expect(cardStyle.getPropertyValue("border-radius")).toBe("var(--radius-md)");
+    expect(bodyStyle.getPropertyValue("background")).toBe("");
+    expect(bodyStyle.getPropertyValue("border")).toBe("");
+    expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
   });
 });
