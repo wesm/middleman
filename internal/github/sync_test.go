@@ -5022,7 +5022,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NotNil(mr.DetailFetchedAt)
-	assert.Equal(timelineAt.UTC(), mr.LastActivityAt.UTC())
+	assert.Equal(now.UTC(), mr.LastActivityAt.UTC())
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)

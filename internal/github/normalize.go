@@ -206,6 +206,9 @@ func NormalizeTimelineEvent(mrID int64, event PullRequestTimelineEvent) *db.MREv
 			Ref:       event.Ref,
 			CreatedAt: event.CreatedAt,
 		})
+		if event.NodeID != "" {
+			normalized.DedupeKey = timelineDedupeKey(event)
+		}
 		return &normalized
 	case "cross_referenced":
 		metadata, _ := json.Marshal(crossReferenceMetadata{

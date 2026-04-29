@@ -2280,11 +2280,6 @@ func (s *Syncer) syncOpenMRFromBulk(
 		lastActivity := computeLastActivity(
 			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits,
 		)
-		for _, timelineEvent := range bulk.TimelineEvents {
-			if timelineEvent.CreatedAt.After(lastActivity) {
-				lastActivity = timelineEvent.CreatedAt
-			}
-		}
 		if err := s.db.UpdateMRDerivedFields(
 			ctx, repoID, number, db.MRDerivedFields{
 				ReviewDecision: reviewDecision,

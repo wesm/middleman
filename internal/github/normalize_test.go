@@ -350,7 +350,7 @@ func TestNormalizeTimelineEventForcePush(t *testing.T) {
 	assert.Equal("dana", event.Author)
 	assert.Equal("aaaaaaa -> bbbbbbb", event.Summary)
 	assert.Equal(createdAt, event.CreatedAt)
-	assert.Equal("force-push-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", event.DedupeKey)
+	assert.Equal("timeline-HRFPE_1", event.DedupeKey)
 	assert.Contains(event.MetadataJSON, `"before_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)
 	assert.Contains(event.MetadataJSON, `"after_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`)
 	assert.Contains(event.MetadataJSON, `"ref":"feature"`)
