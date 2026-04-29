@@ -247,6 +247,17 @@ func TestSelectPRByUpstream(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(42, number)
 
+	number, ok = selectPRByUpstream([]db.MergeRequest{{
+		Number:           44,
+		HeadBranch:       "shared-branch",
+		HeadRepoCloneURL: "https://ghe.example.com/fork-two/widget.git",
+	}}, upstreamState{
+		branchName: "shared-branch",
+		remoteURL:  "git@github.com:Fork-Two/Widget.git",
+	})
+	assert.False(ok)
+	assert.Zero(number)
+
 	for _, upstream := range []upstreamState{
 		{branchName: "shared-branch", remoteURL: "not a clone url"},
 		{branchName: "missing", remoteURL: "git@github.com:Fork-Two/Widget.git"},
@@ -329,15 +340,15 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 	assert := Assert.New(t)
 
 	assert.Equal(
-		"fork/widget",
+		"github.com/fork/widget",
 		normalizeCloneRepoIdentity(" git@GitHub.com:Fork/Widget.git "),
 	)
 	assert.Equal(
-		"fork/widget",
+		"github.com/fork/widget",
 		normalizeCloneRepoIdentity("https://token@github.com/Fork/Widget/"),
 	)
 	assert.Equal(
-		"fork/widget",
+		"github.com/fork/widget",
 		normalizeCloneRepoIdentity("ssh://git@github.com:22/Fork/Widget.git"),
 	)
 	assert.Empty(normalizeCloneRepoIdentity("/tmp/workspace/remote.git"))

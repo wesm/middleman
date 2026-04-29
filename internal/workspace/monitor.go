@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -275,9 +276,32 @@ func normalizeCloneRepoIdentity(cloneURL string) string {
 	if !strings.Contains(cloneURL, "://") && !strings.Contains(cloneURL, "@") {
 		return ""
 	}
+	host := normalizeCloneURLHost(cloneURL)
+	if host == "" {
+		return ""
+	}
 	fullName := ghclient.ParseHeadRepoFullName(cloneURL)
 	if fullName == "" {
 		return ""
 	}
-	return strings.ToLower(fullName)
+	return strings.ToLower(host + "/" + fullName)
+}
+
+func normalizeCloneURLHost(cloneURL string) string {
+	if strings.Contains(cloneURL, "://") {
+		parsed, err := url.Parse(cloneURL)
+		if err != nil {
+			return ""
+		}
+		return parsed.Hostname()
+	}
+	beforePath, _, ok := strings.Cut(cloneURL, ":")
+	if !ok {
+		return ""
+	}
+	_, host, ok := strings.Cut(beforePath, "@")
+	if !ok {
+		return ""
+	}
+	return host
 }
