@@ -228,6 +228,19 @@ func samePlatformHost(left, right string) bool {
 	return strings.EqualFold(left, right)
 }
 
+func (s *Server) defaultPlatformHost() string {
+	if s.cfg == nil {
+		return "github.com"
+	}
+	s.cfgMu.Lock()
+	host := s.cfg.DefaultPlatformHost
+	s.cfgMu.Unlock()
+	if strings.TrimSpace(host) == "" {
+		return "github.com"
+	}
+	return strings.ToLower(strings.TrimSpace(host))
+}
+
 func classifyResolveError(err error) (int, string) {
 	switch {
 	case errors.Is(err, ghclient.ErrConfiguredRepoArchived):

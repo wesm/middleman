@@ -9,6 +9,7 @@
     localDateTimeLabel,
     repoKey,
     repoStateKey,
+    shouldShowPlatformHost,
     type RepoMetric,
     type RepoSummaryCard,
   } from "./repoSummary.js";
@@ -43,6 +44,7 @@
   const repoURL = $derived(
     `https://${summary.platform_host || "github.com"}/${summary.owner}/${summary.name}`,
   );
+  const showPlatformHost = $derived(shouldShowPlatformHost(summary));
   const syncTime = $derived(
     summary.last_sync_completed_at
       || summary.last_sync_started_at,
@@ -193,8 +195,8 @@
           href={repoURL}
           target="_blank"
           rel="noopener noreferrer"
-          title="Open on GitHub"
-          aria-label={`Open ${summary.owner}/${summary.name} on GitHub`}
+          title={`Open on ${summary.platform_host || "github.com"}`}
+          aria-label={`Open ${summary.owner}/${summary.name} on ${summary.platform_host || "github.com"}`}
         >
           <ExternalLinkIcon
             size="14"
@@ -203,9 +205,11 @@
           />
         </a>
       </div>
-      <Chip size="sm" class="chip--muted" uppercase={false}>
-        {summary.platform_host}
-      </Chip>
+      {#if showPlatformHost}
+        <Chip size="sm" class="chip--muted" uppercase={false}>
+          {summary.platform_host}
+        </Chip>
+      {/if}
     </div>
 
     <div class="repo-card__actions">

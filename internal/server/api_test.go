@@ -2215,6 +2215,39 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert.NotEmpty((*widgets.RecentIssues)[0].Title)
 }
 
+func TestAPIListRepoSummariesIncludesDefaultPlatformHost(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+default_platform_host = "ghe.example.com"
+
+[[repos]]
+owner = "acme"
+name = "widgets"
+platform_host = "ghe.example.com"
+`, &mockGH{})
+
+	_, err := database.UpsertRepo(
+		t.Context(), "ghe.example.com", "acme", "widgets",
+	)
+	require.NoError(err)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Owner:        "acme",
+		Name:         "widgets",
+		PlatformHost: "ghe.example.com",
+	}})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
+	require.Equal(http.StatusOK, rr.Code)
+
+	var summaries []repoSummaryResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&summaries))
+	require.Len(summaries, 1)
+	assert.Equal("ghe.example.com", summaries[0].PlatformHost)
+	assert.Equal("ghe.example.com", summaries[0].DefaultPlatformHost)
+}
+
 func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

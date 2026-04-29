@@ -211,19 +211,23 @@ func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func toRepoSummaryResponse(summary db.RepoSummary) repoSummaryResponse {
+func toRepoSummaryResponse(
+	summary db.RepoSummary,
+	defaultPlatformHost string,
+) repoSummaryResponse {
 	resp := repoSummaryResponse{
-		PlatformHost:     summary.Repo.PlatformHost,
-		Owner:            summary.Repo.Owner,
-		Name:             summary.Repo.Name,
-		LastSyncError:    summary.Repo.LastSyncError,
-		CachedPRCount:    summary.CachedPRCount,
-		OpenPRCount:      summary.OpenPRCount,
-		DraftPRCount:     summary.DraftPRCount,
-		CachedIssueCount: summary.CachedIssueCount,
-		OpenIssueCount:   summary.OpenIssueCount,
-		ActiveAuthors:    make([]repoSummaryAuthorResponse, 0, len(summary.ActiveAuthors)),
-		RecentIssues:     make([]repoSummaryIssueResponse, 0, len(summary.RecentIssues)),
+		PlatformHost:        summary.Repo.PlatformHost,
+		DefaultPlatformHost: defaultPlatformHost,
+		Owner:               summary.Repo.Owner,
+		Name:                summary.Repo.Name,
+		LastSyncError:       summary.Repo.LastSyncError,
+		CachedPRCount:       summary.CachedPRCount,
+		OpenPRCount:         summary.OpenPRCount,
+		DraftPRCount:        summary.DraftPRCount,
+		CachedIssueCount:    summary.CachedIssueCount,
+		OpenIssueCount:      summary.OpenIssueCount,
+		ActiveAuthors:       make([]repoSummaryAuthorResponse, 0, len(summary.ActiveAuthors)),
+		RecentIssues:        make([]repoSummaryIssueResponse, 0, len(summary.RecentIssues)),
 	}
 	if summary.Repo.LastSyncStartedAt != nil {
 		resp.LastSyncStartedAt = formatUTCRFC3339(*summary.Repo.LastSyncStartedAt)

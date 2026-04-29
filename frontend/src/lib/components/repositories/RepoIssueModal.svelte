@@ -8,6 +8,7 @@
   import {
     repoKey,
     repoStateKey,
+    shouldShowPlatformHost,
     type RepoSummaryCard,
   } from "./repoSummary.js";
 
@@ -40,6 +41,7 @@
   const titleId = $derived(
     `repo-issue-modal-title-${stateKey}`,
   );
+  const showPlatformHost = $derived(shouldShowPlatformHost(summary));
 
   let titleInput = $state<HTMLInputElement | null>(null);
 
@@ -81,9 +83,11 @@
       <header class="issue-modal__header">
         <div class="issue-modal__title-group">
           <h2 id={titleId}>New issue in {key}</h2>
-          <Chip size="sm" class="chip--muted" uppercase={false}>
-            {summary.platform_host}
-          </Chip>
+          {#if showPlatformHost}
+            <Chip size="sm" class="chip--muted" uppercase={false}>
+              {summary.platform_host}
+            </Chip>
+          {/if}
         </div>
         <ActionButton size="sm" type="button" onclick={oncancel}>
           Cancel

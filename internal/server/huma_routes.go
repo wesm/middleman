@@ -1735,9 +1735,12 @@ func (s *Server) listRepoSummaries(
 		summaries = s.filterConfiguredRepoSummaries(summaries)
 	}
 
+	defaultPlatformHost := s.defaultPlatformHost()
 	out := make([]repoSummaryResponse, 0, len(summaries))
 	for _, summary := range summaries {
-		out = append(out, toRepoSummaryResponse(summary))
+		out = append(out, toRepoSummaryResponse(
+			summary, defaultPlatformHost,
+		))
 	}
 
 	return &listRepoSummariesOutput{Body: out}, nil

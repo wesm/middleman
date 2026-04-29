@@ -118,6 +118,7 @@ All fields are optional. Repos can be added in the config file or through the Se
 |-------|---------|-------------|
 | `sync_interval` | `"5m"` | How often to pull from GitHub |
 | `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding your token |
+| `default_platform_host` | `"github.com"` | Host treated as implicit in repository UI labels |
 | `host` | `"127.0.0.1"` | Listen address |
 | `port` | `8091` | Listen port |
 | `base_path` | `"/"` | URL prefix for reverse proxy deployments |
@@ -139,7 +140,7 @@ platform_host = "github.corp.example.com"
 token_env = "GHE_TOKEN"
 ```
 
-Each distinct host can use a separate token env var. Repos without `platform_host` default to `github.com`.
+Each distinct host can use a separate token env var. Repos without `platform_host` default to `github.com`. Set `default_platform_host` when you want another host to be hidden as the implied repository host in the UI.
 
 ## Embedding
 
