@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -163,7 +164,12 @@
               {/if}
             </div>
             {#if event.EventType === "commit" && showCommitDetails && commitDetails}
-              <div class="event-body commit-body-details">{commitDetails}</div>
+              <div
+                class="event-body commit-body-details"
+                transition:slide={{ duration: 100 }}
+              >
+                {commitDetails}
+              </div>
             {/if}
           </div>
         {:else}
