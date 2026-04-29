@@ -434,11 +434,10 @@ func (s *Server) refreshConfiguredRepo(
 		return nil, huma.Error404NotFound(
 			owner + "/" + name + " is no longer configured")
 	}
-	if err := s.persistResolvedRepos(r.Context(), expanded); err != nil {
+	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusInternalServerError,
-			"persist resolved repos: "+err.Error())
-		return
+		return nil, huma.Error500InternalServerError(
+			"persist resolved repos: " + err.Error())
 	}
 	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
