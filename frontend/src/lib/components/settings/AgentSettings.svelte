@@ -291,6 +291,30 @@
           </label>
 
           <div class="row-actions">
+            {#if draft.builtin && draft.expanded}
+              <button
+                class="icon-btn"
+                type="button"
+                title="Reset"
+                aria-label={`Reset ${agentName(draft)}`}
+                disabled={saving}
+                onclick={() => resetBuiltin(draft)}
+              >
+                <RotateCcwIcon size="13" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {:else if !draft.builtin && draft.expanded}
+              <button
+                class="icon-btn icon-btn--danger"
+                type="button"
+                title="Remove"
+                aria-label={`Remove ${agentName(draft)}`}
+                disabled={saving}
+                onclick={() => removeCustomAgent(draft.id)}
+              >
+                <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {/if}
+
             <button
               class="icon-btn"
               type="button"
@@ -305,30 +329,6 @@
                 <ChevronRightIcon size="13" strokeWidth="2" aria-hidden="true" />
               {/if}
             </button>
-
-            {#if draft.builtin}
-              <button
-                class="icon-btn"
-                type="button"
-                title="Reset"
-                aria-label={`Reset ${agentName(draft)}`}
-                disabled={saving}
-                onclick={() => resetBuiltin(draft)}
-              >
-                <RotateCcwIcon size="13" strokeWidth="2" aria-hidden="true" />
-              </button>
-            {:else}
-              <button
-                class="icon-btn icon-btn--danger"
-                type="button"
-                title="Remove"
-                aria-label={`Remove ${agentName(draft)}`}
-                disabled={saving}
-                onclick={() => removeCustomAgent(draft.id)}
-              >
-                <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
-              </button>
-            {/if}
           </div>
         </div>
 
