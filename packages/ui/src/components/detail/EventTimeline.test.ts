@@ -107,4 +107,79 @@ describe("EventTimeline", () => {
     expect(bodyStyle.getPropertyValue("border")).toBe("");
     expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
   });
+
+  it("renders commit events as compact one-line commit detail rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "feat: add timeline filters\n\nLong body",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("abcdef1")).toBeTruthy();
+    expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).toBeTruthy();
+    expect(document.querySelector(".commit-title")).toBeTruthy();
+  });
+
+  it("renders system events as compact rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 2,
+            EventType: "renamed_title",
+            Summary: `"Old" -> "New"`,
+            MetadataJSON: JSON.stringify({
+              previous_title: "Old",
+              current_title: "New",
+            }),
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "base_ref_changed",
+            Summary: "main -> release",
+            MetadataJSON: JSON.stringify({
+              previous_ref_name: "main",
+              current_ref_name: "release",
+            }),
+          }),
+          makeEvent({
+            ID: 4,
+            EventType: "cross_referenced",
+            Summary: "Referenced from other/repo#77",
+            MetadataJSON: JSON.stringify({
+              source_owner: "other",
+              source_repo: "repo",
+              source_number: 77,
+              source_title: "Related bug",
+              source_url: "https://github.com/other/repo/issues/77",
+            }),
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Title changed")).toBeTruthy();
+    expect(screen.getByText("Base changed")).toBeTruthy();
+    expect(screen.getByText("Referenced")).toBeTruthy();
+    expect(screen.getByText("Related bug")).toBeTruthy();
+    expect(document.querySelectorAll(".event--compact").length).toBe(3);
+  });
+
+  it("shows filtered empty copy when filters hide all events", () => {
+    render(EventTimeline, {
+      props: {
+        events: [],
+        filtered: true,
+      },
+    });
+
+    expect(screen.getByText("No activity matches the current filters")).toBeTruthy();
+  });
 });
