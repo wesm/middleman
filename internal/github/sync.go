@@ -2615,14 +2615,14 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
-	forcePushEvents, err := client.ListForcePushEvents(ctx, repo.Owner, repo.Name, number)
+	timelineEvents, err := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
-		slog.Warn("force-push fetch failed during timeline refresh",
+		slog.Warn("timeline event fetch failed during timeline refresh",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 			"err", err,
 		)
-		forcePushEvents = nil
+		timelineEvents = nil
 	}
 
 	var events []db.MREvent
@@ -2635,8 +2635,12 @@ func (s *Syncer) refreshTimeline(
 	for _, c := range commits {
 		events = append(events, NormalizeCommitEvent(mrID, c))
 	}
-	for _, fp := range forcePushEvents {
-		events = append(events, NormalizeForcePushEvent(mrID, fp))
+	for _, timelineEvent := range timelineEvents {
+		event := NormalizeTimelineEvent(mrID, timelineEvent)
+		if event == nil {
+			continue
+		}
+		events = append(events, *event)
 	}
 
 	if err := s.replacePRCommentEvents(ctx, mrID, comments); err != nil {

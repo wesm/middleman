@@ -64,6 +64,8 @@ type mockClient struct {
 	comments                        []*gh.IssueComment
 	reviews                         []*gh.PullRequestReview
 	commits                         []*gh.RepositoryCommit
+	timelineEvents                  []PullRequestTimelineEvent
+	timelineEventsErr               error
 	forcePushEvents                 []ForcePushEvent
 	forcePushEventsErr              error
 	ciStatus                        *gh.CombinedStatus
@@ -585,7 +587,8 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 				Author:  &gh.CommitAuthor{Name: new("dev"), Date: makeTimestamp(now.Add(-1 * time.Hour))},
 			},
 		}},
-		forcePushEvents: []ForcePushEvent{{
+		timelineEvents: []PullRequestTimelineEvent{{
+			EventType: "force_push",
 			Actor:     "alice",
 			BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			AfterSHA:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -619,6 +622,107 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert.Equal("alice", forcePush.Author)
 	assert.Equal("aaaaaaa -> bbbbbbb", forcePush.Summary)
 	assert.Contains(forcePush.MetadataJSON, `"ref":"feature"`)
+}
+
+func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{buildOpenPR(1, now)},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		timelineEvents: []PullRequestTimelineEvent{
+			{
+				NodeID:            "CRE_1",
+				EventType:         "cross_referenced",
+				Actor:             "alice",
+				CreatedAt:         now.Add(-3 * time.Minute),
+				SourceType:        "Issue",
+				SourceOwner:       "other",
+				SourceRepo:        "repo",
+				SourceNumber:      77,
+				SourceTitle:       "Related bug",
+				SourceURL:         "https://github.com/other/repo/issues/77",
+				IsCrossRepository: true,
+			},
+			{
+				NodeID:          "BRC_1",
+				EventType:       "base_ref_changed",
+				Actor:           "bob",
+				CreatedAt:       now.Add(-2 * time.Minute),
+				PreviousRefName: "main",
+				CurrentRefName:  "release",
+			},
+			{
+				NodeID:        "RTE_1",
+				EventType:     "renamed_title",
+				Actor:         "carol",
+				CreatedAt:     now.Add(-1 * time.Minute),
+				PreviousTitle: "Old",
+				CurrentTitle:  "New",
+			},
+		},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+
+	events, err := d.ListMREvents(ctx, pr.ID)
+	require.NoError(err)
+
+	byType := map[string]db.MREvent{}
+	for _, event := range events {
+		byType[event.EventType] = event
+	}
+	assert.Contains(byType, "cross_referenced")
+	assert.Contains(byType, "base_ref_changed")
+	assert.Contains(byType, "renamed_title")
+	assert.Contains(byType["cross_referenced"].MetadataJSON, `"source_title":"Related bug"`)
+	assert.Equal("main -> release", byType["base_ref_changed"].Summary)
+	assert.Equal(`"Old" -> "New"`, byType["renamed_title"].Summary)
+}
+
+func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	commentID := int64(123)
+	body := "human comment"
+	user := &gh.User{Login: new("alice")}
+
+	mc := &mockClient{
+		openPRs: []*gh.PullRequest{buildOpenPR(1, now)},
+		comments: []*gh.IssueComment{{
+			ID:        &commentID,
+			User:      user,
+			Body:      &body,
+			CreatedAt: makeTimestamp(now.Add(-time.Minute)),
+		}},
+		reviews:           []*gh.PullRequestReview{},
+		commits:           []*gh.RepositoryCommit{},
+		timelineEventsErr: errors.New("graphql unavailable"),
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer.RunOnce(ctx)
+
+	pr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	events, err := d.ListMREvents(ctx, pr.ID)
+	require.NoError(err)
+	require.NotEmpty(events)
+	require.Equal("issue_comment", events[0].EventType)
 }
 
 func TestSyncStoresPRLabels(t *testing.T) {

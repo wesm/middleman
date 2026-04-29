@@ -19,24 +19,13 @@ import (
 var _ Client = (*liveClient)(nil)
 
 func (m *mockClient) ListPullRequestTimelineEvents(
-	ctx context.Context, owner, repo string, number int,
+	_ context.Context, _, _ string, _ int,
 ) ([]PullRequestTimelineEvent, error) {
-	forcePushEvents, err := m.ListForcePushEvents(ctx, owner, repo, number)
-	if err != nil {
-		return nil, err
+	m.trackCall()
+	if m.timelineEventsErr != nil {
+		return nil, m.timelineEventsErr
 	}
-	events := make([]PullRequestTimelineEvent, 0, len(forcePushEvents))
-	for _, forcePushEvent := range forcePushEvents {
-		events = append(events, PullRequestTimelineEvent{
-			EventType: "force_push",
-			Actor:     forcePushEvent.Actor,
-			CreatedAt: forcePushEvent.CreatedAt,
-			BeforeSHA: forcePushEvent.BeforeSHA,
-			AfterSHA:  forcePushEvent.AfterSHA,
-			Ref:       forcePushEvent.Ref,
-		})
-	}
-	return events, nil
+	return m.timelineEvents, nil
 }
 
 func TestNewClientReturnsNonNil(t *testing.T) {
