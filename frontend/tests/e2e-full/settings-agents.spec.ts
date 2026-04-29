@@ -40,7 +40,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
 
   await expandAgent(page, "Codex");
   const argsInput = page.getByLabel("Codex arguments");
-  const saveButton = page.getByRole("button", { name: "Save agents" });
+  const saveButton = page.getByRole("button", { name: "Save workspace agents" });
 
   await argsInput.fill("\"\"");
   await expect(saveButton).toBeEnabled();
@@ -101,7 +101,7 @@ test("settings preserves explicit default built-in agents during other saves", a
   await page.locator(".settings-page")
     .waitFor({ state: "visible", timeout: 10_000 });
 
-  const saveButton = page.getByRole("button", { name: "Save agents" });
+  const saveButton = page.getByRole("button", { name: "Save workspace agents" });
   await expect(page.getByRole("checkbox", { name: "Codex" })).toBeVisible();
   await expect(page.getByLabel("Codex arguments")).toHaveCount(0);
   await expandAgent(page, "Codex");
@@ -165,7 +165,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
   await page.locator(".settings-page")
     .waitFor({ state: "visible", timeout: 10_000 });
 
-  const saveButton = page.getByRole("button", { name: "Save agents" });
+  const saveButton = page.getByRole("button", { name: "Save workspace agents" });
   await expandAgent(page, "Codex");
   await expect(page.getByLabel("Codex binary")).toHaveValue("");
   await expect(saveButton).toBeDisabled();
