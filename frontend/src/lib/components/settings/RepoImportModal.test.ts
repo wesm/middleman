@@ -62,7 +62,7 @@ describe("RepoImportModal", () => {
 
   it("hides private repositories and forks from preview selection", async () => {
     preview.mockResolvedValue({ owner: "acme", pattern: "*", repos: rows });
-    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "" } });
+    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "" }, agents: [] });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });

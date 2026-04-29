@@ -360,6 +360,7 @@
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     <div class="issue-detail">
+      <div class="issue-detail-content">
       {#if staleIssue && issues.getIssueDetailError() !== null}
         <div class="detail-load-error" data-testid="detail-load-error">
           Couldn't load this issue: {issues.getIssueDetailError()}
@@ -555,6 +556,7 @@
           <div class="loading-placeholder">Detail not yet loaded</div>
         {/if}
       </div>
+      </div>
     </div>
 
     {#if branchConflict}
@@ -710,14 +712,22 @@
 
   .issue-detail {
     padding: 20px 24px;
-    max-width: 800px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  .issue-detail-content {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
     width: 100%;
+    max-width: 800px;
     margin-inline: auto;
   }
 

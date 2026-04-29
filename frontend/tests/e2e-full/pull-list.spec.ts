@@ -6,7 +6,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function waitForPullList(page: Page): Promise<void> {
   // Wait for at least one PR item to appear (data loaded).
-  await page.locator(".pull-item").first()
+  await page
+    .locator(".pull-item")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -21,15 +23,21 @@ test.describe("PR list view", () => {
     await expect(countBadge).toHaveText(/^8 PRs$/);
   });
 
-  test("sidebar status pills use the shared chip component", async ({ page }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^8 PRs$/);
+  test("sidebar status pills use the shared chip component", async ({
+    page,
+  }) => {
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^8 PRs$/,
+    );
 
     // Seeded fixtures have no kanban_state rows; visiting a PR detail
     // creates the row server-side via EnsureKanbanState. Without this,
     // .status-chip never renders because PullItem hides it for empty
     // KanbanStatus.
     await page.locator(".pull-item").first().click();
-    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 5_000 });
+    await page
+      .locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 5_000 });
     await page.goto("/pulls");
     await waitForPullList(page);
 
@@ -39,7 +47,9 @@ test.describe("PR list view", () => {
     await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 
-  test("closed state shows closed and merged PRs with correct count", async ({ page }) => {
+  test("closed state shows closed and merged PRs with correct count", async ({
+    page,
+  }) => {
     await page.locator(".state-btn", { hasText: "Closed" }).click();
 
     const countBadge = page.locator(".filter-bar .list-count-chip");
@@ -54,13 +64,74 @@ test.describe("PR list view", () => {
     // matching item is already visible in the unfiltered list, so
     // we must wait on a condition that only becomes true after
     // the debounced search request completes.
-    await expect(page.locator(".filter-bar .list-count-chip"))
-      .toHaveText(/^1 PRs?$/, { timeout: 5_000 });
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^1 PRs?$/,
+      { timeout: 5_000 },
+    );
 
     // Verify the single remaining item is the expected one.
     const items = page.locator(".pull-item");
     await expect(items).toHaveCount(1);
-    await expect(items.first().locator(".title"))
-      .toContainText("caching layer");
+    await expect(items.first().locator(".title")).toContainText(
+      "caching layer",
+    );
+  });
+
+  test("PR detail keeps the scrollbar on the pane edge", async ({ page }) => {
+    await page
+      .locator(".pull-item")
+      .filter({ hasText: "caching layer" })
+      .first()
+      .click();
+
+    const pullDetail = page.locator(".pull-detail");
+    await expect(pullDetail).toBeVisible();
+
+    await pullDetail.evaluate((el) => {
+      const filler = document.createElement("div");
+      filler.style.height = "3000px";
+      filler.style.flexShrink = "0";
+      filler.style.background = "transparent";
+      filler.setAttribute("data-test-filler", "pull-scroll");
+      el.appendChild(filler);
+    });
+
+    const overflowY = await pullDetail.evaluate(
+      (el) => getComputedStyle(el).overflowY,
+    );
+    expect(["auto", "scroll"]).toContain(overflowY);
+
+    const before = await pullDetail.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollTop: el.scrollTop,
+    }));
+    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+    expect(before.scrollTop).toBe(0);
+
+    await pullDetail.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+
+    const finalScroll = await pullDetail.evaluate((el) => el.scrollTop);
+    expect(finalScroll).toBeGreaterThan(0);
+
+    const detailArea = page.locator(".main-area");
+    const contentHeader = page.locator(".pull-detail .detail-header");
+    const areaBox = await detailArea.boundingBox();
+    const detailBox = await pullDetail.boundingBox();
+    const headerBox = await contentHeader.boundingBox();
+    expect(areaBox).not.toBeNull();
+    expect(detailBox).not.toBeNull();
+    expect(headerBox).not.toBeNull();
+    if (areaBox !== null && detailBox !== null && headerBox !== null) {
+      const areaCenter = areaBox.x + areaBox.width / 2;
+      const headerCenter = headerBox.x + headerBox.width / 2;
+      expect(
+        Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width)),
+      ).toBeLessThan(2);
+      expect(Math.abs(headerCenter - areaCenter)).toBeLessThan(2);
+      expect(headerBox.width).toBeLessThanOrEqual(800);
+    }
   });
 });
