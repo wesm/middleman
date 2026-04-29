@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
-  import { localDateTimeLabel, timeAgo } from "../../utils/time.js";
+  import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
 
   interface Props {
@@ -137,13 +137,14 @@
               {#if event.Author}
                 <span class="event-author">{event.Author}</span>
               {/if}
-              <span class="event-time">{localDateTimeLabel(event.CreatedAt)}</span>
               {#if event.EventType === "commit"}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 <span class="commit-title">{commitTitle(event.Body)}</span>
+                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
               {:else if event.EventType === "cross_referenced"}
                 {@const sourceUrl = metadataString(metadata, "source_url")}
                 {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
+                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
                 {#if sourceUrl}
                   <a
                     class="system-event-link"
@@ -157,11 +158,12 @@
                   <span class="system-event-summary">{sourceTitle}</span>
                 {/if}
               {:else}
+                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
                 <span class="system-event-summary">{event.Summary}</span>
               {/if}
             </div>
             {#if event.EventType === "commit" && showCommitDetails && commitDetails}
-              <div class="commit-body-details">{commitDetails}</div>
+              <div class="event-body commit-body-details">{commitDetails}</div>
             {/if}
           </div>
         {:else}
@@ -347,13 +349,7 @@
 
   .commit-body-details {
     margin-top: 7px;
-    padding-top: 7px;
-    border-top: 1px solid var(--border-muted);
-    color: var(--text-secondary);
-    font-size: 12px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
+    padding-right: 10px;
   }
 
   .system-event-summary,

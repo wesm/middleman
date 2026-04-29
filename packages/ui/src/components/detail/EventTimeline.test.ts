@@ -54,6 +54,7 @@ describe("EventTimeline", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("renders force-push label, actor, and SHA transition", () => {
@@ -110,7 +111,8 @@ describe("EventTimeline", () => {
   });
 
   it("renders commit events as compact one-line commit detail rows", () => {
-    vi.spyOn(Date.prototype, "toLocaleString").mockReturnValue("Jun 1, 2024, 8:00 AM");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
     render(EventTimeline, {
       props: {
@@ -127,12 +129,24 @@ describe("EventTimeline", () => {
     expect(screen.getByText("abcdef1")).toBeTruthy();
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
     expect(screen.getByText("Long body")).toBeTruthy();
-    expect(screen.getByText("Jun 1, 2024, 8:00 AM")).toBeTruthy();
+    expect(screen.getByText("4h ago")).toBeTruthy();
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeTruthy();
+    expect(
+      document.querySelector(".commit-body-details")?.classList.contains("event-body"),
+    ).toBe(true);
+    expect(
+      document
+        .querySelector(".event-header--compact")
+        ?.lastElementChild
+        ?.classList.contains("event-time"),
+    ).toBe(true);
   });
 
   it("can hide commit body details while keeping the title row", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
+
     render(EventTimeline, {
       props: {
         events: [
@@ -148,7 +162,14 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("abcdef1")).toBeTruthy();
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
+    expect(screen.getByText("4h ago")).toBeTruthy();
     expect(screen.queryByText("Long body")).toBeNull();
+    expect(
+      document
+        .querySelector(".event-header--compact")
+        ?.lastElementChild
+        ?.classList.contains("event-time"),
+    ).toBe(true);
   });
 
   it("renders system events as compact rows", () => {
