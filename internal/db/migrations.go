@@ -24,7 +24,7 @@ const (
 	timestampRepairGateVersion            = 10
 	workspaceSetupMigrationVersion        = 11
 	workspaceTmuxSessionsMigrationVersion = 13
-	workspaceAssociatedPRMigrationVersion = 14
+	workspaceAssociatedPRMigrationVersion = 16
 )
 
 //go:embed migrations/*.sql
@@ -314,6 +314,9 @@ func reconcileWorkspaceAssociatedPRMigrationVersion12(
 	); err != nil {
 		return false, err
 	}
+	if err := ensureRepoOverviewMigrationArtifacts(rw); err != nil {
+		return false, err
+	}
 
 	hasItemType, err := hasColumn(
 		rw, "middleman_workspaces", "item_type",
@@ -392,6 +395,45 @@ func reconcileWorkspaceAssociatedPRMigrationVersion12(
 	}
 
 	return true, nil
+}
+
+func ensureRepoOverviewMigrationArtifacts(rw *sql.DB) error {
+	hasRepoOverviews := hasTable(rw, "middleman_repo_overviews")
+	if !hasRepoOverviews {
+		_, err := rw.Exec(`
+			CREATE TABLE middleman_repo_overviews (
+			    repo_id                  INTEGER PRIMARY KEY REFERENCES middleman_repos(id) ON DELETE CASCADE,
+			    latest_release_tag       TEXT NOT NULL DEFAULT '',
+			    latest_release_name      TEXT NOT NULL DEFAULT '',
+			    latest_release_url       TEXT NOT NULL DEFAULT '',
+			    latest_release_target    TEXT NOT NULL DEFAULT '',
+			    latest_release_prerelease INTEGER NOT NULL DEFAULT 0,
+			    latest_release_published_at DATETIME,
+			    commits_since_release    INTEGER,
+			    commit_timeline_json     TEXT NOT NULL DEFAULT '[]',
+			    releases_json            TEXT NOT NULL DEFAULT '[]',
+			    timeline_updated_at      DATETIME,
+			    updated_at               DATETIME NOT NULL DEFAULT (datetime('now'))
+			)
+		`)
+		return err
+	}
+
+	hasReleasesJSON, err := hasColumn(
+		rw, "middleman_repo_overviews", "releases_json",
+	)
+	if err != nil {
+		return err
+	}
+	if hasReleasesJSON {
+		return nil
+	}
+
+	_, err = rw.Exec(`
+		ALTER TABLE middleman_repo_overviews
+		    ADD COLUMN releases_json TEXT NOT NULL DEFAULT '[]'
+	`)
+	return err
 }
 
 func ensureWorkspaceTmuxSessionsMigrationArtifacts(

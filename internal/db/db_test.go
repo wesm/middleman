@@ -867,6 +867,49 @@ func TestOpenRepairsAssociatedPRWorkspaceUniqueness(t *testing.T) {
 	require.NoError(reopened.InsertWorkspace(ctx, issueWS))
 }
 
+func TestOpenRepairsAssociatedPRBranchMigrationWithoutSkippingRepoOverviews(t *testing.T) {
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "workspace-old-branch-v14.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`DROP TABLE middleman_repo_overviews`)
+	require.NoError(err)
+	_, err = raw.Exec(`UPDATE schema_migrations SET version = 14, dirty = FALSE`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	require.True(
+		tableExistsForTest(
+			t,
+			reopened.ReadDB(),
+			"middleman_repo_overviews",
+		),
+	)
+	hasReleasesJSON, err := hasColumn(
+		reopened.ReadDB(),
+		"middleman_repo_overviews",
+		"releases_json",
+	)
+	require.NoError(err)
+	require.True(hasReleasesJSON)
+
+	var actualVersion int
+	err = reopened.ReadDB().QueryRow(
+		`SELECT version FROM schema_migrations LIMIT 1`,
+	).Scan(&actualVersion)
+	require.NoError(err)
+	require.Equal(latestMigrationVersionForTest(t), actualVersion)
+}
+
 func workspaceWithSharedNumberForTest(id string) *Workspace {
 	return &Workspace{
 		ID:              id,
