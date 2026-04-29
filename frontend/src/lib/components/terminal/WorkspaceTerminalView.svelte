@@ -448,6 +448,12 @@
     return getWorkspacePRNumber(ws) !== null;
   }
 
+  function syncSidebarTabForWorkspace(ws: Workspace): void {
+    if (!isSidebarTabSupported(ws, sidebarTab)) {
+      sidebarTab = defaultSidebarTab(ws);
+    }
+  }
+
   function getWorkspacePRNumber(ws: Workspace): number | null {
     if (ws.item_type === "pull_request") return ws.item_number;
     return ws.associated_pr_number ?? null;
