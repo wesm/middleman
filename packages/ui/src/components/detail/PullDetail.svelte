@@ -29,6 +29,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
+  import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
 
@@ -602,7 +603,7 @@
       <div class="meta-row">
         <span class="meta-item">{detail.repo_owner}/{detail.repo_name}</span>
         <span class="meta-sep">·</span>
-        <span class="meta-item">#{pr.Number}</span>
+        <CopyItemNumber kind="pull" number={pr.Number} url={pr.URL} />
         <span class="meta-sep">·</span>
         <span class="meta-item">{pr.Author}</span>
         <span class="meta-sep">·</span>

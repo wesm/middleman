@@ -13,6 +13,7 @@
   import ActionButton from "../shared/ActionButton.svelte";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import CopyItemNumber from "./CopyItemNumber.svelte";
 
   const { issues, activity } = getStores();
   const client = getClient();
@@ -404,7 +405,7 @@
       <div class="meta-row">
         <span class="meta-item">{detail.repo_owner}/{detail.repo_name}</span>
         <span class="meta-sep">·</span>
-        <span class="meta-item">#{issue.Number}</span>
+        <CopyItemNumber kind="issue" number={issue.Number} url={issue.URL} />
         <span class="meta-sep">·</span>
         <span class="meta-item">{issue.Author}</span>
         <span class="meta-sep">·</span>
