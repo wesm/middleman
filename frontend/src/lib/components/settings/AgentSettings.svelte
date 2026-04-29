@@ -392,11 +392,12 @@
   }
 
   .agent-row {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(112px, 0.9fr) minmax(120px, 1fr) minmax(150px, 1.2fr) 28px;
+    grid-template-columns: minmax(112px, 0.9fr) minmax(120px, 1fr) minmax(150px, 1.2fr);
     gap: 8px;
     align-items: end;
-    padding: 8px;
+    padding: 8px 40px 8px 8px;
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
@@ -405,7 +406,7 @@
   .agent-row--custom {
     grid-template-columns:
       minmax(88px, 0.8fr) minmax(72px, 0.7fr) minmax(96px, 0.9fr)
-      minmax(96px, 1fr) minmax(128px, 1.2fr) 28px;
+      minmax(96px, 1fr) minmax(128px, 1.2fr);
   }
 
   .enable-field,
@@ -440,10 +441,12 @@
   }
 
   .row-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    min-height: 28px;
   }
 
   .icon-btn {
@@ -526,7 +529,6 @@
       align-items: stretch;
     }
 
-    .row-actions,
     .settings-actions {
       justify-content: flex-start;
     }
