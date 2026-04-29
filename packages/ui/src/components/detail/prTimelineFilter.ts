@@ -46,18 +46,37 @@ export function timelineEventBucket(event: PREvent): PRTimelineEventBucket {
   }
 }
 
-function normalizeFilter(
-  value: Partial<PRTimelineFilterState> | null,
-): PRTimelineFilterState {
+function booleanOrDefault(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeFilter(value: unknown): PRTimelineFilterState {
+  const persisted =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
   return {
-    showMessages:
-      value?.showMessages ?? DEFAULT_PR_TIMELINE_FILTER.showMessages,
-    showCommitDetails:
-      value?.showCommitDetails ?? DEFAULT_PR_TIMELINE_FILTER.showCommitDetails,
-    showEvents: value?.showEvents ?? DEFAULT_PR_TIMELINE_FILTER.showEvents,
-    showForcePushes:
-      value?.showForcePushes ?? DEFAULT_PR_TIMELINE_FILTER.showForcePushes,
-    hideBots: value?.hideBots ?? DEFAULT_PR_TIMELINE_FILTER.hideBots,
+    showMessages: booleanOrDefault(
+      persisted.showMessages,
+      DEFAULT_PR_TIMELINE_FILTER.showMessages,
+    ),
+    showCommitDetails: booleanOrDefault(
+      persisted.showCommitDetails,
+      DEFAULT_PR_TIMELINE_FILTER.showCommitDetails,
+    ),
+    showEvents: booleanOrDefault(
+      persisted.showEvents,
+      DEFAULT_PR_TIMELINE_FILTER.showEvents,
+    ),
+    showForcePushes: booleanOrDefault(
+      persisted.showForcePushes,
+      DEFAULT_PR_TIMELINE_FILTER.showForcePushes,
+    ),
+    hideBots: booleanOrDefault(
+      persisted.hideBots,
+      DEFAULT_PR_TIMELINE_FILTER.hideBots,
+    ),
   };
 }
 
@@ -65,8 +84,7 @@ export function loadPRTimelineFilter(): PRTimelineFilterState {
   try {
     const raw = localStorage.getItem(PR_TIMELINE_FILTER_STORAGE_KEY);
     if (!raw) return DEFAULT_PR_TIMELINE_FILTER;
-    const parsed = JSON.parse(raw) as Partial<PRTimelineFilterState>;
-    return normalizeFilter(parsed);
+    return normalizeFilter(JSON.parse(raw) as unknown);
   } catch {
     return DEFAULT_PR_TIMELINE_FILTER;
   }

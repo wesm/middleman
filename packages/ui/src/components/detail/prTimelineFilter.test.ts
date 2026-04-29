@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PREvent } from "../../api/types.js";
 import {
   activePRTimelineFilterCount,
@@ -50,6 +50,74 @@ describe("prTimelineFilter", () => {
       showForcePushes: false,
       hideBots: true,
     });
+  });
+
+  it("returns defaults for corrupt persisted JSON", () => {
+    localStorage.setItem("middleman-pr-timeline-filter", "{");
+
+    expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
+  });
+
+  it("uses defaults for invalid persisted fields while preserving booleans", () => {
+    localStorage.setItem(
+      "middleman-pr-timeline-filter",
+      JSON.stringify({
+        showMessages: "false",
+        showCommitDetails: false,
+        showEvents: 0,
+        showForcePushes: true,
+        hideBots: "true",
+      }),
+    );
+
+    expect(loadPRTimelineFilter()).toEqual({
+      showMessages: true,
+      showCommitDetails: false,
+      showEvents: true,
+      showForcePushes: true,
+      hideBots: false,
+    });
+  });
+
+  it("returns defaults when persisted JSON is not an object", () => {
+    localStorage.setItem("middleman-pr-timeline-filter", JSON.stringify([]));
+    expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
+
+    localStorage.setItem(
+      "middleman-pr-timeline-filter",
+      JSON.stringify("filter"),
+    );
+    expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
+  });
+
+  it("returns defaults when localStorage reads throw", () => {
+    const getItem = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("storage unavailable");
+      });
+
+    try {
+      expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+
+  it("does not throw when localStorage writes throw", () => {
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("storage full");
+      });
+
+    try {
+      expect(() =>
+        savePRTimelineFilter(DEFAULT_PR_TIMELINE_FILTER),
+      ).not.toThrow();
+    } finally {
+      setItem.mockRestore();
+    }
   });
 
   it("classifies event buckets", () => {
