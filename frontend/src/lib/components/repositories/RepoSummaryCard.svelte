@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ActionButton, Chip } from "@middleman/ui";
   import { timeAgo } from "@middleman/ui/utils/time";
+  import { ExternalLinkIcon } from "../../icons.js";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import {
     displayReleaseName,
@@ -39,6 +40,9 @@
 
   const key = $derived(repoKey(summary));
   const stateKey = $derived(repoStateKey(summary));
+  const repoURL = $derived(
+    `https://${summary.platform_host || "github.com"}/${summary.owner}/${summary.name}`,
+  );
   const syncTime = $derived(
     summary.last_sync_completed_at
       || summary.last_sync_started_at,
@@ -184,6 +188,20 @@
           <span class="repo-card__slash">/</span>
           <span>{summary.name}</span>
         </button>
+        <a
+          class="repo-card__gh-link"
+          href={repoURL}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open on GitHub"
+          aria-label={`Open ${summary.owner}/${summary.name} on GitHub`}
+        >
+          <ExternalLinkIcon
+            size="14"
+            strokeWidth="2"
+            aria-hidden="true"
+          />
+        </a>
       </div>
       <Chip size="sm" class="chip--muted" uppercase={false}>
         {summary.platform_host}
@@ -382,6 +400,19 @@
 
   .repo-card__name:hover {
     color: var(--accent-blue);
+  }
+
+  .repo-card__gh-link {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    transition: color 0.1s;
+  }
+
+  .repo-card__gh-link:hover {
+    color: var(--accent-blue);
+    text-decoration: none;
   }
 
   .repo-card__slash {

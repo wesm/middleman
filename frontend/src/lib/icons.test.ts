@@ -6,6 +6,7 @@ import * as icons from "./icons.ts";
 const approvedIconNames = [
   "AlertIcon",
   "ChevronDownIcon",
+  "ExternalLinkIcon",
   "MergeConflictIcon",
   "MoonIcon",
   "RefreshIcon",
