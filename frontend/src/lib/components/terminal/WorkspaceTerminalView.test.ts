@@ -105,6 +105,18 @@ const runningSession = {
   created_at: "2026-04-29T00:00:00Z",
 };
 
+function runtimeWithSession(createdAt: string) {
+  return {
+    launch_targets: [],
+    sessions: [
+      {
+        ...runningSession,
+        created_at: createdAt,
+      },
+    ],
+  };
+}
+
 function runtimeWithStaleSession() {
   return {
     launch_targets: [],
@@ -224,6 +236,35 @@ describe("WorkspaceTerminalView", () => {
     )).toBe("true");
     expect(localStorage.getItem("middleman-workspace-active-tab:ws-1"))
       .toBe("home");
+  });
+
+  it("shows a relaunched agent with the same key and a new generation", async () => {
+    const relaunchedAt = "2026-04-29T00:01:00Z";
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithStaleSession())
+      .mockResolvedValueOnce(runtimeWithSession(relaunchedAt));
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    sockets[0]!.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "exited", code: 0 }),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy(),
+    );
   });
 
   it("closes the shell drawer when its terminal exits", async () => {

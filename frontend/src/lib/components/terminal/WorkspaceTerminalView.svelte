@@ -46,6 +46,12 @@
     createdAt: string;
   }
 
+  interface ClosedRuntimeSession {
+    workspaceId: string;
+    key: string;
+    createdAt: string;
+  }
+
   const {
     workspaceId,
   }: { workspaceId: string } = $props();
@@ -75,7 +81,7 @@
   let tmuxTabOpen = $state(false);
   let tmuxTerminalMounted = $state(false);
   let mountedSessionKeys = $state<string[]>([]);
-  let closedSessionKeys = $state<string[]>([]);
+  let closedSessions = $state<ClosedRuntimeSession[]>([]);
   let closedShellSession = $state<ClosedShellSession | null>(null);
   let launchingKey = $state<string | null>(null);
   let shellOpen = $state(false);
@@ -160,7 +166,10 @@
   const runtimeSessions = $derived(
     runtimeLive
       ? (runtime?.sessions ?? []).filter(
-          (session) => !closedSessionKeys.includes(session.key),
+          (session) =>
+            !closedSessions.some((closed) =>
+              sessionGenerationMatches(closed, session),
+            ),
         )
       : [],
   );
@@ -337,15 +346,37 @@
     );
   }
 
-  function markSessionClosed(sessionKey: string): void {
-    if (!closedSessionKeys.includes(sessionKey)) {
-      closedSessionKeys = [...closedSessionKeys, sessionKey];
+  function sessionGenerationMatches(
+    closed: ClosedRuntimeSession,
+    session: RuntimeSession,
+  ): boolean {
+    return (
+      closed.workspaceId === session.workspace_id &&
+      closed.key === session.key &&
+      closed.createdAt === session.created_at
+    );
+  }
+
+  function markSessionClosed(session: RuntimeSession): void {
+    if (
+      !closedSessions.some((closed) =>
+        sessionGenerationMatches(closed, session),
+      )
+    ) {
+      closedSessions = [
+        ...closedSessions,
+        {
+          workspaceId: session.workspace_id,
+          key: session.key,
+          createdAt: session.created_at,
+        },
+      ];
     }
   }
 
-  function clearClosedSession(sessionKey: string): void {
-    closedSessionKeys = closedSessionKeys.filter(
-      (key) => key !== sessionKey,
+  function clearClosedSession(session: RuntimeSession): void {
+    closedSessions = closedSessions.filter(
+      (closed) => !sessionGenerationMatches(closed, session),
     );
   }
 
@@ -461,9 +492,6 @@
       runtime = data;
       runtimeForId = id;
       runtimeError = null;
-      closedSessionKeys = closedSessionKeys.filter((key) =>
-        data.sessions.some((session) => session.key === key),
-      );
       clearClosedShellIfReplaced(id, data.shell_session);
       if (
         activeTabKey.startsWith("session:") &&
@@ -506,7 +534,7 @@
       if (id !== workspaceId) return;
       await fetchRuntime();
       if (id !== workspaceId) return;
-      clearClosedSession(session.key);
+      clearClosedSession(session);
       mountSessionTerminal(session.key);
       selectWorkspaceTab(`session:${session.key}`);
     } catch (err) {
@@ -548,11 +576,11 @@
     }
   }
 
-  function handleSessionExit(sessionKey: string, id: string): void {
-    if (id !== workspaceId) return;
-    markSessionClosed(sessionKey);
-    unmountSessionTerminal(sessionKey);
-    if (activeTabKey === `session:${sessionKey}`) {
+  function handleSessionExit(session: RuntimeSession): void {
+    if (session.workspace_id !== workspaceId) return;
+    markSessionClosed(session);
+    unmountSessionTerminal(session.key);
+    if (activeTabKey === `session:${session.key}`) {
       selectWorkspaceTab("home");
     }
     void fetchRuntime();
@@ -722,7 +750,7 @@
     shellOpen = false;
     launchingKey = null;
     shellLoading = false;
-    closedSessionKeys = [];
+    closedSessions = [];
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.
@@ -1022,11 +1050,7 @@
                           )}
                           reconnectOnExit={false}
                           active={activeTabKey === `session:${session.key}`}
-                          onExit={() =>
-                            handleSessionExit(
-                              session.key,
-                              session.workspace_id,
-                            )}
+                          onExit={() => handleSessionExit(session)}
                           initialStatus={session.status}
                         />
                       {/if}
