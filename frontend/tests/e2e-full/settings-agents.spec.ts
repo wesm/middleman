@@ -12,6 +12,8 @@ import {
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
 
+test.describe.configure({ mode: "serial" });
+
 test.beforeAll(async () => {
   isolatedServer = await startIsolatedE2EServer();
   api = await playwrightRequest.newContext({
@@ -63,4 +65,64 @@ test("settings preserves quoted empty workspace agent arguments", async ({
   await page.locator(".settings-page")
     .waitFor({ state: "visible", timeout: 10_000 });
   await expect(page.getByLabel("Codex arguments")).toHaveValue("\"\"");
+});
+
+test("settings preserves explicit default built-in agents during other saves", async ({
+  page,
+}) => {
+  if (!api) {
+    throw new Error("settings agents API context not initialized");
+  }
+  const apiContext = api;
+  const seedResponse = await apiContext.put("/api/v1/settings", {
+    data: {
+      agents: [{
+        key: "codex",
+        label: "Codex",
+        command: ["codex"],
+        enabled: true,
+      }],
+    },
+  });
+  const seedBody = await seedResponse.text();
+  expect(
+    seedResponse.status(),
+    `PUT /api/v1/settings seed failed: ${seedBody}`,
+  ).toBe(200);
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page")
+    .waitFor({ state: "visible", timeout: 10_000 });
+
+  const saveButton = page.getByRole("button", { name: "Save agents" });
+  await expect(page.getByLabel("Codex arguments")).toHaveValue("");
+  await expect(saveButton).toBeDisabled();
+
+  await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
+  await expect(saveButton).toBeEnabled();
+  const saveResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v1/settings") &&
+    response.request().method() === "PUT"
+  );
+  await saveButton.click();
+  const saveResponse = await saveResponsePromise;
+  const saveBody = await saveResponse.text();
+  expect(
+    saveResponse.status(),
+    `PUT /api/v1/settings failed: ${saveBody}`,
+  ).toBe(200);
+
+  await expect.poll(async () => {
+    const response = await apiContext.get("/api/v1/settings");
+    const settings = await response.json() as {
+      agents: Array<{ key: string; command: string[] }>;
+    };
+    return {
+      codex: settings.agents.find((agent) => agent.key === "codex")?.command,
+      claude: settings.agents.find((agent) => agent.key === "claude")?.command,
+    };
+  }).toEqual({
+    codex: ["codex"],
+    claude: ["claude", "--permission-mode", "acceptEdits"],
+  });
 });
