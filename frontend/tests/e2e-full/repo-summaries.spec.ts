@@ -1,6 +1,58 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("repository summaries", () => {
+  test("remembers filters after tab changes", async ({ page }) => {
+    await page.goto("/repos");
+
+    await page.getByPlaceholder("Filter repositories").fill("acme");
+    await page.getByRole("button", { name: "Has issues" }).click();
+    await page.locator(".repo-page__sort-dropdown")
+      .getByRole("button", { name: "Name" })
+      .click();
+    await page.locator(".filter-dropdown")
+      .getByRole("button", { name: "Open issues" })
+      .click();
+
+    const repoCards = page.locator(".repo-card");
+    await expect(repoCards).toHaveCount(2);
+    await expect(
+      repoCards.nth(0).getByRole("button", { name: /acme\s*\/\s*widgets/ }),
+    ).toBeVisible();
+    await expect(
+      repoCards.nth(1).getByRole("button", { name: /acme\s*\/\s*tools/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /acme\s*\/\s*archived/ }),
+    ).toHaveCount(0);
+
+    await page.getByRole("button", { name: "PRs", exact: true }).click();
+    await expect(page).toHaveURL(/\/pulls$/);
+
+    await page.getByRole("button", { name: "Repos", exact: true }).click();
+    await expect(page).toHaveURL(/\/repos$/);
+    await expect(
+      page.getByPlaceholder("Filter repositories"),
+    ).toHaveValue("acme");
+    await expect(
+      page.getByRole("button", { name: "Has issues" }),
+    ).toHaveClass(/repo-page__filter--active/);
+    await expect(
+      page.locator(".repo-page__sort-dropdown")
+        .getByRole("button", { name: "Open issues" }),
+    ).toBeVisible();
+
+    await expect(repoCards).toHaveCount(2);
+    await expect(
+      repoCards.nth(0).getByRole("button", { name: /acme\s*\/\s*widgets/ }),
+    ).toBeVisible();
+    await expect(
+      repoCards.nth(1).getByRole("button", { name: /acme\s*\/\s*tools/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /acme\s*\/\s*archived/ }),
+    ).toHaveCount(0);
+  });
+
   test("shows repo stats and can create an issue", async ({ page }) => {
     await page.goto("/repos");
 

@@ -27,8 +27,13 @@
     type RepoSort,
     type RepoSummaryCard as RepoSummaryCardData,
   } from "./repoSummary.js";
+  import {
+    loadRepoSummaryFilters,
+    saveRepoSummaryFilters,
+  } from "./repoSummaryFilters.js";
 
   const stores = getStores();
+  const initialFilters = loadRepoSummaryFilters();
 
   let summaries = $state<RepoSummaryCardData[]>([]);
   let loading = $state(true);
@@ -42,9 +47,9 @@
   let issueSubmittingByRepo = $state<Record<string, boolean>>(
     {},
   );
-  let searchQuery = $state("");
-  let activeFilter = $state<RepoFilter>("all");
-  let sortMode = $state<RepoSort>("name");
+  let searchQuery = $state(initialFilters.searchQuery);
+  let activeFilter = $state<RepoFilter>(initialFilters.activeFilter);
+  let sortMode = $state<RepoSort>(initialFilters.sortMode);
 
   const totals = $derived.by(() =>
     summaries.reduce(
@@ -171,14 +176,25 @@
 
   function setFilter(filter: RepoFilter): void {
     activeFilter = filter;
+    persistFilters();
   }
 
   function updateSearch(event: Event): void {
     searchQuery = (event.currentTarget as HTMLInputElement).value;
+    persistFilters();
   }
 
   function setSort(sort: RepoSort): void {
     sortMode = sort;
+    persistFilters();
+  }
+
+  function persistFilters(): void {
+    saveRepoSummaryFilters({
+      searchQuery,
+      activeFilter,
+      sortMode,
+    });
   }
 
   function filterAndNavigate(
