@@ -6,6 +6,8 @@ import { apiErrorMessage, client } from "./runtime.js";
 type SettingsResponse = components["schemas"]["SettingsResponse"];
 type RepoPreviewGeneratedResponse =
   components["schemas"]["RepoPreviewResponse"];
+type UpdateSettingsRequest =
+  components["schemas"]["UpdateSettingsRequest"];
 
 function requestErrorMessage(
   error: { detail?: string; title?: string } | undefined,
@@ -50,6 +52,29 @@ function normalizePreviewResponse(
   } as RepoPreviewResponse;
 }
 
+function normalizeUpdateRequest(
+  settings: {
+    activity?: Settings["activity"];
+    terminal?: Settings["terminal"];
+    agents?: Settings["agents"];
+  },
+): UpdateSettingsRequest {
+  const request: UpdateSettingsRequest = {};
+  if (settings.activity) {
+    request.activity = settings.activity;
+  }
+  if (settings.terminal) {
+    request.terminal = settings.terminal;
+  }
+  if (settings.agents) {
+    request.agents = settings.agents.map((agent) => ({
+      ...agent,
+      command: agent.command ?? null,
+    }));
+  }
+  return request;
+}
+
 export async function getSettings(): Promise<Settings> {
   const { data, error, response } = await client.GET("/settings");
   if (!data) {
@@ -71,7 +96,7 @@ export async function updateSettings(
   },
 ): Promise<Settings> {
   const { data, error, response } = await client.PUT("/settings", {
-    body: settings,
+    body: normalizeUpdateRequest(settings),
   });
   if (!data) {
     throw new Error(

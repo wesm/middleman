@@ -69,19 +69,24 @@ describe("settings api", () => {
       ],
     });
 
-    expect(fetch).toHaveBeenCalledWith("/api/v1/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agents: [
-          {
-            key: "codex",
-            label: "Codex",
-            command: ["codex", "--full-auto"],
-            enabled: true,
-          },
-        ],
-      }),
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    expect(new URL((request as Request).url).pathname).toBe(
+      "/api/v1/settings",
+    );
+    expect((request as Request).method).toBe("PUT");
+    expect((request as Request).headers.get("Content-Type")).toBe(
+      "application/json",
+    );
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex", "--full-auto"],
+          enabled: true,
+        },
+      ],
     });
   });
 
