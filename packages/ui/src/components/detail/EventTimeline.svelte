@@ -69,10 +69,17 @@
   function parseMetadata(event: PREvent | IssueEvent): Record<string, unknown> {
     if (!event.MetadataJSON) return {};
     try {
-      return JSON.parse(event.MetadataJSON) as Record<string, unknown>;
+      const parsed = JSON.parse(event.MetadataJSON) as unknown;
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return parsed as Record<string, unknown>;
     } catch {
       return {};
     }
+  }
+
+  function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+    const value = metadata[key];
+    return typeof value === "string" && value.length > 0 ? value : null;
   }
 
   let copiedId = $state<string | null>(null);
@@ -122,14 +129,20 @@
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 <span class="commit-title">{commitTitle(event.Body)}</span>
               {:else if event.EventType === "cross_referenced"}
-                <a
-                  class="system-event-link"
-                  href={String(metadata.source_url ?? "")}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {String(metadata.source_title ?? event.Summary)}
-                </a>
+                {@const sourceUrl = metadataString(metadata, "source_url")}
+                {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
+                {#if sourceUrl}
+                  <a
+                    class="system-event-link"
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {sourceTitle}
+                  </a>
+                {:else}
+                  <span class="system-event-summary">{sourceTitle}</span>
+                {/if}
               {:else}
                 <span class="system-event-summary">{event.Summary}</span>
               {/if}

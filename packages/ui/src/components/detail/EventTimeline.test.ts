@@ -176,6 +176,33 @@ describe("EventTimeline", () => {
     expect(document.querySelectorAll(".event--compact").length).toBe(3);
   });
 
+  it("falls back to non-link cross-reference text when metadata is invalid", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 5,
+            EventType: "cross_referenced",
+            Summary: "Referenced from other/repo#77",
+            MetadataJSON: "null",
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "cross_referenced",
+            Summary: "Referenced from other/repo#78",
+            MetadataJSON: JSON.stringify({
+              source_title: "Related follow-up",
+            }),
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Referenced from other/repo#77")).toBeTruthy();
+    expect(screen.getByText("Related follow-up")).toBeTruthy();
+    expect(document.querySelectorAll(".system-event-link").length).toBe(0);
+  });
+
   it("shows filtered empty copy when filters hide all events", () => {
     render(EventTimeline, {
       props: {
