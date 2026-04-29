@@ -17,6 +17,11 @@ test.describe("repository summaries", () => {
     await expect(page.getByText("Total repos")).toBeVisible();
     await expect(widgetsCard).toContainText("Open PRs");
     await expect(widgetsCard).toContainText("Recent open issues");
+    await expect(
+      widgetsCard.getByRole("link", {
+        name: "Open acme/widgets on GitHub",
+      }),
+    ).toHaveAttribute("href", "https://github.com/acme/widgets");
 
     await expect(
       widgetsCard.getByRole("button", { name: "View PRs" }),

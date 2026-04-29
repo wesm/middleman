@@ -1,5 +1,6 @@
 export { default as AlertIcon } from "@lucide/svelte/icons/alert-triangle";
 export { default as ChevronDownIcon } from "@lucide/svelte/icons/chevron-down";
+export { default as ExternalLinkIcon } from "@lucide/svelte/icons/external-link";
 export { default as MergeConflictIcon } from "@lucide/svelte/icons/git-merge";
 export { default as MoonIcon } from "@lucide/svelte/icons/moon";
 export { default as RefreshIcon } from "@lucide/svelte/icons/refresh-ccw";

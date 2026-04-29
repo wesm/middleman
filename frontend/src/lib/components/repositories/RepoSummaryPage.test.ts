@@ -152,6 +152,13 @@ describe("RepoSummaryPage", () => {
         name: /acme\s*\/\s*widgets/,
       }),
     ).toBeTruthy();
+    const repoLink = screen.getByRole("link", {
+      name: "Open acme/widgets on GitHub",
+    });
+    expect(repoLink.getAttribute("href")).toBe(
+      "https://github.com/acme/widgets",
+    );
+    expect(repoLink.getAttribute("target")).toBe("_blank");
     expect(screen.getAllByText("Open PRs").length).toBeGreaterThan(1);
     expect(screen.getByText("v2.8.1")).toBeTruthy();
     expect(screen.getByText("8 commits")).toBeTruthy();
