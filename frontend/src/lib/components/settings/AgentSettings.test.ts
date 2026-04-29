@@ -112,6 +112,83 @@ describe("AgentSettings", () => {
     });
   });
 
+  it("does not mark explicit default built-in agents dirty", () => {
+    const onUpdate = vi.fn();
+
+    render(AgentSettings, {
+      props: {
+        agents: [{
+          key: "codex",
+          label: "Codex",
+          command: ["codex"],
+          enabled: true,
+        }],
+        onUpdate,
+      },
+    });
+
+    expect(
+      (screen.getByRole("button", { name: "Save agents" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("preserves explicit default built-in agents when saving other changes", async () => {
+    mockUpdateSettings.mockResolvedValue({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["codex"],
+          enabled: true,
+        },
+        {
+          key: "claude",
+          label: "Claude",
+          command: ["claude", "--permission-mode", "acceptEdits"],
+          enabled: true,
+        },
+      ],
+    });
+    const onUpdate = vi.fn();
+
+    render(AgentSettings, {
+      props: {
+        agents: [{
+          key: "codex",
+          label: "Codex",
+          command: ["codex"],
+          enabled: true,
+        }],
+        onUpdate,
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Claude arguments"), {
+      target: { value: "--permission-mode acceptEdits" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save agents" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        agents: [
+          {
+            key: "claude",
+            label: "Claude",
+            command: ["claude", "--permission-mode", "acceptEdits"],
+            enabled: true,
+          },
+          {
+            key: "codex",
+            label: "Codex",
+            command: ["codex"],
+            enabled: true,
+          },
+        ],
+      });
+    });
+  });
+
   it("adds custom agents to the saved settings", async () => {
     mockUpdateSettings.mockResolvedValue({
       agents: [{

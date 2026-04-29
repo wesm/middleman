@@ -44,8 +44,11 @@
   // svelte-ignore state_referenced_locally
   let drafts = $state<AgentDraft[]>(initialDrafts(agents));
 
-  const serializedAgents = $derived(serializeDrafts(drafts));
   const savedAgents = $derived(normalizeAgents(agents));
+  const preservedDefaultBuiltinKeys = $derived(defaultBuiltinKeys(savedAgents));
+  const serializedAgents = $derived(
+    serializeDrafts(drafts, preservedDefaultBuiltinKeys),
+  );
   const hasInvalidDraft = $derived(drafts.some((draft) => !isDraftValid(draft)));
   const isDirty = $derived(
     JSON.stringify(serializedAgents) !== JSON.stringify(savedAgents),
@@ -102,7 +105,29 @@
       .sort((left, right) => left.key.localeCompare(right.key));
   }
 
-  function serializeDrafts(rows: AgentDraft[]): AgentSettingsType[] {
+  function defaultBuiltinKeys(configured: AgentSettingsType[]): Set<string> {
+    return new Set(
+      configured
+        .filter((agent) => isDefaultBuiltinAgent(agent))
+        .map((agent) => agent.key),
+    );
+  }
+
+  function isDefaultBuiltinAgent(agent: AgentSettingsType): boolean {
+    const builtin = builtins.find((candidate) => candidate.key === agent.key);
+    if (!builtin) return false;
+    if (!agent.enabled || agent.label !== builtin.label) return false;
+    const command = agent.command ?? [];
+    return (
+      command.length === 0 ||
+      (command.length === 1 && command[0] === builtin.binary)
+    );
+  }
+
+  function serializeDrafts(
+    rows: AgentDraft[],
+    preservedDefaultKeys = new Set<string>(),
+  ): AgentSettingsType[] {
     const agentsToSave: AgentSettingsType[] = [];
     for (const draft of rows) {
       const key = draft.key.trim().toLowerCase();
@@ -120,7 +145,7 @@
           label === builtin.label &&
           binary === builtin.binary &&
           args.length === 0;
-        if (isDefault) continue;
+        if (isDefault && !preservedDefaultKeys.has(key)) continue;
       }
 
       agentsToSave.push({
@@ -378,8 +403,8 @@
 
   .agent-row--custom {
     grid-template-columns:
-      minmax(112px, 0.8fr) minmax(88px, 0.7fr) minmax(112px, 0.9fr)
-      minmax(120px, 1fr) minmax(150px, 1.2fr) 28px;
+      minmax(88px, 0.8fr) minmax(72px, 0.7fr) minmax(96px, 0.9fr)
+      minmax(96px, 1fr) minmax(128px, 1.2fr) 28px;
   }
 
   .enable-field,
