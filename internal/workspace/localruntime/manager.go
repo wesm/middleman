@@ -73,6 +73,9 @@ type Options struct {
 	// StripEnvVars names additional env vars to strip beyond the
 	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
+	// OnSessionExit is called after a launched runtime session or shell exits
+	// naturally and is removed from the manager's active session maps.
+	OnSessionExit func(SessionInfo)
 }
 
 type Manager struct {
@@ -86,6 +89,7 @@ type Manager struct {
 	tmuxOwnerMarker  string
 	wrapAgentsInTmux bool
 	stripEnvVars     []string
+	onSessionExit    func(SessionInfo)
 	startLocks       map[string]*sync.Mutex
 	stoppingWS       map[string]int
 	inflightWS       map[string]int
@@ -164,6 +168,7 @@ func NewManager(options Options) *Manager {
 		tmuxOwnerMarker:  options.TmuxOwnerMarker,
 		wrapAgentsInTmux: options.WrapAgentSessionsInTmux,
 		stripEnvVars:     dedupeStrings(options.StripEnvVars),
+		onSessionExit:    options.OnSessionExit,
 		startLocks:       make(map[string]*sync.Mutex),
 		stoppingWS:       make(map[string]int),
 		inflightWS:       make(map[string]int),
@@ -303,7 +308,7 @@ func (m *Manager) Launch(
 		return SessionInfo{}, err
 	}
 	started.tmuxSession = launch.TmuxSession
-	go started.watch()
+	go m.watchSession(started, false)
 
 	m.mu.Lock()
 	if m.closed {
@@ -425,7 +430,7 @@ func (m *Manager) restoreTmuxSession(
 	started.tmuxSession = tmuxSession
 	// startSession already starts drainOutput; restored tmux attach
 	// sessions only need the process watcher here.
-	go started.watch()
+	go m.watchSession(started, false)
 
 	m.mu.Lock()
 	if m.closed {
@@ -917,7 +922,7 @@ func (m *Manager) EnsureShell(
 		)
 		return SessionInfo{}, err
 	}
-	go started.watch()
+	go m.watchSession(started, true)
 
 	m.mu.Lock()
 	if m.closed {
@@ -1337,6 +1342,36 @@ func (m *Manager) removeIfSame(
 	}
 }
 
+func (m *Manager) watchSession(
+	s *session,
+	shell bool,
+) {
+	info := s.watch()
+	if m.removeExitedSession(info, s, shell) && m.onSessionExit != nil {
+		m.onSessionExit(info)
+	}
+}
+
+func (m *Manager) removeExitedSession(
+	info SessionInfo,
+	s *session,
+	shell bool,
+) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sessions := m.sessions
+	if shell {
+		sessions = m.shells
+	}
+	current, ok := sessions[info.Key]
+	if !ok || current != s {
+		return false
+	}
+	delete(sessions, info.Key)
+	return true
+}
+
 func startSession(
 	info SessionInfo,
 	command []string,
@@ -1425,7 +1460,7 @@ func (s *session) snapshot() SessionInfo {
 	return info
 }
 
-func (s *session) watch() {
+func (s *session) watch() SessionInfo {
 	exitCode := waitExitCode(s.cmd.Wait())
 	now := time.Now().UTC()
 
@@ -1434,6 +1469,7 @@ func (s *session) watch() {
 	s.info.ExitedAt = &now
 	s.info.ExitCode = &exitCode
 	info := s.info
+	info.TmuxSession = s.tmuxSession
 	s.mu.Unlock()
 
 	_ = s.ptmx.Close()
@@ -1445,6 +1481,7 @@ func (s *session) watch() {
 		"target_key", info.TargetKey,
 		"exit_code", exitCode,
 	)
+	return info
 }
 
 func (s *session) drainOutput() {

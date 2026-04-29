@@ -733,13 +733,16 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 		"descendant child should die with the session leader")
 }
 
-func TestManagerReportsExitedProcess(t *testing.T) {
+func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
+	exited := make(chan SessionInfo, 1)
 	mgr := NewManager(Options{Targets: []LaunchTarget{
 		helperTarget("helper", "exit"),
+	}, OnSessionExit: func(info SessionInfo) {
+		exited <- info
 	}})
 	t.Cleanup(mgr.Shutdown)
 
@@ -748,19 +751,57 @@ func TestManagerReportsExitedProcess(t *testing.T) {
 
 	var got SessionInfo
 	require.Eventually(t, func() bool {
-		sessions := mgr.ListSessions("ws-1")
-		if len(sessions) != 1 {
+		select {
+		case got = <-exited:
+			return true
+		default:
 			return false
 		}
-		got = sessions[0]
-		return got.Status == SessionStatusExited
 	}, 2*time.Second, 20*time.Millisecond)
 
 	assert := Assert.New(t)
 	assert.Equal(session.Key, got.Key)
+	assert.Equal(SessionStatusExited, got.Status)
 	assert.NotNil(got.ExitedAt)
 	assert.NotNil(got.ExitCode)
 	assert.Equal(3, *got.ExitCode)
+	assert.Empty(mgr.ListSessions("ws-1"))
+}
+
+func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	ctx := context.Background()
+	exited := make(chan SessionInfo, 1)
+	mgr := NewManager(Options{
+		ShellCommand: helperCommand("exit"),
+		OnSessionExit: func(info SessionInfo) {
+			exited <- info
+		},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	shell, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(t, err)
+
+	var got SessionInfo
+	require.Eventually(t, func() bool {
+		select {
+		case got = <-exited:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 20*time.Millisecond)
+
+	assert := Assert.New(t)
+	assert.Equal(shell.Key, got.Key)
+	assert.Equal(SessionStatusExited, got.Status)
+	assert.NotNil(got.ExitedAt)
+	assert.NotNil(got.ExitCode)
+	assert.Equal(3, *got.ExitCode)
+	assert.Nil(mgr.ShellSession("ws-1"))
 }
 
 func TestManagerShellSingletonPerWorkspace(t *testing.T) {

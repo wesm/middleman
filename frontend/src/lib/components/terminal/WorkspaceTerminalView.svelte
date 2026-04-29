@@ -68,6 +68,7 @@
   let tmuxTabOpen = $state(false);
   let tmuxTerminalMounted = $state(false);
   let mountedSessionKeys = $state<string[]>([]);
+  let closedSessionKeys = $state<string[]>([]);
   let launchingKey = $state<string | null>(null);
   let shellOpen = $state(false);
   let shellLoading = $state(false);
@@ -149,7 +150,11 @@
       workspace?.id === workspaceId,
   );
   const runtimeSessions = $derived(
-    runtimeLive ? (runtime?.sessions ?? []) : [],
+    runtimeLive
+      ? (runtime?.sessions ?? []).filter(
+          (session) => !closedSessionKeys.includes(session.key),
+        )
+      : [],
   );
   const launchTargets = $derived(
     runtimeLive ? (runtime?.launch_targets ?? []) : [],
@@ -317,6 +322,18 @@
     );
   }
 
+  function markSessionClosed(sessionKey: string): void {
+    if (!closedSessionKeys.includes(sessionKey)) {
+      closedSessionKeys = [...closedSessionKeys, sessionKey];
+    }
+  }
+
+  function clearClosedSession(sessionKey: string): void {
+    closedSessionKeys = closedSessionKeys.filter(
+      (key) => key !== sessionKey,
+    );
+  }
+
   function isSessionTerminalMounted(
     sessionKey: string,
   ): boolean {
@@ -406,6 +423,9 @@
       runtime = data;
       runtimeForId = id;
       runtimeError = null;
+      closedSessionKeys = closedSessionKeys.filter((key) =>
+        data.sessions.some((session) => session.key === key),
+      );
       if (
         activeTabKey.startsWith("session:") &&
         !activeSession
@@ -447,6 +467,7 @@
       if (id !== workspaceId) return;
       await fetchRuntime();
       if (id !== workspaceId) return;
+      clearClosedSession(session.key);
       mountSessionTerminal(session.key);
       selectWorkspaceTab(`session:${session.key}`);
     } catch (err) {
@@ -486,6 +507,23 @@
       runtimeError =
         err instanceof Error ? err.message : "Stop failed";
     }
+  }
+
+  function handleSessionExit(sessionKey: string, id: string): void {
+    if (id !== workspaceId) return;
+    markSessionClosed(sessionKey);
+    unmountSessionTerminal(sessionKey);
+    if (activeTabKey === `session:${sessionKey}`) {
+      selectWorkspaceTab("home");
+    }
+    void fetchRuntime();
+  }
+
+  function handleShellExit(id: string): void {
+    if (id !== workspaceId) return;
+    shellOpen = false;
+    shellLoading = false;
+    void fetchRuntime();
   }
 
   async function toggleShell(): Promise<void> {
@@ -640,6 +678,7 @@
     shellOpen = false;
     launchingKey = null;
     shellLoading = false;
+    closedSessionKeys = [];
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.
@@ -939,7 +978,8 @@
                           )}
                           reconnectOnExit={false}
                           active={activeTabKey === `session:${session.key}`}
-                          onExit={() => void fetchRuntime()}
+                          onExit={() =>
+                            handleSessionExit(session.key, workspaceId)}
                           initialStatus={session.status}
                         />
                       {/if}
@@ -953,7 +993,7 @@
                 loading={shellLoading}
                 shellSession={shellSessionActive ? shellSession : null}
                 onToggle={() => void toggleShell()}
-                onExit={() => void fetchRuntime()}
+                onExit={() => handleShellExit(workspaceId)}
               />
             </div>
           </div>
