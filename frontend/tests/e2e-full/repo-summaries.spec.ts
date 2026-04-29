@@ -1,6 +1,34 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("repository summaries", () => {
+  test("remembers filters after tab changes", async ({ page }) => {
+    await page.goto("/repos");
+
+    await page.getByPlaceholder("Filter repositories").fill("widgets");
+
+    await expect(
+      page.getByRole("button", { name: /acme\s*\/\s*widgets/ }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /acme\s*\/\s*tools/ }).first(),
+    ).toHaveCount(0);
+
+    await page.getByRole("button", { name: "PRs", exact: true }).click();
+    await expect(page).toHaveURL(/\/pulls$/);
+
+    await page.getByRole("button", { name: "Repos", exact: true }).click();
+    await expect(page).toHaveURL(/\/repos$/);
+    await expect(
+      page.getByPlaceholder("Filter repositories"),
+    ).toHaveValue("widgets");
+    await expect(
+      page.getByRole("button", { name: /acme\s*\/\s*widgets/ }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /acme\s*\/\s*tools/ }).first(),
+    ).toHaveCount(0);
+  });
+
   test("shows repo stats and can create an issue", async ({ page }) => {
     await page.goto("/repos");
 

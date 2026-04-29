@@ -68,6 +68,7 @@ describe("RepoSummaryPage", () => {
     mockPost.mockReset();
     mockNavigate.mockReset();
     mockSetGlobalRepo.mockReset();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -342,6 +343,92 @@ describe("RepoSummaryPage", () => {
       { target: { value: "fresh" } },
     );
     expect(screen.getByText("No repositories match")).toBeTruthy();
+  });
+
+  it("remembers repository filters when the page remounts", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          owner: "acme",
+          name: "fresh",
+          platform_host: "github.com",
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 0,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+          latest_release: {
+            tag_name: "v1.0.0",
+            name: "",
+            url: "",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-16T12:00:00Z",
+          },
+          commits_since_release: 2,
+          commit_timeline: [],
+        },
+        {
+          owner: "acme",
+          name: "stale",
+          platform_host: "github.com",
+          cached_pr_count: 4,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 3,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+          latest_release: {
+            tag_name: "v0.9.0",
+            name: "",
+            url: "",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-03-01T12:00:00Z",
+          },
+          commits_since_release: 72,
+          commit_timeline: [],
+        },
+      ],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Stale" }),
+    );
+    await fireEvent.input(
+      screen.getByPlaceholderText("Filter repositories"),
+      { target: { value: "stale" } },
+    );
+
+    cleanup();
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*stale/ });
+    expect(
+      screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),
+    ).toBeNull();
+    expect(
+      (screen.getByPlaceholderText("Filter repositories") as HTMLInputElement)
+        .value,
+    ).toBe("stale");
+    expect(
+      screen.getByRole("button", { name: "Stale" }).className,
+    ).toContain("repo-page__filter--active");
   });
 
   it("creates an issue from a repo card and navigates to it", async () => {
