@@ -258,9 +258,6 @@
   .event-body {
     font-size: 12px;
     color: var(--text-primary);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
     padding: 8px 36px 8px 10px;
     white-space: pre-wrap;
     word-break: break-word;
