@@ -56,6 +56,7 @@
 
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
+  let runtimeFetchSeq = 0;
   // The workspace ID that `runtime` was fetched for. Stored
   // alongside the payload so we never render or operate on
   // sessions/targets that belong to a previous workspace
@@ -452,9 +453,11 @@
   async function fetchRuntime(): Promise<void> {
     if (!workspaceId) return;
     const id = workspaceId;
+    const seq = runtimeFetchSeq + 1;
+    runtimeFetchSeq = seq;
     try {
       const data = await getWorkspaceRuntime(id);
-      if (id !== workspaceId) return;
+      if (id !== workspaceId || seq !== runtimeFetchSeq) return;
       runtime = data;
       runtimeForId = id;
       runtimeError = null;
@@ -473,7 +476,7 @@
           data.sessions.some((session) => session.key === key),
       );
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (id !== workspaceId || seq !== runtimeFetchSeq) return;
       runtimeError =
         err instanceof Error
           ? err.message

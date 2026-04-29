@@ -128,6 +128,22 @@ function runtimeWithShellSession() {
   };
 }
 
+function runtimeWithoutShellSession() {
+  return {
+    launch_targets: [],
+    sessions: [],
+    shell_session: null,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
     delete window.__BASE_PATH__;
@@ -272,6 +288,54 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() =>
       expect(mocks.ensureWorkspaceShell).toHaveBeenCalledTimes(2),
     );
+    expect(sockets).toHaveLength(1);
+  });
+
+  it("ignores older runtime responses after shell cleanup refreshes", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const staleRefresh = deferred<ReturnType<typeof runtimeWithShellSession>>();
+    const freshRefresh = deferred<
+      ReturnType<typeof runtimeWithoutShellSession>
+    >();
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithShellSession())
+      .mockResolvedValueOnce(runtimeWithShellSession())
+      .mockReturnValueOnce(staleRefresh.promise)
+      .mockReturnValueOnce(freshRefresh.promise);
+    mocks.ensureWorkspaceShell.mockResolvedValue(undefined);
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    const shellButton = await screen.findByRole("button", {
+      name: "Open shell drawer",
+    });
+    await fireEvent.click(shellButton);
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    sockets[0]!.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "exited", code: 0 }),
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", {
+        name: "Open shell drawer",
+      })).toBeTruthy(),
+    );
+
+    await fireEvent.click(shellButton);
+    freshRefresh.resolve(runtimeWithoutShellSession());
+    await waitFor(() =>
+      expect(screen.getByText("Shell unavailable")).toBeTruthy(),
+    );
+
+    staleRefresh.resolve(runtimeWithShellSession());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(sockets).toHaveLength(1);
   });
 });
