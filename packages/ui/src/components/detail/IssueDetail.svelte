@@ -14,6 +14,10 @@
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
+  import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
+  import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import XIcon from "@lucide/svelte/icons/x";
 
   const { issues, activity } = getStores();
   const client = getClient();
@@ -465,20 +469,27 @@
           <ActionButton
             class="btn--workspace"
             onclick={() => navigate(`/terminal/${workspace.id}`)}
-            tone="success"
-            surface="solid"
+            tone="info"
+            surface="soft"
             size="sm"
+            label="Open Workspace"
+            shortLabel="Workspace"
           >
-            Open Workspace
+            <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {:else}
-          <button
+          <ActionButton
             class="btn--workspace"
             disabled={workspaceCreating || staleIssue}
             onclick={() => void createWorkspace()}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label={workspaceCreating ? "Creating..." : "Create Workspace"}
+            shortLabel={workspaceCreating ? "Creating..." : "Create Workspace"}
           >
-            {workspaceCreating ? "Creating..." : "Create Workspace"}
-          </button>
+            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
         {/if}
         {#if issue.State === "open"}
           <ActionButton
@@ -488,8 +499,10 @@
             tone="danger"
             surface="outline"
             size="sm"
+            label={stateSubmitting ? "Closing..." : "Close issue"}
+            shortLabel={stateSubmitting ? "Closing..." : "Close"}
           >
-            {stateSubmitting ? "Closing..." : "Close issue"}
+            <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {:else}
           <ActionButton
@@ -499,8 +512,10 @@
             tone="success"
             surface="solid"
             size="sm"
+            label={stateSubmitting ? "Reopening..." : "Reopen issue"}
+            shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
           >
-            {stateSubmitting ? "Reopening..." : "Reopen issue"}
+            <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {/if}
         {#if workspaceError}
@@ -897,27 +912,6 @@
     align-items: center;
     gap: 8px;
     padding: 8px 0;
-  }
-
-  .btn--workspace {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid var(--accent-blue, #0969da);
-    background: var(--accent-blue, #0969da);
-    color: #fff;
-    cursor: pointer;
-    transition: filter 0.1s;
-  }
-
-  .btn--workspace:hover {
-    filter: brightness(1.1);
-  }
-
-  .btn--workspace:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .action-error {
