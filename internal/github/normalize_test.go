@@ -254,6 +254,104 @@ func TestNormalizeForcePushEvent(t *testing.T) {
 	require.Contains(event.MetadataJSON, `"ref":"feature"`)
 }
 
+func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 15, 0, 0, time.UTC)
+
+	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		NodeID:            "CRE_1",
+		EventType:         "cross_referenced",
+		Actor:             "alice",
+		CreatedAt:         createdAt,
+		SourceType:        "Issue",
+		SourceOwner:       "other",
+		SourceRepo:        "repo",
+		SourceNumber:      77,
+		SourceTitle:       "Related bug",
+		SourceURL:         "https://github.com/other/repo/issues/77",
+		IsCrossRepository: true,
+		WillCloseTarget:   false,
+	})
+
+	require.NotNil(event)
+	assert.Equal(int64(17), event.MergeRequestID)
+	assert.Equal("cross_referenced", event.EventType)
+	assert.Equal("alice", event.Author)
+	assert.Equal("Referenced from other/repo#77", event.Summary)
+	assert.Equal(createdAt, event.CreatedAt)
+	assert.Equal("timeline-CRE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"source_title":"Related bug"`)
+	assert.Contains(event.MetadataJSON, `"is_cross_repository":true`)
+}
+
+func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 5, 0, 0, time.UTC)
+
+	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		NodeID:        "RTE_1",
+		EventType:     "renamed_title",
+		Actor:         "bob",
+		CreatedAt:     createdAt,
+		PreviousTitle: "Old title",
+		CurrentTitle:  "New title",
+	})
+
+	assert.Equal("renamed_title", event.EventType)
+	assert.Equal("bob", event.Author)
+	assert.Equal(`"Old title" -> "New title"`, event.Summary)
+	assert.Contains(event.MetadataJSON, `"previous_title":"Old title"`)
+	assert.Contains(event.MetadataJSON, `"current_title":"New title"`)
+}
+
+func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 10, 0, 0, time.UTC)
+
+	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		NodeID:          "BRC_1",
+		EventType:       "base_ref_changed",
+		Actor:           "carol",
+		CreatedAt:       createdAt,
+		PreviousRefName: "main",
+		CurrentRefName:  "release",
+	})
+
+	assert.Equal("base_ref_changed", event.EventType)
+	assert.Equal("carol", event.Author)
+	assert.Equal("main -> release", event.Summary)
+	assert.Contains(event.MetadataJSON, `"previous_ref_name":"main"`)
+	assert.Contains(event.MetadataJSON, `"current_ref_name":"release"`)
+}
+
+func TestNormalizeTimelineEventForcePush(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 20, 0, 0, time.UTC)
+
+	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		NodeID:    "HRFPE_1",
+		EventType: "force_push",
+		Actor:     "dana",
+		BeforeSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		AfterSHA:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Ref:       "feature",
+		CreatedAt: createdAt,
+	})
+
+	require.NotNil(event)
+	assert.Equal(int64(17), event.MergeRequestID)
+	assert.Equal("force_push", event.EventType)
+	assert.Equal("dana", event.Author)
+	assert.Equal("aaaaaaa -> bbbbbbb", event.Summary)
+	assert.Equal(createdAt, event.CreatedAt)
+	assert.Equal("timeline-HRFPE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"before_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)
+	assert.Contains(event.MetadataJSON, `"after_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`)
+	assert.Contains(event.MetadataJSON, `"ref":"feature"`)
+}
+
 func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
 	assert := Assert.New(t)
 	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.

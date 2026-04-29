@@ -1,6 +1,8 @@
 package github
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -155,6 +157,27 @@ type forcePushMetadata struct {
 	Ref       string `json:"ref"`
 }
 
+type crossReferenceMetadata struct {
+	SourceType        string `json:"source_type"`
+	SourceOwner       string `json:"source_owner"`
+	SourceRepo        string `json:"source_repo"`
+	SourceNumber      int    `json:"source_number"`
+	SourceTitle       string `json:"source_title"`
+	SourceURL         string `json:"source_url"`
+	IsCrossRepository bool   `json:"is_cross_repository"`
+	WillCloseTarget   bool   `json:"will_close_target"`
+}
+
+type renamedTitleMetadata struct {
+	PreviousTitle string `json:"previous_title"`
+	CurrentTitle  string `json:"current_title"`
+}
+
+type baseRefChangedMetadata struct {
+	PreviousRefName string `json:"previous_ref_name"`
+	CurrentRefName  string `json:"current_ref_name"`
+}
+
 func NormalizeForcePushEvent(mrID int64, fp ForcePushEvent) db.MREvent {
 	metadata, _ := json.Marshal(forcePushMetadata{
 		BeforeSHA: fp.BeforeSHA,
@@ -171,6 +194,98 @@ func NormalizeForcePushEvent(mrID int64, fp ForcePushEvent) db.MREvent {
 		CreatedAt:      fp.CreatedAt,
 		DedupeKey:      fmt.Sprintf("force-push-%s-%s", fp.BeforeSHA, fp.AfterSHA),
 	}
+}
+
+func NormalizeTimelineEvent(mrID int64, event PullRequestTimelineEvent) *db.MREvent {
+	switch event.EventType {
+	case "force_push":
+		normalized := NormalizeForcePushEvent(mrID, ForcePushEvent{
+			Actor:     event.Actor,
+			BeforeSHA: event.BeforeSHA,
+			AfterSHA:  event.AfterSHA,
+			Ref:       event.Ref,
+			CreatedAt: event.CreatedAt,
+		})
+		normalized.DedupeKey = timelineDedupeKey(event)
+		return &normalized
+	case "cross_referenced":
+		metadata, _ := json.Marshal(crossReferenceMetadata{
+			SourceType:        event.SourceType,
+			SourceOwner:       event.SourceOwner,
+			SourceRepo:        event.SourceRepo,
+			SourceNumber:      event.SourceNumber,
+			SourceTitle:       event.SourceTitle,
+			SourceURL:         event.SourceURL,
+			IsCrossRepository: event.IsCrossRepository,
+			WillCloseTarget:   event.WillCloseTarget,
+		})
+		return &db.MREvent{
+			MergeRequestID: mrID,
+			EventType:      "cross_referenced",
+			Author:         event.Actor,
+			Summary:        fmt.Sprintf("Referenced from %s/%s#%d", event.SourceOwner, event.SourceRepo, event.SourceNumber),
+			MetadataJSON:   string(metadata),
+			CreatedAt:      event.CreatedAt,
+			DedupeKey:      timelineDedupeKey(event),
+		}
+	case "renamed_title":
+		metadata, _ := json.Marshal(renamedTitleMetadata{
+			PreviousTitle: event.PreviousTitle,
+			CurrentTitle:  event.CurrentTitle,
+		})
+		return &db.MREvent{
+			MergeRequestID: mrID,
+			EventType:      "renamed_title",
+			Author:         event.Actor,
+			Summary:        fmt.Sprintf("%q -> %q", event.PreviousTitle, event.CurrentTitle),
+			MetadataJSON:   string(metadata),
+			CreatedAt:      event.CreatedAt,
+			DedupeKey:      timelineDedupeKey(event),
+		}
+	case "base_ref_changed":
+		metadata, _ := json.Marshal(baseRefChangedMetadata{
+			PreviousRefName: event.PreviousRefName,
+			CurrentRefName:  event.CurrentRefName,
+		})
+		return &db.MREvent{
+			MergeRequestID: mrID,
+			EventType:      "base_ref_changed",
+			Author:         event.Actor,
+			Summary:        event.PreviousRefName + " -> " + event.CurrentRefName,
+			MetadataJSON:   string(metadata),
+			CreatedAt:      event.CreatedAt,
+			DedupeKey:      timelineDedupeKey(event),
+		}
+	default:
+		return nil
+	}
+}
+
+func timelineDedupeKey(event PullRequestTimelineEvent) string {
+	if event.NodeID != "" {
+		return "timeline-" + event.NodeID
+	}
+	raw := strings.Join([]string{
+		event.EventType,
+		event.CreatedAt.UTC().Format(time.RFC3339Nano),
+		event.Actor,
+		event.BeforeSHA,
+		event.AfterSHA,
+		event.Ref,
+		event.PreviousTitle,
+		event.CurrentTitle,
+		event.PreviousRefName,
+		event.CurrentRefName,
+		event.SourceType,
+		event.SourceOwner,
+		event.SourceRepo,
+		fmt.Sprint(event.SourceNumber),
+		event.SourceTitle,
+		event.SourceURL,
+		fmt.Sprint(event.IsCrossRepository),
+		fmt.Sprint(event.WillCloseTarget),
+	}, "\x00")
+	return "timeline-" + shortHash(raw)
 }
 
 // DeriveOverallCIStatus computes an aggregate CI status from check runs
@@ -444,6 +559,11 @@ func shortSHA(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+func shortHash(value string) string {
+	sum := sha1.Sum([]byte(value))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 func appName(r *gh.CheckRun) string {
