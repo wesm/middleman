@@ -27,6 +27,10 @@ vi.mock("../../stores/embed-config.svelte.js", () => ({
 
 import AgentSettings from "./AgentSettings.svelte";
 
+async function expandAgent(name: string): Promise<void> {
+  await fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
+}
+
 describe("AgentSettings", () => {
   afterEach(() => {
     cleanup();
@@ -51,6 +55,7 @@ describe("AgentSettings", () => {
       },
     });
 
+    await expandAgent("Codex");
     await fireEvent.input(screen.getByLabelText("Codex binary"), {
       target: { value: "/opt/codex" },
     });
@@ -95,6 +100,7 @@ describe("AgentSettings", () => {
       },
     });
 
+    await expandAgent("Codex");
     await fireEvent.input(screen.getByLabelText("Codex arguments"), {
       target: { value: "\"\"" },
     });
@@ -127,6 +133,8 @@ describe("AgentSettings", () => {
       },
     });
 
+    expect(screen.getByLabelText("Codex")).toBeTruthy();
+    expect(screen.queryByLabelText("Codex binary")).toBeNull();
     expect(
       (screen.getByRole("button", { name: "Save agents" }) as HTMLButtonElement)
         .disabled,
@@ -164,6 +172,7 @@ describe("AgentSettings", () => {
       },
     });
 
+    await expandAgent("Claude");
     await fireEvent.input(screen.getByLabelText("Claude arguments"), {
       target: { value: "--permission-mode acceptEdits" },
     });
@@ -220,6 +229,7 @@ describe("AgentSettings", () => {
       },
     });
 
+    await expandAgent("Claude");
     await fireEvent.input(screen.getByLabelText("Claude arguments"), {
       target: { value: "--permission-mode acceptEdits" },
     });

@@ -1,5 +1,6 @@
 import {
   expect,
+  type Page,
   request as playwrightRequest,
   test,
   type APIRequestContext,
@@ -26,6 +27,10 @@ test.afterAll(async () => {
   await isolatedServer?.stop();
 });
 
+async function expandAgent(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: `Edit ${name}` }).click();
+}
+
 test("settings preserves quoted empty workspace agent arguments", async ({
   page,
 }) => {
@@ -33,6 +38,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
   await page.locator(".settings-page")
     .waitFor({ state: "visible", timeout: 10_000 });
 
+  await expandAgent(page, "Codex");
   const argsInput = page.getByLabel("Codex arguments");
   const saveButton = page.getByRole("button", { name: "Save agents" });
 
@@ -64,6 +70,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
   await page.reload();
   await page.locator(".settings-page")
     .waitFor({ state: "visible", timeout: 10_000 });
+  await expandAgent(page, "Codex");
   await expect(page.getByLabel("Codex arguments")).toHaveValue("\"\"");
 });
 
@@ -95,9 +102,13 @@ test("settings preserves explicit default built-in agents during other saves", a
     .waitFor({ state: "visible", timeout: 10_000 });
 
   const saveButton = page.getByRole("button", { name: "Save agents" });
+  await expect(page.getByRole("checkbox", { name: "Codex" })).toBeVisible();
+  await expect(page.getByLabel("Codex arguments")).toHaveCount(0);
+  await expandAgent(page, "Codex");
   await expect(page.getByLabel("Codex arguments")).toHaveValue("");
   await expect(saveButton).toBeDisabled();
 
+  await expandAgent(page, "Claude");
   await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse((response) =>
@@ -155,9 +166,11 @@ test("settings preserves disabled built-in agents with empty commands", async ({
     .waitFor({ state: "visible", timeout: 10_000 });
 
   const saveButton = page.getByRole("button", { name: "Save agents" });
+  await expandAgent(page, "Codex");
   await expect(page.getByLabel("Codex binary")).toHaveValue("");
   await expect(saveButton).toBeDisabled();
 
+  await expandAgent(page, "Claude");
   await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse((response) =>
