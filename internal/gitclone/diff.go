@@ -1,13 +1,16 @@
 package gitclone
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // DiffFiles returns file metadata (path, status, renames) without patch
-// content. It runs only git diff --raw, which is much faster than a full
-// diff for large PRs.
+// content. It combines git diff --raw and --numstat, which is much faster
+// than a full patch diff for large PRs.
 func (m *Manager) DiffFiles(
 	ctx context.Context,
 	host, owner, name, mergeBase, headSHA string,
@@ -23,13 +26,73 @@ func (m *Manager) DiffFiles(
 	if files == nil {
 		files = []DiffFile{}
 	}
+	numstatOut, err := m.git(ctx, host, clonePath,
+		"diff", "--numstat", "-z", "-M", "-C",
+		"--find-copies-harder", mergeBase, headSHA,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("git diff --numstat: %w", err)
+	}
+	counts := parseNumstatZ(numstatOut)
 	// Ensure Hunks is never nil so JSON serializes as [] not null.
 	for i := range files {
+		if count, ok := counts[files[i].Path]; ok {
+			files[i].Additions = count.additions
+			files[i].Deletions = count.deletions
+		}
 		if files[i].Hunks == nil {
 			files[i].Hunks = []Hunk{}
 		}
 	}
 	return files, nil
+}
+
+type numstatCount struct {
+	additions int
+	deletions int
+}
+
+func parseNumstatZ(data []byte) map[string]numstatCount {
+	records := bytes.Split(data, []byte{0})
+	counts := make(map[string]numstatCount)
+	for i := 0; i < len(records); {
+		record := string(records[i])
+		if record == "" {
+			i++
+			continue
+		}
+		fields := strings.SplitN(record, "\t", 3)
+		if len(fields) < 3 {
+			i++
+			continue
+		}
+		path := fields[2]
+		if path == "" && i+2 < len(records) {
+			path = string(records[i+2])
+			i += 3
+		} else {
+			i++
+		}
+		if path == "" {
+			continue
+		}
+		counts[path] = numstatCount{
+			additions: parseNumstatInt(fields[0]),
+			deletions: parseNumstatInt(fields[1]),
+		}
+	}
+	return counts
+}
+
+func parseNumstatInt(value string) int {
+	if value == "-" {
+		return 0
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // Diff runs a two-dot git diff between mergeBase and headSHA and returns

@@ -1146,8 +1146,12 @@ export interface components {
             readonly $schema?: string;
             detail_fetched_at?: string;
             detail_loaded: boolean;
+            diff_head_sha: string;
             events: components["schemas"]["MREvent"][] | null;
+            merge_base_sha: string;
             merge_request: components["schemas"]["MergeRequest"];
+            platform_base_sha: string;
+            platform_head_sha: string;
             platform_host: string;
             repo_name: string;
             repo_owner: string;

@@ -139,8 +139,10 @@ func TestDiffFiles(t *testing.T) {
 	// No patch content.
 	assert.Empty(files[0].Hunks)
 	assert.Empty(files[1].Hunks)
-	assert.Zero(files[0].Additions)
-	assert.Zero(files[0].Deletions)
+	assert.Equal(1, files[0].Additions)
+	assert.Equal(1, files[0].Deletions)
+	assert.Equal(1, files[1].Additions)
+	assert.Zero(files[1].Deletions)
 }
 
 func TestDiffFilesEmpty(t *testing.T) {

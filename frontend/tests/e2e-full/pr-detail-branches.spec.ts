@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("PR detail branch info", () => {
   test.beforeEach(async ({ page }) => {
@@ -39,4 +40,105 @@ test.describe("PR detail branch info", () => {
     await expect(headBtn).toHaveClass(/branch-name-btn--copied/);
     await expect(headBtn).toHaveAttribute("title", "Copied!");
   });
+
+  test("summarizes changed lines by category in the popover", async ({ page }) => {
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          stale: false,
+          files: [
+            {
+              path: "docs/review-plan.md",
+              old_path: "docs/review-plan.md",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 10,
+              deletions: 2,
+              hunks: [],
+            },
+            {
+              path: "internal/server/api.go",
+              old_path: "internal/server/api.go",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 180,
+              deletions: 20,
+              hunks: [],
+            },
+            {
+              path: "internal/server/api_test.go",
+              old_path: "internal/server/api_test.go",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 49,
+              deletions: 7,
+              hunks: [],
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/pulls/acme/widgets/1");
+    await page.locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const trigger = page.locator(".diff-summary-trigger");
+    await expect(trigger).toHaveText("+240/-30");
+
+    await trigger.focus();
+
+    const popover = page.locator(".diff-summary-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(
+      /Plans\/docs\s+\+10\/-2[\s\S]*Code\s+\+180\/-20[\s\S]*Tests\s+\+49\/-7/,
+    );
+    await expect(popover).not.toContainText("Other");
+  });
+});
+
+test("diff summary uses real files after the PR head advances", async ({ page }) => {
+  const server = await startIsolatedE2EServer();
+  try {
+    await page.addInitScript(() => {
+      const realSetInterval = window.setInterval;
+      window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+        realSetInterval(handler, timeout === 60_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
+    });
+    await page.goto(`${server.info.base_url}/pulls/acme/widgets/1`);
+    await page.locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.locator(".sync-indicator")).toHaveCount(0);
+
+    const trigger = page.locator(".diff-summary-trigger");
+    await expect(trigger).toHaveText("+240/-30");
+    await trigger.focus();
+
+    const popover = page.locator(".diff-summary-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(/Code\s+\+\d+\/-\d+/);
+    await expect(popover).not.toContainText("Tests");
+    const initialSummary = await popover.textContent();
+
+    const response = await page.request.post(
+      `${server.info.base_url}/__e2e/pr-diff-summary/advance-head`,
+    );
+    expect(response.ok()).toBe(true);
+    const advanced = await response.json() as { head_sha: string };
+
+    await expect(trigger).toHaveAttribute(
+      "aria-describedby",
+      new RegExp(advanced.head_sha.slice(0, 10)),
+    );
+    await expect(popover).toContainText(/Plans\/docs\s+\+\d+\/-\d+/);
+    await expect(popover).toContainText(/Tests\s+\+\d+\/-\d+/);
+    await expect(popover).not.toHaveText(initialSummary ?? "");
+  } finally {
+    await server.stop();
+  }
 });

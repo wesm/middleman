@@ -408,8 +408,12 @@ type MergeRequestDetailResponse struct {
 	Schema           *string                  `json:"$schema,omitempty"`
 	DetailFetchedAt  *string                  `json:"detail_fetched_at,omitempty"`
 	DetailLoaded     bool                     `json:"detail_loaded"`
+	DiffHeadSha      string                   `json:"diff_head_sha"`
 	Events           *[]MREvent               `json:"events"`
+	MergeBaseSha     string                   `json:"merge_base_sha"`
 	MergeRequest     MergeRequest             `json:"merge_request"`
+	PlatformBaseSha  string                   `json:"platform_base_sha"`
+	PlatformHeadSha  string                   `json:"platform_head_sha"`
 	PlatformHost     string                   `json:"platform_host"`
 	RepoName         string                   `json:"repo_name"`
 	RepoOwner        string                   `json:"repo_owner"`

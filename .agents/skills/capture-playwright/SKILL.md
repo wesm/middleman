@@ -1,1 +1,0 @@
-../../../skills/capture-playwright/SKILL.md
