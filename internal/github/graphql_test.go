@@ -1,13 +1,16 @@
 package github
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/shurcooL/githubv4"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -249,6 +252,7 @@ func TestConvertGQLPRCompleteness(t *testing.T) {
 	assert.True(bulk.CommentsComplete)
 	assert.True(bulk.ReviewsComplete)
 	assert.True(bulk.CommitsComplete)
+	assert.True(bulk.TimelineComplete)
 	assert.True(bulk.CIComplete)
 
 	// Comments incomplete
@@ -256,6 +260,86 @@ func TestConvertGQLPRCompleteness(t *testing.T) {
 	bulk = convertGQLPR(&gql)
 	assert.False(bulk.CommentsComplete)
 	assert.True(bulk.ReviewsComplete)
+
+	gql.Comments.PageInfo.HasNextPage = false
+	gql.TimelineItems.PageInfo.HasNextPage = true
+	bulk = convertGQLPR(&gql)
+	assert.False(bulk.TimelineComplete)
+}
+
+func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	var sawTimelineItems bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		sawTimelineItems = bytes.Contains(body, []byte("timelineItems"))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[{
+			"databaseId":1001,
+			"number":1,
+			"title":"Timeline PR",
+			"state":"OPEN",
+			"isDraft":false,
+			"body":"",
+			"url":"https://github.com/owner/repo/pull/1",
+			"author":{"login":"alice"},
+			"createdAt":"` + now + `",
+			"updatedAt":"` + now + `",
+			"mergedAt":null,
+			"closedAt":null,
+			"additions":1,
+			"deletions":0,
+			"mergeable":"MERGEABLE",
+			"reviewDecision":"",
+			"headRefName":"feature",
+			"baseRefName":"main",
+			"headRefOid":"abc123",
+			"baseRefOid":"def456",
+			"headRepository":{"url":"https://github.com/owner/repo"},
+			"labels":{"nodes":[]},
+			"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"lastCommit":{"nodes":[]},
+			"timelineItems":{"nodes":[{
+				"__typename":"BaseRefChangedEvent",
+				"id":"BRC_1",
+				"actor":{"login":"bob"},
+				"createdAt":"` + now + `",
+				"previousRefName":"main",
+				"currentRefName":"release"
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+
+	result, err := fetcher.FetchRepoPRs(t.Context(), "owner", "repo")
+	require.NoError(err)
+	require.NotNil(result)
+	require.Len(result.PullRequests, 1)
+	require.True(sawTimelineItems)
+	require.Len(result.PullRequests[0].TimelineEvents, 1)
+
+	event := result.PullRequests[0].TimelineEvents[0]
+	assert.Equal("base_ref_changed", event.EventType)
+	assert.Equal("BRC_1", event.NodeID)
+	assert.Equal("bob", event.Actor)
+	assert.Equal("main", event.PreviousRefName)
+	assert.Equal("release", event.CurrentRefName)
+	assert.True(result.PullRequests[0].TimelineComplete)
 }
 
 func TestNormalizeBulkCI(t *testing.T) {

@@ -4873,6 +4873,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 		CommentsComplete: true,
 		ReviewsComplete:  true,
 		CommitsComplete:  true,
+		TimelineComplete: true,
 		CIComplete:       true,
 	}, false)
 	require.NoError(err)
@@ -4893,6 +4894,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 		CommentsComplete: true,
 		ReviewsComplete:  true,
 		CommitsComplete:  true,
+		TimelineComplete: true,
 		CIComplete:       true,
 	}, false)
 	require.NoError(err)
@@ -4978,6 +4980,55 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.Empty(events)
+}
+
+func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 14, 0, 0, 0, time.UTC)
+	timelineAt := now.Add(3 * time.Minute)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR: buildOpenPR(1, now),
+		TimelineEvents: []PullRequestTimelineEvent{{
+			NodeID:          "BRC_1",
+			EventType:       "base_ref_changed",
+			Actor:           "alice",
+			PreviousRefName: "main",
+			CurrentRefName:  "release",
+			CreatedAt:       timelineAt,
+		}},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
+	}, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NotNil(mr.DetailFetchedAt)
+	assert.Equal(timelineAt.UTC(), mr.LastActivityAt.UTC())
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("base_ref_changed", events[0].EventType)
+	assert.Equal("main -> release", events[0].Summary)
 }
 
 // buildOpenPRWithSHA mirrors buildOpenPR but lets the caller set the

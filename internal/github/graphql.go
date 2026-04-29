@@ -84,6 +84,10 @@ type gqlPR struct {
 			}
 		}
 	} `graphql:"lastCommit: commits(last: 1)"`
+	TimelineItems struct {
+		Nodes    []gqlPullRequestTimelineItem
+		PageInfo pageInfo
+	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100)"`
 }
 
 type gqlComment struct {
@@ -114,6 +118,77 @@ type gqlCommit struct {
 		Date time.Time
 		User *struct{ Login string }
 	}
+}
+
+type gqlPullRequestTimelineItem struct {
+	Typename                string                     `graphql:"__typename"`
+	Node                    gqlNodeFragment            `graphql:"... on Node"`
+	HeadRefForcePushedEvent gqlHeadRefForcePushedEvent `graphql:"... on HeadRefForcePushedEvent"`
+	CrossReferencedEvent    gqlCrossReferencedEvent    `graphql:"... on CrossReferencedEvent"`
+	RenamedTitleEvent       gqlRenamedTitleEvent       `graphql:"... on RenamedTitleEvent"`
+	BaseRefChangedEvent     gqlBaseRefChangedEvent     `graphql:"... on BaseRefChangedEvent"`
+}
+
+type gqlNodeFragment struct {
+	ID string
+}
+
+type gqlActorRef struct {
+	Login string
+}
+
+type gqlHeadRefForcePushedEvent struct {
+	Actor        *gqlActorRef
+	BeforeCommit *struct {
+		OID string `graphql:"oid"`
+	}
+	AfterCommit *struct {
+		OID string `graphql:"oid"`
+	}
+	CreatedAt time.Time
+	Ref       *struct {
+		Name string
+	}
+}
+
+type gqlCrossReferencedEvent struct {
+	Actor             *gqlActorRef
+	CreatedAt         time.Time
+	IsCrossRepository bool
+	WillCloseTarget   bool
+	Source            gqlReferencedSubject
+}
+
+type gqlReferencedSubject struct {
+	Typename    string                 `graphql:"__typename"`
+	Issue       gqlReferencedIssueOrPR `graphql:"... on Issue"`
+	PullRequest gqlReferencedIssueOrPR `graphql:"... on PullRequest"`
+}
+
+type gqlReferencedIssueOrPR struct {
+	Number     int
+	Title      string
+	URL        string `graphql:"url"`
+	Repository struct {
+		Owner struct {
+			Login string
+		}
+		Name string
+	}
+}
+
+type gqlRenamedTitleEvent struct {
+	Actor         *gqlActorRef
+	CreatedAt     time.Time
+	PreviousTitle string
+	CurrentTitle  string
+}
+
+type gqlBaseRefChangedEvent struct {
+	Actor           *gqlActorRef
+	CreatedAt       time.Time
+	PreviousRefName string
+	CurrentRefName  string
 }
 
 type gqlIssueQuery struct {
@@ -421,11 +496,13 @@ type BulkPR struct {
 	Comments         []*gh.IssueComment
 	Reviews          []*gh.PullRequestReview
 	Commits          []*gh.RepositoryCommit
+	TimelineEvents   []PullRequestTimelineEvent
 	CheckRuns        []*gh.CheckRun
 	Statuses         []*gh.RepoStatus
 	CommentsComplete bool
 	ReviewsComplete  bool
 	CommitsComplete  bool
+	TimelineComplete bool
 	CIComplete       bool
 }
 
@@ -674,6 +751,7 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
 		ReviewsComplete:  !gql.Reviews.PageInfo.HasNextPage,
 		CommitsComplete:  !gql.AllCommits.PageInfo.HasNextPage,
+		TimelineComplete: !gql.TimelineItems.PageInfo.HasNextPage,
 	}
 
 	for i := range gql.Comments.Nodes {
@@ -684,6 +762,12 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	}
 	for i := range gql.AllCommits.Nodes {
 		bulk.Commits = append(bulk.Commits, adaptCommit(&gql.AllCommits.Nodes[i]))
+	}
+	for i := range gql.TimelineItems.Nodes {
+		event, ok := adaptPullRequestTimelineEvent(&gql.TimelineItems.Nodes[i])
+		if ok {
+			bulk.TimelineEvents = append(bulk.TimelineEvents, event)
+		}
 	}
 
 	bulk.CIComplete = true
@@ -698,4 +782,74 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	}
 
 	return bulk
+}
+
+func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequestTimelineEvent, bool) {
+	if gql == nil {
+		return PullRequestTimelineEvent{}, false
+	}
+	event := PullRequestTimelineEvent{NodeID: gql.Node.ID}
+	switch gql.Typename {
+	case "HeadRefForcePushedEvent":
+		src := gql.HeadRefForcePushedEvent
+		event.EventType = "force_push"
+		event.CreatedAt = src.CreatedAt
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+		if src.BeforeCommit != nil {
+			event.BeforeSHA = src.BeforeCommit.OID
+		}
+		if src.AfterCommit != nil {
+			event.AfterSHA = src.AfterCommit.OID
+		}
+		if src.Ref != nil {
+			event.Ref = src.Ref.Name
+		}
+	case "CrossReferencedEvent":
+		src := gql.CrossReferencedEvent
+		event.EventType = "cross_referenced"
+		event.CreatedAt = src.CreatedAt
+		event.IsCrossRepository = src.IsCrossRepository
+		event.WillCloseTarget = src.WillCloseTarget
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+		event.SourceType = src.Source.Typename
+		switch src.Source.Typename {
+		case "Issue":
+			copyReferencedSubject(&event, src.Source.Issue)
+		case "PullRequest":
+			copyReferencedSubject(&event, src.Source.PullRequest)
+		}
+	case "RenamedTitleEvent":
+		src := gql.RenamedTitleEvent
+		event.EventType = "renamed_title"
+		event.CreatedAt = src.CreatedAt
+		event.PreviousTitle = src.PreviousTitle
+		event.CurrentTitle = src.CurrentTitle
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+	case "BaseRefChangedEvent":
+		src := gql.BaseRefChangedEvent
+		event.EventType = "base_ref_changed"
+		event.CreatedAt = src.CreatedAt
+		event.PreviousRefName = src.PreviousRefName
+		event.CurrentRefName = src.CurrentRefName
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+	default:
+		return PullRequestTimelineEvent{}, false
+	}
+	return event, true
+}
+
+func copyReferencedSubject(event *PullRequestTimelineEvent, source gqlReferencedIssueOrPR) {
+	event.SourceNumber = source.Number
+	event.SourceTitle = source.Title
+	event.SourceURL = source.URL
+	event.SourceOwner = source.Repository.Owner.Login
+	event.SourceRepo = source.Repository.Name
 }

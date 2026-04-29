@@ -2185,7 +2185,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
-	// Timeline events — comments, reviews, commits.
+	// Timeline events — comments, reviews, commits, and system events.
 	// Events use ON CONFLICT DO NOTHING, so partial data is safe.
 	var events []db.MREvent
 	for _, c := range bulk.Comments {
@@ -2196,6 +2196,11 @@ func (s *Syncer) syncOpenMRFromBulk(
 	}
 	for _, c := range bulk.Commits {
 		events = append(events, NormalizeCommitEvent(mrID, c))
+	}
+	for _, timelineEvent := range bulk.TimelineEvents {
+		if event := NormalizeTimelineEvent(mrID, timelineEvent); event != nil {
+			events = append(events, *event)
+		}
 	}
 	if bulk.CommentsComplete {
 		if err := s.replacePRCommentEvents(ctx, mrID, bulk.Comments); err != nil {
@@ -2268,12 +2273,18 @@ func (s *Syncer) syncOpenMRFromBulk(
 	allComplete := bulk.CommentsComplete &&
 		bulk.ReviewsComplete &&
 		bulk.CommitsComplete &&
+		bulk.TimelineComplete &&
 		bulk.CIComplete
 	if allComplete {
 		reviewDecision := DeriveReviewDecision(bulk.Reviews)
 		lastActivity := computeLastActivity(
 			bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits,
 		)
+		for _, timelineEvent := range bulk.TimelineEvents {
+			if timelineEvent.CreatedAt.After(lastActivity) {
+				lastActivity = timelineEvent.CreatedAt
+			}
+		}
 		if err := s.db.UpdateMRDerivedFields(
 			ctx, repoID, number, db.MRDerivedFields{
 				ReviewDecision: reviewDecision,
