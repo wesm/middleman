@@ -56,7 +56,7 @@ gh issue comment <number> --repo owner/repo --body "$IMAGE_MD"
 
 For screenshots, the emitted markdown can usually be pasted as-is.
 
-For videos, `gh image` may still emit image-style markdown like `![demo.webm](...)`. GitHub PR descriptions and comments do not reliably inline `.webm` attachments from that syntax, so normalize it to a plain link such as `[demo.webm](...)` or `Video: https://...` before pasting into a PR description or comment.
+For videos, `gh image` may still emit image-style markdown like `![demo.webm](...)`. GitHub PR descriptions and comments do not reliably inline `.webm` attachments from that syntax, so normalize it to a plain link such as `[demo.webm](...)` or `https://...` before pasting into a PR description or comment, video links need to be on their OWN line.
 
 If video upload is rejected, keep the local video file, say that `gh image` appears image-only in this environment, and ask whether a screenshot link or a different upload path is preferred.
 
