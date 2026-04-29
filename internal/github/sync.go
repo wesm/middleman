@@ -1274,22 +1274,22 @@ func (s *Syncer) syncRepoOverview(
 			slog.Warn("list repo tags failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
-			return
-		}
-		selectedTags = displayTags(tags, 3)
-		for _, tag := range selectedTags {
-			overview.Releases = append(overview.Releases, repoReleaseFromTag(
-				repo.PlatformHost,
-				repo.Owner,
-				repo.Name,
-				tag,
-			))
-		}
-		if len(overview.Releases) > 0 {
-			overview.LatestRelease = &overview.Releases[0]
-		}
-		for _, tag := range selectedTags {
-			timelineTags = append(timelineTags, tag.GetName())
+		} else {
+			selectedTags = displayTags(tags, 3)
+			for _, tag := range selectedTags {
+				overview.Releases = append(overview.Releases, repoReleaseFromTag(
+					repo.PlatformHost,
+					repo.Owner,
+					repo.Name,
+					tag,
+				))
+			}
+			if len(overview.Releases) > 0 {
+				overview.LatestRelease = &overview.Releases[0]
+			}
+			for _, tag := range selectedTags {
+				timelineTags = append(timelineTags, tag.GetName())
+			}
 		}
 	} else {
 		for _, release := range selectedReleases {

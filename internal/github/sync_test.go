@@ -634,6 +634,71 @@ func TestSyncRepoOverviewUsesTagsWhenRepoHasNoReleases(t *testing.T) {
 	assert.False(overview.LatestRelease.Prerelease)
 }
 
+func TestSyncRepoOverviewClearsReleasesWhenTagFallbackFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	publishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	commitsSince := 9
+	err = d.UpsertRepoOverview(ctx, repoID, db.RepoOverview{
+		LatestRelease: &db.RepoRelease{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/owner/repo/releases/tag/v1.0.0",
+			PublishedAt: &publishedAt,
+		},
+		Releases: []db.RepoRelease{{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/owner/repo/releases/tag/v1.0.0",
+			PublishedAt: &publishedAt,
+		}},
+		CommitsSinceRelease: &commitsSince,
+		CommitTimeline: []db.RepoCommitTimelinePoint{{
+			SHA:         "abc123",
+			Message:     "Old release timeline",
+			CommittedAt: time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+		}},
+	})
+	require.NoError(err)
+
+	client := &mockClient{
+		listReleases: []*gh.RepositoryRelease{},
+		listTagsErr:  errors.New("tags unavailable"),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		nil,
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	syncer.syncRepoOverview(
+		ctx,
+		client,
+		RepoRef{PlatformHost: "github.com", Owner: "owner", Name: "repo"},
+		repoID,
+		false,
+	)
+
+	summaries, err := d.ListRepoSummaries(ctx)
+	require.NoError(err)
+	require.Len(summaries, 1)
+	overview := summaries[0].Overview
+
+	assert.Nil(overview.LatestRelease)
+	assert.Empty(overview.Releases)
+	assert.Nil(overview.CommitsSinceRelease)
+	assert.Empty(overview.CommitTimeline)
+}
+
 func TestSyncStoresForcePushEvent(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
