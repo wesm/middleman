@@ -25,7 +25,7 @@ export function createRuntimeClient(
   fetch?: FetchFn,
   clientBaseURL = baseUrl,
 ) {
-  const inner = fetch ?? globalThis.fetch.bind(globalThis);
+  const inner = fetch ?? ((input: Request) => globalThis.fetch(input));
   return createAPIClient(clientBaseURL, {
     fetch: csrfFetch(inner),
     querySerializer,
