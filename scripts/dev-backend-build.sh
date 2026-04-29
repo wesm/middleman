@@ -4,7 +4,7 @@ set -eu
 
 state_dir="tmp/air"
 input_hash_file="$state_dir/openapi-inputs.sha256"
-frontend_spec="frontend/openapi/openapi.json"
+frontend_spec="frontend/openapi/openapi.yaml"
 backend_spec="internal/apiclient/spec/openapi.json"
 frontend_schema="packages/ui/src/api/generated/schema.ts"
 frontend_client="packages/ui/src/api/generated/client.ts"
@@ -67,7 +67,7 @@ generate_frontend_client() {
 
   cat > "$tmp_client" <<'EOF'
 /**
- * This file was auto-generated from frontend/openapi/openapi.json.
+ * This file was auto-generated from frontend/openapi/openapi.yaml.
  * Do not make direct changes to the file.
  */
 
@@ -87,7 +87,9 @@ generate_api_artifacts() {
   tmp_backend_spec="$(mktemp "$state_dir/backend-openapi.XXXXXX")"
   frontend_changed=0
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_frontend_spec"
+  mkdir -p "$(dirname "$backend_spec")"
+
+  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_frontend_spec" -format yaml
   GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_backend_spec" -version 3.0
 
   if write_if_changed "$frontend_spec" "$tmp_frontend_spec"; then
@@ -100,17 +102,13 @@ generate_api_artifacts() {
     tmp_schema="$(mktemp "$state_dir/frontend-schema.XXXXXX")"
     (
       cd frontend
-      "$BUN_BIN" x openapi-typescript openapi/openapi.json -o "../$tmp_schema"
+      "$BUN_BIN" x openapi-typescript openapi/openapi.yaml -o "../$tmp_schema"
     )
     write_if_changed "$frontend_schema" "$tmp_schema" >/dev/null 2>&1 || true
     generate_frontend_client
   fi
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" \
-    "$GO_BIN" tool oapi-codegen \
-    --config internal/apiclient/generated/config.yaml \
-    -o internal/apiclient/generated/client.gen.go \
-    internal/apiclient/spec/openapi.json
+  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" generate ./internal/apiclient/generated
 }
 
 current_inputs_hash="$(compute_inputs_hash)"

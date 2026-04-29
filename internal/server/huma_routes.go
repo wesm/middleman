@@ -366,6 +366,12 @@ func apiConfig(basePath string) huma.Config {
 }
 
 func (s *Server) registerAPI(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "get-version",
+		Method:      http.MethodGet,
+		Path:        "/version",
+	}, s.getVersion)
+
 	huma.Get(api, "/activity", s.listActivity)
 	huma.Get(api, "/pulls", s.listPulls)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
@@ -440,6 +446,7 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.bulkAddRepos)
 	huma.Get(api, "/repos/{owner}/{name}", s.getRepo)
 	huma.Get(api, "/repos/{owner}/{name}/comment-autocomplete", s.getCommentAutocomplete)
+	s.registerSettingsAPI(api)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve-workflows", s.approveWorkflows)
 	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
@@ -476,8 +483,26 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/sync",
 		DefaultStatus: http.StatusAccepted,
 	}, s.triggerSync)
+	huma.Register(api, huma.Operation{
+		OperationID: "stream-events",
+		Method:      http.MethodGet,
+		Path:        "/events",
+		Responses: map[string]*huma.Response{
+			"200": {
+				Description: "Server-sent event stream",
+				Content: map[string]*huma.MediaType{
+					"text/event-stream": {},
+				},
+			},
+		},
+	}, s.streamEvents)
 	huma.Get(api, "/sync/status", s.syncStatus)
 	huma.Get(api, "/rate-limits", s.getRateLimits)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-roborev-status",
+		Method:      http.MethodGet,
+		Path:        "/roborev/status",
+	}, s.getRoborevStatus)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/commits", s.getCommits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)

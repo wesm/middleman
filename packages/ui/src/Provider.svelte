@@ -187,7 +187,7 @@
     const activityStore =
       createActivityStore(activityOpts);
 
-    const diffOpts: DiffStoreOptions = {};
+    const diffOpts: DiffStoreOptions = { client: cl };
     if (cfg.basePath != null) {
       const bp = cfg.basePath;
       diffOpts.getBasePath = () => bp;
@@ -250,7 +250,7 @@
 
       const daemon = createDaemonStore({
         client: roborevClient,
-        healthBaseUrl: bp + "/api/v1",
+        middlemanClient: cl,
         onRecover: () => {
           void jobsStore.loadJobs();
           const selectedId =

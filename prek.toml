@@ -20,6 +20,33 @@ hooks = [
 repo = "local"
 hooks = [
   {
+    id = "frontend-api-client-check",
+    name = "prevent manual frontend /api/v1 calls",
+    language = "system",
+    entry = "make frontend-api-client-check",
+    files = "^(scripts/lint-api-urls\\.(mjs|test\\.mjs)|frontend/src/.*\\.(svelte|ts|js|tsx|jsx)|packages/ui/src/.*\\.(svelte|ts|js|tsx|jsx))$",
+    pass_filenames = false,
+    priority = 0,
+  },
+  {
+    id = "script-tests",
+    name = "script regression tests",
+    language = "system",
+    entry = "make script-tests",
+    files = "^scripts/.*\\.(mjs|sh)$",
+    pass_filenames = false,
+    priority = 0,
+  },
+  {
+    id = "huma-route-check",
+    name = "prevent non-Huma Go routes",
+    language = "system",
+    entry = "make huma-route-check",
+    files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|middleman\\.go)$",
+    pass_filenames = false,
+    priority = 0,
+  },
+  {
     id = "migration-history-check",
     name = "prevent edits to main-branch migrations",
     language = "system",

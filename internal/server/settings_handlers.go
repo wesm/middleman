@@ -2,12 +2,12 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"path"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/wesm/middleman/internal/config"
 	ghclient "github.com/wesm/middleman/internal/github"
 )
@@ -237,38 +237,28 @@ func classifyResolveError(err error) (int, string) {
 	}
 }
 
-func (s *Server) handleGetSettings(
-	w http.ResponseWriter, r *http.Request,
-) {
+func (s *Server) getSettings(
+	_ context.Context, _ *struct{},
+) (*getSettingsOutput, error) {
 	if s.cfg == nil {
-		writeError(w, http.StatusNotFound,
-			"settings not available")
-		return
+		return nil, huma.Error404NotFound("settings not available")
 	}
 
-	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
+	return &getSettingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
-func (s *Server) handleUpdateSettings(
-	w http.ResponseWriter, r *http.Request,
-) {
+func (s *Server) updateSettings(
+	_ context.Context, input *updateSettingsInput,
+) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		writeError(w, http.StatusNotFound,
-			"settings not available")
-		return
-	}
-
-	var body updateSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
-		return
+		return nil, huma.Error404NotFound("settings not available")
 	}
 
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
 	prevTerminal := s.cfg.Terminal
-	if body.Activity != nil {
-		candidate := *body.Activity
+	if input.Body.Activity != nil {
+		candidate := *input.Body.Activity
 		if candidate.ViewMode == "" {
 			candidate.ViewMode = "threaded"
 		}
@@ -277,62 +267,47 @@ func (s *Server) handleUpdateSettings(
 		}
 		s.cfg.Activity = candidate
 	}
-	if body.Terminal != nil {
-		s.cfg.Terminal = *body.Terminal
+	if input.Body.Terminal != nil {
+		s.cfg.Terminal = *input.Body.Terminal
 	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusInternalServerError,
-			"save config: "+err.Error())
-		return
+		return nil, huma.Error500InternalServerError(
+			"save config: " + err.Error())
 	}
 	s.cfgMu.Unlock()
 
-	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
+	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
-func (s *Server) handleAddRepo(
-	w http.ResponseWriter, r *http.Request,
-) {
+func (s *Server) addConfiguredRepo(
+	ctx context.Context, input *addRepoInput,
+) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		writeError(w, http.StatusNotFound,
-			"settings not available")
-		return
+		return nil, huma.Error404NotFound("settings not available")
+	}
+	if input.Body.Owner == "" || input.Body.Name == "" {
+		return nil, huma.Error400BadRequest("owner and name are required")
 	}
 
-	var body struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	if body.Owner == "" || body.Name == "" {
-		writeError(w, http.StatusBadRequest,
-			"owner and name are required")
-		return
-	}
-
-	newRepo := config.Repo{Owner: body.Owner, Name: body.Name}
+	newRepo := config.Repo{Owner: input.Body.Owner, Name: input.Body.Name}
 
 	// Pre-check (racy but gives a fast 400 before the GitHub call).
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
-			writeError(w, http.StatusBadRequest,
-				body.Owner+"/"+body.Name+" is already configured")
-			return
+			return nil, huma.Error400BadRequest(
+				input.Body.Owner + "/" + input.Body.Name +
+					" is already configured")
 		}
 	}
 	allRepos := append(
@@ -341,12 +316,11 @@ func (s *Server) handleAddRepo(
 	s.cfgMu.Unlock()
 
 	_, expanded, err := ghclient.ResolveConfiguredRepo(
-		r.Context(), s.configuredClients(allRepos), newRepo,
+		ctx, s.configuredClients(allRepos), newRepo,
 	)
 	if err != nil {
 		status, msg := classifyResolveError(err)
-		writeError(w, status, msg)
-		return
+		return nil, huma.NewError(status, msg)
 	}
 
 	// Re-acquire lock and apply the addition to current state
@@ -355,43 +329,39 @@ func (s *Server) handleAddRepo(
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
-			writeError(w, http.StatusBadRequest,
-				body.Owner+"/"+body.Name+" is already configured")
-			return
+			return nil, huma.Error400BadRequest(
+				input.Body.Owner + "/" + input.Body.Name +
+					" is already configured")
 		}
 	}
 	s.cfg.Repos = append(s.cfg.Repos, newRepo)
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusInternalServerError,
-			"save config: "+err.Error())
-		return
+		return nil, huma.Error500InternalServerError(
+			"save config: " + err.Error())
 	}
 	s.mergeTrackedRepos(expanded)
 	s.cfgMu.Unlock()
 
-	s.syncer.TriggerRun(context.WithoutCancel(r.Context()))
-	writeJSON(w, http.StatusCreated, s.buildLocalSettingsResponse())
+	s.syncer.TriggerRun(context.WithoutCancel(ctx))
+	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
-func (s *Server) handleRefreshRepo(
-	w http.ResponseWriter, r *http.Request,
-) {
+func (s *Server) refreshConfiguredRepo(
+	ctx context.Context, input *repoConfigInput,
+) (*settingsOutput, error) {
 	if s.cfgPath == "" {
-		writeError(w, http.StatusNotFound,
-			"settings not available")
-		return
+		return nil, huma.Error404NotFound("settings not available")
 	}
 
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
+	owner := input.Owner
+	name := input.Name
 
 	s.cfgMu.Lock()
 	repos := append([]config.Repo(nil), s.cfg.Repos...)
@@ -408,23 +378,20 @@ func (s *Server) handleRefreshRepo(
 		}
 	}
 	if target == nil {
-		writeError(w, http.StatusNotFound,
-			owner+"/"+name+" is not configured")
-		return
+		return nil, huma.Error404NotFound(
+			owner + "/" + name + " is not configured")
 	}
 	if !target.HasNameGlob() {
-		writeError(w, http.StatusBadRequest,
+		return nil, huma.Error400BadRequest(
 			"refresh is only supported for glob patterns")
-		return
 	}
 
 	_, expanded, err := ghclient.ResolveConfiguredRepo(
-		r.Context(), s.configuredClients(repos), *target,
+		ctx, s.configuredClients(repos), *target,
 	)
 	if err != nil {
 		status, msg := classifyResolveError(err)
-		writeError(w, status, msg)
-		return
+		return nil, huma.NewError(status, msg)
 	}
 
 	// Re-acquire cfgMu and verify the target glob still exists
@@ -446,28 +413,25 @@ func (s *Server) handleRefreshRepo(
 	}
 	if !stillExists {
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusNotFound,
-			owner+"/"+name+" is no longer configured")
-		return
+		return nil, huma.Error404NotFound(
+			owner + "/" + name + " is no longer configured")
 	}
 	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
 
-	s.syncer.TriggerRun(context.WithoutCancel(r.Context()))
-	writeJSON(w, http.StatusOK, s.buildLocalSettingsResponse())
+	s.syncer.TriggerRun(context.WithoutCancel(ctx))
+	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
-func (s *Server) handleDeleteRepo(
-	w http.ResponseWriter, r *http.Request,
-) {
+func (s *Server) deleteConfiguredRepo(
+	_ context.Context, input *repoConfigInput,
+) (*struct{}, error) {
 	if s.cfgPath == "" {
-		writeError(w, http.StatusNotFound,
-			"settings not available")
-		return
+		return nil, huma.Error404NotFound("settings not available")
 	}
 
-	owner := r.PathValue("owner")
-	name := r.PathValue("name")
+	owner := input.Owner
+	name := input.Name
 
 	s.cfgMu.Lock()
 	idx := -1
@@ -482,9 +446,8 @@ func (s *Server) handleDeleteRepo(
 	}
 	if idx == -1 {
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusNotFound,
-			owner+"/"+name+" is not configured")
-		return
+		return nil, huma.Error404NotFound(
+			owner + "/" + name + " is not configured")
 	}
 
 	prev := append([]config.Repo(nil), s.cfg.Repos...)
@@ -494,12 +457,11 @@ func (s *Server) handleDeleteRepo(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		writeError(w, http.StatusInternalServerError,
-			"save config: "+err.Error())
-		return
+		return nil, huma.Error500InternalServerError(
+			"save config: " + err.Error())
 	}
 	s.removeConfigRepos(s.cfg.Repos)
 	s.cfgMu.Unlock()
 
-	w.WriteHeader(http.StatusNoContent)
+	return nil, nil
 }

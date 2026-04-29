@@ -25,7 +25,8 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check tidy svelte-skills svelte-skills-sync clean install-hooks help
+        dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check \
+        frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -76,14 +77,30 @@ frontend-check:
 	cd packages/ui && bun run typecheck && bun run lint
 	cd frontend && bun run typecheck && bun run lint
 
-# Regenerate the checked-in OpenAPI documents and generated clients
+# Prevent production frontend code from bypassing generated API clients
+frontend-api-client-check:
+	bun scripts/lint-api-urls.mjs
+
+# Prevent application HTTP routes from bypassing Huma registration
+huma-route-check:
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
+
+# Run lightweight script regression tests
+script-tests:
+	bun test scripts/*.test.mjs
+
+# Run lightweight generated-client/Huma guardrails
+guardrail-check: frontend-api-client-check huma-route-check script-tests
+
+
+# Regenerate the checked-in OpenAPI document and generated clients
 api-generate:
-	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.json
+	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.yaml
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
-	cd packages/ui && bunx openapi-typescript ../../frontend/openapi/openapi.json -o src/api/generated/schema.ts
+	cd packages/ui && bunx openapi-typescript ../../frontend/openapi/openapi.yaml -o src/api/generated/schema.ts
 	printf '%s\n' \
 		'/**' \
-		' * This file was auto-generated from frontend/openapi/openapi.json.' \
+		' * This file was auto-generated from frontend/openapi/openapi.yaml.' \
 		' * Do not make direct changes to the file.' \
 		' */' \
 		'' \
@@ -220,6 +237,7 @@ help:
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
+	@echo "  frontend-api-client-check - Prevent manual /api/v1 frontend calls outside generated clients"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""
 	@echo "  test           - Run all tests"
@@ -230,6 +248,8 @@ help:
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
+	@echo "  huma-route-check - Prevent non-Huma Go route registrations"
+	@echo "  guardrail-check - Run generated-client and Huma route guardrails"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Sync repo-local Svelte AI skills and per-agent symlinks"
 	@echo "  svelte-skills-sync - Alias for svelte-skills"

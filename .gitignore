@@ -30,5 +30,6 @@ cmd/e2e-server/e2e-server.exe
 .claude/settings.local.json
 .superset
 frontend/src/lib/api/generated/
+internal/apiclient/spec/openapi.json
 __pycache__/
 *.py[cod]

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httputil"
@@ -46,44 +47,48 @@ type roborevStatusResponse struct {
 	Endpoint  string `json:"endpoint"`
 }
 
-// handleRoborevStatus probes the roborev daemon and reports whether
+type roborevStatusOutput struct {
+	Body roborevStatusResponse
+}
+
+// getRoborevStatus probes the roborev daemon and reports whether
 // it is reachable and what version it advertises.
-func handleRoborevStatus(
-	cfg *config.Config,
-) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		endpoint := cfg.RoborevEndpoint()
-		// Sanitize: strip credentials and path, expose
-		// only scheme + host for the UI error message.
-		sanitized := "(configured endpoint)"
-		if u, err := url.Parse(endpoint); err == nil {
-			u.User = nil
-			u.Path = ""
-			u.RawQuery = ""
-			u.Fragment = ""
-			sanitized = u.String()
-		}
-		resp := roborevStatusResponse{Endpoint: sanitized}
-
-		client := &http.Client{Timeout: 2 * time.Second}
-		statusURL := strings.TrimRight(endpoint, "/") + "/api/status"
-
-		r, err := client.Get(statusURL)
-		if err != nil {
-			writeJSON(w, http.StatusOK, resp)
-			return
-		}
-		defer r.Body.Close()
-
-		var body struct {
-			Version string `json:"version"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSON(w, http.StatusOK, resp)
-			return
-		}
-		resp.Available = true
-		resp.Version = body.Version
-		writeJSON(w, http.StatusOK, resp)
+func (s *Server) getRoborevStatus(
+	_ context.Context, _ *struct{},
+) (*roborevStatusOutput, error) {
+	cfg := s.cfg
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
+	endpoint := cfg.RoborevEndpoint()
+	// Sanitize: strip credentials and path, expose
+	// only scheme + host for the UI error message.
+	sanitized := "(configured endpoint)"
+	if u, err := url.Parse(endpoint); err == nil {
+		u.User = nil
+		u.Path = ""
+		u.RawQuery = ""
+		u.Fragment = ""
+		sanitized = u.String()
+	}
+	resp := roborevStatusResponse{Endpoint: sanitized}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	statusURL := strings.TrimRight(endpoint, "/") + "/api/status"
+
+	r, err := client.Get(statusURL)
+	if err != nil {
+		return &roborevStatusOutput{Body: resp}, nil
+	}
+	defer r.Body.Close()
+
+	var body struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return &roborevStatusOutput{Body: resp}, nil
+	}
+	resp.Available = true
+	resp.Version = body.Version
+	return &roborevStatusOutput{Body: resp}, nil
 }

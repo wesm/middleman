@@ -6,7 +6,13 @@ import { csrfFetch, type FetchFn } from "@middleman/ui/api/csrf";
 
 const basePath =
   typeof window !== "undefined" ? window.__BASE_PATH__ ?? "/" : "/";
-const baseUrl = `${basePath.replace(/\/$/, "")}/api/v1`;
+const baseUrl =
+  typeof window !== "undefined"
+    ? new URL(
+        `${basePath.replace(/\/$/, "")}/api/v1`,
+        window.location.origin,
+      ).toString()
+    : "http://localhost/api/v1";
 
 export const querySerializer: QuerySerializerOptions = {
   array: {
@@ -29,7 +35,12 @@ export function createRuntimeClient(
 export const client = createRuntimeClient();
 
 export function apiErrorMessage(
-  error: components["schemas"]["ErrorModel"] | undefined,
+  error:
+    | Pick<
+        Partial<components["schemas"]["ErrorModel"]>,
+        "detail" | "title"
+      >
+    | undefined,
   fallback: string,
 ): string {
   return error?.detail ?? error?.title ?? fallback;

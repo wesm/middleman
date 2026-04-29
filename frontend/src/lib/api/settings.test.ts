@@ -1,52 +1,73 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bulkAddRepos, previewRepos, removeRepo } from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ repos: [] }),
-      text: vi.fn().mockResolvedValue(""),
-    }) as unknown as typeof fetch;
-  });
-
-  it("encodes repo names for delete requests", async () => {
-    await removeRepo("acme", "widgets-?");
-
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/v1/repos/acme/widgets-%3F",
-      { method: "DELETE", headers: { "Content-Type": "application/json" } },
+    vi.resetModules();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({ repos: [], owner: "acme", pattern: "widget-*" }),
+      ),
     );
   });
 
+  it("encodes repo names for delete requests", async () => {
+    const { removeRepo } = await import("./settings.js");
+
+    await removeRepo("acme", "widgets-?");
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    expect(new URL((request as Request).url).pathname).toBe(
+      "/api/v1/repos/acme/widgets-%3F",
+    );
+    expect((request as Request).method).toBe("DELETE");
+  });
+
   it("posts preview requests", async () => {
+    const { previewRepos } = await import("./settings.js");
+
     await previewRepos("acme", "widget-*");
 
-    expect(fetch).toHaveBeenCalledWith("/api/v1/repos/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner: "acme", pattern: "widget-*" }),
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    expect(new URL((request as Request).url).pathname).toBe(
+      "/api/v1/repos/preview",
+    );
+    expect((request as Request).method).toBe("POST");
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      owner: "acme",
+      pattern: "widget-*",
     });
   });
 
   it("posts bulk add requests", async () => {
+    const { bulkAddRepos } = await import("./settings.js");
+
     await bulkAddRepos([{ owner: "acme", name: "api" }]);
 
-    expect(fetch).toHaveBeenCalledWith("/api/v1/repos/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repos: [{ owner: "acme", name: "api" }] }),
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    expect(new URL((request as Request).url).pathname).toBe(
+      "/api/v1/repos/bulk",
+    );
+    expect((request as Request).method).toBe("POST");
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      repos: [{ owner: "acme", name: "api" }],
     });
   });
 
   it("uses json error envelope when present", async () => {
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      clone: vi.fn().mockReturnValue({ text: vi.fn().mockResolvedValue("") }),
-      json: vi.fn().mockResolvedValue({ error: "invalid glob pattern" }),
-      text: vi.fn(),
-    });
+    vi.mocked(fetch).mockResolvedValueOnce(
+      Response.json(
+        { detail: "invalid glob pattern" },
+        {
+          status: 400,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      ),
+    );
+    const { previewRepos } = await import("./settings.js");
 
     await expect(previewRepos("acme", "[")).rejects.toThrow("invalid glob pattern");
   });
