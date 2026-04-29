@@ -8559,6 +8559,111 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 	assert.Empty(*afterStopResp.JSON200.Sessions)
 }
 
+func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "helper",
+		Label:   "Helper",
+		Command: serverRuntimeHelperCommand("exit"),
+	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+
+	require.Eventually(func() bool {
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if runtimeErr != nil ||
+			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.JSON200 == nil ||
+			runtimeResp.JSON200.Sessions == nil {
+			return false
+		}
+		return len(*runtimeResp.JSON200.Sessions) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+	assert.NotEmpty(launchResp.JSON200.Key)
+}
+
+func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "tmux-record")
+	tmuxPath := filepath.Join(dir, "fake-tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$@" >> "$TMUX_RECORD"
+case "$1" in
+  has-session)
+    echo "can't find session: $3" >&2
+    exit 1
+    ;;
+  new-session|set-option|attach-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: []string{"/bin/sh", "-lc", "exit 0"},
+		}},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
+	}
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "helper",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+
+	require.Eventually(func() bool {
+		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if runtimeErr != nil ||
+			runtimeResp.StatusCode() != http.StatusOK ||
+			runtimeResp.JSON200 == nil ||
+			runtimeResp.JSON200.Sessions == nil {
+			return false
+		}
+		return len(*runtimeResp.JSON200.Sessions) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+
+	require.Eventually(func() bool {
+		stored, storedErr := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+		return storedErr == nil && len(stored) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+	assert.NotEmpty(launchResp.JSON200.Key)
+}
+
 func TestWorkspaceRuntimeIncludesStoredTmuxSessionsAfterReloadE2E(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
@@ -8683,6 +8788,10 @@ if [ "$mode" = "capture-pane" ]; then
 fi
 if [ "$1" = "has-session" ]; then
   exit 1
+fi
+if [ "$1" = "attach-session" ]; then
+  cat >/dev/null
+  exit 0
 fi
 if [ -n "$new_session" ]; then
   printf '%s\n' "$new_session" >> "$session_file"
@@ -8860,6 +8969,10 @@ case "$1" in
     printf '%s\n' 'middleman-0000000000000001-e81d3b0e9d82feaa'
     exit 0
     ;;
+  attach-session)
+    cat >/dev/null
+    exit 0
+    ;;
 esac
 if [ "$mode" = "display-message" ]; then
   case "$target" in
@@ -8947,6 +9060,7 @@ for a in "$@"; do
 done
 case "$1" in
   has-session)
+    echo "can't find session: $3" >&2
     exit 1
     ;;
   new-session)
@@ -9015,32 +9129,27 @@ exit 0
 	assert.Contains(runtimeNewSession, "@middleman_owner")
 	assert.Contains(runtimeNewSession, srv.workspaces.TmuxOwnerMarker())
 
-	var runtimeResp *generated.GetWorkspaceRuntimeResponse
 	require.Eventually(func() bool {
-		runtimeResp, err = client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+		runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
 		if err != nil ||
 			runtimeResp.StatusCode() != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil ||
-			len(*runtimeResp.JSON200.Sessions) != 1 {
+			runtimeResp.JSON200.Sessions == nil {
 			return false
 		}
-		return (*runtimeResp.JSON200.Sessions)[0].Status == "exited"
+		return len(*runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 
-	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
-	require.NoError(err)
-	require.Len(stored, 1)
-	assert.Equal(sessionName, stored[0].SessionName)
+	require.Eventually(func() bool {
+		stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
+		return err == nil && len(stored) == 0
+	}, 2*time.Second, 20*time.Millisecond)
 
 	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, launchResp.JSON200.Key,
 	)
 	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-	stored, err = database.ListWorkspaceTmuxSessions(ctx, ws.Id)
-	require.NoError(err)
-	assert.Empty(stored)
+	require.Equal(http.StatusNotFound, stopResp.StatusCode())
 }
 
 func tmuxRecordContains(argvs [][]string, want []string) bool {
@@ -9070,7 +9179,11 @@ case "$1" in
   has-session)
     exit 1
     ;;
-  new-session|set-option|attach-session|kill-session)
+  attach-session)
+    cat >/dev/null
+    exit 0
+    ;;
+  new-session|set-option|kill-session)
     exit 0
     ;;
 esac
@@ -9154,7 +9267,11 @@ case "$1" in
   has-session)
     exit 1
     ;;
-  new-session|set-option|attach-session|kill-session)
+  attach-session)
+    cat >/dev/null
+    exit 0
+    ;;
+  new-session|set-option|kill-session)
     exit 0
     ;;
 esac
@@ -9207,7 +9324,7 @@ exit 0
 	})
 }
 
-func TestWorkspaceRuntimeStopTmuxCleanupFailureKeepsSessionE2E(
+func TestWorkspaceRuntimeStopTmuxCleanupFailureCleansExitedSessionE2E(
 	t *testing.T,
 ) {
 	require := require.New(t)
@@ -9223,6 +9340,10 @@ for a in "$@"; do
   if [ "$prev" = "-t" ]; then target="$a"; fi
   prev="$a"
 done
+if [ "$1" = "attach-session" ]; then
+  cat >/dev/null
+  exit 0
+fi
 if [ "$1" = "kill-session" ]; then
   case "$target" in
     middleman-????????????????-*)
@@ -9264,13 +9385,18 @@ exit 0
 	require.NoError(err)
 	require.Equal(http.StatusInternalServerError, stopResp.StatusCode())
 
-	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
-	require.NotNil(getResp.JSON200)
-	require.NotNil(getResp.JSON200.Sessions)
-	require.Len(*getResp.JSON200.Sessions, 1)
-	assert.Equal(launchResp.JSON200.Key, (*getResp.JSON200.Sessions)[0].Key)
+	assert.Eventually(func() bool {
+		getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(
+			ctx, ws.Id,
+		)
+		if err != nil ||
+			getResp.StatusCode() != http.StatusOK ||
+			getResp.JSON200 == nil ||
+			getResp.JSON200.Sessions == nil {
+			return false
+		}
+		return len(*getResp.JSON200.Sessions) == 0
+	}, 2*time.Second, 20*time.Millisecond)
 
 	stored, err := database.ListWorkspaceTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
@@ -10044,6 +10170,8 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 			}
 		}
 		return
+	case "exit":
+		os.Exit(3)
 	default:
 		os.Exit(2)
 	}

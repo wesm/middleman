@@ -450,6 +450,43 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 	require.Len(mgr.ListSessions("ws-1"), 1)
 }
 
+func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
+	require.NoError(os.WriteFile(
+		tmuxPath,
+		[]byte("#!/bin/sh\nexit 42\n"),
+		0o755,
+	))
+	ctx := context.Background()
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			helperTarget("helper", "sleep"),
+		},
+		TmuxCommand: []string{tmuxPath},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	info, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+
+	mgr.mu.Lock()
+	mgr.sessions[info.Key].tmuxSession = "middleman-ws-1-helper"
+	mgr.mu.Unlock()
+
+	err = mgr.Stop(ctx, "ws-1", info.Key)
+
+	require.Error(err)
+	require.Contains(err.Error(), "kill tmux session")
+	assert.Eventually(func() bool {
+		return len(mgr.ListSessions("ws-1")) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
 func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 	tmuxPath := filepath.Join(t.TempDir(), "tmux-absent")
 	require.NoError(t, os.WriteFile(
@@ -733,13 +770,16 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 		"descendant child should die with the session leader")
 }
 
-func TestManagerReportsExitedProcess(t *testing.T) {
+func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
+	exited := make(chan SessionInfo, 1)
 	mgr := NewManager(Options{Targets: []LaunchTarget{
 		helperTarget("helper", "exit"),
+	}, OnSessionExit: func(info SessionInfo) {
+		exited <- info
 	}})
 	t.Cleanup(mgr.Shutdown)
 
@@ -748,19 +788,57 @@ func TestManagerReportsExitedProcess(t *testing.T) {
 
 	var got SessionInfo
 	require.Eventually(t, func() bool {
-		sessions := mgr.ListSessions("ws-1")
-		if len(sessions) != 1 {
+		select {
+		case got = <-exited:
+			return true
+		default:
 			return false
 		}
-		got = sessions[0]
-		return got.Status == SessionStatusExited
 	}, 2*time.Second, 20*time.Millisecond)
 
 	assert := Assert.New(t)
 	assert.Equal(session.Key, got.Key)
+	assert.Equal(SessionStatusExited, got.Status)
 	assert.NotNil(got.ExitedAt)
 	assert.NotNil(got.ExitCode)
 	assert.Equal(3, *got.ExitCode)
+	assert.Empty(mgr.ListSessions("ws-1"))
+}
+
+func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	ctx := context.Background()
+	exited := make(chan SessionInfo, 1)
+	mgr := NewManager(Options{
+		ShellCommand: helperCommand("exit"),
+		OnSessionExit: func(info SessionInfo) {
+			exited <- info
+		},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	shell, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(t, err)
+
+	var got SessionInfo
+	require.Eventually(t, func() bool {
+		select {
+		case got = <-exited:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 20*time.Millisecond)
+
+	assert := Assert.New(t)
+	assert.Equal(shell.Key, got.Key)
+	assert.Equal(SessionStatusExited, got.Status)
+	assert.NotNil(got.ExitedAt)
+	assert.NotNil(got.ExitCode)
+	assert.Equal(3, *got.ExitCode)
+	assert.Nil(mgr.ShellSession("ws-1"))
 }
 
 func TestManagerShellSingletonPerWorkspace(t *testing.T) {

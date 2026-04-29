@@ -40,6 +40,18 @@
     mr_is_draft?: boolean | null;
   }
 
+  interface ClosedShellSession {
+    workspaceId: string;
+    key: string;
+    createdAt: string;
+  }
+
+  interface ClosedRuntimeSession {
+    workspaceId: string;
+    key: string;
+    createdAt: string;
+  }
+
   const {
     workspaceId,
   }: { workspaceId: string } = $props();
@@ -50,6 +62,7 @@
 
   let workspace = $state<Workspace | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
+  let runtimeFetchSeq = 0;
   // The workspace ID that `runtime` was fetched for. Stored
   // alongside the payload so we never render or operate on
   // sessions/targets that belong to a previous workspace
@@ -68,6 +81,8 @@
   let tmuxTabOpen = $state(false);
   let tmuxTerminalMounted = $state(false);
   let mountedSessionKeys = $state<string[]>([]);
+  let closedSessions = $state<ClosedRuntimeSession[]>([]);
+  let closedShellSession = $state<ClosedShellSession | null>(null);
   let launchingKey = $state<string | null>(null);
   let shellOpen = $state(false);
   let shellLoading = $state(false);
@@ -149,7 +164,14 @@
       workspace?.id === workspaceId,
   );
   const runtimeSessions = $derived(
-    runtimeLive ? (runtime?.sessions ?? []) : [],
+    runtimeLive
+      ? (runtime?.sessions ?? []).filter(
+          (session) =>
+            !closedSessions.some((closed) =>
+              sessionGenerationMatches(closed, session),
+            ),
+        )
+      : [],
   );
   const launchTargets = $derived(
     runtimeLive ? (runtime?.launch_targets ?? []) : [],
@@ -157,9 +179,16 @@
   const shellSession = $derived(
     runtimeLive ? (runtime?.shell_session ?? null) : null,
   );
+  const shellSessionLocallyClosed = $derived(
+    shellSession !== null &&
+      closedShellSession?.workspaceId === shellSession.workspace_id &&
+      closedShellSession?.key === shellSession.key &&
+      closedShellSession?.createdAt === shellSession.created_at,
+  );
   const shellSessionActive = $derived(
-    shellSession?.status === "running" ||
-      shellSession?.status === "starting",
+    !shellSessionLocallyClosed &&
+      (shellSession?.status === "running" ||
+        shellSession?.status === "starting"),
   );
   const activeSession = $derived.by(() => {
     if (!activeTabKey.startsWith("session:")) return null;
@@ -317,6 +346,61 @@
     );
   }
 
+  function sessionGenerationMatches(
+    closed: ClosedRuntimeSession,
+    session: RuntimeSession,
+  ): boolean {
+    return (
+      closed.workspaceId === session.workspace_id &&
+      closed.key === session.key &&
+      closed.createdAt === session.created_at
+    );
+  }
+
+  function markSessionClosed(session: RuntimeSession): void {
+    if (
+      !closedSessions.some((closed) =>
+        sessionGenerationMatches(closed, session),
+      )
+    ) {
+      closedSessions = [
+        ...closedSessions,
+        {
+          workspaceId: session.workspace_id,
+          key: session.key,
+          createdAt: session.created_at,
+        },
+      ];
+    }
+  }
+
+  function clearClosedSession(session: RuntimeSession): void {
+    closedSessions = closedSessions.filter(
+      (closed) => !sessionGenerationMatches(closed, session),
+    );
+  }
+
+  function markShellClosed(
+    id: string,
+    shellKey: string,
+    createdAt: string,
+  ): void {
+    closedShellSession = { workspaceId: id, key: shellKey, createdAt };
+  }
+
+  function clearClosedShellIfReplaced(
+    id: string,
+    shell: RuntimeSession | null | undefined,
+  ): void {
+    if (
+      closedShellSession?.workspaceId === id &&
+      (closedShellSession.key !== shell?.key ||
+        closedShellSession.createdAt !== shell?.created_at)
+    ) {
+      closedShellSession = null;
+    }
+  }
+
   function isSessionTerminalMounted(
     sessionKey: string,
   ): boolean {
@@ -400,12 +484,15 @@
   async function fetchRuntime(): Promise<void> {
     if (!workspaceId) return;
     const id = workspaceId;
+    const seq = runtimeFetchSeq + 1;
+    runtimeFetchSeq = seq;
     try {
       const data = await getWorkspaceRuntime(id);
-      if (id !== workspaceId) return;
+      if (id !== workspaceId || seq !== runtimeFetchSeq) return;
       runtime = data;
       runtimeForId = id;
       runtimeError = null;
+      clearClosedShellIfReplaced(id, data.shell_session);
       if (
         activeTabKey.startsWith("session:") &&
         !activeSession
@@ -417,7 +504,7 @@
           data.sessions.some((session) => session.key === key),
       );
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (id !== workspaceId || seq !== runtimeFetchSeq) return;
       runtimeError =
         err instanceof Error
           ? err.message
@@ -447,6 +534,7 @@
       if (id !== workspaceId) return;
       await fetchRuntime();
       if (id !== workspaceId) return;
+      clearClosedSession(session);
       mountSessionTerminal(session.key);
       selectWorkspaceTab(`session:${session.key}`);
     } catch (err) {
@@ -486,6 +574,28 @@
       runtimeError =
         err instanceof Error ? err.message : "Stop failed";
     }
+  }
+
+  function handleSessionExit(session: RuntimeSession): void {
+    if (session.workspace_id !== workspaceId) return;
+    markSessionClosed(session);
+    unmountSessionTerminal(session.key);
+    if (activeTabKey === `session:${session.key}`) {
+      selectWorkspaceTab("home");
+    }
+    void fetchRuntime();
+  }
+
+  function handleShellExit(
+    id: string,
+    shellKey: string,
+    createdAt: string,
+  ): void {
+    if (id !== workspaceId) return;
+    markShellClosed(id, shellKey, createdAt);
+    shellOpen = false;
+    shellLoading = false;
+    void fetchRuntime();
   }
 
   async function toggleShell(): Promise<void> {
@@ -640,6 +750,7 @@
     shellOpen = false;
     launchingKey = null;
     shellLoading = false;
+    closedSessions = [];
 
     // Errors/transient flags from the prior workspace should not
     // bleed across — clear them but don't touch workspace/runtime.
@@ -939,7 +1050,7 @@
                           )}
                           reconnectOnExit={false}
                           active={activeTabKey === `session:${session.key}`}
-                          onExit={() => void fetchRuntime()}
+                          onExit={() => handleSessionExit(session)}
                           initialStatus={session.status}
                         />
                       {/if}
@@ -953,7 +1064,8 @@
                 loading={shellLoading}
                 shellSession={shellSessionActive ? shellSession : null}
                 onToggle={() => void toggleShell()}
-                onExit={() => void fetchRuntime()}
+                onExit={(id, shellKey, createdAt) =>
+                  handleShellExit(id, shellKey, createdAt)}
               />
             </div>
           </div>

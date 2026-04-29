@@ -30,12 +30,13 @@ import (
 // intentionally not a generic host worktree browser or arbitrary Git
 // automation layer.
 type Manager struct {
-	db          *db.DB
-	worktreeDir string
-	clones      *gitclone.Manager
-	tmuxCmd     []string
-	retryMu     sync.Mutex
-	retryQueued map[string]bool
+	db            *db.DB
+	worktreeDir   string
+	clones        *gitclone.Manager
+	tmuxCmd       []string
+	retryMu       sync.Mutex
+	retryQueued   map[string]bool
+	runtimeTmuxMu sync.Mutex
 }
 
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
@@ -1245,14 +1246,18 @@ func (m *Manager) RecordRuntimeTmuxSession(
 	workspaceID string,
 	sessionName string,
 	targetKey string,
+	createdAt time.Time,
 ) error {
 	if sessionName == "" {
 		return nil
 	}
+	m.runtimeTmuxMu.Lock()
+	defer m.runtimeTmuxMu.Unlock()
 	return m.db.UpsertWorkspaceTmuxSession(ctx, &db.WorkspaceTmuxSession{
 		WorkspaceID: workspaceID,
 		SessionName: sessionName,
 		TargetKey:   targetKey,
+		CreatedAt:   createdAt,
 	})
 }
 
@@ -1266,7 +1271,34 @@ func (m *Manager) ForgetRuntimeTmuxSession(
 	if sessionName == "" {
 		return nil
 	}
+	m.runtimeTmuxMu.Lock()
+	defer m.runtimeTmuxMu.Unlock()
 	return m.db.DeleteWorkspaceTmuxSession(ctx, workspaceID, sessionName)
+}
+
+// ForgetMissingRuntimeTmuxSession removes a stored runtime tmux session only
+// after tmux reports that the session no longer exists.
+func (m *Manager) ForgetMissingRuntimeTmuxSession(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+	createdAt time.Time,
+) (bool, error) {
+	if sessionName == "" {
+		return false, nil
+	}
+	m.runtimeTmuxMu.Lock()
+	defer m.runtimeTmuxMu.Unlock()
+	exists, err := m.tmuxSessionExists(ctx, sessionName)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	return m.db.DeleteWorkspaceTmuxSessionCreatedAt(
+		ctx, workspaceID, sessionName, createdAt,
+	)
 }
 
 // StopStoredRuntimeTmuxSession cleans up a persisted runtime tmux session even
@@ -1279,6 +1311,8 @@ func (m *Manager) StopStoredRuntimeTmuxSession(
 	if targetKey == "" {
 		return false, nil
 	}
+	m.runtimeTmuxMu.Lock()
+	defer m.runtimeTmuxMu.Unlock()
 	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, workspaceID)
 	if err != nil {
 		return false, err

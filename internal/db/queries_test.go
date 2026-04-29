@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"testing"
 	"time"
@@ -1948,6 +1949,38 @@ func TestWorkspaceCRUD(t *testing.T) {
 	noSuch, err := d.GetWorkspace(ctx, "nonexistent")
 	require.NoError(err)
 	assert.Nil(noSuch)
+}
+
+func TestFreshWorkspaceTmuxSessionSchemaIncludesCreatedAt(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	rows, err := d.ReadDB().QueryContext(
+		context.Background(),
+		`PRAGMA table_info(middleman_workspace_tmux_sessions)`,
+	)
+	require.NoError(err)
+	defer rows.Close()
+
+	columns := make(map[string]string)
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		require.NoError(rows.Scan(
+			&cid, &name, &columnType, &notNull, &defaultVal, &pk,
+		))
+		columns[name] = columnType
+	}
+	require.NoError(rows.Err())
+
+	assert.Equal("DATETIME", columns["created_at"])
 }
 
 func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {

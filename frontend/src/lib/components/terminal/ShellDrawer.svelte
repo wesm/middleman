@@ -10,7 +10,11 @@
     loading?: boolean;
     shellSession?: RuntimeSession | null;
     onToggle?: () => void;
-    onExit?: () => void;
+    onExit?: (
+      workspaceId: string,
+      shellKey: string,
+      createdAt: string,
+    ) => void;
   }
 
   const {
@@ -38,11 +42,18 @@
       {#if loading}
         <div class="drawer-state">Starting shell...</div>
       {:else if shellSession}
-        <TerminalPane
-          websocketPath={workspaceShellWebSocketPath(workspaceId)}
-          reconnectOnExit={false}
-          onExit={() => onExit?.()}
-        />
+        {#key shellSession.key}
+          <TerminalPane
+            websocketPath={workspaceShellWebSocketPath(shellSession.workspace_id)}
+            reconnectOnExit={false}
+            onExit={() =>
+              onExit?.(
+                shellSession.workspace_id,
+                shellSession.key,
+                shellSession.created_at,
+              )}
+          />
+        {/key}
       {:else}
         <div class="drawer-state">Shell unavailable</div>
       {/if}

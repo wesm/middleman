@@ -1243,6 +1243,59 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 	require.Len(stored, 2)
 }
 
+func TestManagerForgetMissingRuntimeTmuxSessionPreservesRecreatedRow(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`if [ "$1" = "has-session" ]; then` + "\n" +
+		`  echo "can't find session: $3" >&2` + "\n" +
+		`  exit 1` + "\n" +
+		`fi` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script})
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "ws-1",
+		TmuxSession:  "middleman-ws-1",
+		Status:       "ready",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+	}))
+	oldCreatedAt := time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC)
+	newCreatedAt := time.Date(2026, 4, 29, 1, 1, 0, 0, time.UTC)
+	sessionName := "middleman-ws-1-helper"
+	require.NoError(mgr.RecordRuntimeTmuxSession(
+		context.Background(), "ws-1", sessionName, "helper", oldCreatedAt,
+	))
+	require.NoError(mgr.RecordRuntimeTmuxSession(
+		context.Background(), "ws-1", sessionName, "helper", newCreatedAt,
+	))
+
+	deleted, err := mgr.ForgetMissingRuntimeTmuxSession(
+		context.Background(), "ws-1", sessionName, oldCreatedAt,
+	)
+	require.NoError(err)
+	assert.False(deleted)
+
+	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), "ws-1")
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(newCreatedAt, stored[0].CreatedAt)
+}
+
 func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

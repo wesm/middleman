@@ -61,7 +61,10 @@ type shutdownDeadline struct {
 	set      bool
 }
 
-var startupTmuxCleanupTimeout = 2 * time.Second
+var (
+	startupTmuxCleanupTimeout    = 2 * time.Second
+	runtimeSessionCleanupTimeout = 2 * time.Second
+)
 
 func (d *shutdownDeadline) tighten(deadline time.Time) {
 	d.mu.Lock()
@@ -390,6 +393,7 @@ func newServer(
 			TmuxOwnerMarker:         s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
 			StripEnvVars:            cfg.TokenEnvNames(),
+			OnSessionExit:           s.handleRuntimeSessionExit,
 		})
 		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
 			slog.Warn("restore runtime tmux sessions", "err", err)
@@ -554,6 +558,30 @@ func (s *Server) restoreRuntimeTmuxSessions(ctx context.Context) error {
 	}
 	slog.Debug("restoring runtime tmux sessions", "count", len(sessions))
 	return s.runtime.RestoreTmuxSessions(ctx, sessions)
+}
+
+func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
+	if info.TmuxSession == "" || s.workspaces == nil {
+		return
+	}
+	s.runBackground(func(ctx context.Context) {
+		cleanupCtx, cancel := context.WithTimeout(
+			ctx, runtimeSessionCleanupTimeout,
+		)
+		defer cancel()
+		if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
+			cleanupCtx, info.WorkspaceID, info.TmuxSession,
+			info.CreatedAt,
+		); err != nil {
+			slog.Warn(
+				"forget missing runtime tmux session",
+				"workspace_id", info.WorkspaceID,
+				"session_key", info.Key,
+				"tmux_session", info.TmuxSession,
+				"err", err,
+			)
+		}
+	})
 }
 
 func (s *Server) bootstrapScript() string {
