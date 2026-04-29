@@ -8439,6 +8439,72 @@ func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
 	assert.True(tmux.Available)
 }
 
+func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	cfg := &config.Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		BasePath:       "/",
+		DataDir:        dir,
+		Activity: config.Activity{
+			ViewMode:  "threaded",
+			TimeRange: "7d",
+		},
+	}
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(cfg.Save(cfgPath))
+
+	agentPath := filepath.Join(dir, "codex-custom")
+	require.NoError(os.WriteFile(
+		agentPath,
+		[]byte("#!/bin/sh\nexit 0\n"),
+		0o755,
+	))
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	srv.cfgPath = cfgPath
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	agents := []config.Agent{{
+		Key:     "codex",
+		Label:   "Custom Codex",
+		Command: []string{agentPath, "--full-auto"},
+	}}
+	updateResp := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings",
+		updateSettingsRequest{Agents: &agents},
+	)
+	require.Equal(http.StatusOK, updateResp.Code, updateResp.Body.String())
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(reloaded.Agents, 1)
+	assert.Equal([]string{agentPath, "--full-auto"}, reloaded.Agents[0].Command)
+
+	runtimeResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.NotNil(runtimeResp.JSON200)
+	require.NotNil(runtimeResp.JSON200.LaunchTargets)
+
+	var codex generated.LaunchTarget
+	for _, target := range *runtimeResp.JSON200.LaunchTargets {
+		if target.Key == "codex" {
+			codex = target
+			break
+		}
+	}
+	assert.Equal("Custom Codex", codex.Label)
+	assert.True(codex.Available)
+	require.NotNil(codex.Command)
+	assert.Equal([]string{agentPath, "--full-auto"}, *codex.Command)
+}
+
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 	disabled := false
 	cfg := &config.Config{Agents: []config.Agent{{
