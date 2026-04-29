@@ -10,7 +10,11 @@
     loading?: boolean;
     shellSession?: RuntimeSession | null;
     onToggle?: () => void;
-    onExit?: (workspaceId: string) => void;
+    onExit?: (
+      workspaceId: string,
+      shellKey: string,
+      createdAt: string,
+    ) => void;
   }
 
   const {
@@ -42,7 +46,12 @@
           <TerminalPane
             websocketPath={workspaceShellWebSocketPath(shellSession.workspace_id)}
             reconnectOnExit={false}
-            onExit={() => onExit?.(shellSession.workspace_id)}
+            onExit={() =>
+              onExit?.(
+                shellSession.workspace_id,
+                shellSession.key,
+                shellSession.created_at,
+              )}
           />
         {/key}
       {:else}

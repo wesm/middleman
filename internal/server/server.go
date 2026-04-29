@@ -571,6 +571,7 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 		defer cancel()
 		if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
 			cleanupCtx, info.WorkspaceID, info.TmuxSession,
+			info.CreatedAt,
 		); err != nil {
 			slog.Warn(
 				"forget missing runtime tmux session",

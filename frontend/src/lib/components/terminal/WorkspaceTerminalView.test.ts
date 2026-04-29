@@ -238,4 +238,40 @@ describe("WorkspaceTerminalView", () => {
       })).toBeTruthy(),
     );
   });
+
+  it("does not reopen the just-exited shell from stale runtime data", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithShellSession());
+    mocks.ensureWorkspaceShell.mockResolvedValue(undefined);
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    const shellButton = await screen.findByRole("button", {
+      name: "Open shell drawer",
+    });
+    await fireEvent.click(shellButton);
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    sockets[0]!.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "exited", code: 0 }),
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", {
+        name: "Open shell drawer",
+      })).toBeTruthy(),
+    );
+
+    await fireEvent.click(shellButton);
+
+    await waitFor(() =>
+      expect(mocks.ensureWorkspaceShell).toHaveBeenCalledTimes(2),
+    );
+    expect(sockets).toHaveLength(1);
+  });
 });

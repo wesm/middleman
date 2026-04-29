@@ -3033,6 +3033,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	if session.TmuxSession != "" {
 		if err := s.workspaces.RecordRuntimeTmuxSession(
 			ctx, summary.ID, session.TmuxSession, session.TargetKey,
+			session.CreatedAt,
 		); err != nil {
 			_ = s.runtime.Stop(ctx, summary.ID, session.Key)
 			return nil, huma.Error500InternalServerError(
@@ -3044,6 +3045,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 		) == "" {
 			if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
 				ctx, summary.ID, session.TmuxSession,
+				session.CreatedAt,
 			); err != nil {
 				return nil, huma.Error500InternalServerError(
 					"forget missing runtime tmux session: " + err.Error(),

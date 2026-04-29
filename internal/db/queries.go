@@ -2561,13 +2561,19 @@ func (d *DB) UpsertWorkspaceTmuxSession(
 	ctx context.Context,
 	session *WorkspaceTmuxSession,
 ) error {
+	createdAt := canonicalUTCTime(session.CreatedAt)
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspace_tmux_sessions
-		    (workspace_id, session_name, target_key)
-		VALUES (?, ?, ?)
+		    (workspace_id, session_name, target_key, created_at)
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(workspace_id, session_name) DO UPDATE SET
-		    target_key = excluded.target_key`,
+		    target_key = excluded.target_key,
+		    created_at = excluded.created_at`,
 		session.WorkspaceID, session.SessionName, session.TargetKey,
+		createdAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert workspace tmux session: %w", err)
@@ -2653,6 +2659,29 @@ func (d *DB) DeleteWorkspaceTmuxSession(
 		return fmt.Errorf("delete workspace tmux session: %w", err)
 	}
 	return nil
+}
+
+// DeleteWorkspaceTmuxSessionCreatedAt removes one stored runtime tmux session
+// only if it still belongs to the same runtime session generation.
+func (d *DB) DeleteWorkspaceTmuxSessionCreatedAt(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+	createdAt time.Time,
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
+		DELETE FROM middleman_workspace_tmux_sessions
+		WHERE workspace_id = ? AND session_name = ? AND created_at = ?`,
+		workspaceID, sessionName, canonicalUTCTime(createdAt),
+	)
+	if err != nil {
+		return false, fmt.Errorf("delete workspace tmux session: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("delete workspace tmux session rows: %w", err)
+	}
+	return rows > 0, nil
 }
 
 // DeleteWorkspaceTmuxSessions removes every stored runtime tmux

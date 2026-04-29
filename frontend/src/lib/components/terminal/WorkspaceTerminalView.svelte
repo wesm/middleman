@@ -40,6 +40,12 @@
     mr_is_draft?: boolean | null;
   }
 
+  interface ClosedShellSession {
+    workspaceId: string;
+    key: string;
+    createdAt: string;
+  }
+
   const {
     workspaceId,
   }: { workspaceId: string } = $props();
@@ -69,6 +75,7 @@
   let tmuxTerminalMounted = $state(false);
   let mountedSessionKeys = $state<string[]>([]);
   let closedSessionKeys = $state<string[]>([]);
+  let closedShellSession = $state<ClosedShellSession | null>(null);
   let launchingKey = $state<string | null>(null);
   let shellOpen = $state(false);
   let shellLoading = $state(false);
@@ -162,9 +169,16 @@
   const shellSession = $derived(
     runtimeLive ? (runtime?.shell_session ?? null) : null,
   );
+  const shellSessionLocallyClosed = $derived(
+    shellSession !== null &&
+      closedShellSession?.workspaceId === shellSession.workspace_id &&
+      closedShellSession?.key === shellSession.key &&
+      closedShellSession?.createdAt === shellSession.created_at,
+  );
   const shellSessionActive = $derived(
-    shellSession?.status === "running" ||
-      shellSession?.status === "starting",
+    !shellSessionLocallyClosed &&
+      (shellSession?.status === "running" ||
+        shellSession?.status === "starting"),
   );
   const activeSession = $derived.by(() => {
     if (!activeTabKey.startsWith("session:")) return null;
@@ -334,6 +348,27 @@
     );
   }
 
+  function markShellClosed(
+    id: string,
+    shellKey: string,
+    createdAt: string,
+  ): void {
+    closedShellSession = { workspaceId: id, key: shellKey, createdAt };
+  }
+
+  function clearClosedShellIfReplaced(
+    id: string,
+    shell: RuntimeSession | null | undefined,
+  ): void {
+    if (
+      closedShellSession?.workspaceId === id &&
+      (closedShellSession.key !== shell?.key ||
+        closedShellSession.createdAt !== shell?.created_at)
+    ) {
+      closedShellSession = null;
+    }
+  }
+
   function isSessionTerminalMounted(
     sessionKey: string,
   ): boolean {
@@ -426,6 +461,7 @@
       closedSessionKeys = closedSessionKeys.filter((key) =>
         data.sessions.some((session) => session.key === key),
       );
+      clearClosedShellIfReplaced(id, data.shell_session);
       if (
         activeTabKey.startsWith("session:") &&
         !activeSession
@@ -519,8 +555,13 @@
     void fetchRuntime();
   }
 
-  function handleShellExit(id: string): void {
+  function handleShellExit(
+    id: string,
+    shellKey: string,
+    createdAt: string,
+  ): void {
     if (id !== workspaceId) return;
+    markShellClosed(id, shellKey, createdAt);
     shellOpen = false;
     shellLoading = false;
     void fetchRuntime();
@@ -996,7 +1037,8 @@
                 loading={shellLoading}
                 shellSession={shellSessionActive ? shellSession : null}
                 onToggle={() => void toggleShell()}
-                onExit={(id) => handleShellExit(id)}
+                onExit={(id, shellKey, createdAt) =>
+                  handleShellExit(id, shellKey, createdAt)}
               />
             </div>
           </div>
