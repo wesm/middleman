@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PREvent } from "../../api/types.js";
+import PRTimelineFilter from "./PRTimelineFilter.svelte";
 import {
   activePRTimelineFilterCount,
   DEFAULT_PR_TIMELINE_FILTER,
@@ -175,5 +177,72 @@ describe("prTimelineFilter", () => {
         hideBots: true,
       }),
     ).toBe(3);
+  });
+});
+
+describe("PRTimelineFilter", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("uses the shared filter dropdown trigger and emits changes", async () => {
+    const onChange = vi.fn();
+    render(PRTimelineFilter, {
+      props: {
+        filter: DEFAULT_PR_TIMELINE_FILTER,
+        onChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /messages/i }));
+
+    expect(onChange).toHaveBeenCalledWith({
+      ...DEFAULT_PR_TIMELINE_FILTER,
+      showMessages: false,
+    });
+    expect(document.querySelector(".filter-dropdown")).toBeTruthy();
+  });
+
+  it("shows active filter count and reset", async () => {
+    const onChange = vi.fn();
+    render(PRTimelineFilter, {
+      props: {
+        filter: {
+          ...DEFAULT_PR_TIMELINE_FILTER,
+          showCommitDetails: false,
+          hideBots: true,
+        },
+        onChange,
+      },
+    });
+
+    expect(screen.getByText("2")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /show all/i }));
+
+    expect(onChange).toHaveBeenCalledWith(DEFAULT_PR_TIMELINE_FILTER);
+  });
+
+  it("offers timeline filter labels", async () => {
+    const onChange = vi.fn();
+    render(PRTimelineFilter, {
+      props: {
+        filter: DEFAULT_PR_TIMELINE_FILTER,
+        onChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+
+    expect(screen.getByRole("button", { name: /messages/i })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /commit details/i }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /events/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /force pushes/i })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /hide bot activity/i }),
+    ).toBeTruthy();
   });
 });
