@@ -45,7 +45,7 @@ test.describe("PR timeline filters", () => {
     await openTimelineFilters(page);
 
     await page.getByRole("button", { name: "Commit details" }).click();
-    await expect(page.getByText("feat: add cache store")).not.toBeVisible();
+    await expect(page.getByText("feat: add cache store")).toBeVisible();
     await page.getByRole("button", { name: "Commit details" }).click();
     await expect(page.getByText("feat: add cache store")).toBeVisible();
 
@@ -90,7 +90,7 @@ test.describe("PR timeline filters", () => {
   });
 
   test(
-    "shows a filtered-empty state when every event bucket is hidden",
+    "keeps commit rows when every other event bucket is hidden",
     async ({ page }) => {
       await openPRTimeline(page);
       await openTimelineFilters(page);
@@ -100,8 +100,9 @@ test.describe("PR timeline filters", () => {
       await page.getByRole("button", { name: "Events" }).click();
       await page.getByRole("button", { name: "Force pushes" }).click();
 
+      await expect(page.getByText("feat: add cache store")).toBeVisible();
       await expect(page.getByText("No activity matches the current filters"))
-        .toBeVisible();
+        .not.toBeVisible();
     },
   );
 });

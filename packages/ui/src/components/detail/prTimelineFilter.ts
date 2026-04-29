@@ -111,7 +111,7 @@ export function filterPREvents(
       case "messages":
         return filter.showMessages;
       case "commitDetails":
-        return filter.showCommitDetails;
+        return true;
       case "events":
         return filter.showEvents;
       case "forcePushes":
