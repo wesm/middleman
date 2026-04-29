@@ -25,6 +25,14 @@ vi.mock("../../stores/embed-config.svelte.js", () => ({
   isEmbedded: () => false,
 }));
 
+Object.defineProperty(Element.prototype, "animate", {
+  configurable: true,
+  value: () => ({
+    cancel: vi.fn(),
+    finished: Promise.resolve(),
+  }),
+});
+
 import AgentSettings from "./AgentSettings.svelte";
 
 async function expandAgent(name: string): Promise<void> {

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import type { AgentSettings as AgentSettingsType } from "@middleman/ui/api/types";
+  import { slide } from "svelte/transition";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
@@ -323,17 +323,18 @@
               disabled={saving}
               onclick={() => toggleExpanded(draft)}
             >
-              {#if draft.expanded}
-                <ChevronDownIcon size="13" strokeWidth="2" aria-hidden="true" />
-              {:else}
+              <span class={["chevron-icon", draft.expanded && "chevron-icon--expanded"]}>
                 <ChevronRightIcon size="13" strokeWidth="2" aria-hidden="true" />
-              {/if}
+              </span>
             </button>
           </div>
         </div>
 
         {#if draft.expanded}
-          <div class={["agent-fields", !draft.builtin && "agent-fields--custom"]}>
+          <div
+            class={["agent-fields", !draft.builtin && "agent-fields--custom"]}
+            transition:slide={{ duration: 120 }}
+          >
             {#if !draft.builtin}
               <label class="field">
                 <span>Key</span>
@@ -512,6 +513,15 @@
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
+  }
+
+  .chevron-icon {
+    display: inline-flex;
+    transition: transform 120ms ease-out;
+  }
+
+  .chevron-icon--expanded {
+    transform: rotate(90deg);
   }
 
   .icon-btn:hover:not(:disabled) {
