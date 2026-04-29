@@ -81,7 +81,8 @@
     const command = agent?.command ?? [];
     const key = builtin?.key ?? agent?.key ?? "";
     const label = agent?.label ?? builtin?.label ?? key;
-    const binary = command[0] ?? builtin?.binary ?? "";
+    const binary =
+      command[0] ?? (agent?.enabled === false ? "" : builtin?.binary ?? "");
     return {
       id: builtin ? `builtin:${builtin.key}` : `custom:${key}:${customID++}`,
       builtin: builtin !== null,

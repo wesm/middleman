@@ -189,6 +189,62 @@ describe("AgentSettings", () => {
     });
   });
 
+  it("preserves disabled built-in agents with empty commands when saving other changes", async () => {
+    mockUpdateSettings.mockResolvedValue({
+      agents: [
+        {
+          key: "codex",
+          label: "Codex",
+          command: [],
+          enabled: false,
+        },
+        {
+          key: "claude",
+          label: "Claude",
+          command: ["claude", "--permission-mode", "acceptEdits"],
+          enabled: true,
+        },
+      ],
+    });
+    const onUpdate = vi.fn();
+
+    render(AgentSettings, {
+      props: {
+        agents: [{
+          key: "codex",
+          label: "Codex",
+          command: [],
+          enabled: false,
+        }],
+        onUpdate,
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Claude arguments"), {
+      target: { value: "--permission-mode acceptEdits" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save agents" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        agents: [
+          {
+            key: "claude",
+            label: "Claude",
+            command: ["claude", "--permission-mode", "acceptEdits"],
+            enabled: true,
+          },
+          {
+            key: "codex",
+            label: "Codex",
+            command: [],
+            enabled: false,
+          },
+        ],
+      });
+    });
+  });
+
   it("adds custom agents to the saved settings", async () => {
     mockUpdateSettings.mockResolvedValue({
       agents: [{
