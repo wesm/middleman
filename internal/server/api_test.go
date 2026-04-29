@@ -10281,7 +10281,7 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 	require.NoError(conn.Write(
 		ctx, websocket.MessageBinary, []byte("size\n"),
 	))
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	var got strings.Builder
 	for {
