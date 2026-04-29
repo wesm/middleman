@@ -204,19 +204,23 @@
     let current = "";
     let quote: "\"" | "'" | null = null;
     let escaping = false;
+    let tokenStarted = false;
 
     for (const char of input.trim()) {
       if (escaping) {
         current += char;
         escaping = false;
+        tokenStarted = true;
         continue;
       }
       if (char === "\\" && quote !== "'") {
         escaping = true;
+        tokenStarted = true;
         continue;
       }
       if ((char === "\"" || char === "'") && quote === null) {
         quote = char;
+        tokenStarted = true;
         continue;
       }
       if (char === quote) {
@@ -224,16 +228,18 @@
         continue;
       }
       if (/\s/.test(char) && quote === null) {
-        if (current !== "") {
+        if (tokenStarted) {
           args.push(current);
           current = "";
+          tokenStarted = false;
         }
         continue;
       }
       current += char;
+      tokenStarted = true;
     }
     if (escaping) current += "\\";
-    if (current !== "") args.push(current);
+    if (tokenStarted) args.push(current);
     return args;
   }
 </script>

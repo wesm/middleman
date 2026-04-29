@@ -77,6 +77,41 @@ describe("AgentSettings", () => {
     }]);
   });
 
+  it("preserves quoted empty arguments when saving", async () => {
+    mockUpdateSettings.mockResolvedValue({
+      agents: [{
+        key: "codex",
+        label: "Codex",
+        command: ["codex", ""],
+        enabled: true,
+      }],
+    });
+    const onUpdate = vi.fn();
+
+    render(AgentSettings, {
+      props: {
+        agents: [],
+        onUpdate,
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Codex arguments"), {
+      target: { value: "\"\"" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save agents" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        agents: [{
+          key: "codex",
+          label: "Codex",
+          command: ["codex", ""],
+          enabled: true,
+        }],
+      });
+    });
+  });
+
   it("adds custom agents to the saved settings", async () => {
     mockUpdateSettings.mockResolvedValue({
       agents: [{
