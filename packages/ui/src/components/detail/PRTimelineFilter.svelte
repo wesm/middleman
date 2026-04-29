@@ -77,6 +77,7 @@
   title="Filter PR activity"
   {sections}
   minWidth="220px"
+  align="end"
   {...activeCount > 0
     ? {
         resetLabel: "Show all",

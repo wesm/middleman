@@ -137,6 +137,39 @@ describe("FilterDropdown", () => {
     expect(document.querySelector(".filter-dropdown")).toBeNull();
   });
 
+  it("supports end-aligned dropdown placement", async () => {
+    render(FilterDropdown, {
+      props: {
+        label: "Filters",
+        align: "end",
+        sections: [
+          {
+            items: [
+              {
+                id: "messages",
+                label: "Messages",
+                active: true,
+                onSelect: vi.fn(),
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /filters/i,
+      }),
+    );
+
+    expect(
+      document
+        .querySelector(".filter-dropdown")
+        ?.classList.contains("filter-dropdown--align-end"),
+    ).toBe(true);
+  });
+
   it("closes and blocks selection when disabled flips true while open", async () => {
     const onSelect = vi.fn();
     const onReset = vi.fn();
