@@ -657,6 +657,7 @@ type RepoSummaryResponse struct {
 	CachedPrCount        int64                             `json:"cached_pr_count"`
 	CommitTimeline       *[]RepoSummaryCommitPointResponse `json:"commit_timeline"`
 	CommitsSinceRelease  *int64                            `json:"commits_since_release,omitempty"`
+	DefaultPlatformHost  string                            `json:"default_platform_host"`
 	DraftPrCount         int64                             `json:"draft_pr_count"`
 	LastSyncCompletedAt  *string                           `json:"last_sync_completed_at,omitempty"`
 	LastSyncError        *string                           `json:"last_sync_error,omitempty"`

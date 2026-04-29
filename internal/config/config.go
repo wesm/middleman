@@ -25,6 +25,7 @@ const (
 	defaultTimeRange         = "7d"
 	defaultBasePath          = "/"
 	defaultSyncBudgetPerHour = 500
+	defaultPlatformHost      = "github.com"
 )
 
 type Repo struct {
@@ -190,19 +191,20 @@ type Tmux struct {
 }
 
 type Config struct {
-	SyncInterval      string   `toml:"sync_interval"`
-	GitHubTokenEnv    string   `toml:"github_token_env"`
-	Host              string   `toml:"host"`
-	Port              int      `toml:"port"`
-	BasePath          string   `toml:"base_path"`
-	DataDir           string   `toml:"data_dir"`
-	SyncBudgetPerHour int      `toml:"sync_budget_per_hour"`
-	Repos             []Repo   `toml:"repos"`
-	Activity          Activity `toml:"activity"`
-	Terminal          Terminal `toml:"terminal"`
-	Agents            []Agent  `toml:"agents"`
-	Roborev           Roborev  `toml:"roborev"`
-	Tmux              Tmux     `toml:"tmux"`
+	SyncInterval        string   `toml:"sync_interval"`
+	GitHubTokenEnv      string   `toml:"github_token_env"`
+	DefaultPlatformHost string   `toml:"default_platform_host"`
+	Host                string   `toml:"host"`
+	Port                int      `toml:"port"`
+	BasePath            string   `toml:"base_path"`
+	DataDir             string   `toml:"data_dir"`
+	SyncBudgetPerHour   int      `toml:"sync_budget_per_hour"`
+	Repos               []Repo   `toml:"repos"`
+	Activity            Activity `toml:"activity"`
+	Terminal            Terminal `toml:"terminal"`
+	Agents              []Agent  `toml:"agents"`
+	Roborev             Roborev  `toml:"roborev"`
+	Tmux                Tmux     `toml:"tmux"`
 }
 
 func DefaultConfigPath() string {
@@ -255,6 +257,7 @@ func EnsureDefault(path string) error {
 
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
 
@@ -324,10 +327,11 @@ func writeExclusive(src, dst string) error {
 
 func Load(path string) (*Config, error) {
 	cfg := &Config{
-		SyncInterval:   defaultSyncInterval,
-		GitHubTokenEnv: defaultGitHubTokenEnv,
-		Host:           defaultHost,
-		Port:           defaultPort,
+		SyncInterval:        defaultSyncInterval,
+		GitHubTokenEnv:      defaultGitHubTokenEnv,
+		DefaultPlatformHost: defaultPlatformHost,
+		Host:                defaultHost,
+		Port:                defaultPort,
 	}
 
 	data, err := os.ReadFile(path)
@@ -375,6 +379,13 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
+	c.DefaultPlatformHost = strings.ToLower(
+		strings.TrimSpace(c.DefaultPlatformHost),
+	)
+	if c.DefaultPlatformHost == "" {
+		c.DefaultPlatformHost = defaultPlatformHost
+	}
+
 	for i := range c.Repos {
 		if c.Repos[i].ownerHasGlob() {
 			return fmt.Errorf(
@@ -628,34 +639,39 @@ func (c *Config) TmuxAgentSessionsEnabled() bool {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval      string   `toml:"sync_interval"`
-	GitHubTokenEnv    string   `toml:"github_token_env"`
-	Host              string   `toml:"host"`
-	Port              int      `toml:"port"`
-	SyncBudgetPerHour int      `toml:"sync_budget_per_hour,omitempty"`
-	BasePath          string   `toml:"base_path,omitempty"`
-	DataDir           string   `toml:"data_dir,omitempty"`
-	Repos             []Repo   `toml:"repos"`
-	Activity          Activity `toml:"activity"`
-	Terminal          Terminal `toml:"terminal,omitempty"`
-	Agents            []Agent  `toml:"agents,omitempty"`
-	Roborev           Roborev  `toml:"roborev,omitempty"`
-	Tmux              Tmux     `toml:"tmux,omitempty"`
+	SyncInterval        string   `toml:"sync_interval"`
+	GitHubTokenEnv      string   `toml:"github_token_env"`
+	DefaultPlatformHost string   `toml:"default_platform_host,omitempty"`
+	Host                string   `toml:"host"`
+	Port                int      `toml:"port"`
+	SyncBudgetPerHour   int      `toml:"sync_budget_per_hour,omitempty"`
+	BasePath            string   `toml:"base_path,omitempty"`
+	DataDir             string   `toml:"data_dir,omitempty"`
+	Repos               []Repo   `toml:"repos"`
+	Activity            Activity `toml:"activity"`
+	Terminal            Terminal `toml:"terminal,omitempty"`
+	Agents              []Agent  `toml:"agents,omitempty"`
+	Roborev             Roborev  `toml:"roborev,omitempty"`
+	Tmux                Tmux     `toml:"tmux,omitempty"`
 }
 
 // Save writes the current config to the given path.
 func (c *Config) Save(path string) error {
 	f := configFile{
-		SyncInterval:   c.SyncInterval,
-		GitHubTokenEnv: c.GitHubTokenEnv,
-		Host:           c.Host,
-		Port:           c.Port,
-		Repos:          c.Repos,
-		Activity:       c.Activity,
-		Terminal:       c.Terminal,
-		Agents:         c.Agents,
-		Roborev:        c.Roborev,
-		Tmux:           c.Tmux,
+		SyncInterval:        c.SyncInterval,
+		GitHubTokenEnv:      c.GitHubTokenEnv,
+		DefaultPlatformHost: c.DefaultPlatformHost,
+		Host:                c.Host,
+		Port:                c.Port,
+		Repos:               c.Repos,
+		Activity:            c.Activity,
+		Terminal:            c.Terminal,
+		Agents:              c.Agents,
+		Roborev:             c.Roborev,
+		Tmux:                c.Tmux,
+	}
+	if c.DefaultPlatformHost == defaultPlatformHost {
+		f.DefaultPlatformHost = ""
 	}
 	if c.SyncBudgetPerHour != defaultSyncBudgetPerHour {
 		f.SyncBudgetPerHour = c.SyncBudgetPerHour

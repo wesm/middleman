@@ -107,6 +107,7 @@ type repoSummaryCommitPointResponse struct {
 
 type repoSummaryResponse struct {
 	PlatformHost         string                           `json:"platform_host"`
+	DefaultPlatformHost  string                           `json:"default_platform_host"`
 	Owner                string                           `json:"owner"`
 	Name                 string                           `json:"name"`
 	LastSyncStartedAt    string                           `json:"last_sync_started_at,omitempty"`

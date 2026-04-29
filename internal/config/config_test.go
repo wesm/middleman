@@ -105,6 +105,21 @@ name = "repo"
 	assert.Equal("5m", cfg.SyncInterval)
 	assert.Equal("127.0.0.1", cfg.Host)
 	assert.Equal(8091, cfg.Port)
+	assert.Equal("github.com", cfg.DefaultPlatformHost)
+}
+
+func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	cfg, cfg2 := roundTripConfigString(t, `
+default_platform_host = "GHE.Example.COM"
+
+[[repos]]
+owner = "test"
+name = "repo"
+`)
+
+	assert.Equal("ghe.example.com", cfg.DefaultPlatformHost)
+	assert.Equal("ghe.example.com", cfg2.DefaultPlatformHost)
 }
 
 func TestLoadNoRepos(t *testing.T) {

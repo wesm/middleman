@@ -1580,6 +1580,7 @@ export interface components {
             commit_timeline: components["schemas"]["RepoSummaryCommitPointResponse"][] | null;
             /** Format: int64 */
             commits_since_release?: number;
+            default_platform_host: string;
             /** Format: int64 */
             draft_pr_count: number;
             last_sync_completed_at?: string;

@@ -43,6 +43,16 @@ export function repoStateKey(summary: {
   return `${summary.platform_host}/${summary.owner}/${summary.name}`;
 }
 
+export function shouldShowPlatformHost(summary: {
+  platform_host: string;
+  default_platform_host?: string;
+}): boolean {
+  const host = (summary.platform_host || "github.com").toLowerCase();
+  const defaultHost = (summary.default_platform_host || "github.com")
+    .toLowerCase();
+  return host !== defaultHost;
+}
+
 export function localDateTimeLabel(dateStr: string): string {
   return new Date(dateStr).toLocaleString();
 }
@@ -73,6 +83,7 @@ export function normalizeSummaries(
 ): RepoSummaryCard[] {
   return (data ?? []).map((summary) => ({
     ...summary,
+    default_platform_host: summary.default_platform_host || "github.com",
     active_authors: summary.active_authors ?? [],
     recent_issues: summary.recent_issues ?? [],
     commit_timeline: summary.commit_timeline ?? [],

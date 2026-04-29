@@ -154,7 +154,7 @@ describe("RepoSummaryPage", () => {
       }),
     ).toBeTruthy();
     const repoLink = screen.getByRole("link", {
-      name: "Open acme/widgets on GitHub",
+      name: "Open acme/widgets on github.com",
     });
     expect(repoLink.getAttribute("href")).toBe(
       "https://github.com/acme/widgets",
@@ -185,6 +185,46 @@ describe("RepoSummaryPage", () => {
     expect(
       screen.queryByText("Ship repo overview timeline"),
     ).toBeNull();
+  });
+
+  it("hides the configured default platform host on repo cards", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          owner: "acme",
+          name: "widgets",
+          platform_host: "github.com",
+          default_platform_host: "github.com",
+          cached_pr_count: 0,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 0,
+          open_issue_count: 0,
+          active_authors: [],
+          recent_issues: [],
+        },
+        {
+          owner: "enterprise",
+          name: "service",
+          platform_host: "ghe.example.com",
+          default_platform_host: "github.com",
+          cached_pr_count: 0,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 0,
+          open_issue_count: 0,
+          active_authors: [],
+          recent_issues: [],
+        },
+      ],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    expect(screen.queryByText("github.com")).toBeNull();
+    expect(screen.getByText("ghe.example.com")).toBeTruthy();
   });
 
   it("keeps cached output visible when a sync issue exists", async () => {
