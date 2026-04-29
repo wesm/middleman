@@ -1269,6 +1269,31 @@ func (m *Manager) ForgetRuntimeTmuxSession(
 	return m.db.DeleteWorkspaceTmuxSession(ctx, workspaceID, sessionName)
 }
 
+// ForgetMissingRuntimeTmuxSession removes a stored runtime tmux session only
+// after tmux reports that the session no longer exists.
+func (m *Manager) ForgetMissingRuntimeTmuxSession(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+) (bool, error) {
+	if sessionName == "" {
+		return false, nil
+	}
+	exists, err := m.tmuxSessionExists(ctx, sessionName)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	if err := m.db.DeleteWorkspaceTmuxSession(
+		ctx, workspaceID, sessionName,
+	); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // StopStoredRuntimeTmuxSession cleans up a persisted runtime tmux session even
 // when the in-memory runtime manager no longer knows about it.
 func (m *Manager) StopStoredRuntimeTmuxSession(

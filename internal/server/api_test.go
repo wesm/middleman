@@ -9060,6 +9060,7 @@ for a in "$@"; do
 done
 case "$1" in
   has-session)
+    echo "can't find session: $3" >&2
     exit 1
     ;;
   new-session)

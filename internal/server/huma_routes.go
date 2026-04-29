@@ -3042,11 +3042,11 @@ func (s *Server) launchWorkspaceRuntimeSession(
 		if runtimeSessionTmuxSession(
 			s.runtime.ListSessions(summary.ID), session.Key,
 		) == "" {
-			if err := s.workspaces.ForgetRuntimeTmuxSession(
+			if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
 				ctx, summary.ID, session.TmuxSession,
 			); err != nil {
 				return nil, huma.Error500InternalServerError(
-					"forget exited runtime tmux session: " + err.Error(),
+					"forget missing runtime tmux session: " + err.Error(),
 				)
 			}
 		}

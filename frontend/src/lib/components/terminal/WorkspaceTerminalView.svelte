@@ -979,7 +979,10 @@
                           reconnectOnExit={false}
                           active={activeTabKey === `session:${session.key}`}
                           onExit={() =>
-                            handleSessionExit(session.key, workspaceId)}
+                            handleSessionExit(
+                              session.key,
+                              session.workspace_id,
+                            )}
                           initialStatus={session.status}
                         />
                       {/if}
@@ -993,7 +996,7 @@
                 loading={shellLoading}
                 shellSession={shellSessionActive ? shellSession : null}
                 onToggle={() => void toggleShell()}
-                onExit={() => handleShellExit(workspaceId)}
+                onExit={(id) => handleShellExit(id)}
               />
             </div>
           </div>

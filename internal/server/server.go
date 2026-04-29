@@ -569,11 +569,11 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 			ctx, runtimeSessionCleanupTimeout,
 		)
 		defer cancel()
-		if err := s.workspaces.ForgetRuntimeTmuxSession(
+		if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
 			cleanupCtx, info.WorkspaceID, info.TmuxSession,
 		); err != nil {
 			slog.Warn(
-				"forget exited runtime tmux session",
+				"forget missing runtime tmux session",
 				"workspace_id", info.WorkspaceID,
 				"session_key", info.Key,
 				"tmux_session", info.TmuxSession,
