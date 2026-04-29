@@ -356,6 +356,36 @@ test.describe("diff view", () => {
     await expect(segments.nth(2)).not.toHaveClass(/segment--active/);
   });
 
+  test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const categorySelect = page.getByRole("combobox", {
+      name: "Filter changed files: All",
+    });
+    await expect(categorySelect).toContainText("All");
+
+    await categorySelect.click();
+    await page.getByRole("option", { name: "Code" }).click();
+
+    await expect(page.locator(".diff-file")).toHaveCount(3);
+    await expect(page.locator(".diff-file-row")).toHaveCount(3);
+    await expect(page.locator(".diff-file", { hasText: "assets/logo.png" }))
+      .toHaveCount(0);
+    await expect(page.locator(".diff-file-row", { hasText: "logo.png" }))
+      .toHaveCount(0);
+
+    await page.getByRole("combobox", {
+      name: "Filter changed files: Code",
+    }).click();
+    await page.getByRole("option", { name: "All" }).click();
+
+    await expect(page.locator(".diff-file")).toHaveCount(4);
+    await expect(page.locator(".diff-file-row")).toHaveCount(4);
+  });
+
   test("hide whitespace toggle triggers re-fetch", async ({ page }) => {
     let fetchCount = 0;
     await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {

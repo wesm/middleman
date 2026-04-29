@@ -6,6 +6,12 @@ import type {
 import { createAPIClient } from "../api/generated/client.js";
 import type { components } from "../api/generated/schema.js";
 import type { MiddlemanClient } from "../types.js";
+import {
+  countDiffFilesByCategory,
+  filterDiffFilesByCategory,
+  type DiffFileCategoryCounts,
+  type DiffFileCategoryFilter,
+} from "../utils/diff-categories.js";
 
 export type DiffScope =
   | { kind: "head" }
@@ -136,6 +142,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let activeFile = $state<string | null>(null);
   let scrollTarget = $state<string | null>(null);
   let scrolling = $state(false);
+  let fileCategoryFilter = $state<DiffFileCategoryFilter>("all");
   let commits = $state<CommitInfo[] | null>(null);
   let commitsLoading = $state(false);
   let commitsError = $state<string | null>(null);
@@ -169,6 +176,21 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (fileList) return { stale: fileList.stale, files: fileList.files ?? [] };
     return null;
   }
+  function getVisibleFileList(): FilesResult | null {
+    const list = getFileList();
+    if (!list) return null;
+    return {
+      stale: list.stale,
+      files: filterDiffFilesByCategory(list.files, fileCategoryFilter),
+    };
+  }
+  function getVisibleDiffFiles(): DiffResult["files"] {
+    if (!diff) return [];
+    return filterDiffFilesByCategory(diff.files ?? [], fileCategoryFilter);
+  }
+  function getFileCategoryCounts(): DiffFileCategoryCounts {
+    return countDiffFilesByCategory(getFileList()?.files ?? []);
+  }
   function isFileListLoading(): boolean {
     // Show loading until we have *some* file data. When /files fails
     // but /diff is still in flight, keep showing loading state.
@@ -179,6 +201,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
   function getHideWhitespace(): boolean {
     return hideWhitespace;
+  }
+  function getFileCategoryFilter(): DiffFileCategoryFilter {
+    return fileCategoryFilter;
   }
   function getActiveFile(): string | null {
     return activeFile;
@@ -201,6 +226,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function setActiveFile(path: string | null): void {
     activeFile = path;
+  }
+
+  function setFileCategoryFilter(nextFilter: DiffFileCategoryFilter): void {
+    fileCategoryFilter = nextFilter;
+    const visibleFiles = getVisibleFileList()?.files ?? getVisibleDiffFiles();
+    setActiveIfNeeded(visibleFiles);
   }
 
   function clearScrolling(): void {
@@ -268,7 +299,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       }
       const result = normalizeDiffResult(data);
       diff = result;
-      setActiveIfNeeded(result.files);
+      setActiveIfNeeded(getVisibleDiffFiles());
     } catch (err) {
       if (ac.signal.aborted) return;
       if (abortController !== ac) return;
@@ -344,6 +375,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = number;
     if (prChanged) {
       scope = { kind: "head" };
+      fileCategoryFilter = "all";
       commits = null;
       commitsLoading = false;
       commitsError = null;
@@ -375,7 +407,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         if (!data) return;
         const result = normalizeFilesResult(data);
         fileList = result;
-        setActiveIfNeeded(result.files);
+        setActiveIfNeeded(getVisibleFileList()?.files);
       } catch {
         if (filesAc.signal.aborted) return;
         if (fileListAbortController !== filesAc) return;
@@ -408,7 +440,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         }
         const result = normalizeDiffResult(data);
         diff = result;
-        setActiveIfNeeded(result.files);
+        setActiveIfNeeded(getVisibleDiffFiles());
       } catch (_err) {
         if (diffAc.signal.aborted) return;
         if (abortController !== diffAc) return;
@@ -446,6 +478,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     activeFile = null;
     scrollTarget = null;
     scrolling = false;
+    fileCategoryFilter = "all";
     commits = null;
     commitsLoading = false;
     commitsError = null;
@@ -573,11 +606,16 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     isDiffLoading,
     getDiffError,
     getFileList,
+    getVisibleFileList,
+    getVisibleDiffFiles,
+    getFileCategoryCounts,
     isFileListLoading,
     getTabWidth,
     getHideWhitespace,
+    getFileCategoryFilter,
     getActiveFile,
     setActiveFile,
+    setFileCategoryFilter,
     isScrolling,
     clearScrolling,
     requestScrollToFile,

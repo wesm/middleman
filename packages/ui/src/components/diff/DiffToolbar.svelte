@@ -1,15 +1,34 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
+  import {
+    diffFileCategoryOptions,
+    type DiffFileCategoryFilter,
+  } from "../../utils/diff-categories.js";
+  import SelectDropdown from "../shared/SelectDropdown.svelte";
 
   const { diff } = getStores();
   const tabOptions = [1, 2, 4, 8] as const;
+
+  function setFileCategoryFilter(value: string): void {
+    diff.setFileCategoryFilter(value as DiffFileCategoryFilter);
+  }
 </script>
 
 <div class="diff-toolbar">
+  <div class="toolbar-group toolbar-group--category">
+    <span class="toolbar-label">Files</span>
+    <SelectDropdown
+      class="diff-category-select"
+      value={diff.getFileCategoryFilter()}
+      options={diffFileCategoryOptions}
+      onchange={setFileCategoryFilter}
+      title="Filter changed files"
+    />
+  </div>
   <div class="toolbar-group">
     <span class="toolbar-label">Tab width</span>
     <div class="segmented-control">
-      {#each tabOptions as opt}
+      {#each tabOptions as opt (opt)}
         <button
           class="segment"
           class:segment--active={diff.getTabWidth() === opt}
@@ -50,6 +69,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  :global(.diff-category-select) {
+    min-width: 118px;
   }
 
   .toolbar-label {

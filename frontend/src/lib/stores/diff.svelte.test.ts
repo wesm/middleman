@@ -472,4 +472,92 @@ describe("createDiffStore loadDiff", () => {
     expect(result).not.toBeNull();
     expect(result!.files).toEqual([]);
   });
+
+  it("filters loaded diff and file list by selected file category", async () => {
+    const result: DiffResult = {
+      stale: false,
+      whitespace_only_count: 0,
+      files: [
+        {
+          path: "docs/review-plan.md",
+          old_path: "docs/review-plan.md",
+          status: "modified",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: 1,
+          deletions: 1,
+          hunks: [],
+        },
+        {
+          path: "src/App.svelte",
+          old_path: "src/App.svelte",
+          status: "modified",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: 1,
+          deletions: 1,
+          hunks: [],
+        },
+        {
+          path: "src/App.test.ts",
+          old_path: "src/App.test.ts",
+          status: "modified",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: 1,
+          deletions: 1,
+          hunks: [],
+        },
+        {
+          path: "bun.lock",
+          old_path: "bun.lock",
+          status: "modified",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: 1,
+          deletions: 1,
+          hunks: [],
+        },
+      ],
+    };
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+
+        if (url.includes("/files")) {
+          return Response.json({ stale: false, files: result.files });
+        }
+        if (url.includes("/diff")) {
+          return Response.json(result);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ getBasePath: () => "/" });
+    await store.loadDiff("owner", "repo", 1);
+
+    expect(store.getFileCategoryFilter()).toBe("all");
+    expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
+      "docs/review-plan.md",
+      "src/App.svelte",
+      "src/App.test.ts",
+      "bun.lock",
+    ]);
+
+    store.setFileCategoryFilter("tests");
+
+    expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
+      "src/App.test.ts",
+    ]);
+    expect(store.getVisibleFileList()?.files.map((file) => file.path)).toEqual([
+      "src/App.test.ts",
+    ]);
+  });
 });
