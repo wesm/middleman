@@ -58,6 +58,9 @@ type mockClient struct {
 	listReleases                    []*gh.RepositoryRelease
 	listReleasesErr                 error
 	listReleasesFn                  func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
+	listTags                        []*gh.RepositoryTag
+	listTagsErr                     error
+	listTagsFn                      func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
 	listOpenPRsFn                   func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listPullRequestsPageFn          func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
@@ -162,6 +165,19 @@ func (m *mockClient) ListReleases(
 		return nil, m.listReleasesErr
 	}
 	return m.listReleases, nil
+}
+
+func (m *mockClient) ListTags(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryTag, error) {
+	m.trackCall()
+	if m.listTagsFn != nil {
+		return m.listTagsFn(ctx, owner, repo, perPage)
+	}
+	if m.listTagsErr != nil {
+		return nil, m.listTagsErr
+	}
+	return m.listTags, nil
 }
 
 func (m *mockClient) GetPullRequest(
@@ -564,6 +580,58 @@ func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
 	assert.Equal("abc123", overview.CommitTimeline[0].SHA)
 	assert.Equal("Keep cached timeline", overview.CommitTimeline[0].Message)
 	assert.Equal(oldTimelineUpdatedAt, *overview.TimelineUpdatedAt)
+}
+
+func TestSyncRepoOverviewUsesTagsWhenRepoHasNoReleases(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	tagName := "v1.2.3"
+	sha := "abcdef1234567890abcdef1234567890abcdef12"
+	client := &mockClient{
+		listReleases: []*gh.RepositoryRelease{},
+		listTags: []*gh.RepositoryTag{{
+			Name: &tagName,
+			Commit: &gh.Commit{
+				SHA: &sha,
+			},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		nil,
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	syncer.syncRepoOverview(
+		ctx,
+		client,
+		RepoRef{PlatformHost: "github.com", Owner: "owner", Name: "repo"},
+		repoID,
+		false,
+	)
+
+	summaries, err := d.ListRepoSummaries(ctx)
+	require.NoError(err)
+	require.Len(summaries, 1)
+	overview := summaries[0].Overview
+	require.NotNil(overview.LatestRelease)
+	require.Len(overview.Releases, 1)
+
+	assert.Equal("v1.2.3", overview.LatestRelease.TagName)
+	assert.Equal("v1.2.3", overview.LatestRelease.Name)
+	assert.Equal("https://github.com/owner/repo/tree/v1.2.3", overview.LatestRelease.URL)
+	assert.Equal(sha, overview.LatestRelease.TargetCommitish)
+	assert.Nil(overview.LatestRelease.PublishedAt)
+	assert.False(overview.LatestRelease.Prerelease)
 }
 
 func TestSyncStoresForcePushEvent(t *testing.T) {

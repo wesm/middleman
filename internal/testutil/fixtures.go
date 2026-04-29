@@ -669,6 +669,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 				OpenIssues: openIssues,
 				Issues:     allIssues,
 				Comments:   make(map[string][]*gh.IssueComment),
+				Tags:       make(map[string][]*gh.RepositoryTag),
 				CombinedStatuses: map[string]*gh.CombinedStatus{
 					refKey("acme", "widgets", widgetsPR1HeadSHA): {
 						State: new("success"),
