@@ -1,0 +1,664 @@
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+const mockGet = vi.fn();
+const mockPost = vi.fn();
+const mockNavigate = vi.fn();
+const mockSetGlobalRepo = vi.fn();
+
+vi.mock("../../api/runtime.js", () => ({
+  client: {
+    GET: (...args: unknown[]) => mockGet(...args),
+    POST: (...args: unknown[]) => mockPost(...args),
+  },
+  apiErrorMessage: (
+    error: { detail?: string; title?: string } | undefined,
+    fallback: string,
+  ) => error?.detail ?? error?.title ?? fallback,
+}));
+
+vi.mock("../../stores/router.svelte.js", () => ({
+  navigate: (path: string) => mockNavigate(path),
+}));
+
+vi.mock("../../stores/filter.svelte.js", () => ({
+  setGlobalRepo: (repo: string | undefined) =>
+    mockSetGlobalRepo(repo),
+}));
+
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@middleman/ui")>();
+  const { default: MockCommentEditor } = await import(
+    "../../../test/MockCommentEditor.svelte"
+  );
+  return {
+    ...actual,
+    CommentEditor: MockCommentEditor,
+    getStores: () => ({
+      sync: {
+        subscribeSyncComplete: () => () => {},
+      },
+      settings: {
+        isSettingsLoaded: () => true,
+        hasConfiguredRepos: () => true,
+      },
+    }),
+  };
+});
+
+import RepoSummaryPage from "./RepoSummaryPage.svelte";
+
+describe("RepoSummaryPage", () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+    mockPost.mockReset();
+    mockNavigate.mockReset();
+    mockSetGlobalRepo.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders repository summaries from the API", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 6,
+        open_pr_count: 3,
+        draft_pr_count: 1,
+        cached_issue_count: 4,
+        open_issue_count: 2,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        latest_release: {
+          tag_name: "v2.8.1",
+          name: "Version 2.8.1",
+          url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
+          target_commitish: "main",
+          prerelease: false,
+          published_at: "2026-04-15T12:00:00Z",
+        },
+        releases: [
+          {
+            tag_name: "v2.8.1",
+            name: "Version 2.8.1",
+            url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-15T12:00:00Z",
+          },
+          {
+            tag_name: "v2.8.0",
+            name: "Version 2.8.0",
+            url: "https://github.com/acme/widgets/releases/tag/v2.8.0",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-10T12:00:00Z",
+          },
+          {
+            tag_name: "v2.7.0",
+            name: "Version 2.7.0",
+            url: "https://github.com/acme/widgets/releases/tag/v2.7.0",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-05T12:00:00Z",
+          },
+        ],
+        commits_since_release: 8,
+        commit_timeline: [{
+          sha: "abc123",
+          message: "Ship repo overview timeline",
+          committed_at: "2026-04-16T12:00:00Z",
+        }],
+        active_authors: [
+          { login: "alice", item_count: 3 },
+          { login: "bob", item_count: 2 },
+        ],
+        recent_issues: [{
+          number: 12,
+          title: "Investigate repo summary card",
+          author: "alice",
+          state: "open",
+          url: "https://github.com/acme/widgets/issues/12",
+          last_activity_at: "2026-04-17T14:55:00Z",
+        }],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    expect(
+      await screen.findByRole("button", {
+        name: /acme\s*\/\s*widgets/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Open PRs").length).toBeGreaterThan(1);
+    expect(screen.getByText("v2.8.1")).toBeTruthy();
+    expect(screen.getByText("8 commits")).toBeTruthy();
+    expect(
+      screen.getByText("Investigate repo summary card"),
+    ).toBeTruthy();
+    expect(screen.getByTitle("alice").getAttribute("src")).toContain(
+      "https://github.com/alice.png?size=40",
+    );
+    expect(
+      screen.getByRole("button", { name: "Release v2.8.0" }),
+    ).toBeTruthy();
+
+    const commitDot = screen.getByRole("button", {
+      name: "Commit abc123",
+    });
+    await fireEvent.mouseEnter(commitDot);
+    expect(screen.getByText("Ship repo overview timeline")).toBeTruthy();
+    await fireEvent.click(commitDot);
+    await fireEvent.mouseLeave(commitDot);
+    expect(screen.getByText("Ship repo overview timeline")).toBeTruthy();
+    await fireEvent.click(document.body);
+    expect(
+      screen.queryByText("Ship repo overview timeline"),
+    ).toBeNull();
+  });
+
+  it("keeps cached output visible when a sync issue exists", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 6,
+        open_pr_count: 3,
+        draft_pr_count: 1,
+        cached_issue_count: 4,
+        open_issue_count: 2,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "rate limit exceeded",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+
+    expect(screen.getByText("Cached PRs")).toBeTruthy();
+    expect(screen.getByText("Cached issues")).toBeTruthy();
+    expect(screen.getByText("Sync issue")).toBeTruthy();
+    expect(screen.queryByText("rate limit exceeded")).toBeNull();
+  });
+
+  it("navigates from repo metric cells instead of separate view buttons", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 6,
+        open_pr_count: 3,
+        draft_pr_count: 1,
+        cached_issue_count: 4,
+        open_issue_count: 2,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+
+    expect(
+      screen.queryByRole("button", { name: "View PRs" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "View issues" }),
+    ).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /3\s+Open PRs/ }),
+    );
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+      "github.com/acme/widgets",
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/pulls");
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /2\s+Open issues/ }),
+    );
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+      "github.com/acme/widgets",
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("/issues");
+  });
+
+  it("filters repositories by search and stale release state", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          owner: "acme",
+          name: "fresh",
+          platform_host: "github.com",
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 0,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+          latest_release: {
+            tag_name: "v1.0.0",
+            name: "",
+            url: "",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-04-16T12:00:00Z",
+          },
+          commits_since_release: 2,
+          commit_timeline: [],
+        },
+        {
+          owner: "acme",
+          name: "stale",
+          platform_host: "github.com",
+          cached_pr_count: 4,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 3,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+          latest_release: {
+            tag_name: "v0.9.0",
+            name: "",
+            url: "",
+            target_commitish: "main",
+            prerelease: false,
+            published_at: "2026-03-01T12:00:00Z",
+          },
+          commits_since_release: 72,
+          commit_timeline: [],
+        },
+      ],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    expect(
+      await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
+    ).toBeTruthy();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Stale" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
+    ).toBeTruthy();
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Filter repositories"),
+      { target: { value: "fresh" } },
+    );
+    expect(screen.getByText("No repositories match")).toBeTruthy();
+  });
+
+  it("creates an issue from a repo card and navigates to it", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 2,
+        open_pr_count: 1,
+        draft_pr_count: 0,
+        cached_issue_count: 1,
+        open_issue_count: 1,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+    mockPost.mockResolvedValue({
+      data: {
+        Number: 27,
+        repo_owner: "acme",
+        repo_name: "widgets",
+        detail_loaded: false,
+      },
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+
+    expect(
+      screen.getByRole("dialog", {
+        name: "New issue in acme/widgets",
+      }),
+    ).toBeTruthy();
+    const bodyEditor = screen.getByTestId("mock-comment-editor");
+    expect(bodyEditor.getAttribute("data-owner")).toBe("acme");
+    expect(bodyEditor.getAttribute("data-name")).toBe("widgets");
+    expect(bodyEditor.getAttribute("data-platform-host")).toBe("github.com");
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      {
+        target: { value: "Ship repo summaries" },
+      },
+    );
+    await fireEvent.input(
+      screen.getByRole("textbox", {
+        name: "Describe the problem, context, or follow-up work",
+      }),
+      {
+        target: { value: "Need a compact repo dashboard." },
+      },
+    );
+    await fireEvent.submit(
+      screen.getByRole("button", { name: "Create issue" }),
+    );
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repos/{owner}/{name}/issues",
+        expect.objectContaining({
+          params: {
+            path: { owner: "acme", name: "widgets" },
+          },
+          body: {
+            title: "Ship repo summaries",
+            body: "Need a compact repo dashboard.",
+            platform_host: "github.com",
+          },
+        }),
+      );
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+        "github.com/acme/widgets",
+      );
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/issues/acme/widgets/27?platform_host=github.com",
+      );
+    });
+  });
+
+  it("does not send duplicate issue create requests while submitting", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 2,
+        open_pr_count: 1,
+        draft_pr_count: 0,
+        cached_issue_count: 1,
+        open_issue_count: 1,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+    let resolvePost:
+      | ((value: { data: { Number: number }; error: undefined }) => void)
+      | undefined;
+    mockPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      {
+        target: { value: "Ship repo summaries" },
+      },
+    );
+
+    const createButton = screen.getByRole("button", {
+      name: "Create issue",
+    });
+    await fireEvent.submit(createButton);
+    await fireEvent.submit(createButton);
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    resolvePost?.({
+      data: { Number: 27 },
+      error: undefined,
+    });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/issues/acme/widgets/27?platform_host=github.com",
+      );
+    });
+  });
+
+  it("keeps issue composer state separate for duplicate repos on different hosts", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          owner: "acme",
+          name: "widgets",
+          platform_host: "github.com",
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+        },
+        {
+          owner: "acme",
+          name: "widgets",
+          platform_host: "ghe.example.com",
+          cached_pr_count: 1,
+          open_pr_count: 0,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
+        },
+      ],
+      error: undefined,
+    });
+    mockPost.mockResolvedValue({
+      data: {
+        Number: 42,
+        repo_owner: "acme",
+        repo_name: "widgets",
+        detail_loaded: false,
+      },
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findAllByRole("button", {
+      name: /acme\s*\/\s*widgets/,
+    });
+    const issueButtons = screen.getAllByRole("button", {
+      name: "New issue",
+    });
+    const firstIssueButton = issueButtons[0];
+    const secondIssueButton = issueButtons[1];
+    if (!firstIssueButton || !secondIssueButton) {
+      throw new Error("expected issue buttons for both repo hosts");
+    }
+
+    await fireEvent.click(firstIssueButton);
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      { target: { value: "GitHub.com draft" } },
+    );
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
+
+    await fireEvent.click(secondIssueButton);
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
+        .value,
+    ).toBe("");
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      { target: { value: "Enterprise draft" } },
+    );
+    await fireEvent.submit(
+      screen.getByRole("button", { name: "Create issue" }),
+    );
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repos/{owner}/{name}/issues",
+        expect.objectContaining({
+          params: {
+            path: { owner: "acme", name: "widgets" },
+          },
+          body: expect.objectContaining({
+            title: "Enterprise draft",
+            platform_host: "ghe.example.com",
+          }),
+        }),
+      );
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith(
+        "ghe.example.com/acme/widgets",
+      );
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/issues/acme/widgets/42?platform_host=ghe.example.com",
+      );
+    });
+  });
+
+  it("retains modal issue drafts when dismissed", async () => {
+    mockGet.mockResolvedValue({
+      data: [{
+        owner: "acme",
+        name: "widgets",
+        platform_host: "github.com",
+        cached_pr_count: 2,
+        open_pr_count: 1,
+        draft_pr_count: 0,
+        cached_issue_count: 1,
+        open_issue_count: 1,
+        most_recent_activity_at: "2026-04-17T15:04:05Z",
+        last_sync_completed_at: "2026-04-17T15:00:00Z",
+        last_sync_started_at: "2026-04-17T14:59:00Z",
+        last_sync_error: "",
+        active_authors: [],
+        recent_issues: [],
+      }],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+    await fireEvent.input(
+      screen.getByPlaceholderText("Issue title"),
+      { target: { value: "Draft issue title" } },
+    );
+    await fireEvent.input(
+      screen.getByRole("textbox", {
+        name: "Describe the problem, context, or follow-up work",
+      }),
+      {
+        target: { value: "Draft issue body with @alice" },
+      },
+    );
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "New issue" }),
+    );
+
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
+        .value,
+    ).toBe("Draft issue title");
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Describe the problem, context, or follow-up work",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("Draft issue body with @alice");
+  });
+});

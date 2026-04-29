@@ -31,6 +31,7 @@ type FixtureClient struct {
 	Issues                    map[string][]*gh.Issue
 	Comments                  map[string][]*gh.IssueComment
 	ReposByOwner              map[string][]*gh.Repository
+	Releases                  map[string][]*gh.RepositoryRelease
 	CombinedStatuses          map[string]*gh.CombinedStatus
 	CheckRuns                 map[string][]*gh.CheckRun
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
@@ -47,6 +48,7 @@ func NewFixtureClient() ghclient.Client {
 		Issues:           make(map[string][]*gh.Issue),
 		Comments:         make(map[string][]*gh.IssueComment),
 		ReposByOwner:     make(map[string][]*gh.Repository),
+		Releases:         make(map[string][]*gh.RepositoryRelease),
 		CombinedStatuses: make(map[string]*gh.CombinedStatus),
 		CheckRuns:        make(map[string][]*gh.CheckRun),
 		nextID:           10_000,
@@ -96,6 +98,21 @@ func (c *FixtureClient) ListRepositoriesByOwner(
 	}
 	out := make([]*gh.Repository, len(repos))
 	copy(out, repos)
+	return out, nil
+}
+
+func (c *FixtureClient) ListReleases(
+	_ context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryRelease, error) {
+	releases := c.Releases[repoKey(owner, repo)]
+	if len(releases) == 0 {
+		return nil, nil
+	}
+	if perPage > 0 && perPage < len(releases) {
+		releases = releases[:perPage]
+	}
+	out := make([]*gh.RepositoryRelease, len(releases))
+	copy(out, releases)
 	return out, nil
 }
 
@@ -166,6 +183,61 @@ func (c *FixtureClient) GetIssue(
 		}
 	}
 	return nil, nil
+}
+
+func (c *FixtureClient) CreateIssue(
+	_ context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	issuesKey := repoKey(owner, repo)
+	maxNumber := 0
+	for _, issue := range c.Issues[issuesKey] {
+		if n := issue.GetNumber(); n > maxNumber {
+			maxNumber = n
+		}
+	}
+
+	number := maxNumber + 1
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	state := "open"
+	id := c.nextID
+	c.nextID++
+	labelID := c.nextID
+	c.nextID++
+	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+	login := "fixture-bot"
+	comments := 0
+	labelName := "created-from-repos"
+	labelDescription := "Issue created from the repositories page"
+	labelColor := "0e8a16"
+	labelDefault := false
+
+	issue := &gh.Issue{
+		ID:               &id,
+		Number:           &number,
+		Title:            &title,
+		Body:             &body,
+		State:            &state,
+		HTMLURL:          &htmlURL,
+		User:             &gh.User{Login: &login},
+		Comments:         &comments,
+		CreatedAt:        &now,
+		UpdatedAt:        &now,
+		ClosedAt:         nil,
+		PullRequestLinks: nil,
+		Labels: []*gh.Label{{
+			ID:          &labelID,
+			Name:        &labelName,
+			Description: &labelDescription,
+			Color:       &labelColor,
+			Default:     &labelDefault,
+		}},
+	}
+	c.Issues[issuesKey] = append([]*gh.Issue{issue}, c.Issues[issuesKey]...)
+	c.OpenIssues[issuesKey] = append([]*gh.Issue{issue}, c.OpenIssues[issuesKey]...)
+	return issue, nil
 }
 
 func (c *FixtureClient) findIssue(owner, repo string, number int) *gh.Issue {

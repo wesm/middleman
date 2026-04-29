@@ -53,6 +53,7 @@
   function navigateTab(
     destination:
       | "activity"
+      | "repos"
       | "pulls"
       | "issues"
       | "board"
@@ -62,6 +63,7 @@
       | "design-system",
   ): void {
     if (destination === "activity") navigate("/");
+    else if (destination === "repos") navigate("/repos");
     else if (destination === "pulls" || destination === "issues") {
       navigate(routeForTab(destination));
     } else if (destination === "board") navigate("/pulls/board");
@@ -103,6 +105,7 @@
         onchange={(e) => {
           const v = (e.target as HTMLSelectElement).value;
           if (v === "activity") navigate("/");
+          else if (v === "repos") navigateTab("repos");
           else if (v === "pulls") navigateTab("pulls");
           else if (v === "issues") navigateTab("issues");
           else if (v === "board") navigateTab("board");
@@ -113,6 +116,7 @@
         }}
       >
         <option value="activity">Activity</option>
+        <option value="repos">Repos</option>
         <option value="pulls">PRs</option>
         <option value="issues">Issues</option>
         <option value="board">Board</option>
@@ -132,6 +136,9 @@
       <div class="tab-group">
         <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
           Activity
+        </button>
+        <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
+          Repos
         </button>
         <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
           PRs

@@ -176,7 +176,7 @@ interface WorkspaceDetailContext {
 }
 
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "board" | "reviews" | "workspaces";
+  type: "pull" | "issue" | "activity" | "repos" | "board" | "reviews" | "workspaces";
   owner?: string;
   name?: string;
   number?: number;

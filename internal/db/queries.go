@@ -784,7 +784,11 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		_, owner, name := canonicalRepoIdentifier("", opts.RepoOwner, opts.RepoName)
+		host, owner, name := canonicalRepoIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
+		if host != "" {
+			conds = append(conds, "r.platform_host = ?")
+			args = append(args, host)
+		}
 		conds = append(conds, "r.owner = ? AND r.name = ?")
 		args = append(args, owner, name)
 	}
@@ -1485,7 +1489,11 @@ func (d *DB) ListIssues(
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		_, owner, name := canonicalRepoIdentifier("", opts.RepoOwner, opts.RepoName)
+		host, owner, name := canonicalRepoIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
+		if host != "" {
+			conds = append(conds, "r.platform_host = ?")
+			args = append(args, host)
+		}
 		conds = append(conds, "r.owner = ? AND r.name = ?")
 		args = append(args, owner, name)
 	}

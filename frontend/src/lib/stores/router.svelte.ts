@@ -1,6 +1,7 @@
 export type Route =
   | { page: "activity" }
   | { page: "design-system" }
+  | { page: "repos" }
   | { page: "workspaces" }
   | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
   | { page: "issues"; selected?: { owner: string; name: string; number: number; platformHost?: string | undefined } }
@@ -42,7 +43,7 @@ function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
   const search = qIdx >= 0 ? fullPath.slice(qIdx + 1) : "";
-  const path = stripBase(pathname);
+  const path = stripBase(pathname).replace(/\/+$/, "") || "/";
   if (path.startsWith("/focus/")) {
     if (path === "/focus/mrs") {
       const sp = new URLSearchParams(search);
@@ -115,6 +116,9 @@ function parseRoute(fullPath: string): Route {
     }
     return { page: "pulls", view: "list" };
   }
+  if (path === "/repos") {
+    return { page: "repos" };
+  }
   if (path === "/settings" && !isEmbedded()) return { page: "settings" };
   if (path.startsWith("/issues")) {
     const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
@@ -171,8 +175,8 @@ export function getRoute(): Route {
 }
 
 export function getPage():
-  "activity" | "design-system" | "pulls" | "issues" | "settings" | "focus" | "reviews"
-  | "workspaces" | "terminal" {
+  "activity" | "design-system" | "repos" | "pulls" | "issues" | "settings"
+  | "focus" | "reviews" | "workspaces" | "terminal" {
   return route.page;
 }
 
@@ -221,6 +225,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = r.view === "board" ? "board" : "pull";
   } else if (r.page === "issues") {
     navType = "issue";
+  } else if (r.page === "repos") {
+    navType = "repos";
   } else if (r.page === "reviews") {
     navType = "reviews";
   } else if (

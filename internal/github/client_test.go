@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"testing"
+	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/require"
@@ -46,6 +48,44 @@ func TestGraphQLEndpointForHost(t *testing.T) {
 func TestClientInterfaceIncludesListForcePushEvents(t *testing.T) {
 	_, ok := reflect.TypeFor[Client]().MethodByName("ListForcePushEvents")
 	require.True(t, ok)
+}
+
+func TestListReleasesTracksRate(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	rt := NewRateTracker(database, "github.example.com", "rest")
+	resetAt := time.Now().Add(time.Hour).Unix()
+	var gotMethod string
+	var gotPerPage string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widgets/releases", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPerPage = r.URL.Query().Get("per_page")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4998")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+		_, _ = w.Write([]byte(`[{"tag_name":"v1.0.0","name":"Release v1.0.0"}]`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{gh: ghClient, rateTracker: rt}
+
+	releases, err := c.ListReleases(t.Context(), "acme", "widgets", 2)
+	require.NoError(err)
+	require.Len(releases, 1)
+	require.Equal(http.MethodGet, gotMethod)
+	require.Equal("2", gotPerPage)
+	require.Equal("v1.0.0", releases[0].GetTagName())
+	require.Equal(1, rt.RequestsThisHour())
+	require.Equal(4998, rt.Remaining())
+	require.Equal(5000, rt.RateLimit())
 }
 
 func TestListForcePushEvents(t *testing.T) {

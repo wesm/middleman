@@ -87,6 +87,19 @@ func (s *Server) lookupRepo(
 	return repo, nil
 }
 
+func (s *Server) filterConfiguredRepoSummaries(
+	summaries []db.RepoSummary,
+) []db.RepoSummary {
+	filtered := make([]db.RepoSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		repo := summary.Repo
+		if s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repo.PlatformHost) {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered
+}
+
 // lookupRepoID resolves a repository from owner/name inputs and returns a
 // stable not-found error for handlers that need repo identity only.
 func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, error) {
@@ -171,14 +184,19 @@ func (s *Server) lookupIssue(
 	return repo, issue, nil
 }
 
-// parseRepoFilter splits the repo query parameter when it is in owner/name
-// form and otherwise returns empty parts so callers can ignore invalid input.
-func parseRepoFilter(repo string) (owner, name string) {
-	parts := strings.SplitN(repo, "/", 2)
-	if len(parts) != 2 {
-		return "", ""
+// parseRepoFilter splits the repo query parameter when it is in owner/name or
+// platform_host/owner/name form and otherwise returns empty parts so callers
+// can ignore invalid input.
+func parseRepoFilter(repo string) (platformHost, owner, name string) {
+	parts := strings.Split(repo, "/")
+	switch len(parts) {
+	case 2:
+		return "", parts[0], parts[1]
+	case 3:
+		return parts[0], parts[1], parts[2]
+	default:
+		return "", "", ""
 	}
-	return parts[0], parts[1]
 }
 
 func validateStarredRequest(body starredRequest) bool {
@@ -191,6 +209,91 @@ func validateStarredRequest(body starredRequest) bool {
 // constructed the original time.Time.
 func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
+}
+
+func toRepoSummaryResponse(summary db.RepoSummary) repoSummaryResponse {
+	resp := repoSummaryResponse{
+		PlatformHost:     summary.Repo.PlatformHost,
+		Owner:            summary.Repo.Owner,
+		Name:             summary.Repo.Name,
+		LastSyncError:    summary.Repo.LastSyncError,
+		CachedPRCount:    summary.CachedPRCount,
+		OpenPRCount:      summary.OpenPRCount,
+		DraftPRCount:     summary.DraftPRCount,
+		CachedIssueCount: summary.CachedIssueCount,
+		OpenIssueCount:   summary.OpenIssueCount,
+		ActiveAuthors:    make([]repoSummaryAuthorResponse, 0, len(summary.ActiveAuthors)),
+		RecentIssues:     make([]repoSummaryIssueResponse, 0, len(summary.RecentIssues)),
+	}
+	if summary.Repo.LastSyncStartedAt != nil {
+		resp.LastSyncStartedAt = formatUTCRFC3339(*summary.Repo.LastSyncStartedAt)
+	}
+	if summary.Repo.LastSyncCompletedAt != nil {
+		resp.LastSyncCompletedAt = formatUTCRFC3339(*summary.Repo.LastSyncCompletedAt)
+	}
+	if summary.MostRecentActivityAt != nil {
+		resp.MostRecentActivityAt = formatUTCRFC3339(*summary.MostRecentActivityAt)
+	}
+	if summary.Overview.LatestRelease != nil {
+		release := summary.Overview.LatestRelease
+		resp.LatestRelease = &repoSummaryReleaseResponse{
+			TagName:         release.TagName,
+			Name:            release.Name,
+			URL:             release.URL,
+			TargetCommitish: release.TargetCommitish,
+			Prerelease:      release.Prerelease,
+		}
+		if release.PublishedAt != nil {
+			resp.LatestRelease.PublishedAt = formatUTCRFC3339(*release.PublishedAt)
+		}
+	}
+	resp.Releases = make([]repoSummaryReleaseResponse, 0, len(summary.Overview.Releases))
+	for _, release := range summary.Overview.Releases {
+		item := repoSummaryReleaseResponse{
+			TagName:         release.TagName,
+			Name:            release.Name,
+			URL:             release.URL,
+			TargetCommitish: release.TargetCommitish,
+			Prerelease:      release.Prerelease,
+		}
+		if release.PublishedAt != nil {
+			item.PublishedAt = formatUTCRFC3339(*release.PublishedAt)
+		}
+		resp.Releases = append(resp.Releases, item)
+	}
+	resp.CommitsSinceRelease = summary.Overview.CommitsSinceRelease
+	resp.CommitTimeline = make(
+		[]repoSummaryCommitPointResponse,
+		0,
+		len(summary.Overview.CommitTimeline),
+	)
+	for _, point := range summary.Overview.CommitTimeline {
+		resp.CommitTimeline = append(resp.CommitTimeline, repoSummaryCommitPointResponse{
+			SHA:         point.SHA,
+			Message:     point.Message,
+			CommittedAt: formatUTCRFC3339(point.CommittedAt),
+		})
+	}
+	if summary.Overview.TimelineUpdatedAt != nil {
+		resp.TimelineUpdatedAt = formatUTCRFC3339(*summary.Overview.TimelineUpdatedAt)
+	}
+	for _, author := range summary.ActiveAuthors {
+		resp.ActiveAuthors = append(resp.ActiveAuthors, repoSummaryAuthorResponse{
+			Login:     author.Login,
+			ItemCount: author.ItemCount,
+		})
+	}
+	for _, issue := range summary.RecentIssues {
+		resp.RecentIssues = append(resp.RecentIssues, repoSummaryIssueResponse{
+			Number:         issue.Number,
+			Title:          issue.Title,
+			Author:         issue.Author,
+			State:          issue.State,
+			URL:            issue.URL,
+			LastActivityAt: formatUTCRFC3339(issue.LastActivityAt),
+		})
+	}
+	return resp
 }
 
 // toWorktreeLinkResponses converts DB links to API responses.

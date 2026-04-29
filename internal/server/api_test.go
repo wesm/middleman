@@ -38,6 +38,7 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/stacks"
+	"github.com/wesm/middleman/internal/testutil"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -69,6 +70,7 @@ type mockGH struct {
 	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
+	createIssueFn             func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getUserFn                 func(context.Context, string) (*gh.User, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
@@ -77,6 +79,7 @@ type mockGH struct {
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
 	listReposByOwnerFn        func(context.Context, string) ([]*gh.Repository, error)
+	listReleasesFn            func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listCheckRunsForRefFn     func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	getCombinedStatusFn       func(context.Context, string, string, string) (*gh.CombinedStatus, error)
@@ -110,6 +113,29 @@ func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (
 	return nil, nil
 }
 
+func (m *mockGH) CreateIssue(
+	ctx context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	if m.createIssueFn != nil {
+		return m.createIssueFn(ctx, owner, repo, title, body)
+	}
+	number := 1
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	state := "open"
+	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+	login := "fixture-bot"
+	return &gh.Issue{
+		Number:    &number,
+		Title:     &title,
+		Body:      &body,
+		State:     &state,
+		HTMLURL:   &htmlURL,
+		User:      &gh.User{Login: &login},
+		CreatedAt: &now,
+		UpdatedAt: &now,
+	}, nil
+}
+
 func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
 	if m.getUserFn != nil {
 		return m.getUserFn(ctx, login)
@@ -122,6 +148,15 @@ func (m *mockGH) ListRepositoriesByOwner(
 ) ([]*gh.Repository, error) {
 	if m.listReposByOwnerFn != nil {
 		return m.listReposByOwnerFn(ctx, owner)
+	}
+	return nil, nil
+}
+
+func (m *mockGH) ListReleases(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryRelease, error) {
+	if m.listReleasesFn != nil {
+		return m.listReleasesFn(ctx, owner, repo, perPage)
 	}
 	return nil, nil
 }
@@ -820,6 +855,29 @@ func TestAPIListPullsAcceptsMixedCaseRepoFilter(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
+}
+
+func TestAPIListPullsAcceptsHostQualifiedRepoFilter(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
+	client := setupTestClient(t, srv)
+
+	repo := "ghe.example.com/acme/widget"
+	resp, err := client.HTTP.ListPullsWithResponse(
+		t.Context(), &generated.ListPullsParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
+	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
+	assert.EqualValues(2, (*resp.JSON200)[0].Number)
 }
 
 func TestAPIGetPullIncludesBranches(t *testing.T) {
@@ -2056,6 +2114,396 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPIListRepoSummaries(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "archived", PlatformHost: "github.com"},
+	}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	client := setupTestClient(t, srv)
+
+	_, err := testutil.SeedFixtures(context.Background(), database)
+	require.NoError(err)
+	widgetsRepo, err := database.GetRepoByOwnerName(context.Background(), "acme", "widgets")
+	require.NoError(err)
+	require.NotNil(widgetsRepo)
+	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	previousPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	commitsSince := 42
+	err = database.UpsertRepoOverview(context.Background(), widgetsRepo.ID, db.RepoOverview{
+		LatestRelease: &db.RepoRelease{
+			TagName:         "v2.8.1",
+			Name:            "Version 2.8.1",
+			URL:             "https://github.com/acme/widgets/releases/tag/v2.8.1",
+			TargetCommitish: "main",
+			Prerelease:      false,
+			PublishedAt:     &publishedAt,
+		},
+		Releases: []db.RepoRelease{
+			{
+				TagName:         "v2.8.1",
+				Name:            "Version 2.8.1",
+				URL:             "https://github.com/acme/widgets/releases/tag/v2.8.1",
+				TargetCommitish: "main",
+				Prerelease:      false,
+				PublishedAt:     &publishedAt,
+			},
+			{
+				TagName:         "v2.7.0",
+				Name:            "Version 2.7.0",
+				URL:             "https://github.com/acme/widgets/releases/tag/v2.7.0",
+				TargetCommitish: "main",
+				Prerelease:      true,
+				PublishedAt:     &previousPublishedAt,
+			},
+		},
+		CommitsSinceRelease: &commitsSince,
+		CommitTimeline: []db.RepoCommitTimelinePoint{{
+			SHA:         "abc123",
+			Message:     "Ship repo overview",
+			CommittedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
+		}},
+	})
+	require.NoError(err)
+
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(context.Background())
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 3)
+
+	var widgets *generated.RepoSummaryResponse
+	for i := range *resp.JSON200 {
+		summary := &(*resp.JSON200)[i]
+		if summary.Name == "widgets" {
+			widgets = summary
+			break
+		}
+	}
+	require.NotNil(widgets)
+	require.NotNil(widgets.ActiveAuthors)
+	require.NotNil(widgets.RecentIssues)
+
+	assert.Equal("acme", widgets.Owner)
+	assert.Equal(int64(4), widgets.OpenPrCount)
+	assert.Equal(int64(1), widgets.DraftPrCount)
+	assert.Equal(int64(3), widgets.OpenIssueCount)
+	assert.Equal(int64(7), widgets.CachedPrCount)
+	assert.Equal(int64(4), widgets.CachedIssueCount)
+	assert.NotNil(widgets.MostRecentActivityAt)
+	require.NotNil(widgets.LatestRelease)
+	assert.Equal("v2.8.1", widgets.LatestRelease.TagName)
+	require.NotNil(widgets.Releases)
+	assert.Len(*widgets.Releases, 2)
+	assert.Equal("v2.7.0", (*widgets.Releases)[1].TagName)
+	assert.True((*widgets.Releases)[1].Prerelease)
+	assert.Equal(
+		formatUTCRFC3339(previousPublishedAt),
+		*(*widgets.Releases)[1].PublishedAt,
+	)
+	assert.Equal(int64(42), *widgets.CommitsSinceRelease)
+	require.NotNil(widgets.CommitTimeline)
+	assert.Len(*widgets.CommitTimeline, 1)
+	assert.Equal("Ship repo overview", (*widgets.CommitTimeline)[0].Message)
+	assert.Len(*widgets.ActiveAuthors, 3)
+	assert.Equal("alice", (*widgets.ActiveAuthors)[0].Login)
+	assert.Equal(int64(3), (*widgets.ActiveAuthors)[0].ItemCount)
+	assert.NotEmpty((*widgets.RecentIssues)[0].Title)
+}
+
+func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	runGit(t, dir, "clone", remote, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+
+	commitFile := func(name, message string) {
+		t.Helper()
+		require.NoError(os.WriteFile(
+			filepath.Join(work, name),
+			[]byte(message+"\n"),
+			0o644,
+		))
+		runGit(t, work, "add", ".")
+		runGit(t, work, "commit", "-m", message)
+	}
+
+	commitFile("base.txt", "release v1")
+	runGit(t, work, "tag", "v1.0.0")
+	commitFile("v2.txt", "prepare v2")
+	runGit(t, work, "tag", "v2.0.0")
+	commitFile("v3.txt", "prepare v3")
+	runGit(t, work, "tag", "v3.0.0")
+	commitFile("post-1.txt", "post latest 1")
+	commitFile("post-2.txt", "post latest 2")
+	runGit(t, work, "push", "--tags", "origin", "main")
+
+	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
+	clonePath := clones.ClonePath("github.com", "acme", "widgets")
+	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
+	runGit(t, dir, "clone", "--bare", remote, clonePath)
+
+	releaseForTag := func(tag string, publishedAt time.Time) *gh.RepositoryRelease {
+		t.Helper()
+		name := "Release " + tag
+		url := "https://github.com/acme/widgets/releases/tag/" + tag
+		targetCommitish := "main"
+		prerelease := false
+		draft := false
+		return &gh.RepositoryRelease{
+			TagName:         &tag,
+			Name:            &name,
+			HTMLURL:         &url,
+			TargetCommitish: &targetCommitish,
+			Prerelease:      &prerelease,
+			Draft:           &draft,
+			PublishedAt:     &gh.Timestamp{Time: publishedAt},
+		}
+	}
+
+	releases := []*gh.RepositoryRelease{
+		releaseForTag("v3.0.0", time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)),
+		releaseForTag("v2.0.0", time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)),
+		releaseForTag("v1.0.0", time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)),
+	}
+	mock := &mockGH{
+		listReleasesFn: func(
+			_ context.Context, owner, repo string, perPage int,
+		) ([]*gh.RepositoryRelease, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("widgets", repo)
+			assert.Equal(10, perPage)
+			return releases, nil
+		},
+	}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, clones, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	syncer.RunOnce(ctx)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+
+	widgets := (*resp.JSON200)[0]
+	require.NotNil(widgets.LatestRelease)
+	require.NotNil(widgets.Releases)
+	require.NotNil(widgets.CommitsSinceRelease)
+	require.NotNil(widgets.CommitTimeline)
+	require.NotNil(widgets.TimelineUpdatedAt)
+
+	assert.Equal("v3.0.0", widgets.LatestRelease.TagName)
+	assert.Len(*widgets.Releases, 3)
+	assert.Equal("v1.0.0", (*widgets.Releases)[2].TagName)
+	assert.Equal(int64(2), *widgets.CommitsSinceRelease)
+	assert.Len(*widgets.CommitTimeline, 4)
+	assert.Equal("post latest 2", (*widgets.CommitTimeline)[0].Message)
+	assert.Equal("post latest 1", (*widgets.CommitTimeline)[1].Message)
+	assert.Len((*widgets.CommitTimeline)[0].Sha, 40)
+}
+
+func TestAPICreateIssue(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	createdAt := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	mock := &mockGH{
+		createIssueFn: func(_ context.Context, owner, repo, title, body string) (*gh.Issue, error) {
+			id := int64(9876)
+			number := 27
+			state := "open"
+			url := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+			login := "issue-bot"
+			ts := gh.Timestamp{Time: createdAt}
+			comments := 0
+			labelID := int64(42)
+			labelName := "enhancement"
+			labelColor := "a2eeef"
+			return &gh.Issue{
+				ID:       &id,
+				Number:   &number,
+				Title:    &title,
+				Body:     &body,
+				State:    &state,
+				HTMLURL:  &url,
+				User:     &gh.User{Login: &login},
+				Comments: &comments,
+				Labels: []*gh.Label{{
+					ID:    &labelID,
+					Name:  &labelName,
+					Color: &labelColor,
+				}},
+				CreatedAt: &ts,
+				UpdatedAt: &ts,
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithRepos(
+		t,
+		mock,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		},
+	)
+	client := setupTestClient(t, srv)
+
+	_, err := database.UpsertRepo(context.Background(), "github.com", "acme", "widgets")
+	require.NoError(err)
+
+	resp, err := client.HTTP.CreateIssueWithResponse(
+		context.Background(),
+		"acme",
+		"widgets",
+		generated.CreateIssueJSONRequestBody{
+			Title: "Ship repo summaries",
+			Body:  "Add a top-level repository overview page.",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusCreated, resp.StatusCode())
+	require.NotNil(resp.JSON201)
+
+	assert.Equal(int64(27), resp.JSON201.Number)
+	assert.Equal("acme", resp.JSON201.RepoOwner)
+	assert.Equal("widgets", resp.JSON201.RepoName)
+	assert.Equal("Ship repo summaries", resp.JSON201.Title)
+	require.NotNil(resp.JSON201.Labels)
+	assert.Equal([]generated.Label{{
+		Name:      "enhancement",
+		Color:     "a2eeef",
+		IsDefault: false,
+	}}, *resp.JSON201.Labels)
+
+	issue, err := database.GetIssue(context.Background(), "acme", "widgets", 27)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("Ship repo summaries", issue.Title)
+	assert.Equal("Add a top-level repository overview page.", issue.Body)
+	assert.Equal("open", issue.State)
+	assert.Equal(createdAt, issue.CreatedAt.UTC())
+	require.Len(issue.Labels, 1)
+	assert.Equal("enhancement", issue.Labels[0].Name)
+	assert.Equal("a2eeef", issue.Labels[0].Color)
+}
+
+func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	githubCalled := false
+	enterpriseCalled := false
+	githubClient := &mockGH{
+		createIssueFn: func(_ context.Context, _, _, _, _ string) (*gh.Issue, error) {
+			githubCalled = true
+			return nil, errors.New("wrong host")
+		},
+	}
+	enterpriseClient := &mockGH{
+		createIssueFn: func(_ context.Context, owner, repo, title, body string) (*gh.Issue, error) {
+			enterpriseCalled = true
+			number := 44
+			state := "open"
+			url := fmt.Sprintf("https://ghe.example.com/%s/%s/issues/%d", owner, repo, number)
+			login := "issue-bot"
+			ts := gh.Timestamp{Time: time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)}
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				Body:      &body,
+				State:     &state,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &login},
+				CreatedAt: &ts,
+				UpdatedAt: &ts,
+			}, nil
+		},
+	}
+	repos := []ghclient.RepoRef{
+		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widgets", PlatformHost: "ghe.example.com"},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": enterpriseClient,
+		},
+		database,
+		nil,
+		repos,
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	_, err = database.UpsertRepo(context.Background(), "github.com", "acme", "widgets")
+	require.NoError(err)
+	enterpriseRepoID, err := database.UpsertRepo(context.Background(), "ghe.example.com", "acme", "widgets")
+	require.NoError(err)
+
+	body := strings.NewReader(`{
+		"title": "Ship enterprise issue",
+		"body": "Route to the selected host.",
+		"platform_host": "ghe.example.com"
+	}`)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/repos/acme/widgets/issues",
+		body,
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusCreated, rec.Code)
+	assert.False(githubCalled)
+	assert.True(enterpriseCalled)
+	issue, err := database.GetIssueByRepoIDAndNumber(
+		context.Background(),
+		enterpriseRepoID,
+		44,
+	)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("Ship enterprise issue", issue.Title)
+}
+
 func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(
@@ -2158,6 +2606,24 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
+	githubRepoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         githubRepoID,
+		PlatformID:     12001,
+		Number:         12,
+		URL:            "https://github.com/acme/widget/pull/12",
+		Title:          "Wrong host mention",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature-12",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Add(-4 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-4 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-4 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+
 	repoID, err := database.UpsertRepo(ctx, "ghe.example.com", "acme", "widget")
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -2176,7 +2642,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	})
 	require.NoError(err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos/acme/widget/comment-autocomplete?platform_host=ghe.example.com&trigger=%23&q=1&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -3501,6 +3967,29 @@ func TestAPIListIssuesAcceptsMixedCaseRepoFilter(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 	require.Equal("widget", (*resp.JSON200)[0].RepoName)
+}
+
+func TestAPIListIssuesAcceptsHostQualifiedRepoFilter(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 5, "open", "GitHub issue")
+	seedIssueOnHost(t, database, "ghe.example.com", "acme", "widget", 7, "open", "Enterprise issue")
+	client := setupTestClient(t, srv)
+
+	repo := "ghe.example.com/acme/widget"
+	resp, err := client.HTTP.ListIssuesWithResponse(
+		t.Context(), &generated.ListIssuesParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
+	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
+	assert.EqualValues(7, (*resp.JSON200)[0].Number)
 }
 
 func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
@@ -7063,6 +7552,32 @@ func TestAPIListActivity(t *testing.T) {
 	assert.NotEmpty(*resp.JSON200.Items,
 		"activity feed should contain PR and comment items")
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
+}
+
+func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	repo := "ghe.example.com/acme/widget"
+	resp, err := client.HTTP.GetActivityWithResponse(
+		t.Context(), &generated.GetActivityParams{Since: &since, Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.NotEmpty(*resp.JSON200.Items)
+	for _, item := range *resp.JSON200.Items {
+		assert.Equal("ghe.example.com", item.PlatformHost)
+		assert.Equal("acme", item.RepoOwner)
+		assert.Equal("widget", item.RepoName)
+	}
 }
 
 // --- Stacks E2E ---

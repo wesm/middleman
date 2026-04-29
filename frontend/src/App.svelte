@@ -15,6 +15,7 @@
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
+  import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
@@ -323,6 +324,7 @@
     const page = getPage();
     if (page === "settings") return;
     if (page === "design-system") return;
+    if (page === "repos") return;
     if (page === "reviews") return;
     if (page === "workspaces") return;
 
@@ -529,6 +531,8 @@
           detailTab={drawerItem?.detailTab ?? "conversation"}
           onDetailTabChange={handleActivityDetailTabChange}
         />
+      {:else if getPage() === "repos"}
+        <RepoSummaryPage />
       {:else if getPage() === "pulls"}
         {@const route = getRoute()}
         {#if route.page === "pulls" && route.view === "board"}

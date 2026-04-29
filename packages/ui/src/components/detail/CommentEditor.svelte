@@ -24,6 +24,7 @@
   interface Props {
     owner: string;
     name: string;
+    platformHost?: string | undefined;
     value: string;
     disabled?: boolean;
     placeholder?: string;
@@ -57,6 +58,7 @@
   let {
     owner,
     name,
+    platformHost,
     value,
     disabled = false,
     placeholder = "Write a comment... (Cmd+Enter to submit)",
@@ -129,6 +131,7 @@
             trigger,
             q: query,
             limit: 8,
+            ...(platformHost ? { platform_host: platformHost } : {}),
           },
         },
       },

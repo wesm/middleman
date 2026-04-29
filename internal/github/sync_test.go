@@ -49,11 +49,15 @@ type mockClient struct {
 	listOpenPRsErr                  error
 	listOpenIssuesErr               error
 	singlePR                        *gh.PullRequest
+	createIssueFn                   func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getRepositoryFn                 func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn                func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                      func(context.Context, string, string, int) (*gh.Issue, error)
 	getUserFn                       func(context.Context, string) (*gh.User, error)
 	listReposByOwnerFn              func(context.Context, string) ([]*gh.Repository, error)
+	listReleases                    []*gh.RepositoryRelease
+	listReleasesErr                 error
+	listReleasesFn                  func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listOpenPRsFn                   func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listPullRequestsPageFn          func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
@@ -117,6 +121,16 @@ func (m *mockClient) GetIssue(
 	return nil, nil
 }
 
+func (m *mockClient) CreateIssue(
+	ctx context.Context, owner, repo, title, body string,
+) (*gh.Issue, error) {
+	m.trackCall()
+	if m.createIssueFn != nil {
+		return m.createIssueFn(ctx, owner, repo, title, body)
+	}
+	return nil, nil
+}
+
 func (m *mockClient) GetUser(ctx context.Context, login string) (*gh.User, error) {
 	m.trackCall()
 	m.getUserCalls.Add(1)
@@ -135,6 +149,19 @@ func (m *mockClient) ListRepositoriesByOwner(
 		return m.listReposByOwnerFn(ctx, owner)
 	}
 	return nil, nil
+}
+
+func (m *mockClient) ListReleases(
+	ctx context.Context, owner, repo string, perPage int,
+) ([]*gh.RepositoryRelease, error) {
+	m.trackCall()
+	if m.listReleasesFn != nil {
+		return m.listReleasesFn(ctx, owner, repo, perPage)
+	}
+	if m.listReleasesErr != nil {
+		return nil, m.listReleasesErr
+	}
+	return m.listReleases, nil
 }
 
 func (m *mockClient) GetPullRequest(
@@ -457,6 +484,86 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		}
 	}
 	assert.True(found)
+}
+
+func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+
+	oldPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	oldTimelineUpdatedAt := time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)
+	oldCommitsSince := 7
+	err = d.UpsertRepoOverview(ctx, repoID, db.RepoOverview{
+		LatestRelease: &db.RepoRelease{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/owner/repo/releases/tag/v1.0.0",
+			PublishedAt: &oldPublishedAt,
+		},
+		Releases: []db.RepoRelease{{
+			TagName:     "v1.0.0",
+			Name:        "Version 1.0.0",
+			URL:         "https://github.com/owner/repo/releases/tag/v1.0.0",
+			PublishedAt: &oldPublishedAt,
+		}},
+		CommitsSinceRelease: &oldCommitsSince,
+		CommitTimeline: []db.RepoCommitTimelinePoint{{
+			SHA:         "abc123",
+			Message:     "Keep cached timeline",
+			CommittedAt: time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+		}},
+		TimelineUpdatedAt: &oldTimelineUpdatedAt,
+	})
+	require.NoError(err)
+
+	tagName := "v1.0.0"
+	releaseName := "Version 1.0.0"
+	releaseURL := "https://github.com/owner/repo/releases/tag/v1.0.0"
+	client := &mockClient{
+		listReleases: []*gh.RepositoryRelease{{
+			TagName:     &tagName,
+			Name:        &releaseName,
+			HTMLURL:     &releaseURL,
+			PublishedAt: &gh.Timestamp{Time: oldPublishedAt},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		nil,
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	syncer.syncRepoOverview(
+		ctx,
+		client,
+		RepoRef{PlatformHost: "github.com", Owner: "owner", Name: "repo"},
+		repoID,
+		false,
+	)
+
+	summaries, err := d.ListRepoSummaries(ctx)
+	require.NoError(err)
+	require.Len(summaries, 1)
+	overview := summaries[0].Overview
+	require.NotNil(overview.LatestRelease)
+	require.NotNil(overview.CommitsSinceRelease)
+	require.Len(overview.CommitTimeline, 1)
+	require.NotNil(overview.TimelineUpdatedAt)
+
+	assert.Equal("v1.0.0", overview.LatestRelease.TagName)
+	assert.Equal(oldPublishedAt, *overview.LatestRelease.PublishedAt)
+	assert.Equal(oldCommitsSince, *overview.CommitsSinceRelease)
+	assert.Equal("abc123", overview.CommitTimeline[0].SHA)
+	assert.Equal("Keep cached timeline", overview.CommitTimeline[0].Message)
+	assert.Equal(oldTimelineUpdatedAt, *overview.TimelineUpdatedAt)
 }
 
 func TestSyncStoresForcePushEvent(t *testing.T) {

@@ -89,6 +89,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-repo-summaries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}": {
         parameters: {
             query?: never;
@@ -117,6 +133,22 @@ export interface paths {
         get: operations["get-repos-by-owner-by-name-comment-autocomplete"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/{owner}/{name}/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create-issue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -760,6 +792,17 @@ export interface components {
             /** @description Commits in newest-first order */
             commits: components["schemas"]["CommitResponse"][] | null;
         };
+        CreateIssueInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateIssueInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            platform_host?: string;
+            title: string;
+        };
         CreateIssueWorkspaceInputBody: {
             /**
              * Format: uri
@@ -974,6 +1017,12 @@ export interface components {
             Summary: string;
         };
         IssueResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/IssueResponse.json
+             */
+            readonly $schema?: string;
             Author: string;
             Body: string;
             /** Format: date-time */
@@ -1317,6 +1366,60 @@ export interface components {
             Owner: string;
             Platform: string;
             PlatformHost: string;
+        };
+        RepoSummaryAuthorResponse: {
+            /** Format: int64 */
+            item_count: number;
+            login: string;
+        };
+        RepoSummaryCommitPointResponse: {
+            committed_at: string;
+            message: string;
+            sha: string;
+        };
+        RepoSummaryIssueResponse: {
+            author: string;
+            last_activity_at: string;
+            /** Format: int64 */
+            number: number;
+            state: string;
+            title: string;
+            url: string;
+        };
+        RepoSummaryReleaseResponse: {
+            name: string;
+            prerelease: boolean;
+            published_at?: string;
+            tag_name: string;
+            target_commitish: string;
+            url: string;
+        };
+        RepoSummaryResponse: {
+            active_authors: components["schemas"]["RepoSummaryAuthorResponse"][] | null;
+            /** Format: int64 */
+            cached_issue_count: number;
+            /** Format: int64 */
+            cached_pr_count: number;
+            commit_timeline: components["schemas"]["RepoSummaryCommitPointResponse"][] | null;
+            /** Format: int64 */
+            commits_since_release?: number;
+            /** Format: int64 */
+            draft_pr_count: number;
+            last_sync_completed_at?: string;
+            last_sync_error?: string;
+            last_sync_started_at?: string;
+            latest_release?: components["schemas"]["RepoSummaryReleaseResponse"];
+            most_recent_activity_at?: string;
+            name: string;
+            /** Format: int64 */
+            open_issue_count: number;
+            /** Format: int64 */
+            open_pr_count: number;
+            owner: string;
+            platform_host: string;
+            recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;
+            releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
+            timeline_updated_at?: string;
         };
         ResolveItemResponse: {
             /**
@@ -1667,6 +1770,35 @@ export interface operations {
             };
         };
     };
+    "list-repo-summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSummaryResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "get-repos-by-owner-by-name": {
         parameters: {
             query?: never;
@@ -1702,6 +1834,7 @@ export interface operations {
     "get-repos-by-owner-by-name-comment-autocomplete": {
         parameters: {
             query?: {
+                platform_host?: string;
                 trigger?: string;
                 q?: string;
                 limit?: number;
@@ -1722,6 +1855,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentAutocompleteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIssueInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueResponse"];
                 };
             };
             /** @description Error */

@@ -38,6 +38,56 @@ func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
+type RepoSummary struct {
+	Repo                 Repo
+	CachedPRCount        int
+	OpenPRCount          int
+	DraftPRCount         int
+	CachedIssueCount     int
+	OpenIssueCount       int
+	MostRecentActivityAt *time.Time
+	Overview             RepoOverview
+	ActiveAuthors        []RepoActivityAuthor
+	RecentIssues         []RepoIssueHeadline
+}
+
+type RepoOverview struct {
+	LatestRelease       *RepoRelease
+	Releases            []RepoRelease
+	CommitsSinceRelease *int
+	CommitTimeline      []RepoCommitTimelinePoint
+	TimelineUpdatedAt   *time.Time
+}
+
+type RepoRelease struct {
+	TagName         string
+	Name            string
+	URL             string
+	TargetCommitish string
+	Prerelease      bool
+	PublishedAt     *time.Time
+}
+
+type RepoCommitTimelinePoint struct {
+	SHA         string
+	Message     string
+	CommittedAt time.Time
+}
+
+type RepoActivityAuthor struct {
+	Login     string
+	ItemCount int
+}
+
+type RepoIssueHeadline struct {
+	Number         int
+	Title          string
+	Author         string
+	State          string
+	URL            string
+	LastActivityAt time.Time
+}
+
 type MergeRequest struct {
 	ID                int64
 	RepoID            int64
@@ -106,14 +156,15 @@ type KanbanState struct {
 }
 
 type ListMergeRequestsOpts struct {
-	RepoOwner   string
-	RepoName    string
-	State       string
-	KanbanState string
-	Starred     bool
-	Search      string
-	Limit       int
-	Offset      int
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	State        string
+	KanbanState  string
+	Starred      bool
+	Search       string
+	Limit        int
+	Offset       int
 }
 
 type Issue struct {
@@ -158,13 +209,14 @@ type CommentAutocompleteReference struct {
 }
 
 type ListIssuesOpts struct {
-	RepoOwner string
-	RepoName  string
-	State     string
-	Starred   bool
-	Search    string
-	Limit     int
-	Offset    int
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	State        string
+	Starred      bool
+	Search       string
+	Limit        int
+	Offset       int
 }
 
 type StarredItem struct {

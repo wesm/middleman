@@ -113,6 +113,9 @@ export {
   default as ActionButton,
 } from "./components/shared/ActionButton.svelte";
 export {
+  default as CommentEditor,
+} from "./components/detail/CommentEditor.svelte";
+export {
   default as Chip,
 } from "./components/shared/Chip.svelte";
 export {
