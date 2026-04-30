@@ -103,7 +103,11 @@ test.describe("comment editor autocomplete", () => {
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, { timeout: 10_000 });
 
     const detail = page.locator(".pull-detail");
-    const editor = detail.locator(".comment-editor-input").first();
+    const shell = detail.locator(".comment-editor-shell").first();
+    const editor = shell.locator(".comment-editor-input");
+    const submit = shell.getByRole("button", { name: "Comment" });
+    await expect(editor).toBeVisible();
+    await expect(submit).toBeVisible();
     await editor.click();
     await page.keyboard.type("<script>alert('x')</script> @a");
 
@@ -114,7 +118,6 @@ test.describe("comment editor autocomplete", () => {
     await aliceOption.dispatchEvent("pointerdown");
     await expect(editor).toContainText("@alice");
 
-    const submit = detail.locator(".submit-btn");
     await expect(submit).toBeEnabled();
     await submit.click();
 
@@ -128,13 +131,16 @@ test.describe("comment editor autocomplete", () => {
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, { timeout: 10_000 });
 
     const detail = page.locator(".issue-detail");
-    const editor = detail.locator(".comment-editor-input").first();
+    const shell = detail.locator(".comment-editor-shell").first();
+    const editor = shell.locator(".comment-editor-input");
+    const submit = shell.getByRole("button", { name: "Comment" });
+    await expect(editor).toBeVisible();
+    await expect(submit).toBeVisible();
     await editor.fill("See #1");
 
     await expect(page.locator(".comment-editor-option").first()).toBeVisible({ timeout: 10_000 });
     await editor.press("Enter");
 
-    const submit = detail.locator(".submit-btn");
     await expect(submit).toBeEnabled();
     await submit.click();
 
