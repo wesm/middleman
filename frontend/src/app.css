@@ -225,6 +225,9 @@ a:hover {
 }
 
 /* Markdown body rendering */
+.markdown-body {
+  overflow-x: auto;
+}
 .markdown-body p {
   margin-bottom: 0.5em;
 }
@@ -272,6 +275,40 @@ a:hover {
   max-width: 100%;
   height: auto;
   border-radius: var(--radius-sm);
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 12px;
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 9px;
+  border: 1px solid var(--border-muted);
+  text-align: left;
+  vertical-align: top;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.markdown-body th {
+  background: var(--bg-surface-hover);
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.markdown-body th:not(:last-child),
+.markdown-body td:not(:last-child) {
+  width: 1%;
+  white-space: nowrap;
+}
+.markdown-body th:last-child,
+.markdown-body td:last-child {
+  overflow-wrap: anywhere;
+}
+.markdown-body tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg-surface-hover) 42%, transparent);
 }
 
 /* Item reference links (#123, owner/repo#456) */
