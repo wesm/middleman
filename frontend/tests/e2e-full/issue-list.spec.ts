@@ -155,13 +155,16 @@ test.describe("issue list view", () => {
     expect(detailBox).not.toBeNull();
     expect(headerBox).not.toBeNull();
     if (areaBox !== null && detailBox !== null && headerBox !== null) {
-      const areaCenter = areaBox.x + areaBox.width / 2;
+      const scrollportWidth = await issueDetail.evaluate(
+        (el) => el.clientWidth,
+      );
+      const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
       // Allow small slack for sub-pixel layout differences.
       expect(
         Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width)),
       ).toBeLessThan(2);
-      expect(Math.abs(headerCenter - areaCenter)).toBeLessThan(2);
+      expect(Math.abs(headerCenter - scrollportCenter)).toBeLessThan(2);
       expect(headerBox.width).toBeLessThanOrEqual(800);
     }
   });
