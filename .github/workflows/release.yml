@@ -61,7 +61,7 @@ jobs:
           go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
             -o dist/middleman ./cmd/middleman
 
-          ./dist/middleman --version
+          ./dist/middleman version
 
           cd dist
           ARCHIVE="middleman_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
@@ -132,7 +132,7 @@ jobs:
             -o dist/middleman${EXT} ./cmd/middleman
 
           if [ "$GOOS" != "darwin" ] || [ "$GOARCH" = "$(go env GOHOSTARCH)" ]; then
-            ./dist/middleman${EXT} --version
+            ./dist/middleman${EXT} version
           fi
 
           cd dist
