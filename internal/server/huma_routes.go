@@ -1128,24 +1128,8 @@ func (s *Server) createIssue(
 	}
 
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
-
-	if platformHost == "" {
-		repos, err := s.db.ListRepos(ctx)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("repo lookup failed")
-		}
-		matches := 0
-		for _, candidate := range repos {
-			if strings.EqualFold(candidate.Owner, input.Owner) &&
-				strings.EqualFold(candidate.Name, input.Name) {
-				matches++
-			}
-		}
-		if matches > 1 {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
+	if err := s.requirePlatformHostForAmbiguousRepo(ctx, input.Owner, input.Name, platformHost); err != nil {
+		return nil, err
 	}
 
 	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
@@ -1203,8 +1187,42 @@ func (s *Server) createIssue(
 	}
 	savedIssue.ID = issueID
 
+	out := createIssueResponse(*savedIssue, repo)
+
+	return &createIssueOutput{
+		Status: http.StatusCreated,
+		Body:   out,
+	}, nil
+}
+
+func (s *Server) requirePlatformHostForAmbiguousRepo(
+	ctx context.Context,
+	owner string,
+	name string,
+	platformHost string,
+) error {
+	if platformHost != "" {
+		return nil
+	}
+	repos, err := s.db.ListRepos(ctx)
+	if err != nil {
+		return huma.Error500InternalServerError("repo lookup failed")
+	}
+	matches := 0
+	for _, candidate := range repos {
+		if strings.EqualFold(candidate.Owner, owner) && strings.EqualFold(candidate.Name, name) {
+			matches++
+		}
+	}
+	if matches > 1 {
+		return huma.Error400BadRequest("platform_host is required for ambiguous repo")
+	}
+	return nil
+}
+
+func createIssueResponse(savedIssue db.Issue, repo *db.Repo) issueResponse {
 	out := issueResponse{
-		Issue:        *savedIssue,
+		Issue:        savedIssue,
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1213,11 +1231,7 @@ func (s *Server) createIssue(
 	if savedIssue.DetailFetchedAt != nil {
 		out.DetailFetchedAt = formatUTCRFC3339(*savedIssue.DetailFetchedAt)
 	}
-
-	return &createIssueOutput{
-		Status: http.StatusCreated,
-		Body:   out,
-	}, nil
+	return out
 }
 
 func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
@@ -1661,10 +1675,8 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 func (s *Server) setPRGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
-	if input.Body.State != "open" && input.Body.State != "closed" {
-		return nil, huma.Error400BadRequest(
-			"state must be 'open' or 'closed'",
-		)
+	if err := validateOpenClosedState(input.Body.State); err != nil {
+		return nil, err
 	}
 
 	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
@@ -1693,39 +1705,9 @@ func (s *Server) setPRGitHubState(
 		ctx, input.Owner, input.Name,
 		input.Number, ghclient.EditPullRequestOpts{State: &input.Body.State},
 	); err != nil {
-		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
-			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
-			// Re-fetch to sync local state and determine the real cause.
-			repoID, repoErr := s.lookupRepoID(
-				ctx, input.Owner, input.Name,
-			)
-			if repoErr == nil {
-				ghPR, fetchErr := client.GetPullRequest(
-					ctx, input.Owner, input.Name, input.Number,
-				)
-				if fetchErr == nil {
-					if ghPR == nil {
-						return nil, huma.Error502BadGateway("GitHub API returned no pull request")
-					}
-					normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
-					if normalizeErr != nil {
-						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
-					}
-					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
-					if ghPR.GetMerged() {
-						return nil, huma.Error409Conflict(
-							"cannot change state of a merged pull request",
-						)
-					}
-					// Already in requested state (concurrent edit).
-					if ghPR.GetState() == input.Body.State {
-						out := &githubStateOutput{}
-						out.Body.State = input.Body.State
-						return out, nil
-					}
-				}
-			}
+		out, handledErr := s.handlePREditStateError(ctx, client, input, err)
+		if out != nil || handledErr != nil {
+			return out, handledErr
 		}
 		return nil, huma.Error502BadGateway(
 			"GitHub API error: " + err.Error(),
@@ -1753,18 +1735,67 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
+	return newGitHubStateOutput(input.Body.State), nil
+}
+
+func validateOpenClosedState(state string) error {
+	if state != "open" && state != "closed" {
+		return huma.Error400BadRequest("state must be 'open' or 'closed'")
+	}
+	return nil
+}
+
+func newGitHubStateOutput(state string) *githubStateOutput {
 	out := &githubStateOutput{}
-	out.Body.State = input.Body.State
-	return out, nil
+	out.Body.State = state
+	return out
+}
+
+func isGitHubUnprocessable(err error) bool {
+	var ghErr *gh.ErrorResponse
+	return errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
+		ghErr.Response.StatusCode == http.StatusUnprocessableEntity
+}
+
+func (s *Server) handlePREditStateError(
+	ctx context.Context,
+	client ghclient.Client,
+	input *githubStateInput,
+	err error,
+) (*githubStateOutput, error) {
+	if !isGitHubUnprocessable(err) {
+		return nil, nil
+	}
+	repoID, repoErr := s.lookupRepoID(ctx, input.Owner, input.Name)
+	if repoErr != nil {
+		return nil, nil
+	}
+	ghPR, fetchErr := client.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
+	if fetchErr != nil {
+		return nil, nil
+	}
+	if ghPR == nil {
+		return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+	}
+	normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
+	if normalizeErr != nil {
+		return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+	}
+	_, _ = s.db.UpsertMergeRequest(ctx, normalized)
+	if ghPR.GetMerged() {
+		return nil, huma.Error409Conflict("cannot change state of a merged pull request")
+	}
+	if ghPR.GetState() == input.Body.State {
+		return newGitHubStateOutput(input.Body.State), nil
+	}
+	return nil, nil
 }
 
 func (s *Server) setIssueGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
-	if input.Body.State != "open" && input.Body.State != "closed" {
-		return nil, huma.Error400BadRequest(
-			"state must be 'open' or 'closed'",
-		)
+	if err := validateOpenClosedState(input.Body.State); err != nil {
+		return nil, err
 	}
 
 	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
@@ -1791,31 +1822,9 @@ func (s *Server) setIssueGitHubState(
 		ctx, input.Owner, input.Name,
 		input.Number, input.Body.State,
 	); err != nil {
-		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
-			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
-			// Re-fetch to sync local state. If already in the
-			// requested state (concurrent edit), treat as success.
-			ghIssue, fetchErr := client.GetIssue(
-				ctx, input.Owner, input.Name, input.Number,
-			)
-			if fetchErr == nil {
-				if ghIssue == nil {
-					return nil, huma.Error502BadGateway("GitHub API returned no issue")
-				}
-				normalized, normalizeErr := ghclient.NormalizeIssue(
-					repo.ID, ghIssue,
-				)
-				if normalizeErr != nil {
-					return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
-				}
-				_, _ = s.db.UpsertIssue(ctx, normalized)
-				if ghIssue.GetState() == input.Body.State {
-					out := &githubStateOutput{}
-					out.Body.State = input.Body.State
-					return out, nil
-				}
-			}
+		out, handledErr := s.handleIssueEditStateError(ctx, client, repo.ID, input, err)
+		if out != nil || handledErr != nil {
+			return out, handledErr
 		}
 		return nil, huma.Error502BadGateway(
 			"GitHub API error: " + err.Error(),
@@ -1836,9 +1845,35 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
-	out := &githubStateOutput{}
-	out.Body.State = input.Body.State
-	return out, nil
+	return newGitHubStateOutput(input.Body.State), nil
+}
+
+func (s *Server) handleIssueEditStateError(
+	ctx context.Context,
+	client ghclient.Client,
+	repoID int64,
+	input *githubStateInput,
+	err error,
+) (*githubStateOutput, error) {
+	if !isGitHubUnprocessable(err) {
+		return nil, nil
+	}
+	ghIssue, fetchErr := client.GetIssue(ctx, input.Owner, input.Name, input.Number)
+	if fetchErr != nil {
+		return nil, nil
+	}
+	if ghIssue == nil {
+		return nil, huma.Error502BadGateway("GitHub API returned no issue")
+	}
+	normalized, normalizeErr := ghclient.NormalizeIssue(repoID, ghIssue)
+	if normalizeErr != nil {
+		return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+	}
+	_, _ = s.db.UpsertIssue(ctx, normalized)
+	if ghIssue.GetState() == input.Body.State {
+		return newGitHubStateOutput(input.Body.State), nil
+	}
+	return nil, nil
 }
 
 func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, error) {
@@ -2349,47 +2384,9 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	host := s.syncer.HostForRepo(input.Owner, input.Name)
 	hideWhitespace := input.Whitespace == "hide"
 
-	// Determine diff range based on scope query params.
-	diffFrom := shas.MergeBaseSHA
-	diffTo := shas.DiffHeadSHA
-
-	hasCommit := input.Commit != ""
-	hasFrom := input.From != ""
-	hasTo := input.To != ""
-
-	switch {
-	case !hasCommit && !hasFrom && !hasTo:
-		// Default: full PR diff. diffFrom/diffTo already set.
-
-	case hasCommit && !hasFrom && !hasTo:
-		if _, err := s.validateSHAs(ctx, host, input, shas, input.Commit); err != nil {
-			return nil, err
-		}
-		parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.Commit)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
-		}
-		diffFrom = parent
-		diffTo = input.Commit
-
-	case !hasCommit && hasFrom && hasTo:
-		indexMap, err := s.validateSHAs(ctx, host, input, shas, input.From, input.To)
-		if err != nil {
-			return nil, err
-		}
-		// In newest-first order, "from" (older) must have a higher index than "to" (newer).
-		if indexMap[input.From] <= indexMap[input.To] {
-			return nil, huma.Error400BadRequest("invalid range: 'from' must be older than 'to'")
-		}
-		parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.From)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
-		}
-		diffFrom = parent
-		diffTo = input.To
-
-	default:
-		return nil, huma.Error400BadRequest("invalid scope: use 'commit' alone or 'from'+'to' together")
+	diffFrom, diffTo, err := s.resolveDiffRange(ctx, host, input, shas)
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := s.clones.Diff(ctx, host, input.Owner, input.Name, diffFrom, diffTo, hideWhitespace)
@@ -2408,6 +2405,64 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
 		Files:               result.Files,
 	}}, nil
+}
+
+func (s *Server) resolveDiffRange(
+	ctx context.Context,
+	host string,
+	input *getDiffInput,
+	shas *db.DiffSHAs,
+) (string, string, error) {
+	hasCommit := input.Commit != ""
+	hasFrom := input.From != ""
+	hasTo := input.To != ""
+
+	switch {
+	case !hasCommit && !hasFrom && !hasTo:
+		return shas.MergeBaseSHA, shas.DiffHeadSHA, nil
+	case hasCommit && !hasFrom && !hasTo:
+		return s.resolveCommitDiffRange(ctx, host, input, shas)
+	case !hasCommit && hasFrom && hasTo:
+		return s.resolveSpanDiffRange(ctx, host, input, shas)
+	default:
+		return "", "", huma.Error400BadRequest("invalid scope: use 'commit' alone or 'from'+'to' together")
+	}
+}
+
+func (s *Server) resolveCommitDiffRange(
+	ctx context.Context,
+	host string,
+	input *getDiffInput,
+	shas *db.DiffSHAs,
+) (string, string, error) {
+	if _, err := s.validateSHAs(ctx, host, input, shas, input.Commit); err != nil {
+		return "", "", err
+	}
+	parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.Commit)
+	if err != nil {
+		return "", "", huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
+	}
+	return parent, input.Commit, nil
+}
+
+func (s *Server) resolveSpanDiffRange(
+	ctx context.Context,
+	host string,
+	input *getDiffInput,
+	shas *db.DiffSHAs,
+) (string, string, error) {
+	indexMap, err := s.validateSHAs(ctx, host, input, shas, input.From, input.To)
+	if err != nil {
+		return "", "", err
+	}
+	if indexMap[input.From] <= indexMap[input.To] {
+		return "", "", huma.Error400BadRequest("invalid range: 'from' must be older than 'to'")
+	}
+	parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.From)
+	if err != nil {
+		return "", "", huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
+	}
+	return parent, input.To, nil
 }
 
 // --- Files (lightweight) ---
@@ -2601,76 +2656,76 @@ func (s *Server) createWorkspace(
 
 func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 	s.runBackground(func(bgCtx context.Context) {
-		for {
-			setupErr := s.workspaces.Setup(bgCtx, ws)
-			summary, getErr := s.workspaces.GetSummary(
-				bgCtx, ws.ID,
-			)
-			if getErr != nil {
-				slog.Warn("get workspace summary after setup",
-					"id", ws.ID, "err", getErr,
-				)
-				return
-			}
-			if summary == nil {
-				return
-			}
-			resp := s.toWorkspaceResponse(bgCtx, summary)
-			if setupErr != nil {
-				slog.Warn("workspace setup failed",
-					"id", ws.ID, "err", setupErr,
-				)
-			}
-			s.hub.Broadcast(Event{
-				Type: "workspace_status",
-				Data: resp,
-			})
-
-			next, queued, queueErr := s.workspaces.StartQueuedRetryIfErrored(
-				bgCtx, ws.ID,
-			)
-			if queueErr != nil {
-				slog.Warn("start queued workspace retry",
-					"id", ws.ID, "err", queueErr,
-				)
-				summary, getErr = s.workspaces.GetSummary(bgCtx, ws.ID)
-				if getErr != nil {
-					slog.Warn("get workspace summary after queued retry failure",
-						"id", ws.ID, "err", getErr,
-					)
-					return
-				}
-				if summary != nil {
-					s.hub.Broadcast(Event{
-						Type: "workspace_status",
-						Data: toWorkspaceResponse(summary),
-					})
-				}
-				return
-			}
-			if !queued {
-				return
-			}
-			if next == nil {
+		for ws != nil {
+			next, ok := s.runWorkspaceSetupOnce(bgCtx, ws)
+			if !ok {
 				return
 			}
 			ws = next
-			summary, getErr = s.workspaces.GetSummary(bgCtx, ws.ID)
-			if getErr != nil {
-				slog.Warn("get workspace summary after queued retry",
-					"id", ws.ID, "err", getErr,
-				)
-				return
-			}
-			if summary == nil {
-				return
-			}
-			s.hub.Broadcast(Event{
-				Type: "workspace_status",
-				Data: s.toWorkspaceResponse(bgCtx, summary),
-			})
 		}
 	})
+}
+
+func (s *Server) runWorkspaceSetupOnce(
+	bgCtx context.Context,
+	ws *workspace.Workspace,
+) (*workspace.Workspace, bool) {
+	setupErr := s.workspaces.Setup(bgCtx, ws)
+	summary, ok := s.broadcastWorkspaceSetupResult(bgCtx, ws.ID, setupErr)
+	if !ok || summary == nil {
+		return nil, false
+	}
+
+	next, queued, queueErr := s.workspaces.StartQueuedRetryIfErrored(bgCtx, ws.ID)
+	if queueErr != nil {
+		s.handleQueuedRetryError(bgCtx, ws.ID, queueErr)
+		return nil, false
+	}
+	if !queued || next == nil {
+		return nil, false
+	}
+	if !s.broadcastWorkspaceSummary(bgCtx, next.ID, "get workspace summary after queued retry") {
+		return nil, false
+	}
+	return next, true
+}
+
+func (s *Server) broadcastWorkspaceSetupResult(
+	ctx context.Context,
+	workspaceID string,
+	setupErr error,
+) (*workspace.WorkspaceSummary, bool) {
+	summary, getErr := s.workspaces.GetSummary(ctx, workspaceID)
+	if getErr != nil {
+		slog.Warn("get workspace summary after setup", "id", workspaceID, "err", getErr)
+		return nil, false
+	}
+	if summary == nil {
+		return nil, false
+	}
+	if setupErr != nil {
+		slog.Warn("workspace setup failed", "id", workspaceID, "err", setupErr)
+	}
+	s.hub.Broadcast(Event{Type: "workspace_status", Data: s.toWorkspaceResponse(ctx, summary)})
+	return summary, true
+}
+
+func (s *Server) handleQueuedRetryError(ctx context.Context, workspaceID string, queueErr error) {
+	slog.Warn("start queued workspace retry", "id", workspaceID, "err", queueErr)
+	s.broadcastWorkspaceSummary(ctx, workspaceID, "get workspace summary after queued retry failure")
+}
+
+func (s *Server) broadcastWorkspaceSummary(ctx context.Context, workspaceID string, warnMsg string) bool {
+	summary, getErr := s.workspaces.GetSummary(ctx, workspaceID)
+	if getErr != nil {
+		slog.Warn(warnMsg, "id", workspaceID, "err", getErr)
+		return false
+	}
+	if summary == nil {
+		return false
+	}
+	s.hub.Broadcast(Event{Type: "workspace_status", Data: s.toWorkspaceResponse(ctx, summary)})
+	return true
 }
 
 // createIssueWorkspace creates or reuses an issue-backed middleman workspace.
@@ -2730,59 +2785,7 @@ func (s *Server) createIssueWorkspace(
 		},
 	)
 	if err != nil {
-		msg := err.Error()
-		var branchConflict *workspace.IssueWorkspaceBranchConflictError
-		if errors.As(err, &branchConflict) {
-			conflict := &huma.ErrorModel{
-				Type:   issueWorkspaceBranchConflictType,
-				Title:  "Issue workspace branch conflict",
-				Status: http.StatusConflict,
-				Detail: "A local branch with the requested name already exists.",
-				Errors: []*huma.ErrorDetail{
-					{
-						Message:  "Requested branch already exists",
-						Location: "body.git_head_ref",
-						Value:    branchConflict.Branch,
-					},
-					{
-						Message:  "Suggested alternative branch name",
-						Location: "body.suggested_git_head_ref",
-						Value:    branchConflict.SuggestedBranch,
-					},
-				},
-			}
-			return nil, conflict
-		}
-		if strings.Contains(msg, "not tracked") {
-			return nil, huma.Error404NotFound(msg)
-		}
-		if strings.Contains(msg, "not synced") {
-			return nil, huma.Error404NotFound(msg)
-		}
-		if strings.Contains(msg, "invalid branch name") {
-			return nil, huma.Error400BadRequest(msg)
-		}
-		if strings.Contains(msg, "UNIQUE constraint") {
-			existing, getErr := s.workspaces.GetByIssue(
-				ctx,
-				input.Body.PlatformHost,
-				input.Owner,
-				input.Name,
-				input.Number,
-			)
-			if getErr == nil && existing != nil {
-				summary, summaryErr := s.workspaces.GetSummary(ctx, existing.ID)
-				if summaryErr == nil && summary != nil {
-					return &createWorkspaceOutput{
-						Status: http.StatusAccepted,
-						Body:   s.toWorkspaceResponse(ctx, summary),
-					}, nil
-				}
-			}
-		}
-		return nil, huma.Error500InternalServerError(
-			"create issue workspace: " + msg,
-		)
+		return s.handleCreateIssueWorkspaceError(ctx, input, err)
 	}
 
 	s.runWorkspaceSetup(ws)
@@ -2803,6 +2806,78 @@ func (s *Server) createIssueWorkspace(
 		Status: http.StatusAccepted,
 		Body:   s.toWorkspaceResponse(ctx, summary),
 	}, nil
+}
+
+func (s *Server) handleCreateIssueWorkspaceError(
+	ctx context.Context,
+	input *createIssueWorkspaceInput,
+	err error,
+) (*createWorkspaceOutput, error) {
+	msg := err.Error()
+	if conflict := issueWorkspaceBranchConflictError(err); conflict != nil {
+		return nil, conflict
+	}
+	if strings.Contains(msg, "not tracked") || strings.Contains(msg, "not synced") {
+		return nil, huma.Error404NotFound(msg)
+	}
+	if strings.Contains(msg, "invalid branch name") {
+		return nil, huma.Error400BadRequest(msg)
+	}
+	if strings.Contains(msg, "UNIQUE constraint") {
+		if out := s.existingIssueWorkspaceOutput(ctx, input); out != nil {
+			return out, nil
+		}
+	}
+	return nil, huma.Error500InternalServerError("create issue workspace: " + msg)
+}
+
+func issueWorkspaceBranchConflictError(err error) *huma.ErrorModel {
+	var branchConflict *workspace.IssueWorkspaceBranchConflictError
+	if !errors.As(err, &branchConflict) {
+		return nil
+	}
+	return &huma.ErrorModel{
+		Type:   issueWorkspaceBranchConflictType,
+		Title:  "Issue workspace branch conflict",
+		Status: http.StatusConflict,
+		Detail: "A local branch with the requested name already exists.",
+		Errors: []*huma.ErrorDetail{
+			{
+				Message:  "Requested branch already exists",
+				Location: "body.git_head_ref",
+				Value:    branchConflict.Branch,
+			},
+			{
+				Message:  "Suggested alternative branch name",
+				Location: "body.suggested_git_head_ref",
+				Value:    branchConflict.SuggestedBranch,
+			},
+		},
+	}
+}
+
+func (s *Server) existingIssueWorkspaceOutput(
+	ctx context.Context,
+	input *createIssueWorkspaceInput,
+) *createWorkspaceOutput {
+	existing, getErr := s.workspaces.GetByIssue(
+		ctx,
+		input.Body.PlatformHost,
+		input.Owner,
+		input.Name,
+		input.Number,
+	)
+	if getErr != nil || existing == nil {
+		return nil
+	}
+	summary, summaryErr := s.workspaces.GetSummary(ctx, existing.ID)
+	if summaryErr != nil || summary == nil {
+		return nil
+	}
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   s.toWorkspaceResponse(ctx, summary),
+	}
 }
 
 // listWorkspaces returns middleman's persisted workspace records.
@@ -2834,7 +2909,7 @@ func (s *Server) listWorkspaces(
 	if len(summaries) == 1 {
 		list[0] = s.toWorkspaceResponse(ctx, &summaries[0])
 	} else {
-		workers := min(len(summaries), tmuxProbeMaxConcurrency)
+		workers := min(len(summaries), 2)
 		jobs := make(chan int)
 		var wg sync.WaitGroup
 		wg.Add(workers)
@@ -3376,16 +3451,15 @@ func (s *Server) deleteWorkspace(
 	// across the whole Delete call — including step 3 — so a Launch
 	// arriving between StopWorkspace returning and DB removal cannot
 	// spawn a process in the soon-to-be-deleted worktree.
-	if s.runtime != nil {
-		s.runtime.BeginStopping(input.ID)
-		defer s.runtime.EndStopping(input.ID)
-	}
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
-		func(stopCtx context.Context) {
-			if s.runtime != nil {
-				s.runtime.StopWorkspace(stopCtx, input.ID)
+		func(stopCtx context.Context) func() {
+			if s.runtime == nil {
+				return nil
 			}
+			s.runtime.BeginStopping(input.ID)
+			s.runtime.StopWorkspace(stopCtx, input.ID)
+			return func() { s.runtime.EndStopping(input.ID) }
 		},
 	)
 	if err != nil {

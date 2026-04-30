@@ -215,35 +215,7 @@ func (h *Handler) ServeHTTP(
 	}()
 
 	// Wait for tmux exit OR bridge disconnect (whichever first).
-	cmdDone := make(chan int, 1)
-	go func() {
-		cmdDone <- processExitCode(cmd.Wait())
-	}()
-
-	var exitCode int
-	select {
-	case exitCode = <-cmdDone:
-		// tmux exited normally.
-		logWebsocketDebug(
-			"workspace terminal tmux attach exited",
-			"workspace_id", id,
-			"exit_code", exitCode,
-		)
-	case <-bridgeDone:
-		// Browser disconnected. Cancel context to kill tmux attach.
-		logWebsocketDebug(
-			"workspace terminal bridge disconnected",
-			"workspace_id", id,
-		)
-		cancel()
-		_ = ptmx.Close()
-		// Wait briefly for cmd to finish.
-		select {
-		case exitCode = <-cmdDone:
-		case <-time.After(2 * time.Second):
-			exitCode = -1
-		}
-	}
+	exitCode := waitForTerminalExit(ctx, cancel, id, cmd, ptmx, bridgeDone)
 
 	exitMsg, _ := json.Marshal(map[string]any{
 		"type": "exited",
@@ -263,6 +235,42 @@ func (h *Handler) ServeHTTP(
 		"workspace_id", id,
 		"exit_code", exitCode,
 	)
+}
+
+func waitForTerminalExit(
+	_ context.Context,
+	cancel context.CancelFunc,
+	id string,
+	cmd *exec.Cmd,
+	ptmx *os.File,
+	bridgeDone <-chan struct{},
+) int {
+	cmdDone := make(chan int, 1)
+	go func() {
+		cmdDone <- processExitCode(cmd.Wait())
+	}()
+	select {
+	case exitCode := <-cmdDone:
+		logWebsocketDebug(
+			"workspace terminal tmux attach exited",
+			"workspace_id", id,
+			"exit_code", exitCode,
+		)
+		return exitCode
+	case <-bridgeDone:
+		logWebsocketDebug(
+			"workspace terminal bridge disconnected",
+			"workspace_id", id,
+		)
+		cancel()
+		_ = ptmx.Close()
+		select {
+		case exitCode := <-cmdDone:
+			return exitCode
+		case <-time.After(2 * time.Second):
+			return -1
+		}
+	}
 }
 
 func (h *Handler) claimTerminalSlot(

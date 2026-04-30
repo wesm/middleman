@@ -8641,14 +8641,13 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 	var errs []error
 	for _, ws := range workspaces {
 		_, err := func() ([]string, error) {
-			beforeDestructive := func(stopCtx context.Context) {
-				if srv.runtime != nil {
-					srv.runtime.StopWorkspace(stopCtx, ws.ID)
+			beforeDestructive := func(stopCtx context.Context) func() {
+				if srv.runtime == nil {
+					return nil
 				}
-			}
-			if srv.runtime != nil {
 				srv.runtime.BeginStopping(ws.ID)
-				defer srv.runtime.EndStopping(ws.ID)
+				srv.runtime.StopWorkspace(stopCtx, ws.ID)
+				return func() { srv.runtime.EndStopping(ws.ID) }
 			}
 			return srv.workspaces.Delete(ctx, ws.ID, true, beforeDestructive)
 		}()

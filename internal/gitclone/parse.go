@@ -98,85 +98,102 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 		if i >= len(rawFiles) {
 			break
 		}
-
-		// Detect binary from extended headers.
-		for _, ext := range fd.Extended {
-			if strings.HasPrefix(ext, "Binary files ") || strings.HasPrefix(ext, "GIT binary patch") {
-				rawFiles[i].IsBinary = true
-				break
-			}
-		}
-
-		// Convert hunks.
-		for _, h := range fd.Hunks {
-			hunk := Hunk{
-				OldStart: int(h.OrigStartLine),
-				OldCount: int(h.OrigLines),
-				NewStart: int(h.NewStartLine),
-				NewCount: int(h.NewLines),
-				Section:  h.Section,
-			}
-			oldNum := int(h.OrigStartLine)
-			newNum := int(h.NewStartLine)
-
-			// The library handles "\ No newline at end of file" internally:
-			// - Orig side: sets OrigNoNewlineAt to the byte offset after the line
-			// - New side: removes the trailing \n from Body
-			body := h.Body
-			newSideNoNewline := len(body) > 0 && body[len(body)-1] != '\n'
-			bodyLines := strings.Split(string(body), "\n")
-
-			byteOffset := 0
-			for j, line := range bodyLines {
-				if j == len(bodyLines)-1 && line == "" {
-					continue
-				}
-
-				lineByteEnd := byteOffset + len(line) + 1 // +1 for \n separator
-
-				if len(line) == 0 {
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "context", Content: "", OldNum: oldNum, NewNum: newNum,
-					})
-					oldNum++
-					newNum++
-					byteOffset = lineByteEnd
-					continue
-				}
-
-				isLastRealLine := j == len(bodyLines)-1 ||
-					(j == len(bodyLines)-2 && bodyLines[len(bodyLines)-1] == "")
-
-				switch line[0] {
-				case ' ':
-					// Context lines appear on both sides; check both no-newline signals.
-					noNL := (newSideNoNewline && isLastRealLine) ||
-						(h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt)
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "context", Content: line[1:], OldNum: oldNum, NewNum: newNum, NoNewline: noNL,
-					})
-					oldNum++
-					newNum++
-				case '+':
-					noNL := newSideNoNewline && isLastRealLine
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "add", Content: line[1:], NewNum: newNum, NoNewline: noNL,
-					})
-					newNum++
-					rawFiles[i].Additions++
-				case '-':
-					noNL := h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt
-					hunk.Lines = append(hunk.Lines, Line{
-						Type: "delete", Content: line[1:], OldNum: oldNum, NoNewline: noNL,
-					})
-					oldNum++
-					rawFiles[i].Deletions++
-				}
-				byteOffset = lineByteEnd
-			}
-			rawFiles[i].Hunks = append(rawFiles[i].Hunks, hunk)
-		}
+		mergeFileDiff(&rawFiles[i], fd)
 	}
 
 	return rawFiles
+}
+
+func mergeFileDiff(file *DiffFile, fd *godiff.FileDiff) {
+	file.IsBinary = file.IsBinary || fileDiffIsBinary(fd)
+	for _, h := range fd.Hunks {
+		file.Hunks = append(file.Hunks, parseHunk(h, file))
+	}
+}
+
+func fileDiffIsBinary(fd *godiff.FileDiff) bool {
+	for _, ext := range fd.Extended {
+		if strings.HasPrefix(ext, "Binary files ") || strings.HasPrefix(ext, "GIT binary patch") {
+			return true
+		}
+	}
+	return false
+}
+
+func parseHunk(h *godiff.Hunk, file *DiffFile) Hunk {
+	hunk := Hunk{
+		OldStart: int(h.OrigStartLine),
+		OldCount: int(h.OrigLines),
+		NewStart: int(h.NewStartLine),
+		NewCount: int(h.NewLines),
+		Section:  h.Section,
+	}
+	state := hunkLineState{
+		oldNum:           int(h.OrigStartLine),
+		newNum:           int(h.NewStartLine),
+		newSideNoNewline: len(h.Body) > 0 && h.Body[len(h.Body)-1] != '\n',
+	}
+	bodyLines := strings.Split(string(h.Body), "\n")
+	for j, line := range bodyLines {
+		if j == len(bodyLines)-1 && line == "" {
+			continue
+		}
+		state.addLine(&hunk, file, h, bodyLines, j, line)
+	}
+	return hunk
+}
+
+type hunkLineState struct {
+	oldNum           int
+	newNum           int
+	byteOffset       int
+	newSideNoNewline bool
+}
+
+func (s *hunkLineState) addLine(
+	hunk *Hunk,
+	file *DiffFile,
+	h *godiff.Hunk,
+	bodyLines []string,
+	j int,
+	line string,
+) {
+	lineByteEnd := s.byteOffset + len(line) + 1 // +1 for \n separator
+	defer func() { s.byteOffset = lineByteEnd }()
+
+	if len(line) == 0 {
+		hunk.Lines = append(hunk.Lines, Line{
+			Type: "context", Content: "", OldNum: s.oldNum, NewNum: s.newNum,
+		})
+		s.oldNum++
+		s.newNum++
+		return
+	}
+
+	isLastRealLine := j == len(bodyLines)-1 ||
+		(j == len(bodyLines)-2 && bodyLines[len(bodyLines)-1] == "")
+	switch line[0] {
+	case ' ':
+		noNL := (s.newSideNoNewline && isLastRealLine) ||
+			(h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt)
+		hunk.Lines = append(hunk.Lines, Line{
+			Type: "context", Content: line[1:], OldNum: s.oldNum, NewNum: s.newNum, NoNewline: noNL,
+		})
+		s.oldNum++
+		s.newNum++
+	case '+':
+		noNL := s.newSideNoNewline && isLastRealLine
+		hunk.Lines = append(hunk.Lines, Line{
+			Type: "add", Content: line[1:], NewNum: s.newNum, NoNewline: noNL,
+		})
+		s.newNum++
+		file.Additions++
+	case '-':
+		noNL := h.OrigNoNewlineAt > 0 && int32(lineByteEnd) == h.OrigNoNewlineAt
+		hunk.Lines = append(hunk.Lines, Line{
+			Type: "delete", Content: line[1:], OldNum: s.oldNum, NoNewline: noNL,
+		})
+		s.oldNum++
+		file.Deletions++
+	}
 }

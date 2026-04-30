@@ -108,89 +108,107 @@ func isTestingT(expr ast.Expr, testingImports map[string]struct{}) bool {
 	return ok
 }
 
+type bodyAnalysis struct {
+	pass                 *analysis.Pass
+	tName                string
+	assertHelper         helperState
+	requireHelper        helperState
+	assertCallPositions  []ast.Node
+	requireCallPositions []ast.Node
+}
+
 func analyzeBody(pass *analysis.Pass, body *ast.BlockStmt, tName string, imports importSet) {
 	if body == nil {
 		return
 	}
 
-	var assertHelper, requireHelper helperState
-	var assertCallPositions []ast.Node
-	var requireCallPositions []ast.Node
-
-	var visit func(ast.Node)
-	visit = func(n ast.Node) {
-		switch node := n.(type) {
-		case *ast.FuncLit:
-			return
-		case *ast.AssignStmt:
-			for i, rhs := range node.Rhs {
-				if i >= len(node.Lhs) {
-					continue
-				}
-				if ident, ok := node.Lhs[i].(*ast.Ident); ok {
-					if ident.Name == "assert" && isAssertNewCall(pass, rhs, tName) {
-						assertHelper.add(identObject(pass, ident))
-					}
-					if ident.Name == "require" && isRequireNewCall(pass, rhs, tName) {
-						requireHelper.add(identObject(pass, ident))
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for i, value := range node.Values {
-				if i >= len(node.Names) {
-					continue
-				}
-				if node.Names[i].Name == "assert" && isAssertNewCall(pass, value, tName) {
-					assertHelper.add(identObject(pass, node.Names[i]))
-				}
-				if node.Names[i].Name == "require" && isRequireNewCall(pass, value, tName) {
-					requireHelper.add(identObject(pass, node.Names[i]))
-				}
-			}
-		case *ast.CallExpr:
-			switch callKind(pass, node, assertHelper, requireHelper) {
-			case "assert":
-				assertCallPositions = append(assertCallPositions, node)
-			case "require":
-				requireCallPositions = append(requireCallPositions, node)
-			case "assert-helper":
-				assertHelper.used = true
-			case "require-helper":
-				requireHelper.used = true
-			}
-		}
-
-		ast.Inspect(n, func(child ast.Node) bool {
-			if child == nil || child == n {
-				return true
-			}
-			if _, ok := child.(*ast.FuncLit); ok {
-				return false
-			}
-			visit(child)
-			return false
-		})
-	}
-
+	analysis := &bodyAnalysis{pass: pass, tName: tName}
 	for _, stmt := range body.List {
-		visit(stmt)
+		analysis.visit(stmt)
+	}
+	analysis.report()
+}
+
+func (a *bodyAnalysis) visit(n ast.Node) {
+	switch node := n.(type) {
+	case *ast.FuncLit:
+		return
+	case *ast.AssignStmt:
+		a.recordAssign(node)
+	case *ast.ValueSpec:
+		a.recordValueSpec(node)
+	case *ast.CallExpr:
+		a.recordCall(node)
 	}
 
-	total := len(assertCallPositions) + len(requireCallPositions)
+	ast.Inspect(n, func(child ast.Node) bool {
+		if child == nil || child == n {
+			return true
+		}
+		if _, ok := child.(*ast.FuncLit); ok {
+			return false
+		}
+		a.visit(child)
+		return false
+	})
+}
+
+func (a *bodyAnalysis) recordAssign(node *ast.AssignStmt) {
+	for i, rhs := range node.Rhs {
+		if i >= len(node.Lhs) {
+			continue
+		}
+		ident, ok := node.Lhs[i].(*ast.Ident)
+		if !ok {
+			continue
+		}
+		a.recordHelperIdent(ident, rhs)
+	}
+}
+
+func (a *bodyAnalysis) recordValueSpec(node *ast.ValueSpec) {
+	for i, value := range node.Values {
+		if i >= len(node.Names) {
+			continue
+		}
+		a.recordHelperIdent(node.Names[i], value)
+	}
+}
+
+func (a *bodyAnalysis) recordHelperIdent(ident *ast.Ident, value ast.Expr) {
+	if ident.Name == "assert" && isAssertNewCall(a.pass, value, a.tName) {
+		a.assertHelper.add(identObject(a.pass, ident))
+	}
+	if ident.Name == "require" && isRequireNewCall(a.pass, value, a.tName) {
+		a.requireHelper.add(identObject(a.pass, ident))
+	}
+}
+
+func (a *bodyAnalysis) recordCall(node *ast.CallExpr) {
+	switch callKind(a.pass, node, a.assertHelper, a.requireHelper) {
+	case "assert":
+		a.assertCallPositions = append(a.assertCallPositions, node)
+	case "require":
+		a.requireCallPositions = append(a.requireCallPositions, node)
+	case "assert-helper":
+		a.assertHelper.used = true
+	case "require-helper":
+		a.requireHelper.used = true
+	}
+}
+
+func (a *bodyAnalysis) report() {
+	total := len(a.assertCallPositions) + len(a.requireCallPositions)
 	if total <= 3 {
 		return
 	}
-
-	hasAssertHelper := len(assertHelper.objs) > 0 && assertHelper.used
-	hasRequireHelper := len(requireHelper.objs) > 0 && requireHelper.used
-
-	if len(assertCallPositions) >= 2 && !hasAssertHelper {
-		pass.Reportf(assertCallPositions[len(assertCallPositions)-1].Pos(), assertDiagnosticMessage, total)
+	hasAssertHelper := len(a.assertHelper.objs) > 0 && a.assertHelper.used
+	hasRequireHelper := len(a.requireHelper.objs) > 0 && a.requireHelper.used
+	if len(a.assertCallPositions) >= 2 && !hasAssertHelper {
+		a.pass.Reportf(a.assertCallPositions[len(a.assertCallPositions)-1].Pos(), assertDiagnosticMessage, total)
 	}
-
-	if len(requireCallPositions) >= 2 && !hasRequireHelper {
-		pass.Reportf(requireCallPositions[len(requireCallPositions)-1].Pos(), requireDiagnosticMessage, total)
+	if len(a.requireCallPositions) >= 2 && !hasRequireHelper {
+		a.pass.Reportf(a.requireCallPositions[len(a.requireCallPositions)-1].Pos(), requireDiagnosticMessage, total)
 	}
 }
 

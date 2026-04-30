@@ -49,110 +49,13 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("mkdir work: %w", err)
 	}
 
-	// Initialize a working repo and create the base commit.
-	if err := git(workDir, "init", "-b", "main"); err != nil {
-		return nil, fmt.Errorf("git init: %w", err)
-	}
-	if err := git(workDir,
-		"config", "user.email", "test@example.com"); err != nil {
-		return nil, err
-	}
-	if err := git(workDir,
-		"config", "user.name", "Test"); err != nil {
-		return nil, err
-	}
-
-	// --- Base commit files ---
-
-	if err := writeFile(workDir, "main.go", mainGoContent); err != nil {
-		return nil, err
-	}
-	if err := writeFile(workDir,
-		"internal/handler.go", handlerGoBase); err != nil {
-		return nil, err
-	}
-	if err := writeFile(workDir,
-		"config.yaml", configYAMLContent); err != nil {
-		return nil, err
-	}
-	if err := writeFile(workDir,
-		"README.md", readmeBase); err != nil {
-		return nil, err
-	}
-
-	if err := git(workDir, "add", "-A"); err != nil {
-		return nil, err
-	}
-	if err := git(workDir,
-		"commit", "-m", "Initial commit"); err != nil {
-		return nil, err
-	}
-
-	baseSHA, err := revParse(workDir, "HEAD")
+	baseSHA, err := setupDiffRepoBase(workDir)
 	if err != nil {
-		return nil, fmt.Errorf("rev-parse base: %w", err)
-	}
-
-	// --- PR branch with changes ---
-
-	if err := git(workDir,
-		"checkout", "-b", "feature/caching"); err != nil {
 		return nil, err
 	}
-
-	// Modify handler.go in two separate locations (produces 2 hunks).
-	if err := writeFile(workDir,
-		"internal/handler.go", handlerGoHead); err != nil {
-		return nil, err
-	}
-	// Add a new file.
-	if err := writeFile(workDir,
-		"internal/cache.go", cacheGoContent); err != nil {
-		return nil, err
-	}
-	// Delete config.yaml.
-	if err := os.Remove(
-		filepath.Join(workDir, "config.yaml")); err != nil {
-		return nil, err
-	}
-	// Whitespace-only change to README.md.
-	if err := writeFile(workDir,
-		"README.md", readmeHead); err != nil {
-		return nil, err
-	}
-
-	if err := git(workDir, "add", "-A"); err != nil {
-		return nil, err
-	}
-	if err := git(workDir,
-		"commit", "-m", "feat: add caching layer"); err != nil {
-		return nil, err
-	}
-
-	headSHA, err := revParse(workDir, "HEAD")
+	headSHA, altHeadSHA, err := setupDiffRepoHead(workDir)
 	if err != nil {
-		return nil, fmt.Errorf("rev-parse head: %w", err)
-	}
-
-	if err := writeFile(workDir,
-		"internal/cache_test.go", cacheTestGoContent); err != nil {
 		return nil, err
-	}
-	if err := writeFile(workDir,
-		"docs/cache-plan.md", cachePlanContent); err != nil {
-		return nil, err
-	}
-	if err := git(workDir, "add", "-A"); err != nil {
-		return nil, err
-	}
-	if err := git(workDir,
-		"commit", "-m", "test: cover caching layer"); err != nil {
-		return nil, err
-	}
-
-	altHeadSHA, err := revParse(workDir, "HEAD")
-	if err != nil {
-		return nil, fmt.Errorf("rev-parse alternate head: %w", err)
 	}
 
 	// Clone as bare to the path the clone manager expects.
@@ -192,6 +95,90 @@ func SetupDiffRepo(
 		AddedFiles:   []string{"internal/cache.go"},
 		DeletedFiles: []string{"config.yaml"},
 	}, nil
+}
+
+func setupDiffRepoBase(workDir string) (string, error) {
+	if err := git(workDir, "init", "-b", "main"); err != nil {
+		return "", fmt.Errorf("git init: %w", err)
+	}
+	if err := git(workDir, "config", "user.email", "test@example.com"); err != nil {
+		return "", err
+	}
+	if err := git(workDir, "config", "user.name", "Test"); err != nil {
+		return "", err
+	}
+	files := map[string]string{
+		"main.go":             mainGoContent,
+		"internal/handler.go": handlerGoBase,
+		"config.yaml":         configYAMLContent,
+		"README.md":           readmeBase,
+	}
+	for name, content := range files {
+		if err := writeFile(workDir, name, content); err != nil {
+			return "", err
+		}
+	}
+	if err := git(workDir, "add", "-A"); err != nil {
+		return "", err
+	}
+	if err := git(workDir, "commit", "-m", "Initial commit"); err != nil {
+		return "", err
+	}
+	baseSHA, err := revParse(workDir, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("rev-parse base: %w", err)
+	}
+	return baseSHA, nil
+}
+
+func setupDiffRepoHead(workDir string) (string, string, error) {
+	if err := git(workDir, "checkout", "-b", "feature/caching"); err != nil {
+		return "", "", err
+	}
+	if err := writeFile(workDir, "internal/handler.go", handlerGoHead); err != nil {
+		return "", "", err
+	}
+	if err := writeFile(workDir, "internal/cache.go", cacheGoContent); err != nil {
+		return "", "", err
+	}
+	if err := os.Remove(filepath.Join(workDir, "config.yaml")); err != nil {
+		return "", "", err
+	}
+	if err := writeFile(workDir, "README.md", readmeHead); err != nil {
+		return "", "", err
+	}
+	if err := git(workDir, "add", "-A"); err != nil {
+		return "", "", err
+	}
+	if err := git(workDir, "commit", "-m", "feat: add caching layer"); err != nil {
+		return "", "", err
+	}
+	headSHA, err := revParse(workDir, "HEAD")
+	if err != nil {
+		return "", "", fmt.Errorf("rev-parse head: %w", err)
+	}
+	altHeadSHA, err := setupDiffRepoAlternateHead(workDir)
+	return headSHA, altHeadSHA, err
+}
+
+func setupDiffRepoAlternateHead(workDir string) (string, error) {
+	if err := writeFile(workDir, "internal/cache_test.go", cacheTestGoContent); err != nil {
+		return "", err
+	}
+	if err := writeFile(workDir, "docs/cache-plan.md", cachePlanContent); err != nil {
+		return "", err
+	}
+	if err := git(workDir, "add", "-A"); err != nil {
+		return "", err
+	}
+	if err := git(workDir, "commit", "-m", "test: cover caching layer"); err != nil {
+		return "", err
+	}
+	altHeadSHA, err := revParse(workDir, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("rev-parse alternate head: %w", err)
+	}
+	return altHeadSHA, nil
 }
 
 func git(dir string, args ...string) error {

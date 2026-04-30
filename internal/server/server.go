@@ -412,41 +412,7 @@ func newServer(
 	// terminal handler all share the same value and the nil-safety
 	// of the call is explicit at this level.
 	tmuxCmd := cfg.TmuxCommand()
-	if options.WorktreeDir != "" {
-		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
-		s.workspacePRMonitor = workspace.NewPRMonitor(database)
-		s.workspaces.SetTmuxCommand(tmuxCmd)
-		if clones != nil {
-			s.workspaces.SetClones(clones)
-		}
-		cleanupCtx, cleanupCancel := context.WithTimeout(
-			context.Background(), startupTmuxCleanupTimeout,
-		)
-		if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
-			slog.Warn("reap orphan tmux sessions", "err", err)
-		}
-		if err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
-			slog.Warn("prune missing tmux sessions", "err", err)
-		}
-		cleanupCancel()
-		var agents []config.Agent
-		if cfg != nil {
-			agents = cfg.Agents
-		}
-		s.runtime = localruntime.NewManager(localruntime.Options{
-			Targets: localruntime.ResolveLaunchTargets(
-				agents, tmuxCmd, nil,
-			),
-			TmuxCommand:             tmuxCmd,
-			TmuxOwnerMarker:         s.workspaces.TmuxOwnerMarker(),
-			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
-			StripEnvVars:            cfg.TokenEnvNames(),
-			OnSessionExit:           s.handleRuntimeSessionExit,
-		})
-		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
-			slog.Warn("restore runtime tmux sessions", "err", err)
-		}
-	}
+	s.initWorkspaceServices(database, clones, options.WorktreeDir, cfg, tmuxCmd)
 
 	if s.workspaces != nil {
 		s.runBackground(s.runWorkspacePRMonitorLoop)
@@ -472,63 +438,7 @@ func newServer(
 	}
 
 	if frontend != nil {
-		indexBytes, err := fs.ReadFile(frontend, "index.html")
-		if err != nil {
-			indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
-		}
-		indexTemplate := string(indexBytes)
-		if basePath != "/" {
-			prefix := strings.TrimSuffix(basePath, "/")
-			indexTemplate = strings.ReplaceAll(indexTemplate, `src="/assets/`, `src="`+prefix+`/assets/`)
-			indexTemplate = strings.ReplaceAll(indexTemplate, `href="/assets/`, `href="`+prefix+`/assets/`)
-		}
-
-		serveIndex := func(w http.ResponseWriter) {
-			idx := strings.Replace(indexTemplate, "<head>",
-				`<head><script>`+s.bootstrapScript()+`</script>`, 1)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			// index.html references content-hashed bundles. Browsers
-			// must always re-fetch it so a rebuild is picked up; the
-			// hashed assets it references can still be cached forever.
-			w.Header().Set("Cache-Control",
-				"no-store, no-cache, must-revalidate, max-age=0")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(idx))
-		}
-
-		fileServer := http.FileServerFS(frontend)
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				http.NotFound(w, r)
-				return
-			}
-			name := strings.TrimPrefix(r.URL.Path, "/")
-			if name == "" || name == "index.html" {
-				serveIndex(w)
-				return
-			}
-			f, err := frontend.Open(name)
-			if err == nil {
-				f.Close()
-				if strings.HasPrefix(r.URL.Path, "/assets/") {
-					w.Header().Set("Cache-Control",
-						"public, max-age=31536000, immutable")
-				}
-				fileServer.ServeHTTP(w, r)
-				return
-			}
-			// A missing /assets/* request is a stale-bundle fetch from
-			// an old cached index.html. Returning the SPA HTML here
-			// would 200 with the wrong Content-Type and leave the page
-			// stuck on a failed module import.
-			if strings.HasPrefix(r.URL.Path, "/assets/") {
-				http.NotFound(w, r)
-				return
-			}
-			serveIndex(w)
-		})
+		s.registerFrontendRoutes(mux, frontend, basePath)
 	}
 
 	// When serving under a base path, use an outer mux with
@@ -547,6 +457,134 @@ func newServer(
 	}
 
 	return s
+}
+
+func (s *Server) registerFrontendRoutes(mux *http.ServeMux, frontend fs.FS, basePath string) {
+	indexTemplate := frontendIndexTemplate(frontend, basePath)
+	serveIndex := func(w http.ResponseWriter) {
+		s.serveFrontendIndex(w, indexTemplate)
+	}
+	fileServer := http.FileServerFS(frontend)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if name == "" || name == "index.html" {
+			serveIndex(w)
+			return
+		}
+		if serveFrontendAsset(w, r, frontend, fileServer, name) {
+			return
+		}
+		// A missing /assets/* request is a stale-bundle fetch from an old cached
+		// index.html. Returning the SPA HTML here would 200 with the wrong
+		// Content-Type and leave the page stuck on a failed module import.
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			http.NotFound(w, r)
+			return
+		}
+		serveIndex(w)
+	})
+}
+
+func frontendIndexTemplate(frontend fs.FS, basePath string) string {
+	indexBytes, err := fs.ReadFile(frontend, "index.html")
+	if err != nil {
+		indexBytes = []byte("<!DOCTYPE html><html><body>frontend not found</body></html>")
+	}
+	indexTemplate := string(indexBytes)
+	if basePath == "/" {
+		return indexTemplate
+	}
+	prefix := strings.TrimSuffix(basePath, "/")
+	indexTemplate = strings.ReplaceAll(indexTemplate, `src="/assets/`, `src="`+prefix+`/assets/`)
+	return strings.ReplaceAll(indexTemplate, `href="/assets/`, `href="`+prefix+`/assets/`)
+}
+
+func (s *Server) serveFrontendIndex(w http.ResponseWriter, indexTemplate string) {
+	idx := strings.Replace(indexTemplate, "<head>",
+		`<head><script>`+s.bootstrapScript()+`</script>`, 1)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// index.html references content-hashed bundles. Browsers must always
+	// re-fetch it so a rebuild is picked up; the hashed assets it references
+	// can still be cached forever.
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(idx))
+}
+
+func serveFrontendAsset(
+	w http.ResponseWriter,
+	r *http.Request,
+	frontend fs.FS,
+	fileServer http.Handler,
+	name string,
+) bool {
+	f, err := frontend.Open(name)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	if strings.HasPrefix(r.URL.Path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+	fileServer.ServeHTTP(w, r)
+	return true
+}
+
+func (s *Server) initWorkspaceServices(
+	database *db.DB,
+	clones *gitclone.Manager,
+	worktreeDir string,
+	cfg *config.Config,
+	tmuxCmd []string,
+) {
+	if worktreeDir == "" {
+		return
+	}
+	s.workspaces = workspace.NewManager(database, worktreeDir)
+	s.workspacePRMonitor = workspace.NewPRMonitor(database)
+	s.workspaces.SetTmuxCommand(tmuxCmd)
+	if clones != nil {
+		s.workspaces.SetClones(clones)
+	}
+	s.cleanupWorkspaceTmuxSessions()
+	s.runtime = localruntime.NewManager(s.runtimeOptions(cfg, tmuxCmd))
+	if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
+		slog.Warn("restore runtime tmux sessions", "err", err)
+	}
+}
+
+func (s *Server) cleanupWorkspaceTmuxSessions() {
+	cleanupCtx, cleanupCancel := context.WithTimeout(
+		context.Background(), startupTmuxCleanupTimeout,
+	)
+	defer cleanupCancel()
+	if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
+		slog.Warn("reap orphan tmux sessions", "err", err)
+	}
+	if err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
+		slog.Warn("prune missing tmux sessions", "err", err)
+	}
+}
+
+func (s *Server) runtimeOptions(cfg *config.Config, tmuxCmd []string) localruntime.Options {
+	var agents []config.Agent
+	if cfg != nil {
+		agents = cfg.Agents
+	}
+	return localruntime.Options{
+		Targets:                 localruntime.ResolveLaunchTargets(agents, tmuxCmd, nil),
+		TmuxCommand:             tmuxCmd,
+		TmuxOwnerMarker:         s.workspaces.TmuxOwnerMarker(),
+		WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
+		StripEnvVars:            cfg.TokenEnvNames(),
+		OnSessionExit:           s.handleRuntimeSessionExit,
+	}
 }
 
 func (s *Server) restoreRuntimeTmuxSessions(ctx context.Context) error {
@@ -808,40 +846,49 @@ func (s *Server) serveSSE(
 			if !ok {
 				return
 			}
-			data, err := json.Marshal(ev.Data)
-			if err != nil {
-				slog.Error("sse: marshal event", "type", ev.Type, "err", err)
-				continue
-			}
-			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-				return
-			}
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data); err != nil {
-				return
-			}
-			if err := rc.Flush(); err != nil {
-				return
-			}
-			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+			if !writeSSEEvent(w, rc, ev) {
 				return
 			}
 		case <-ticker.C:
-			if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-				return
-			}
-			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
-				return
-			}
-			if err := rc.Flush(); err != nil {
-				return
-			}
-			if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+			if !writeSSEKeepalive(w, rc) {
 				return
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func writeSSEEvent(w io.Writer, rc sseController, ev Event) bool {
+	data, err := json.Marshal(ev.Data)
+	if err != nil {
+		slog.Error("sse: marshal event", "type", ev.Type, "err", err)
+		return true
+	}
+	return writeSSEFrame(rc, func() error {
+		_, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data)
+		return err
+	})
+}
+
+func writeSSEKeepalive(w io.Writer, rc sseController) bool {
+	return writeSSEFrame(rc, func() error {
+		_, err := fmt.Fprint(w, ": keepalive\n\n")
+		return err
+	})
+}
+
+func writeSSEFrame(rc sseController, write func() error) bool {
+	if err := rc.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return false
+	}
+	if err := write(); err != nil {
+		return false
+	}
+	if err := rc.Flush(); err != nil {
+		return false
+	}
+	return rc.SetWriteDeadline(time.Time{}) == nil
 }
 
 func (s *Server) getVersion(

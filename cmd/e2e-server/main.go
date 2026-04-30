@@ -75,6 +75,159 @@ type e2eServerInfo struct {
 
 type globRefreshContextKey struct{}
 
+func e2eConfigRepos(defaultPlatformHost string) []config.Repo {
+	if strings.EqualFold(defaultPlatformHost, "github.com") {
+		return []config.Repo{
+			{Owner: "acme", Name: "widgets"},
+			{Owner: "acme", Name: "tools"},
+			{Owner: "acme", Name: "archived"},
+			{Owner: "roborev-dev", Name: "*"},
+		}
+	}
+	return []config.Repo{
+		{
+			Owner:        "enterprise",
+			Name:         "service",
+			PlatformHost: defaultPlatformHost,
+		},
+		{
+			Owner:        "acme",
+			Name:         "widgets",
+			PlatformHost: "github.com",
+		},
+	}
+}
+
+func e2eListRepositoriesByOwner(
+	fc *testutil.FixtureClient,
+) func(context.Context, string) ([]*gh.Repository, error) {
+	return func(ctx context.Context, owner string) ([]*gh.Repository, error) {
+		switch owner {
+		case "import-lab":
+			return e2eImportLabRepos(owner), nil
+		case "roborev-dev":
+			return e2eRoborevRepos(ctx, owner), nil
+		default:
+			return fc.ReposByOwner[owner], nil
+		}
+	}
+}
+
+func e2eImportLabRepos(owner string) []*gh.Repository {
+	return []*gh.Repository{
+		e2eRepo(owner, "api", "Import API", false, time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)),
+		e2eRepo(owner, "worker", "Import worker", false, time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)),
+		e2eRepo(owner, "archived", "Archived import fixture", true, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)),
+	}
+}
+
+func e2eRoborevRepos(ctx context.Context, owner string) []*gh.Repository {
+	repos := []*gh.Repository{
+		e2eRepo(owner, "middleman", "Main dashboard", false, time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)),
+		e2eRepo(owner, "worker", "Background jobs", false, time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)),
+		e2eRepo(owner, "archived", "Archived service", true, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)),
+	}
+	if includeRefreshRepo, _ := ctx.Value(globRefreshContextKey{}).(bool); includeRefreshRepo {
+		repos = append(repos, e2eRepo(owner, "review-bot", "Review automation", false, time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)))
+	}
+	return repos
+}
+
+func e2eRepo(owner, name, description string, archived bool, pushedAt time.Time) *gh.Repository {
+	privateFalse := false
+	return &gh.Repository{
+		Name:        &name,
+		Owner:       &gh.User{Login: &owner},
+		Description: &description,
+		Private:     &privateFalse,
+		Archived:    &archived,
+		PushedAt:    &gh.Timestamp{Time: pushedAt},
+	}
+}
+
+func runSeededStackDetection(ctx context.Context, database *db.DB) error {
+	for _, rp := range []struct{ owner, name string }{
+		{"acme", "widgets"},
+		{"acme", "tools"},
+	} {
+		repo, err := database.GetRepoByOwnerName(ctx, rp.owner, rp.name)
+		if err != nil || repo == nil {
+			continue
+		}
+		if err := stacks.RunDetection(ctx, database, repo.ID); err != nil {
+			return fmt.Errorf("stack detection %s/%s: %w", rp.owner, rp.name, err)
+		}
+	}
+	return nil
+}
+
+func seedStartupRepos(
+	ctx context.Context,
+	database *db.DB,
+	repos []ghclient.RepoRef,
+	defaultPlatformHost string,
+) error {
+	for _, repo := range repos {
+		if _, err := database.UpsertRepo(ctx, repo.PlatformHost, repo.Owner, repo.Name); err != nil {
+			return fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+	}
+	if strings.EqualFold(defaultPlatformHost, "github.com") {
+		return nil
+	}
+	if _, err := database.UpsertRepo(ctx, defaultPlatformHost, "enterprise", "service"); err != nil {
+		return fmt.Errorf("seed default-host repo: %w", err)
+	}
+	return nil
+}
+
+func e2eRootHandler(
+	srv http.Handler,
+	database *db.DB,
+	diffRepo *testutil.DiffRepoResult,
+	fc *testutil.FixtureClient,
+) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
+			handleAdvanceHead(w, r, database, diffRepo, fc)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			strings.Contains(r.URL.Path, "/api/v1/repos/roborev-dev/") &&
+			strings.HasSuffix(r.URL.Path, "/refresh") {
+			r = r.WithContext(context.WithValue(r.Context(), globRefreshContextKey{}, true))
+		}
+		srv.ServeHTTP(w, r)
+	})
+}
+
+func handleAdvanceHead(
+	w http.ResponseWriter,
+	r *http.Request,
+	database *db.DB,
+	diffRepo *testutil.DiffRepoResult,
+	fc *testutil.FixtureClient,
+) {
+	repo, err := database.GetRepoByOwnerName(r.Context(), "acme", "widgets")
+	if err != nil || repo == nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+	if err := database.UpdateDiffSHAs(r.Context(), repo.ID, 1, diffRepo.AltHeadSHA, diffRepo.BaseSHA, diffRepo.BaseSHA); err != nil {
+		http.Error(w, "update diff shas", http.StatusInternalServerError)
+		return
+	}
+	if err := database.UpdatePlatformSHAs(r.Context(), repo.ID, 1, diffRepo.AltHeadSHA, diffRepo.BaseSHA); err != nil {
+		http.Error(w, "update platform shas", http.StatusInternalServerError)
+		return
+	}
+	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.AltHeadSHA, diffRepo.BaseSHA)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"head_sha": diffRepo.AltHeadSHA}); err != nil {
+		slog.Warn("write e2e response", "err", err)
+	}
+}
+
 // run starts the e2e server and blocks until ctx is canceled or the
 // HTTP server errors out. Tests call it directly with a cancellable
 // context; main() wires it to SIGINT/SIGTERM.
@@ -104,19 +257,8 @@ func run(
 		return fmt.Errorf("seed fixtures: %w", err)
 	}
 
-	// Run stack detection so seeded stacked chains are discoverable
-	// via /api/v1/stacks and the PR detail sidebar.
-	for _, rp := range []struct{ owner, name string }{
-		{"acme", "widgets"},
-		{"acme", "tools"},
-	} {
-		repo, err := database.GetRepoByOwnerName(ctx, rp.owner, rp.name)
-		if err != nil || repo == nil {
-			continue
-		}
-		if err := stacks.RunDetection(ctx, database, repo.ID); err != nil {
-			return fmt.Errorf("stack detection %s/%s: %w", rp.owner, rp.name, err)
-		}
+	if err := runSeededStackDetection(ctx, database); err != nil {
+		return err
 	}
 
 	diffRepo, err := testutil.SetupDiffRepo(ctx, tmpDir, database)
@@ -124,26 +266,7 @@ func run(
 		return fmt.Errorf("setup diff repo: %w", err)
 	}
 
-	repos := []config.Repo{
-		{Owner: "acme", Name: "widgets"},
-		{Owner: "acme", Name: "tools"},
-		{Owner: "acme", Name: "archived"},
-		{Owner: "roborev-dev", Name: "*"},
-	}
-	if !strings.EqualFold(defaultPlatformHost, "github.com") {
-		repos = []config.Repo{
-			{
-				Owner:        "enterprise",
-				Name:         "service",
-				PlatformHost: defaultPlatformHost,
-			},
-			{
-				Owner:        "acme",
-				Name:         "widgets",
-				PlatformHost: "github.com",
-			},
-		}
-	}
+	repos := e2eConfigRepos(defaultPlatformHost)
 	cfg := &config.Config{
 		SyncInterval:        "5m",
 		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
@@ -165,83 +288,7 @@ func run(
 	}
 
 	fc := result.FixtureClient()
-	fc.ListRepositoriesByOwnerFn = func(
-		ctx context.Context, owner string,
-	) ([]*gh.Repository, error) {
-		pushedMiddleman := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
-		pushedWorker := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
-		pushedBot := gh.Timestamp{Time: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)}
-		privateFalse := false
-		if owner == "import-lab" {
-			return []*gh.Repository{
-				{
-					Name:        new("api"),
-					Owner:       &gh.User{Login: new(owner)},
-					Description: new("Import API"),
-					Private:     &privateFalse,
-					Archived:    new(false),
-					PushedAt:    &pushedMiddleman,
-				},
-				{
-					Name:        new("worker"),
-					Owner:       &gh.User{Login: new(owner)},
-					Description: new("Import worker"),
-					Private:     &privateFalse,
-					Archived:    new(false),
-					PushedAt:    &pushedWorker,
-				},
-				{
-					Name:        new("archived"),
-					Owner:       &gh.User{Login: new(owner)},
-					Description: new("Archived import fixture"),
-					Private:     &privateFalse,
-					Archived:    new(true),
-					PushedAt:    &pushedBot,
-				},
-			}, nil
-		}
-		if owner != "roborev-dev" {
-			return fc.ReposByOwner[owner], nil
-		}
-
-		repos := []*gh.Repository{
-			{
-				Name:        new("middleman"),
-				Owner:       &gh.User{Login: new(owner)},
-				Description: new("Main dashboard"),
-				Private:     &privateFalse,
-				Archived:    new(false),
-				PushedAt:    &pushedMiddleman,
-			},
-			{
-				Name:        new("worker"),
-				Owner:       &gh.User{Login: new(owner)},
-				Description: new("Background jobs"),
-				Private:     &privateFalse,
-				Archived:    new(false),
-				PushedAt:    &pushedWorker,
-			},
-			{
-				Name:        new("archived"),
-				Owner:       &gh.User{Login: new(owner)},
-				Description: new("Archived service"),
-				Private:     new(false),
-				Archived:    new(true),
-				PushedAt:    &pushedBot,
-			},
-		}
-		if includeRefreshRepo, _ := ctx.Value(globRefreshContextKey{}).(bool); includeRefreshRepo {
-			repos = append(repos, &gh.Repository{
-				Name:        new("review-bot"),
-				Owner:       &gh.User{Login: new(owner)},
-				Description: new("Review automation"),
-				Private:     &privateFalse,
-				Archived:    new(false),
-				PushedAt:    &pushedBot,
-			})
-		}
-		return repos, nil
-	}
+	fc.ListRepositoriesByOwnerFn = e2eListRepositoriesByOwner(fc)
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
 
 	fixtureClients := map[string]ghclient.Client{
@@ -253,19 +300,8 @@ func run(
 		fixtureClients,
 		cfg.Repos,
 	)
-	for _, repo := range startupResolved.Expanded {
-		if _, err := database.UpsertRepo(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name,
-		); err != nil {
-			return fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-	}
-	if !strings.EqualFold(defaultPlatformHost, "github.com") {
-		if _, err := database.UpsertRepo(
-			ctx, defaultPlatformHost, "enterprise", "service",
-		); err != nil {
-			return fmt.Errorf("seed default-host repo: %w", err)
-		}
+	if err := seedStartupRepos(ctx, database, startupResolved.Expanded, defaultPlatformHost); err != nil {
+		return err
 	}
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
@@ -318,57 +354,18 @@ func run(
 			WorktreeDir: filepath.Join(tmpDir, "worktrees"),
 		},
 	)
-	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost &&
-			r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
-			repo, err := database.GetRepoByOwnerName(
-				r.Context(), "acme", "widgets",
-			)
-			if err != nil || repo == nil {
-				http.Error(w, "repo not found", http.StatusNotFound)
-				return
-			}
-			if err := database.UpdateDiffSHAs(
-				r.Context(), repo.ID, 1,
-				diffRepo.AltHeadSHA, diffRepo.BaseSHA, diffRepo.BaseSHA,
-			); err != nil {
-				http.Error(w, "update diff shas", http.StatusInternalServerError)
-				return
-			}
-			if err := database.UpdatePlatformSHAs(
-				r.Context(), repo.ID, 1,
-				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
-			); err != nil {
-				http.Error(w, "update platform shas", http.StatusInternalServerError)
-				return
-			}
-			patchFixturePRSHAs(
-				fc, "acme", "widgets", 1,
-				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
-			)
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
-				"head_sha": diffRepo.AltHeadSHA,
-			}); err != nil {
-				slog.Warn("write e2e response", "err", err)
-			}
-			return
-		}
-		if r.Method == http.MethodPost &&
-			strings.Contains(r.URL.Path, "/api/v1/repos/roborev-dev/") &&
-			strings.HasSuffix(r.URL.Path, "/refresh") {
-			r = r.WithContext(
-				context.WithValue(r.Context(), globRefreshContextKey{}, true),
-			)
-		}
-		srv.ServeHTTP(w, r)
-	})
+	rootHandler := e2eRootHandler(srv, database, diffRepo, fc)
 
-	// Do not start the syncer's background loop. The seeded DB is the
-	// ground truth for E2E tests; RunOnce would overwrite it with
-	// incomplete fixture client data. The syncer only needs to exist
-	// for Status() and IsTrackedRepo() calls.
+	return serveE2E(ctx, port, serverInfoFile, rootHandler, srv)
+}
 
+func serveE2E(
+	ctx context.Context,
+	port int,
+	serverInfoFile string,
+	rootHandler http.Handler,
+	srv *server.Server,
+) error {
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -398,16 +395,16 @@ func run(
 		ReadTimeout: 15 * time.Second,
 		IdleTimeout: 60 * time.Second,
 	}
+	defer shutdownE2EServer(srv, httpServer)
 
-	// Drain HTTP handlers and bg goroutines before DB close.
-	// LIFO ordering: this runs after stop() but before the
-	// deferred database.Close above. srv.Shutdown closes the
-	// hub so SSE handlers exit, then drains bg goroutines;
-	// httpServer.Shutdown drains in-flight HTTP handlers.
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 10*time.Second,
-		)
+	errCh := make(chan error, 1)
+	go serveHTTP(listener, httpServer, errCh)
+	return waitForE2EServer(ctx, srv, httpServer, errCh)
+}
+
+func shutdownE2EServer(srv *server.Server, httpServer *http.Server) func() {
+	return func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("server shutdown", "err", err)
@@ -415,33 +412,26 @@ func run(
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("http shutdown", "err", err)
 		}
-	}()
+	}
+}
 
-	errCh := make(chan error, 1)
-	go func() {
-		if serveErr := httpServer.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
-			errCh <- serveErr
-		}
-		close(errCh)
-	}()
+func serveHTTP(listener net.Listener, httpServer *http.Server, errCh chan<- error) {
+	if serveErr := httpServer.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
+		errCh <- serveErr
+	}
+	close(errCh)
+}
 
+func waitForE2EServer(
+	ctx context.Context,
+	srv *server.Server,
+	httpServer *http.Server,
+	errCh <-chan error,
+) error {
 	select {
 	case <-ctx.Done():
 		slog.Info("shutting down")
-		// Trigger Shutdown so Serve unblocks (the defer is a
-		// safety net for other exit paths and is idempotent).
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 10*time.Second,
-		)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("server shutdown", "err", err)
-		}
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			slog.Warn("http shutdown", "err", err)
-		}
-		// Drain errCh so a real Serve failure (not
-		// ErrServerClosed) is surfaced instead of swallowed.
+		shutdownE2EServer(srv, httpServer)()
 		if serveErr, ok := <-errCh; ok {
 			return fmt.Errorf("server: %w", serveErr)
 		}
