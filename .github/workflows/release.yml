@@ -170,7 +170,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum *.tar.gz *.zip > SHA256SUMS
+          sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
           cat SHA256SUMS
 
       - name: Get tag message
@@ -189,10 +189,12 @@ jobs:
 
           if [ -n "$TAG_MSG" ]; then
             DELIM="TAGMSG_$(date +%s%N)"
-            echo "body<<$DELIM" >> "$GITHUB_OUTPUT"
-            echo "$TAG_MSG" >> "$GITHUB_OUTPUT"
-            echo "$DELIM" >> "$GITHUB_OUTPUT"
-            echo "has_body=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "body<<$DELIM"
+              echo "$TAG_MSG"
+              echo "$DELIM"
+              echo "has_body=true"
+            } >> "$GITHUB_OUTPUT"
           else
             echo "has_body=false" >> "$GITHUB_OUTPUT"
           fi
