@@ -115,32 +115,32 @@
 
 <div class="comment-box">
   {#key `pull:${owner}/${name}/${number}`}
-    <CommentEditor
-      {owner}
-      {name}
-      {platformHost}
-      value={body}
-      disabled={isPostingCurrent || disabled}
-      oninput={(nextBody) => {
-        setCommentDraft("pull", owner, name, number, nextBody, platformHost);
-      }}
-      onsubmit={() => {
-        void handleSubmit();
-      }}
-    />
+    <div class="comment-editor-shell">
+      <CommentEditor
+        {owner}
+        {name}
+        {platformHost}
+        value={body}
+        disabled={isPostingCurrent || disabled}
+        oninput={(nextBody) => {
+          setCommentDraft("pull", owner, name, number, nextBody, platformHost);
+        }}
+        onsubmit={() => {
+          void handleSubmit();
+        }}
+      />
+      <button
+        class="submit-btn"
+        onclick={() => void handleSubmit()}
+        disabled={isEmpty || isPostingCurrent || disabled}
+      >
+        {isPostingCurrent ? "Posting…" : "Comment"}
+      </button>
+    </div>
   {/key}
   {#if visibleError !== null}
     <p class="error-msg">{visibleError}</p>
   {/if}
-  <div class="comment-actions">
-    <button
-      class="submit-btn"
-      onclick={() => void handleSubmit()}
-      disabled={isEmpty || isPostingCurrent || disabled}
-    >
-      {isPostingCurrent ? "Posting…" : "Comment"}
-    </button>
-  </div>
 </div>
 
 <style>
@@ -155,12 +155,20 @@
     color: var(--accent-red);
   }
 
-  .comment-actions {
-    display: flex;
-    justify-content: flex-end;
+  .comment-editor-shell {
+    position: relative;
+  }
+
+  .comment-editor-shell :global(.comment-editor-input) {
+    min-height: 112px;
+    max-height: 75dvh;
+    padding-bottom: 46px;
   }
 
   .submit-btn {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
     font-size: 13px;
     font-weight: 500;
     padding: 6px 14px;
@@ -168,6 +176,7 @@
     color: #fff;
     border-radius: var(--radius-sm);
     cursor: pointer;
+    z-index: 1;
     transition: opacity 0.15s;
   }
 

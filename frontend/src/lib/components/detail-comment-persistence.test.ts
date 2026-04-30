@@ -168,6 +168,22 @@ describe("comment draft persistence", () => {
     });
   });
 
+  it.each([
+    ["pull request", renderPullCommentBox],
+    ["issue", renderIssueCommentBox],
+  ] as const)("renders the %s comment button inside the editor", async (_kind, renderBox) => {
+    renderBox();
+
+    const button = screen.getByRole("button", { name: "Comment" });
+    await waitFor(() => {
+      expect(document.querySelector(".comment-editor-input")).toBeInstanceOf(HTMLElement);
+    });
+
+    const shell = button.closest(".comment-editor-shell");
+    expect(shell).not.toBeNull();
+    expect(shell?.querySelector(".comment-editor-input")).toBe(getCommentEditor());
+  });
+
   it.each(["pull", "issue"] as const)(
     "keeps %s comment drafts isolated by platform host",
     async (kind) => {
