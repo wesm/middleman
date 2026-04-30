@@ -555,6 +555,126 @@ test.describe("detail load-error banner", () => {
   });
 });
 
+test.describe("detail comment editor submission", () => {
+  test("PR detail submits a comment from the embedded editor button", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    const submittedBodies: string[] = [];
+    await page.route(
+      `**/api/v1/repos/${prA.repo_owner}/${prA.repo_name}/pulls/${prA.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(prA)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+    await page.route(
+      `**/api/v1/repos/${prA.repo_owner}/${prA.repo_name}/pulls/${prA.Number}/comments`,
+      async (route) => {
+        submittedBodies.push(JSON.parse(route.request().postData() ?? "{}").body);
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ id: 42 }),
+        });
+      },
+    );
+    await page.route(
+      `**/api/v1/repos/${prA.repo_owner}/${prA.repo_name}/pulls/${prA.Number}/sync`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(detailEnvelopePR(prA)),
+        });
+      },
+    );
+
+    await page.goto(`/pulls/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
+    await expect(page.locator(".detail-title")).toContainText(prA.Title);
+
+    const shell = page.locator(".comment-box .comment-editor-shell").first();
+    await expect(shell.locator(".comment-editor-input")).toBeVisible();
+    const submit = shell.getByRole("button", { name: "Comment" });
+    await expect(submit).toBeVisible();
+
+    await shell.locator(".comment-editor-input").fill("Looks ready to ship");
+    await expect(submit).toBeEnabled();
+    await submit.click();
+
+    await expect.poll(() => submittedBodies).toEqual(["Looks ready to ship"]);
+  });
+
+  test("issue detail submits a comment from the embedded editor button", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    const submittedBodies: string[] = [];
+    await page.route(
+      `**/api/v1/repos/${issueX.repo_owner}/${issueX.repo_name}/issues/${issueX.Number}`,
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopeIssue(issueX)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+    await page.route(
+      `**/api/v1/repos/${issueX.repo_owner}/${issueX.repo_name}/issues/${issueX.Number}/comments`,
+      async (route) => {
+        submittedBodies.push(JSON.parse(route.request().postData() ?? "{}").body);
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ id: 43 }),
+        });
+      },
+    );
+    await page.route(
+      `**/api/v1/repos/${issueX.repo_owner}/${issueX.repo_name}/issues/${issueX.Number}/sync`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(detailEnvelopeIssue(issueX)),
+        });
+      },
+    );
+
+    await page.goto(
+      `/issues/${issueX.repo_owner}/${issueX.repo_name}/${issueX.Number}`,
+    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueX.Title,
+    );
+
+    const shell = page
+      .locator(".issue-detail .comment-box .comment-editor-shell")
+      .first();
+    await expect(shell.locator(".comment-editor-input")).toBeVisible();
+    const submit = shell.getByRole("button", { name: "Comment" });
+    await expect(submit).toBeVisible();
+
+    await shell.locator(".comment-editor-input").fill("I can reproduce this");
+    await expect(submit).toBeEnabled();
+    await submit.click();
+
+    await expect.poll(() => submittedBodies).toEqual(["I can reproduce this"]);
+  });
+});
+
 test.describe("PR detail stale-action gating", () => {
   test("close, comment, and create-workspace are inert while the new PR is loading", async ({ page }) => {
     const userMutations = recordUserMutations(page);
