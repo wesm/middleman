@@ -548,6 +548,7 @@
         </div>
       {:else}
         <div class="pull-detail">
+          <div class="pull-detail-content">
       {#if detailStore.isStaleRefreshing()}
         <div class="refresh-banner">
           <span class="sync-dot"></span>
@@ -1103,6 +1104,7 @@
           <div class="loading-placeholder">Detail not yet loaded</div>
         {/if}
       </div>
+          </div>
         </div>
       {/if}
     </div>
@@ -1198,18 +1200,24 @@
   }
 
   .pull-detail {
-    container: pull-detail / inline-size;
     padding: 20px 24px;
-    max-width: 800px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
     flex: 1;
     min-height: 0;
     min-width: 0;
     overflow-y: auto;
     overflow-x: hidden;
     width: 100%;
+  }
+
+  .pull-detail-content {
+    container: pull-detail / inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 800px;
     margin-inline: auto;
   }
 

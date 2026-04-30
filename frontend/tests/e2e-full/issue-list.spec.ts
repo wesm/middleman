@@ -8,7 +8,9 @@ import { expect, test, type Page } from "@playwright/test";
 //   acme/tools#5: open, dave, "Support config file loading"
 
 async function waitForIssueList(page: Page): Promise<void> {
-  await page.locator(".issue-item").first()
+  await page
+    .locator(".issue-item")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -23,8 +25,12 @@ test.describe("issue list view", () => {
     await expect(countBadge).toHaveText(/^4 issues$/);
   });
 
-  test("sidebar issue pills use the shared chip component", async ({ page }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^4 issues$/);
+  test("sidebar issue pills use the shared chip component", async ({
+    page,
+  }) => {
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^4 issues$/,
+    );
 
     await page.locator(".group-btn", { hasText: "All" }).click();
     const firstItem = page.locator(".issue-item").first();
@@ -44,8 +50,10 @@ test.describe("issue list view", () => {
     await input.fill("Safari");
 
     // Wait for the filtered result to appear (replaces fixed sleep).
-    await expect(page.locator(".filter-bar .list-count-chip"))
-      .toHaveText(/^1 issues?$/, { timeout: 5_000 });
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^1 issues?$/,
+      { timeout: 5_000 },
+    );
 
     const items = page.locator(".issue-item");
     const count = await items.count();
@@ -57,8 +65,11 @@ test.describe("issue list view", () => {
     }
   });
 
-  test("issue detail state chip preserves shared chip layout", async ({ page }) => {
-    await page.locator(".issue-item")
+  test("issue detail state chip preserves shared chip layout", async ({
+    page,
+  }) => {
+    await page
+      .locator(".issue-item")
       .filter({ hasText: "Safari" })
       .first()
       .click();
@@ -81,10 +92,13 @@ test.describe("issue list view", () => {
     expect(stateChipStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 
-  test("issue detail scrolls internally and centers horizontally", async ({ page }) => {
+  test("issue detail keeps the scrollbar on the pane edge", async ({
+    page,
+  }) => {
     // Open the Safari issue specifically. Matches widgets#10 on the
     // seeded fixture (max-width 800px centered layout).
-    await page.locator(".issue-item")
+    await page
+      .locator(".issue-item")
       .filter({ hasText: "Safari" })
       .first()
       .click();
@@ -129,20 +143,29 @@ test.describe("issue list view", () => {
     const finalScroll = await issueDetail.evaluate((el) => el.scrollTop);
     expect(finalScroll).toBeGreaterThan(0);
 
-    // Centering check: .issue-detail has max-width 800px and
-    // margin-inline: auto. Compare its horizontal center against the
-    // center of its parent .main-area container (the PR list view
-    // has a sidebar, so the viewport center is not relevant).
+    // The scroll container should span the detail pane so the native
+    // scrollbar is flush with the pane edge, not the centered content
+    // column. The header remains in the capped content column.
     const detailArea = page.locator(".main-area");
+    const contentHeader = page.locator(".issue-detail .detail-header");
     const areaBox = await detailArea.boundingBox();
     const detailBox = await issueDetail.boundingBox();
+    const headerBox = await contentHeader.boundingBox();
     expect(areaBox).not.toBeNull();
     expect(detailBox).not.toBeNull();
-    if (areaBox !== null && detailBox !== null) {
-      const areaCenter = areaBox.x + areaBox.width / 2;
-      const detailCenter = detailBox.x + detailBox.width / 2;
+    expect(headerBox).not.toBeNull();
+    if (areaBox !== null && detailBox !== null && headerBox !== null) {
+      const scrollportWidth = await issueDetail.evaluate(
+        (el) => el.clientWidth,
+      );
+      const scrollportCenter = detailBox.x + scrollportWidth / 2;
+      const headerCenter = headerBox.x + headerBox.width / 2;
       // Allow small slack for sub-pixel layout differences.
-      expect(Math.abs(detailCenter - areaCenter)).toBeLessThan(2);
+      expect(
+        Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width)),
+      ).toBeLessThan(2);
+      expect(Math.abs(headerCenter - scrollportCenter)).toBeLessThan(2);
+      expect(headerBox.width).toBeLessThanOrEqual(800);
     }
   });
 });
