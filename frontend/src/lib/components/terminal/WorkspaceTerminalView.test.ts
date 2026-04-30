@@ -11,14 +11,11 @@ const mocks = vi.hoisted(() => ({
   ensureWorkspaceShell: vi.fn(),
   getWorkspaceRuntime: vi.fn(),
   launchWorkspaceSession: vi.fn(),
-  mockClearTextureAtlas: vi.fn(),
   mockDispose: vi.fn(),
   mockFit: vi.fn(),
   mockLoadAddon: vi.fn(),
-  mockOnBinary: vi.fn(),
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
-  mockRefresh: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
 }));
@@ -42,30 +39,21 @@ class MockWebSocket {
   close(): void {}
 }
 
-vi.mock("@xterm/xterm", () => ({
+vi.mock("ghostty-web", () => ({
+  init: vi.fn().mockResolvedValue(undefined),
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: mocks.mockFit,
+  })),
   Terminal: vi.fn().mockImplementation((options) => ({
     cols: 80,
     rows: 24,
     open: mocks.mockOpen,
     loadAddon: mocks.mockLoadAddon,
     onData: mocks.mockOnData,
-    onBinary: mocks.mockOnBinary,
     dispose: mocks.mockDispose,
     write: mocks.terminalWrite,
-    refresh: mocks.mockRefresh,
-    clearTextureAtlas: mocks.mockClearTextureAtlas,
     options: { ...options },
   })),
-}));
-
-vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: mocks.mockFit,
-  })),
-}));
-
-vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation(() => ({})),
 }));
 
 vi.mock("@middleman/ui", async (importOriginal) => {

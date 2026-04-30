@@ -1,14 +1,12 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, render, waitFor } from "@testing-library/svelte";
+import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFit = vi.fn();
 const mockOpen = vi.fn();
 const mockLoadAddon = vi.fn();
 const mockOnData = vi.fn();
-const mockOnBinary = vi.fn();
 const mockDispose = vi.fn();
-const mockRefresh = vi.fn();
-const mockClearTextureAtlas = vi.fn();
 const terminalCtor = vi.fn();
 const terminalWrite = vi.fn();
 
@@ -49,7 +47,11 @@ vi.mock("@middleman/ui", () => ({
   }),
 }));
 
-vi.mock("@xterm/xterm", () => ({
+vi.mock("ghostty-web", () => ({
+  init: vi.fn().mockResolvedValue(undefined),
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: mockFit,
+  })),
   Terminal: vi.fn().mockImplementation((options) => {
     terminalCtor(options);
     return {
@@ -58,24 +60,11 @@ vi.mock("@xterm/xterm", () => ({
       open: mockOpen,
       loadAddon: mockLoadAddon,
       onData: mockOnData,
-      onBinary: mockOnBinary,
       dispose: mockDispose,
       write: terminalWrite,
-      refresh: mockRefresh,
-      clearTextureAtlas: mockClearTextureAtlas,
       options: { ...options },
     };
   }),
-}));
-
-vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: mockFit,
-  })),
-}));
-
-vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation(() => ({})),
 }));
 
 import TerminalPane from "./TerminalPane.svelte";
@@ -90,10 +79,7 @@ describe("TerminalPane", () => {
     mockOpen.mockReset();
     mockLoadAddon.mockReset();
     mockOnData.mockReset();
-    mockOnBinary.mockReset();
     mockDispose.mockReset();
-    mockRefresh.mockReset();
-    mockClearTextureAtlas.mockReset();
     terminalWrite.mockReset();
     sockets = [];
 
@@ -118,12 +104,18 @@ describe("TerminalPane", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the configured settings font family for xterm", () => {
+  async function renderStarted(
+    props: Partial<ComponentProps<typeof TerminalPane>> = {},
+  ) {
+    const result = render(TerminalPane, { props });
+    await waitFor(() => expect(terminalCtor).toHaveBeenCalled());
+    return result;
+  }
+
+  it("uses the configured settings font family for ghostty-web", async () => {
     configuredFontFamily = "\"Fira Code\", monospace";
 
-    render(TerminalPane, {
-      props: { workspaceId: "ws-123" },
-    });
+    await renderStarted({ workspaceId: "ws-123" });
 
     expect(terminalCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -132,10 +124,8 @@ describe("TerminalPane", () => {
     );
   });
 
-  it("uses the /ws terminal route for the default workspace socket", () => {
-    render(TerminalPane, {
-      props: { workspaceId: "ws-123" },
-    });
+  it("uses the /ws terminal route for the default workspace socket", async () => {
+    await renderStarted({ workspaceId: "ws-123" });
 
     expect(sockets).toHaveLength(1);
     const url = new URL(socketAt(0).url);
@@ -143,12 +133,10 @@ describe("TerminalPane", () => {
     expect(url.pathname).toBe("/ws/v1/workspaces/ws-123/terminal");
   });
 
-  it("applies the base path to the default workspace socket", () => {
+  it("applies the base path to the default workspace socket", async () => {
     window.__BASE_PATH__ = "/middleman/";
 
-    render(TerminalPane, {
-      props: { workspaceId: "ws-123" },
-    });
+    await renderStarted({ workspaceId: "ws-123" });
 
     expect(sockets).toHaveLength(1);
     const url = new URL(socketAt(0).url);
@@ -158,12 +146,10 @@ describe("TerminalPane", () => {
     );
   });
 
-  it("connects to an explicit websocket path", () => {
-    render(TerminalPane, {
-      props: {
-        websocketPath:
-          "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      },
+  it("connects to an explicit websocket path", async () => {
+    await renderStarted({
+      websocketPath:
+        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
     });
 
     expect(sockets).toHaveLength(1);
@@ -176,12 +162,10 @@ describe("TerminalPane", () => {
     expect(url.searchParams.get("rows")).toBe("24");
   });
 
-  it("keeps /ws paths on the current dev origin for Vite proxying", () => {
-    render(TerminalPane, {
-      props: {
-        websocketPath:
-          "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      },
+  it("keeps /ws paths on the current dev origin for Vite proxying", async () => {
+    await renderStarted({
+      websocketPath:
+        "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
     });
 
     expect(sockets).toHaveLength(1);
@@ -192,14 +176,12 @@ describe("TerminalPane", () => {
     );
   });
 
-  it("does not duplicate the base path for explicit websocket paths", () => {
+  it("does not duplicate the base path for explicit websocket paths", async () => {
     window.__BASE_PATH__ = "/middleman/";
 
-    render(TerminalPane, {
-      props: {
-        websocketPath:
-          "/middleman/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      },
+    await renderStarted({
+      websocketPath:
+        "/middleman/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
     });
 
     expect(sockets).toHaveLength(1);
@@ -211,15 +193,12 @@ describe("TerminalPane", () => {
   });
 
   it("refreshes the terminal when a hidden pane becomes active", async () => {
-    const { rerender } = render(TerminalPane, {
-      props: {
-        websocketPath:
-          "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-        active: false,
-      },
+    const { rerender } = await renderStarted({
+      websocketPath:
+        "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      active: false,
     });
 
-    expect(mockRefresh).not.toHaveBeenCalled();
     expect(socketAt(0).sent).toEqual([]);
 
     await rerender({
@@ -229,21 +208,17 @@ describe("TerminalPane", () => {
     });
 
     expect(mockFit).toHaveBeenCalled();
-    expect(mockClearTextureAtlas).toHaveBeenCalled();
-    expect(mockRefresh).toHaveBeenCalledWith(0, 23);
     expect(socketAt(0).sent).toContain(
       JSON.stringify({ type: "refresh", cols: 80, rows: 24 }),
     );
   });
 
-  it("does not open a websocket when initialStatus is exited", () => {
-    render(TerminalPane, {
-      props: {
-        websocketPath:
-          "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-        reconnectOnExit: false,
-        initialStatus: "exited",
-      },
+  it("does not open a websocket when initialStatus is exited", async () => {
+    await renderStarted({
+      websocketPath:
+        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      reconnectOnExit: false,
+      initialStatus: "exited",
     });
 
     expect(sockets).toHaveLength(0);
@@ -252,18 +227,16 @@ describe("TerminalPane", () => {
     );
   });
 
-  it("does not restart sessions when reconnectOnExit is false", () => {
-    vi.useFakeTimers();
+  it("does not restart sessions when reconnectOnExit is false", async () => {
     const onExit = vi.fn();
 
-    render(TerminalPane, {
-      props: {
-        websocketPath:
-          "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-        reconnectOnExit: false,
-        onExit,
-      },
+    await renderStarted({
+      websocketPath:
+        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      reconnectOnExit: false,
+      onExit,
     });
+    vi.useFakeTimers();
 
     expect(sockets).toHaveLength(1);
     const socket = socketAt(0);

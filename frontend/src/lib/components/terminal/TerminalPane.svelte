@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
-  import { Terminal } from "@xterm/xterm";
-  import { FitAddon } from "@xterm/addon-fit";
-  import { WebglAddon } from "@xterm/addon-webgl";
-  import "@xterm/xterm/css/xterm.css";
+  import {
+    init as initGhostty,
+    FitAddon,
+    Terminal,
+  } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
 
   interface TerminalPaneProps {
@@ -45,6 +46,12 @@
   const encoder = new TextEncoder();
 
   const MAX_RECONNECT_DELAY = 30000;
+  let ghosttyInitPromise: Promise<void> | null = null;
+
+  function ensureGhosttyInitialized(): Promise<void> {
+    ghosttyInitPromise ??= initGhostty();
+    return ghosttyInitPromise;
+  }
 
   function defaultTerminalFontFamily(): string {
     const rootFontFamily = getComputedStyle(
@@ -146,8 +153,6 @@
     if (!terminal) return;
 
     fitAddon?.fit();
-    terminal.clearTextureAtlas();
-    terminal.refresh(0, Math.max(0, terminal.rows - 1));
     sendRefresh(terminal.cols, terminal.rows);
   }
 
@@ -283,9 +288,6 @@
   $effect(() => {
     if (!terminal) return;
     terminal.options.fontFamily = terminalFontFamily;
-    // The WebGL renderer caches glyphs per font; force a rebuild so
-    // cell widths and glyph metrics line up after the family changes.
-    terminal.clearTextureAtlas();
     fitAddon?.fit();
   });
 
@@ -297,9 +299,12 @@
   onMount(() => {
     let started = false;
 
-    function start(): void {
+    async function start(): Promise<void> {
       if (started || disposed) return;
       started = true;
+
+      await ensureGhosttyInitialized();
+      if (disposed) return;
 
       const term = new Terminal({
         theme: {
@@ -319,31 +324,11 @@
       fitAddon = fit;
       term.loadAddon(fit);
 
-      try {
-        const wgl = new WebglAddon();
-        wgl.onContextLoss(() => {
-          wgl.dispose();
-        });
-        term.loadAddon(wgl);
-      } catch {
-        // WebGL unavailable; canvas renderer used as fallback.
-      }
-
       fit.fit();
 
       term.onData((data: string) => {
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(encoder.encode(data));
-        }
-      });
-
-      term.onBinary((data: string) => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          const buf = new Uint8Array(data.length);
-          for (let i = 0; i < data.length; i++) {
-            buf[i] = data.charCodeAt(i) & 0xff;
-          }
-          ws.send(buf.buffer);
         }
       });
 
@@ -362,15 +347,12 @@
       connect();
     }
 
-    // Custom fonts (JetBrains Mono, etc.) may still be loading when
-    // the pane mounts. Initializing xterm before fonts settle locks
-    // in fallback-font cell metrics, so the WebGL atlas and the
-    // measured cols/rows drift away from what gets painted — which
-    // looks like cursor/prompt overlap in the running shell.
+    // Custom fonts may still be loading when the pane mounts. Waiting
+    // keeps terminal cell metrics aligned with what gets painted.
     if (document.fonts && typeof document.fonts.ready?.then === "function") {
-      void document.fonts.ready.then(start);
+      void document.fonts.ready.then(() => void start());
     } else {
-      start();
+      void start();
     }
 
     return cleanup;
