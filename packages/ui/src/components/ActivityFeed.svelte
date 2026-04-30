@@ -13,6 +13,7 @@
     localDateLabel,
     parseAPITimestamp,
   } from "../utils/time.js";
+  import Chip from "./shared/Chip.svelte";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -171,6 +172,26 @@
     return item.item_type === "pr" ? "badge-pr" : "badge-issue";
   }
 
+  function kindChipClass(item: ActivityItem): string {
+    const legacyClass = badgeClass(item);
+    const toneClass =
+      legacyClass === "badge-pr" ? "chip--blue"
+      : legacyClass === "badge-closed" ? "chip--red"
+      : "chip--purple";
+    return `badge ${legacyClass} ${toneClass}`;
+  }
+
+  function itemTypeChipClass(itemType: string): string {
+    return itemType === "pr"
+      ? "badge badge-pr chip--blue"
+      : "badge badge-issue chip--purple";
+  }
+
+  function stateChipClass(state: string): string {
+    const toneClass = state === "merged" ? "chip--purple" : "chip--red";
+    return `state-badge state-${state} ${toneClass}`;
+  }
+
   function stateLabel(item: ActivityItem): string | null {
     if (item.item_state === "merged") return "Merged";
     if (item.item_state === "closed") return "Closed";
@@ -308,6 +329,16 @@
     }
   }
 
+  function eventChipClass(type: string): string {
+    const toneClass =
+      type === "comment" ? "chip--amber"
+      : type === "review" ? "chip--green"
+      : type === "commit" ? "chip--teal"
+      : type === "force_push" ? "chip--red"
+      : "chip--muted";
+    return `evt-label ${eventClass(type)} ${toneClass}`;
+  }
+
   function relativeTime(iso: string): string {
     const diff = Date.now() - parseAPITimestamp(iso).getTime();
     const mins = Math.floor(diff / 60000);
@@ -415,14 +446,21 @@
                 type="button"
               >
                 <span class="compact-row-top">
-                  <span class="badge {row.representative.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.representative.item_type === "pr" ? "PR" : "Issue"}</span>
+                  <Chip
+                    size="sm"
+                    class={itemTypeChipClass(row.representative.item_type)}
+                  >{row.representative.item_type === "pr" ? "PR" : "Issue"}</Chip>
                   <span class="item-number">#{row.representative.item_number}</span>
                   <span class="compact-time">{relativeTime(row.latest)}</span>
                 </span>
                 <span class="compact-title">{row.representative.item_title}</span>
                 <span class="compact-meta">
                   <span>{row.representative.repo_owner}/{row.representative.repo_name}</span>
-                  <span class="evt-label evt-commit">{row.count} commits</span>
+                  <Chip
+                    size="sm"
+                    uppercase={false}
+                    class="evt-label evt-commit chip--teal"
+                  >{row.count} commits</Chip>
                   <span>{row.author}</span>
                 </span>
               </button>
@@ -434,17 +472,21 @@
                 type="button"
               >
                 <span class="compact-row-top">
-                  <span class="badge {badgeClass(row)}">{itemTypeLabel(row)}</span>
+                  <Chip size="sm" class={kindChipClass(row)}>{itemTypeLabel(row)}</Chip>
                   <span class="item-number">#{row.item_number}</span>
                   {#if stateLabel(row)}
-                    <span class="state-badge state-{row.item_state}">{stateLabel(row)}</span>
+                    <Chip size="sm" class={stateChipClass(row.item_state)}>{stateLabel(row)}</Chip>
                   {/if}
                   <span class="compact-time">{relativeTime(row.created_at)}</span>
                 </span>
                 <span class="compact-title">{row.item_title}</span>
                 <span class="compact-meta">
                   <span>{row.repo_owner}/{row.repo_name}</span>
-                  <span class="evt-label {eventClass(row.activity_type)}">{eventLabel(row)}</span>
+                  <Chip
+                    size="sm"
+                    uppercase={false}
+                    class={eventChipClass(row.activity_type)}
+                  >{eventLabel(row)}</Chip>
                   <span>{row.author}</span>
                 </span>
               </button>
@@ -469,10 +511,17 @@
               {#if isCollapsedActivityRow(row)}
                 <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
                   <td class="col-kind">
-                    <span class="badge {row.representative.item_type === 'pr' ? 'badge-pr' : 'badge-issue'}">{row.representative.item_type === "pr" ? "PR" : "Issue"}</span>
+                    <Chip
+                      size="sm"
+                      class={itemTypeChipClass(row.representative.item_type)}
+                    >{row.representative.item_type === "pr" ? "PR" : "Issue"}</Chip>
                   </td>
                   <td class="col-event">
-                    <span class="evt-label evt-commit">{row.count} commits</span>
+                    <Chip
+                      size="sm"
+                      uppercase={false}
+                      class="evt-label evt-commit chip--teal"
+                    >{row.count} commits</Chip>
                   </td>
                   <td class="col-repo">{row.representative.repo_owner}/{row.representative.repo_name}</td>
                   <td class="col-item">
@@ -492,13 +541,17 @@
               {:else}
                 <tr class="activity-row" onclick={() => handleRowClick(row)}>
                   <td class="col-kind">
-                    <span class="badge {badgeClass(row)}">{itemTypeLabel(row)}</span>
+                    <Chip size="sm" class={kindChipClass(row)}>{itemTypeLabel(row)}</Chip>
                     {#if stateLabel(row)}
-                      <span class="state-badge state-{row.item_state}">{stateLabel(row)}</span>
+                      <Chip size="sm" class={stateChipClass(row.item_state)}>{stateLabel(row)}</Chip>
                     {/if}
                   </td>
                   <td class="col-event">
-                    <span class="evt-label {eventClass(row.activity_type)}">{eventLabel(row)}</span>
+                    <Chip
+                      size="sm"
+                      uppercase={false}
+                      class={eventChipClass(row.activity_type)}
+                    >{eventLabel(row)}</Chip>
                   </td>
                   <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
                   <td class="col-item">
@@ -754,63 +807,6 @@
   .collapsed-row {
     background: var(--bg-inset);
   }
-
-  .badge {
-    display: inline-block;
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 600;
-    white-space: nowrap;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .badge-pr {
-    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
-    color: var(--accent-blue);
-  }
-  .badge-issue {
-    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
-    color: var(--accent-purple);
-  }
-  .badge-merged {
-    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
-    color: var(--accent-purple);
-  }
-  .badge-closed {
-    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
-    color: var(--accent-red);
-  }
-
-  .state-badge {
-    display: inline-block;
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    margin-left: 3px;
-  }
-  .state-merged {
-    background: color-mix(in srgb, var(--accent-purple) 20%, transparent);
-    color: var(--accent-purple);
-  }
-  .state-closed {
-    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
-    color: var(--accent-red);
-  }
-
-  .evt-label {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .evt-label.evt-comment { color: var(--accent-amber); }
-  .evt-label.evt-review { color: var(--accent-green); }
-  .evt-label.evt-commit { color: var(--accent-teal); }
-  .evt-label.evt-force-push { color: var(--accent-red); }
 
   .col-repo {
     color: var(--text-muted);
