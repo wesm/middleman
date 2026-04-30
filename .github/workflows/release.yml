@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -54,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          COMMIT="${GITHUB_SHA::8}"
+          COMMIT="${GITHUB_SHA:0:8}"
           BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
           mkdir -p dist
@@ -122,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          COMMIT="${GITHUB_SHA::8}"
+          COMMIT="${GITHUB_SHA:0:8}"
           BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           EXT=""
           if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
