@@ -24,7 +24,7 @@ DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
-        frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check \
         frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
 
@@ -57,9 +57,13 @@ install: build-release
 		cp $(BINARY) "$$INSTALL_DIR/$(BINARY)"; \
 	fi
 
+# Install Bun workspace dependencies for frontend and packages/ui
+frontend-deps:
+	bun install
+
 # Build frontend SPA and copy into embed directory
-frontend:
-	cd frontend && bun install && bun run build
+frontend: frontend-deps
+	cd frontend && bun run build
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
 	printf 'ok\n' > internal/web/dist/stub.html
@@ -69,11 +73,11 @@ frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
 # Run Vite dev server with Bun (use alongside `make dev`)
-frontend-dev-bun:
-	cd frontend && bun install && bun run dev
+frontend-dev-bun: frontend-deps
+	cd frontend && bun run dev
 
 # Run TypeScript/Svelte lint and type checks
-frontend-check:
+frontend-check: frontend-deps
 	cd packages/ui && bun run typecheck && bun run lint
 	cd frontend && bun run typecheck && bun run lint
 
@@ -233,6 +237,7 @@ help:
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
 	@echo "  dev            - Run Go server with air live reload, debug file logs, and info-level console logs"
+	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server (honors MIDDLEMAN_CONFIG)"
