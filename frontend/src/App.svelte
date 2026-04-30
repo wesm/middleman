@@ -53,11 +53,12 @@
     isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
+    type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
     buildActivitySelectionSearch,
     parseActivitySelection,
-    type ActivitySelection,
+    type ActivityDetailTab,
   } from "./lib/utils/activitySelection.js";
   import {
     getGlobalRepo,
@@ -199,18 +200,15 @@
     }
   });
 
-  let drawerItem = $state<{
-    itemType: "pr" | "issue";
-    platformHost?: string | undefined;
-    owner: string;
-    name: string;
-    number: number;
-    detailTab: "conversation" | "files";
-  } | null>(null);
+  type DrawerItem = RoutableItemRef & {
+    detailTab: ActivityDetailTab;
+  };
+
+  let drawerItem = $state<DrawerItem | null>(null);
 
   function sameActivitySelection(
-    left: ActivitySelection | null,
-    right: ActivitySelection | null,
+    left: DrawerItem | null,
+    right: DrawerItem | null,
   ): boolean {
     if (left === right) return true;
     if (left === null || right === null) return false;
@@ -223,7 +221,7 @@
   }
 
   function updateDrawerURL(
-    item: ActivitySelection | null,
+    item: DrawerItem | null,
   ): void {
     if (getPage() !== "activity") return;
     const sp = buildActivitySelectionSearch(

@@ -1,12 +1,29 @@
+export type RepoRef = {
+  owner: string;
+  name: string;
+};
+
+export type NumberedItemRef = RepoRef & {
+  number: number;
+};
+
+export type HostedItemRef = NumberedItemRef & {
+  platformHost?: string | undefined;
+};
+
+export type RoutableItemRef = HostedItemRef & {
+  itemType: "pr" | "issue";
+};
+
 export type Route =
   | { page: "activity" }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "workspaces" }
-  | { page: "pulls"; view: "list" | "board"; selected?: { owner: string; name: string; number: number }; tab?: "files" }
-  | { page: "issues"; selected?: { owner: string; name: string; number: number; platformHost?: string | undefined } }
+  | { page: "pulls"; view: "list" | "board"; selected?: NumberedItemRef; tab?: "files" }
+  | { page: "issues"; selected?: HostedItemRef }
   | { page: "settings" }
-  | { page: "focus"; itemType: "pr" | "issue"; owner: string; name: string; number: number; platformHost?: string | undefined }
+  | ({ page: "focus" } & RoutableItemRef)
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
@@ -319,7 +336,7 @@ export function getDetailTab(): DetailTab {
   return "conversation";
 }
 
-export function getSelectedPRFromRoute(): { owner: string; name: string; number: number } | null {
+export function getSelectedPRFromRoute(): NumberedItemRef | null {
   if (route.page !== "pulls") return null;
   if ("selected" in route && route.selected) {
     return route.selected;

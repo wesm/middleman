@@ -908,7 +908,7 @@ func (m *Manager) cleanupTmuxSession(
 			continue
 		}
 		err := m.killTmuxSession(ctx, target.session)
-		if err == nil || isTmuxSessionAbsent([]byte(err.Error()), err) {
+		if err == nil || isTmuxKillSessionGone(err) {
 			continue
 		}
 		if target.main {
@@ -1022,7 +1022,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 			continue
 		}
 		if err := m.killTmuxSession(ctx, session); err != nil &&
-			!isTmuxSessionAbsent([]byte(err.Error()), err) {
+			!isTmuxKillSessionGone(err) {
 			return fmt.Errorf(
 				"kill orphan tmux session %q: %w", session, err,
 			)
@@ -1324,7 +1324,7 @@ func (m *Manager) StopStoredRuntimeTmuxSession(
 		}
 		if err := m.killTmuxSession(
 			ctx, storedSession.SessionName,
-		); err != nil && !isTmuxSessionAbsent([]byte(err.Error()), err) {
+		); err != nil && !isTmuxKillSessionGone(err) {
 			return true, fmt.Errorf(
 				"kill tmux session %q: %w",
 				storedSession.SessionName, err,
@@ -1453,7 +1453,7 @@ func (m *Manager) newTmuxSession(
 	}
 	if err := m.setTmuxOwnerMarker(ctx, session); err != nil {
 		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
-			!isTmuxSessionAbsent([]byte(killErr.Error()), killErr) {
+			!isTmuxKillSessionGone(killErr) {
 			return fmt.Errorf(
 				"set tmux owner marker: %w; cleanup new tmux session: %v",
 				err, killErr,
@@ -1529,6 +1529,15 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 		strings.Contains(msg, "no server running") ||
 		(strings.Contains(msg, "error connecting to") &&
 			strings.Contains(msg, "No such file or directory"))
+}
+
+func isTmuxKillSessionGone(err error) bool {
+	if err == nil {
+		return true
+	}
+	msg := err.Error()
+	return isTmuxSessionAbsent([]byte(msg), err) ||
+		strings.Contains(msg, "server exited unexpectedly")
 }
 
 // killTmuxSession kills a tmux session via the manager's prefix.
