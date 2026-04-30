@@ -1,6 +1,35 @@
 import { expect, test } from "@playwright/test";
+import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
 
 test.describe("repository summaries", () => {
+  test("hides a configured non-github default host in repo labels", async ({ page }) => {
+    const server = await startIsolatedE2EServerWithOptions({
+      defaultPlatformHost: "ghe.example.com",
+    });
+    try {
+      await page.goto(`${server.info.base_url}/repos`);
+
+      const repoCards = page.locator(".repo-card");
+      const enterpriseCard = repoCards.filter({
+        has: page.getByRole("button", {
+          name: /enterprise\s*\/\s*service/,
+        }),
+      }).first();
+      await expect(enterpriseCard).toBeVisible();
+      await expect(enterpriseCard.getByText("ghe.example.com")).toHaveCount(0);
+
+      const githubCard = repoCards.filter({
+        has: page.getByRole("button", {
+          name: /acme\s*\/\s*widgets/,
+        }),
+      }).first();
+      await expect(githubCard).toBeVisible();
+      await expect(githubCard.getByText("github.com")).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("remembers filters after tab changes", async ({ page }) => {
     await page.goto("/repos");
 

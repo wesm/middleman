@@ -29,9 +29,20 @@ export type RepoSort = "name" | "open-prs" | "open-issues" | "activity" | "stale
 export const staleReleaseCommitThreshold = 50;
 
 export function repoKey(summary: {
+  platform_host?: string;
+  default_platform_host?: string | undefined;
   owner: string;
   name: string;
 }): string {
+  if (
+    summary.platform_host
+    && shouldShowPlatformHost({
+      platform_host: summary.platform_host,
+      default_platform_host: summary.default_platform_host,
+    })
+  ) {
+    return `${summary.platform_host}/${summary.owner}/${summary.name}`;
+  }
   return `${summary.owner}/${summary.name}`;
 }
 
@@ -45,7 +56,7 @@ export function repoStateKey(summary: {
 
 export function shouldShowPlatformHost(summary: {
   platform_host: string;
-  default_platform_host?: string;
+  default_platform_host?: string | undefined;
 }): boolean {
   const host = (summary.platform_host || "github.com").toLowerCase();
   const defaultHost = (summary.default_platform_host || "github.com")

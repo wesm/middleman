@@ -182,14 +182,15 @@ test.describe("activity feed filters", () => {
 });
 
 test.describe("activity UTC timestamp presentation", () => {
-  let isolatedServer: IsolatedE2EServer;
+  let isolatedServer: IsolatedE2EServer | undefined;
 
   test.beforeAll(async () => {
+    test.setTimeout(60_000);
     isolatedServer = await startIsolatedE2EServer();
   });
 
   test.afterAll(async () => {
-    await isolatedServer.stop();
+    await isolatedServer?.stop();
   });
 
   test.beforeEach(async ({ page }) => {
@@ -197,7 +198,7 @@ test.describe("activity UTC timestamp presentation", () => {
       const originalNow = Date.now.bind(Date);
       Date.now = () => originalNow() + offsetMs;
     }, 2 * 24 * 60 * 60 * 1000);
-    await page.goto(isolatedServer.info.base_url);
+    await page.goto(isolatedServer!.info.base_url);
     await waitForTable(page);
   });
 
