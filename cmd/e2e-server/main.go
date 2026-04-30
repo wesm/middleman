@@ -41,6 +41,10 @@ func main() {
 		"roborev", defaultRoborevEndpoint,
 		"roborev daemon endpoint",
 	)
+	defaultPlatformHost := flag.String(
+		"default-platform-host", "github.com",
+		"default platform host for seeded config",
+	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -54,7 +58,9 @@ func main() {
 	)
 	defer stop()
 
-	if err := run(ctx, *port, *roborev, *serverInfoFile); err != nil {
+	if err := run(
+		ctx, *port, *roborev, *serverInfoFile, *defaultPlatformHost,
+	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -72,7 +78,15 @@ type globRefreshContextKey struct{}
 // run starts the e2e server and blocks until ctx is canceled or the
 // HTTP server errors out. Tests call it directly with a cancellable
 // context; main() wires it to SIGINT/SIGTERM.
-func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) error {
+func run(
+	ctx context.Context,
+	port int,
+	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
+) error {
+	defaultPlatformHost = strings.TrimSpace(defaultPlatformHost)
+	if defaultPlatformHost == "" {
+		defaultPlatformHost = "github.com"
+	}
 	tmpDir, err := os.MkdirTemp("", "middleman-e2e-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -110,18 +124,34 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 		return fmt.Errorf("setup diff repo: %w", err)
 	}
 
+	repos := []config.Repo{
+		{Owner: "acme", Name: "widgets"},
+		{Owner: "acme", Name: "tools"},
+		{Owner: "acme", Name: "archived"},
+		{Owner: "roborev-dev", Name: "*"},
+	}
+	if !strings.EqualFold(defaultPlatformHost, "github.com") {
+		repos = []config.Repo{
+			{
+				Owner:        "enterprise",
+				Name:         "service",
+				PlatformHost: defaultPlatformHost,
+			},
+			{
+				Owner:        "acme",
+				Name:         "widgets",
+				PlatformHost: "github.com",
+			},
+		}
+	}
 	cfg := &config.Config{
-		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
-		Host:           "127.0.0.1",
-		Port:           8091,
-		BasePath:       "/",
-		Repos: []config.Repo{
-			{Owner: "acme", Name: "widgets"},
-			{Owner: "acme", Name: "tools"},
-			{Owner: "acme", Name: "archived"},
-			{Owner: "roborev-dev", Name: "*"},
-		},
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: defaultPlatformHost,
+		Host:                "127.0.0.1",
+		Port:                8091,
+		BasePath:            "/",
+		Repos:               repos,
 		Activity: config.Activity{
 			ViewMode:  "flat",
 			TimeRange: "7d",
@@ -214,9 +244,13 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	}
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
 
+	fixtureClients := map[string]ghclient.Client{
+		"github.com":        fc,
+		defaultPlatformHost: fc,
+	}
 	startupResolved := ghclient.ResolveConfiguredRepos(
 		ctx,
-		map[string]ghclient.Client{"github.com": fc},
+		fixtureClients,
 		cfg.Repos,
 	)
 	for _, repo := range startupResolved.Expanded {
@@ -224,6 +258,13 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 			ctx, repo.PlatformHost, repo.Owner, repo.Name,
 		); err != nil {
 			return fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+	}
+	if !strings.EqualFold(defaultPlatformHost, "github.com") {
+		if _, err := database.UpsertRepo(
+			ctx, defaultPlatformHost, "enterprise", "service",
+		); err != nil {
+			return fmt.Errorf("seed default-host repo: %w", err)
 		}
 	}
 
@@ -246,15 +287,24 @@ func run(ctx context.Context, port int, roborevEndpoint, serverInfoFile string) 
 	budget.Spend(75)
 
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": fc},
+		fixtureClients,
 		database, diffRepo.Manager, startupResolved.Expanded, time.Hour,
-		map[string]*ghclient.RateTracker{"github.com": rt},
-		map[string]*ghclient.SyncBudget{"github.com": budget},
+		map[string]*ghclient.RateTracker{
+			"github.com":        rt,
+			defaultPlatformHost: rt,
+		},
+		map[string]*ghclient.SyncBudget{
+			"github.com":        budget,
+			defaultPlatformHost: budget,
+		},
 	)
 
 	// Wire GraphQL fetcher so GQL rate data appears in the endpoint.
 	gqlFetcher := ghclient.NewGraphQLFetcher("fake-token", "github.com", gqlRT, budget)
-	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": gqlFetcher})
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com":        gqlFetcher,
+		defaultPlatformHost: gqlFetcher,
+	})
 
 	assets, err := web.Assets()
 	if err != nil {

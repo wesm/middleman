@@ -20,6 +20,10 @@ export type IsolatedE2EServer = {
   stop: () => Promise<void>;
 };
 
+export type IsolatedE2EServerOptions = {
+  defaultPlatformHost?: string;
+};
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../../..");
 const serverInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
@@ -267,7 +271,10 @@ async function removeServerInfo(filePath: string): Promise<void> {
   await rm(filePath, { force: true });
 }
 
-async function spawnServer(infoFile: string): Promise<{
+async function spawnServer(
+  infoFile: string,
+  options: IsolatedE2EServerOptions = {},
+): Promise<{
   child: ChildProcess;
   info: E2EServerInfo;
 }> {
@@ -281,6 +288,9 @@ async function spawnServer(infoFile: string): Promise<{
     "-server-info-file",
     infoFile,
   ];
+  if (options.defaultPlatformHost) {
+    args.push("-default-platform-host", options.defaultPlatformHost);
+  }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
@@ -402,9 +412,15 @@ export async function stopE2EServer(): Promise<void> {
 }
 
 export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
+  return startIsolatedE2EServerWithOptions();
+}
+
+export async function startIsolatedE2EServerWithOptions(
+  options: IsolatedE2EServerOptions = {},
+): Promise<IsolatedE2EServer> {
   const isolatedInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
   const isolatedInfoFile = path.join(isolatedInfoDir, "server-info.json");
-  const started = await spawnServer(isolatedInfoFile);
+  const started = await spawnServer(isolatedInfoFile, options);
 
   return {
     info: started.info,
