@@ -1878,6 +1878,71 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 	assert.Equal(wsID, getResp.JSON200.Id)
 }
 
+func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "has-session" ]; then` + "\n" +
+		`    echo "can't find session: sim" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		`  if [ "$a" = "kill-session" ]; then` + "\n" +
+		`    echo "server exited unexpectedly" >&2` + "\n" +
+		`    exit 1` + "\n" +
+		`  fi` + "\n" +
+		"done\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+
+	client, _, database := setupWrapperServerWithScriptAndDB(t, script)
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		t.Context(),
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+				t.Context(), wsID,
+			)
+			if getErr != nil || getResp.JSON200 == nil {
+				return false
+			}
+			return getResp.JSON200.Status == "ready"
+		},
+		5*time.Second, 50*time.Millisecond,
+	)
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		t.Context(), wsID, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(t.Context(), wsID)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, getResp.StatusCode())
+
+	stored, err := database.GetWorkspace(t.Context(), wsID)
+	require.NoError(err)
+	assert.Nil(stored)
+}
+
 func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
