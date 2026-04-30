@@ -1033,17 +1033,25 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
+	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	mrID, err := s.lookupMRID(ctx, ref)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	exists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("validate comment target failed")
+	}
+	if !exists {
+		return nil, huma.Error404NotFound("comment not found for pull request")
+	}
+
 	comment, err := client.EditIssueComment(
 		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
-	}
-
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
-	mrID, err := s.lookupMRID(ctx, ref)
-	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
 	}
 
 	event := ghclient.NormalizeCommentEvent(mrID, comment)
@@ -1325,13 +1333,6 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.EditIssueComment(
-		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
-	)
-	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
-	}
-
 	ref := repoNumberPathRef{
 		owner:        input.Owner,
 		name:         input.Name,
@@ -1341,6 +1342,21 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("validate comment target failed")
+	}
+	if !exists {
+		return nil, huma.Error404NotFound("comment not found for issue")
+	}
+
+	comment, err := client.EditIssueComment(
+		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
 	}
 
 	event := ghclient.NormalizeIssueCommentEvent(issueID, comment)

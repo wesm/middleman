@@ -2784,6 +2784,15 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	mrID := seedPR(t, database, "acme", "widget", 7)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "original body",
+		CreatedAt:      createdAt,
+		DedupeKey:      "comment-9876",
+	}}))
 
 	req := httptest.NewRequest(
 		http.MethodPatch,
@@ -2803,6 +2812,44 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	assert.Equal("maintainer", events[0].Author)
 	require.NotNil(events[0].PlatformID)
 	assert.Equal(commentID, *events[0].PlatformID)
+}
+
+func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
+	require := require.New(t)
+	commentID := int64(5555)
+	var editCalls atomic.Int32
+	mock := &mockGH{
+		editIssueCommentFn: func(_ context.Context, _, _ string, _ int64, _ string) (*gh.IssueComment, error) {
+			editCalls.Add(1)
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	routeMRID := seedPR(t, database, "acme", "widget", 7)
+	otherMRID := seedPR(t, database, "acme", "widget", 8)
+	require.NotEqual(routeMRID, otherMRID)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: otherMRID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "other PR body",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "comment-5555",
+	}}))
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/7/comments/5555",
+		strings.NewReader(`{"body":"wrong target"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusNotFound, rec.Code)
+	require.Equal(int32(0), editCalls.Load())
 }
 
 func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
@@ -2828,6 +2875,15 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Author:     "maintainer",
+		Body:       "original issue body",
+		CreatedAt:  createdAt,
+		DedupeKey:  "issue-comment-1234",
+	}}))
 
 	req := httptest.NewRequest(
 		http.MethodPatch,
@@ -2847,6 +2903,44 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	assert.Equal("maintainer", events[0].Author)
 	require.NotNil(events[0].PlatformID)
 	assert.Equal(commentID, *events[0].PlatformID)
+}
+
+func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
+	require := require.New(t)
+	commentID := int64(6666)
+	var editCalls atomic.Int32
+	mock := &mockGH{
+		editIssueCommentFn: func(_ context.Context, _, _ string, _ int64, _ string) (*gh.IssueComment, error) {
+			editCalls.Add(1)
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	routeIssueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	otherIssueID := seedIssue(t, database, "acme", "widget", 6, "open")
+	require.NotEqual(routeIssueID, otherIssueID)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    otherIssueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Author:     "maintainer",
+		Body:       "other issue body",
+		CreatedAt:  time.Now().UTC(),
+		DedupeKey:  "issue-comment-6666",
+	}}))
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/issues/5/comments/6666",
+		strings.NewReader(`{"body":"wrong target"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusNotFound, rec.Code)
+	require.Equal(int32(0), editCalls.Load())
 }
 
 func TestAPICommentAutocomplete(t *testing.T) {
