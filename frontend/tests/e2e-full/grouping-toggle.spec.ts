@@ -14,6 +14,24 @@ async function waitForIssueList(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function openActivityViewDropdown(page: Page) {
+  const dropdown = page.locator(".activity-feed .filter-dropdown");
+  if (await dropdown.isVisible()) {
+    return dropdown;
+  }
+  await page.locator(".activity-feed .filter-btn", { hasText: "View" }).click();
+  await expect(dropdown).toBeVisible();
+  return dropdown;
+}
+
+async function selectActivityViewItem(
+  page: Page,
+  label: string | RegExp,
+): Promise<void> {
+  const dropdown = await openActivityViewDropdown(page);
+  await dropdown.locator(".filter-item", { hasText: label }).click();
+}
+
 test.describe("grouping toggle", () => {
   test.beforeEach(async ({ page }) => {
     // Clear persisted grouping once before first app bootstrap so tests start
@@ -93,7 +111,7 @@ test.describe("grouping toggle", () => {
     await page.goto("/");
 
     // Switch to threaded mode.
-    await page.locator(".seg-btn", { hasText: "Threaded" }).click();
+    await selectActivityViewItem(page, "Threaded");
 
     // Wait for threaded view to render.
     await page.locator(".threaded-view .item-row").first()
@@ -112,13 +130,10 @@ test.describe("grouping toggle", () => {
     await page.goto("/");
 
     // Switch to threaded + ungrouped.
-    await page.locator(".seg-btn", { hasText: "Threaded" }).click();
+    await selectActivityViewItem(page, "Threaded");
     await page.locator(".threaded-view .item-row").first()
       .waitFor({ state: "visible", timeout: 10_000 });
-    // Click "All" in the grouping toggle (the segmented-control containing "By Repo").
-    const groupControl = page.locator(".segmented-control")
-      .filter({ has: page.locator(".seg-btn", { hasText: "By Repo" }) });
-    await groupControl.locator(".seg-btn", { hasText: "All" }).click();
+    await selectActivityViewItem(page, "All");
 
     // Wait for repo tags to appear (ungrouped).
     await page.locator(".repo-tag").first()
@@ -134,19 +149,19 @@ test.describe("grouping toggle", () => {
   test("activity toggle hidden in flat mode, visible in threaded", async ({ page }) => {
     await page.goto("/");
 
-    // In flat mode (default), the By Repo / All toggle should not exist.
-    // The flat/threaded control is visible; check there's no "By Repo" button.
-    await page.locator(".seg-btn", { hasText: "Flat" })
-      .waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page.locator(".seg-btn", { hasText: "By Repo" }))
+    // In flat mode (default), the view dropdown should not offer grouping.
+    let dropdown = await openActivityViewDropdown(page);
+    await expect(dropdown.locator(".filter-item", { hasText: /By repo/i }))
       .toHaveCount(0);
+    await page.keyboard.press("Escape");
 
     // Switch to threaded mode.
-    await page.locator(".seg-btn", { hasText: "Threaded" }).click();
+    await selectActivityViewItem(page, "Threaded");
     await page.locator(".threaded-view").waitFor({ state: "visible", timeout: 10_000 });
 
-    // Now By Repo / All toggle should be visible.
-    await expect(page.locator(".seg-btn", { hasText: "By Repo" }))
+    // Now grouping controls should be available from the view dropdown.
+    dropdown = page.locator(".activity-feed .filter-dropdown");
+    await expect(dropdown.locator(".filter-item", { hasText: /By repo/i }))
       .toBeVisible();
   });
 
@@ -164,12 +179,8 @@ test.describe("grouping toggle", () => {
       .toHaveText("No activity found", { timeout: 10_000 });
 
     // Now switch to threaded + ungrouped. ActivityThreaded receives [].
-    await page.locator(".seg-btn", { hasText: "Threaded" }).click();
-    // The "By Repo/All" toggle appears in threaded mode. Switch to ungrouped
-    // by finding "All" within the same segmented-control as "By Repo".
-    const groupControl = page.locator(".segmented-control")
-      .filter({ has: page.locator(".seg-btn", { hasText: "By Repo" }) });
-    await groupControl.locator(".seg-btn", { hasText: "All" }).click();
+    await selectActivityViewItem(page, "Threaded");
+    await selectActivityViewItem(page, "All");
 
     // The threaded view's own empty state should render.
     await expect(page.locator(".threaded-view .empty-state"))
