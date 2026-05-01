@@ -29,7 +29,7 @@
   {tone}
   dot
   uppercase={false}
-  class={`status-badge review-status-chip review-status-chip--${status}`}
+  class={`status-badge status-${status} review-status-chip review-status-chip--${status}`}
 >
   {status}
 </Chip>
