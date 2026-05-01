@@ -243,6 +243,14 @@ const (
 	failIssues                       // issue sync path failed
 )
 
+type graphQLIndexStatus uint8
+
+const (
+	graphQLUnavailable graphQLIndexStatus = iota
+	graphQLSucceeded
+	graphQLSyncFailed
+)
+
 // markRepoFailed records that the most recent sync of this repo hit
 // a partial failure after the ETag cache may have been populated, so
 // the next cycle must force an unconditional refetch of the affected
@@ -1487,27 +1495,34 @@ func (s *Syncer) indexSyncRepoPRs(ctx context.Context, client Client, repo RepoR
 		s.markRepoFailed(repo, failMR)
 		return false, false, fmt.Errorf("list open PRs: %w", err)
 	}
-	if s.indexSyncRepoPRsGraphQL(ctx, repo, repoID, cloneFetchOK) {
+	switch s.indexSyncRepoPRsGraphQL(ctx, repo, repoID, cloneFetchOK) {
+	case graphQLSucceeded:
 		return false, false, nil
+	case graphQLSyncFailed:
+		return false, true, nil
 	}
 	failed, err := s.indexSyncRepoPRsREST(ctx, client, repo, repoID, ghPRs, cloneFetchOK)
 	return false, failed, err
 }
 
-func (s *Syncer) indexSyncRepoPRsGraphQL(ctx context.Context, repo RepoRef, repoID int64, cloneFetchOK bool) bool {
+func (s *Syncer) indexSyncRepoPRsGraphQL(ctx context.Context, repo RepoRef, repoID int64, cloneFetchOK bool) graphQLIndexStatus {
 	fetcher := s.fetcherFor(repo)
 	if fetcher == nil {
-		return false
+		return graphQLUnavailable
 	}
 	if backoff, _ := fetcher.ShouldBackoff(); backoff {
-		return false
+		return graphQLUnavailable
 	}
 	result, gqlErr := fetcher.FetchRepoPRs(ctx, repo.Owner, repo.Name)
 	if gqlErr != nil {
 		slog.Warn("GraphQL fetch failed, falling back to REST index", "repo", repo.Owner+"/"+repo.Name, "err", gqlErr)
-		return false
+		return graphQLUnavailable
 	}
-	return s.doSyncRepoGraphQL(ctx, repo, repoID, result, cloneFetchOK) == nil
+	if err := s.doSyncRepoGraphQL(ctx, repo, repoID, result, cloneFetchOK); err != nil {
+		slog.Error("GraphQL sync failed, skipping REST fallback", "repo", repo.Owner+"/"+repo.Name, "err", err)
+		return graphQLSyncFailed
+	}
+	return graphQLSucceeded
 }
 
 func (s *Syncer) indexSyncRepoPRsREST(ctx context.Context, client Client, repo RepoRef, repoID int64, ghPRs []*gh.PullRequest, cloneFetchOK bool) (bool, error) {
@@ -1545,8 +1560,11 @@ func (s *Syncer) indexSyncRepoIssues(ctx context.Context, client Client, repo Re
 		slog.Error("list open issues failed", "repo", repo.Owner+"/"+repo.Name, "err", issueListErr)
 		return false, true
 	}
-	if s.indexSyncRepoIssuesGraphQL(ctx, repo, repoID) {
+	switch s.indexSyncRepoIssuesGraphQL(ctx, repo, repoID) {
+	case graphQLSucceeded:
 		return false, false
+	case graphQLSyncFailed:
+		return false, true
 	}
 	if err := s.syncIssuesFromList(ctx, client, repo, repoID, ghIssues, forceIssues); err != nil {
 		slog.Error("REST issue sync failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
@@ -1555,20 +1573,24 @@ func (s *Syncer) indexSyncRepoIssues(ctx context.Context, client Client, repo Re
 	return false, false
 }
 
-func (s *Syncer) indexSyncRepoIssuesGraphQL(ctx context.Context, repo RepoRef, repoID int64) bool {
+func (s *Syncer) indexSyncRepoIssuesGraphQL(ctx context.Context, repo RepoRef, repoID int64) graphQLIndexStatus {
 	fetcher := s.fetcherFor(repo)
 	if fetcher == nil {
-		return false
+		return graphQLUnavailable
 	}
 	if backoff, _ := fetcher.ShouldBackoff(); backoff {
-		return false
+		return graphQLUnavailable
 	}
 	issueResult, gqlErr := fetcher.FetchRepoIssues(ctx, repo.Owner, repo.Name)
 	if gqlErr != nil {
 		slog.Warn("GraphQL issue fetch failed, falling back to REST", "repo", repo.Owner+"/"+repo.Name, "err", gqlErr)
-		return false
+		return graphQLUnavailable
 	}
-	return s.doSyncRepoGraphQLIssues(ctx, repo, repoID, issueResult) == nil
+	if err := s.doSyncRepoGraphQLIssues(ctx, repo, repoID, issueResult); err != nil {
+		slog.Error("GraphQL issue sync failed, skipping REST fallback", "repo", repo.Owner+"/"+repo.Name, "err", err)
+		return graphQLSyncFailed
+	}
+	return graphQLSucceeded
 }
 
 // indexUpsertMR upserts a PR from list endpoint data only. No

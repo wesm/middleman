@@ -4230,6 +4230,142 @@ func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string, endpoints .
 	}
 }
 
+func newEmptyGraphQLSyncServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+}
+
+func TestSyncerGraphQLMRSyncFailureMarksRepoFailed(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, repo.PlatformHost, repo.Owner, repo.Name)
+	require.NoError(err)
+
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "open mr",
+		Author:          "alice",
+		State:           "open",
+		HeadBranch:      "feature-branch",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123def456",
+		PlatformBaseSHA: "base123",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &now,
+		MergeableState:  "clean",
+	})
+	require.NoError(err)
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.openIssues = []*gh.Issue{}
+	mc.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		return nil, fmt.Errorf("transient closed PR fetch failure")
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	gqlSrv := newEmptyGraphQLSyncServer(t)
+	defer gqlSrv.Close()
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": {client: gqlClient},
+	})
+
+	syncer.RunOnce(ctx)
+
+	v, flagged := syncer.failedRepos.Load(repoFailKey(repo))
+	require.True(flagged, "GraphQL sync failure must not be cleared by REST fallback")
+	assert.Equal(failMR, v.(failScope))
+}
+
+func TestSyncerGraphQLIssueSyncFailureMarksRepoFailed(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, repo.PlatformHost, repo.Owner, repo.Name)
+	require.NoError(err)
+
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      7000,
+		Number:          7,
+		URL:             "https://github.com/owner/repo/issues/7",
+		Title:           "open issue",
+		Author:          "alice",
+		State:           "open",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &now,
+	})
+	require.NoError(err)
+
+	issueID := int64(7000)
+	issueNumber := 7
+	issueTitle := "open issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/7"
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{}
+	mc.openIssues = []*gh.Issue{openIssue}
+	mc.getIssueErr = fmt.Errorf("transient closed issue fetch failure")
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	gqlSrv := newEmptyGraphQLSyncServer(t)
+	defer gqlSrv.Close()
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": {client: gqlClient},
+	})
+
+	syncer.RunOnce(ctx)
+
+	v, flagged := syncer.failedRepos.Load(repoFailKey(repo))
+	require.True(flagged, "GraphQL issue sync failure must not be cleared by REST fallback")
+	assert.Equal(failIssues, v.(failScope))
+}
+
 // TestSyncerSyncOpenIssueFailureMarksRepoFailed verifies that when
 // the open-issue list succeeds but syncOpenIssue fails for an
 // individual item (here via a ListIssueComments error during timeline
