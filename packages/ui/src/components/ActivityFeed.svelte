@@ -14,6 +14,8 @@
     parseAPITimestamp,
   } from "../utils/time.js";
   import Chip from "./shared/Chip.svelte";
+  import ItemKindChip from "./shared/ItemKindChip.svelte";
+  import ItemStateChip from "./shared/ItemStateChip.svelte";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -162,40 +164,8 @@
     }
   }
 
-  function itemTypeLabel(item: ActivityItem): string {
-    return item.item_type === "pr" ? "PR" : "Issue";
-  }
-
-  function badgeClass(item: ActivityItem): string {
-    if (item.item_state === "merged") return "badge-merged";
-    if (item.item_state === "closed") return "badge-closed";
-    return item.item_type === "pr" ? "badge-pr" : "badge-issue";
-  }
-
-  function kindChipClass(item: ActivityItem): string {
-    const legacyClass = badgeClass(item);
-    const toneClass =
-      legacyClass === "badge-pr" ? "chip--blue"
-      : legacyClass === "badge-closed" ? "chip--red"
-      : "chip--purple";
-    return `badge ${legacyClass} ${toneClass}`;
-  }
-
-  function itemTypeChipClass(itemType: string): string {
-    return itemType === "pr"
-      ? "badge badge-pr chip--blue"
-      : "badge badge-issue chip--purple";
-  }
-
-  function stateChipClass(state: string): string {
-    const toneClass = state === "merged" ? "chip--purple" : "chip--red";
-    return `state-badge state-${state} ${toneClass}`;
-  }
-
-  function stateLabel(item: ActivityItem): string | null {
-    if (item.item_state === "merged") return "Merged";
-    if (item.item_state === "closed") return "Closed";
-    return null;
+  function hasStateChip(item: ActivityItem): boolean {
+    return item.item_state === "merged" || item.item_state === "closed";
   }
 
   const displayItems = $derived.by(() => {
@@ -446,10 +416,7 @@
                 type="button"
               >
                 <span class="compact-row-top">
-                  <Chip
-                    size="sm"
-                    class={itemTypeChipClass(row.representative.item_type)}
-                  >{row.representative.item_type === "pr" ? "PR" : "Issue"}</Chip>
+                  <ItemKindChip kind={row.representative.item_type} />
                   <span class="item-number">#{row.representative.item_number}</span>
                   <span class="compact-time">{relativeTime(row.latest)}</span>
                 </span>
@@ -472,10 +439,10 @@
                 type="button"
               >
                 <span class="compact-row-top">
-                  <Chip size="sm" class={kindChipClass(row)}>{itemTypeLabel(row)}</Chip>
+                  <ItemKindChip kind={row.item_type} />
                   <span class="item-number">#{row.item_number}</span>
-                  {#if stateLabel(row)}
-                    <Chip size="sm" class={stateChipClass(row.item_state)}>{stateLabel(row)}</Chip>
+                  {#if hasStateChip(row)}
+                    <ItemStateChip state={row.item_state} />
                   {/if}
                   <span class="compact-time">{relativeTime(row.created_at)}</span>
                 </span>
@@ -511,10 +478,7 @@
               {#if isCollapsedActivityRow(row)}
                 <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
                   <td class="col-kind">
-                    <Chip
-                      size="sm"
-                      class={itemTypeChipClass(row.representative.item_type)}
-                    >{row.representative.item_type === "pr" ? "PR" : "Issue"}</Chip>
+                    <ItemKindChip kind={row.representative.item_type} />
                   </td>
                   <td class="col-event">
                     <Chip
@@ -541,9 +505,9 @@
               {:else}
                 <tr class="activity-row" onclick={() => handleRowClick(row)}>
                   <td class="col-kind">
-                    <Chip size="sm" class={kindChipClass(row)}>{itemTypeLabel(row)}</Chip>
-                    {#if stateLabel(row)}
-                      <Chip size="sm" class={stateChipClass(row.item_state)}>{stateLabel(row)}</Chip>
+                    <ItemKindChip kind={row.item_type} />
+                    {#if hasStateChip(row)}
+                      <ItemStateChip state={row.item_state} />
                     {/if}
                   </td>
                   <td class="col-event">
@@ -807,6 +771,20 @@
   .collapsed-row {
     background: var(--bg-inset);
   }
+
+  .col-kind :global(.chip + .chip) {
+    margin-left: 3px;
+  }
+
+  .evt-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .evt-label.evt-comment { color: var(--accent-amber); }
+  .evt-label.evt-review { color: var(--accent-green); }
+  .evt-label.evt-commit { color: var(--accent-teal); }
+  .evt-label.evt-force-push { color: var(--accent-red); }
 
   .col-repo {
     color: var(--text-muted);

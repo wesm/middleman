@@ -1,0 +1,29 @@
+import { cleanup, render, screen } from "@testing-library/svelte";
+import { createRawSnippet } from "svelte";
+import { afterEach, describe, expect, it } from "vitest";
+
+import Chip from "./Chip.svelte";
+
+describe("Chip", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("expresses semantic tone and dot state without caller-owned classes", () => {
+    render(Chip, {
+      props: {
+        tone: "success",
+        dot: true,
+        uppercase: false,
+        children: createRawSnippet(() => ({
+          render: () => "<span>Running</span>",
+        })),
+      },
+    });
+
+    const chip = screen.getByText("Running").closest(".chip");
+    expect(chip).not.toBeNull();
+    expect(chip?.classList.contains("chip--tone-success")).toBe(true);
+    expect(chip?.querySelector(".chip__dot")).not.toBeNull();
+  });
+});
