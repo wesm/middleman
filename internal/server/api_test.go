@@ -535,6 +535,10 @@ func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
 
+func withSeedPRDetailFetchedAt(detailFetchedAt time.Time) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.DetailFetchedAt = &detailFetchedAt }
+}
+
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
 	t.Helper()
@@ -855,6 +859,93 @@ func TestAPIGetPull(t *testing.T) {
 	require.Equal("acme", resp.JSON200.RepoOwner)
 	require.Equal("widget", resp.JSON200.RepoName)
 	require.Equal("abc123def456", resp.JSON200.PlatformHeadSha)
+}
+
+func TestAPIPullListAndDetailProjectSharedResponseShape(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	srv.workspaces = workspace.NewManager(database, filepath.Join(t.TempDir(), "worktrees"))
+
+	detailFetchedAt := testEDTTime(14, 25)
+	prID := seedPR(
+		t, database, "acme", "widget", 12,
+		withSeedPRDetailFetchedAt(detailFetchedAt),
+	)
+	require.NoError(database.SetWorktreeLinks(t.Context(), []db.WorktreeLink{{
+		MergeRequestID: prID,
+		WorktreeKey:    "wt-acme-widget-12",
+		WorktreePath:   "/tmp/acme-widget-12",
+		WorktreeBranch: "feature/projection",
+		LinkedAt:       time.Now().UTC().Truncate(time.Second),
+	}}))
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID:              "ws-pr-12",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      12,
+		GitHeadRef:      "feature/projection",
+		WorkspaceBranch: "feature/projection",
+		WorktreePath:    "/tmp/acme-widget-12",
+		TmuxSession:     "middleman-ws-pr-12",
+		Status:          "ready",
+	}))
+	client := setupTestClient(t, srv)
+
+	listResp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 1)
+	listed := (*listResp.JSON200)[0]
+	assert.Equal("github.com", listed.PlatformHost)
+	assert.Equal("acme", listed.RepoOwner)
+	assert.Equal("widget", listed.RepoName)
+	assert.True(listed.DetailLoaded)
+	require.NotNil(listed.DetailFetchedAt)
+	assertRFC3339UTC(t, *listed.DetailFetchedAt, detailFetchedAt)
+	require.NotNil(listed.WorktreeLinks)
+	require.Len(*listed.WorktreeLinks, 1)
+	assert.Equal("wt-acme-widget-12", (*listed.WorktreeLinks)[0].WorktreeKey)
+	assert.Equal("/tmp/acme-widget-12", *(*listed.WorktreeLinks)[0].WorktreePath)
+	assert.Equal("feature/projection", *(*listed.WorktreeLinks)[0].WorktreeBranch)
+
+	detailResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		t.Context(), "acme", "widget", 12,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
+	assert.Equal("github.com", detailResp.JSON200.PlatformHost)
+	assert.Equal("acme", detailResp.JSON200.RepoOwner)
+	assert.Equal("widget", detailResp.JSON200.RepoName)
+	assert.EqualValues(12, detailResp.JSON200.MergeRequest.Number)
+	assert.True(detailResp.JSON200.DetailLoaded)
+	require.NotNil(detailResp.JSON200.DetailFetchedAt)
+	assertRFC3339UTC(t, *detailResp.JSON200.DetailFetchedAt, detailFetchedAt)
+	require.NotNil(detailResp.JSON200.Events)
+	assert.Empty(*detailResp.JSON200.Events)
+	require.NotNil(detailResp.JSON200.WorktreeLinks)
+	require.Len(*detailResp.JSON200.WorktreeLinks, 1)
+	assert.Equal("wt-acme-widget-12", (*detailResp.JSON200.WorktreeLinks)[0].WorktreeKey)
+	require.NotNil(detailResp.JSON200.Workspace)
+	assert.Equal("ws-pr-12", detailResp.JSON200.Workspace.Id)
+	assert.Equal("ready", detailResp.JSON200.Workspace.Status)
+
+	seedPR(t, database, "acme", "widget", 13)
+	emptyLinksResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		t.Context(), "acme", "widget", 13,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, emptyLinksResp.StatusCode())
+	require.NotNil(emptyLinksResp.JSON200)
+	require.NotNil(emptyLinksResp.JSON200.Events)
+	assert.Empty(*emptyLinksResp.JSON200.Events)
+	require.NotNil(emptyLinksResp.JSON200.WorktreeLinks)
+	assert.Empty(*emptyLinksResp.JSON200.WorktreeLinks)
 }
 
 func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
@@ -4344,6 +4435,82 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 		Color:       "d73a4a",
 		IsDefault:   true,
 	}}, *resp.JSON200.Issue.Labels)
+}
+
+func TestAPIIssueListAndDetailProjectSharedResponseShape(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	srv.workspaces = workspace.NewManager(database, filepath.Join(t.TempDir(), "worktrees"))
+
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	detailFetchedAt := testEDTTime(16, 5)
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      21000,
+		Number:          21,
+		URL:             "https://github.com/acme/widget/issues/21",
+		Title:           "Projection issue",
+		Author:          "testuser",
+		State:           "open",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	require.NotZero(issueID)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "ws-issue-21",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      21,
+		GitHeadRef:      "middleman/issue-21",
+		WorkspaceBranch: "middleman/issue-21",
+		WorktreePath:    "/tmp/acme-widget-issue-21",
+		TmuxSession:     "middleman-ws-issue-21",
+		Status:          "ready",
+	}))
+	client := setupTestClient(t, srv)
+
+	listResp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode())
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 1)
+	listed := (*listResp.JSON200)[0]
+	assert.Equal("github.com", listed.PlatformHost)
+	assert.Equal("acme", listed.RepoOwner)
+	assert.Equal("widget", listed.RepoName)
+	assert.True(listed.DetailLoaded)
+	require.NotNil(listed.DetailFetchedAt)
+	assertRFC3339UTC(t, *listed.DetailFetchedAt, detailFetchedAt)
+
+	detailResp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		ctx, "acme", "widget", 21, nil,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode())
+	require.NotNil(detailResp.JSON200)
+	assert.Equal("github.com", detailResp.JSON200.PlatformHost)
+	assert.Equal("acme", detailResp.JSON200.RepoOwner)
+	assert.Equal("widget", detailResp.JSON200.RepoName)
+	assert.EqualValues(21, detailResp.JSON200.Issue.Number)
+	assert.True(detailResp.JSON200.DetailLoaded)
+	require.NotNil(detailResp.JSON200.DetailFetchedAt)
+	assertRFC3339UTC(t, *detailResp.JSON200.DetailFetchedAt, detailFetchedAt)
+	require.NotNil(detailResp.JSON200.Events)
+	assert.Empty(*detailResp.JSON200.Events)
+	require.NotNil(detailResp.JSON200.Workspace)
+	assert.Equal("ws-issue-21", detailResp.JSON200.Workspace.Id)
+	assert.Equal("ready", detailResp.JSON200.Workspace.Status)
 }
 
 func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
