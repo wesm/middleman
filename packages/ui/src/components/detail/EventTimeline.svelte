@@ -1,9 +1,14 @@
 <script lang="ts">
+  import CheckIcon from "@lucide/svelte/icons/check";
+  import CopyIcon from "@lucide/svelte/icons/copy";
+  import PencilIcon from "@lucide/svelte/icons/pencil";
+  import XIcon from "@lucide/svelte/icons/x";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
+  import CommentEditor from "./CommentEditor.svelte";
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
@@ -11,6 +16,7 @@
     repoName?: string;
     filtered?: boolean;
     showCommitDetails?: boolean;
+    onEditComment?: (event: PREvent | IssueEvent, body: string) => Promise<boolean>;
   }
 
   const {
@@ -19,6 +25,7 @@
     repoName,
     filtered = false,
     showCommitDetails = true,
+    onEditComment,
   }: Props = $props();
 
   const typeLabels: Record<string, string> = {
@@ -97,6 +104,58 @@
 
   let copiedId = $state<string | null>(null);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+  let editingId = $state<number | null>(null);
+  let editDraft = $state("");
+  let savingEditId = $state<number | null>(null);
+  let editError = $state<string | null>(null);
+
+  function canEditComment(event: PREvent | IssueEvent): boolean {
+    return (
+      event.EventType === "issue_comment" &&
+      event.PlatformID != null &&
+      repoOwner !== undefined &&
+      repoName !== undefined &&
+      onEditComment !== undefined
+    );
+  }
+
+  function startEdit(event: PREvent | IssueEvent): void {
+    editingId = event.ID;
+    editDraft = event.Body;
+    editError = null;
+  }
+
+  function cancelEdit(): void {
+    editingId = null;
+    editDraft = "";
+    editError = null;
+  }
+
+  async function saveEdit(event: PREvent | IssueEvent): Promise<void> {
+    const nextBody = editDraft.trim();
+    if (nextBody === "") {
+      editError = "Comment body must not be empty";
+      return;
+    }
+    if (nextBody === event.Body.trim()) {
+      cancelEdit();
+      return;
+    }
+    if (onEditComment === undefined) return;
+
+    savingEditId = event.ID;
+    editError = null;
+    try {
+      const ok = await onEditComment(event, nextBody);
+      if (ok) {
+        cancelEdit();
+      } else {
+        editError = "Could not edit comment";
+      }
+    } finally {
+      savingEditId = null;
+    }
+  }
 
   function copyText(id: string, text: string): void {
     void copyToClipboard(text).then((ok) => {
@@ -191,30 +250,127 @@
             {/if}
             {#if event.Body}
               <div class="event-body-wrap">
-                <button
-                  class="copy-icon-btn"
-                  class:copied={copiedId === String(event.ID)}
-                  onclick={() => copyText(String(event.ID), event.Body)}
-                  title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
-                >
-                  {#if copiedId === String(event.ID)}
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-                    </svg>
-                  {:else}
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
-                      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
-                    </svg>
+                <div class="event-actions">
+                  {#if canEditComment(event)}
+                    <button
+                      class="event-action-btn"
+                      onclick={() => startEdit(event)}
+                      title="Edit comment"
+                      aria-label="Edit comment"
+                      disabled={savingEditId !== null}
+                    >
+                      <PencilIcon size={14} />
+                    </button>
                   {/if}
-                </button>
-                <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
-                  {#if shouldRenderMarkdown(event.EventType)}
-                    {@html renderMarkdown(event.Body, repoOwner && repoName ? { owner: repoOwner, name: repoName } : undefined)}
-                  {:else}
-                    {event.Body}
-                  {/if}
+                  <button
+                    class="event-action-btn"
+                    class:copied={copiedId === String(event.ID)}
+                    onclick={() => copyText(String(event.ID), event.Body)}
+                    title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
+                    aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
+                  >
+                    {#if copiedId === String(event.ID)}
+                      <CheckIcon size={14} />
+                    {:else}
+                      <CopyIcon size={14} />
+                    {/if}
+                  </button>
                 </div>
+                {#if editingId === event.ID && repoOwner && repoName}
+                  <div class="edit-panel">
+                    <CommentEditor
+                      owner={repoOwner}
+                      name={repoName}
+                      value={editDraft}
+                      disabled={savingEditId === event.ID}
+                      oninput={(nextBody) => {
+                        editDraft = nextBody;
+                      }}
+                      onsubmit={() => {
+                        void saveEdit(event);
+                      }}
+                    />
+                    {#if editError}
+                      <p class="edit-error">{editError}</p>
+                    {/if}
+                    <div class="edit-actions">
+                      <button
+                        class="edit-action edit-action--primary"
+                        onclick={() => void saveEdit(event)}
+                        disabled={savingEditId === event.ID}
+                      >
+                        <CheckIcon size={14} />
+                        {savingEditId === event.ID ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        class="edit-action"
+                        onclick={cancelEdit}
+                        disabled={savingEditId === event.ID}
+                      >
+                        <XIcon size={14} />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
+                    {#if shouldRenderMarkdown(event.EventType)}
+                      {@html renderMarkdown(event.Body, repoOwner && repoName ? { owner: repoOwner, name: repoName } : undefined)}
+                    {:else}
+                      {event.Body}
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {:else if canEditComment(event)}
+              <div class="event-body-wrap">
+                {#if editingId === event.ID && repoOwner && repoName}
+                  <div class="edit-panel">
+                    <CommentEditor
+                      owner={repoOwner}
+                      name={repoName}
+                      value={editDraft}
+                      disabled={savingEditId === event.ID}
+                      oninput={(nextBody) => {
+                        editDraft = nextBody;
+                      }}
+                      onsubmit={() => {
+                        void saveEdit(event);
+                      }}
+                    />
+                    {#if editError}
+                      <p class="edit-error">{editError}</p>
+                    {/if}
+                    <div class="edit-actions">
+                      <button
+                        class="edit-action edit-action--primary"
+                        onclick={() => void saveEdit(event)}
+                        disabled={savingEditId === event.ID}
+                      >
+                        <CheckIcon size={14} />
+                        {savingEditId === event.ID ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        class="edit-action"
+                        onclick={cancelEdit}
+                        disabled={savingEditId === event.ID}
+                      >
+                        <XIcon size={14} />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                {:else}
+                  <button
+                    class="event-action-btn empty-edit-btn"
+                    onclick={() => startEdit(event)}
+                    title="Edit comment"
+                    aria-label="Edit comment"
+                    disabled={savingEditId !== null}
+                  >
+                    <PencilIcon size={14} />
+                  </button>
+                {/if}
               </div>
             {/if}
           </div>
@@ -383,10 +539,16 @@
     margin-top: 8px;
   }
 
-  .copy-icon-btn {
+  .event-actions {
     position: absolute;
     top: 6px;
     right: 6px;
+    display: flex;
+    gap: 2px;
+    z-index: 1;
+  }
+
+  .event-action-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -396,31 +558,35 @@
     color: var(--text-muted);
     opacity: 0;
     transition: opacity 0.15s, background 0.15s, color 0.15s;
-    z-index: 1;
   }
 
-  .event-body-wrap:hover .copy-icon-btn,
-  .copy-icon-btn:focus-visible {
+  .event-body-wrap:hover .event-action-btn,
+  .event-action-btn:focus-visible {
     opacity: 1;
   }
 
-  .copy-icon-btn:hover {
+  .event-action-btn:hover:not(:disabled) {
     background: var(--bg-surface-hover);
     color: var(--text-secondary);
   }
 
-  .copy-icon-btn:active {
+  .event-action-btn:active:not(:disabled) {
     transform: scale(0.92);
   }
 
-  .copy-icon-btn.copied {
+  .event-action-btn.copied {
     opacity: 1;
     color: var(--accent-green);
     background: color-mix(in srgb, var(--accent-green) 12%, transparent);
   }
 
+  .event-action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   @media (hover: none) {
-    .copy-icon-btn {
+    .event-action-btn {
       opacity: 1;
     }
   }
@@ -436,5 +602,63 @@
 
   .event-body.markdown-body {
     white-space: normal;
+  }
+
+  .edit-panel {
+    padding: 8px 0 2px;
+  }
+
+  .edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .edit-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-default);
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .edit-action--primary {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue);
+    color: white;
+  }
+
+  .edit-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .edit-action:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .edit-action--primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-blue) 86%, black);
+    color: white;
+  }
+
+  .edit-error {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--accent-red);
+  }
+
+  .empty-edit-btn {
+    position: static;
+    opacity: 1;
+    margin-top: 8px;
   }
 </style>

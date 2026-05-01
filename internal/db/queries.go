@@ -920,6 +920,29 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	})
 }
 
+func (d *DB) MRCommentEventExists(
+	ctx context.Context,
+	mrID int64,
+	platformID int64,
+) (bool, error) {
+	var exists bool
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM middleman_mr_events
+			WHERE merge_request_id = ?
+			  AND platform_id = ?
+			  AND event_type = 'issue_comment'
+		 )`,
+		mrID,
+		platformID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check mr comment event exists: %w", err)
+	}
+	return exists, nil
+}
+
 // DeleteMissingMRCommentEvents removes issue_comment rows for a PR whose
 // dedupe keys are absent from the latest GitHub comment list.
 func (d *DB) DeleteMissingMRCommentEvents(
@@ -1791,6 +1814,29 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		}
 		return nil
 	})
+}
+
+func (d *DB) IssueCommentEventExists(
+	ctx context.Context,
+	issueID int64,
+	platformID int64,
+) (bool, error) {
+	var exists bool
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM middleman_issue_events
+			WHERE issue_id = ?
+			  AND platform_id = ?
+			  AND event_type = 'issue_comment'
+		)`,
+		issueID,
+		platformID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check issue comment event exists: %w", err)
+	}
+	return exists, nil
 }
 
 // DeleteMissingIssueCommentEvents removes issue_comment rows for an issue whose

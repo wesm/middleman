@@ -75,6 +75,20 @@ type postCommentOutput struct {
 	Body   db.MREvent
 }
 
+type editCommentInput struct {
+	Owner     string `path:"owner"`
+	Name      string `path:"name"`
+	Number    int    `path:"number"`
+	CommentID int64  `path:"comment_id"`
+	Body      struct {
+		Body string `json:"body"`
+	}
+}
+
+type editCommentOutput struct {
+	Body db.MREvent
+}
+
 type listIssuesInput struct {
 	Repo    string `query:"repo"`
 	State   string `query:"state"`
@@ -112,6 +126,21 @@ type postIssueCommentInput struct {
 type postIssueCommentOutput struct {
 	Status int `status:"201"`
 	Body   db.IssueEvent
+}
+
+type editIssueCommentInput struct {
+	Owner     string `path:"owner"`
+	Name      string `path:"name"`
+	Number    int    `path:"number"`
+	CommentID int64  `path:"comment_id"`
+	Body      struct {
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host,omitempty"`
+	}
+}
+
+type editIssueCommentOutput struct {
+	Body db.IssueEvent
 }
 
 type createIssueInput struct {
@@ -394,6 +423,12 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/repos/{owner}/{name}/pulls/{number}/comments",
 		DefaultStatus: http.StatusCreated,
 	}, s.postComment)
+	huma.Register(api, huma.Operation{
+		OperationID:   "edit-pr-comment",
+		Method:        http.MethodPatch,
+		Path:          "/repos/{owner}/{name}/pulls/{number}/comments/{comment_id}",
+		DefaultStatus: http.StatusOK,
+	}, s.editComment)
 
 	huma.Get(api, "/issues", s.listIssues)
 	huma.Register(api, huma.Operation{
@@ -409,6 +444,12 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/repos/{owner}/{name}/issues/{number}/comments",
 		DefaultStatus: http.StatusCreated,
 	}, s.postIssueComment)
+	huma.Register(api, huma.Operation{
+		OperationID:   "edit-issue-comment",
+		Method:        http.MethodPatch,
+		Path:          "/repos/{owner}/{name}/issues/{number}/comments/{comment_id}",
+		DefaultStatus: http.StatusOK,
+	}, s.editIssueComment)
 
 	huma.Post(api, "/repos/{owner}/{name}/items/{number}/resolve", s.resolveItem)
 
@@ -982,6 +1023,45 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	return &postCommentOutput{Status: http.StatusCreated, Body: event}, nil
 }
 
+func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*editCommentOutput, error) {
+	if strings.TrimSpace(input.Body.Body) == "" {
+		return nil, huma.Error400BadRequest("comment body must not be empty")
+	}
+
+	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	mrID, err := s.lookupMRID(ctx, ref)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	exists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("validate comment target failed")
+	}
+	if !exists {
+		return nil, huma.Error404NotFound("comment not found for pull request")
+	}
+
+	comment, err := client.EditIssueComment(
+		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
+	}
+
+	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
+		return nil, huma.Error500InternalServerError("persist edited comment failed")
+	}
+
+	return &editCommentOutput{Body: event}, nil
+}
+
 func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
 	if input.State != "" {
 		valid := map[string]bool{
@@ -1231,6 +1311,60 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 	}
 
 	return &postIssueCommentOutput{Status: http.StatusCreated, Body: event}, nil
+}
+
+func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentInput) (*editIssueCommentOutput, error) {
+	if strings.TrimSpace(input.Body.Body) == "" {
+		return nil, huma.Error400BadRequest("comment body must not be empty")
+	}
+
+	repo, err := s.lookupRepo(
+		ctx, input.Owner, input.Name, input.Body.PlatformHost,
+	)
+	if err != nil {
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("repo lookup failed")
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	ref := repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
+	issueID, err := s.lookupIssueID(ctx, ref)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("validate comment target failed")
+	}
+	if !exists {
+		return nil, huma.Error404NotFound("comment not found for issue")
+	}
+
+	comment, err := client.EditIssueComment(
+		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
+	}
+
+	event := ghclient.NormalizeIssueCommentEvent(issueID, comment)
+	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
+		return nil, huma.Error500InternalServerError("persist edited comment failed")
+	}
+
+	return &editIssueCommentOutput{Body: event}, nil
 }
 
 func (s *Server) setStarred(ctx context.Context, input *starredInput) (*statusOnlyOutput, error) {

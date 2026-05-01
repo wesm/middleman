@@ -414,6 +414,38 @@ components:
         - whitespace_only_count
         - files
       type: object
+    EditCommentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+      required:
+        - body
+      type: object
+    EditIssueCommentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditIssueCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        platform_host:
+          type: string
+      required:
+        - body
+      type: object
     EditPRContentInputBody:
       additionalProperties: false
       properties:
@@ -1607,6 +1639,8 @@ components:
           type:
             - string
             - "null"
+        fork:
+          type: boolean
         name:
           type: string
         owner:
@@ -1622,6 +1656,7 @@ components:
         - name
         - description
         - private
+        - fork
         - pushed_at
         - already_configured
       type: object
@@ -1721,6 +1756,8 @@ components:
         commits_since_release:
           format: int64
           type: integer
+        default_platform_host:
+          type: string
         draft_pr_count:
           format: int64
           type: integer
@@ -1762,6 +1799,7 @@ components:
           type: string
       required:
         - platform_host
+        - default_platform_host
         - owner
         - name
         - cached_pr_count
@@ -2764,6 +2802,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+  /repos/{owner}/{name}/issues/{number}/comments/{comment_id}:
+    patch:
+      operationId: edit-issue-comment
+      parameters:
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditIssueCommentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueEvent"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /repos/{owner}/{name}/issues/{number}/github-state:
     post:
       operationId: set-issue-github-state
@@ -3128,6 +3211,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/MREvent"
           description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /repos/{owner}/{name}/pulls/{number}/comments/{comment_id}:
+    patch:
+      operationId: edit-pr-comment
+      parameters:
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditCommentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MREvent"
+          description: OK
         default:
           content:
             application/problem+json:

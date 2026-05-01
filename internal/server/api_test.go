@@ -75,6 +75,7 @@ type mockGH struct {
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
+	editIssueCommentFn        func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
 	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
@@ -268,6 +269,23 @@ func (m *mockGH) CreateIssueComment(
 	return &gh.IssueComment{
 		ID:   &id,
 		Body: &body,
+	}, nil
+}
+
+func (m *mockGH) EditIssueComment(
+	ctx context.Context, owner, repo string, commentID int64, body string,
+) (*gh.IssueComment, error) {
+	if m.editIssueCommentFn != nil {
+		return m.editIssueCommentFn(ctx, owner, repo, commentID, body)
+	}
+	login := "fixture-bot"
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	return &gh.IssueComment{
+		ID:        &commentID,
+		Body:      &body,
+		User:      &gh.User{Login: &login},
+		CreatedAt: &now,
+		UpdatedAt: &now,
 	}, nil
 }
 
@@ -2741,6 +2759,188 @@ func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusCreated, resp.StatusCode())
 	require.NotNil(resp.JSON201)
+}
+
+func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	commentID := int64(9876)
+	createdAt := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
+	mock := &mockGH{
+		editIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64, body string) (*gh.IssueComment, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("widget", repo)
+			assert.Equal(commentID, gotCommentID)
+			assert.Equal("edited body", body)
+			login := "maintainer"
+			return &gh.IssueComment{
+				ID:        &gotCommentID,
+				Body:      &body,
+				User:      &gh.User{Login: &login},
+				CreatedAt: &gh.Timestamp{Time: createdAt},
+				UpdatedAt: &gh.Timestamp{Time: createdAt.Add(time.Minute)},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 7)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "original body",
+		CreatedAt:      createdAt,
+		DedupeKey:      "comment-9876",
+	}}))
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/7/comments/9876",
+		strings.NewReader(`{"body":"edited body"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusOK, rec.Code)
+	events, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited body", events[0].Body)
+	assert.Equal("maintainer", events[0].Author)
+	require.NotNil(events[0].PlatformID)
+	assert.Equal(commentID, *events[0].PlatformID)
+}
+
+func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
+	require := require.New(t)
+	commentID := int64(5555)
+	var editCalls atomic.Int32
+	mock := &mockGH{
+		editIssueCommentFn: func(_ context.Context, _, _ string, _ int64, _ string) (*gh.IssueComment, error) {
+			editCalls.Add(1)
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	routeMRID := seedPR(t, database, "acme", "widget", 7)
+	otherMRID := seedPR(t, database, "acme", "widget", 8)
+	require.NotEqual(routeMRID, otherMRID)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: otherMRID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Author:         "maintainer",
+		Body:           "other PR body",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "comment-5555",
+	}}))
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/7/comments/5555",
+		strings.NewReader(`{"body":"wrong target"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusNotFound, rec.Code)
+	require.Equal(int32(0), editCalls.Load())
+}
+
+func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	commentID := int64(1234)
+	createdAt := time.Date(2026, 4, 29, 13, 0, 0, 0, time.UTC)
+	mock := &mockGH{
+		editIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64, body string) (*gh.IssueComment, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("widget", repo)
+			assert.Equal(commentID, gotCommentID)
+			assert.Equal("edited issue body", body)
+			login := "maintainer"
+			return &gh.IssueComment{
+				ID:        &gotCommentID,
+				Body:      &body,
+				User:      &gh.User{Login: &login},
+				CreatedAt: &gh.Timestamp{Time: createdAt},
+				UpdatedAt: &gh.Timestamp{Time: createdAt.Add(time.Minute)},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Author:     "maintainer",
+		Body:       "original issue body",
+		CreatedAt:  createdAt,
+		DedupeKey:  "issue-comment-1234",
+	}}))
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/issues/5/comments/1234",
+		strings.NewReader(`{"body":"edited issue body"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusOK, rec.Code)
+	events, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited issue body", events[0].Body)
+	assert.Equal("maintainer", events[0].Author)
+	require.NotNil(events[0].PlatformID)
+	assert.Equal(commentID, *events[0].PlatformID)
+}
+
+func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
+	require := require.New(t)
+	commentID := int64(6666)
+	var editCalls atomic.Int32
+	mock := &mockGH{
+		editIssueCommentFn: func(_ context.Context, _, _ string, _ int64, _ string) (*gh.IssueComment, error) {
+			editCalls.Add(1)
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	routeIssueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	otherIssueID := seedIssue(t, database, "acme", "widget", 6, "open")
+	require.NotEqual(routeIssueID, otherIssueID)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    otherIssueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Author:     "maintainer",
+		Body:       "other issue body",
+		CreatedAt:  time.Now().UTC(),
+		DedupeKey:  "issue-comment-6666",
+	}}))
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/issues/5/comments/6666",
+		strings.NewReader(`{"body":"wrong target"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	require.Equal(http.StatusNotFound, rec.Code)
+	require.Equal(int32(0), editCalls.Load())
 }
 
 func TestAPICommentAutocomplete(t *testing.T) {

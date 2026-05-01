@@ -75,6 +75,7 @@ type Client interface {
 	ListWorkflowRunsForHeadSHA(ctx context.Context, owner, repo, headSHA string) ([]*gh.WorkflowRun, error)
 	ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
+	EditIssueComment(ctx context.Context, owner, repo string, commentID int64, body string) (*gh.IssueComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
@@ -969,6 +970,21 @@ func (c *liveClient) CreateIssueComment(
 	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("creating comment on %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return comment, nil
+}
+
+func (c *liveClient) EditIssueComment(
+	ctx context.Context, owner, repo string, commentID int64, body string,
+) (*gh.IssueComment, error) {
+	comment, resp, err := c.gh.Issues.EditComment(
+		ctx, owner, repo, commentID, &gh.IssueComment{Body: new(body)},
+	)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"editing comment %d on %s/%s: %w", commentID, owner, repo, err,
+		)
 	}
 	return comment, nil
 }

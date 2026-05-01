@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
+var errFixtureNotFound = errors.New("fixture client: not found")
 
 type fixtureReadyForReviewStaleStateError struct {
 	message string
@@ -374,6 +376,29 @@ func (c *FixtureClient) CreateIssueComment(
 	key := issueKey(owner, repo, number)
 	c.Comments[key] = append(c.Comments[key], comment)
 	return comment, nil
+}
+
+func (c *FixtureClient) EditIssueComment(
+	_ context.Context, owner, repo string, commentID int64, body string,
+) (*gh.IssueComment, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	prefix := repoKey(owner, repo) + "#"
+	for key, comments := range c.Comments {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		for _, comment := range comments {
+			if comment.GetID() == commentID {
+				comment.Body = &body
+				updatedAt := time.Now().UTC()
+				comment.UpdatedAt = &gh.Timestamp{Time: updatedAt}
+				return comment, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("%w: comment %d", errFixtureNotFound, commentID)
 }
 
 // CreateReview returns an error (mutations not supported).

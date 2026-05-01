@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import componentSource from "./EventTimeline.svelte?raw";
@@ -253,5 +253,27 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("No activity matches the current filters")).toBeTruthy();
+  });
+
+  it("shows inline edit controls for editable issue comments", async () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            Body: "Original comment",
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+        repoOwner: "acme",
+        repoName: "widget",
+        onEditComment: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit comment" }));
+
+    expect(screen.getByRole("button", { name: /save/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
   });
 });
