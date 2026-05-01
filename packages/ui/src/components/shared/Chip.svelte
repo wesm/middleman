@@ -64,14 +64,7 @@
     aria-expanded={expanded}
     {disabled}
     onclick={onclick}
-  >
-    {#if dot}
-      <span class="chip__dot" aria-hidden="true"></span>
-    {/if}
-    {#if children}
-      {@render children()}
-    {/if}
-  </button>
+  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}{@render children()}{/if}</button>
 {:else}
   <span
     class={[
@@ -85,14 +78,7 @@
     ]}
     {title}
     {style}
-  >
-    {#if dot}
-      <span class="chip__dot" aria-hidden="true"></span>
-    {/if}
-    {#if children}
-      {@render children()}
-    {/if}
-  </span>
+  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}{@render children()}{/if}</span>
 {/if}
 
 <style>

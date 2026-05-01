@@ -155,7 +155,7 @@ describe("ActivityFeed compact mode", () => {
       .toBe("PR");
     expect(row?.querySelector(".chip--state-merged")?.textContent)
       .toContain("Merged");
-    expect(row?.querySelector(".badge")).toBeNull();
+    expect(row?.querySelector(".badge")).not.toBeNull();
     expect(row?.querySelector(".state-badge")).toBeNull();
   });
 });

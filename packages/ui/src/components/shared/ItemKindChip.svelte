@@ -24,7 +24,7 @@
     normalized === "pr" ? "info" : "merged",
   );
   const chipClass = $derived(
-    ["chip--kind", `chip--kind-${normalized}`, className]
+    ["badge", "chip--kind", `chip--kind-${normalized}`, className]
       .filter(Boolean)
       .join(" "),
   );

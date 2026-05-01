@@ -18,7 +18,7 @@ describe("StatusBadge", () => {
     const chip = screen.getByText("running").closest(".chip");
     expect(chip).not.toBeNull();
     expect(chip?.classList.contains("chip--tone-info")).toBe(true);
+    expect(chip?.classList.contains("status-badge")).toBe(true);
     expect(chip?.querySelector(".chip__dot")).not.toBeNull();
-    expect(chip?.querySelector(".status-badge")).toBeNull();
   });
 });
