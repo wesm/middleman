@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { FilterDropdown, getStores } from "@middleman/ui";
   import type { RepoSummary } from "@middleman/ui/api/types";
+  import { buildIssueRoute } from "@middleman/ui/routes";
 
   import {
     RefreshIcon,
@@ -280,11 +281,13 @@
     issueBodyByRepo[key] = "";
     composerSummary = null;
     setGlobalRepo(repoStateKey(summary));
-    const platformQuery = summary.platform_host
-      ? `?platform_host=${encodeURIComponent(summary.platform_host)}`
-      : "";
     navigate(
-      `/issues/${summary.owner}/${summary.name}/${data.Number}${platformQuery}`,
+      buildIssueRoute({
+        owner: summary.owner,
+        name: summary.name,
+        number: data.Number,
+        platformHost: summary.platform_host,
+      }),
     );
   }
 
@@ -443,7 +446,12 @@
           onopenissue={(number) =>
             filterAndNavigate(
               summary,
-              `/issues/${summary.owner}/${summary.name}/${number}?platform_host=${encodeURIComponent(summary.platform_host)}`,
+              buildIssueRoute({
+                owner: summary.owner,
+                name: summary.name,
+                number,
+                platformHost: summary.platform_host,
+              }),
             )}
         />
       {/each}

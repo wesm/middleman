@@ -20,6 +20,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 - Tokens: `frontend/src/app.css`
 - Shared primitives: `packages/ui/src/components/shared/`
+- Routed item references and URL builders: `packages/ui/src/routes.ts`
 - Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
 - Interaction contracts: `context/ui-interaction-contracts.md`
 - This guidance: `context/ui-design-system.md`
@@ -134,7 +135,7 @@ Default color intent:
 
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
 
-For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. In particular, PR/issue route and drawer state should use the shared item reference types from `frontend/src/lib/stores/router.svelte.ts` instead of repeating `{ owner; name; number }` style shapes.
+For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `packages/ui/src/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
 
 Before adding UI styling:
 

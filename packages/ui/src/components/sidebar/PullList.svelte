@@ -5,6 +5,12 @@
   import PullItem from "./PullItem.svelte";
   import Chip from "../shared/Chip.svelte";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
+  import type { PullRequest } from "../../api/types.js";
+  import {
+    buildPullRequestFilesRoute,
+    buildPullRequestRoute,
+    type PullRequestRouteRef,
+  } from "../../routes.js";
 
   const { pulls, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
@@ -68,18 +74,29 @@
     }, 300);
   }
 
-  function handleSelect(owner: string, name: string, number: number): void {
-    pulls.selectPR(owner, name, number);
+  function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
+    return {
+      owner: pr.repo_owner ?? "",
+      name: pr.repo_name ?? "",
+      number: pr.Number,
+    };
+  }
+
+  function handleSelect(ref: PullRequestRouteRef): void {
+    pulls.selectPR(ref.owner, ref.name, ref.number);
     if (_getDetailTab() === "files") {
-      navigate(`/pulls/${owner}/${name}/${number}/files`);
+      navigate(buildPullRequestFilesRoute(ref));
     } else {
-      navigate(`/pulls/${owner}/${name}/${number}`);
+      navigate(buildPullRequestRoute(ref));
     }
   }
 
-  function isSelected(owner: string, name: string, number: number): boolean {
+  function isSelected(ref: PullRequestRouteRef): boolean {
     const sel = pulls.getSelectedPR();
-    return sel !== null && sel.owner === owner && sel.name === name && sel.number === number;
+    return sel !== null
+      && sel.owner === ref.owner
+      && sel.name === ref.name
+      && sel.number === ref.number;
   }
 
   const selectedVisiblePR = $derived.by(() => {
@@ -225,9 +242,7 @@
       {#if groupingMode === "byRepo"}
         {#each [...pulls.pullsByRepo().entries()] as [repo, prs] (repo)}
           {@const userCollapsed = collapsedRepos.isCollapsed("pulls", repo)}
-          {@const hasSelectedPR = isDiffFocus && prs.some(
-            (p) => isSelected(p.repo_owner ?? "", p.repo_name ?? "", p.Number),
-          )}
+          {@const hasSelectedPR = isDiffFocus && prs.some((p) => isSelected(routeRefForPull(p)))}
           {@const collapsed = userCollapsed && !hasSelectedPR}
           <div class="repo-group">
             <button
@@ -249,13 +264,14 @@
             </button>
             {#if !collapsed}
               {#each prs as pr (pr.ID)}
-                {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                {@const prRef = routeRefForPull(pr)}
+                {@const prSelected = isSelected(prRef)}
                 <PullItem
                   {pr}
                   showRepo={false}
                   selected={prSelected}
                   {importAction}
-                  onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                  onclick={() => handleSelect(prRef)}
                 />
                 {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                   <div class="diff-files-wrap">
@@ -271,13 +287,14 @@
           <div class="repo-group">
             <h3 class="repo-header">{wg.label}</h3>
             {#each wg.items as pr (pr.ID)}
-              {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+              {@const prRef = routeRefForPull(pr)}
+              {@const prSelected = isSelected(prRef)}
               <PullItem
                 {pr}
                 showRepo={true}
                 selected={prSelected}
                 {importAction}
-                onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                onclick={() => handleSelect(prRef)}
               />
               {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                 <div class="diff-files-wrap">
@@ -289,13 +306,14 @@
         {/each}
       {:else}
         {#each pulls.getPulls() as pr (pr.ID)}
-          {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+          {@const prRef = routeRefForPull(pr)}
+          {@const prSelected = isSelected(prRef)}
           <PullItem
             {pr}
             showRepo={true}
             selected={prSelected}
             {importAction}
-            onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+            onclick={() => handleSelect(prRef)}
           />
           {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
             <div class="diff-files-wrap">

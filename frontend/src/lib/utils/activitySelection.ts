@@ -1,14 +1,16 @@
+import {
+  buildIssueRoute,
+  buildPullRequestFilesRoute,
+  buildPullRequestRoute,
+  type RoutedItemRef,
+} from "@middleman/ui/routes";
+
 export type ActivitySelectionItemType = "pr" | "issue";
 export type ActivityDetailTab = "conversation" | "files";
 
-export interface ActivitySelection {
-  itemType: ActivitySelectionItemType;
-  owner: string;
-  name: string;
-  number: number;
-  platformHost?: string | undefined;
+export type ActivitySelection = RoutedItemRef & {
   detailTab: ActivityDetailTab;
-}
+};
 
 type Destination = "pulls" | "issues";
 
@@ -74,13 +76,11 @@ export function activitySelectionToRoute(
   if (!selection) return null;
   if (destination === "pulls") {
     if (selection.itemType !== "pr") return null;
-    const suffix = selection.detailTab === "files" ? "/files" : "";
-    return `/pulls/${selection.owner}/${selection.name}/${selection.number}${suffix}`;
+    return selection.detailTab === "files"
+      ? buildPullRequestFilesRoute(selection)
+      : buildPullRequestRoute(selection);
   }
 
   if (selection.itemType !== "issue") return null;
-  const qs = selection.platformHost
-    ? `?platform_host=${encodeURIComponent(selection.platformHost)}`
-    : "";
-  return `/issues/${selection.owner}/${selection.name}/${selection.number}${qs}`;
+  return buildIssueRoute(selection);
 }

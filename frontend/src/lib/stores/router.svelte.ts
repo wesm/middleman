@@ -1,19 +1,15 @@
-export type RepoRef = {
-  owner: string;
-  name: string;
-};
+import {
+  buildRoutedItemRoute,
+  type IssueRouteRef,
+  type NumberedRouteItemRef,
+  type RepositoryRouteRef,
+  type RoutedItemRef,
+} from "@middleman/ui/routes";
 
-export type NumberedItemRef = RepoRef & {
-  number: number;
-};
-
-export type HostedItemRef = NumberedItemRef & {
-  platformHost?: string | undefined;
-};
-
-export type RoutableItemRef = HostedItemRef & {
-  itemType: "pr" | "issue";
-};
+export type RepoRef = RepositoryRouteRef;
+export type NumberedItemRef = NumberedRouteItemRef;
+export type HostedItemRef = IssueRouteRef;
+export type RoutableItemRef = RoutedItemRef;
 
 export type Route =
   | { page: "activity" }
@@ -208,15 +204,16 @@ export function buildItemRoute(
   number: number,
   platformHost?: string,
 ): string {
-  const issueQuery = type === "issue" && platformHost
-    ? `?platform_host=${encodeURIComponent(platformHost)}`
-    : "";
-  if (isFocusMode()) {
-    return `/focus/${type}/${owner}/${name}/${number}${issueQuery}`;
-  }
-  return type === "pr"
-    ? `/pulls/${owner}/${name}/${number}`
-    : `/issues/${owner}/${name}/${number}${issueQuery}`;
+  return buildRoutedItemRoute(
+    {
+      itemType: type,
+      owner,
+      name,
+      number,
+      ...(platformHost && { platformHost }),
+    },
+    { focus: isFocusMode() },
+  );
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {

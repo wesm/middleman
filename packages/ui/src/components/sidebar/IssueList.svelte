@@ -3,6 +3,11 @@
   import IssueItem from "./IssueItem.svelte";
   import Chip from "../shared/Chip.svelte";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
+  import type { Issue } from "../../api/types.js";
+  import {
+    buildIssueRoute,
+    type IssueRouteRef,
+  } from "../../routes.js";
 
   const { issues, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
@@ -39,30 +44,27 @@
     }, 300);
   }
 
-  function handleSelect(
-    owner: string,
-    name: string,
-    number: number,
-    platformHost: string,
-  ): void {
-    issues.selectIssue(owner, name, number, platformHost);
-    navigate(
-      `/issues/${owner}/${name}/${number}?platform_host=${encodeURIComponent(platformHost)}`,
-    );
+  function routeRefForIssue(issue: Issue): IssueRouteRef {
+    return {
+      owner: issue.repo_owner ?? "",
+      name: issue.repo_name ?? "",
+      number: issue.Number,
+      platformHost: issue.platform_host,
+    };
   }
 
-  function isSelected(
-    owner: string,
-    name: string,
-    number: number,
-    platformHost: string,
-  ): boolean {
+  function handleSelect(ref: IssueRouteRef): void {
+    issues.selectIssue(ref.owner, ref.name, ref.number, ref.platformHost);
+    navigate(buildIssueRoute(ref));
+  }
+
+  function isSelected(ref: IssueRouteRef): boolean {
     const sel = issues.getSelectedIssue();
     return sel !== null
-      && sel.owner === owner
-      && sel.name === name
-      && sel.number === number
-      && sel.platformHost === platformHost;
+      && sel.owner === ref.owner
+      && sel.name === ref.name
+      && sel.number === ref.number
+      && sel.platformHost === ref.platformHost;
   }
 </script>
 
@@ -177,11 +179,12 @@
             </button>
             {#if !collapsed}
               {#each repoIssues as issue (issue.ID)}
+                {@const issueRef = routeRefForIssue(issue)}
                 <IssueItem
                   {issue}
                   showRepo={false}
-                  selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
-                  onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
+                  selected={isSelected(issueRef)}
+                  onclick={() => handleSelect(issueRef)}
                 />
               {/each}
             {/if}
@@ -189,11 +192,12 @@
         {/each}
       {:else}
         {#each issues.getIssues() as issue (issue.ID)}
+          {@const issueRef = routeRefForIssue(issue)}
           <IssueItem
             {issue}
             showRepo={true}
-            selected={isSelected(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
-            onclick={() => handleSelect(issue.repo_owner ?? "", issue.repo_name ?? "", issue.Number, issue.platform_host)}
+            selected={isSelected(issueRef)}
+            onclick={() => handleSelect(issueRef)}
           />
         {/each}
       {/if}

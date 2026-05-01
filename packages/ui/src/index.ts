@@ -40,6 +40,23 @@ export {
   getHostState,
   getRoborevClient,
 } from "./context.js";
+export {
+  buildFocusIssueRoute,
+  buildFocusListRoute,
+  buildFocusPullRequestRoute,
+  buildIssueRoute,
+  buildPullRequestFilesRoute,
+  buildPullRequestRoute,
+  buildRoutedItemRoute,
+} from "./routes.js";
+export type {
+  FocusListRouteRef,
+  IssueRouteRef,
+  NumberedRouteItemRef,
+  PullRequestRouteRef,
+  RepositoryRouteRef,
+  RoutedItemRef,
+} from "./routes.js";
 
 // Store factories
 export { createPullsStore } from "./stores/pulls.svelte.js";
