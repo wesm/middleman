@@ -21,11 +21,11 @@ module in `internal/server/repo_identity.go`. Handlers should not repeat:
 - how not-found and ambiguity errors are represented;
 - how a repo row becomes the stable `repo_id` used for item lookups.
 
-Use `repoLookupOwnerNameAllowed` for legacy routes where the path only carries
-`owner/name` and the existing behavior is to select the deterministic
-owner/name match from the database. Use
-`repoLookupRequireUnambiguousOwnerName` for mutations where the target repo
-must be unambiguous unless the caller provides `platform_host`.
+The server uses strict identity resolution for routes that operate on one
+repository: if the caller omits `platform_host`, `owner/name` must resolve to
+exactly one known repo. `errRepoAmbiguous` is a client input problem and should
+map to HTTP 400 with a message asking for `platform_host`; it should not be
+collapsed into a generic 500.
 
 ## Item Resolution
 
@@ -37,3 +37,10 @@ crossing when stale database rows exist.
 `ResolveLocalItem` intentionally treats a missing local repo row as "not found
 locally" instead of a hard error so `/items/{number}/resolve` can fall through
 to the sync path for tracked repositories.
+
+Before that sync fallback runs, the handler must check configured repositories
+as well as local database rows. If multiple tracked repos share the same
+`owner/name`, a no-host `/items/{number}/resolve` request is ambiguous even
+when SQLite has not seen either repo yet. In that case the server must return
+HTTP 400 instead of calling the no-host sync path, because the syncer would
+otherwise pick a host using first-match `hostFor` behavior.

@@ -6785,6 +6785,30 @@ func TestResolveItem_AmbiguousOwnerNameRequiresPlatformHost(t *testing.T) {
 	require.Equal(http.StatusBadRequest, resp.StatusCode())
 }
 
+func TestResolveItem_AmbiguousTrackedRepoRequiresPlatformHostBeforeSync(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var getIssueCalls int
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			getIssueCalls++
+			return nil, nil
+		},
+	}
+	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		t.Context(), "acme", "widget", 7, nil,
+	)
+	require.NoError(err)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode())
+	assert.Zero(getIssueCalls)
+}
+
 func TestResolveItem_ExplicitPlatformHostResolvesRepoScopedItem(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
@@ -6866,6 +6890,23 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
+}
+
+func TestGetIssue_AmbiguousOwnerNameRequiresPlatformHost(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 7, "open", "GitHub issue")
+	seedIssueOnHost(t, database, "ghe.example.com", "acme", "widget", 7, "open", "GHE issue")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNameIssuesByNumberWithResponse(
+		t.Context(), "acme", "widget", 7, nil,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
 }
 
 func TestAPICloseIssue422AlreadyClosed(t *testing.T) {

@@ -3757,6 +3757,25 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	return false
 }
 
+// IsTrackedRepoAmbiguous checks whether owner/name matches more than one
+// configured repo and therefore needs an explicit platform host.
+func (s *Syncer) IsTrackedRepoAmbiguous(owner, name string) bool {
+	s.reposMu.Lock()
+	repos := s.repos
+	s.reposMu.Unlock()
+	matches := 0
+	for _, r := range repos {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
+			matches++
+			if matches > 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TrackedRepos returns a snapshot of the tracked repositories.
 func (s *Syncer) TrackedRepos() []RepoRef {
 	s.reposMu.Lock()

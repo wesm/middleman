@@ -1158,6 +1158,11 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 		platformHost: input.PlatformHost,
 	})
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
 			return nil, huma.Error404NotFound("issue not found")
 		}
@@ -1704,6 +1709,11 @@ func (s *Server) setIssueGitHubState(
 		platformHost: input.Body.PlatformHost,
 	})
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
 			return nil, huma.Error404NotFound("issue not found")
 		}
@@ -1948,6 +1958,11 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		platformHost: input.PlatformHost,
 	})
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
 			return nil, huma.Error404NotFound("issue not found after sync")
 		}
@@ -2107,6 +2122,11 @@ func (s *Server) resolveItem(
 				RepoTracked: false,
 			},
 		}, nil
+	}
+	if platformHost == "" && s.syncer.IsTrackedRepoAmbiguous(owner, name) {
+		return nil, huma.Error400BadRequest(
+			"platform_host is required for ambiguous repo",
+		)
 	}
 
 	localItem, err := s.repoIdentity().ResolveLocalItem(ctx, repoNumberPathRef{
