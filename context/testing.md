@@ -13,3 +13,9 @@ The test uses `MIDDLEMAN_GITHUB_TOKEN` first, then `GITHUB_TOKEN`. It intentiona
 When changing structs, fields, aliases, fragments, pagination arguments, or nested selections used by `internal/github/graphql.go`, enable `MIDDLEMAN_LIVE_GITHUB_TESTS=1` and run the live validation test in addition to the normal Go tests.
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
+
+## Related context
+
+- [`context/github-sync-invariants.md`](./github-sync-invariants.md) documents
+  the host-aware identity, timeline freshness, SHA-sensitive CI, and fallback
+  rules that usually determine which tests belong on a GitHub-sync change.

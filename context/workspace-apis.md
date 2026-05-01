@@ -37,3 +37,9 @@ issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
 - Represent arbitrary worktrees discovered on a host machine.
 - Mirror an external workspace tree or host inventory.
 - Serve as a generic Git automation API outside middleman's workspace lifecycle.
+
+## Related context
+
+- [`context/workspace-runtime-lifecycle.md`](./workspace-runtime-lifecycle.md)
+  documents runtime-session exit, tmux persistence, and destructive ordering
+  rules that sit underneath these APIs.
