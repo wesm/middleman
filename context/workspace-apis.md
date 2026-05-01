@@ -32,6 +32,30 @@ browser and not an embedder protocol for arbitrary host state.
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
 
+## Runtime Lifecycle Seam
+
+Workspace runtime lifecycle coordination belongs below the HTTP server in
+`internal/workspace.RuntimeLifecycle`.
+
+- `internal/workspace/localruntime.Manager` is the process adapter. It starts,
+  stops, lists, restores, and attaches local runtime processes and tmux-backed
+  runtime sessions.
+- `internal/workspace.Manager` is the persistence/worktree adapter. It records
+  durable runtime tmux ownership rows and owns workspace deletion of persisted
+  rows, worktrees, branches, and base workspace tmux sessions.
+- `RuntimeLifecycle` composes those adapters for cross-adapter ordering:
+  launch + record + rollback, explicit stop + stored tmux fallback, natural
+  exit cleanup, and delete-time stopping marker + stop-before-destructive
+  cleanup.
+- Server handlers should call lifecycle methods for launching runtime sessions,
+  stopping runtime sessions, and deleting workspaces. They should not directly
+  interleave process cleanup with runtime tmux persistence.
+
+The delete ordering is intentional: dirty preflight must run before runtime
+sessions are stopped, but the runtime stopping marker must span the whole
+delete call so a concurrent launch cannot start in a worktree after sessions
+were stopped and before the workspace row is removed.
+
 ## Non-Goals
 
 - Represent arbitrary worktrees discovered on a host machine.

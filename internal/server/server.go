@@ -123,6 +123,7 @@ type Server struct {
 	syncer             *ghclient.Syncer
 	clones             *gitclone.Manager
 	workspaces         *workspace.Manager
+	runtimeLifecycle   *workspace.RuntimeLifecycle
 	workspacePRMonitor *workspace.PRMonitor
 	tmuxActivity       *tmuxActivityTracker
 	runtime            *localruntime.Manager
@@ -443,6 +444,9 @@ func newServer(
 			StripEnvVars:            cfg.TokenEnvNames(),
 			OnSessionExit:           s.handleRuntimeSessionExit,
 		})
+		s.runtimeLifecycle = workspace.NewRuntimeLifecycle(
+			s.runtime, s.workspaces,
+		)
 		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
 			slog.Warn("restore runtime tmux sessions", "err", err)
 		}
@@ -575,7 +579,7 @@ func (s *Server) restoreRuntimeTmuxSessions(ctx context.Context) error {
 }
 
 func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
-	if info.TmuxSession == "" || s.workspaces == nil {
+	if info.TmuxSession == "" || s.runtimeLifecycle == nil {
 		return
 	}
 	s.runBackground(func(ctx context.Context) {
@@ -583,9 +587,8 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 			ctx, runtimeSessionCleanupTimeout,
 		)
 		defer cancel()
-		if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
-			cleanupCtx, info.WorkspaceID, info.TmuxSession,
-			info.CreatedAt,
+		if _, err := s.runtimeLifecycle.ForgetMissingSession(
+			cleanupCtx, info,
 		); err != nil {
 			slog.Warn(
 				"forget missing runtime tmux session",

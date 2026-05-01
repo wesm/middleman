@@ -3174,46 +3174,21 @@ func (s *Server) launchWorkspaceRuntimeSession(
 		return nil, huma.Error400BadRequest("target_key is required")
 	}
 
-	if targetKey == string(localruntime.LaunchTargetPlainShell) {
-		session, err := s.runtime.EnsureShell(
-			ctx, summary.ID, summary.WorktreePath,
-		)
-		if err != nil {
+	session, err := s.runtimeLifecycle.LaunchSession(
+		ctx,
+		workspace.RuntimeWorkspace{
+			ID:           summary.ID,
+			WorktreePath: summary.WorktreePath,
+		},
+		targetKey,
+	)
+	if err != nil {
+		if targetKey == string(localruntime.LaunchTargetPlainShell) {
 			return nil, huma.Error500InternalServerError(
 				"ensure shell: " + err.Error(),
 			)
 		}
-		return &workspaceRuntimeSessionOutput{Body: session}, nil
-	}
-
-	session, err := s.runtime.Launch(
-		ctx, summary.ID, summary.WorktreePath, targetKey,
-	)
-	if err != nil {
 		return nil, workspaceRuntimeLaunchError(err)
-	}
-	if session.TmuxSession != "" {
-		if err := s.workspaces.RecordRuntimeTmuxSession(
-			ctx, summary.ID, session.TmuxSession, session.TargetKey,
-			session.CreatedAt,
-		); err != nil {
-			_ = s.runtime.Stop(ctx, summary.ID, session.Key)
-			return nil, huma.Error500InternalServerError(
-				"record runtime tmux session: " + err.Error(),
-			)
-		}
-		if runtimeSessionTmuxSession(
-			s.runtime.ListSessions(summary.ID), session.Key,
-		) == "" {
-			if _, err := s.workspaces.ForgetMissingRuntimeTmuxSession(
-				ctx, summary.ID, session.TmuxSession,
-				session.CreatedAt,
-			); err != nil {
-				return nil, huma.Error500InternalServerError(
-					"forget missing runtime tmux session: " + err.Error(),
-				)
-			}
-		}
 	}
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
 }
@@ -3226,65 +3201,15 @@ func (s *Server) stopWorkspaceRuntimeSession(
 	if err != nil {
 		return nil, err
 	}
-	tmuxSession := runtimeSessionTmuxSession(
-		s.runtime.ListSessions(summary.ID), input.SessionKey,
-	)
-	if err := s.runtime.Stop(
+	if err := s.runtimeLifecycle.StopSession(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
 		if errors.Is(err, localruntime.ErrSessionNotFound) {
-			if targetKey, ok := runtimeTargetKeyFromSessionKey(
-				summary.ID, input.SessionKey,
-			); ok {
-				stopped, stopErr := s.workspaces.StopStoredRuntimeTmuxSession(
-					ctx, summary.ID, targetKey,
-				)
-				if stopErr != nil {
-					return nil, huma.Error500InternalServerError(
-						"stop stored runtime tmux session: " +
-							stopErr.Error(),
-					)
-				}
-				if stopped {
-					return nil, nil
-				}
-			}
 			return nil, huma.Error404NotFound(err.Error())
 		}
-		return nil, huma.Error500InternalServerError(
-			"stop runtime session: " + err.Error(),
-		)
-	}
-	if tmuxSession != "" {
-		if err := s.workspaces.ForgetRuntimeTmuxSession(
-			ctx, summary.ID, tmuxSession,
-		); err != nil {
-			return nil, huma.Error500InternalServerError(
-				"forget runtime tmux session: " + err.Error(),
-			)
-		}
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return nil, nil
-}
-
-func runtimeSessionTmuxSession(
-	sessions []localruntime.SessionInfo,
-	key string,
-) string {
-	for _, session := range sessions {
-		if session.Key == key {
-			return session.TmuxSession
-		}
-	}
-	return ""
-}
-
-func runtimeTargetKeyFromSessionKey(
-	workspaceID string,
-	key string,
-) (string, bool) {
-	targetKey, ok := strings.CutPrefix(key, workspaceID+":")
-	return targetKey, ok && targetKey != ""
 }
 
 func (s *Server) ensureWorkspaceRuntimeShell(
@@ -3296,8 +3221,13 @@ func (s *Server) ensureWorkspaceRuntimeShell(
 		return nil, err
 	}
 
-	session, err := s.runtime.EnsureShell(
-		ctx, summary.ID, summary.WorktreePath,
+	session, err := s.runtimeLifecycle.LaunchSession(
+		ctx,
+		workspace.RuntimeWorkspace{
+			ID:           summary.ID,
+			WorktreePath: summary.WorktreePath,
+		},
+		string(localruntime.LaunchTargetPlainShell),
 	)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
@@ -3311,7 +3241,7 @@ func (s *Server) getReadyRuntimeWorkspace(
 	ctx context.Context,
 	id string,
 ) (*db.WorkspaceSummary, error) {
-	if s.workspaces == nil || s.runtime == nil {
+	if s.workspaces == nil || s.runtime == nil || s.runtimeLifecycle == nil {
 		return nil, huma.Error503ServiceUnavailable(
 			"workspace runtime not configured",
 		)
@@ -3339,6 +3269,10 @@ func workspaceRuntimeLaunchError(err error) error {
 	if strings.Contains(msg, "target not found") {
 		return huma.Error404NotFound(msg)
 	}
+	if strings.HasPrefix(msg, "record runtime tmux session:") ||
+		strings.HasPrefix(msg, "forget missing runtime tmux session:") {
+		return huma.Error500InternalServerError(msg)
+	}
 	if strings.Contains(msg, "not available") ||
 		strings.Contains(msg, "no command") {
 		return huma.Error400BadRequest(msg)
@@ -3358,6 +3292,11 @@ func (s *Server) deleteWorkspace(
 			"workspace manager not configured",
 		)
 	}
+	if s.runtimeLifecycle == nil {
+		return nil, huma.Error503ServiceUnavailable(
+			"workspace runtime not configured",
+		)
+	}
 
 	// Order of operations:
 	//   1. dirty preflight inside Delete — returns 409 without
@@ -3372,21 +3311,12 @@ func (s *Server) deleteWorkspace(
 	// processes could write new uncommitted changes that bypass the
 	// dirty check the user requested.
 	//
-	// BeginStopping/EndStopping holds the runtime's stopping marker
-	// across the whole Delete call — including step 3 — so a Launch
-	// arriving between StopWorkspace returning and DB removal cannot
-	// spawn a process in the soon-to-be-deleted worktree.
-	if s.runtime != nil {
-		s.runtime.BeginStopping(input.ID)
-		defer s.runtime.EndStopping(input.ID)
-	}
-	dirty, err := s.workspaces.Delete(
+	// RuntimeLifecycle holds the runtime's stopping marker across
+	// the whole Delete call — including step 3 — so a Launch arriving
+	// between StopWorkspace returning and DB removal cannot spawn a
+	// process in the soon-to-be-deleted worktree.
+	dirty, err := s.runtimeLifecycle.DeleteWorkspace(
 		ctx, input.ID, input.Force,
-		func(stopCtx context.Context) {
-			if s.runtime != nil {
-				s.runtime.StopWorkspace(stopCtx, input.ID)
-			}
-		},
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
