@@ -14,7 +14,9 @@ enough for that operation.
 ## Server Boundary
 
 HTTP handlers should resolve repositories through the repository identity
-module in `internal/server/repo_identity.go`. Handlers should not repeat:
+module in `internal/repoidentity`. `internal/server/repo_identity.go` is only
+the adapter from route-local structs to that module. Handlers should not
+repeat:
 
 - whether `owner/name` is enough;
 - when omitted `platform_host` must be rejected as ambiguous;
@@ -23,9 +25,9 @@ module in `internal/server/repo_identity.go`. Handlers should not repeat:
 
 The server uses strict identity resolution for routes that operate on one
 repository: if the caller omits `platform_host`, `owner/name` must resolve to
-exactly one known repo. `errRepoAmbiguous` is a client input problem and should
-map to HTTP 400 with a message asking for `platform_host`; it should not be
-collapsed into a generic 500.
+exactly one known repo. `repoidentity.ErrAmbiguous` is a client input problem
+and should map to HTTP 400 with a message asking for `platform_host`; it should
+not be collapsed into a generic 500.
 
 ## Item Resolution
 

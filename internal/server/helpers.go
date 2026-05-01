@@ -2,12 +2,12 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/repoidentity"
 )
 
 type repoNumberPathRef struct {
@@ -25,7 +25,7 @@ type starredRequest struct {
 	PlatformHost string `json:"platform_host,omitempty"`
 }
 
-var errRepoNotFound = errors.New("repo not found")
+var errRepoNotFound = repoidentity.ErrNotFound
 
 // buildRepoLookup materializes a repo-id keyed map used to annotate list
 // responses with owner/name information.
