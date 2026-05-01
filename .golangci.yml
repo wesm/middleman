@@ -6,6 +6,8 @@ linters:
   enable:
     - errcheck
     - forbidigo
+    - gocognit
+    - gocyclo
     - govet
     - ineffassign
     - staticcheck
@@ -33,6 +35,10 @@ linters:
         - pattern: '^time\.FixedZone$'
           msg: Do not create backend timezone conversions outside tests.
       analyze-types: true
+    gocognit:
+      min-complexity: 20
+    gocyclo:
+      min-complexity: 20
   exclusions:
     generated: lax
     presets:

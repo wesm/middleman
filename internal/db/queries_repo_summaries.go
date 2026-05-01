@@ -284,81 +284,103 @@ func (d *DB) loadRepoSummaryOverviews(
 	defer rows.Close()
 
 	for rows.Next() {
-		var (
-			repoID             int64
-			tagName            string
-			releaseName        string
-			releaseURL         string
-			targetCommitish    string
-			prerelease         bool
-			publishedAtStr     sql.NullString
-			commitsSince       sql.NullInt64
-			timelineJSON       string
-			releasesJSON       string
-			timelineUpdatedStr sql.NullString
-		)
-		if err := rows.Scan(
-			&repoID,
-			&tagName,
-			&releaseName,
-			&releaseURL,
-			&targetCommitish,
-			&prerelease,
-			&publishedAtStr,
-			&commitsSince,
-			&timelineJSON,
-			&releasesJSON,
-			&timelineUpdatedStr,
-		); err != nil {
+		overview, err := scanRepoSummaryOverview(rows)
+		if err != nil {
 			return fmt.Errorf("scan repo summary overview: %w", err)
 		}
 
-		summary := summaryByRepoID[repoID]
+		summary := summaryByRepoID[overview.repoID]
 		if summary == nil {
 			continue
 		}
-
-		if tagName != "" {
-			release := &RepoRelease{
-				TagName:         tagName,
-				Name:            releaseName,
-				URL:             releaseURL,
-				TargetCommitish: targetCommitish,
-				Prerelease:      prerelease,
-			}
-			if publishedAtStr.Valid {
-				t, err := parseDBTime(publishedAtStr.String)
-				if err != nil {
-					return fmt.Errorf("parse repo release published_at %q: %w", publishedAtStr.String, err)
-				}
-				release.PublishedAt = &t
-			}
-			summary.Overview.LatestRelease = release
-		}
-		if commitsSince.Valid {
-			count := int(commitsSince.Int64)
-			summary.Overview.CommitsSinceRelease = &count
-		}
-		releases, err := parseRepoReleasesJSON(releasesJSON)
-		if err != nil {
-			return fmt.Errorf("parse repo releases json: %w", err)
-		}
-		summary.Overview.Releases = releases
-		points, err := parseRepoTimelineJSON(timelineJSON)
-		if err != nil {
-			return fmt.Errorf("parse repo timeline json: %w", err)
-		}
-		summary.Overview.CommitTimeline = points
-		if timelineUpdatedStr.Valid {
-			t, err := parseDBTime(timelineUpdatedStr.String)
-			if err != nil {
-				return fmt.Errorf("parse repo timeline updated_at %q: %w", timelineUpdatedStr.String, err)
-			}
-			summary.Overview.TimelineUpdatedAt = &t
+		if err := applyRepoSummaryOverview(summary, overview); err != nil {
+			return err
 		}
 	}
 
 	return rows.Err()
+}
+
+type repoSummaryOverviewRow struct {
+	repoID             int64
+	tagName            string
+	releaseName        string
+	releaseURL         string
+	targetCommitish    string
+	prerelease         bool
+	publishedAtStr     sql.NullString
+	commitsSince       sql.NullInt64
+	timelineJSON       string
+	releasesJSON       string
+	timelineUpdatedStr sql.NullString
+}
+
+func scanRepoSummaryOverview(rows *sql.Rows) (repoSummaryOverviewRow, error) {
+	var overview repoSummaryOverviewRow
+	err := rows.Scan(
+		&overview.repoID,
+		&overview.tagName,
+		&overview.releaseName,
+		&overview.releaseURL,
+		&overview.targetCommitish,
+		&overview.prerelease,
+		&overview.publishedAtStr,
+		&overview.commitsSince,
+		&overview.timelineJSON,
+		&overview.releasesJSON,
+		&overview.timelineUpdatedStr,
+	)
+	return overview, err
+}
+
+func applyRepoSummaryOverview(summary *RepoSummary, overview repoSummaryOverviewRow) error {
+	if overview.tagName != "" {
+		release, err := repoSummaryLatestRelease(overview)
+		if err != nil {
+			return err
+		}
+		summary.Overview.LatestRelease = release
+	}
+	if overview.commitsSince.Valid {
+		count := int(overview.commitsSince.Int64)
+		summary.Overview.CommitsSinceRelease = &count
+	}
+	releases, err := parseRepoReleasesJSON(overview.releasesJSON)
+	if err != nil {
+		return fmt.Errorf("parse repo releases json: %w", err)
+	}
+	summary.Overview.Releases = releases
+	points, err := parseRepoTimelineJSON(overview.timelineJSON)
+	if err != nil {
+		return fmt.Errorf("parse repo timeline json: %w", err)
+	}
+	summary.Overview.CommitTimeline = points
+	if overview.timelineUpdatedStr.Valid {
+		t, err := parseDBTime(overview.timelineUpdatedStr.String)
+		if err != nil {
+			return fmt.Errorf("parse repo timeline updated_at %q: %w", overview.timelineUpdatedStr.String, err)
+		}
+		summary.Overview.TimelineUpdatedAt = &t
+	}
+	return nil
+}
+
+func repoSummaryLatestRelease(overview repoSummaryOverviewRow) (*RepoRelease, error) {
+	release := &RepoRelease{
+		TagName:         overview.tagName,
+		Name:            overview.releaseName,
+		URL:             overview.releaseURL,
+		TargetCommitish: overview.targetCommitish,
+		Prerelease:      overview.prerelease,
+	}
+	if overview.publishedAtStr.Valid {
+		t, err := parseDBTime(overview.publishedAtStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("parse repo release published_at %q: %w", overview.publishedAtStr.String, err)
+		}
+		release.PublishedAt = &t
+	}
+	return release, nil
 }
 
 func parseRepoTimelineJSON(value string) ([]RepoCommitTimelinePoint, error) {

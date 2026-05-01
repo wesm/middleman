@@ -19,23 +19,31 @@ type SeedResult struct {
 	FixtureClient func() *FixtureClient
 }
 
+func seedRepos(ctx context.Context, d *db.DB) (int64, int64, error) {
+	widgetsID, err := d.UpsertRepo(ctx, "github.com", "acme", "widgets")
+	if err != nil {
+		return 0, 0, fmt.Errorf("upsert acme/widgets: %w", err)
+	}
+	toolsID, err := d.UpsertRepo(ctx, "github.com", "acme", "tools")
+	if err != nil {
+		return 0, 0, fmt.Errorf("upsert acme/tools: %w", err)
+	}
+	_, err = d.UpsertRepo(ctx, "github.com", "acme", "archived")
+	if err != nil {
+		return 0, 0, fmt.Errorf("upsert acme/archived: %w", err)
+	}
+
+	return widgetsID, toolsID, nil
+}
+
 // SeedFixtures populates d with a synthetic data set for E2E tests and returns
 // a SeedResult containing a FixtureClient factory for the seeded open items.
 func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	now := time.Now().UTC()
 
-	// --- Repos ---
-	widgetsID, err := d.UpsertRepo(ctx, "github.com", "acme", "widgets")
+	widgetsID, toolsID, err := seedRepos(ctx, d)
 	if err != nil {
-		return nil, fmt.Errorf("upsert acme/widgets: %w", err)
-	}
-	toolsID, err := d.UpsertRepo(ctx, "github.com", "acme", "tools")
-	if err != nil {
-		return nil, fmt.Errorf("upsert acme/tools: %w", err)
-	}
-	_, err = d.UpsertRepo(ctx, "github.com", "acme", "archived")
-	if err != nil {
-		return nil, fmt.Errorf("upsert acme/archived: %w", err)
+		return nil, err
 	}
 
 	// --- Pull Requests ---
@@ -333,103 +341,18 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		}
 	}
 
-	// --- Issues ---
-
-	// widgets#10: open, eve
-	wi10Created := now.Add(-5 * 24 * time.Hour)
-	wi10ID, err := d.UpsertIssue(ctx, &db.Issue{
-		RepoID:         widgetsID,
-		PlatformID:     3010,
-		Number:         10,
-		URL:            "https://github.com/acme/widgets/issues/10",
-		Title:          "Widget rendering broken on Safari",
-		Author:         "eve",
-		State:          "open",
-		CommentCount:   2,
-		CreatedAt:      wi10Created,
-		UpdatedAt:      now.Add(-4 * time.Hour),
-		LastActivityAt: now.Add(-4 * time.Hour),
-	})
+	issueData, err := seedIssues(ctx, d, now, widgetsID, toolsID)
 	if err != nil {
-		return nil, fmt.Errorf("upsert widgets issue#10: %w", err)
+		return nil, err
 	}
-
-	// widgets#11: open, alice, older (20d ago)
-	wi11Created := now.Add(-20 * 24 * time.Hour)
-	wi11ID, err := d.UpsertIssue(ctx, &db.Issue{
-		RepoID:         widgetsID,
-		PlatformID:     3011,
-		Number:         11,
-		URL:            "https://github.com/acme/widgets/issues/11",
-		Title:          "Add dark mode support",
-		Author:         "alice",
-		State:          "open",
-		CommentCount:   0,
-		CreatedAt:      wi11Created,
-		UpdatedAt:      wi11Created,
-		LastActivityAt: wi11Created,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("upsert widgets issue#11: %w", err)
-	}
-
-	// widgets#12: closed 3d ago, bob
-	wi12Closed := now.Add(-3 * 24 * time.Hour)
-	wi12ID, err := d.UpsertIssue(ctx, &db.Issue{
-		RepoID:         widgetsID,
-		PlatformID:     3012,
-		Number:         12,
-		URL:            "https://github.com/acme/widgets/issues/12",
-		Title:          "Crash on empty input",
-		Author:         "bob",
-		State:          "closed",
-		CommentCount:   1,
-		CreatedAt:      now.Add(-10 * 24 * time.Hour),
-		UpdatedAt:      wi12Closed,
-		LastActivityAt: wi12Closed,
-		ClosedAt:       &wi12Closed,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("upsert widgets issue#12: %w", err)
-	}
-
-	// widgets#13: open, dependabot[bot]
-	wi13Created := now.Add(-2 * 24 * time.Hour)
-	wi13ID, err := d.UpsertIssue(ctx, &db.Issue{
-		RepoID:         widgetsID,
-		PlatformID:     3013,
-		Number:         13,
-		URL:            "https://github.com/acme/widgets/issues/13",
-		Title:          "Security advisory: prototype pollution",
-		Author:         "dependabot[bot]",
-		State:          "open",
-		CommentCount:   0,
-		CreatedAt:      wi13Created,
-		UpdatedAt:      wi13Created,
-		LastActivityAt: wi13Created,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("upsert widgets issue#13: %w", err)
-	}
-
-	// tools#5: open, dave
-	ti5Created := now.Add(-7 * 24 * time.Hour)
-	ti5ID, err := d.UpsertIssue(ctx, &db.Issue{
-		RepoID:         toolsID,
-		PlatformID:     4005,
-		Number:         5,
-		URL:            "https://github.com/acme/tools/issues/5",
-		Title:          "Support config file loading",
-		Author:         "dave",
-		State:          "open",
-		CommentCount:   1,
-		CreatedAt:      ti5Created,
-		UpdatedAt:      now.Add(-16 * time.Hour),
-		LastActivityAt: now.Add(-16 * time.Hour),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("upsert tools issue#5: %w", err)
-	}
+	wi10ID := issueData.wi10ID
+	wi12ID := issueData.wi12ID
+	ti5ID := issueData.ti5ID
+	wi10Created := issueData.wi10Created
+	wi11Created := issueData.wi11Created
+	wi12Closed := issueData.wi12Closed
+	wi13Created := issueData.wi13Created
+	ti5Created := issueData.ti5Created
 
 	// --- PR Events ---
 
@@ -585,10 +508,163 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert tools PR#1 events: %w", err)
 	}
 
-	// --- Issue Events ---
+	if err := seedIssueEvents(ctx, d, now, wi10ID, wi12ID, ti5ID); err != nil {
+		return nil, err
+	}
 
+	return buildSeedResult(seedFixtureClientInput{
+		now:               now,
+		widgetsPR1HeadSHA: widgetsPR1HeadSHA,
+		w1Created:         w1Created,
+		w2Created:         w2Created,
+		w3Merged:          w3Merged,
+		w4Merged:          w4Merged,
+		w5Closed:          w5Closed,
+		w6Created:         w6Created,
+		w7Created:         w7Created,
+		t1Created:         t1Created,
+		t2Merged:          t2Merged,
+		wi10Created:       wi10Created,
+		wi11Created:       wi11Created,
+		wi12Closed:        wi12Closed,
+		wi13Created:       wi13Created,
+		ti5Created:        ti5Created,
+	}), nil
+}
+
+type seedIssueData struct {
+	wi10ID      int64
+	wi12ID      int64
+	ti5ID       int64
+	wi10Created time.Time
+	wi11Created time.Time
+	wi12Closed  time.Time
+	wi13Created time.Time
+	ti5Created  time.Time
+}
+
+func seedIssues(
+	ctx context.Context,
+	d *db.DB,
+	now time.Time,
+	widgetsID int64,
+	toolsID int64,
+) (seedIssueData, error) {
+	// widgets#10: open, eve
+	wi10Created := now.Add(-5 * 24 * time.Hour)
+	wi10ID, err := d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         widgetsID,
+		PlatformID:     3010,
+		Number:         10,
+		URL:            "https://github.com/acme/widgets/issues/10",
+		Title:          "Widget rendering broken on Safari",
+		Author:         "eve",
+		State:          "open",
+		CommentCount:   2,
+		CreatedAt:      wi10Created,
+		UpdatedAt:      now.Add(-4 * time.Hour),
+		LastActivityAt: now.Add(-4 * time.Hour),
+	})
+	if err != nil {
+		return seedIssueData{}, fmt.Errorf("upsert widgets issue#10: %w", err)
+	}
+
+	// widgets#11: open, alice, older (20d ago)
+	wi11Created := now.Add(-20 * 24 * time.Hour)
+	wi11ID, err := d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         widgetsID,
+		PlatformID:     3011,
+		Number:         11,
+		URL:            "https://github.com/acme/widgets/issues/11",
+		Title:          "Add dark mode support",
+		Author:         "alice",
+		State:          "open",
+		CommentCount:   0,
+		CreatedAt:      wi11Created,
+		UpdatedAt:      wi11Created,
+		LastActivityAt: wi11Created,
+	})
+	if err != nil {
+		return seedIssueData{}, fmt.Errorf("upsert widgets issue#11: %w", err)
+	}
+
+	// widgets#12: closed 3d ago, bob
+	wi12Closed := now.Add(-3 * 24 * time.Hour)
+	wi12ID, err := d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         widgetsID,
+		PlatformID:     3012,
+		Number:         12,
+		URL:            "https://github.com/acme/widgets/issues/12",
+		Title:          "Crash on empty input",
+		Author:         "bob",
+		State:          "closed",
+		CommentCount:   1,
+		CreatedAt:      now.Add(-10 * 24 * time.Hour),
+		UpdatedAt:      wi12Closed,
+		LastActivityAt: wi12Closed,
+		ClosedAt:       &wi12Closed,
+	})
+	if err != nil {
+		return seedIssueData{}, fmt.Errorf("upsert widgets issue#12: %w", err)
+	}
+
+	// widgets#13: open, dependabot[bot]
+	wi13Created := now.Add(-2 * 24 * time.Hour)
+	wi13ID, err := d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         widgetsID,
+		PlatformID:     3013,
+		Number:         13,
+		URL:            "https://github.com/acme/widgets/issues/13",
+		Title:          "Security advisory: prototype pollution",
+		Author:         "dependabot[bot]",
+		State:          "open",
+		CommentCount:   0,
+		CreatedAt:      wi13Created,
+		UpdatedAt:      wi13Created,
+		LastActivityAt: wi13Created,
+	})
+	if err != nil {
+		return seedIssueData{}, fmt.Errorf("upsert widgets issue#13: %w", err)
+	}
+
+	// tools#5: open, dave
+	ti5Created := now.Add(-7 * 24 * time.Hour)
+	ti5ID, err := d.UpsertIssue(ctx, &db.Issue{
+		RepoID:         toolsID,
+		PlatformID:     4005,
+		Number:         5,
+		URL:            "https://github.com/acme/tools/issues/5",
+		Title:          "Support config file loading",
+		Author:         "dave",
+		State:          "open",
+		CommentCount:   1,
+		CreatedAt:      ti5Created,
+		UpdatedAt:      now.Add(-16 * time.Hour),
+		LastActivityAt: now.Add(-16 * time.Hour),
+	})
+	if err != nil {
+		return seedIssueData{}, fmt.Errorf("upsert tools issue#5: %w", err)
+	}
+
+	_ = wi11ID
+	_ = wi13ID
+	return seedIssueData{
+		wi10ID: wi10ID, wi12ID: wi12ID, ti5ID: ti5ID,
+		wi10Created: wi10Created, wi11Created: wi11Created,
+		wi12Closed: wi12Closed, wi13Created: wi13Created, ti5Created: ti5Created,
+	}, nil
+}
+
+func seedIssueEvents(
+	ctx context.Context,
+	d *db.DB,
+	now time.Time,
+	wi10ID int64,
+	wi12ID int64,
+	ti5ID int64,
+) error {
 	// widgets issue#10: 2 comments (alice, bob)
-	err = d.UpsertIssueEvents(ctx, []db.IssueEvent{
+	err := d.UpsertIssueEvents(ctx, []db.IssueEvent{
 		{
 			IssueID:   wi10ID,
 			EventType: "issue_comment",
@@ -607,7 +683,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("upsert widgets issue#10 events: %w", err)
+		return fmt.Errorf("upsert widgets issue#10 events: %w", err)
 	}
 
 	// widgets issue#12: 1 comment (carol)
@@ -622,7 +698,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("upsert widgets issue#12 events: %w", err)
+		return fmt.Errorf("upsert widgets issue#12 events: %w", err)
 	}
 
 	// tools issue#5: 1 comment (dave)
@@ -637,65 +713,82 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("upsert tools issue#5 events: %w", err)
+		return fmt.Errorf("upsert tools issue#5 events: %w", err)
 	}
 
-	// --- Build FixtureClient open items ---
+	return nil
+}
 
+type seedFixtureClientInput struct {
+	now               time.Time
+	widgetsPR1HeadSHA string
+	w1Created         time.Time
+	w2Created         time.Time
+	w3Merged          time.Time
+	w4Merged          time.Time
+	w5Closed          time.Time
+	w6Created         time.Time
+	w7Created         time.Time
+	t1Created         time.Time
+	t2Merged          time.Time
+	wi10Created       time.Time
+	wi11Created       time.Time
+	wi12Closed        time.Time
+	wi13Created       time.Time
+	ti5Created        time.Time
+}
+
+func buildSeedResult(in seedFixtureClientInput) *SeedResult {
 	openPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
-			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
-			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
-			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", in.w1Created, in.now.Add(-2*time.Hour)), 240, 30), in.widgetsPR1HeadSHA),
+			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", in.w2Created, in.now.Add(-20*time.Hour)), 55, 12),
+			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", in.w6Created, in.now.Add(-12*time.Hour)), 150, 40),
+			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", in.w7Created, in.now.Add(-6*time.Hour)), 1, 1),
 		},
 		"acme/tools": {
-			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20),
+			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", in.t1Created, in.now.Add(-18*time.Hour)), 180, 20),
 		},
 	}
 
 	allPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
-			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
-			setPRStats(buildGHPR("acme", "widgets", 1003, 3, "Upgrade dependency versions", "carol", "merged", false, "", now.Add(-10*24*time.Hour), w3Merged), 80, 80),
-			setPRStats(buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", now.Add(-30*24*time.Hour), w4Merged), 420, 310),
-			setPRStats(buildGHPR("acme", "widgets", 1005, 5, "Experimental new API", "bob", "closed", false, "", now.Add(-15*24*time.Hour), w5Closed), 900, 0),
-			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
-			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
+			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", in.w1Created, in.now.Add(-2*time.Hour)), 240, 30), in.widgetsPR1HeadSHA),
+			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", in.w2Created, in.now.Add(-20*time.Hour)), 55, 12),
+			setPRStats(buildGHPR("acme", "widgets", 1003, 3, "Upgrade dependency versions", "carol", "merged", false, "", in.now.Add(-10*24*time.Hour), in.w3Merged), 80, 80),
+			setPRStats(buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", in.now.Add(-30*24*time.Hour), in.w4Merged), 420, 310),
+			setPRStats(buildGHPR("acme", "widgets", 1005, 5, "Experimental new API", "bob", "closed", false, "", in.now.Add(-15*24*time.Hour), in.w5Closed), 900, 0),
+			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", in.w6Created, in.now.Add(-12*time.Hour)), 150, 40),
+			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", in.w7Created, in.now.Add(-6*time.Hour)), 1, 1),
 		},
 		"acme/tools": {
-			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20),
-			setPRStats(buildGHPR("acme", "tools", 2002, 2, "Initial project setup", "alice", "merged", false, "", now.Add(-62*24*time.Hour), t2Merged), 500, 0),
+			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", in.t1Created, in.now.Add(-18*time.Hour)), 180, 20),
+			setPRStats(buildGHPR("acme", "tools", 2002, 2, "Initial project setup", "alice", "merged", false, "", in.now.Add(-62*24*time.Hour), in.t2Merged), 500, 0),
 		},
 	}
 
 	openIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
-			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
-			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
+			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", in.wi10Created, in.now.Add(-4*time.Hour)),
+			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", in.wi11Created, in.wi11Created),
+			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", in.wi13Created, in.wi13Created),
 		},
 		"acme/tools": {
-			buildGHIssue("acme", "tools", 4005, 5, "Support config file loading", "dave", "open", ti5Created, now.Add(-16*time.Hour)),
+			buildGHIssue("acme", "tools", 4005, 5, "Support config file loading", "dave", "open", in.ti5Created, in.now.Add(-16*time.Hour)),
 		},
 	}
 
 	allIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
-			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
-			buildGHIssue("acme", "widgets", 3012, 12, "Crash on empty input", "carol", "closed", now.Add(-7*24*time.Hour), wi12Closed),
-			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
+			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", in.wi10Created, in.now.Add(-4*time.Hour)),
+			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", in.wi11Created, in.wi11Created),
+			buildGHIssue("acme", "widgets", 3012, 12, "Crash on empty input", "carol", "closed", in.now.Add(-7*24*time.Hour), in.wi12Closed),
+			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", in.wi13Created, in.wi13Created),
 		},
 		"acme/tools": {
-			buildGHIssue("acme", "tools", 4005, 5, "Support config file loading", "dave", "open", ti5Created, now.Add(-16*time.Hour)),
+			buildGHIssue("acme", "tools", 4005, 5, "Support config file loading", "dave", "open", in.ti5Created, in.now.Add(-16*time.Hour)),
 		},
 	}
-
-	// Suppress unused variable warnings for IDs only needed for event insertion.
-	_ = wi11ID
-	_ = wi13ID
 
 	result := &SeedResult{
 		FixtureClient: func() *FixtureClient {
@@ -707,12 +800,12 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 				Comments:   make(map[string][]*gh.IssueComment),
 				Tags:       make(map[string][]*gh.RepositoryTag),
 				CombinedStatuses: map[string]*gh.CombinedStatus{
-					refKey("acme", "widgets", widgetsPR1HeadSHA): {
+					refKey("acme", "widgets", in.widgetsPR1HeadSHA): {
 						State: new("success"),
 					},
 				},
 				CheckRuns: map[string][]*gh.CheckRun{
-					refKey("acme", "widgets", widgetsPR1HeadSHA): {
+					refKey("acme", "widgets", in.widgetsPR1HeadSHA): {
 						{
 							Name:       new("build"),
 							Status:     new("completed"),
@@ -747,7 +840,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			}
 		},
 	}
-	return result, nil
+	return result
 }
 
 // buildGHPR creates a minimal *gh.PullRequest for the FixtureClient.

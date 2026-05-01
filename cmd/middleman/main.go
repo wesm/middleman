@@ -278,62 +278,13 @@ func run(configPath string) error {
 	}
 	defer database.Close()
 
-	// Build per-host tokens from repo config first, so explicit
-	// token_env overrides are honored (including for github.com).
-	hostTokens := make(map[string]string, len(cfg.Repos)+1)
-	for _, r := range cfg.Repos {
-		host := r.PlatformHostOrDefault()
-		if _, seen := hostTokens[host]; seen {
-			continue
-		}
-		token := r.ResolveToken(globalToken)
-		if token == "" {
-			return fmt.Errorf(
-				"no token for host %s (repo %s/%s)",
-				host, r.Owner, r.Name,
-			)
-		}
-		hostTokens[host] = token
+	hostTokens, err := buildHostTokens(cfg, globalToken)
+	if err != nil {
+		return err
 	}
-	// Seed github.com from the global token if no repo already
-	// provided one, so the settings UI can validate repos even
-	// with empty or GHE-only configs.
-	if _, ok := hostTokens["github.com"]; !ok {
-		hostTokens["github.com"] = globalToken
-	}
-
-	rateTrackers := make(
-		map[string]*ghclient.RateTracker, len(hostTokens),
-	)
-	budgetPerHour := cfg.BudgetPerHour()
-	budgets := make(
-		map[string]*ghclient.SyncBudget, len(hostTokens),
-	)
-	clients := make(
-		map[string]ghclient.Client, len(hostTokens),
-	)
-	cloneTokens := make(
-		map[string]string, len(hostTokens),
-	)
-	for host, token := range hostTokens {
-		rateTrackers[host] = ghclient.NewRateTracker(
-			database, host, "rest",
-		)
-		if budgetPerHour > 0 {
-			budgets[host] = ghclient.NewSyncBudget(
-				budgetPerHour,
-			)
-		}
-		c, err := ghclient.NewClient(
-			token, host, rateTrackers[host], budgets[host],
-		)
-		if err != nil {
-			return fmt.Errorf(
-				"create client for %s: %w", host, err,
-			)
-		}
-		clients[host] = c
-		cloneTokens[host] = token
+	clients, rateTrackers, budgets, cloneTokens, err := buildRuntimeClients(database, cfg, hostTokens)
+	if err != nil {
+		return err
 	}
 
 	repos := resolveStartupRepos(
@@ -350,16 +301,7 @@ func run(configPath string) error {
 		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
-	fetchers := make(
-		map[string]*ghclient.GraphQLFetcher, len(hostTokens),
-	)
-	for host, token := range hostTokens {
-		gqlRT := ghclient.NewRateTracker(database, host, "graphql")
-		fetchers[host] = ghclient.NewGraphQLFetcher(
-			token, host, gqlRT, budgets[host],
-		)
-	}
-	syncer.SetFetchers(fetchers)
+	syncer.SetFetchers(buildRuntimeFetchers(database, hostTokens, budgets))
 
 	assets, err := web.Assets()
 	if err != nil {
@@ -446,6 +388,70 @@ func run(configPath string) error {
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+func buildHostTokens(cfg *config.Config, globalToken string) (map[string]string, error) {
+	hostTokens := make(map[string]string, len(cfg.Repos)+1)
+	for _, r := range cfg.Repos {
+		host := r.PlatformHostOrDefault()
+		if _, seen := hostTokens[host]; seen {
+			continue
+		}
+		token := r.ResolveToken(globalToken)
+		if token == "" {
+			return nil, fmt.Errorf(
+				"no token for host %s (repo %s/%s)", host, r.Owner, r.Name,
+			)
+		}
+		hostTokens[host] = token
+	}
+	if _, ok := hostTokens["github.com"]; !ok {
+		hostTokens["github.com"] = globalToken
+	}
+	return hostTokens, nil
+}
+
+func buildRuntimeClients(
+	database *db.DB,
+	cfg *config.Config,
+	hostTokens map[string]string,
+) (
+	map[string]ghclient.Client,
+	map[string]*ghclient.RateTracker,
+	map[string]*ghclient.SyncBudget,
+	map[string]string,
+	error,
+) {
+	rateTrackers := make(map[string]*ghclient.RateTracker, len(hostTokens))
+	budgets := make(map[string]*ghclient.SyncBudget, len(hostTokens))
+	clients := make(map[string]ghclient.Client, len(hostTokens))
+	cloneTokens := make(map[string]string, len(hostTokens))
+	for host, token := range hostTokens {
+		rateTrackers[host] = ghclient.NewRateTracker(database, host, "rest")
+		if budgetPerHour := cfg.BudgetPerHour(); budgetPerHour > 0 {
+			budgets[host] = ghclient.NewSyncBudget(budgetPerHour)
+		}
+		c, err := ghclient.NewClient(token, host, rateTrackers[host], budgets[host])
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("create client for %s: %w", host, err)
+		}
+		clients[host] = c
+		cloneTokens[host] = token
+	}
+	return clients, rateTrackers, budgets, cloneTokens, nil
+}
+
+func buildRuntimeFetchers(
+	database *db.DB,
+	hostTokens map[string]string,
+	budgets map[string]*ghclient.SyncBudget,
+) map[string]*ghclient.GraphQLFetcher {
+	fetchers := make(map[string]*ghclient.GraphQLFetcher, len(hostTokens))
+	for host, token := range hostTokens {
+		gqlRT := ghclient.NewRateTracker(database, host, "graphql")
+		fetchers[host] = ghclient.NewGraphQLFetcher(token, host, gqlRT, budgets[host])
+	}
+	return fetchers
 }
 
 func resolveStartupRepos(

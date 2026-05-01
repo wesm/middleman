@@ -275,34 +275,10 @@ func NewWithContext(
 		)
 	}
 
-	// Build per-host budgets, clients, and rate trackers.
-	budgetPerHour := cfg.BudgetPerHour()
-	budgets := make(
-		map[string]*ghclient.SyncBudget, len(hosts),
-	)
-	clients := make(map[string]ghclient.Client, len(hosts))
-	rateTrackers := make(
-		map[string]*ghclient.RateTracker, len(hosts),
-	)
-	for _, host := range hosts {
-		rt := ghclient.NewRateTracker(database, host, "rest")
-		rateTrackers[host] = rt
-		if budgetPerHour > 0 {
-			budgets[host] = ghclient.NewSyncBudget(
-				budgetPerHour,
-			)
-		}
-		gh, cErr := ghclient.NewClient(
-			hostTokens[host], host, rt, budgets[host],
-		)
-		if cErr != nil {
-			database.Close()
-			return nil, fmt.Errorf(
-				"middleman: creating GitHub client for %s: %w",
-				host, cErr,
-			)
-		}
-		clients[host] = gh
+	clients, rateTrackers, budgets, err := buildEmbedClients(database, hosts, hostTokens, cfg)
+	if err != nil {
+		database.Close()
+		return nil, err
 	}
 
 	// Build repo refs with resolved PlatformHost.
@@ -331,72 +307,16 @@ func NewWithContext(
 		cfg.SyncDuration(), rateTrackers, budgets,
 	)
 
-	// Wire GraphQL fetchers for bulk PR sync.
-	fetchers := make(
-		map[string]*ghclient.GraphQLFetcher, len(hosts),
-	)
-	for _, host := range hosts {
-		gqlRT := ghclient.NewRateTracker(
-			database, host, "graphql",
-		)
-		fetchers[host] = ghclient.NewGraphQLFetcher(
-			hostTokens[host], host, gqlRT, budgets[host],
-		)
-	}
-	syncer.SetFetchers(fetchers)
+	syncer.SetFetchers(buildEmbedFetchers(database, hosts, hostTokens, budgets))
 
 	if opts.WatchInterval > 0 {
 		syncer.SetWatchInterval(opts.WatchInterval)
 	}
 
-	if opts.EmbedHooks != nil {
-		if opts.EmbedHooks.OnMRSynced != nil {
-			cb := opts.EmbedHooks.OnMRSynced
-			syncer.SetOnMRSynced(
-				func(owner, name string, mr *db.MergeRequest) {
-					host := "github.com"
-					for _, r := range opts.Repos {
-						if r.Owner == owner && r.Name == name && r.PlatformHost != "" {
-							host = r.PlatformHost
-							break
-						}
-					}
-					cb(MergeRequestSummary{
-						MergeRequestID: mr.ID,
-						RepoOwner:      owner,
-						RepoName:       name,
-						Number:         mr.Number,
-						State:          mr.State,
-						Title:          mr.Title,
-						IsDraft:        mr.IsDraft,
-						CIStatus:       mr.CIStatus,
-						ReviewDecision: mr.ReviewDecision,
-						PlatformHost:   host,
-						CIChecksJSON:   mr.CIChecksJSON,
-						UpdatedAt:      mr.UpdatedAt,
-					})
-				},
-			)
-		}
-	}
+	installEmbedMRSyncedHook(syncer, opts)
 
 	// Adapter for embed hook if present.
-	var embedNext func([]ghclient.RepoSyncResult)
-	if opts.EmbedHooks != nil && opts.EmbedHooks.OnSyncCompleted != nil {
-		cb := opts.EmbedHooks.OnSyncCompleted
-		embedNext = func(results []ghclient.RepoSyncResult) {
-			out := make([]RepoSyncResult, len(results))
-			for i, r := range results {
-				out[i] = RepoSyncResult{
-					Owner:        r.Owner,
-					Name:         r.Name,
-					PlatformHost: r.PlatformHost,
-					Error:        r.Error,
-				}
-			}
-			cb(out)
-		}
-	}
+	embedNext := embedSyncCompletedHook(opts.EmbedHooks)
 	// Install the stacks hook eagerly so ad-hoc syncs triggered
 	// before StartSync still run detection. The hook context is
 	// canceled by StopSync, which is a terminal operation.
@@ -420,6 +340,104 @@ func NewWithContext(
 		syncer:     syncer,
 		cancelHook: cancelHook,
 	}, nil
+}
+
+func buildEmbedClients(
+	database *db.DB,
+	hosts []string,
+	hostTokens map[string]string,
+	cfg *config.Config,
+) (
+	map[string]ghclient.Client,
+	map[string]*ghclient.RateTracker,
+	map[string]*ghclient.SyncBudget,
+	error,
+) {
+	budgetPerHour := cfg.BudgetPerHour()
+	budgets := make(map[string]*ghclient.SyncBudget, len(hosts))
+	clients := make(map[string]ghclient.Client, len(hosts))
+	rateTrackers := make(map[string]*ghclient.RateTracker, len(hosts))
+	for _, host := range hosts {
+		rt := ghclient.NewRateTracker(database, host, "rest")
+		rateTrackers[host] = rt
+		if budgetPerHour > 0 {
+			budgets[host] = ghclient.NewSyncBudget(budgetPerHour)
+		}
+		gh, err := ghclient.NewClient(hostTokens[host], host, rt, budgets[host])
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf(
+				"middleman: creating GitHub client for %s: %w", host, err,
+			)
+		}
+		clients[host] = gh
+	}
+	return clients, rateTrackers, budgets, nil
+}
+
+func buildEmbedFetchers(
+	database *db.DB,
+	hosts []string,
+	hostTokens map[string]string,
+	budgets map[string]*ghclient.SyncBudget,
+) map[string]*ghclient.GraphQLFetcher {
+	fetchers := make(map[string]*ghclient.GraphQLFetcher, len(hosts))
+	for _, host := range hosts {
+		gqlRT := ghclient.NewRateTracker(database, host, "graphql")
+		fetchers[host] = ghclient.NewGraphQLFetcher(
+			hostTokens[host], host, gqlRT, budgets[host],
+		)
+	}
+	return fetchers
+}
+
+func installEmbedMRSyncedHook(syncer *ghclient.Syncer, opts Options) {
+	if opts.EmbedHooks == nil || opts.EmbedHooks.OnMRSynced == nil {
+		return
+	}
+	cb := opts.EmbedHooks.OnMRSynced
+	syncer.SetOnMRSynced(func(owner, name string, mr *db.MergeRequest) {
+		cb(MergeRequestSummary{
+			MergeRequestID: mr.ID,
+			RepoOwner:      owner,
+			RepoName:       name,
+			Number:         mr.Number,
+			State:          mr.State,
+			Title:          mr.Title,
+			IsDraft:        mr.IsDraft,
+			CIStatus:       mr.CIStatus,
+			ReviewDecision: mr.ReviewDecision,
+			PlatformHost:   embedRepoHost(opts.Repos, owner, name),
+			CIChecksJSON:   mr.CIChecksJSON,
+			UpdatedAt:      mr.UpdatedAt,
+		})
+	})
+}
+
+func embedRepoHost(repos []Repo, owner, name string) string {
+	for _, r := range repos {
+		if r.Owner == owner && r.Name == name && r.PlatformHost != "" {
+			return r.PlatformHost
+		}
+	}
+	return "github.com"
+}
+
+func embedSyncCompletedHook(hooks *EmbedHooks) func([]ghclient.RepoSyncResult) {
+	if hooks == nil || hooks.OnSyncCompleted == nil {
+		return nil
+	}
+	return func(results []ghclient.RepoSyncResult) {
+		out := make([]RepoSyncResult, len(results))
+		for i, r := range results {
+			out[i] = RepoSyncResult{
+				Owner:        r.Owner,
+				Name:         r.Name,
+				PlatformHost: r.PlatformHost,
+				Error:        r.Error,
+			}
+		}
+		hooks.OnSyncCompleted(out)
+	}
 }
 
 // Handler returns the HTTP handler for this instance.

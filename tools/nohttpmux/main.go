@@ -156,25 +156,41 @@ func collectServeMuxVars(body *ast.BlockStmt, httpImports map[string]struct{}) m
 		case *ast.FuncLit:
 			return false
 		case *ast.AssignStmt:
-			for i, rhs := range node.Rhs {
-				if i >= len(node.Lhs) || !isHTTPNewServeMuxCall(rhs, httpImports) {
-					continue
-				}
-				if ident, ok := node.Lhs[i].(*ast.Ident); ok {
-					vars[ident.Name] = struct{}{}
-				}
-			}
+			collectAssignedServeMuxVars(vars, node, httpImports)
 		case *ast.ValueSpec:
-			for i, value := range node.Values {
-				if i >= len(node.Names) || !isHTTPNewServeMuxCall(value, httpImports) {
-					continue
-				}
-				vars[node.Names[i].Name] = struct{}{}
-			}
+			collectValueSpecServeMuxVars(vars, node, httpImports)
 		}
 		return true
 	})
 	return vars
+}
+
+func collectAssignedServeMuxVars(
+	vars map[string]struct{},
+	node *ast.AssignStmt,
+	httpImports map[string]struct{},
+) {
+	for i, rhs := range node.Rhs {
+		if i >= len(node.Lhs) || !isHTTPNewServeMuxCall(rhs, httpImports) {
+			continue
+		}
+		if ident, ok := node.Lhs[i].(*ast.Ident); ok {
+			vars[ident.Name] = struct{}{}
+		}
+	}
+}
+
+func collectValueSpecServeMuxVars(
+	vars map[string]struct{},
+	node *ast.ValueSpec,
+	httpImports map[string]struct{},
+) {
+	for i, value := range node.Values {
+		if i >= len(node.Names) || !isHTTPNewServeMuxCall(value, httpImports) {
+			continue
+		}
+		vars[node.Names[i].Name] = struct{}{}
+	}
 }
 
 func disallowedRegistration(

@@ -203,53 +203,8 @@ func bridgeRuntimeAttachment(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	inputDone := make(chan struct{})
-	go func() {
-		defer close(inputDone)
-		for {
-			typ, data, err := conn.Read(ctx)
-			if err != nil {
-				logWebsocketDebug("runtime terminal websocket read ended", "err", err)
-				return
-			}
-			switch typ {
-			case websocket.MessageBinary:
-				if err := attachment.Write(data); err != nil {
-					logWebsocketDebug(
-						"runtime terminal pty write ended",
-						"err", err,
-					)
-					return
-				}
-			case websocket.MessageText:
-				handleRuntimeTerminalControl(ctx, attachment, data)
-			}
-		}
-	}()
-
-	outputDone := make(chan struct{})
-	go func() {
-		defer close(outputDone)
-		for {
-			select {
-			case data, ok := <-attachment.Output:
-				if !ok {
-					return
-				}
-				if err := conn.Write(
-					ctx, websocket.MessageBinary, data,
-				); err != nil {
-					logWebsocketDebug(
-						"runtime terminal websocket write ended",
-						"err", err,
-					)
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	inputDone := startRuntimeInputBridge(ctx, conn, attachment)
+	outputDone := startRuntimeOutputBridge(ctx, conn, attachment)
 
 	select {
 	case <-attachment.Done:
@@ -260,16 +215,94 @@ func bridgeRuntimeAttachment(
 		cancel()
 		return false
 	case <-outputDone:
-		select {
-		case <-attachment.Done:
-			cancel()
-			writeRuntimeExit(conn, attachment.Info())
-			return true
-		case <-time.After(100 * time.Millisecond):
-			cancel()
+		return finishRuntimeOutputBridge(cancel, conn, attachment)
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func startRuntimeInputBridge(
+	ctx context.Context,
+	conn *websocket.Conn,
+	attachment *localruntime.Attachment,
+) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				logWebsocketDebug("runtime terminal websocket read ended", "err", err)
+				return
+			}
+			if !handleRuntimeInputMessage(ctx, attachment, typ, data) {
+				return
+			}
+		}
+	}()
+	return done
+}
+
+func handleRuntimeInputMessage(
+	ctx context.Context,
+	attachment *localruntime.Attachment,
+	typ websocket.MessageType,
+	data []byte,
+) bool {
+	switch typ {
+	case websocket.MessageBinary:
+		if err := attachment.Write(data); err != nil {
+			logWebsocketDebug("runtime terminal pty write ended", "err", err)
 			return false
 		}
-	case <-ctx.Done():
+	case websocket.MessageText:
+		handleRuntimeTerminalControl(ctx, attachment, data)
+	}
+	return true
+}
+
+func startRuntimeOutputBridge(
+	ctx context.Context,
+	conn *websocket.Conn,
+	attachment *localruntime.Attachment,
+) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case data, ok := <-attachment.Output:
+				if !ok || !writeRuntimeOutput(ctx, conn, data) {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return done
+}
+
+func writeRuntimeOutput(ctx context.Context, conn *websocket.Conn, data []byte) bool {
+	if err := conn.Write(ctx, websocket.MessageBinary, data); err != nil {
+		logWebsocketDebug("runtime terminal websocket write ended", "err", err)
+		return false
+	}
+	return true
+}
+
+func finishRuntimeOutputBridge(
+	cancel context.CancelFunc,
+	conn *websocket.Conn,
+	attachment *localruntime.Attachment,
+) bool {
+	select {
+	case <-attachment.Done:
+		cancel()
+		writeRuntimeExit(conn, attachment.Info())
+		return true
+	case <-time.After(100 * time.Millisecond):
+		cancel()
 		return false
 	}
 }

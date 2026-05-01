@@ -386,6 +386,33 @@ func (c *Config) Validate() error {
 		c.DefaultPlatformHost = defaultPlatformHost
 	}
 
+	if err := c.validateRepos(); err != nil {
+		return err
+	}
+	if err := c.validateServer(); err != nil {
+		return err
+	}
+	if err := c.validateActivity(); err != nil {
+		return err
+	}
+
+	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
+
+	if err := c.validateAgents(); err != nil {
+		return err
+	}
+
+	if len(c.Tmux.Command) > 0 &&
+		strings.TrimSpace(c.Tmux.Command[0]) == "" {
+		return fmt.Errorf(
+			"config: invalid tmux.command: first element must be non-empty",
+		)
+	}
+
+	return nil
+}
+
+func (c *Config) validateRepos() error {
 	for i := range c.Repos {
 		if c.Repos[i].ownerHasGlob() {
 			return fmt.Errorf(
@@ -430,7 +457,10 @@ func (c *Config) Validate() error {
 			hostToken[host] = effective
 		}
 	}
+	return nil
+}
 
+func (c *Config) validateServer() error {
 	if _, err := time.ParseDuration(c.SyncInterval); err != nil {
 		return fmt.Errorf("config: invalid sync_interval %q: %w", c.SyncInterval, err)
 	}
@@ -460,7 +490,10 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("config: invalid base_path %q: dot segments are not allowed", c.BasePath)
 		}
 	}
+	return nil
+}
 
+func (c *Config) validateActivity() error {
 	validViewModes := map[string]bool{
 		"flat": true, "threaded": true,
 	}
@@ -479,20 +512,6 @@ func (c *Config) Validate() error {
 			c.Activity.TimeRange,
 		)
 	}
-
-	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
-
-	if err := c.validateAgents(); err != nil {
-		return err
-	}
-
-	if len(c.Tmux.Command) > 0 &&
-		strings.TrimSpace(c.Tmux.Command[0]) == "" {
-		return fmt.Errorf(
-			"config: invalid tmux.command: first element must be non-empty",
-		)
-	}
-
 	return nil
 }
 

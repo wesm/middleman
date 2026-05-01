@@ -64,41 +64,11 @@ func runMigrations(rw *sql.DB) (int, error) {
 		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
 	}
 
-	if version == migratedb.NilVersion {
-		legacyVersion, hasLegacyVersion, err := readLegacySchemaVersion(rw)
-		if err != nil {
-			return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("read legacy schema version: %w", err))
-		}
-
-		switch {
-		case hasLegacyVersion:
-			if !hasMiddlemanTables(rw) {
-				return migratedb.NilVersion, wrapMigrationError(
-					fmt.Errorf("legacy database schema version metadata exists without middleman tables"),
-				)
-			}
-			if legacyVersion > latestLegacySchemaVersion {
-				return migratedb.NilVersion, fmt.Errorf(
-					"middleman schema version %d is newer than this binary "+
-						"(expects %d); upgrade middleman",
-					legacyVersion, latestLegacySchemaVersion,
-				)
-			}
-			if legacyVersion < firstLegacySchemaVersion {
-				return migratedb.NilVersion, wrapMigrationError(
-					fmt.Errorf("legacy database schema version %d is invalid", legacyVersion),
-				)
-			}
-			if err := databaseDriver.SetVersion(legacyVersion, false); err != nil {
-				return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("seed legacy migration version: %w", err))
-			}
-			startVersion = legacyVersion
-
-		case hasMiddlemanTables(rw):
-			return migratedb.NilVersion, wrapMigrationError(
-				fmt.Errorf("legacy database is missing schema version metadata"),
-			)
-		}
+	startVersion, err = initializeLegacyMigrationVersion(
+		rw, databaseDriver, version, startVersion,
+	)
+	if err != nil {
+		return migratedb.NilVersion, err
 	}
 
 	if version == timestampRepairGateVersion {
@@ -135,6 +105,60 @@ func runMigrations(rw *sql.DB) (int, error) {
 	}
 
 	return startVersion, nil
+}
+
+func initializeLegacyMigrationVersion(
+	rw *sql.DB,
+	databaseDriver migratedb.Driver,
+	version int,
+	startVersion int,
+) (int, error) {
+	if version != migratedb.NilVersion {
+		return startVersion, nil
+	}
+	legacyVersion, hasLegacyVersion, err := readLegacySchemaVersion(rw)
+	if err != nil {
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("read legacy schema version: %w", err))
+	}
+
+	switch {
+	case hasLegacyVersion:
+		return seedLegacyMigrationVersion(rw, databaseDriver, legacyVersion)
+	case hasMiddlemanTables(rw):
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("legacy database is missing schema version metadata"),
+		)
+	default:
+		return startVersion, nil
+	}
+}
+
+func seedLegacyMigrationVersion(
+	rw *sql.DB,
+	databaseDriver migratedb.Driver,
+	legacyVersion int,
+) (int, error) {
+	if !hasMiddlemanTables(rw) {
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("legacy database schema version metadata exists without middleman tables"),
+		)
+	}
+	if legacyVersion > latestLegacySchemaVersion {
+		return migratedb.NilVersion, fmt.Errorf(
+			"middleman schema version %d is newer than this binary "+
+				"(expects %d); upgrade middleman",
+			legacyVersion, latestLegacySchemaVersion,
+		)
+	}
+	if legacyVersion < firstLegacySchemaVersion {
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("legacy database schema version %d is invalid", legacyVersion),
+		)
+	}
+	if err := databaseDriver.SetVersion(legacyVersion, false); err != nil {
+		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("seed legacy migration version: %w", err))
+	}
+	return legacyVersion, nil
 }
 
 func latestMigrationVersion() (int, error) {

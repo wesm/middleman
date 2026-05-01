@@ -240,42 +240,9 @@ func (m *Manager) CreateIssue(
 		return nil, err
 	}
 
-	workspaceBranch := gitHeadRef
-	if m.clones != nil {
-		remoteURL := fmt.Sprintf(
-			"https://%s/%s/%s.git",
-			platformHost, owner, name,
-		)
-		if err := m.clones.EnsureClone(
-			ctx, platformHost, owner, name, remoteURL,
-		); err != nil {
-			return nil, fmt.Errorf("ensure clone: %w", err)
-		}
-
-		cloneDir := m.clones.ClonePath(platformHost, owner, name)
-		exists, err := localBranchExists(ctx, cloneDir, gitHeadRef)
-		if err != nil {
-			return nil, fmt.Errorf("inspect local branch: %w", err)
-		}
-		if exists {
-			if opts.ReuseExistingBranch {
-				workspaceBranch = ""
-			} else {
-				suggested, err := nextAvailableBranchName(
-					ctx, cloneDir, gitHeadRef,
-				)
-				if err != nil {
-					return nil, fmt.Errorf(
-						"suggest branch name: %w",
-						err,
-					)
-				}
-				return nil, &IssueWorkspaceBranchConflictError{
-					Branch:          gitHeadRef,
-					SuggestedBranch: suggested,
-				}
-			}
-		}
+	workspaceBranch, err := m.issueWorkspaceBranch(ctx, platformHost, owner, name, gitHeadRef, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	id, err := newWorkspaceID()
@@ -304,6 +271,42 @@ func (m *Manager) CreateIssue(
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
 	return ws, nil
+}
+
+func (m *Manager) issueWorkspaceBranch(
+	ctx context.Context,
+	platformHost string,
+	owner string,
+	name string,
+	gitHeadRef string,
+	opts CreateIssueOptions,
+) (string, error) {
+	if m.clones == nil {
+		return gitHeadRef, nil
+	}
+	remoteURL := fmt.Sprintf("https://%s/%s/%s.git", platformHost, owner, name)
+	if err := m.clones.EnsureClone(ctx, platformHost, owner, name, remoteURL); err != nil {
+		return "", fmt.Errorf("ensure clone: %w", err)
+	}
+	cloneDir := m.clones.ClonePath(platformHost, owner, name)
+	exists, err := localBranchExists(ctx, cloneDir, gitHeadRef)
+	if err != nil {
+		return "", fmt.Errorf("inspect local branch: %w", err)
+	}
+	if !exists {
+		return gitHeadRef, nil
+	}
+	if opts.ReuseExistingBranch {
+		return "", nil
+	}
+	suggested, err := nextAvailableBranchName(ctx, cloneDir, gitHeadRef)
+	if err != nil {
+		return "", fmt.Errorf("suggest branch name: %w", err)
+	}
+	return "", &IssueWorkspaceBranchConflictError{
+		Branch:          gitHeadRef,
+		SuggestedBranch: suggested,
+	}
 }
 
 func newWorkspaceID() (string, error) {
@@ -620,7 +623,7 @@ func validateLocalBranchName(
 // between the preflight and the destructive part.
 func (m *Manager) Delete(
 	ctx context.Context, id string, force bool,
-	beforeDestructive func(context.Context),
+	beforeDestructive func(context.Context) func(),
 ) (dirty []string, err error) {
 	ws, err := m.db.GetWorkspace(ctx, id)
 	if err != nil {
@@ -645,7 +648,9 @@ func (m *Manager) Delete(
 	}
 
 	if beforeDestructive != nil {
-		beforeDestructive(ctx)
+		if afterDestructive := beforeDestructive(ctx); afterDestructive != nil {
+			defer afterDestructive()
+		}
 	}
 
 	if err := m.cleanupWorkspaceArtifactsForDelete(ctx, ws); err != nil {
@@ -981,26 +986,33 @@ func (m *Manager) ListSummaries(
 // ReapOrphanTmuxSessions kills middleman-managed tmux sessions that no longer
 // correspond to any workspace row. This is a conservative startup cleanup for
 // stale sessions left behind by crashes or previous bugs.
-func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
+func (m *Manager) liveWorkspaceTmuxSessions(ctx context.Context) (map[string]bool, error) {
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
-		return fmt.Errorf("list workspaces: %w", err)
+		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 	live := make(map[string]bool, len(workspaces))
 	for _, ws := range workspaces {
-		if ws.TmuxSession == "" {
-			continue
+		if ws.TmuxSession != "" {
+			live[ws.TmuxSession] = true
 		}
-		live[ws.TmuxSession] = true
 	}
 	storedSessions, err := m.db.ListAllWorkspaceTmuxSessions(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, stored := range storedSessions {
 		if stored.SessionName != "" {
 			live[stored.SessionName] = true
 		}
+	}
+	return live, nil
+}
+
+func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
+	live, err := m.liveWorkspaceTmuxSessions(ctx)
+	if err != nil {
+		return err
 	}
 
 	sessions, err := m.listTmuxSessions(ctx)

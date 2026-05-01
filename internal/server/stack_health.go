@@ -27,16 +27,8 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 			allGreen = false
 		}
 
-		if m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED" {
-			// A PR only counts as "blocked" when it actually blocks something
-			// downstream — i.e. has at least one non-merged descendant. A
-			// failing tip with nothing below it is not blocking anything.
-			for j := i + 1; j < len(members); j++ {
-				if members[j].State != "merged" {
-					hasBlocker = true
-					break
-				}
-			}
+		if isStackBlocker(m, members[i+1:]) {
+			hasBlocker = true
 		}
 	}
 
@@ -54,6 +46,21 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 		}
 	}
 	return "in_progress"
+}
+
+func isStackBlocker(member db.StackMemberWithPR, descendants []db.StackMemberWithPR) bool {
+	if member.CIStatus != "failure" && member.ReviewDecision != "CHANGES_REQUESTED" {
+		return false
+	}
+	// A PR only counts as "blocked" when it actually blocks something
+	// downstream — i.e. has at least one non-merged descendant. A failing tip
+	// with nothing below it is not blocking anything.
+	for _, descendant := range descendants {
+		if descendant.State != "merged" {
+			return true
+		}
+	}
+	return false
 }
 
 func computeBlockedBy(members []db.StackMemberWithPR) map[int]int {

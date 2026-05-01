@@ -662,182 +662,73 @@ func (c *liveClient) ListCommits(
 	return all, nil
 }
 
+type pullRequestTimelineGraphQLResponse struct {
+	Errors []graphQLError `json:"errors"`
+	Data   struct {
+		Repository *struct {
+			PullRequest *struct {
+				TimelineItems struct {
+					Nodes    []pullRequestTimelineGraphQLNode `json:"nodes"`
+					PageInfo struct {
+						HasNextPage bool    `json:"hasNextPage"`
+						EndCursor   *string `json:"endCursor"`
+					} `json:"pageInfo"`
+				} `json:"timelineItems"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
+type pullRequestTimelineGraphQLNode struct {
+	TypeName string `json:"__typename"`
+	ID       string `json:"id"`
+	Actor    *struct {
+		Login string `json:"login"`
+	} `json:"actor"`
+	BeforeCommit *struct {
+		OID string `json:"oid"`
+	} `json:"beforeCommit"`
+	AfterCommit *struct {
+		OID string `json:"oid"`
+	} `json:"afterCommit"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	Ref             *struct{ Name string } `json:"ref"`
+	PreviousTitle   string                 `json:"previousTitle"`
+	CurrentTitle    string                 `json:"currentTitle"`
+	PreviousRefName string                 `json:"previousRefName"`
+	CurrentRefName  string                 `json:"currentRefName"`
+	Source          *struct {
+		TypeName   string `json:"__typename"`
+		Number     int    `json:"number"`
+		Title      string `json:"title"`
+		URL        string `json:"url"`
+		Repository *struct {
+			Owner *struct {
+				Login string `json:"login"`
+			} `json:"owner"`
+			Name string `json:"name"`
+		} `json:"repository"`
+	} `json:"source"`
+	IsCrossRepository bool `json:"isCrossRepository"`
+	WillCloseTarget   bool `json:"willCloseTarget"`
+}
+
 func (c *liveClient) ListPullRequestTimelineEvents(
 	ctx context.Context, owner, repo string, number int,
 ) ([]PullRequestTimelineEvent, error) {
-	type graphQLResponse struct {
-		Errors []graphQLError `json:"errors"`
-		Data   struct {
-			Repository *struct {
-				PullRequest *struct {
-					TimelineItems struct {
-						Nodes []struct {
-							TypeName string `json:"__typename"`
-							ID       string `json:"id"`
-							Actor    *struct {
-								Login string `json:"login"`
-							} `json:"actor"`
-							BeforeCommit *struct {
-								OID string `json:"oid"`
-							} `json:"beforeCommit"`
-							AfterCommit *struct {
-								OID string `json:"oid"`
-							} `json:"afterCommit"`
-							CreatedAt       time.Time              `json:"createdAt"`
-							Ref             *struct{ Name string } `json:"ref"`
-							PreviousTitle   string                 `json:"previousTitle"`
-							CurrentTitle    string                 `json:"currentTitle"`
-							PreviousRefName string                 `json:"previousRefName"`
-							CurrentRefName  string                 `json:"currentRefName"`
-							Source          *struct {
-								TypeName   string `json:"__typename"`
-								Number     int    `json:"number"`
-								Title      string `json:"title"`
-								URL        string `json:"url"`
-								Repository *struct {
-									Owner *struct {
-										Login string `json:"login"`
-									} `json:"owner"`
-									Name string `json:"name"`
-								} `json:"repository"`
-							} `json:"source"`
-							IsCrossRepository bool `json:"isCrossRepository"`
-							WillCloseTarget   bool `json:"willCloseTarget"`
-						} `json:"nodes"`
-						PageInfo struct {
-							HasNextPage bool    `json:"hasNextPage"`
-							EndCursor   *string `json:"endCursor"`
-						} `json:"pageInfo"`
-					} `json:"timelineItems"`
-				} `json:"pullRequest"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
-
 	var events []PullRequestTimelineEvent
 	var cursor *string
 	for {
-		payload, err := json.Marshal(graphQLRequest{
-			Query: pullRequestTimelineEventsQuery,
-			Variables: map[string]any{
-				"owner":  owner,
-				"repo":   repo,
-				"number": number,
-				"cursor": cursor,
-			},
-		})
+		decoded, err := c.fetchPullRequestTimelinePage(ctx, owner, repo, number, cursor)
 		if err != nil {
-			return nil, fmt.Errorf("marshal pull request timeline query: %w", err)
+			return nil, err
 		}
-
-		req, err := http.NewRequestWithContext(
-			ctx,
-			http.MethodPost,
-			c.graphQLEndpoint,
-			bytes.NewReader(payload),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("create pull request timeline request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"list pull request timeline events for %s/%s#%d: %w",
-				owner, repo, number, err,
-			)
-		}
-		c.trackRateHeaders(resp)
-		if resp.StatusCode != http.StatusOK {
-			_ = resp.Body.Close()
-			return nil, fmt.Errorf(
-				"list pull request timeline events for %s/%s#%d: graphql status %s",
-				owner, repo, number, resp.Status,
-			)
-		}
-
-		var decoded graphQLResponse
-		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-			_ = resp.Body.Close()
-			return nil, fmt.Errorf(
-				"decode pull request timeline events for %s/%s#%d: %w",
-				owner, repo, number, err,
-			)
-		}
-		_ = resp.Body.Close()
-
-		if len(decoded.Errors) > 0 {
-			return nil, fmt.Errorf(
-				"list pull request timeline events for %s/%s#%d: graphql errors: %s",
-				owner, repo, number, joinGraphQLErrorMessages(decoded.Errors),
-			)
-		}
-
-		if decoded.Data.Repository == nil {
-			return nil, fmt.Errorf(
-				"list pull request timeline events for %s/%s#%d: missing repository in graphql response",
-				owner, repo, number,
-			)
-		}
-		if decoded.Data.Repository.PullRequest == nil {
-			return nil, fmt.Errorf(
-				"list pull request timeline events for %s/%s#%d: missing pull request in graphql response",
-				owner, repo, number,
-			)
-		}
-
 		for _, node := range decoded.Data.Repository.PullRequest.TimelineItems.Nodes {
-			event := PullRequestTimelineEvent{
-				NodeID:            node.ID,
-				CreatedAt:         node.CreatedAt,
-				PreviousTitle:     node.PreviousTitle,
-				CurrentTitle:      node.CurrentTitle,
-				PreviousRefName:   node.PreviousRefName,
-				CurrentRefName:    node.CurrentRefName,
-				IsCrossRepository: node.IsCrossRepository,
-				WillCloseTarget:   node.WillCloseTarget,
+			event, ok := timelineEventFromGraphQLNode(node)
+			if ok {
+				events = append(events, event)
 			}
-			switch node.TypeName {
-			case "HeadRefForcePushedEvent":
-				event.EventType = "force_push"
-			case "CrossReferencedEvent":
-				event.EventType = "cross_referenced"
-			case "RenamedTitleEvent":
-				event.EventType = "renamed_title"
-			case "BaseRefChangedEvent":
-				event.EventType = "base_ref_changed"
-			default:
-				continue
-			}
-			if node.Actor != nil {
-				event.Actor = node.Actor.Login
-			}
-			if node.BeforeCommit != nil {
-				event.BeforeSHA = node.BeforeCommit.OID
-			}
-			if node.AfterCommit != nil {
-				event.AfterSHA = node.AfterCommit.OID
-			}
-			if node.Ref != nil {
-				event.Ref = node.Ref.Name
-			}
-			if node.Source != nil {
-				event.SourceType = node.Source.TypeName
-				event.SourceNumber = node.Source.Number
-				event.SourceTitle = node.Source.Title
-				event.SourceURL = node.Source.URL
-				if node.Source.Repository != nil {
-					event.SourceRepo = node.Source.Repository.Name
-					if node.Source.Repository.Owner != nil {
-						event.SourceOwner = node.Source.Repository.Owner.Login
-					}
-				}
-			}
-			events = append(events, event)
 		}
-
 		pageInfo := decoded.Data.Repository.PullRequest.TimelineItems.PageInfo
 		if !pageInfo.HasNextPage {
 			break
@@ -846,6 +737,125 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 	}
 
 	return events, nil
+}
+
+func (c *liveClient) fetchPullRequestTimelinePage(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+	cursor *string,
+) (pullRequestTimelineGraphQLResponse, error) {
+	var decoded pullRequestTimelineGraphQLResponse
+	payload, err := json.Marshal(graphQLRequest{
+		Query: pullRequestTimelineEventsQuery,
+		Variables: map[string]any{
+			"owner":  owner,
+			"repo":   repo,
+			"number": number,
+			"cursor": cursor,
+		},
+	})
+	if err != nil {
+		return decoded, fmt.Errorf("marshal pull request timeline query: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.graphQLEndpoint, bytes.NewReader(payload))
+	if err != nil {
+		return decoded, fmt.Errorf("create pull request timeline request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return decoded, fmt.Errorf("list pull request timeline events for %s/%s#%d: %w", owner, repo, number, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	c.trackRateHeaders(resp)
+	if resp.StatusCode != http.StatusOK {
+		return decoded, fmt.Errorf("list pull request timeline events for %s/%s#%d: graphql status %s", owner, repo, number, resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return decoded, fmt.Errorf("decode pull request timeline events for %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return decoded, validatePullRequestTimelineResponse(decoded, owner, repo, number)
+}
+
+func validatePullRequestTimelineResponse(
+	decoded pullRequestTimelineGraphQLResponse,
+	owner string,
+	repo string,
+	number int,
+) error {
+	if len(decoded.Errors) > 0 {
+		return fmt.Errorf("list pull request timeline events for %s/%s#%d: graphql errors: %s", owner, repo, number, joinGraphQLErrorMessages(decoded.Errors))
+	}
+	if decoded.Data.Repository == nil {
+		return fmt.Errorf("list pull request timeline events for %s/%s#%d: missing repository in graphql response", owner, repo, number)
+	}
+	if decoded.Data.Repository.PullRequest == nil {
+		return fmt.Errorf("list pull request timeline events for %s/%s#%d: missing pull request in graphql response", owner, repo, number)
+	}
+	return nil
+}
+
+func timelineEventFromGraphQLNode(node pullRequestTimelineGraphQLNode) (PullRequestTimelineEvent, bool) {
+	event := PullRequestTimelineEvent{
+		NodeID:            node.ID,
+		CreatedAt:         node.CreatedAt,
+		PreviousTitle:     node.PreviousTitle,
+		CurrentTitle:      node.CurrentTitle,
+		PreviousRefName:   node.PreviousRefName,
+		CurrentRefName:    node.CurrentRefName,
+		IsCrossRepository: node.IsCrossRepository,
+		WillCloseTarget:   node.WillCloseTarget,
+	}
+	switch node.TypeName {
+	case "HeadRefForcePushedEvent":
+		event.EventType = "force_push"
+	case "CrossReferencedEvent":
+		event.EventType = "cross_referenced"
+	case "RenamedTitleEvent":
+		event.EventType = "renamed_title"
+	case "BaseRefChangedEvent":
+		event.EventType = "base_ref_changed"
+	default:
+		return PullRequestTimelineEvent{}, false
+	}
+	populateTimelineEventActorAndRefs(&event, node)
+	populateTimelineEventSource(&event, node)
+	return event, true
+}
+
+func populateTimelineEventActorAndRefs(event *PullRequestTimelineEvent, node pullRequestTimelineGraphQLNode) {
+	if node.Actor != nil {
+		event.Actor = node.Actor.Login
+	}
+	if node.BeforeCommit != nil {
+		event.BeforeSHA = node.BeforeCommit.OID
+	}
+	if node.AfterCommit != nil {
+		event.AfterSHA = node.AfterCommit.OID
+	}
+	if node.Ref != nil {
+		event.Ref = node.Ref.Name
+	}
+}
+
+func populateTimelineEventSource(event *PullRequestTimelineEvent, node pullRequestTimelineGraphQLNode) {
+	if node.Source == nil {
+		return
+	}
+	event.SourceType = node.Source.TypeName
+	event.SourceNumber = node.Source.Number
+	event.SourceTitle = node.Source.Title
+	event.SourceURL = node.Source.URL
+	if node.Source.Repository == nil {
+		return
+	}
+	event.SourceRepo = node.Source.Repository.Name
+	if node.Source.Repository.Owner != nil {
+		event.SourceOwner = node.Source.Repository.Owner.Login
+	}
 }
 
 func (c *liveClient) ListForcePushEvents(
