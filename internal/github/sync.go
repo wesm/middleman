@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -405,8 +406,7 @@ func (s *Syncer) HasDiffSync() bool {
 // the bulk sync cycle.
 func (s *Syncer) SetWatchedMRs(mrs []WatchedMR) {
 	s.watchMu.Lock()
-	s.watchedMRs = make([]WatchedMR, len(mrs))
-	copy(s.watchedMRs, mrs)
+	s.watchedMRs = slices.Clone(mrs)
 	s.watchMu.Unlock()
 }
 
@@ -573,8 +573,7 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 // SetRepos atomically replaces the list of repositories to sync.
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	s.reposMu.Lock()
-	s.repos = make([]RepoRef, len(repos))
-	copy(s.repos, repos)
+	s.repos = slices.Clone(repos)
 	s.reposMu.Unlock()
 }
 
@@ -698,8 +697,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncBudget(ctx)
 
 	s.watchMu.Lock()
-	mrs := make([]WatchedMR, len(s.watchedMRs))
-	copy(mrs, s.watchedMRs)
+	mrs := slices.Clone(s.watchedMRs)
 	s.watchMu.Unlock()
 
 	if len(mrs) == 0 {
@@ -1020,8 +1018,7 @@ func (s *Syncer) runOnce(
 	ctx = WithSyncBudget(ctx)
 
 	s.reposMu.Lock()
-	repos := make([]RepoRef, len(s.repos))
-	copy(repos, s.repos)
+	repos := slices.Clone(s.repos)
 	s.reposMu.Unlock()
 
 	total := len(repos)
@@ -1827,8 +1824,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 	eligibleHosts map[string]bool,
 ) {
 	s.commentRefreshMu.Lock()
-	prs := append([]queuedPRCommentSync(nil), s.pendingPRCommentSyncs...)
-	issues := append([]queuedIssueCommentSync(nil), s.pendingIssueCommentSyncs...)
+	prs := slices.Clone(s.pendingPRCommentSyncs)
+	issues := slices.Clone(s.pendingIssueCommentSyncs)
 	s.pendingPRCommentSyncs = nil
 	s.pendingIssueCommentSyncs = nil
 	s.commentRefreshMu.Unlock()
@@ -3765,9 +3762,7 @@ func (s *Syncer) TrackedRepos() []RepoRef {
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 
-	repos := make([]RepoRef, len(s.repos))
-	copy(repos, s.repos)
-	return repos
+	return slices.Clone(s.repos)
 }
 
 // isTrackedRepoOnHost checks whether the given repo on a specific host

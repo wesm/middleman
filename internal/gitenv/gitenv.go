@@ -18,7 +18,10 @@
 // inherited transport config to remain visible.
 package gitenv
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // StripInherited returns env with every GIT_* variable that could
 // rebind a child git process to an inherited parent context removed.
@@ -38,14 +41,7 @@ import "strings"
 // SSL, HTTP) are preserved so that developers can still observe
 // child git behavior without losing visibility.
 func StripInherited(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, e := range env {
-		if isInherited(e) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
+	return slices.DeleteFunc(slices.Clone(env), isInherited)
 }
 
 // StripAll removes every GIT_* variable and SSH_ASKPASS from env.
@@ -55,15 +51,10 @@ func StripInherited(env []string) []string {
 // build throwaway repos (where GIT_DEFAULT_HASH could create SHA-256
 // repos instead of the expected SHA-1 layout).
 func StripAll(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, e := range env {
+	return slices.DeleteFunc(slices.Clone(env), func(e string) bool {
 		key, _, _ := strings.Cut(e, "=")
-		if strings.HasPrefix(key, "GIT_") || key == "SSH_ASKPASS" {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
+		return strings.HasPrefix(key, "GIT_") || key == "SSH_ASKPASS"
+	})
 }
 
 func isInherited(e string) bool {

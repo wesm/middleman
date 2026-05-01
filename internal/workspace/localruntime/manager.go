@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -49,6 +48,10 @@ type SessionInfo struct {
 	ExitedAt    *time.Time       `json:"exited_at,omitempty"`
 	ExitCode    *int             `json:"exit_code,omitempty"`
 	TmuxSession string           `json:"-"`
+}
+
+func (s SessionInfo) Compare(other SessionInfo) int {
+	return s.CreatedAt.Compare(other.CreatedAt)
 }
 
 type RestoredTmuxSession struct {
@@ -164,8 +167,8 @@ func NewManager(options Options) *Manager {
 		targetsList:      targetsList,
 		sessions:         make(map[string]*session),
 		shells:           make(map[string]*session),
-		shellCommand:     append([]string(nil), options.ShellCommand...),
-		tmuxCommand:      append([]string(nil), options.TmuxCommand...),
+		shellCommand:     slices.Clone(options.ShellCommand),
+		tmuxCommand:      slices.Clone(options.TmuxCommand),
 		tmuxOwnerMarker:  options.TmuxOwnerMarker,
 		wrapAgentsInTmux: options.WrapAgentSessionsInTmux,
 		stripEnvVars:     dedupeStrings(options.StripEnvVars),
@@ -398,7 +401,7 @@ func (m *Manager) restoreTmuxSession(
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	command := append([]string(nil), m.tmuxCommand...)
+	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
 		command = []string{"tmux"}
 	}
@@ -491,9 +494,7 @@ func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
 			sessions = append(sessions, info)
 		}
 	}
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].CreatedAt.Before(sessions[j].CreatedAt)
-	})
+	slices.SortFunc(sessions, SessionInfo.Compare)
 	return sessions
 }
 
@@ -512,7 +513,7 @@ func (m *Manager) TmuxSessions(workspaceID string) []string {
 			sessions = append(sessions, s.tmuxSession)
 		}
 	}
-	sort.Strings(sessions)
+	slices.Sort(sessions)
 	return sessions
 }
 
@@ -632,7 +633,7 @@ func (m *Manager) killTmuxSession(
 	if session == "" {
 		return nil
 	}
-	command := append([]string(nil), m.tmuxCommand...)
+	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
 		command = []string{"tmux"}
 	}
@@ -675,7 +676,7 @@ func (m *Manager) refreshTmuxSessionClients(
 	if session == "" {
 		return nil
 	}
-	command := append([]string(nil), m.tmuxCommand...)
+	command := slices.Clone(m.tmuxCommand)
 	if len(command) == 0 {
 		command = []string{"tmux"}
 	}
@@ -909,7 +910,7 @@ func (m *Manager) EnsureShell(
 		return existing.snapshot(), nil
 	}
 
-	command := append([]string(nil), m.shellCommand...)
+	command := slices.Clone(m.shellCommand)
 	if len(command) == 0 {
 		command = defaultShellCommand()
 	}
@@ -1110,7 +1111,7 @@ func (m *Manager) launchCommand(
 	workspaceID string,
 	cwd string,
 ) (launchCommand, error) {
-	command := append([]string(nil), target.Command...)
+	command := slices.Clone(target.Command)
 	if target.Kind != LaunchTargetAgent || !m.wrapAgentsInTmux {
 		return launchCommand{Command: command}, nil
 	}
@@ -1119,14 +1120,14 @@ func (m *Manager) launchCommand(
 	if err != nil || !tmux.Available {
 		return launchCommand{Command: command}, nil
 	}
-	tmuxCommand := append([]string(nil), m.tmuxCommand...)
+	tmuxCommand := slices.Clone(m.tmuxCommand)
 	if len(tmuxCommand) == 0 {
-		tmuxCommand = append([]string(nil), tmux.Command...)
+		tmuxCommand = slices.Clone(tmux.Command)
 	}
 	if len(tmuxCommand) == 0 {
 		tmuxCommand = []string{"tmux"}
 	}
-	resolvedAgentCommand := append([]string(nil), command...)
+	resolvedAgentCommand := slices.Clone(command)
 	resolvedPath, err := resolveExecutable(resolvedAgentCommand[0])
 	if err != nil {
 		return launchCommand{}, err
@@ -1170,11 +1171,11 @@ func (m *Manager) launchTmuxOwnedCommand(
 	agentCommand string,
 ) []string {
 	hasSession := shellCommand(append(
-		append([]string(nil), tmuxCommand...),
+		slices.Clone(tmuxCommand),
 		"has-session", "-t", tmuxSession,
 	))
 	newSessionArgs := append(
-		append([]string(nil), tmuxCommand...),
+		slices.Clone(tmuxCommand),
 		"new-session", "-d", "-s", tmuxSession,
 	)
 	if cwd != "" {
@@ -1189,16 +1190,16 @@ func (m *Manager) launchTmuxOwnedCommand(
 	)
 	newSession := shellCommand(newSessionArgs)
 	setOwner := shellCommand(append(
-		append([]string(nil), tmuxCommand...),
+		slices.Clone(tmuxCommand),
 		"set-option", "-q", "-t", tmuxSession,
 		"@middleman_owner", m.tmuxOwnerMarker,
 	))
 	killSession := shellCommand(append(
-		append([]string(nil), tmuxCommand...),
+		slices.Clone(tmuxCommand),
 		"kill-session", "-t", tmuxSession,
 	))
 	attachSession := shellCommand(append(
-		append([]string(nil), tmuxCommand...),
+		slices.Clone(tmuxCommand),
 		"attach-session", "-t", tmuxSession,
 	))
 	script := fmt.Sprintf(
@@ -1522,7 +1523,7 @@ func (s *session) drainOutput() {
 }
 
 func (s *session) broadcast(data []byte) {
-	chunk := append([]byte(nil), data...)
+	chunk := slices.Clone(data)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1581,7 +1582,7 @@ func (s *session) appendReplayOutputLocked(chunk []byte) {
 func (s *session) appendOutputBufferLocked(chunk []byte) {
 	s.outputBuffer = append(s.outputBuffer, chunk...)
 	if extra := len(s.outputBuffer) - maxSessionOutputReplay; extra > 0 {
-		s.outputBuffer = append([]byte(nil), s.outputBuffer[extra:]...)
+		s.outputBuffer = slices.Clone(s.outputBuffer[extra:])
 	}
 }
 
@@ -1632,7 +1633,7 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 	s.mu.Lock()
 	info := s.info
 	if len(s.outputBuffer) > 0 && !s.alternateScreenActive {
-		replay := append([]byte(nil), s.outputBuffer...)
+		replay := slices.Clone(s.outputBuffer)
 		ch <- replay
 		slog.Debug(
 			"runtime terminal replay queued",

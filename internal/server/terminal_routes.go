@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -19,7 +20,7 @@ func terminalAPIConfig() huma.Config {
 func (s *Server) registerTerminalAPI(api huma.API, tmuxCmd []string) {
 	handler := &terminal.Handler{
 		Workspaces:  s.workspaces,
-		TmuxCommand: append([]string(nil), tmuxCmd...),
+		TmuxCommand: slices.Clone(tmuxCmd),
 	}
 	op := &huma.Operation{
 		OperationID: "connect-workspace-terminal",

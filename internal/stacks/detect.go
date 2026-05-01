@@ -2,7 +2,7 @@ package stacks
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/wesm/middleman/internal/db"
@@ -12,11 +12,8 @@ import (
 // Returns chains of length >= 2, ordered base-to-tip.
 func DetectChains(prs []db.MergeRequest) [][]db.MergeRequest {
 	// Sort by number for deterministic tie-breaking.
-	sorted := make([]db.MergeRequest, len(prs))
-	copy(sorted, prs)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Number < sorted[j].Number
-	})
+	sorted := slices.Clone(prs)
+	slices.SortFunc(sorted, db.MergeRequest.Compare)
 
 	// head_branch -> PR. Prefer open over merged; within same state, lowest number wins.
 	headMap := make(map[string]db.MergeRequest, len(sorted))

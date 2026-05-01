@@ -3,6 +3,7 @@ package localruntime
 import (
 	"fmt"
 	"os/exec"
+	"slices"
 
 	"github.com/wesm/middleman/internal/config"
 )
@@ -50,7 +51,7 @@ func ResolveLaunchTargets(
 			Label:   agent.Label,
 			Kind:    LaunchTargetAgent,
 			Source:  "config",
-			Command: append([]string(nil), agent.Command...),
+			Command: slices.Clone(agent.Command),
 		}
 		if agent.EnabledOrDefault() {
 			target.Available = true
@@ -93,7 +94,7 @@ func tmuxTarget(
 	tmuxCommand []string,
 	lookPath lookPathFunc,
 ) LaunchTarget {
-	command := append([]string(nil), tmuxCommand...)
+	command := slices.Clone(tmuxCommand)
 	if len(command) == 0 {
 		command = []string{"tmux"}
 	}
@@ -116,6 +117,6 @@ func tmuxTarget(
 }
 
 func cloneTarget(target LaunchTarget) LaunchTarget {
-	target.Command = append([]string(nil), target.Command...)
+	target.Command = slices.Clone(target.Command)
 	return target
 }

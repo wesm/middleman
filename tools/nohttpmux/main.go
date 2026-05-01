@@ -43,15 +43,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		diagnostics = append(diagnostics, fileDiagnostics...)
 	}
 
-	slices.SortFunc(diagnostics, func(a, b Diagnostic) int {
-		if a.Path != b.Path {
-			return strings.Compare(a.Path, b.Path)
-		}
-		if a.Line != b.Line {
-			return a.Line - b.Line
-		}
-		return a.Column - b.Column
-	})
+	slices.SortFunc(diagnostics, Diagnostic.Compare)
 
 	for _, diagnostic := range diagnostics {
 		fmt.Fprintf(
@@ -70,6 +62,16 @@ type Diagnostic struct {
 	Line    int
 	Column  int
 	Message string
+}
+
+func (d Diagnostic) Compare(other Diagnostic) int {
+	if d.Path != other.Path {
+		return strings.Compare(d.Path, other.Path)
+	}
+	if d.Line != other.Line {
+		return d.Line - other.Line
+	}
+	return d.Column - other.Column
 }
 
 func checkFile(path string) ([]Diagnostic, error) {
