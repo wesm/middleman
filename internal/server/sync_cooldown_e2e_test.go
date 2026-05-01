@@ -149,6 +149,18 @@ func startSyncCooldownE2EServer(
 	mock *mockGH,
 ) (string, *http.Client, *db.DB) {
 	t.Helper()
+	baseURL, client, database, _ := startSyncCooldownE2EServerWithSyncer(
+		t, cfgContent, mock,
+	)
+	return baseURL, client, database
+}
+
+func startSyncCooldownE2EServerWithSyncer(
+	t *testing.T,
+	cfgContent string,
+	mock *mockGH,
+) (string, *http.Client, *db.DB, *ghclient.Syncer) {
+	t.Helper()
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -213,7 +225,7 @@ func startSyncCooldownE2EServer(
 		}
 	})
 
-	return baseURL, client, database
+	return baseURL, client, database, syncer
 }
 
 func postJSON(

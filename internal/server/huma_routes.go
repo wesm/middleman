@@ -3448,18 +3448,23 @@ func (s *Server) deleteWorkspace(
 	// dirty check the user requested.
 	//
 	// BeginStopping/EndStopping holds the runtime's stopping marker
-	// across the whole Delete call — including step 3 — so a Launch
-	// arriving between StopWorkspace returning and DB removal cannot
-	// spawn a process in the soon-to-be-deleted worktree.
+	// across the whole Delete call — including the preflight and step 3
+	// — so a Launch arriving after deletion starts cannot spawn a process
+	// in the soon-to-be-deleted worktree. StopWorkspace still runs only
+	// after the dirty preflight passes, so a 409 dirty rejection does not
+	// kill a workspace that survives deletion.
+	if s.runtime != nil {
+		s.runtime.BeginStopping(input.ID)
+		defer s.runtime.EndStopping(input.ID)
+	}
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
 		func(stopCtx context.Context) func() {
 			if s.runtime == nil {
 				return nil
 			}
-			s.runtime.BeginStopping(input.ID)
 			s.runtime.StopWorkspace(stopCtx, input.ID)
-			return func() { s.runtime.EndStopping(input.ID) }
+			return nil
 		},
 	)
 	if err != nil {

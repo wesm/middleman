@@ -53,6 +53,89 @@ func requirePTYAvailable(t *testing.T) {
 	_ = tty.Close()
 }
 
+func TestTriggerSyncE2EPreservesGraphQLFailureRetryState(t *testing.T) {
+	require := require.New(t)
+
+	var invalidations atomic.Int64
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return nil, io.ErrUnexpectedEOF
+		},
+		invalidateListETagsForRepoFn: func(_ string, _ string, endpoints ...string) {
+			if len(endpoints) == 1 && endpoints[0] == "pulls" {
+				invalidations.Add(1)
+			}
+		},
+	}
+	baseURL, client, database, syncer := startSyncCooldownE2EServerWithSyncer(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/acme/widget/pull/1",
+		Title:           "open mr",
+		Author:          "alice",
+		State:           "open",
+		HeadBranch:      "feature-branch",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123def456",
+		PlatformBaseSHA: "base123",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &now,
+		MergeableState:  "clean",
+	})
+	require.NoError(err)
+
+	gqlSrv := newEmptyGraphQLSyncE2EServer(t)
+	defer gqlSrv.Close()
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+
+	status, body := postJSON(t, client, baseURL+"/api/v1/sync", nil)
+	require.Equal(http.StatusAccepted, status, body)
+	first := waitForRepoSynced(t, database, "acme", "widget", nil)
+	require.NotNil(first.LastSyncCompletedAt)
+	require.EqualValues(0, invalidations.Load())
+
+	status, body = postJSON(t, client, baseURL+"/api/v1/sync", nil)
+	require.Equal(http.StatusAccepted, status, body)
+	waitForRepoSynced(t, database, "acme", "widget", first.LastSyncCompletedAt)
+	require.Eventually(func() bool {
+		return invalidations.Load() > 0
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
+func newEmptyGraphQLSyncE2EServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+}
+
 func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(context.Background(), 5*time.Second)
@@ -67,28 +150,29 @@ func gracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) err
 
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
-	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
-	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
-	createIssueFn             func(context.Context, string, string, string, string) (*gh.Issue, error)
-	getUserFn                 func(context.Context, string) (*gh.User, error)
-	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
-	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
-	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
-	editIssueCommentFn        func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
-	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
-	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
-	approveWorkflowRunFn      func(context.Context, string, string, int64) error
-	listReposByOwnerFn        func(context.Context, string) ([]*gh.Repository, error)
-	listReleasesFn            func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
-	listTagsFn                func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
-	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
-	listCheckRunsForRefFn     func(context.Context, string, string, string) ([]*gh.CheckRun, error)
-	getCombinedStatusFn       func(context.Context, string, string, string) (*gh.CombinedStatus, error)
-	listOpenPRsErr            error
-	listOpenIssuesFn          func(context.Context, string, string) ([]*gh.Issue, error)
-	listIssueCommentsFn       func(context.Context, string, string, int) ([]*gh.IssueComment, error)
-	listIssueCommentsErr      error
+	getRepositoryFn              func(context.Context, string, string) (*gh.Repository, error)
+	getPullRequestFn             func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn                   func(context.Context, string, string, int) (*gh.Issue, error)
+	createIssueFn                func(context.Context, string, string, string, string) (*gh.Issue, error)
+	getUserFn                    func(context.Context, string) (*gh.User, error)
+	markReadyForReviewFn         func(context.Context, string, string, int) (*gh.PullRequest, error)
+	editPullRequestFn            func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
+	editIssueFn                  func(context.Context, string, string, int, string) (*gh.Issue, error)
+	editIssueCommentFn           func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
+	mergePullRequestFn           func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
+	listWorkflowRunsForHeadFn    func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
+	approveWorkflowRunFn         func(context.Context, string, string, int64) error
+	listReposByOwnerFn           func(context.Context, string) ([]*gh.Repository, error)
+	listReleasesFn               func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
+	listTagsFn                   func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
+	listOpenPullRequestsFn       func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listCheckRunsForRefFn        func(context.Context, string, string, string) ([]*gh.CheckRun, error)
+	getCombinedStatusFn          func(context.Context, string, string, string) (*gh.CombinedStatus, error)
+	listOpenPRsErr               error
+	listOpenIssuesFn             func(context.Context, string, string) ([]*gh.Issue, error)
+	listIssueCommentsFn          func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listIssueCommentsErr         error
+	invalidateListETagsForRepoFn func(string, string, ...string)
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -379,8 +463,12 @@ func (m *mockGH) ListIssuesPage(
 }
 
 // InvalidateListETagsForRepo is a no-op for the server test mock,
-// which has no underlying HTTP cache.
-func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
+// which has no underlying HTTP cache unless a test installs a hook.
+func (m *mockGH) InvalidateListETagsForRepo(owner, repo string, endpoints ...string) {
+	if m.invalidateListETagsForRepoFn != nil {
+		m.invalidateListETagsForRepoFn(owner, repo, endpoints...)
+	}
+}
 
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
@@ -8641,13 +8729,16 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 	var errs []error
 	for _, ws := range workspaces {
 		_, err := func() ([]string, error) {
+			if srv.runtime != nil {
+				srv.runtime.BeginStopping(ws.ID)
+				defer srv.runtime.EndStopping(ws.ID)
+			}
 			beforeDestructive := func(stopCtx context.Context) func() {
 				if srv.runtime == nil {
 					return nil
 				}
-				srv.runtime.BeginStopping(ws.ID)
 				srv.runtime.StopWorkspace(stopCtx, ws.ID)
-				return func() { srv.runtime.EndStopping(ws.ID) }
+				return nil
 			}
 			return srv.workspaces.Delete(ctx, ws.ID, true, beforeDestructive)
 		}()
