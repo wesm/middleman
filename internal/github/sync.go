@@ -3423,102 +3423,34 @@ func (s *Syncer) drainDetailQueue(
 func (s *Syncer) buildDetailQueueItems(
 	ctx context.Context,
 ) []QueueItem {
-	// Build set of tracked repos to filter out stale DB rows
-	// from removed repos.
 	s.reposMu.Lock()
-	trackedRepos := make(map[string]bool, len(s.repos))
-	for _, r := range s.repos {
-		host := r.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		trackedRepos[host+"\x00"+r.Owner+"/"+r.Name] = true
-	}
+	trackedRepos := make([]RepoRef, len(s.repos))
+	copy(trackedRepos, s.repos)
 	s.reposMu.Unlock()
 
-	// Gather watched MR numbers for matching.
 	s.watchMu.Lock()
-	watched := make(map[string]bool, len(s.watchedMRs))
-	for _, w := range s.watchedMRs {
-		key := fmt.Sprintf(
-			"%s/%s#%d", w.Owner, w.Name, w.Number,
-		)
-		watched[key] = true
-	}
+	watchedMRs := make([]WatchedMR, len(s.watchedMRs))
+	copy(watchedMRs, s.watchedMRs)
 	s.watchMu.Unlock()
 
-	var items []QueueItem
-
-	// Open PRs.
-	prs, err := s.db.ListMergeRequests(
-		ctx, db.ListMergeRequestsOpts{State: "open"},
-	)
-	if err != nil {
+	plan := newDetailRefreshPlanner(s.db).Build(ctx, detailRefreshPlanInput{
+		TrackedRepos: trackedRepos,
+		WatchedMRs:   watchedMRs,
+	})
+	if plan.PullRequestListErr != nil {
 		slog.Warn("detail drain: list open PRs failed",
-			"err", err,
+			"err", plan.PullRequestListErr,
 		)
 		return nil
 	}
-	for _, pr := range prs {
-		repo, rErr := s.db.GetRepoByID(ctx, pr.RepoID)
-		if rErr != nil || repo == nil {
-			continue
-		}
-		repoKey := repo.PlatformHost + "\x00" + repo.Owner + "/" + repo.Name
-		if !trackedRepos[repoKey] {
-			continue
-		}
-		watchKey := fmt.Sprintf(
-			"%s/%s#%d", repo.Owner, repo.Name, pr.Number,
-		)
-		items = append(items, QueueItem{
-			Type:            QueueItemPR,
-			RepoOwner:       repo.Owner,
-			RepoName:        repo.Name,
-			Number:          pr.Number,
-			PlatformHost:    repo.PlatformHost,
-			UpdatedAt:       pr.UpdatedAt,
-			DetailFetchedAt: pr.DetailFetchedAt,
-			CIHadPending:    pr.CIHadPending,
-			Starred:         pr.Starred,
-			Watched:         watched[watchKey],
-			IsOpen:          true,
-		})
-	}
-
-	// Open issues.
-	issues, err := s.db.ListIssues(
-		ctx, db.ListIssuesOpts{State: "open"},
-	)
-	if err != nil {
+	if plan.IssueListErr != nil {
 		slog.Warn("detail drain: list open issues failed",
-			"err", err,
+			"err", plan.IssueListErr,
 		)
-		return items
-	}
-	for _, issue := range issues {
-		repo, rErr := s.db.GetRepoByID(ctx, issue.RepoID)
-		if rErr != nil || repo == nil {
-			continue
-		}
-		repoKey := repo.PlatformHost + "\x00" + repo.Owner + "/" + repo.Name
-		if !trackedRepos[repoKey] {
-			continue
-		}
-		items = append(items, QueueItem{
-			Type:            QueueItemIssue,
-			RepoOwner:       repo.Owner,
-			RepoName:        repo.Name,
-			Number:          issue.Number,
-			PlatformHost:    repo.PlatformHost,
-			UpdatedAt:       issue.UpdatedAt,
-			DetailFetchedAt: issue.DetailFetchedAt,
-			Starred:         issue.Starred,
-			IsOpen:          true,
-		})
+		return plan.Items
 	}
 
-	return items
+	return plan.Items
 }
 
 // --- Backfill Discovery ---
