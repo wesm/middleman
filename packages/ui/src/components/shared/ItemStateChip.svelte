@@ -37,7 +37,13 @@
     }
   });
   const chipClass = $derived(
-    ["chip--state", `chip--state-${normalized}`, className]
+    [
+      "state-badge",
+      `state-${normalized}`,
+      "chip--state",
+      `chip--state-${normalized}`,
+      className,
+    ]
       .filter(Boolean)
       .join(" "),
   );

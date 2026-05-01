@@ -226,7 +226,7 @@
             <Chip
               size="xs"
               uppercase={false}
-              class="repo-chip"
+              class="repo-chip repo-tag"
               style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
             >{itemGroup.repoOwner}/{itemGroup.repoName}</Chip>
           {/if}
