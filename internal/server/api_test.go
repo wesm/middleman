@@ -10012,8 +10012,7 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, shellResp.StatusCode())
 
-	require.Len(srv.runtime.ListSessions(ws.Id), 1)
-	require.NotNil(srv.runtime.ShellSession(ws.Id))
+	requireWorkspaceRuntimeSessionsReady(t, srv, ws.Id)
 
 	force := true
 	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
@@ -10059,8 +10058,7 @@ func TestWorkspaceDeleteFallsBackWhenRuntimeLifecycleNilE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, shellResp.StatusCode())
 
-	require.Len(srv.runtime.ListSessions(ws.Id), 1)
-	require.NotNil(srv.runtime.ShellSession(ws.Id))
+	requireWorkspaceRuntimeSessionsReady(t, srv, ws.Id)
 
 	srv.runtimeLifecycle = nil
 
@@ -10112,8 +10110,7 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, shellResp.StatusCode())
-	require.Len(srv.runtime.ListSessions(ws.Id), 1)
-	require.NotNil(srv.runtime.ShellSession(ws.Id))
+	requireWorkspaceRuntimeSessionsReady(t, srv, ws.Id)
 
 	// Make the worktree dirty so a non-forced delete will be rejected.
 	require.NoError(os.WriteFile(
@@ -10130,6 +10127,18 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	// The 409 must not have killed the runtime sessions.
 	assert.Len(srv.runtime.ListSessions(ws.Id), 1)
 	assert.NotNil(srv.runtime.ShellSession(ws.Id))
+}
+
+func requireWorkspaceRuntimeSessionsReady(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return len(srv.runtime.ListSessions(workspaceID)) == 1 &&
+			srv.runtime.ShellSession(workspaceID) != nil
+	}, time.Second, 10*time.Millisecond)
 }
 
 // TestWorkspaceListReportsCommitsAheadBehindE2E verifies that the
@@ -10916,8 +10925,18 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 	require.Equal("ready", before.Status)
 	require.Nil(before.ErrorMessage)
 	require.NotEmpty(before.WorktreePath)
-	beforeEvents, err := database.ListWorkspaceSetupEvents(ctx, wsID)
-	require.NoError(err)
+	var beforeEvents []db.WorkspaceSetupEvent
+	require.Eventually(func() bool {
+		events, err := database.ListWorkspaceSetupEvents(ctx, wsID)
+		if err != nil {
+			return false
+		}
+		beforeEvents = events
+		return countWorkspaceSetupEvents(events, "setup", "started") > 0 &&
+			countWorkspaceSetupEvents(events, "setup", "ready") > 0
+	}, time.Second, 10*time.Millisecond)
+	beforeSetupStarts := countWorkspaceSetupEvents(beforeEvents, "setup", "started")
+	beforeSetupReady := countWorkspaceSetupEvents(beforeEvents, "setup", "ready")
 
 	retryResp, err := client.HTTP.RetryWorkspaceWithResponse(ctx, wsID)
 	require.NoError(err)
@@ -10933,7 +10952,27 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 
 	afterEvents, err := database.ListWorkspaceSetupEvents(ctx, wsID)
 	require.NoError(err)
-	assert.Len(afterEvents, len(beforeEvents))
+	assert.Equal(
+		beforeSetupStarts,
+		countWorkspaceSetupEvents(afterEvents, "setup", "started"),
+	)
+	assert.Equal(
+		beforeSetupReady,
+		countWorkspaceSetupEvents(afterEvents, "setup", "ready"),
+	)
+}
+
+func countWorkspaceSetupEvents(
+	events []db.WorkspaceSetupEvent,
+	stage, outcome string,
+) int {
+	count := 0
+	for _, event := range events {
+		if event.Stage == stage && event.Outcome == outcome {
+			count++
+		}
+	}
+	return count
 }
 
 func TestWorkspaceCreateNotFound(t *testing.T) {
