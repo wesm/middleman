@@ -299,38 +299,3 @@ func toRepoSummaryResponse(
 	}
 	return resp
 }
-
-// toWorktreeLinkResponses converts DB links to API responses.
-// Returns an empty non-nil slice when input is nil.
-func toWorktreeLinkResponses(
-	links []db.WorktreeLink,
-) []worktreeLinkResponse {
-	out := make([]worktreeLinkResponse, len(links))
-	for i, l := range links {
-		out[i] = worktreeLinkResponse{
-			WorktreeKey:    l.WorktreeKey,
-			WorktreePath:   l.WorktreePath,
-			WorktreeBranch: l.WorktreeBranch,
-		}
-	}
-	return out
-}
-
-// indexWorktreeLinksByMR groups worktree link responses by
-// merge request ID.
-func indexWorktreeLinksByMR(
-	links []db.WorktreeLink,
-) map[int64][]worktreeLinkResponse {
-	m := make(map[int64][]worktreeLinkResponse)
-	for _, l := range links {
-		m[l.MergeRequestID] = append(
-			m[l.MergeRequestID],
-			worktreeLinkResponse{
-				WorktreeKey:    l.WorktreeKey,
-				WorktreePath:   l.WorktreePath,
-				WorktreeBranch: l.WorktreeBranch,
-			},
-		)
-	}
-	return m
-}

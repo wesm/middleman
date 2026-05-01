@@ -659,22 +659,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		if !ok {
 			continue
 		}
-		wl := linksByMR[mr.ID]
-		if wl == nil {
-			wl = []worktreeLinkResponse{}
-		}
-		resp := mergeRequestResponse{
-			MergeRequest:  mr,
-			RepoOwner:     rp.Owner,
-			RepoName:      rp.Name,
-			PlatformHost:  rp.PlatformHost,
-			WorktreeLinks: wl,
-			DetailLoaded:  mr.DetailFetchedAt != nil,
-		}
-		if mr.DetailFetchedAt != nil {
-			resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
-		}
-		out = append(out, resp)
+		out = append(out, projectMergeRequestListResponse(mr, rp, linksByMR[mr.ID]))
 	}
 
 	return &listPullsOutput{Body: out}, nil
@@ -706,9 +691,6 @@ func (s *Server) buildPullDetailResponse(
 	if err != nil {
 		return mergeRequestDetailResponse{}, huma.Error500InternalServerError("list mr events failed")
 	}
-	if events == nil {
-		events = []db.MREvent{}
-	}
 
 	dbLinks, err := s.db.GetWorktreeLinksForMR(ctx, mr.ID)
 	if err != nil {
@@ -723,38 +705,15 @@ func (s *Server) buildPullDetailResponse(
 			"load repo failed",
 		)
 	}
-	resp := mergeRequestDetailResponse{
+	return projectMergeRequestDetailResponse(mergeRequestDetailProjection{
 		MergeRequest:     mr,
 		Events:           events,
-		RepoOwner:        repo.Owner,
-		RepoName:         repo.Name,
-		PlatformHost:     repo.PlatformHost,
-		PlatformHeadSHA:  mr.PlatformHeadSHA,
-		PlatformBaseSHA:  mr.PlatformBaseSHA,
-		DiffHeadSHA:      mr.DiffHeadSHA,
-		MergeBaseSHA:     mr.MergeBaseSHA,
-		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
+		Repo:             *repo,
+		WorktreeLinks:    dbLinks,
 		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr, wfMode),
 		Warnings:         s.diffWarnings(mr),
-		DetailLoaded:     mr.DetailFetchedAt != nil,
-	}
-	if mr.DetailFetchedAt != nil {
-		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
-	}
-
-	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByMR(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name, mr.Number,
-		)
-		if wsErr == nil && wsRef != nil {
-			resp.Workspace = &workspaceRef{
-				ID:     wsRef.ID,
-				Status: wsRef.Status,
-			}
-		}
-	}
-
-	return resp, nil
+		Workspace:        s.workspaceForMergeRequest(ctx, *repo, mr.Number),
+	}), nil
 }
 
 // diffWarnings returns warnings inferred from the persisted PR row. The
@@ -1103,17 +1062,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		if !ok {
 			continue
 		}
-		resp := issueResponse{
-			Issue:        issue,
-			PlatformHost: rp.PlatformHost,
-			RepoOwner:    rp.Owner,
-			RepoName:     rp.Name,
-			DetailLoaded: issue.DetailFetchedAt != nil,
-		}
-		if issue.DetailFetchedAt != nil {
-			resp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
-		}
-		out = append(out, resp)
+		out = append(out, projectIssueListResponse(issue, rp))
 	}
 
 	return &listIssuesOutput{Body: out}, nil
@@ -1203,16 +1152,7 @@ func (s *Server) createIssue(
 	}
 	savedIssue.ID = issueID
 
-	out := issueResponse{
-		Issue:        *savedIssue,
-		PlatformHost: repo.PlatformHost,
-		RepoOwner:    repo.Owner,
-		RepoName:     repo.Name,
-		DetailLoaded: savedIssue.DetailFetchedAt != nil,
-	}
-	if savedIssue.DetailFetchedAt != nil {
-		out.DetailFetchedAt = formatUTCRFC3339(*savedIssue.DetailFetchedAt)
-	}
+	out := projectIssueListResponse(*savedIssue, *repo)
 
 	return &createIssueOutput{
 		Status: http.StatusCreated,
@@ -1234,35 +1174,9 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 		return nil, huma.Error500InternalServerError("get issue failed")
 	}
 
-	events, err := s.db.ListIssueEvents(ctx, issue.ID)
+	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list issue events failed")
-	}
-	if events == nil {
-		events = []db.IssueEvent{}
-	}
-
-	issueResp := issueDetailResponse{
-		Issue:        issue,
-		Events:       events,
-		PlatformHost: repo.PlatformHost,
-		RepoOwner:    repo.Owner,
-		RepoName:     repo.Name,
-		DetailLoaded: issue.DetailFetchedAt != nil,
-	}
-	if issue.DetailFetchedAt != nil {
-		issueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
-	}
-	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByIssue(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
-		)
-		if wsErr == nil && wsRef != nil {
-			issueResp.Workspace = &workspaceRef{
-				ID:     wsRef.ID,
-				Status: wsRef.Status,
-			}
-		}
 	}
 	return &getIssueOutput{Body: issueResp}, nil
 }
@@ -2024,35 +1938,9 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
 	}
 
-	events, err := s.db.ListIssueEvents(ctx, issue.ID)
+	syncIssueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list issue events: " + err.Error())
-	}
-	if events == nil {
-		events = []db.IssueEvent{}
-	}
-
-	syncIssueResp := issueDetailResponse{
-		Issue:        issue,
-		Events:       events,
-		PlatformHost: repo.PlatformHost,
-		RepoOwner:    repo.Owner,
-		RepoName:     repo.Name,
-		DetailLoaded: issue.DetailFetchedAt != nil,
-	}
-	if issue.DetailFetchedAt != nil {
-		syncIssueResp.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
-	}
-	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByIssue(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name, issue.Number,
-		)
-		if wsErr == nil && wsRef != nil {
-			syncIssueResp.Workspace = &workspaceRef{
-				ID:     wsRef.ID,
-				Status: wsRef.Status,
-			}
-		}
 	}
 	return &syncIssueOutput{Body: syncIssueResp}, nil
 }
