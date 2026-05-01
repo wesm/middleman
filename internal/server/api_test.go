@@ -10027,6 +10027,27 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 	assert.Nil(srv.runtime.ShellSession(ws.Id))
 }
 
+func TestWorkspaceDeleteFallsBackWhenRuntimeLifecycleNilE2E(t *testing.T) {
+	require := require.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+	srv.runtimeLifecycle = nil
+
+	force := true
+	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id,
+		&generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusNotFound, getResp.StatusCode())
+}
+
 // TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E covers the case where the
 // workspace is dirty and delete is rejected with 409. Runtime sessions must
 // survive — killing them on a delete that didn't actually happen would leave

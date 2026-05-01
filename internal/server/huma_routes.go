@@ -3292,11 +3292,6 @@ func (s *Server) deleteWorkspace(
 			"workspace manager not configured",
 		)
 	}
-	if s.runtimeLifecycle == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace runtime not configured",
-		)
-	}
 
 	// Order of operations:
 	//   1. dirty preflight inside Delete — returns 409 without
@@ -3315,9 +3310,15 @@ func (s *Server) deleteWorkspace(
 	// the whole Delete call — including step 3 — so a Launch arriving
 	// between StopWorkspace returning and DB removal cannot spawn a
 	// process in the soon-to-be-deleted worktree.
-	dirty, err := s.runtimeLifecycle.DeleteWorkspace(
-		ctx, input.ID, input.Force,
-	)
+	var dirty []string
+	var err error
+	if s.runtimeLifecycle != nil {
+		dirty, err = s.runtimeLifecycle.DeleteWorkspace(
+			ctx, input.ID, input.Force,
+		)
+	} else {
+		dirty, err = s.workspaces.Delete(ctx, input.ID, input.Force, nil)
+	}
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
