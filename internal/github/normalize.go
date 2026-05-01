@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -545,14 +545,7 @@ func repoStatusConclusion(s *gh.RepoStatus) string {
 }
 
 func sortCIChecksByName(checks []db.CICheck) {
-	sort.SliceStable(checks, func(i, j int) bool {
-		leftFolded := strings.ToLower(checks[i].Name)
-		rightFolded := strings.ToLower(checks[j].Name)
-		if leftFolded != rightFolded {
-			return leftFolded < rightFolded
-		}
-		return checks[i].Name < checks[j].Name
-	})
+	slices.SortStableFunc(checks, db.CICheck.Compare)
 }
 
 func shortSHA(sha string) string {

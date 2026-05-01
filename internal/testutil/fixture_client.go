@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -100,9 +101,7 @@ func (c *FixtureClient) ListRepositoriesByOwner(
 	if len(repos) == 0 {
 		return nil, nil
 	}
-	out := make([]*gh.Repository, len(repos))
-	copy(out, repos)
-	return out, nil
+	return slices.Clone(repos), nil
 }
 
 func (c *FixtureClient) ListReleases(
@@ -115,9 +114,7 @@ func (c *FixtureClient) ListReleases(
 	if perPage > 0 && perPage < len(releases) {
 		releases = releases[:perPage]
 	}
-	out := make([]*gh.RepositoryRelease, len(releases))
-	copy(out, releases)
-	return out, nil
+	return slices.Clone(releases), nil
 }
 
 func (c *FixtureClient) ListTags(
@@ -130,9 +127,7 @@ func (c *FixtureClient) ListTags(
 	if perPage > 0 && perPage < len(tags) {
 		tags = tags[:perPage]
 	}
-	out := make([]*gh.RepositoryTag, len(tags))
-	copy(out, tags)
-	return out, nil
+	return slices.Clone(tags), nil
 }
 
 // GetRepository returns a repository with all merge methods enabled.
@@ -278,9 +273,7 @@ func (c *FixtureClient) ListIssueComments(
 	if len(comments) == 0 {
 		return nil, nil
 	}
-	out := make([]*gh.IssueComment, len(comments))
-	copy(out, comments)
-	return out, nil
+	return slices.Clone(comments), nil
 }
 
 func (c *FixtureClient) ListIssueCommentsIfChanged(
@@ -337,9 +330,7 @@ func (c *FixtureClient) ListCheckRunsForRef(
 	if len(runs) == 0 {
 		return nil, nil
 	}
-	out := make([]*gh.CheckRun, len(runs))
-	copy(out, runs)
-	return out, nil
+	return slices.Clone(runs), nil
 }
 
 // ListWorkflowRunsForHeadSHA returns nil (read-only stub).

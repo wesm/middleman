@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -204,7 +205,7 @@ func (s *Server) previewRepos(
 	}
 
 	s.cfgMu.Lock()
-	repos := append([]config.Repo(nil), s.cfg.Repos...)
+	repos := slices.Clone(s.cfg.Repos)
 	s.cfgMu.Unlock()
 
 	rows, err := buildRepoPreviewRows(
@@ -283,7 +284,7 @@ func (s *Server) applyBulkExactRepos(
 			fmt.Errorf("all selected repositories are already configured")
 	}
 
-	prev := append([]config.Repo(nil), s.cfg.Repos...)
+	prev := slices.Clone(s.cfg.Repos)
 	s.cfg.Repos = append(s.cfg.Repos, addConfigs...)
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = prev

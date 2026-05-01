@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -111,7 +112,7 @@ func (m *Manager) SetClones(clones *gitclone.Manager) {
 // invocation the manager issues. When nil/empty, the manager uses
 // ["tmux"] — preserving today's behavior.
 func (m *Manager) SetTmuxCommand(cmd []string) {
-	m.tmuxCmd = append([]string(nil), cmd...)
+	m.tmuxCmd = slices.Clone(cmd)
 }
 
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the

@@ -1,7 +1,8 @@
 package github
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"time"
 )
 
@@ -42,6 +43,10 @@ func (qi *QueueItem) WorstCaseCost() int {
 	return IssueDetailWorstCase
 }
 
+func (qi QueueItem) Compare(other QueueItem) int {
+	return cmp.Compare(other.Score, qi.Score)
+}
+
 // Staleness thresholds.
 const (
 	defaultRefetchInterval = 30 * time.Minute
@@ -62,9 +67,7 @@ func BuildQueue(
 		items[i].Score = score(&items[i], now)
 		eligible = append(eligible, items[i])
 	}
-	sort.Slice(eligible, func(i, j int) bool {
-		return eligible[i].Score > eligible[j].Score
-	})
+	slices.SortFunc(eligible, QueueItem.Compare)
 	return eligible
 }
 

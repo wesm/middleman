@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,6 +116,10 @@ type duplicateNumberViolation struct {
 	names  []string
 }
 
+func (v duplicateNumberViolation) Compare(other duplicateNumberViolation) int {
+	return strings.Compare(v.number, other.number)
+}
+
 func duplicateMigrationNumberViolations(baseRef, migrationDir, diff string) ([]duplicateNumberViolation, error) {
 	baseByNumber, err := migrationNamesByNumberOnRef(baseRef, migrationDir)
 	if err != nil {
@@ -135,13 +140,8 @@ func duplicateMigrationNumberViolations(baseRef, migrationDir, diff string) ([]d
 
 	var violations []duplicateNumberViolation
 	for number, stagedNames := range stagedByNumber {
-		allNames := map[string]struct{}{}
-		for name := range baseByNumber[number] {
-			allNames[name] = struct{}{}
-		}
-		for name := range stagedNames {
-			allNames[name] = struct{}{}
-		}
+		allNames := maps.Clone(stagedNames)
+		maps.Copy(allNames, baseByNumber[number])
 		if len(allNames) <= 1 {
 			continue
 		}
@@ -153,9 +153,7 @@ func duplicateMigrationNumberViolations(baseRef, migrationDir, diff string) ([]d
 		})
 	}
 
-	slices.SortFunc(violations, func(a, b duplicateNumberViolation) int {
-		return strings.Compare(a.number, b.number)
-	})
+	slices.SortFunc(violations, duplicateNumberViolation.Compare)
 	return violations, nil
 }
 
@@ -231,12 +229,7 @@ func migrationIdentityFromPath(path string) (string, string, bool) {
 }
 
 func sortedKeys(values map[string]struct{}) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
+	return slices.Sorted(maps.Keys(values))
 }
 
 func getenvDefault(key, fallback string) string {

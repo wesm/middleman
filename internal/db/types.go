@@ -1,6 +1,10 @@
 package db
 
-import "time"
+import (
+	"cmp"
+	"strings"
+	"time"
+)
 
 type Label struct {
 	ID          int64     `json:"-"`
@@ -127,6 +131,10 @@ type MergeRequest struct {
 	Labels            []Label `json:"labels,omitempty"`
 }
 
+func (mr MergeRequest) Compare(other MergeRequest) int {
+	return cmp.Compare(mr.Number, other.Number)
+}
+
 // CICheck represents a single CI check run.
 type CICheck struct {
 	Name       string `json:"name"`
@@ -134,6 +142,15 @@ type CICheck struct {
 	Conclusion string `json:"conclusion"` // success, failure, neutral, cancelled, skipped, timed_out, action_required, or empty
 	URL        string `json:"url"`        // link to the check run details page
 	App        string `json:"app"`        // app name (e.g., "GitHub Actions")
+}
+
+func (c CICheck) Compare(other CICheck) int {
+	leftFolded := strings.ToLower(c.Name)
+	rightFolded := strings.ToLower(other.Name)
+	if leftFolded != rightFolded {
+		return cmp.Compare(leftFolded, rightFolded)
+	}
+	return cmp.Compare(c.Name, other.Name)
 }
 
 type MREvent struct {

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -625,7 +626,7 @@ func (c *Config) TmuxCommand() []string {
 	if c == nil || len(c.Tmux.Command) == 0 {
 		return []string{"tmux"}
 	}
-	return append([]string(nil), c.Tmux.Command...)
+	return slices.Clone(c.Tmux.Command)
 }
 
 // TmuxAgentSessionsEnabled reports whether runtime agent launches

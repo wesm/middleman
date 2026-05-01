@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -49,7 +50,7 @@ func (s *Server) configuredClients(
 // in-memory state (syncer tracked repos) without calling GitHub.
 func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
-	repos := append([]config.Repo(nil), s.cfg.Repos...)
+	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
 	terminal := s.cfg.Terminal
 	agents := cloneConfigAgents(s.cfg.Agents)
@@ -338,7 +339,7 @@ func cloneConfigAgents(agents []config.Agent) []config.Agent {
 	cloned := make([]config.Agent, len(agents))
 	for i, agent := range agents {
 		cloned[i] = agent
-		cloned[i].Command = append([]string(nil), agent.Command...)
+		cloned[i].Command = slices.Clone(agent.Command)
 	}
 	return cloned
 }
@@ -375,9 +376,7 @@ func (s *Server) addConfiguredRepo(
 					" is already configured")
 		}
 	}
-	allRepos := append(
-		append([]config.Repo(nil), s.cfg.Repos...), newRepo,
-	)
+	allRepos := append(slices.Clone(s.cfg.Repos), newRepo)
 	s.cfgMu.Unlock()
 
 	_, expanded, err := ghclient.ResolveConfiguredRepo(
@@ -429,7 +428,7 @@ func (s *Server) refreshConfiguredRepo(
 	name := input.Name
 
 	s.cfgMu.Lock()
-	repos := append([]config.Repo(nil), s.cfg.Repos...)
+	repos := slices.Clone(s.cfg.Repos)
 	s.cfgMu.Unlock()
 
 	var target *config.Repo
@@ -466,7 +465,7 @@ func (s *Server) refreshConfiguredRepo(
 	// and the stale expansion would resurrect removed repos.
 	s.cfgMu.Lock()
 	stillExists := false
-	currentRepos := append([]config.Repo(nil), s.cfg.Repos...)
+	currentRepos := slices.Clone(s.cfg.Repos)
 	for _, rp := range currentRepos {
 		if sameConfiguredRepo(
 			rp,
@@ -520,7 +519,7 @@ func (s *Server) deleteConfiguredRepo(
 			owner + "/" + name + " is not configured")
 	}
 
-	prev := append([]config.Repo(nil), s.cfg.Repos...)
+	prev := slices.Clone(s.cfg.Repos)
 	s.cfg.Repos = append(
 		s.cfg.Repos[:idx], s.cfg.Repos[idx+1:]...,
 	)
