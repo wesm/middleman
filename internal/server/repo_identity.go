@@ -15,13 +15,6 @@ type repoIdentityRef struct {
 	platformHost string
 }
 
-type repoLookupMode int
-
-const (
-	repoLookupOwnerNameAllowed repoLookupMode = iota
-	repoLookupRequireUnambiguousOwnerName
-)
-
 type repositoryIdentityModule struct {
 	server *Server
 }
@@ -41,43 +34,30 @@ func (s *Server) repoIdentity() repositoryIdentityModule {
 func (m repositoryIdentityModule) LookupRepo(
 	ctx context.Context,
 	ref repoIdentityRef,
-	mode repoLookupMode,
 ) (*db.Repo, error) {
 	ref = normalizeRepoIdentityRef(ref)
 	if ref.platformHost != "" {
 		return m.lookupRepoOnHost(ctx, ref)
 	}
-	if mode == repoLookupRequireUnambiguousOwnerName {
-		repos, err := m.server.db.ListReposByOwnerName(ctx, ref.owner, ref.name)
-		if err != nil {
-			return nil, fmt.Errorf("list matching repos: %w", err)
-		}
-		switch len(repos) {
-		case 0:
-			return nil, errRepoNotFound
-		case 1:
-			return &repos[0], nil
-		default:
-			return nil, errRepoAmbiguous
-		}
-	}
-
-	repo, err := m.server.db.GetRepoByOwnerName(ctx, ref.owner, ref.name)
+	repos, err := m.server.db.ListReposByOwnerName(ctx, ref.owner, ref.name)
 	if err != nil {
-		return nil, fmt.Errorf("get repo: %w", err)
+		return nil, fmt.Errorf("list matching repos: %w", err)
 	}
-	if repo == nil {
+	switch len(repos) {
+	case 0:
 		return nil, errRepoNotFound
+	case 1:
+		return &repos[0], nil
+	default:
+		return nil, errRepoAmbiguous
 	}
-	return repo, nil
 }
 
 func (m repositoryIdentityModule) LookupRepoID(
 	ctx context.Context,
 	ref repoIdentityRef,
-	mode repoLookupMode,
 ) (int64, error) {
-	repo, err := m.LookupRepo(ctx, ref, mode)
+	repo, err := m.LookupRepo(ctx, ref)
 	if err != nil {
 		return 0, err
 	}
@@ -92,7 +72,7 @@ func (m repositoryIdentityModule) LookupMRID(
 		owner:        ref.owner,
 		name:         ref.name,
 		platformHost: ref.platformHost,
-	}, repoLookupOwnerNameAllowed)
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -126,7 +106,7 @@ func (m repositoryIdentityModule) LookupIssue(
 		owner:        ref.owner,
 		name:         ref.name,
 		platformHost: ref.platformHost,
-	}, repoLookupOwnerNameAllowed)
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -150,7 +130,7 @@ func (m repositoryIdentityModule) ResolveLocalItem(
 		owner:        ref.owner,
 		name:         ref.name,
 		platformHost: ref.platformHost,
-	}, repoLookupOwnerNameAllowed)
+	})
 	if errors.Is(err, errRepoNotFound) {
 		return resolvedLocalItem{}, nil
 	}

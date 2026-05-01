@@ -6740,7 +6740,7 @@ func TestResolveItem_PR(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
-		t.Context(), "acme", "widget", 42,
+		t.Context(), "acme", "widget", 42, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6758,12 +6758,54 @@ func TestResolveItem_Issue(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
-		t.Context(), "acme", "widget", 7,
+		t.Context(), "acme", "widget", 7, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 	require.NotNil(resp.JSON200)
 	require.Equal("issue", resp.JSON200.ItemType)
+	require.EqualValues(7, resp.JSON200.Number)
+	require.True(resp.JSON200.RepoTracked)
+}
+
+func TestResolveItem_AmbiguousOwnerNameRequiresPlatformHost(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 7, "open", "GitHub issue")
+	seedIssueOnHost(t, database, "ghe.example.com", "acme", "widget", 7, "open", "GHE issue")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		t.Context(), "acme", "widget", 7, nil,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestResolveItem_ExplicitPlatformHostResolvesRepoScopedItem(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 7, "open", "GitHub issue")
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 7)
+	client := setupTestClient(t, srv)
+	platformHost := "ghe.example.com"
+
+	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
+		t.Context(), "acme", "widget", 7,
+		&generated.PostReposByOwnerByNameItemsByNumberResolveParams{
+			PlatformHost: &platformHost,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("pr", resp.JSON200.ItemType)
 	require.EqualValues(7, resp.JSON200.Number)
 	require.True(resp.JSON200.RepoTracked)
 }
@@ -6774,7 +6816,7 @@ func TestResolveItem_UntrackedRepo(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
-		t.Context(), "unknown", "repo", 1,
+		t.Context(), "unknown", "repo", 1, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6799,7 +6841,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
-		t.Context(), "acme", "widget", 999,
+		t.Context(), "acme", "widget", 999, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusNotFound, resp.StatusCode())
@@ -6820,7 +6862,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostReposByOwnerByNameItemsByNumberResolveWithResponse(
-		t.Context(), "acme", "widget", 999,
+		t.Context(), "acme", "widget", 999, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())

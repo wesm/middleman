@@ -4079,13 +4079,32 @@ func (s *Syncer) syncIssueWithHost(
 func (s *Syncer) SyncItemByNumber(
 	ctx context.Context, owner, name string, number int,
 ) (string, error) {
-	if !s.IsTrackedRepo(owner, name) {
-		return "", fmt.Errorf("repo %s/%s is not tracked", owner, name)
+	return s.syncItemByNumberWithHost(ctx, owner, name, number, "")
+}
+
+// SyncItemByNumberOnHost resolves and syncs an item for a specific tracked host.
+func (s *Syncer) SyncItemByNumberOnHost(
+	ctx context.Context,
+	host, owner, name string,
+	number int,
+) (string, error) {
+	return s.syncItemByNumberWithHost(ctx, owner, name, number, host)
+}
+
+func (s *Syncer) syncItemByNumberWithHost(
+	ctx context.Context,
+	owner, name string,
+	number int,
+	hostHint string,
+) (string, error) {
+	host := hostHint
+	if host == "" {
+		host = s.hostFor(owner, name)
+	}
+	if !s.isTrackedRepoOnHost(owner, name, host) {
+		return "", fmt.Errorf("repo %s/%s on %s is not tracked", owner, name, host)
 	}
 
-	// GitHub's Issues API returns both issues and PRs. If the
-	// response has PullRequestLinks, it's a PR.
-	host := s.hostFor(owner, name)
 	repo := RepoRef{Owner: owner, Name: name, PlatformHost: host}
 	client, err := s.clientFor(repo)
 	if err != nil {
@@ -4104,7 +4123,7 @@ func (s *Syncer) SyncItemByNumber(
 	}
 
 	if ghIssue.PullRequestLinks != nil {
-		if err := s.SyncMR(ctx, owner, name, number); err != nil {
+		if err := s.syncMRWithHost(ctx, owner, name, number, host); err != nil {
 			// A DiffSyncError means the PR row, timeline, and CI status
 			// were upserted successfully and only the diff computation
 			// failed. The item type is known, so resolution can still
@@ -4123,7 +4142,7 @@ func (s *Syncer) SyncItemByNumber(
 		return "pr", nil
 	}
 
-	if err := s.SyncIssue(ctx, owner, name, number); err != nil {
+	if err := s.syncIssueWithHost(ctx, owner, name, number, host); err != nil {
 		return "", fmt.Errorf(
 			"sync issue %s/%s#%d: %w", owner, name, number, err,
 		)

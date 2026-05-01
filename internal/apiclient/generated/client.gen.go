@@ -942,6 +942,11 @@ type EnqueueIssueSyncParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// PostReposByOwnerByNameItemsByNumberResolveParams defines parameters for PostReposByOwnerByNameItemsByNumberResolve.
+type PostReposByOwnerByNameItemsByNumberResolveParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
 type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -1179,7 +1184,7 @@ type ClientInterface interface {
 	CreateIssueWorkspace(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNameItemsByNumberResolve request
-	PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumber request
 	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1662,8 +1667,8 @@ func (c *Client) CreateIssueWorkspace(ctx context.Context, owner string, name st
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNameItemsByNumberResolveRequest(c.Server, owner, name, number)
+func (c *Client) PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNameItemsByNumberResolveRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3574,7 +3579,7 @@ func NewCreateIssueWorkspaceRequestWithBody(server string, owner string, name st
 }
 
 // NewPostReposByOwnerByNameItemsByNumberResolveRequest generates requests for PostReposByOwnerByNameItemsByNumberResolve
-func NewPostReposByOwnerByNameItemsByNumberResolveRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewPostReposByOwnerByNameItemsByNumberResolveRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3611,6 +3616,28 @@ func NewPostReposByOwnerByNameItemsByNumberResolveRequest(server string, owner s
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -5417,7 +5444,7 @@ type ClientWithResponsesInterface interface {
 	CreateIssueWorkspaceWithResponse(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
 
 	// PostReposByOwnerByNameItemsByNumberResolveWithResponse request
-	PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error)
+	PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberWithResponse request
 	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
@@ -7099,8 +7126,8 @@ func (c *ClientWithResponses) CreateIssueWorkspaceWithResponse(ctx context.Conte
 }
 
 // PostReposByOwnerByNameItemsByNumberResolveWithResponse request returning *PostReposByOwnerByNameItemsByNumberResolveResponse
-func (c *ClientWithResponses) PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error) {
-	rsp, err := c.PostReposByOwnerByNameItemsByNumberResolve(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error) {
+	rsp, err := c.PostReposByOwnerByNameItemsByNumberResolve(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

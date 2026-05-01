@@ -40,6 +40,13 @@ type repoNumberInput struct {
 
 type getPullOutput = bodyOutput[mergeRequestDetailResponse]
 
+type resolveItemInput struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+}
+
 type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
@@ -1066,7 +1073,7 @@ func (s *Server) createIssue(
 		owner:        input.Owner,
 		name:         input.Name,
 		platformHost: platformHost,
-	}, repoLookupRequireUnambiguousOwnerName)
+	})
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
 			return nil, huma.Error400BadRequest(
@@ -2084,11 +2091,16 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 }
 
 func (s *Server) resolveItem(
-	ctx context.Context, input *repoNumberInput,
+	ctx context.Context, input *resolveItemInput,
 ) (*resolveItemOutput, error) {
 	owner, name, number := input.Owner, input.Name, input.Number
+	platformHost := strings.TrimSpace(input.PlatformHost)
 
-	if !s.syncer.IsTrackedRepo(owner, name) {
+	tracked := s.syncer.IsTrackedRepo(owner, name)
+	if platformHost != "" {
+		tracked = s.syncer.IsTrackedRepoOnHost(owner, name, platformHost)
+	}
+	if !tracked {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,
@@ -2098,11 +2110,17 @@ func (s *Server) resolveItem(
 	}
 
 	localItem, err := s.repoIdentity().ResolveLocalItem(ctx, repoNumberPathRef{
-		owner:  owner,
-		name:   name,
-		number: number,
+		owner:        owner,
+		name:         name,
+		number:       number,
+		platformHost: platformHost,
 	})
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		return nil, huma.Error500InternalServerError(
 			"resolve item: " + err.Error(),
 		)
@@ -2117,9 +2135,16 @@ func (s *Server) resolveItem(
 		}, nil
 	}
 
-	itemType, err := s.syncer.SyncItemByNumber(
-		ctx, owner, name, number,
-	)
+	var itemType string
+	if platformHost != "" {
+		itemType, err = s.syncer.SyncItemByNumberOnHost(
+			ctx, platformHost, owner, name, number,
+		)
+	} else {
+		itemType, err = s.syncer.SyncItemByNumber(
+			ctx, owner, name, number,
+		)
+	}
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
 	// the result as success here. The resolve response has no warnings
@@ -2171,8 +2196,13 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		owner:        body.Owner,
 		name:         body.Name,
 		platformHost: body.PlatformHost,
-	}, repoLookupOwnerNameAllowed)
+	})
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return 0, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		if errors.Is(err, errRepoNotFound) {
 			return 0, huma.Error404NotFound(err.Error())
 		}

@@ -71,7 +71,7 @@ func (s *Server) lookupRepo(
 		owner:        owner,
 		name:         name,
 		platformHost: platformHost,
-	}, repoLookupOwnerNameAllowed)
+	})
 }
 
 func (s *Server) filterConfiguredRepoSummaries(
@@ -93,7 +93,7 @@ func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, e
 	return s.repoIdentity().LookupRepoID(ctx, repoIdentityRef{
 		owner: owner,
 		name:  name,
-	}, repoLookupOwnerNameAllowed)
+	})
 }
 
 // lookupMRID resolves the internal MR id from the common route tuple.

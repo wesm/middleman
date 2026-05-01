@@ -22,7 +22,7 @@ func TestRepositoryIdentityRequiresPlatformHostWhenOwnerNameIsAmbiguous(t *testi
 	repo, err := srv.repoIdentity().LookupRepo(ctx, repoIdentityRef{
 		owner: "acme",
 		name:  "widget",
-	}, repoLookupRequireUnambiguousOwnerName)
+	})
 	require.ErrorIs(err, errRepoAmbiguous)
 	assert.Nil(repo)
 
@@ -30,7 +30,7 @@ func TestRepositoryIdentityRequiresPlatformHostWhenOwnerNameIsAmbiguous(t *testi
 		owner:        "acme",
 		name:         "widget",
 		platformHost: "ghe.example.com",
-	}, repoLookupRequireUnambiguousOwnerName)
+	})
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Equal(gheID, repo.ID)
@@ -95,7 +95,7 @@ func TestRepositoryIdentityReturnsNotFoundForMissingRepo(t *testing.T) {
 	repo, err := srv.repoIdentity().LookupRepo(t.Context(), repoIdentityRef{
 		owner: "missing",
 		name:  "repo",
-	}, repoLookupOwnerNameAllowed)
+	})
 	require.ErrorIs(t, err, errRepoNotFound)
 	require.Nil(t, repo)
 }

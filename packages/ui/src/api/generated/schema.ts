@@ -2600,7 +2600,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-items-by-number-resolve": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
