@@ -29,6 +29,7 @@ Avoid GitHub notification clutter, overloaded activity streams, and surfaces whe
 - Maintain the user's scan line: prioritize compact hierarchy, stable columns, and fast recognition over decorative presentation.
 - Make state speak quietly: use semantic color, typography, and placement to clarify status without turning the UI into an alert wall.
 - Keep expert flow intact: keyboard navigation, predictable shortcuts, and preserved context matter more than onboarding spectacle.
+- Treat overlays as shared infrastructure: dropdowns, popovers, menus, and tooltips must float above split panes, sidebars, resize handles, drawers, and other overflow-constrained containers instead of being clipped by their local layout.
 - Local-first should feel trustworthy: sync, error, and data freshness states must be visible without being noisy.
 - GitHub fluency is assumed, but GitHub clutter is not copied.
 
