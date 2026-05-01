@@ -179,11 +179,9 @@
           <Chip
             size="xs"
             tone={linkedPRTone(worktree.linkedPR.state)}
-            interactive
             uppercase={false}
             class={`workspace-pr-chip chip--state-${worktree.linkedPR.state}`}
             title="PR #{worktree.linkedPR.number}"
-            onclick={(e: MouseEvent) => e.stopPropagation()}
           >
             #{worktree.linkedPR.number} {worktree.linkedPR.state.toUpperCase()}
             {#if worktree.linkedPR.checksStatus === "success"}
