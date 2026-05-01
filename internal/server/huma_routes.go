@@ -1062,28 +1062,17 @@ func (s *Server) createIssue(
 	}
 
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
-
-	if platformHost == "" {
-		repos, err := s.db.ListRepos(ctx)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("repo lookup failed")
-		}
-		matches := 0
-		for _, candidate := range repos {
-			if strings.EqualFold(candidate.Owner, input.Owner) &&
-				strings.EqualFold(candidate.Name, input.Name) {
-				matches++
-			}
-		}
-		if matches > 1 {
+	repo, err := s.repoIdentity().LookupRepo(ctx, repoIdentityRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		platformHost: platformHost,
+	}, repoLookupRequireUnambiguousOwnerName)
+	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
 			return nil, huma.Error400BadRequest(
 				"platform_host is required for ambiguous repo",
 			)
 		}
-	}
-
-	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
-	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
 			return nil, huma.Error404NotFound("repo not found")
 		}
@@ -1509,7 +1498,7 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 		return nil, huma.Error502BadGateway("GitHub API returned no pull request")
 	}
 
-	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
+	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, "")
 	if err == nil && repoObj != nil {
 		normalized, normalizeErr := ghclient.NormalizePR(repoObj.ID, pr)
 		if normalizeErr == nil {
@@ -1577,7 +1566,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error502BadGateway("GitHub merge error: " + err.Error())
 	}
 
-	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
+	repoObj, _ := s.lookupRepo(ctx, input.Owner, input.Name, "")
 	if repoObj != nil {
 		now := s.now().UTC()
 		_ = s.db.UpdateMRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
@@ -2108,30 +2097,24 @@ func (s *Server) resolveItem(
 		}, nil
 	}
 
-	repo, err := s.db.GetRepoByOwnerName(ctx, owner, name)
+	localItem, err := s.repoIdentity().ResolveLocalItem(ctx, repoNumberPathRef{
+		owner:  owner,
+		name:   name,
+		number: number,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
-			"get repo: " + err.Error(),
+			"resolve item: " + err.Error(),
 		)
 	}
-	if repo != nil {
-		itemType, found, err := s.db.ResolveItemNumber(
-			ctx, repo.ID, number,
-		)
-		if err != nil {
-			return nil, huma.Error500InternalServerError(
-				"resolve item: " + err.Error(),
-			)
-		}
-		if found {
-			return &resolveItemOutput{
-				Body: resolveItemResponse{
-					ItemType:    itemType,
-					Number:      number,
-					RepoTracked: true,
-				},
-			}, nil
-		}
+	if localItem.Found {
+		return &resolveItemOutput{
+			Body: resolveItemResponse{
+				ItemType:    localItem.ItemType,
+				Number:      number,
+				RepoTracked: true,
+			},
+		}, nil
 	}
 
 	itemType, err := s.syncer.SyncItemByNumber(
@@ -2184,17 +2167,11 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, huma.Error400BadRequest("item_type must be 'pr' or 'issue'")
 	}
 
-	var (
-		repoID int64
-		err    error
-	)
-	if body.PlatformHost != "" {
-		repoID, err = s.lookupRepoIDOnHost(
-			ctx, body.Owner, body.Name, body.PlatformHost,
-		)
-	} else {
-		repoID, err = s.lookupRepoID(ctx, body.Owner, body.Name)
-	}
+	repoID, err := s.repoIdentity().LookupRepoID(ctx, repoIdentityRef{
+		owner:        body.Owner,
+		name:         body.Name,
+		platformHost: body.PlatformHost,
+	}, repoLookupOwnerNameAllowed)
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
 			return 0, huma.Error404NotFound(err.Error())

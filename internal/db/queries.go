@@ -450,6 +450,50 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	return repos, rows.Err()
 }
 
+// ListReposByOwnerName returns every repo matching owner/name across hosts.
+func (d *DB) ListReposByOwnerName(ctx context.Context, owner, name string) ([]Repo, error) {
+	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	rows, err := d.ro.QueryContext(ctx,
+		`SELECT id, platform, platform_host, owner, name,
+		        last_sync_started_at, last_sync_completed_at,
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge,
+		        backfill_pr_page, backfill_pr_complete,
+		        backfill_pr_completed_at,
+		        backfill_issue_page, backfill_issue_complete,
+		        backfill_issue_completed_at,
+		        created_at
+		 FROM middleman_repos
+		 WHERE owner = ? AND name = ?
+		 ORDER BY platform_host ASC`, owner, name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list repos by owner/name: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []Repo
+	for rows.Next() {
+		var r Repo
+		if err := rows.Scan(
+			&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+			&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
+			&r.LastSyncError,
+			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+			&r.BackfillPRPage, &r.BackfillPRComplete,
+			&r.BackfillPRCompletedAt,
+			&r.BackfillIssuePage, &r.BackfillIssueComplete,
+			&r.BackfillIssueCompletedAt,
+			&r.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan repo: %w", err)
+		}
+		normalizeRepoTimestamps(&r)
+		repos = append(repos, r)
+	}
+	return repos, rows.Err()
+}
+
 // UpdateRepoSyncStarted records the time a sync began.
 func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) error {
 	t = canonicalUTCTime(t)

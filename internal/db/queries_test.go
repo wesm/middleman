@@ -505,6 +505,28 @@ func TestGetRepoByOwnerName(t *testing.T) {
 	assert.Nil(missing)
 }
 
+func TestListReposByOwnerNameReturnsMatchingHosts(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	githubID, err := d.UpsertRepo(ctx, "github.com", "Acme", "Widget")
+	require.NoError(err)
+	gheID, err := d.UpsertRepo(ctx, "ghe.example.com", "acme", "widget")
+	require.NoError(err)
+	_, err = d.UpsertRepo(ctx, "github.com", "acme", "other")
+	require.NoError(err)
+
+	repos, err := d.ListReposByOwnerName(ctx, "ACME", "WIDGET")
+	require.NoError(err)
+	require.Len(repos, 2)
+	assert.Equal(gheID, repos[0].ID)
+	assert.Equal("ghe.example.com", repos[0].PlatformHost)
+	assert.Equal(githubID, repos[1].ID)
+	assert.Equal("github.com", repos[1].PlatformHost)
+}
+
 func TestUpdateRepoSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
