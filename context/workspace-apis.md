@@ -55,6 +55,9 @@ The delete ordering is intentional: dirty preflight must run before runtime
 sessions are stopped, but the runtime stopping marker must span the whole
 delete call so a concurrent launch cannot start in a worktree after sessions
 were stopped and before the workspace row is removed.
+If a legacy or test server has a runtime manager but no `RuntimeLifecycle`,
+the fallback delete path must preserve the same marker and stop-before-
+destructive ordering.
 
 ## Non-Goals
 

@@ -3317,7 +3317,17 @@ func (s *Server) deleteWorkspace(
 			ctx, input.ID, input.Force,
 		)
 	} else {
-		dirty, err = s.workspaces.Delete(ctx, input.ID, input.Force, nil)
+		var beforeDestructive func(context.Context)
+		if s.runtime != nil {
+			s.runtime.BeginStopping(input.ID)
+			defer s.runtime.EndStopping(input.ID)
+			beforeDestructive = func(stopCtx context.Context) {
+				s.runtime.StopWorkspace(stopCtx, input.ID)
+			}
+		}
+		dirty, err = s.workspaces.Delete(
+			ctx, input.ID, input.Force, beforeDestructive,
+		)
 	}
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
