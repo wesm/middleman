@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1827,8 +1828,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 	eligibleHosts map[string]bool,
 ) {
 	s.commentRefreshMu.Lock()
-	prs := append([]queuedPRCommentSync(nil), s.pendingPRCommentSyncs...)
-	issues := append([]queuedIssueCommentSync(nil), s.pendingIssueCommentSyncs...)
+	prs := slices.Clone(s.pendingPRCommentSyncs)
+	issues := slices.Clone(s.pendingIssueCommentSyncs)
 	s.pendingPRCommentSyncs = nil
 	s.pendingIssueCommentSyncs = nil
 	s.commentRefreshMu.Unlock()
