@@ -101,3 +101,15 @@ func TestStripAllRemovesEveryGitVar(t *testing.T) {
 	assert.Contains(out, "HOME=/Users/test")
 	assert.Contains(out, "HTTPS_PROXY=http://proxy:8080")
 }
+
+func TestStripNilReturnsExplicitEmptyEnv(t *testing.T) {
+	assert := assert.New(t)
+
+	inherited := StripInherited(nil)
+	assert.NotNil(inherited)
+	assert.Empty(inherited)
+
+	all := StripAll(nil)
+	assert.NotNil(all)
+	assert.Empty(all)
+}

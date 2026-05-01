@@ -41,7 +41,7 @@ import (
 // SSL, HTTP) are preserved so that developers can still observe
 // child git behavior without losing visibility.
 func StripInherited(env []string) []string {
-	return slices.DeleteFunc(slices.Clone(env), isInherited)
+	return slices.DeleteFunc(cloneEnv(env), isInherited)
 }
 
 // StripAll removes every GIT_* variable and SSH_ASKPASS from env.
@@ -51,10 +51,17 @@ func StripInherited(env []string) []string {
 // build throwaway repos (where GIT_DEFAULT_HASH could create SHA-256
 // repos instead of the expected SHA-1 layout).
 func StripAll(env []string) []string {
-	return slices.DeleteFunc(slices.Clone(env), func(e string) bool {
+	return slices.DeleteFunc(cloneEnv(env), func(e string) bool {
 		key, _, _ := strings.Cut(e, "=")
 		return strings.HasPrefix(key, "GIT_") || key == "SSH_ASKPASS"
 	})
+}
+
+func cloneEnv(env []string) []string {
+	if env == nil {
+		return []string{}
+	}
+	return slices.Clone(env)
 }
 
 func isInherited(e string) bool {
