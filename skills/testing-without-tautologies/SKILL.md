@@ -7,18 +7,18 @@ description: Use when creating, editing, fixing, or reviewing tests; when adding
 
 ## Core Idea
 
-Tests should fail when the behavior they protect is broken. A passing test is only useful if it can reveal a meaningful problem.
+Tests should fail when protected behavior breaks. A passing test helps only if it can catch a real problem.
 
-Before writing or changing a test, ask: "What production change should make this test fail?" If the answer is unclear, redesign the test.
+Before writing or changing a test, ask: "What production change should make this test fail?" If you cannot answer, redesign the test.
 
 ## Quality Gate
 
 Before writing the test body, answer these:
 
-- **Who uses this behavior?** Prefer the public API, HTTP contract, rendered UI, CLI output, persisted data, or caller-visible result over private state and helper internals.
-- **What exact example proves it?** Use concrete inputs and literal expected outputs. Do not compute expected values with the same logic as production code.
-- **What meaningful mutation would this catch?** Name the broken branch, missing side effect, wrong argument, bad boundary case, or contract violation that should fail the test.
-- **Is this our responsibility?** Test our decisions at framework, SDK, database, and service boundaries. Do not re-test the dependency's documented mechanics.
+- **Who uses this?** Prefer the public API, HTTP contract, rendered UI, CLI output, persisted data, or caller-visible result. Avoid private state and helper internals.
+- **What example proves it?** Use concrete inputs and literal expected outputs. Do not compute expected values with production logic.
+- **What break would this catch?** Name the wrong branch, missing side effect, wrong argument, boundary case, or contract violation.
+- **Do we own it?** Test our choices at framework, SDK, database, and service boundaries. Do not re-test documented dependency mechanics.
 
 ## Required Checks
 
@@ -26,11 +26,11 @@ Apply these checks to every new or modified test:
 
 1. **Assert observable behavior**
    - Verify returned values, persisted state, rendered output, emitted events, API calls, errors, permissions, or other externally meaningful effects.
-   - A test with no assertions is acceptable only when the failure mode is the behavior under test, such as "this constructor rejects invalid input." Prefer explicit assertions even then.
+   - A test with no assertions is acceptable only when the failure mode is the subject, such as "this constructor rejects invalid input." Prefer explicit assertions even then.
 
 2. **Make mocks specific enough to detect regressions**
-   - Mock expectations must verify important arguments, call counts, order, and branches when those details are part of the contract.
-   - Avoid mocks that accept any input when the code must pass a particular value.
+   - Verify important arguments, call counts, order, and branches when they are part of the contract.
+   - Do not let a mock accept any input when the code must pass one value.
 
 3. **Use distinct doubles for distinct branches**
    - Do not reuse one mock handler for success, error, incomplete, unauthorized, or other mutually exclusive paths.
@@ -54,14 +54,14 @@ Apply these checks to every new or modified test:
    - Do not write tests whose real claim is that a trusted framework, SDK, standard library, database, parser, router, or generated client works as documented.
    - For example, do not test that Huma parses URL path parameters, query strings, status codes, or OpenAPI wiring correctly unless your code adds behavior around that parsing.
    - Test your contract at the boundary: that you registered the route you intend, pass the values you received into your domain code correctly, handle errors, and shape responses according to your API contract.
-   - If an upstream behavior is surprising or previously regressed in your usage, write a narrow characterization test around your integration point and name the upstream assumption explicitly.
+   - If upstream behavior is surprising or has regressed in your usage, write a narrow characterization test around your integration point. Name the upstream assumption.
    - When a fake external service stands in for a real one, test the consumer behavior and prefer a contract/verified fake check for the fake itself.
 
 8. **Avoid blindingly obvious current-code assertions**
-   - Do not write tests that only assert the implementation is written the way it is currently written.
+   - Do not test that the implementation is written the way it is written now.
    - Examples: a constructor assigns constructor arguments to fields; a getter returns its backing field; a trivial wrapper forwards one argument unchanged; a constant equals its literal; a data-only struct stores the values you just set.
    - Test these only when there is behavior beyond storage or forwarding: validation, normalization, defaulting, derived values, defensive copying, side effects, permissions, error handling, compatibility guarantees, or a public contract that has regressed before.
-   - Prefer testing the first meaningful consumer-visible behavior that depends on those fields instead of testing the field assignment directly.
+   - Prefer the first consumer-visible result that depends on those fields.
 
 ## Mutation Thought Experiment
 
@@ -76,7 +76,7 @@ Before finishing, mentally mutate the production code:
 - Rename or rearrange private fields while preserving behavior.
 - Remove validation for a boundary value such as zero, empty, nil, unauthorized, or malformed input.
 
-At least one relevant test should fail for each realistic mutation. If none would fail, the test is probably tautological.
+At least one relevant test should fail for each realistic mutation. If none fail, the test is probably tautological.
 
 ## Red Flags
 
@@ -86,7 +86,7 @@ At least one relevant test should fail for each realistic mutation. If none woul
 - The only possible failure is a panic, thrown exception, missing selector, or server crash.
 - The test changed after a failure but the production behavior was not investigated.
 - The test would still be meaningful if your application code were deleted and only the framework/library remained.
-- The test asserts documented upstream mechanics, such as route parsing, JSON decoding, SQL placeholder behavior, or generated client serialization, without asserting your code's decision or contract.
+- The test asserts upstream mechanics, such as route parsing, JSON decoding, SQL placeholder behavior, or generated client serialization, without asserting your decision or contract.
 - The test would fail after a harmless refactor that leaves all public behavior unchanged.
 - The test is mostly a line-by-line translation of the constructor, getter, setter, mapper, or wrapper it claims to verify.
 - The test exists mainly to raise coverage numbers, but it does not check side effects, boundaries, or observable outcomes.
@@ -98,4 +98,4 @@ For each test, write a short intent sentence in your head:
 
 > Given this setup, when the user/system does X, then Y observable behavior changes.
 
-If you cannot fill in Y with something assertable, the test is not ready.
+If Y is not assertable, the test is not ready.
