@@ -67,6 +67,11 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
     detail: [],
     asyncSync: [],
     state: [],
+    githubState: [],
+    content: [],
+    comments: [],
+    files: [],
+    diff: [],
     ready: [],
     approve: [],
     workflows: [],
@@ -121,6 +126,101 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
       const url = new URL(route.request().url());
       seen.state.push(url.searchParams.get("platform_host") ?? "");
       await route.fulfill({ status: 200 });
+    },
+  );
+
+  await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/github-state(?:[?]|$)/,
+    async (route) => {
+      const url = new URL(route.request().url());
+      seen.githubState.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ state: "closed" }),
+      });
+    },
+  );
+
+  await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/comments(?:[?]|$)/,
+    async (route) => {
+      const url = new URL(route.request().url());
+      seen.comments.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ ID: 99, Kind: "comment", Body: "queued" }),
+      });
+    },
+  );
+
+  await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/files(?:[?]|$)/,
+    async (route) => {
+      const url = new URL(route.request().url());
+      seen.files.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          stale: false,
+          files: [
+            {
+              path: "src/App.svelte",
+              old_path: "src/App.svelte",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 10,
+              deletions: 2,
+              hunks: [],
+            },
+          ],
+        }),
+      });
+    },
+  );
+
+  await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/diff(?:[?]|$)/,
+    async (route) => {
+      const url = new URL(route.request().url());
+      seen.diff.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          stale: false,
+          whitespace_only_count: 0,
+          files: [
+            {
+              path: "src/App.svelte",
+              old_path: "src/App.svelte",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 10,
+              deletions: 2,
+              hunks: [],
+            },
+          ],
+        }),
+      });
+    },
+  );
+
+  await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42(?:[?]|$)/,
+    async (route) => {
+      if (route.request().method() !== "PATCH") return route.fallback();
+      const url = new URL(route.request().url());
+      seen.content.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(hostedPRDetail()),
+      });
     },
   );
 
@@ -208,6 +308,24 @@ test("host-qualified PR detail actions preserve platform_host", async ({ page })
   await page.getByRole("combobox", { name: /change workflow status/i }).click();
   await page.getByRole("option", { name: "Reviewing" }).click();
   await expect.poll(() => seen.state).toContain(platformHost);
+
+  await page.locator(".btn--close").click();
+  await expect.poll(() => seen.githubState).toContain(platformHost);
+
+  await page.locator(".body-section .edit-body-btn").click();
+  await page.locator(".body-edit-textarea").fill("Updated body");
+  await page.locator(".body-edit .title-edit-save").click();
+  await expect.poll(() => seen.content).toContain(platformHost);
+
+  await page.locator(".comment-editor-input").fill("Queued comment");
+  await page.getByRole("button", { name: "Comment" }).click();
+  await expect.poll(() => seen.comments).toContain(platformHost);
+
+  await page.getByRole("button", { name: "Files changed" }).click();
+  await expect.poll(() => seen.files).toContain(platformHost);
+  await expect.poll(() => seen.diff).toContain(platformHost);
+
+  await page.getByRole("button", { name: "Conversation" }).click();
 
   await page.locator(".btn--ready").click();
   await expect.poll(() => seen.ready).toContain(platformHost);

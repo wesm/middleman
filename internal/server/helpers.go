@@ -87,15 +87,6 @@ func (s *Server) filterConfiguredRepoSummaries(
 	return filtered
 }
 
-// lookupRepoID resolves a repository from owner/name inputs and returns a
-// stable not-found error for handlers that need repo identity only.
-func (s *Server) lookupRepoID(ctx context.Context, owner, name string) (int64, error) {
-	return s.repoIdentity().LookupRepoID(ctx, repoIdentityRef{
-		owner: owner,
-		name:  name,
-	})
-}
-
 // lookupMRID resolves the internal MR id from the common route tuple.
 func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
 	return s.repoIdentity().LookupMRID(ctx, ref)

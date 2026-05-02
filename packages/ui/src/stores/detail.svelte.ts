@@ -532,9 +532,10 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     fields: { title?: string; body?: string },
   ): Promise<void> {
-    if (!detail || !isDetailShowing(owner, name, number))
+    if (!detail || !isDetailShowing(owner, name, number, platformHost))
       return;
 
     const prevTitle = detail.merge_request.Title;
@@ -559,7 +560,10 @@ export function createDetailStore(
         await apiClient.PATCH(
           "/repos/{owner}/{name}/pulls/{number}",
           {
-            params: { path: { owner, name, number } },
+            params: {
+              path: { owner, name, number },
+              ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+            },
             body: fields,
           },
         );
@@ -572,7 +576,7 @@ export function createDetailStore(
         );
       }
       // Apply server-canonical response.
-      if (data && isDetailShowing(owner, name, number)) {
+      if (data && isDetailShowing(owner, name, number, platformHost)) {
         detail = data as PullDetail;
       }
     } catch (err) {
@@ -580,7 +584,7 @@ export function createDetailStore(
         err instanceof Error ? err.message : String(err);
       // Revert optimistic update.
       if (
-        isDetailShowing(owner, name, number) &&
+        isDetailShowing(owner, name, number, platformHost) &&
         detail
       ) {
         detail = {
@@ -632,6 +636,7 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     currentlyStarred: boolean,
   ): Promise<void> {
     if (detail !== null) {
@@ -652,6 +657,7 @@ export function createDetailStore(
               owner,
               name,
               number,
+              ...(platformHost ? { platform_host: platformHost } : {}),
             },
           });
         if (requestError) {
@@ -669,6 +675,7 @@ export function createDetailStore(
               owner,
               name,
               number,
+              ...(platformHost ? { platform_host: platformHost } : {}),
             },
           });
         if (requestError) {
@@ -700,6 +707,7 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     body: string,
   ): Promise<void> {
     storeError = null;
@@ -708,7 +716,10 @@ export function createDetailStore(
         await apiClient.POST(
           "/repos/{owner}/{name}/pulls/{number}/comments",
           {
-            params: { path: { owner, name, number } },
+            params: {
+              path: { owner, name, number },
+              ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+            },
             body: { body },
           },
         );
@@ -730,12 +741,12 @@ export function createDetailStore(
     syncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshDetail(owner, name, number, detail?.platform_host);
+    await refreshDetail(owner, name, number, platformHost);
     // Pull authoritative state from GitHub so PR row metadata
     // (last_activity_at, comment_count) and the pulls list catch
     // up. Skip if the user navigated away mid-refresh.
     if (gen === syncGeneration) {
-      void syncDetail(owner, name, number, detail?.platform_host, gen);
+      void syncDetail(owner, name, number, platformHost, gen);
     }
   }
 
@@ -744,6 +755,7 @@ export function createDetailStore(
     name: string,
     number: number,
     commentID: number,
+    platformHost: string | undefined,
     body: string,
   ): Promise<boolean> {
     storeError = null;
@@ -758,6 +770,7 @@ export function createDetailStore(
               number,
               comment_id: commentID,
             },
+            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
           },
           body: { body },
         },
@@ -773,7 +786,7 @@ export function createDetailStore(
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(owner, name, number, detail?.platform_host);
+    await refreshDetail(owner, name, number, platformHost);
     return true;
   }
 

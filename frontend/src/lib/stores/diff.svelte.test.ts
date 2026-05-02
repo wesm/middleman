@@ -540,7 +540,7 @@ describe("createDiffStore loadDiff", () => {
       },
     );
 
-    const store = createDiffStore({ getBasePath: () => "/" });
+    const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1);
 
     expect(store.getFileCategoryFilter()).toBe("all");

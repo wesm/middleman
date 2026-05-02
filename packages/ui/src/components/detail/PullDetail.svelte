@@ -81,13 +81,23 @@
   const hasActiveTimelineFilters = $derived(
     activePRTimelineFilterCount(timelineFilter) > 0,
   );
+  const currentPlatformHost = $derived(
+    detailStore.getDetail()?.platform_host ?? platformHost,
+  );
 
   async function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
   ): Promise<boolean> {
     if (event.PlatformID === null) return false;
-    return detailStore.editComment(owner, name, number, event.PlatformID, body);
+    return detailStore.editComment(
+      owner,
+      name,
+      number,
+      event.PlatformID,
+      currentPlatformHost,
+      body,
+    );
   }
 
   function updateTimelineFilter(next: PRTimelineFilterState): void {
@@ -228,7 +238,7 @@
     savingTitle = true;
     try {
       await detailStore.updatePRContent(
-        owner, name, number, { title: trimmed },
+        owner, name, number, currentPlatformHost, { title: trimmed },
       );
       editingTitle = false;
       titleDraft = "";
@@ -275,7 +285,7 @@
     savingBody = true;
     try {
       await detailStore.updatePRContent(
-        owner, name, number, { body: bodyDraft },
+        owner, name, number, currentPlatformHost, { body: bodyDraft },
       );
       editingBody = false;
       bodyDraft = "";
@@ -303,13 +313,13 @@
       const { error: requestError } = await client.POST(
         "/repos/{owner}/{name}/pulls/{number}/github-state",
         {
-          params: { path: { owner, name, number } },
-          body: {
-            state: newState,
+          params: {
+            path: { owner, name, number },
             ...(detail?.platform_host
-              ? { platform_host: detail.platform_host }
+              ? { query: { platform_host: detail.platform_host } }
               : {}),
           },
+          body: { state: newState },
         },
       );
       if (requestError) {
@@ -381,7 +391,6 @@
 
   function onKanbanChange(value: string): void {
     if (stalePR) return;
-    const currentPlatformHost = detailStore.getDetail()?.platform_host ?? platformHost;
     void detailStore.updateKanbanState(
       owner,
       name,
@@ -511,7 +520,12 @@
     const { data, error } = await client.GET(
       "/repos/{owner}/{name}/pulls/{number}/files",
       {
-        params: { path: { owner, name, number } },
+        params: {
+          path: { owner, name, number },
+          ...(currentPlatformHost
+            ? { query: { platform_host: currentPlatformHost } }
+            : {}),
+        },
       },
     );
     if (error) {
@@ -577,7 +591,7 @@
               <DiffSidebar />
             </aside>
             <div class="files-main">
-              <DiffView {owner} {name} {number} />
+              <DiffView {owner} {name} {number} platformHost={detail.platform_host} />
             </div>
           </div>
         </div>
@@ -628,7 +642,13 @@
                 disabled={stalePR}
                 onclick={() => {
                   if (stalePR) return;
-                  void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
+                  void detailStore.toggleDetailPRStar(
+                    owner,
+                    name,
+                    number,
+                    detail.platform_host,
+                    pr.Starred,
+                  );
                 }}
                 title={pr.Starred ? "Unstar" : "Star"}
               >

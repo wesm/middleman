@@ -58,13 +58,16 @@ describe("itemRefHandler", () => {
     document.body.innerHTML = `
       <a class="item-ref"
         href="/pulls/acme/widget/42"
+        data-middleman-item-ref="true"
         data-owner="acme"
         data-name="widget"
         data-number="42"
         data-platform-host="ghe.example.com">#42</a>
     `;
 
-    document.querySelector<HTMLAnchorElement>(".item-ref")?.click();
+    document.querySelector<HTMLAnchorElement>(".item-ref")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+    );
     await Promise.resolve();
 
     expect(mocks.post).toHaveBeenCalledWith(
@@ -79,5 +82,24 @@ describe("itemRefHandler", () => {
     expect(mocks.navigate).toHaveBeenCalledWith(
       "/pr/acme/widget/42?platform_host=ghe.example.com",
     );
+  });
+
+  it("ignores raw HTML that mimics item ref classes without the trusted marker", async () => {
+    cleanupHandler = initItemRefHandler();
+    document.body.innerHTML = `
+      <a class="item-ref"
+        href="#raw"
+        data-owner="acme"
+        data-name="widget"
+        data-number="42">#42</a>
+    `;
+
+    document.querySelector<HTMLAnchorElement>(".item-ref")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+    );
+    await Promise.resolve();
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

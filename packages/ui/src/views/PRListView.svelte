@@ -96,7 +96,7 @@
       </button>
     </div>
     {#if detailTab === "files"}
-      {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
+      {#key `${selectedPR.platformHost ?? ""}:${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
         <div class="files-view">
           <DiffToolbar />
           <div class="files-layout">
@@ -108,6 +108,7 @@
                 owner={selectedPR.owner}
                 name={selectedPR.name}
                 number={selectedPR.number}
+                platformHost={selectedPR.platformHost}
               />
             </div>
           </div>

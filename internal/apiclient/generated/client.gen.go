@@ -932,6 +932,11 @@ type GetReposByOwnerByNameIssuesByNumberParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// SetIssueGithubStateParams defines parameters for SetIssueGithubState.
+type SetIssueGithubStateParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // PostReposByOwnerByNameIssuesByNumberSyncParams defines parameters for PostReposByOwnerByNameIssuesByNumberSync.
 type PostReposByOwnerByNameIssuesByNumberSyncParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
@@ -952,6 +957,11 @@ type GetReposByOwnerByNamePullsByNumberParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// EditPrContentParams defines parameters for EditPrContent.
+type EditPrContentParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // PostReposByOwnerByNamePullsByNumberApproveParams defines parameters for PostReposByOwnerByNamePullsByNumberApprove.
 type PostReposByOwnerByNamePullsByNumberApproveParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
@@ -959,6 +969,21 @@ type PostReposByOwnerByNamePullsByNumberApproveParams struct {
 
 // PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams defines parameters for PostReposByOwnerByNamePullsByNumberApproveWorkflows.
 type PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// PostPrCommentParams defines parameters for PostPrComment.
+type PostPrCommentParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// EditPrCommentParams defines parameters for EditPrComment.
+type EditPrCommentParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// GetReposByOwnerByNamePullsByNumberCommitsParams defines parameters for GetReposByOwnerByNamePullsByNumberCommits.
+type GetReposByOwnerByNamePullsByNumberCommitsParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
@@ -973,7 +998,18 @@ type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	From *string `form:"from,omitempty" json:"from,omitempty"`
 
 	// To End SHA for range diff (inclusive)
-	To *string `form:"to,omitempty" json:"to,omitempty"`
+	To           *string `form:"to,omitempty" json:"to,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// GetReposByOwnerByNamePullsByNumberFilesParams defines parameters for GetReposByOwnerByNamePullsByNumberFiles.
+type GetReposByOwnerByNamePullsByNumberFilesParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// SetPrGithubStateParams defines parameters for SetPrGithubState.
+type SetPrGithubStateParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
 // PostReposByOwnerByNamePullsByNumberMergeParams defines parameters for PostReposByOwnerByNamePullsByNumberMerge.
@@ -1208,9 +1244,9 @@ type ClientInterface interface {
 	EditIssueComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetIssueGithubStateWithBody request with any body
-	SetIssueGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetIssueGithubStateWithBody(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetIssueGithubState(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNameIssuesByNumberSync request
 	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1230,9 +1266,9 @@ type ClientInterface interface {
 	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditPrContentWithBody request with any body
-	EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	EditPrContent(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWithBody request with any body
 	PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1243,28 +1279,28 @@ type ClientInterface interface {
 	PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostPrCommentWithBody request with any body
-	PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostPrComment(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditPrCommentWithBody request with any body
-	EditPrCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	EditPrCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	EditPrComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	EditPrComment(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberCommits request
-	GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberCommitsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberDiff request
 	GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberFiles request
-	GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrGithubStateWithBody request with any body
-	SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	SetPrGithubState(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetPrGithubState(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberImportMetadata request
 	GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1635,8 +1671,8 @@ func (c *Client) EditIssueComment(ctx context.Context, owner string, name string
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetIssueGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetIssueGithubStateRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) SetIssueGithubStateWithBody(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueGithubStateRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1647,8 +1683,8 @@ func (c *Client) SetIssueGithubStateWithBody(ctx context.Context, owner string, 
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetIssueGithubStateRequest(c.Server, owner, name, number, body)
+func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueGithubStateRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1731,8 +1767,8 @@ func (c *Client) GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner s
 	return c.Client.Do(req)
 }
 
-func (c *Client) EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrContentRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1743,8 +1779,8 @@ func (c *Client) EditPrContentWithBody(ctx context.Context, owner string, name s
 	return c.Client.Do(req)
 }
 
-func (c *Client) EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrContentRequest(c.Server, owner, name, number, body)
+func (c *Client) EditPrContent(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1791,8 +1827,8 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPrCommentRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPrCommentRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1803,8 +1839,8 @@ func (c *Client) PostPrCommentWithBody(ctx context.Context, owner string, name s
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPrCommentRequest(c.Server, owner, name, number, body)
+func (c *Client) PostPrComment(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPrCommentRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1815,8 +1851,8 @@ func (c *Client) PostPrComment(ctx context.Context, owner string, name string, n
 	return c.Client.Do(req)
 }
 
-func (c *Client) EditPrCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrCommentRequestWithBody(c.Server, owner, name, number, commentId, contentType, body)
+func (c *Client) EditPrCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrCommentRequestWithBody(c.Server, owner, name, number, commentId, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1827,8 +1863,8 @@ func (c *Client) EditPrCommentWithBody(ctx context.Context, owner string, name s
 	return c.Client.Do(req)
 }
 
-func (c *Client) EditPrComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrCommentRequest(c.Server, owner, name, number, commentId, body)
+func (c *Client) EditPrComment(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrCommentRequest(c.Server, owner, name, number, commentId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1839,8 +1875,8 @@ func (c *Client) EditPrComment(ctx context.Context, owner string, name string, n
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberCommitsRequest(c.Server, owner, name, number)
+func (c *Client) GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberCommitsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberCommitsRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1863,8 +1899,8 @@ func (c *Client) GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, own
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberFilesRequest(c.Server, owner, name, number)
+func (c *Client) GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberFilesRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1875,8 +1911,8 @@ func (c *Client) GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, ow
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetPrGithubStateRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrGithubStateRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1887,8 +1923,8 @@ func (c *Client) SetPrGithubStateWithBody(ctx context.Context, owner string, nam
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetPrGithubState(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetPrGithubStateRequest(c.Server, owner, name, number, body)
+func (c *Client) SetPrGithubState(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrGithubStateRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3357,18 +3393,18 @@ func NewEditIssueCommentRequestWithBody(server string, owner string, name string
 }
 
 // NewSetIssueGithubStateRequest calls the generic SetIssueGithubState builder with application/json body
-func NewSetIssueGithubStateRequest(server string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody) (*http.Request, error) {
+func NewSetIssueGithubStateRequest(server string, owner string, name string, number int64, params *SetIssueGithubStateParams, body SetIssueGithubStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewSetIssueGithubStateRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewSetIssueGithubStateRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewSetIssueGithubStateRequestWithBody generates requests for SetIssueGithubState with any type of body
-func NewSetIssueGithubStateRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewSetIssueGithubStateRequestWithBody(server string, owner string, name string, number int64, params *SetIssueGithubStateParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3405,6 +3441,28 @@ func NewSetIssueGithubStateRequestWithBody(server string, owner string, name str
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), body)
@@ -3759,18 +3817,18 @@ func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, n
 }
 
 // NewEditPrContentRequest calls the generic EditPrContent builder with application/json body
-func NewEditPrContentRequest(server string, owner string, name string, number int64, body EditPrContentJSONRequestBody) (*http.Request, error) {
+func NewEditPrContentRequest(server string, owner string, name string, number int64, params *EditPrContentParams, body EditPrContentJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewEditPrContentRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewEditPrContentRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewEditPrContentRequestWithBody generates requests for EditPrContent with any type of body
-func NewEditPrContentRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewEditPrContentRequestWithBody(server string, owner string, name string, number int64, params *EditPrContentParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3807,6 +3865,28 @@ func NewEditPrContentRequestWithBody(server string, owner string, name string, n
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("PATCH", queryURL.String(), body)
@@ -3973,18 +4053,18 @@ func NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(server string
 }
 
 // NewPostPrCommentRequest calls the generic PostPrComment builder with application/json body
-func NewPostPrCommentRequest(server string, owner string, name string, number int64, body PostPrCommentJSONRequestBody) (*http.Request, error) {
+func NewPostPrCommentRequest(server string, owner string, name string, number int64, params *PostPrCommentParams, body PostPrCommentJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostPrCommentRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewPostPrCommentRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewPostPrCommentRequestWithBody generates requests for PostPrComment with any type of body
-func NewPostPrCommentRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewPostPrCommentRequestWithBody(server string, owner string, name string, number int64, params *PostPrCommentParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4023,6 +4103,28 @@ func NewPostPrCommentRequestWithBody(server string, owner string, name string, n
 		return nil, err
 	}
 
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
 	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
@@ -4034,18 +4136,18 @@ func NewPostPrCommentRequestWithBody(server string, owner string, name string, n
 }
 
 // NewEditPrCommentRequest calls the generic EditPrComment builder with application/json body
-func NewEditPrCommentRequest(server string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody) (*http.Request, error) {
+func NewEditPrCommentRequest(server string, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, body EditPrCommentJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewEditPrCommentRequestWithBody(server, owner, name, number, commentId, "application/json", bodyReader)
+	return NewEditPrCommentRequestWithBody(server, owner, name, number, commentId, params, "application/json", bodyReader)
 }
 
 // NewEditPrCommentRequestWithBody generates requests for EditPrComment with any type of body
-func NewEditPrCommentRequestWithBody(server string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewEditPrCommentRequestWithBody(server string, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4091,6 +4193,28 @@ func NewEditPrCommentRequestWithBody(server string, owner string, name string, n
 		return nil, err
 	}
 
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
 	req, err := http.NewRequest("PATCH", queryURL.String(), body)
 	if err != nil {
 		return nil, err
@@ -4102,7 +4226,7 @@ func NewEditPrCommentRequestWithBody(server string, owner string, name string, n
 }
 
 // NewGetReposByOwnerByNamePullsByNumberCommitsRequest generates requests for GetReposByOwnerByNamePullsByNumberCommits
-func NewGetReposByOwnerByNamePullsByNumberCommitsRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewGetReposByOwnerByNamePullsByNumberCommitsRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberCommitsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4139,6 +4263,28 @@ func NewGetReposByOwnerByNamePullsByNumberCommitsRequest(server string, owner st
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -4256,6 +4402,22 @@ func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner strin
 
 		}
 
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -4268,7 +4430,7 @@ func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner strin
 }
 
 // NewGetReposByOwnerByNamePullsByNumberFilesRequest generates requests for GetReposByOwnerByNamePullsByNumberFiles
-func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4307,6 +4469,28 @@ func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner stri
 		return nil, err
 	}
 
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
@@ -4316,18 +4500,18 @@ func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner stri
 }
 
 // NewSetPrGithubStateRequest calls the generic SetPrGithubState builder with application/json body
-func NewSetPrGithubStateRequest(server string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody) (*http.Request, error) {
+func NewSetPrGithubStateRequest(server string, owner string, name string, number int64, params *SetPrGithubStateParams, body SetPrGithubStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewSetPrGithubStateRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewSetPrGithubStateRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewSetPrGithubStateRequestWithBody generates requests for SetPrGithubState with any type of body
-func NewSetPrGithubStateRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewSetPrGithubStateRequestWithBody(server string, owner string, name string, number int64, params *SetPrGithubStateParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4364,6 +4548,28 @@ func NewSetPrGithubStateRequestWithBody(server string, owner string, name string
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), body)
@@ -5644,9 +5850,9 @@ type ClientWithResponsesInterface interface {
 	EditIssueCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error)
 
 	// SetIssueGithubStateWithBodyWithResponse request with any body
-	SetIssueGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
+	SetIssueGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
 
-	SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
+	SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
 
 	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
 	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
@@ -5666,9 +5872,9 @@ type ClientWithResponsesInterface interface {
 	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
 
 	// EditPrContentWithBodyWithResponse request with any body
-	EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
+	EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
 
-	EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
+	EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with any body
 	PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
@@ -5679,28 +5885,28 @@ type ClientWithResponsesInterface interface {
 	PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error)
 
 	// PostPrCommentWithBodyWithResponse request with any body
-	PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
+	PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
 
-	PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
+	PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
 
 	// EditPrCommentWithBodyWithResponse request with any body
-	EditPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
+	EditPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
 
-	EditPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
+	EditPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberCommitsWithResponse request
-	GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error)
+	GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberCommitsParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberDiffWithResponse request
 	GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberFilesWithResponse request
-	GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error)
+	GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilesParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error)
 
 	// SetPrGithubStateWithBodyWithResponse request with any body
-	SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
+	SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
-	SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
+	SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse request
 	GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error)
@@ -7290,16 +7496,16 @@ func (c *ClientWithResponses) EditIssueCommentWithResponse(ctx context.Context, 
 }
 
 // SetIssueGithubStateWithBodyWithResponse request with arbitrary body returning *SetIssueGithubStateResponse
-func (c *ClientWithResponses) SetIssueGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
-	rsp, err := c.SetIssueGithubStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) SetIssueGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
+	rsp, err := c.SetIssueGithubStateWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseSetIssueGithubStateResponse(rsp)
 }
 
-func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
-	rsp, err := c.SetIssueGithubState(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, params *SetIssueGithubStateParams, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
+	rsp, err := c.SetIssueGithubState(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7360,16 +7566,16 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberWithResponse(ctx
 }
 
 // EditPrContentWithBodyWithResponse request with arbitrary body returning *EditPrContentResponse
-func (c *ClientWithResponses) EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
-	rsp, err := c.EditPrContentWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
+	rsp, err := c.EditPrContentWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseEditPrContentResponse(rsp)
 }
 
-func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
-	rsp, err := c.EditPrContent(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, params *EditPrContentParams, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
+	rsp, err := c.EditPrContent(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7403,16 +7609,16 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWorkflow
 }
 
 // PostPrCommentWithBodyWithResponse request with arbitrary body returning *PostPrCommentResponse
-func (c *ClientWithResponses) PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
-	rsp, err := c.PostPrCommentWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
+	rsp, err := c.PostPrCommentWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParsePostPrCommentResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
-	rsp, err := c.PostPrComment(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, params *PostPrCommentParams, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
+	rsp, err := c.PostPrComment(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7420,16 +7626,16 @@ func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, own
 }
 
 // EditPrCommentWithBodyWithResponse request with arbitrary body returning *EditPrCommentResponse
-func (c *ClientWithResponses) EditPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
-	rsp, err := c.EditPrCommentWithBody(ctx, owner, name, number, commentId, contentType, body, reqEditors...)
+func (c *ClientWithResponses) EditPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
+	rsp, err := c.EditPrCommentWithBody(ctx, owner, name, number, commentId, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseEditPrCommentResponse(rsp)
 }
 
-func (c *ClientWithResponses) EditPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
-	rsp, err := c.EditPrComment(ctx, owner, name, number, commentId, body, reqEditors...)
+func (c *ClientWithResponses) EditPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, params *EditPrCommentParams, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
+	rsp, err := c.EditPrComment(ctx, owner, name, number, commentId, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7437,8 +7643,8 @@ func (c *ClientWithResponses) EditPrCommentWithResponse(ctx context.Context, own
 }
 
 // GetReposByOwnerByNamePullsByNumberCommitsWithResponse request returning *GetReposByOwnerByNamePullsByNumberCommitsResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberCommits(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberCommitsParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberCommits(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7455,8 +7661,8 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberDiffWithResponse
 }
 
 // GetReposByOwnerByNamePullsByNumberFilesWithResponse request returning *GetReposByOwnerByNamePullsByNumberFilesResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberFiles(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilesParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberFiles(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7464,16 +7670,16 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilesWithRespons
 }
 
 // SetPrGithubStateWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateResponse
-func (c *ClientWithResponses) SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
-	rsp, err := c.SetPrGithubStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
+	rsp, err := c.SetPrGithubStateWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseSetPrGithubStateResponse(rsp)
 }
 
-func (c *ClientWithResponses) SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
-	rsp, err := c.SetPrGithubState(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, params *SetPrGithubStateParams, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
+	rsp, err := c.SetPrGithubState(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

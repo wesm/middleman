@@ -151,6 +151,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentOwner = $state("");
   let currentName = $state("");
   let currentNumber = $state(0);
+  let currentPlatformHost = $state<string | undefined>(undefined);
 
   function getCurrentPR(): { owner: string; name: string; number: number } | null {
     if (!currentOwner) return null;
@@ -340,6 +341,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     commit?: string;
     from?: string;
     to?: string;
+    platform_host?: string;
   } {
     return {
       ...(hideWhitespace && { whitespace: "hide" }),
@@ -348,6 +350,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         from: scope.fromSha,
         to: scope.toSha,
       }),
+      ...(currentPlatformHost && { platform_host: currentPlatformHost }),
     };
   }
 
@@ -365,14 +368,17 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): Promise<void> {
     const prChanged =
       owner !== currentOwner ||
       name !== currentName ||
-      number !== currentNumber;
+      number !== currentNumber ||
+      platformHost !== currentPlatformHost;
     currentOwner = owner;
     currentName = name;
     currentNumber = number;
+    currentPlatformHost = platformHost;
     if (prChanged) {
       scope = { kind: "head" };
       fileCategoryFilter = "all";
@@ -399,7 +405,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         const { data } = await apiClient.GET(
           "/repos/{owner}/{name}/pulls/{number}/files",
           {
-            params: { path: { owner, name, number } },
+            params: {
+              path: { owner, name, number },
+              ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+            },
             signal: filesAc.signal,
           },
         );
@@ -486,6 +495,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
+    currentPlatformHost = undefined;
   }
 
   async function loadCommits(): Promise<void> {
@@ -497,24 +507,50 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const owner = currentOwner;
     const name = currentName;
     const number = currentNumber;
+    const platformHost = currentPlatformHost;
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}/commits",
+          "/repos/{owner}/{name}/pulls/{number}/commits",
         {
-          params: { path: { owner, name, number } },
+          params: {
+            path: { owner, name, number },
+            ...(currentPlatformHost
+              ? { query: { platform_host: currentPlatformHost } }
+              : {}),
+          },
         },
       );
-      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      if (
+        currentOwner !== owner ||
+        currentName !== name ||
+        currentNumber !== number ||
+        currentPlatformHost !== platformHost
+      ) return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
-      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      if (
+        currentOwner !== owner ||
+        currentName !== name ||
+        currentNumber !== number ||
+        currentPlatformHost !== platformHost
+      ) return;
       commits = data.commits ?? [];
     } catch (err) {
-      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      if (
+        currentOwner !== owner ||
+        currentName !== name ||
+        currentNumber !== number ||
+        currentPlatformHost !== platformHost
+      ) return;
       commitsError = err instanceof Error ? err.message : String(err);
     } finally {
-      if (currentOwner === owner && currentName === name && currentNumber === number) {
+      if (
+        currentOwner === owner &&
+        currentName === name &&
+        currentNumber === number &&
+        currentPlatformHost === platformHost
+      ) {
         commitsLoading = false;
       }
     }
@@ -539,7 +575,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function selectCommit(sha: string): void {
     scope = { kind: "commit", sha };
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentPlatformHost);
     }
   }
 
@@ -551,14 +587,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const [older, newer] = fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
     scope = { kind: "range", fromSha: older, toSha: newer };
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentPlatformHost);
     }
   }
 
   function resetToHead(): void {
     scope = { kind: "head" };
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentPlatformHost);
     }
   }
 

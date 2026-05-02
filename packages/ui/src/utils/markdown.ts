@@ -65,7 +65,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       const platformHostAttr = t.platformHost
         ? ` data-platform-host="${t.platformHost}"`
         : "";
-      return `<a class="item-ref" href="${href}" data-owner="${t.owner}" data-name="${t.name}" data-number="${t.number}"${platformHostAttr}>${t.text}</a>`;
+      return `<a class="item-ref" href="${href}" data-middleman-item-ref="true" data-owner="${t.owner}" data-name="${t.name}" data-number="${t.number}"${platformHostAttr}>${t.text}</a>`;
     },
   };
 }
@@ -74,7 +74,7 @@ const htmlCache = new Map<string, string>();
 const markedCache = new Map<string, Marked>();
 
 function getMarked(repo?: RepoContext): Marked {
-  const key = repo ? `${repo.owner}/${repo.name}` : "";
+  const key = repo ? `${repo.platformHost ?? ""}:${repo.owner}/${repo.name}` : "";
   let instance = markedCache.get(key);
   if (!instance) {
     instance = new Marked({ breaks: true, gfm: true });
@@ -89,7 +89,9 @@ export function renderMarkdown(
   repo?: RepoContext,
 ): string {
   if (!raw) return "";
-  const key = repo ? `${repo.owner}/${repo.name}\0${raw}` : raw;
+  const key = repo
+    ? `${repo.platformHost ?? ""}:${repo.owner}/${repo.name}\0${raw}`
+    : raw;
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -102,6 +104,7 @@ export function renderMarkdown(
         "data-name",
         "data-number",
         "data-platform-host",
+        "data-middleman-item-ref",
       ],
     },
   );

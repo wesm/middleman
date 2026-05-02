@@ -73,6 +73,7 @@
         submittedOwner,
         submittedName,
         submittedNumber,
+        submittedPlatformHost,
         submittedBody,
       );
       const storeError = detail.getDetailError();

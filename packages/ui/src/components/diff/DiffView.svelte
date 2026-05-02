@@ -9,15 +9,16 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
   }
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, platformHost }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
   let scrollRaf = 0;
 
   onMount(() => {
-    void diffStore.loadDiff(owner, name, number);
+    void diffStore.loadDiff(owner, name, number, platformHost);
 
     return () => {
       cancelAnimationFrame(scrollRaf);

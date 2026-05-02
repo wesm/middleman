@@ -71,6 +71,7 @@ type mockGH struct {
 	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
 	createIssueFn             func(context.Context, string, string, string, string) (*gh.Issue, error)
+	createIssueCommentFn      func(context.Context, string, string, int, string) (*gh.IssueComment, error)
 	getUserFn                 func(context.Context, string) (*gh.User, error)
 	createReviewFn            func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
@@ -264,8 +265,11 @@ func (m *mockGH) ApproveWorkflowRun(
 }
 
 func (m *mockGH) CreateIssueComment(
-	_ context.Context, _, _ string, _ int, body string,
+	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
+	if m.createIssueCommentFn != nil {
+		return m.createIssueCommentFn(ctx, owner, repo, number, body)
+	}
 	id := int64(42)
 	return &gh.IssueComment{
 		ID:   &id,
@@ -2865,6 +2869,7 @@ func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 		"acme",
 		"widget",
 		7,
+		nil,
 		generated.PostPrCommentJSONRequestBody{Body: "looks good"},
 	)
 	require.NoError(err)
@@ -3524,6 +3529,7 @@ func TestAPIClosePR(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -3550,6 +3556,7 @@ func TestAPIReopenPR(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		ctx, "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "open"},
 	)
 	require.NoError(err)
@@ -3575,6 +3582,7 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		ctx, "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "open"},
 	)
 	require.NoError(err)
@@ -3588,6 +3596,7 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "nonsense"},
 	)
 	require.NoError(t, err)
@@ -3605,6 +3614,7 @@ func TestAPICloseIssue(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -3624,6 +3634,7 @@ func TestAPIReopenIssue(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 		generated.SetIssueGithubStateJSONRequestBody{State: "open"},
 	)
 	require.NoError(err)
@@ -3695,6 +3706,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -4230,6 +4242,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -6587,6 +6600,7 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		ctx, "acme", "widget", 5,
+		nil,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -6613,6 +6627,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -6646,6 +6661,7 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -6688,6 +6704,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -6919,6 +6936,94 @@ func TestAPIApprovePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 	assert.Zero(reviewCalls)
 }
 
+func TestAPISetPRGitHubStateRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var editCalls int
+	mock := &mockGH{
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+			editCalls++
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/1/github-state",
+		map[string]string{"state": "closed"},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(editCalls)
+}
+
+func TestAPIEditPRContentRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var editCalls int
+	mock := &mockGH{
+		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
+			editCalls++
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPatch,
+		"/api/v1/repos/acme/widget/pulls/1",
+		map[string]string{"title": "New title"},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(editCalls)
+}
+
+func TestAPIPostPrCommentRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var commentCalls int
+	mock := &mockGH{
+		createIssueCommentFn: func(_ context.Context, _, _ string, _ int, body string) (*gh.IssueComment, error) {
+			commentCalls++
+			id := int64(42)
+			return &gh.IssueComment{ID: &id, Body: &body}, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/1/comments",
+		map[string]string{"body": "hello"},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(commentCalls)
+}
+
 func TestAPIApprovePRUsesPlatformHostQuery(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -7133,6 +7238,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(t, err)
@@ -7385,6 +7491,7 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
 	)
 	require.NoError(err)
@@ -7573,6 +7680,7 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberFilesWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusServiceUnavailable, resp.StatusCode())
@@ -8335,6 +8443,7 @@ func TestAPIGetCommits(t *testing.T) {
 	client, _, _, _, commitSHAs := setupTestServerWithClones(t)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberCommitsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -8350,6 +8459,7 @@ func TestAPIGetCommits_NotFound(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberCommitsWithResponse(
 		t.Context(), "acme", "widget", 999,
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode())

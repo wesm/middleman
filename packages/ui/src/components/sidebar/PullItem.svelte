@@ -36,6 +36,7 @@
       pr.repo_owner ?? "",
       pr.repo_name ?? "",
       pr.Number,
+      pr.platform_host,
       pr.Starred,
     );
   }

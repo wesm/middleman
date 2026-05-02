@@ -26,6 +26,37 @@ function makeDetail(
 }
 
 describe("createDetailStore submitComment", () => {
+  it("passes platform_host through comment creation", async () => {
+    const detailData = makeDetail();
+    const client = {
+      GET: vi.fn(async () => ({ data: detailData })),
+      POST: vi.fn(async (path: string) => {
+        if (path.includes("/sync")) return { data: detailData };
+        return { data: { ID: 42 } };
+      }),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("octo", "repo", 1, {
+      sync: false,
+      platformHost: "ghe.example.com",
+    });
+    await store.submitComment("octo", "repo", 1, "ghe.example.com", "hello");
+
+    expect(client.POST).toHaveBeenCalledWith(
+      "/repos/{owner}/{name}/pulls/{number}/comments",
+      {
+        params: {
+          path: { owner: "octo", name: "repo", number: 1 },
+          query: { platform_host: "ghe.example.com" },
+        },
+        body: { body: "hello" },
+      },
+    );
+  });
+
   it("never flips loading flag while refreshing after a comment", async () => {
     const detailData = makeDetail();
     const loadingDuringRefresh: boolean[] = [];
@@ -62,7 +93,7 @@ describe("createDetailStore submitComment", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    await holder.store.submitComment("octo", "repo", 1, "hello");
+    await holder.store.submitComment("octo", "repo", 1, undefined, "hello");
 
     expect(getCallCount).toBeGreaterThan(1);
     expect(loadingDuringRefresh.length).toBeGreaterThan(0);
@@ -101,7 +132,7 @@ describe("createDetailStore submitComment", () => {
     await store.loadDetail("octo", "repo", 1);
 
     // Fire submitComment without awaiting; refresh GET will block on refreshPromise.
-    const submitPromise = store.submitComment("octo", "repo", 1, "hi");
+    const submitPromise = store.submitComment("octo", "repo", 1, undefined, "hi");
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -150,7 +181,7 @@ describe("createDetailStore submitComment", () => {
     loadPulls.mockClear();
     postCalls.length = 0;
 
-    await store.submitComment("octo", "repo", 1, "hi");
+    await store.submitComment("octo", "repo", 1, undefined, "hi");
     // Drain the background syncDetail fired by submitComment.
     await Promise.resolve();
     await Promise.resolve();
@@ -204,7 +235,7 @@ describe("createDetailStore submitComment", () => {
     await store.loadDetail("octo", "repo", 1);
 
     // submitComment refreshes silently and should pick up the new event.
-    await store.submitComment("octo", "repo", 1, "hello");
+    await store.submitComment("octo", "repo", 1, undefined, "hello");
     expect(store.getDetail()?.events).toHaveLength(1);
 
     // The background sync now returns stale data (no comment).

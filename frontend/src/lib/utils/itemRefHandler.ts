@@ -7,7 +7,11 @@ let requestId = 0;
 function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
   let el = target as HTMLElement | null;
   while (el) {
-    if (el instanceof HTMLAnchorElement && el.classList.contains("item-ref")) {
+    if (
+      el instanceof HTMLAnchorElement &&
+      el.classList.contains("item-ref") &&
+      el.dataset.middlemanItemRef === "true"
+    ) {
       return el;
     }
     el = el.parentElement;

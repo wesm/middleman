@@ -271,6 +271,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     currentlyStarred: boolean,
   ): Promise<void> {
     try {
@@ -281,6 +282,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
             owner,
             name,
             number,
+            ...(platformHost ? { platform_host: platformHost } : {}),
           },
         });
         if (error) {
@@ -295,6 +297,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
             owner,
             name,
             number,
+            ...(platformHost ? { platform_host: platformHost } : {}),
           },
         });
         if (error) {

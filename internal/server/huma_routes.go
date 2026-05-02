@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -76,10 +77,11 @@ type setKanbanStateInput struct {
 type statusOnlyOutput = okStatusOutput
 
 type postCommentInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+	Body         struct {
 		Body string `json:"body"`
 	}
 }
@@ -87,11 +89,12 @@ type postCommentInput struct {
 type postCommentOutput = createdOutput[db.MREvent]
 
 type editCommentInput struct {
-	Owner     string `path:"owner"`
-	Name      string `path:"name"`
-	Number    int    `path:"number"`
-	CommentID int64  `path:"comment_id"`
-	Body      struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	PlatformHost string `query:"platform_host"`
+	Body         struct {
 		Body string `json:"body"`
 	}
 }
@@ -215,10 +218,11 @@ type mergePRBody struct {
 type mergePROutput = bodyOutput[mergePRBody]
 
 type editPRContentInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+	Body         struct {
 		Title *string `json:"title,omitempty"`
 		Body  *string `json:"body,omitempty"`
 	}
@@ -227,10 +231,11 @@ type editPRContentInput struct {
 type editPRContentOutput = bodyOutput[mergeRequestDetailResponse]
 
 type githubStateInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+	Body         struct {
 		State        string `json:"state"`
 		PlatformHost string `json:"platform_host,omitempty"`
 	}
@@ -898,14 +903,26 @@ func (s *Server) editPRContent(
 		return nil, huma.Error400BadRequest("title must not be blank")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	platformHost := strings.TrimSpace(input.PlatformHost)
+	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
+	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+	}
+
+	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	mr, err := s.db.GetMergeRequest(
-		ctx, input.Owner, input.Name, input.Number,
-	)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"get pull request failed",
@@ -957,9 +974,7 @@ func (s *Server) editPRContent(
 		)
 	}
 
-	mr, err = s.db.GetMergeRequest(
-		ctx, input.Owner, input.Name, input.Number,
-	)
+	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
 	if err != nil || mr == nil {
 		return nil, huma.Error500InternalServerError(
 			"re-read pull request failed",
@@ -981,7 +996,29 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	platformHost := strings.TrimSpace(input.PlatformHost)
+	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
+	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request failed")
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+
+	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -991,13 +1028,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error502BadGateway("create comment on GitHub failed")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
-	mrID, err := s.lookupMRID(ctx, ref)
-	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
-	}
-
-	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	event := ghclient.NormalizeCommentEvent(mr.ID, comment)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		_ = err
 	}
@@ -1010,18 +1041,34 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	platformHost := strings.TrimSpace(input.PlatformHost)
+	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
+	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request failed")
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+
+	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
-	mrID, err := s.lookupMRID(ctx, ref)
-	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
-	}
-
-	exists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
+	exists, err := s.db.MRCommentEventExists(ctx, mr.ID, input.CommentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("validate comment target failed")
 	}
@@ -1036,7 +1083,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
 	}
 
-	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	event := ghclient.NormalizeCommentEvent(mr.ID, comment)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		return nil, huma.Error500InternalServerError("persist edited comment failed")
 	}
@@ -1252,6 +1299,11 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		ctx, input.Owner, input.Name, input.Body.PlatformHost,
 	)
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		if errors.Is(err, errRepoNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
 		}
@@ -1298,6 +1350,11 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		ctx, input.Owner, input.Name, input.Body.PlatformHost,
 	)
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		if errors.Is(err, errRepoNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
 		}
@@ -1738,14 +1795,26 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	platformHost := strings.TrimSpace(input.PlatformHost)
+	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
+	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+	}
+
+	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	mr, err := s.db.GetMergeRequest(
-		ctx, input.Owner, input.Name, input.Number,
-	)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"get pull request: " + err.Error(),
@@ -1768,45 +1837,33 @@ func (s *Server) setPRGitHubState(
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state and determine the real cause.
-			repoID, repoErr := s.lookupRepoID(
-				ctx, input.Owner, input.Name,
+			ghPR, fetchErr := client.GetPullRequest(
+				ctx, input.Owner, input.Name, input.Number,
 			)
-			if repoErr == nil {
-				ghPR, fetchErr := client.GetPullRequest(
-					ctx, input.Owner, input.Name, input.Number,
-				)
-				if fetchErr == nil {
-					if ghPR == nil {
-						return nil, huma.Error502BadGateway("GitHub API returned no pull request")
-					}
-					normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
-					if normalizeErr != nil {
-						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
-					}
-					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
-					if ghPR.GetMerged() {
-						return nil, huma.Error409Conflict(
-							"cannot change state of a merged pull request",
-						)
-					}
-					// Already in requested state (concurrent edit).
-					if ghPR.GetState() == input.Body.State {
-						out := &githubStateOutput{}
-						out.Body.State = input.Body.State
-						return out, nil
-					}
+			if fetchErr == nil {
+				if ghPR == nil {
+					return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+				}
+				normalized, normalizeErr := ghclient.NormalizePR(repoObj.ID, ghPR)
+				if normalizeErr != nil {
+					return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+				}
+				_, _ = s.db.UpsertMergeRequest(ctx, normalized)
+				if ghPR.GetMerged() {
+					return nil, huma.Error409Conflict(
+						"cannot change state of a merged pull request",
+					)
+				}
+				// Already in requested state (concurrent edit).
+				if ghPR.GetState() == input.Body.State {
+					out := &githubStateOutput{}
+					out.Body.State = input.Body.State
+					return out, nil
 				}
 			}
 		}
 		return nil, huma.Error502BadGateway(
 			"GitHub API error: " + err.Error(),
-		)
-	}
-
-	repoID, err := s.lookupRepoID(ctx, input.Owner, input.Name)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get repo: " + err.Error(),
 		)
 	}
 
@@ -1816,7 +1873,7 @@ func (s *Server) setPRGitHubState(
 		closedAt = &now
 	}
 	if err := s.db.UpdateMRState(
-		ctx, repoID, input.Number,
+		ctx, repoObj.ID, input.Number,
 		input.Body.State, nil, closedAt,
 	); err != nil {
 		return nil, huma.Error500InternalServerError(
@@ -2414,14 +2471,54 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 
 type getCommitsOutput = bodyOutput[commitsResponse]
 
-func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
+func (s *Server) diffRefsForPR(
+	ctx context.Context,
+	owner string,
+	name string,
+	number int,
+	platformHost string,
+) (*db.Repo, *db.DiffSHAs, error) {
+	repoObj, err := s.lookupRepo(ctx, owner, name, strings.TrimSpace(platformHost))
+	if err != nil {
+		return nil, nil, err
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, number)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to look up PR: %w", err)
+	}
+	if mr == nil {
+		return repoObj, nil, nil
+	}
+	return repoObj, &db.DiffSHAs{
+		PlatformHeadSHA: mr.PlatformHeadSHA,
+		PlatformBaseSHA: mr.PlatformBaseSHA,
+		DiffHeadSHA:     mr.DiffHeadSHA,
+		DiffBaseSHA:     mr.DiffBaseSHA,
+		MergeBaseSHA:    mr.MergeBaseSHA,
+		State:           mr.State,
+	}, nil
+}
+
+func repoIdentityError(err error) error {
+	if errors.Is(err, errRepoAmbiguous) {
+		return huma.Error400BadRequest(
+			"platform_host is required for ambiguous repo",
+		)
+	}
+	if errors.Is(err, errRepoNotFound) {
+		return huma.Error404NotFound(err.Error())
+	}
+	return huma.Error500InternalServerError("get repo: " + err.Error())
+}
+
+func (s *Server) getCommits(ctx context.Context, input *prDetailInput) (*getCommitsOutput, error) {
 	if s.clones == nil {
 		return nil, huma.Error503ServiceUnavailable("commits not available: clone manager not configured")
 	}
 
-	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	repoObj, shas, err := s.diffRefsForPR(ctx, input.Owner, input.Name, input.Number, input.PlatformHost)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to look up PR")
+		return nil, repoIdentityError(err)
 	}
 	if shas == nil {
 		return nil, huma.Error404NotFound("pull request not found")
@@ -2430,7 +2527,7 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 		return nil, huma.Error404NotFound("commits not available for this pull request")
 	}
 
-	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	host := repoObj.PlatformHost
 	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
@@ -2454,13 +2551,14 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 // --- Diff ---
 
 type getDiffInput struct {
-	Owner      string `path:"owner"`
-	Name       string `path:"name"`
-	Number     int    `path:"number"`
-	Whitespace string `query:"whitespace"`
-	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
-	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
-	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Whitespace   string `query:"whitespace"`
+	Commit       string `query:"commit" doc:"Scope to a single commit SHA"`
+	From         string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To           string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+	PlatformHost string `query:"platform_host"`
 }
 
 type getDiffOutput = bodyOutput[diffResponse]
@@ -2470,9 +2568,9 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		return nil, huma.Error503ServiceUnavailable("diff view not available: clone manager not configured")
 	}
 
-	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	repoObj, shas, err := s.diffRefsForPR(ctx, input.Owner, input.Name, input.Number, input.PlatformHost)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to look up PR")
+		return nil, repoIdentityError(err)
 	}
 	if shas == nil {
 		return nil, huma.Error404NotFound("pull request not found")
@@ -2481,7 +2579,7 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		return nil, huma.Error404NotFound("diff not available for this pull request")
 	}
 
-	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	host := repoObj.PlatformHost
 	hideWhitespace := input.Whitespace == "hide"
 
 	// Determine diff range based on scope query params.
@@ -2548,9 +2646,10 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 // --- Files (lightweight) ---
 
 type getFilesInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
 }
 
 type getFilesOutput = bodyOutput[filesResponse]
@@ -2560,9 +2659,9 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 		return nil, huma.Error503ServiceUnavailable("files view not available: clone manager not configured")
 	}
 
-	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	repoObj, shas, err := s.diffRefsForPR(ctx, input.Owner, input.Name, input.Number, input.PlatformHost)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to look up PR")
+		return nil, repoIdentityError(err)
 	}
 	if shas == nil {
 		return nil, huma.Error404NotFound("pull request not found")
@@ -2571,7 +2670,7 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 		return nil, huma.Error404NotFound("file list not available for this pull request")
 	}
 
-	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	host := repoObj.PlatformHost
 	files, err := s.clones.DiffFiles(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {

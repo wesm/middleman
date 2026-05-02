@@ -2458,7 +2458,9 @@ export interface operations {
     };
     "set-issue-github-state": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -2670,7 +2672,9 @@ export interface operations {
     };
     "edit-pr-content": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -2781,7 +2785,9 @@ export interface operations {
     };
     "post-pr-comment": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -2818,7 +2824,9 @@ export interface operations {
     };
     "edit-pr-comment": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -2856,7 +2864,9 @@ export interface operations {
     };
     "get-repos-by-owner-by-name-pulls-by-number-commits": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -2897,6 +2907,7 @@ export interface operations {
                 from?: string;
                 /** @description End SHA for range diff (inclusive) */
                 to?: string;
+                platform_host?: string;
             };
             header?: never;
             path: {
@@ -2930,7 +2941,9 @@ export interface operations {
     };
     "get-repos-by-owner-by-name-pulls-by-number-files": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -2963,7 +2976,9 @@ export interface operations {
     };
     "set-pr-github-state": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
