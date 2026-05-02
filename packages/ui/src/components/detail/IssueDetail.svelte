@@ -467,7 +467,11 @@
                 </svg>
               {/if}
             </button>
-            <div class="inset-box markdown-body">{@html renderMarkdown(issue.Body, { owner, name })}</div>
+            <div class="inset-box markdown-body">{@html renderMarkdown(issue.Body, {
+              owner,
+              name,
+              platformHost: detail.platform_host,
+            })}</div>
           </div>
         </div>
       {/if}
@@ -571,6 +575,7 @@
             events={detail.events ?? []}
             repoOwner={owner}
             repoName={name}
+            platformHost={detail.platform_host}
             onEditComment={editTimelineComment}
           />
         {:else if issues.isIssueDetailSyncing()}

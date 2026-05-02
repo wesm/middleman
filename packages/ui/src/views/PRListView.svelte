@@ -21,6 +21,7 @@
       owner: string;
       name: string;
       number: number;
+      platformHost?: string | undefined;
     } | null;
     detailTab?: "conversation" | "files";
     isSidebarCollapsed?: boolean;
@@ -50,10 +51,13 @@
       return;
     }
     if (selectedPR === null) return;
+    const platformQuery = selectedPR.platformHost
+      ? `?platform_host=${encodeURIComponent(selectedPR.platformHost)}`
+      : "";
     navigate(
       tab === "files"
-        ? `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`
-        : `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`,
+        ? `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files${platformQuery}`
+        : `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}${platformQuery}`,
     );
   }
 </script>
@@ -114,6 +118,7 @@
         owner={selectedPR.owner}
         name={selectedPR.name}
         number={selectedPR.number}
+        platformHost={selectedPR.platformHost}
         autoSync={autoSyncDetail}
         hideTabs={true}
       />

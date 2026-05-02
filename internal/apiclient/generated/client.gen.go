@@ -947,6 +947,11 @@ type PostReposByOwnerByNameItemsByNumberResolveParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// GetReposByOwnerByNamePullsByNumberParams defines parameters for GetReposByOwnerByNamePullsByNumber.
+type GetReposByOwnerByNamePullsByNumberParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams defines parameters for PostReposByOwnerByNamePullsByNumberApproveWorkflows.
 type PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
@@ -973,6 +978,16 @@ type PostReposByOwnerByNamePullsByNumberMergeParams struct {
 
 // PostReposByOwnerByNamePullsByNumberReadyForReviewParams defines parameters for PostReposByOwnerByNamePullsByNumberReadyForReview.
 type PostReposByOwnerByNamePullsByNumberReadyForReviewParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// PostReposByOwnerByNamePullsByNumberSyncParams defines parameters for PostReposByOwnerByNamePullsByNumberSync.
+type PostReposByOwnerByNamePullsByNumberSyncParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// EnqueuePrSyncParams defines parameters for EnqueuePrSync.
+type EnqueuePrSyncParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
@@ -1202,7 +1217,7 @@ type ClientInterface interface {
 	PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumber request
-	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditPrContentWithBody request with any body
 	EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1261,10 +1276,10 @@ type ClientInterface interface {
 	SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberSync request
-	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EnqueuePrSync request
-	EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	EnqueuePrSync(ctx context.Context, owner string, name string, number int64, params *EnqueuePrSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RefreshRepo request
 	RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1694,8 +1709,8 @@ func (c *Client) PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context,
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberRequest(c.Server, owner, name, number)
+func (c *Client) GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1958,8 +1973,8 @@ func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, 
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberSyncRequest(c.Server, owner, name, number)
+func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberSyncRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1970,8 +1985,8 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, ow
 	return c.Client.Do(req)
 }
 
-func (c *Client) EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEnqueuePrSyncRequest(c.Server, owner, name, number)
+func (c *Client) EnqueuePrSync(ctx context.Context, owner string, name string, number int64, params *EnqueuePrSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueuePrSyncRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3664,7 +3679,7 @@ func NewPostReposByOwnerByNameItemsByNumberResolveRequest(server string, owner s
 }
 
 // NewGetReposByOwnerByNamePullsByNumberRequest generates requests for GetReposByOwnerByNamePullsByNumber
-func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3701,6 +3716,28 @@ func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, n
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -4618,7 +4655,7 @@ func NewSetKanbanStateRequestWithBody(server string, owner string, name string, 
 }
 
 // NewPostReposByOwnerByNamePullsByNumberSyncRequest generates requests for PostReposByOwnerByNamePullsByNumberSync
-func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4657,6 +4694,28 @@ func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner stri
 		return nil, err
 	}
 
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
@@ -4666,7 +4725,7 @@ func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner stri
 }
 
 // NewEnqueuePrSyncRequest generates requests for EnqueuePrSync
-func NewEnqueuePrSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewEnqueuePrSyncRequest(server string, owner string, name string, number int64, params *EnqueuePrSyncParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4703,6 +4762,28 @@ func NewEnqueuePrSyncRequest(server string, owner string, name string, number in
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -5528,7 +5609,7 @@ type ClientWithResponsesInterface interface {
 	PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameItemsByNumberResolveParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberWithResponse request
-	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
+	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
 
 	// EditPrContentWithBodyWithResponse request with any body
 	EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
@@ -5587,10 +5668,10 @@ type ClientWithResponsesInterface interface {
 	SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberSyncWithResponse request
-	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
+	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
 
 	// EnqueuePrSyncWithResponse request
-	EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
+	EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *EnqueuePrSyncParams, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
 
 	// RefreshRepoWithResponse request
 	RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
@@ -7216,8 +7297,8 @@ func (c *ClientWithResponses) PostReposByOwnerByNameItemsByNumberResolveWithResp
 }
 
 // GetReposByOwnerByNamePullsByNumberWithResponse request returning *GetReposByOwnerByNamePullsByNumberResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumber(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumber(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7407,8 +7488,8 @@ func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, ow
 }
 
 // PostReposByOwnerByNamePullsByNumberSyncWithResponse request returning *PostReposByOwnerByNamePullsByNumberSyncResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberSync(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberSync(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7416,8 +7497,8 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithRespons
 }
 
 // EnqueuePrSyncWithResponse request returning *EnqueuePrSyncResponse
-func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error) {
-	rsp, err := c.EnqueuePrSync(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *EnqueuePrSyncParams, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error) {
+	rsp, err := c.EnqueuePrSync(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

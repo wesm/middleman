@@ -8,6 +8,7 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
     prTitle: string;
     prBody: string;
     prAuthor: string;
@@ -20,7 +21,7 @@
   }
 
   const {
-    owner, name, number, prTitle, prBody,
+    owner, name, number, platformHost, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
     onclose, onmerged,
@@ -86,7 +87,10 @@
         method: selectedMethod,
       };
       const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/merge", {
-        params: { path: { owner, name, number } },
+        params: {
+          path: { owner, name, number },
+          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+        },
         body: params,
       });
       if (error) {

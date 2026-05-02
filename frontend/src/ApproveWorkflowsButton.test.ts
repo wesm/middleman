@@ -59,10 +59,49 @@ describe("ApproveWorkflowsButton", () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       "/repos/{owner}/{name}/pulls/{number}/approve-workflows",
-      { params: { path: { owner: "acme", name: "widget", number: 7 } } },
+      {
+        params: {
+          path: { owner: "acme", name: "widget", number: 7 },
+        },
+      },
     );
-    expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7);
+    expect(mockRefreshDetailOnly).toHaveBeenCalledWith(
+      "acme",
+      "widget",
+      7,
+      undefined,
+    );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes platform_host when approving host-qualified workflows", async () => {
+    mockPost.mockResolvedValue({
+      data: { status: "approved_workflows", approved_count: 1 },
+    });
+
+    render(ApproveWorkflowsButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        platformHost: "ghe.example.com",
+        count: 1,
+      },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /^approve workflows$/i }),
+    );
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/repos/{owner}/{name}/pulls/{number}/approve-workflows",
+      {
+        params: {
+          path: { owner: "acme", name: "widget", number: 7 },
+          query: { platform_host: "ghe.example.com" },
+        },
+      },
+    );
   });
 
   it("shows an inline error when approval fails", async () => {

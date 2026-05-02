@@ -127,8 +127,9 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): string {
-    return `${owner}/${name}/${number}`;
+    return `${platformHost ?? ""}:${owner}/${name}/${number}`;
   }
 
   function isDetailShowing(
@@ -154,12 +155,18 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
     expectedGen: number = syncGeneration,
   ): Promise<void> {
     try {
       const { data } = await apiClient.GET(
         "/repos/{owner}/{name}/pulls/{number}",
-        { params: { path: { owner, name, number } } },
+        {
+          params: {
+            path: { owner, name, number },
+            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+          },
+        },
       );
       // Re-check the generation after the awaited request: if the
       // selected PR changed mid-flight, dropping the assignment keeps
@@ -181,6 +188,7 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     gen: number,
   ): Promise<void> {
     syncing = true;
@@ -188,7 +196,12 @@ export function createDetailStore(
       const { data, error: requestError } =
         await apiClient.POST(
           "/repos/{owner}/{name}/pulls/{number}/sync",
-          { params: { path: { owner, name, number } } },
+          {
+            params: {
+              path: { owner, name, number },
+              ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+            },
+          },
         );
       if (gen !== syncGeneration) return;
       if (requestError) {
@@ -234,13 +247,14 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
-    options?: { sync?: DetailSyncMode },
+    options?: { sync?: DetailSyncMode; platformHost?: string | undefined },
   ): Promise<void> {
     const syncMode = options?.sync ?? true;
+    const platformHost = options?.platformHost;
     // Dedup by item identity only. A second caller with a different
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
-    const key = prKey(owner, name, number);
+    const key = prKey(owner, name, number, platformHost);
     if (
       loading &&
       activeLoad?.key === key &&
@@ -277,7 +291,12 @@ export function createDetailStore(
         const { data, error: requestError } =
           await apiClient.GET(
             "/repos/{owner}/{name}/pulls/{number}",
-            { params: { path: { owner, name, number } } },
+            {
+              params: {
+                path: { owner, name, number },
+                ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+              },
+            },
           );
         if (gen !== syncGeneration) return;
         if (requestError) {
@@ -307,12 +326,13 @@ export function createDetailStore(
       // request isn't lost when it joined an in-flight load.
       const finalSyncMode = currentLoad.syncMode;
       if (gen === syncGeneration && finalSyncMode === true) {
-        void syncDetail(owner, name, number, gen);
+        void syncDetail(owner, name, number, platformHost, gen);
       } else if (gen === syncGeneration && finalSyncMode === "background") {
         void enqueueBackgroundDetailSync(
           owner,
           name,
           number,
+          platformHost,
           gen,
           detail?.detail_fetched_at,
         );
@@ -326,6 +346,7 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     gen: number,
     previousFetchedAt?: string,
   ): Promise<void> {
@@ -333,13 +354,19 @@ export function createDetailStore(
     try {
       const { error: requestError } = await apiClient.POST(
         "/repos/{owner}/{name}/pulls/{number}/sync/async",
-        { params: { path: { owner, name, number } } },
+        {
+          params: {
+            path: { owner, name, number },
+            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+          },
+        },
       );
       if (requestError) return;
       await refreshAfterBackgroundDetailSync(
         owner,
         name,
         number,
+        platformHost,
         gen,
         previousFetchedAt,
       );
@@ -353,13 +380,14 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     gen: number,
     previousFetchedAt?: string,
   ): Promise<void> {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== syncGeneration) return;
-      await refreshDetail(owner, name, number, gen);
+      await refreshDetail(owner, name, number, platformHost, gen);
       if (gen !== syncGeneration) return;
       const fetchedAt = detail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {
@@ -372,8 +400,9 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): Promise<void> {
-    await refreshDetail(owner, name, number);
+    await refreshDetail(owner, name, number, platformHost);
   }
 
   async function updateKanbanState(
@@ -562,15 +591,16 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): void {
     stopDetailPolling();
     detailPollHandle = setInterval(() => {
-      void refreshDetail(owner, name, number);
+      void refreshDetail(owner, name, number, platformHost);
     }, 60_000);
     if (syncDep) {
       unsubSyncComplete =
         syncDep.subscribeSyncComplete(() => {
-          void refreshDetail(owner, name, number);
+          void refreshDetail(owner, name, number, platformHost);
         });
     }
   }
@@ -688,12 +718,12 @@ export function createDetailStore(
     syncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshDetail(owner, name, number);
+    await refreshDetail(owner, name, number, detail?.platform_host);
     // Pull authoritative state from GitHub so PR row metadata
     // (last_activity_at, comment_count) and the pulls list catch
     // up. Skip if the user navigated away mid-refresh.
     if (gen === syncGeneration) {
-      void syncDetail(owner, name, number, gen);
+      void syncDetail(owner, name, number, detail?.platform_host, gen);
     }
   }
 
@@ -731,7 +761,7 @@ export function createDetailStore(
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(owner, name, number);
+    await refreshDetail(owner, name, number, detail?.platform_host);
     return true;
   }
 

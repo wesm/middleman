@@ -10,6 +10,7 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
     count: number;
     size?: "sm" | "md";
     disabled?: boolean;
@@ -20,6 +21,7 @@
     owner,
     name,
     number,
+    platformHost,
     count,
     size = "md",
     disabled = false,
@@ -46,7 +48,10 @@
       const { error: requestError } = await client.POST(
         "/repos/{owner}/{name}/pulls/{number}/approve-workflows",
         {
-          params: { path: { owner, name, number } },
+          params: {
+            path: { owner, name, number },
+            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+          },
         },
       );
       if (requestError) {
@@ -56,7 +61,7 @@
             "failed to approve workflows",
         );
       }
-      await detail.refreshDetailOnly(owner, name, number);
+      await detail.refreshDetailOnly(owner, name, number, platformHost);
       await pulls.loadPulls();
       oncompleted?.();
     } catch (err) {

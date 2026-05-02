@@ -252,6 +252,7 @@
             owner: activeDrawer.owner,
             name: activeDrawer.name,
             number: activeDrawer.number,
+            platformHost: activeDrawer.platformHost,
           }}
           detailTab={effectiveDetailTab}
           isSidebarCollapsed={true}

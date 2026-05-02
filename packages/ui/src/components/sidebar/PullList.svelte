@@ -67,18 +67,51 @@
     }, 300);
   }
 
-  function handleSelect(owner: string, name: string, number: number): void {
-    pulls.selectPR(owner, name, number);
-    if (_getDetailTab() === "files") {
-      navigate(`/pulls/${owner}/${name}/${number}/files`);
-    } else {
-      navigate(`/pulls/${owner}/${name}/${number}`);
-    }
+  function pullRoute(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost?: string,
+  ): string {
+    const platformQuery = platformHost
+      ? `?platform_host=${encodeURIComponent(platformHost)}`
+      : "";
+    return _getDetailTab() === "files"
+      ? `/pulls/${owner}/${name}/${number}/files${platformQuery}`
+      : `/pulls/${owner}/${name}/${number}${platformQuery}`;
   }
 
-  function isSelected(owner: string, name: string, number: number): boolean {
+  function handleSelect(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost?: string,
+  ): void {
+    pulls.selectPR(owner, name, number, platformHost);
+    navigate(pullRoute(owner, name, number, platformHost));
+  }
+
+  function sameSelectedPR(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost?: string,
+  ): boolean {
     const sel = pulls.getSelectedPR();
-    return sel !== null && sel.owner === owner && sel.name === name && sel.number === number;
+    return sel !== null
+      && sel.owner === owner
+      && sel.name === name
+      && sel.number === number
+      && (sel.platformHost === undefined || sel.platformHost === platformHost);
+  }
+
+  function isSelected(
+    owner: string,
+    name: string,
+    number: number,
+    platformHost?: string,
+  ): boolean {
+    return sameSelectedPR(owner, name, number, platformHost);
   }
 
   const selectedVisiblePR = $derived.by(() => {
@@ -87,7 +120,11 @@
     const pr = pulls.getPulls().find(
       (p) => (p.repo_owner ?? "") === sel.owner
         && (p.repo_name ?? "") === sel.name
-        && p.Number === sel.number,
+        && p.Number === sel.number
+        && (
+          sel.platformHost === undefined
+          || p.platform_host === sel.platformHost
+        ),
     );
     if (!pr) return null;
     // In byRepo mode, a user-collapsed repo group hides the PR row — treat
@@ -228,7 +265,12 @@
         {#each [...pulls.pullsByRepo().entries()] as [repo, prs] (repo)}
           {@const userCollapsed = collapsedRepos.isCollapsed("pulls", repo)}
           {@const hasSelectedPR = isDiffFocus && prs.some(
-            (p) => isSelected(p.repo_owner ?? "", p.repo_name ?? "", p.Number),
+            (p) => isSelected(
+              p.repo_owner ?? "",
+              p.repo_name ?? "",
+              p.Number,
+              p.platform_host,
+            ),
           )}
           {@const collapsed = userCollapsed && !hasSelectedPR}
           <div class="repo-group">
@@ -251,13 +293,13 @@
             </button>
             {#if !collapsed}
               {#each prs as pr (pr.ID)}
-                {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number, pr.platform_host)}
                 <PullItem
                   {pr}
                   showRepo={false}
                   selected={prSelected}
                   {importAction}
-                  onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                  onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number, pr.platform_host)}
                 />
                 {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                   <div class="diff-files-wrap">
@@ -273,13 +315,13 @@
           <div class="repo-group">
             <h3 class="repo-header">{wg.label}</h3>
             {#each wg.items as pr (pr.ID)}
-              {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+              {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number, pr.platform_host)}
               <PullItem
                 {pr}
                 showRepo={true}
                 selected={prSelected}
                 {importAction}
-                onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+                onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number, pr.platform_host)}
               />
               {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                 <div class="diff-files-wrap">
@@ -291,13 +333,13 @@
         {/each}
       {:else}
         {#each pulls.getPulls() as pr (pr.ID)}
-          {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+          {@const prSelected = isSelected(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number, pr.platform_host)}
           <PullItem
             {pr}
             showRepo={true}
             selected={prSelected}
             {importAction}
-            onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number)}
+            onclick={() => handleSelect(pr.repo_owner ?? "", pr.repo_name ?? "", pr.Number, pr.platform_host)}
           />
           {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
             <div class="diff-files-wrap">

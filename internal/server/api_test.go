@@ -853,6 +853,7 @@ func TestAPIGetPull(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -872,6 +873,7 @@ func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "Acme", "Widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -929,6 +931,7 @@ func TestAPIGetPullIncludesBranches(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -951,6 +954,7 @@ func TestAPIGetPullIncludesLabels(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -983,6 +987,7 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1042,6 +1047,7 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1307,6 +1313,7 @@ func TestAPISyncPRIncludesWorkflowApprovalForForkPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1432,6 +1439,7 @@ func TestAPISyncPRIgnoresWorkflowRunsForOtherPRAtSameSHA(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1581,6 +1589,7 @@ func TestAPIGetPullNotFound(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 999,
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode())
@@ -1619,6 +1628,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1676,6 +1686,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 2,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1730,6 +1741,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 3,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1786,6 +1798,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 4,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1843,6 +1856,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 5,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1893,6 +1907,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 6,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1947,6 +1962,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 7,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -2002,6 +2018,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 8,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -2083,6 +2100,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 		t.Context(), "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	// Diff-sync failures are non-fatal: the handler must return 200
@@ -3584,6 +3602,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	go func() {
 		resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 			t.Context(), "acme", "widget", 1,
+			nil,
 		)
 		if err != nil {
 			syncErr <- err
@@ -3695,6 +3714,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 	go func() {
 		resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 			t.Context(), "acme", "widget", 1,
+			nil,
 		)
 		if err != nil {
 			syncErr <- err
@@ -3711,6 +3731,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 
 	detailResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, detailResp.StatusCode())
@@ -3789,12 +3810,14 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 
 	syncResp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, syncResp.StatusCode())
 
 	detailResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, detailResp.StatusCode())
@@ -3857,6 +3880,7 @@ func TestAPIEnqueuePRSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 	defer cancel()
 	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
 		ctx, "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode())
@@ -4028,6 +4052,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	go func() {
 		resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 			t.Context(), "acme", "widget", 1,
+			nil,
 		)
 		if err != nil {
 			syncErr <- err
@@ -4623,10 +4648,12 @@ func TestAPISyncIssueRejectsAmbiguousTrackedRepoBeforeSync(t *testing.T) {
 			return nil, nil
 		},
 	}
-	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
 
 	rr := doJSON(
 		t,
@@ -5171,6 +5198,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -5192,6 +5220,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -5304,6 +5333,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -5320,6 +5350,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -5458,6 +5489,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(targetNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -5473,6 +5505,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(targetNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -5943,6 +5976,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -5960,6 +5994,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -6290,6 +6325,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	firstResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode())
@@ -6307,6 +6343,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	secondResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode())
@@ -6416,6 +6453,7 @@ func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6753,10 +6791,12 @@ func TestAPIReadyForReviewRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 			return nil, nil
 		},
 	}
-	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
 
 	rr := doJSON(
 		t,
@@ -6780,10 +6820,12 @@ func TestAPIMergePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 			return nil, nil
 		},
 	}
-	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
 
 	rr := doJSON(
 		t,
@@ -7676,6 +7718,7 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	// Before detail fetch: detail_loaded=false.
 	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -7707,6 +7750,7 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 
 	resp2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		t.Context(), "acme", "widget", 2,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp2.StatusCode())
@@ -8743,6 +8787,7 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberSyncWithResponse(
 		context.Background(), "acme", "widget", int64(prNumber),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -11219,6 +11264,7 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	// MR detail should include the workspace reference.
 	mrResp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, mrResp.StatusCode())
@@ -12017,6 +12063,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	// PR on github.com
 	r1, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", 10,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, r1.StatusCode())
@@ -12026,6 +12073,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	// PR on ghe.example.com (same owner/name, different number)
 	r2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", 20,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, r2.StatusCode())

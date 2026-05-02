@@ -5,6 +5,7 @@ import DOMPurify from "dompurify";
 interface RepoContext {
   owner: string;
   name: string;
+  platformHost?: string | undefined;
 }
 
 function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
@@ -24,7 +25,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       }
       return adjusted >= 0 ? adjusted : undefined;
     },
-    tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string): { type: string; raw: string; owner: string; name: string; number: number; text: string } | undefined {
+    tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string): { type: string; raw: string; owner: string; name: string; number: number; text: string; platformHost?: string | undefined } | undefined {
       // Don't tokenize inside markdown link/image labels
       // to avoid producing invalid nested <a> elements.
       if (this.lexer.state.inLink) return undefined;
@@ -52,15 +53,19 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           owner: repo.owner,
           name: repo.name,
           number: parseInt(bareMatch[1]!, 10),
+          ...(repo.platformHost ? { platformHost: repo.platformHost } : {}),
           text: bareMatch[0],
         };
       }
       return undefined;
     },
     renderer(token): string {
-      const t = token as unknown as { owner: string; name: string; number: number; text: string };
+      const t = token as unknown as { owner: string; name: string; number: number; text: string; platformHost?: string | undefined };
       const href = `https://github.com/${t.owner}/${t.name}/issues/${t.number}`;
-      return `<a class="item-ref" href="${href}" data-owner="${t.owner}" data-name="${t.name}" data-number="${t.number}">${t.text}</a>`;
+      const platformHostAttr = t.platformHost
+        ? ` data-platform-host="${t.platformHost}"`
+        : "";
+      return `<a class="item-ref" href="${href}" data-owner="${t.owner}" data-name="${t.name}" data-number="${t.number}"${platformHostAttr}>${t.text}</a>`;
     },
   };
 }
@@ -90,7 +95,15 @@ export function renderMarkdown(
 
   const html = DOMPurify.sanitize(
     getMarked(repo).parse(raw) as string,
-    { ADD_ATTR: ["target", "data-owner", "data-name", "data-number"] },
+    {
+      ADD_ATTR: [
+        "target",
+        "data-owner",
+        "data-name",
+        "data-number",
+        "data-platform-host",
+      ],
+    },
   );
   if (htmlCache.size > 500) htmlCache.clear();
   htmlCache.set(key, html);

@@ -19,12 +19,18 @@ async function resolveAndNavigate(
   owner: string,
   name: string,
   number: number,
+  platformHost: string | undefined,
   thisRequestId: number,
 ): Promise<void> {
   try {
     const { data, error, response } = await client.POST(
       "/repos/{owner}/{name}/items/{number}/resolve",
-      { params: { path: { owner, name, number } } },
+      {
+        params: {
+          path: { owner, name, number },
+          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+        },
+      },
     );
 
     // A newer click superseded this one — discard the result.
@@ -51,6 +57,7 @@ async function resolveAndNavigate(
       owner,
       name,
       number,
+      data.item_type === "issue" ? platformHost : undefined,
     );
     navigate(path);
   } catch {
@@ -69,11 +76,18 @@ function handleClick(e: MouseEvent): void {
   const owner = anchor.dataset.owner;
   const name = anchor.dataset.name;
   const numberStr = anchor.dataset.number;
+  const platformHost = anchor.dataset.platformHost;
   if (!owner || !name || !numberStr) return;
 
   e.preventDefault();
   requestId++;
-  void resolveAndNavigate(owner, name, parseInt(numberStr, 10), requestId);
+  void resolveAndNavigate(
+    owner,
+    name,
+    parseInt(numberStr, 10),
+    platformHost,
+    requestId,
+  );
 }
 
 export function initItemRefHandler(): () => void {

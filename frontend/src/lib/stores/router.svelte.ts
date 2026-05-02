@@ -20,7 +20,7 @@ export type Route =
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "workspaces" }
-  | { page: "pulls"; view: "list" | "board"; selected?: NumberedItemRef; tab?: "files" }
+  | { page: "pulls"; view: "list" | "board"; selected?: HostedItemRef; tab?: "files" }
   | { page: "issues"; selected?: HostedItemRef }
   | { page: "settings" }
   | ({ page: "focus" } & RoutableItemRef)
@@ -80,12 +80,15 @@ function parseRoute(fullPath: string): Route {
       /^\/focus\/pr\/([^/]+)\/([^/]+)\/(\d+)$/,
     );
     if (prMatch) {
+      const sp = new URLSearchParams(search);
+      const platformHost = sp.get("platform_host") ?? undefined;
       return {
         page: "focus",
         itemType: "pr",
         owner: prMatch[1]!,
         name: prMatch[2]!,
         number: parseInt(prMatch[3]!, 10),
+        ...(platformHost && { platformHost }),
       };
     }
     const issueMatch = path.match(
@@ -110,6 +113,8 @@ function parseRoute(fullPath: string): Route {
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
     if (rest === "/board") return { page: "pulls", view: "board" };
+    const sp = new URLSearchParams(search);
+    const platformHost = sp.get("platform_host") ?? undefined;
     const filesMatch = rest.match(/^\/([^/]+)\/([^/]+)\/(\d+)\/files$/);
     if (filesMatch) {
       return {
@@ -119,6 +124,7 @@ function parseRoute(fullPath: string): Route {
           owner: filesMatch[1]!,
           name: filesMatch[2]!,
           number: parseInt(filesMatch[3]!, 10),
+          ...(platformHost && { platformHost }),
         },
         tab: "files",
       };
@@ -128,7 +134,12 @@ function parseRoute(fullPath: string): Route {
       return {
         page: "pulls",
         view: "list",
-        selected: { owner: match[1]!, name: match[2]!, number: parseInt(match[3]!, 10) },
+        selected: {
+          owner: match[1]!,
+          name: match[2]!,
+          number: parseInt(match[3]!, 10),
+          ...(platformHost && { platformHost }),
+        },
       };
     }
     return { page: "pulls", view: "list" };
@@ -208,15 +219,15 @@ export function buildItemRoute(
   number: number,
   platformHost?: string,
 ): string {
-  const issueQuery = type === "issue" && platformHost
+  const hostQuery = platformHost
     ? `?platform_host=${encodeURIComponent(platformHost)}`
     : "";
   if (isFocusMode()) {
-    return `/focus/${type}/${owner}/${name}/${number}${issueQuery}`;
+    return `/focus/${type}/${owner}/${name}/${number}${hostQuery}`;
   }
   return type === "pr"
-    ? `/pulls/${owner}/${name}/${number}`
-    : `/issues/${owner}/${name}/${number}${issueQuery}`;
+    ? `/pulls/${owner}/${name}/${number}${hostQuery}`
+    : `/issues/${owner}/${name}/${number}${hostQuery}`;
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {
@@ -336,7 +347,7 @@ export function getDetailTab(): DetailTab {
   return "conversation";
 }
 
-export function getSelectedPRFromRoute(): NumberedItemRef | null {
+export function getSelectedPRFromRoute(): HostedItemRef | null {
   if (route.page !== "pulls") return null;
   if ("selected" in route && route.selected) {
     return route.selected;

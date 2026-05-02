@@ -46,7 +46,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<
-    { owner: string; name: string; number: number } | null
+    {
+      owner: string;
+      name: string;
+      number: number;
+      platformHost?: string | undefined;
+    } | null
   >(null);
 
   // --- reads ---
@@ -67,6 +72,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
   } | null {
     return selectedPR;
   }
@@ -135,6 +141,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
           first.repo_owner ?? "",
           first.repo_name ?? "",
           first.Number,
+          first.platform_host,
         );
       }
       return;
@@ -151,6 +158,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         next.repo_owner ?? "",
         next.repo_name ?? "",
         next.Number,
+        next.platform_host,
       );
     }
   }
@@ -166,6 +174,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
           last.repo_owner ?? "",
           last.repo_name ?? "",
           last.Number,
+          last.platform_host,
         );
       }
       return;
@@ -183,6 +192,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
           prev.repo_owner ?? "",
           prev.repo_name ?? "",
           prev.Number,
+          prev.platform_host,
         );
       }
     }
@@ -208,8 +218,14 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): void {
-    selectedPR = { owner, name, number };
+    selectedPR = {
+      owner,
+      name,
+      number,
+      ...(platformHost ? { platformHost } : {}),
+    };
   }
 
   function clearSelection(): void {
@@ -295,6 +311,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): Promise<FetchPullResult> {
     try {
       const { data, error, response } = await apiClient.GET(
@@ -302,6 +319,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         {
           params: {
             path: { owner, name, number },
+            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
           },
         },
       );
@@ -319,7 +337,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         status: "found",
         pull: {
           ...mr,
-          platform_host: "",
+          platform_host: data.platform_host,
           repo_owner: data.repo_owner,
           repo_name: data.repo_name,
           detail_loaded: data.detail_loaded,

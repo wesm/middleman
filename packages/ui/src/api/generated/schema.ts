@@ -2635,7 +2635,9 @@ export interface operations {
     };
     "get-repos-by-owner-by-name-pulls-by-number": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -3171,7 +3173,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-sync": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -3204,7 +3208,9 @@ export interface operations {
     };
     "enqueue-pr-sync": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;

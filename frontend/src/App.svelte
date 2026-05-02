@@ -53,6 +53,7 @@
     isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
+    buildItemRoute,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
@@ -179,6 +180,7 @@
           route.selected.owner,
           route.selected.name,
           route.selected.number,
+          route.selected.platformHost,
         );
       } else {
         stores.pulls.clearSelection();
@@ -274,14 +276,21 @@
     const sel = stores.pulls.getSelectedPR();
     if (!sel) return;
     const tab = getDetailTab();
-    const path =
-      tab === "files"
-        ? `/pulls/${sel.owner}/${sel.name}/${sel.number}/files`
-        : `/pulls/${sel.owner}/${sel.name}/${sel.number}`;
+    const path = buildItemRoute(
+      "pr",
+      sel.owner,
+      sel.name,
+      sel.number,
+      sel.platformHost,
+    );
+    const [pathname, query = ""] = path.split("?");
+    const tabPath = tab === "files"
+      ? `${pathname}/files${query ? `?${query}` : ""}`
+      : path;
     if (getSelectedPRFromRoute()) {
-      replaceUrl(path);
+      replaceUrl(tabPath);
     } else {
-      navigate(path);
+      navigate(tabPath);
     }
   }
 
@@ -481,6 +490,7 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              platformHost: r.platformHost,
             }}
             detailTab="conversation"
             isSidebarCollapsed={true}

@@ -10,6 +10,7 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
     size?: "sm" | "md";
     disabled?: boolean;
     oncompleted?: () => void;
@@ -19,6 +20,7 @@
     owner,
     name,
     number,
+    platformHost,
     size = "md",
     disabled = false,
     oncompleted,
@@ -37,19 +39,22 @@
     error = null;
     try {
       const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/ready-for-review", {
-        params: { path: { owner, name, number } },
+        params: {
+          path: { owner, name, number },
+          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+        },
       });
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to mark pull request ready for review");
       }
-      await detail.loadDetail(owner, name, number);
+      await detail.loadDetail(owner, name, number, { platformHost });
       await pulls.loadPulls();
       oncompleted?.();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (shouldRefreshStaleDraftState(message)) {
         try {
-          await detail.loadDetail(owner, name, number);
+          await detail.loadDetail(owner, name, number, { platformHost });
           await pulls.loadPulls();
         } catch {
           // Preserve the original mutation error if the stale-state refresh also fails.

@@ -45,8 +45,41 @@ describe("ReadyForReviewButton", () => {
       screen.getByRole("button", { name: /ready for review/i }),
     );
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141);
+    expect(mockLoadDetail).toHaveBeenCalledWith(
+      "wesm",
+      "middleman",
+      141,
+      { platformHost: undefined },
+    );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes platform_host when marking a host-qualified PR ready", async () => {
+    mockPost.mockResolvedValue({ data: { status: "ready_for_review" } });
+
+    render(ReadyForReviewButton, {
+      props: {
+        owner: "wesm",
+        name: "middleman",
+        number: 141,
+        platformHost: "ghe.example.com",
+        size: "sm",
+      },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /ready for review/i }),
+    );
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/repos/{owner}/{name}/pulls/{number}/ready-for-review",
+      {
+        params: {
+          path: { owner: "wesm", name: "middleman", number: 141 },
+          query: { platform_host: "ghe.example.com" },
+        },
+      },
+    );
   });
 
   it("refreshes stale draft state after a GitHub 404", async () => {
@@ -65,7 +98,12 @@ describe("ReadyForReviewButton", () => {
       screen.getByRole("button", { name: /ready for review/i }),
     );
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141);
+    expect(mockLoadDetail).toHaveBeenCalledWith(
+      "wesm",
+      "middleman",
+      141,
+      { platformHost: undefined },
+    );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 });

@@ -14,6 +14,7 @@
     events: Array<PREvent | IssueEvent>;
     repoOwner?: string;
     repoName?: string;
+    platformHost?: string | undefined;
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: (event: PREvent | IssueEvent, body: string) => Promise<boolean>;
@@ -23,6 +24,7 @@
     events,
     repoOwner,
     repoName,
+    platformHost,
     filtered = false,
     showCommitDetails = true,
     onEditComment,
@@ -315,7 +317,12 @@
                 {:else}
                   <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
                     {#if shouldRenderMarkdown(event.EventType)}
-                      {@html renderMarkdown(event.Body, repoOwner && repoName ? { owner: repoOwner, name: repoName } : undefined)}
+                      {@html renderMarkdown(
+                        event.Body,
+                        repoOwner && repoName
+                          ? { owner: repoOwner, name: repoName, platformHost }
+                          : undefined,
+                      )}
                     {:else}
                       {event.Body}
                     {/if}

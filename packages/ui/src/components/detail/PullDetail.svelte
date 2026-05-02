@@ -52,6 +52,7 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -62,6 +63,7 @@
     owner,
     name,
     number,
+    platformHost,
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
@@ -106,7 +108,8 @@
     return (
       d.repo_owner !== owner ||
       d.repo_name !== name ||
-      (d.merge_request?.Number ?? -1) !== number
+      (d.merge_request?.Number ?? -1) !== number ||
+      (platformHost !== undefined && d.platform_host !== platformHost)
     );
   });
 
@@ -114,15 +117,24 @@
     const requestOwner = owner;
     const requestName = name;
     const requestNumber = number;
+    const requestPlatformHost = platformHost;
     const requestAutoSync = autoSync;
     untrack(() => {
       void detailStore.loadDetail(
         requestOwner,
         requestName,
         requestNumber,
-        { sync: requestAutoSync },
+        {
+          sync: requestAutoSync,
+          platformHost: requestPlatformHost,
+        },
       );
-      detailStore.startDetailPolling(requestOwner, requestName, requestNumber);
+      detailStore.startDetailPolling(
+        requestOwner,
+        requestName,
+        requestNumber,
+        requestPlatformHost,
+      );
     });
     return () => detailStore.stopDetailPolling();
   });
@@ -287,11 +299,17 @@
     stateSubmitting = true;
     stateError = null;
     try {
+      const detail = detailStore.getDetail();
       const { error: requestError } = await client.POST(
         "/repos/{owner}/{name}/pulls/{number}/github-state",
         {
           params: { path: { owner, name, number } },
-          body: { state: newState },
+          body: {
+            state: newState,
+            ...(detail?.platform_host
+              ? { platform_host: detail.platform_host }
+              : {}),
+          },
         },
       );
       if (requestError) {
@@ -301,7 +319,9 @@
             ?? "failed to change PR state",
         );
       }
-      await detailStore.loadDetail(owner, name, number);
+      await detailStore.loadDetail(owner, name, number, {
+        platformHost: detail?.platform_host,
+      });
       await refreshPulls();
       await activity.loadActivity();
     } catch (err) {
@@ -763,13 +783,14 @@
       {#snippet primaryActionButtons()}
         {#if pr.State === "open"}
           {#if pr.IsDraft}
-            <ReadyForReviewButton
-              {owner}
-              {name}
-              {number}
-              size="sm"
-              disabled={stalePR}
-              oncompleted={closeActionMenu}
+          <ReadyForReviewButton
+            {owner}
+            {name}
+            {number}
+            platformHost={detail.platform_host}
+            size="sm"
+            disabled={stalePR}
+            oncompleted={closeActionMenu}
             />
           {/if}
           <ApproveButton
@@ -784,6 +805,7 @@
               {owner}
               {name}
               {number}
+              platformHost={detail.platform_host}
               count={workflowApproval.count ?? 0}
               size="sm"
               disabled={stalePR}
@@ -988,6 +1010,7 @@
           {owner}
           {name}
           {number}
+          platformHost={d.platform_host}
           prTitle={p.Title}
           prBody={p.Body}
           prAuthor={p.Author}
@@ -998,7 +1021,9 @@
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {
             showMergeModal = false;
-            void detailStore.loadDetail(owner, name, number);
+            void detailStore.loadDetail(owner, name, number, {
+              platformHost: d.platform_host,
+            });
             void pulls.loadPulls();
             void activity.loadActivity();
           }}
@@ -1064,7 +1089,11 @@
                 </svg>
               {/if}
             </button>
-            <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { owner, name })}</div>
+            <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, {
+              owner,
+              name,
+              platformHost: detail.platform_host,
+            })}</div>
           </div>
         {:else}
           <button class="add-description-btn" onclick={startEditBody}>
@@ -1098,6 +1127,7 @@
             events={filteredTimelineEvents}
             repoOwner={owner}
             repoName={name}
+            platformHost={detail.platform_host}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
             onEditComment={editTimelineComment}
