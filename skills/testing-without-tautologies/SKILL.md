@@ -64,7 +64,7 @@ Apply these checks to every new or modified test:
    - Test them only when they validate, normalize, default, derive, copy, enforce permissions, handle errors, cause side effects, or protect compatibility.
    - Prefer the first consumer-visible result that depends on the fields.
 
-## Mutation Thought Experiment
+## Mutation Check
 
 Before finishing, mentally mutate the production code. At least one relevant test should fail for each realistic mutation.
 
