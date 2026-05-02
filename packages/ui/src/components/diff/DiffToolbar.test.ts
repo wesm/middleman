@@ -21,6 +21,7 @@ function renderToolbar() {
 describe("DiffToolbar", () => {
   afterEach(() => {
     cleanup();
+    localStorage.removeItem("diff-word-wrap");
   });
 
   it("defaults the changed file category filter to all and renders category buttons", async () => {
@@ -52,5 +53,19 @@ describe("DiffToolbar", () => {
     expect(diff.getFileCategoryFilter()).toBe("code");
     expect(screen.getByRole("button", { name: "Code (0)" })
       .getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("toggles the word wrap preference", async () => {
+    const { diff } = renderToolbar();
+    const wordWrap = screen.getByRole("switch", { name: "Word wrap" });
+
+    expect(diff.getWordWrap()).toBe(false);
+    expect(wordWrap.getAttribute("aria-checked")).toBe("false");
+
+    await fireEvent.click(wordWrap);
+
+    expect(diff.getWordWrap()).toBe(true);
+    expect(wordWrap.getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem("diff-word-wrap")).toBe("true");
   });
 });

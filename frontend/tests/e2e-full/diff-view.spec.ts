@@ -226,6 +226,7 @@ test.describe("diff view", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-word-wrap");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -355,6 +356,23 @@ test.describe("diff view", () => {
     await segments.nth(1).click();
     await expect(segments.nth(1)).toHaveClass(/segment--active/);
     await expect(segments.nth(2)).not.toHaveClass(/segment--active/);
+  });
+
+  test("word wrap toggle changes diff line wrapping", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const wrapToggle = page.getByRole("switch", { name: "Word wrap" });
+    const firstCodeLine = page.locator(".diff-line .code").first();
+
+    await expect(wrapToggle).toHaveAttribute("aria-checked", "false");
+    await expect(firstCodeLine).toHaveCSS("white-space", "pre");
+
+    await wrapToggle.click();
+
+    await expect(wrapToggle).toHaveAttribute("aria-checked", "true");
+    await expect(firstCodeLine).toHaveCSS("white-space", "pre-wrap");
   });
 
   test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
@@ -734,6 +752,7 @@ test.describe("diff view performance", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-word-wrap");
       localStorage.removeItem("diff-collapsed-files");
     });
   });

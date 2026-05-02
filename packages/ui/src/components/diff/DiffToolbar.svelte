@@ -58,6 +58,20 @@
         <span class="toggle-knob"></span>
       </button>
     </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Word wrap</span>
+      <button
+        class="toggle-switch"
+        class:toggle-switch--on={diff.getWordWrap()}
+        role="switch"
+        aria-label="Word wrap"
+        aria-checked={diff.getWordWrap()}
+        title={diff.getWordWrap() ? "Disable word wrap" : "Enable word wrap"}
+        onclick={() => diff.setWordWrap(!diff.getWordWrap())}
+      >
+        <span class="toggle-knob"></span>
+      </button>
+    </div>
   </div>
 </div>
 

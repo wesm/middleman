@@ -133,6 +133,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let fileListAbortController: AbortController | null = null;
 
   let tabWidth = $state(loadTabWidth());
+  let wordWrap = $state(
+    safeGetItem("diff-word-wrap") === "true",
+  );
   let hideWhitespace = $state(
     safeGetItem("diff-hide-whitespace") === "true",
   );
@@ -199,6 +202,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function getTabWidth(): number {
     return tabWidth;
   }
+  function getWordWrap(): boolean {
+    return wordWrap;
+  }
   function getHideWhitespace(): boolean {
     return hideWhitespace;
   }
@@ -255,6 +261,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function setTabWidth(w: number): void {
     tabWidth = w;
     safeSetItem("diff-tab-width", String(w));
+  }
+
+  function setWordWrap(v: boolean): void {
+    wordWrap = v;
+    safeSetItem("diff-word-wrap", String(v));
   }
 
   function setHideWhitespace(v: boolean): void {
@@ -611,6 +622,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     getFileCategoryCounts,
     isFileListLoading,
     getTabWidth,
+    getWordWrap,
     getHideWhitespace,
     getFileCategoryFilter,
     getActiveFile,
@@ -622,6 +634,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     getScrollTarget,
     consumeScrollTarget,
     setTabWidth,
+    setWordWrap,
     setHideWhitespace,
     isFileCollapsed,
     toggleFileCollapsed,

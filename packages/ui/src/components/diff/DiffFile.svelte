@@ -193,7 +193,7 @@
         <div class="binary-notice">Binary file changed</div>
       {:else}
         <div class="file-rows">
-          {#each renderedFile.hunks as hunk, hunkIdx}
+          {#each renderedFile.hunks as hunk, hunkIdx (`${hunk.old_start}:${hunk.new_start}:${hunkIdx}`)}
             {#if hunkIdx > 0}
               {@const gap = computeCollapsedLines(renderedFile.hunks, hunkIdx)}
               {#if gap > 0}
@@ -205,7 +205,7 @@
               <span class="hunk-gutter"></span>
               <span class="hunk-text">@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@{hunk.section ? ` ${hunk.section}` : ""}</span>
             </div>
-            {#each hunk.lines as line, lineIdx}
+            {#each hunk.lines as line, lineIdx (`${hunkIdx}:${line.old_num ?? ""}:${line.new_num ?? ""}:${lineIdx}`)}
               <DiffLineComponent
                 type={line.type}
                 content={line.content}
@@ -302,9 +302,17 @@
     overflow-x: auto;
   }
 
+  :global(.diff-area--word-wrap) .file-content {
+    overflow-x: hidden;
+  }
+
   .file-rows {
     min-width: 100%;
     width: max-content;
+  }
+
+  :global(.diff-area--word-wrap) .file-rows {
+    width: 100%;
   }
 
   .binary-notice {
@@ -334,5 +342,10 @@
   .hunk-text {
     padding: 2px 12px;
     white-space: pre;
+  }
+
+  :global(.diff-area--word-wrap) .hunk-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 </style>
