@@ -2060,32 +2060,25 @@ func (d *DB) SetWorktreeLinks(
 	ctx context.Context, links []WorktreeLink,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM middleman_mr_worktree_links`,
-		); err != nil {
+		q := d.writeQueries.WithTx(tx)
+		if err := q.DeleteAllWorktreeLinks(ctx); err != nil {
 			return fmt.Errorf("delete worktree links: %w", err)
 		}
-		if len(links) == 0 {
-			return nil
-		}
-		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_mr_worktree_links
-			    (merge_request_id, worktree_key,
-			     worktree_path, worktree_branch, linked_at)
-			VALUES (?, ?, ?, ?, ?)`)
-		if err != nil {
-			return fmt.Errorf(
-				"prepare insert worktree link: %w", err,
-			)
-		}
-		defer stmt.Close()
 		for i := range links {
 			l := &links[i]
-			if _, err := stmt.ExecContext(ctx,
-				l.MergeRequestID, l.WorktreeKey,
-				l.WorktreePath, l.WorktreeBranch,
-				l.LinkedAt.UTC().Format(time.RFC3339),
-			); err != nil {
+			if err := q.InsertWorktreeLink(ctx, dbsqlc.InsertWorktreeLinkParams{
+				MergeRequestID: l.MergeRequestID,
+				WorktreeKey:    l.WorktreeKey,
+				WorktreePath: sql.NullString{
+					String: l.WorktreePath,
+					Valid:  true,
+				},
+				WorktreeBranch: sql.NullString{
+					String: l.WorktreeBranch,
+					Valid:  true,
+				},
+				LinkedAt: l.LinkedAt.UTC().Format(time.RFC3339),
+			}); err != nil {
 				return fmt.Errorf(
 					"insert worktree link %s: %w",
 					l.WorktreeKey, err,
@@ -2101,21 +2094,13 @@ func (d *DB) SetWorktreeLinks(
 func (d *DB) GetWorktreeLinksForMR(
 	ctx context.Context, mergeRequestID int64,
 ) ([]WorktreeLink, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, merge_request_id, worktree_key,
-		       worktree_path, worktree_branch, linked_at
-		FROM middleman_mr_worktree_links
-		WHERE merge_request_id = ?
-		ORDER BY linked_at DESC`,
-		mergeRequestID,
-	)
+	rows, err := d.readQueries.ListWorktreeLinksForMR(ctx, mergeRequestID)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"get worktree links for MR: %w", err,
 		)
 	}
-	defer rows.Close()
-	return scanWorktreeLinks(rows)
+	return worktreeLinksFromSQL(rows)
 }
 
 // GetWorktreeLinksForMRs returns worktree links for the
@@ -2132,27 +2117,13 @@ func (d *DB) GetWorktreeLinksForMRs(
 	for start := 0; start < len(mrIDs); start += batchSize {
 		end := min(start+batchSize, len(mrIDs))
 		batch := mrIDs[start:end]
-		placeholders := make([]string, len(batch))
-		args := make([]any, len(batch))
-		for i, id := range batch {
-			placeholders[i] = "?"
-			args[i] = id
-		}
-		query := `
-			SELECT id, merge_request_id, worktree_key,
-			       worktree_path, worktree_branch, linked_at
-			FROM middleman_mr_worktree_links
-			WHERE merge_request_id IN (` +
-			strings.Join(placeholders, ",") + `)
-			ORDER BY linked_at DESC`
-		rows, err := d.ro.QueryContext(ctx, query, args...)
+		rows, err := d.readQueries.ListWorktreeLinksForMRIDs(ctx, batch)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"get worktree links for MRs: %w", err,
 			)
 		}
-		links, err := scanWorktreeLinks(rows)
-		rows.Close()
+		links, err := worktreeLinksFromSQL(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -2166,19 +2137,13 @@ func (d *DB) GetWorktreeLinksForMRs(
 func (d *DB) GetAllWorktreeLinks(
 	ctx context.Context,
 ) ([]WorktreeLink, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, merge_request_id, worktree_key,
-		       worktree_path, worktree_branch, linked_at
-		FROM middleman_mr_worktree_links
-		ORDER BY linked_at DESC`,
-	)
+	rows, err := d.readQueries.ListAllWorktreeLinks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"get all worktree links: %w", err,
 		)
 	}
-	defer rows.Close()
-	return scanWorktreeLinks(rows)
+	return worktreeLinksFromSQL(rows)
 }
 
 // GetRepoByHostOwnerName returns the repo for the given
@@ -2207,6 +2172,139 @@ func (d *DB) GetRepoByHostOwnerName(
 
 // --- Workspaces ---
 
+func nullStringFromPtr(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
+func ptrFromNullString(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	return &s.String
+}
+
+func nullInt64FromIntPtr(v *int) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*v), Valid: true}
+}
+
+func intPtrFromNullInt64(v sql.NullInt64) *int {
+	if !v.Valid {
+		return nil
+	}
+	i := int(v.Int64)
+	return &i
+}
+
+func boolPtrFromNullInt64(v sql.NullInt64) *bool {
+	if !v.Valid {
+		return nil
+	}
+	b := v.Int64 != 0
+	return &b
+}
+
+func stringPtrFromSQLValue(v any) *string {
+	switch value := v.(type) {
+	case nil:
+		return nil
+	case string:
+		return &value
+	case []byte:
+		s := string(value)
+		return &s
+	case sql.NullString:
+		return ptrFromNullString(value)
+	default:
+		s := fmt.Sprint(value)
+		return &s
+	}
+}
+
+func workspaceFromSQLFields(
+	id, platformHost, repoOwner, repoName string,
+	itemType string,
+	itemNumber int64,
+	associatedPRNumber sql.NullInt64,
+	gitHeadRef string,
+	mrHeadRepo sql.NullString,
+	workspaceBranch, worktreePath, tmuxSession, status string,
+	errorMessage sql.NullString,
+	createdAt time.Time,
+) Workspace {
+	return Workspace{
+		ID:                 id,
+		PlatformHost:       platformHost,
+		RepoOwner:          repoOwner,
+		RepoName:           repoName,
+		ItemType:           itemType,
+		ItemNumber:         int(itemNumber),
+		AssociatedPRNumber: intPtrFromNullInt64(associatedPRNumber),
+		GitHeadRef:         gitHeadRef,
+		MRHeadRepo:         ptrFromNullString(mrHeadRepo),
+		WorkspaceBranch:    workspaceBranch,
+		WorktreePath:       worktreePath,
+		TmuxSession:        tmuxSession,
+		Status:             status,
+		ErrorMessage:       ptrFromNullString(errorMessage),
+		CreatedAt:          createdAt.UTC(),
+	}
+}
+
+func workspaceFromGetRow(row dbsqlc.GetWorkspaceRow) Workspace {
+	return workspaceFromSQLFields(
+		row.ID, row.PlatformHost, row.RepoOwner, row.RepoName,
+		row.ItemType, row.ItemNumber, row.AssociatedPrNumber,
+		row.GitHeadRef, row.MrHeadRepo, row.WorkspaceBranch,
+		row.WorktreePath, row.TmuxSession, row.Status,
+		row.ErrorMessage, row.CreatedAt,
+	)
+}
+
+func workspaceFromGetByItemRow(row dbsqlc.GetWorkspaceByItemRow) Workspace {
+	return workspaceFromSQLFields(
+		row.ID, row.PlatformHost, row.RepoOwner, row.RepoName,
+		row.ItemType, row.ItemNumber, row.AssociatedPrNumber,
+		row.GitHeadRef, row.MrHeadRepo, row.WorkspaceBranch,
+		row.WorktreePath, row.TmuxSession, row.Status,
+		row.ErrorMessage, row.CreatedAt,
+	)
+}
+
+func workspaceFromListRow(row dbsqlc.ListWorkspacesRow) Workspace {
+	return workspaceFromSQLFields(
+		row.ID, row.PlatformHost, row.RepoOwner, row.RepoName,
+		row.ItemType, row.ItemNumber, row.AssociatedPrNumber,
+		row.GitHeadRef, row.MrHeadRepo, row.WorkspaceBranch,
+		row.WorktreePath, row.TmuxSession, row.Status,
+		row.ErrorMessage, row.CreatedAt,
+	)
+}
+
+func workspaceInsertParams(ws *Workspace) dbsqlc.InsertWorkspaceParams {
+	return dbsqlc.InsertWorkspaceParams{
+		ID:                 ws.ID,
+		PlatformHost:       ws.PlatformHost,
+		RepoOwner:          ws.RepoOwner,
+		RepoName:           ws.RepoName,
+		ItemType:           ws.ItemType,
+		ItemNumber:         int64(ws.ItemNumber),
+		AssociatedPrNumber: nullInt64FromIntPtr(ws.AssociatedPRNumber),
+		GitHeadRef:         ws.GitHeadRef,
+		MrHeadRepo:         nullStringFromPtr(ws.MRHeadRepo),
+		WorkspaceBranch:    ws.WorkspaceBranch,
+		WorktreePath:       ws.WorktreePath,
+		TmuxSession:        ws.TmuxSession,
+		Status:             ws.Status,
+		ErrorMessage:       nullStringFromPtr(ws.ErrorMessage),
+	}
+}
+
 // InsertWorkspace inserts a new workspace row.
 func (d *DB) InsertWorkspace(
 	ctx context.Context, ws *Workspace,
@@ -2214,21 +2312,7 @@ func (d *DB) InsertWorkspace(
 	ws.PlatformHost, ws.RepoOwner, ws.RepoName = canonicalRepoIdentifier(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
-		    (id, platform_host, repo_owner, repo_name,
-		     item_type, item_number, associated_pr_number,
-		     git_head_ref, mr_head_repo, workspace_branch,
-		     worktree_path, tmux_session, status,
-		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		ws.ItemType, ws.ItemNumber, ws.AssociatedPRNumber,
-		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
-		ws.WorktreePath, ws.TmuxSession, ws.Status,
-		ws.ErrorMessage,
-	)
-	if err != nil {
+	if err := d.writeQueries.InsertWorkspace(ctx, workspaceInsertParams(ws)); err != nil {
 		return fmt.Errorf("insert workspace: %w", err)
 	}
 	return nil
@@ -2238,28 +2322,14 @@ func (d *DB) InsertWorkspace(
 func (d *DB) GetWorkspace(
 	ctx context.Context, id string,
 ) (*Workspace, error) {
-	var ws Workspace
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
-		       error_message, created_at
-		FROM middleman_workspaces WHERE id = ?`, id,
-	).Scan(
-		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
-		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt,
-	)
+	row, err := d.readQueries.GetWorkspace(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workspace: %w", err)
 	}
-	ws.CreatedAt = ws.CreatedAt.UTC()
+	ws := workspaceFromGetRow(row)
 	return &ws, nil
 }
 
@@ -2271,31 +2341,20 @@ func (d *DB) GetWorkspaceByMR(
 	mrNumber int,
 ) (*Workspace, error) {
 	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
-	var ws Workspace
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
-		       error_message, created_at
-		FROM middleman_workspaces
-		WHERE platform_host = ? AND repo_owner = ?
-		  AND repo_name = ? AND item_type = ? AND item_number = ?`,
-		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
-	).Scan(
-		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
-		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt,
-	)
+	row, err := d.readQueries.GetWorkspaceByItem(ctx, dbsqlc.GetWorkspaceByItemParams{
+		PlatformHost: platformHost,
+		RepoOwner:    owner,
+		RepoName:     name,
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   int64(mrNumber),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workspace by MR: %w", err)
 	}
-	ws.CreatedAt = ws.CreatedAt.UTC()
+	ws := workspaceFromGetByItemRow(row)
 	return &ws, nil
 }
 
@@ -2307,31 +2366,20 @@ func (d *DB) GetWorkspaceByIssue(
 	issueNumber int,
 ) (*Workspace, error) {
 	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
-	var ws Workspace
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
-		       error_message, created_at
-		FROM middleman_workspaces
-		WHERE platform_host = ? AND repo_owner = ?
-		  AND repo_name = ? AND item_type = ? AND item_number = ?`,
-		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
-	).Scan(
-		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
-		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
-		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt,
-	)
+	row, err := d.readQueries.GetWorkspaceByItem(ctx, dbsqlc.GetWorkspaceByItemParams{
+		PlatformHost: platformHost,
+		RepoOwner:    owner,
+		RepoName:     name,
+		ItemType:     WorkspaceItemTypeIssue,
+		ItemNumber:   int64(issueNumber),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workspace by issue: %w", err)
 	}
-	ws.CreatedAt = ws.CreatedAt.UTC()
+	ws := workspaceFromGetByItemRow(row)
 	return &ws, nil
 }
 
@@ -2340,38 +2388,15 @@ func (d *DB) GetWorkspaceByIssue(
 func (d *DB) ListWorkspaces(
 	ctx context.Context,
 ) ([]Workspace, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
-		       item_type, item_number, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
-		       error_message, created_at
-		FROM middleman_workspaces
-		ORDER BY created_at DESC`,
-	)
+	rows, err := d.readQueries.ListWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
-	defer rows.Close()
-
-	var out []Workspace
-	for rows.Next() {
-		var ws Workspace
-		if err := rows.Scan(
-			&ws.ID, &ws.PlatformHost, &ws.RepoOwner,
-			&ws.RepoName, &ws.ItemType, &ws.ItemNumber,
-			&ws.AssociatedPRNumber,
-			&ws.GitHeadRef, &ws.MRHeadRepo,
-			&ws.WorkspaceBranch,
-			&ws.WorktreePath, &ws.TmuxSession,
-			&ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan workspace: %w", err)
-		}
-		ws.CreatedAt = ws.CreatedAt.UTC()
-		out = append(out, ws)
+	out := make([]Workspace, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, workspaceFromListRow(row))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // UpdateWorkspaceStatus sets the status and optional error
@@ -2381,12 +2406,11 @@ func (d *DB) UpdateWorkspaceStatus(
 	id, status string,
 	errMsg *string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
-		SET status = ?, error_message = ?
-		WHERE id = ?`,
-		status, errMsg, id,
-	)
+	err := d.writeQueries.UpdateWorkspaceStatus(ctx, dbsqlc.UpdateWorkspaceStatusParams{
+		Status:       status,
+		ErrorMessage: nullStringFromPtr(errMsg),
+		ID:           id,
+	})
 	if err != nil {
 		return fmt.Errorf("update workspace status: %w", err)
 	}
@@ -2399,12 +2423,10 @@ func (d *DB) UpdateWorkspaceStatus(
 func (d *DB) UpdateWorkspaceBranch(
 	ctx context.Context, id, branch string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
-		SET workspace_branch = ?
-		WHERE id = ?`,
-		branch, id,
-	)
+	err := d.writeQueries.UpdateWorkspaceBranch(ctx, dbsqlc.UpdateWorkspaceBranchParams{
+		WorkspaceBranch: branch,
+		ID:              id,
+	})
 	if err != nil {
 		return fmt.Errorf("update workspace branch: %w", err)
 	}
@@ -2417,20 +2439,9 @@ func (d *DB) UpdateWorkspaceBranch(
 func (d *DB) StartWorkspaceRetry(
 	ctx context.Context, id string,
 ) (bool, error) {
-	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
-		SET status = 'creating',
-		    error_message = NULL
-		WHERE id = ? AND status = 'error'`, id,
-	)
+	affected, err := d.writeQueries.StartWorkspaceRetry(ctx, id)
 	if err != nil {
 		return false, fmt.Errorf("start workspace retry: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf(
-			"start workspace retry rows affected: %w", err,
-		)
 	}
 	return affected == 1, nil
 }
@@ -2440,21 +2451,19 @@ func (d *DB) StartWorkspaceRetry(
 func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
 	ctx context.Context, id string, prNumber int,
 ) (bool, error) {
-	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
-		SET associated_pr_number = ?
-		WHERE id = ? AND associated_pr_number IS NULL`,
-		prNumber, id,
+	rows, err := d.writeQueries.SetWorkspaceAssociatedPRNumberIfNull(
+		ctx,
+		dbsqlc.SetWorkspaceAssociatedPRNumberIfNullParams{
+			AssociatedPrNumber: sql.NullInt64{
+				Int64: int64(prNumber),
+				Valid: true,
+			},
+			ID: id,
+		},
 	)
 	if err != nil {
 		return false, fmt.Errorf(
 			"set workspace associated PR number: %w", err,
-		)
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf(
-			"set workspace associated PR number rows affected: %w", err,
 		)
 	}
 	return rows > 0, nil
@@ -2465,13 +2474,12 @@ func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
 func (d *DB) InsertWorkspaceSetupEvent(
 	ctx context.Context, event *WorkspaceSetupEvent,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_workspace_setup_events
-		    (workspace_id, stage, outcome, message)
-		VALUES (?, ?, ?, ?)`,
-		event.WorkspaceID, event.Stage, event.Outcome,
-		event.Message,
-	)
+	err := d.writeQueries.InsertWorkspaceSetupEvent(ctx, dbsqlc.InsertWorkspaceSetupEventParams{
+		WorkspaceID: event.WorkspaceID,
+		Stage:       event.Stage,
+		Outcome:     event.Outcome,
+		Message:     event.Message,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"insert workspace setup event: %w", err,
@@ -2485,35 +2493,137 @@ func (d *DB) InsertWorkspaceSetupEvent(
 func (d *DB) ListWorkspaceSetupEvents(
 	ctx context.Context, workspaceID string,
 ) ([]WorkspaceSetupEvent, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, workspace_id, stage, outcome, message,
-		       created_at
-		FROM middleman_workspace_setup_events
-		WHERE workspace_id = ?
-		ORDER BY id`, workspaceID,
-	)
+	rows, err := d.readQueries.ListWorkspaceSetupEvents(ctx, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"list workspace setup events: %w", err,
 		)
 	}
-	defer rows.Close()
-
-	var out []WorkspaceSetupEvent
-	for rows.Next() {
-		var event WorkspaceSetupEvent
-		if err := rows.Scan(
-			&event.ID, &event.WorkspaceID, &event.Stage,
-			&event.Outcome, &event.Message, &event.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf(
-				"scan workspace setup event: %w", err,
-			)
-		}
-		event.CreatedAt = event.CreatedAt.UTC()
-		out = append(out, event)
+	out := make([]WorkspaceSetupEvent, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, WorkspaceSetupEvent{
+			ID:          row.ID,
+			WorkspaceID: row.WorkspaceID,
+			Stage:       row.Stage,
+			Outcome:     row.Outcome,
+			Message:     row.Message,
+			CreatedAt:   row.CreatedAt.UTC(),
+		})
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+func workspaceTmuxSessionFromSQL(
+	row dbsqlc.MiddlemanWorkspaceTmuxSession,
+) WorkspaceTmuxSession {
+	return WorkspaceTmuxSession{
+		WorkspaceID: row.WorkspaceID,
+		SessionName: row.SessionName,
+		TargetKey:   row.TargetKey,
+		CreatedAt:   row.CreatedAt.UTC(),
+	}
+}
+
+func workspaceTmuxSessionsFromSQL(
+	rows []dbsqlc.MiddlemanWorkspaceTmuxSession,
+) []WorkspaceTmuxSession {
+	out := make([]WorkspaceTmuxSession, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, workspaceTmuxSessionFromSQL(row))
+	}
+	return out
+}
+
+func workspaceSummaryFromSQLFields(
+	id, platformHost, repoOwner, repoName string,
+	itemType string,
+	itemNumber int64,
+	associatedPRNumber sql.NullInt64,
+	gitHeadRef string,
+	mrHeadRepo sql.NullString,
+	workspaceBranch, worktreePath, tmuxSession, status string,
+	errorMessage sql.NullString,
+	createdAt time.Time,
+	mrTitle, mrState any,
+	mrIsDraft sql.NullInt64,
+	mrCIStatus, mrReviewDecision sql.NullString,
+	mrAdditions, mrDeletions sql.NullInt64,
+) WorkspaceSummary {
+	return WorkspaceSummary{
+		Workspace: workspaceFromSQLFields(
+			id, platformHost, repoOwner, repoName,
+			itemType, itemNumber, associatedPRNumber,
+			gitHeadRef, mrHeadRepo, workspaceBranch,
+			worktreePath, tmuxSession, status,
+			errorMessage, createdAt,
+		),
+		MRTitle:          stringPtrFromSQLValue(mrTitle),
+		MRState:          stringPtrFromSQLValue(mrState),
+		MRIsDraft:        boolPtrFromNullInt64(mrIsDraft),
+		MRCIStatus:       ptrFromNullString(mrCIStatus),
+		MRReviewDecision: ptrFromNullString(mrReviewDecision),
+		MRAdditions:      intPtrFromNullInt64(mrAdditions),
+		MRDeletions:      intPtrFromNullInt64(mrDeletions),
+	}
+}
+
+func workspaceSummaryFromListRow(
+	row dbsqlc.ListWorkspaceSummariesRow,
+) WorkspaceSummary {
+	return workspaceSummaryFromSQLFields(
+		row.ID, row.PlatformHost, row.RepoOwner, row.RepoName,
+		row.ItemType, row.ItemNumber, row.AssociatedPrNumber,
+		row.GitHeadRef, row.MrHeadRepo, row.WorkspaceBranch,
+		row.WorktreePath, row.TmuxSession, row.Status,
+		row.ErrorMessage, row.CreatedAt, row.MrTitle, row.MrState,
+		row.MrIsDraft, row.MrCiStatus, row.MrReviewDecision,
+		row.MrAdditions, row.MrDeletions,
+	)
+}
+
+func workspaceSummaryFromGetRow(
+	row dbsqlc.GetWorkspaceSummaryRow,
+) WorkspaceSummary {
+	return workspaceSummaryFromSQLFields(
+		row.ID, row.PlatformHost, row.RepoOwner, row.RepoName,
+		row.ItemType, row.ItemNumber, row.AssociatedPrNumber,
+		row.GitHeadRef, row.MrHeadRepo, row.WorkspaceBranch,
+		row.WorktreePath, row.TmuxSession, row.Status,
+		row.ErrorMessage, row.CreatedAt, row.MrTitle, row.MrState,
+		row.MrIsDraft, row.MrCiStatus, row.MrReviewDecision,
+		row.MrAdditions, row.MrDeletions,
+	)
+}
+
+func worktreeLinkFromSQL(row dbsqlc.MiddlemanMrWorktreeLink) (WorktreeLink, error) {
+	linkedAt, err := time.Parse(time.RFC3339, row.LinkedAt)
+	if err != nil {
+		return WorktreeLink{}, fmt.Errorf(
+			"parse linked_at %q: %w", row.LinkedAt, err,
+		)
+	}
+	return WorktreeLink{
+		ID:             row.ID,
+		MergeRequestID: row.MergeRequestID,
+		WorktreeKey:    row.WorktreeKey,
+		WorktreePath:   row.WorktreePath.String,
+		WorktreeBranch: row.WorktreeBranch.String,
+		LinkedAt:       linkedAt,
+	}, nil
+}
+
+func worktreeLinksFromSQL(
+	rows []dbsqlc.MiddlemanMrWorktreeLink,
+) ([]WorktreeLink, error) {
+	out := make([]WorktreeLink, 0, len(rows))
+	for _, row := range rows {
+		link, err := worktreeLinkFromSQL(row)
+		if err != nil {
+			return nil, fmt.Errorf("scan worktree link: %w", err)
+		}
+		out = append(out, link)
+	}
+	return out, nil
 }
 
 // UpsertWorkspaceTmuxSession records a tmux session owned by a
@@ -2527,16 +2637,12 @@ func (d *DB) UpsertWorkspaceTmuxSession(
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_workspace_tmux_sessions
-		    (workspace_id, session_name, target_key, created_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(workspace_id, session_name) DO UPDATE SET
-		    target_key = excluded.target_key,
-		    created_at = excluded.created_at`,
-		session.WorkspaceID, session.SessionName, session.TargetKey,
-		createdAt,
-	)
+	err := d.writeQueries.UpsertWorkspaceTmuxSession(ctx, dbsqlc.UpsertWorkspaceTmuxSessionParams{
+		WorkspaceID: session.WorkspaceID,
+		SessionName: session.SessionName,
+		TargetKey:   session.TargetKey,
+		CreatedAt:   createdAt,
+	})
 	if err != nil {
 		return fmt.Errorf("upsert workspace tmux session: %w", err)
 	}
@@ -2549,30 +2655,11 @@ func (d *DB) ListWorkspaceTmuxSessions(
 	ctx context.Context,
 	workspaceID string,
 ) ([]WorkspaceTmuxSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT workspace_id, session_name, target_key, created_at
-		FROM middleman_workspace_tmux_sessions
-		WHERE workspace_id = ?
-		ORDER BY target_key, created_at, session_name`, workspaceID,
-	)
+	rows, err := d.readQueries.ListWorkspaceTmuxSessions(ctx, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace tmux sessions: %w", err)
 	}
-	defer rows.Close()
-
-	var out []WorkspaceTmuxSession
-	for rows.Next() {
-		var session WorkspaceTmuxSession
-		if err := rows.Scan(
-			&session.WorkspaceID, &session.SessionName,
-			&session.TargetKey, &session.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan workspace tmux session: %w", err)
-		}
-		session.CreatedAt = session.CreatedAt.UTC()
-		out = append(out, session)
-	}
-	return out, rows.Err()
+	return workspaceTmuxSessionsFromSQL(rows), nil
 }
 
 // ListAllWorkspaceTmuxSessions returns every stored runtime tmux
@@ -2581,29 +2668,11 @@ func (d *DB) ListWorkspaceTmuxSessions(
 func (d *DB) ListAllWorkspaceTmuxSessions(
 	ctx context.Context,
 ) ([]WorkspaceTmuxSession, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT workspace_id, session_name, target_key, created_at
-		FROM middleman_workspace_tmux_sessions
-		ORDER BY workspace_id, target_key, created_at, session_name`,
-	)
+	rows, err := d.readQueries.ListAllWorkspaceTmuxSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all workspace tmux sessions: %w", err)
 	}
-	defer rows.Close()
-
-	var out []WorkspaceTmuxSession
-	for rows.Next() {
-		var session WorkspaceTmuxSession
-		if err := rows.Scan(
-			&session.WorkspaceID, &session.SessionName,
-			&session.TargetKey, &session.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan workspace tmux session: %w", err)
-		}
-		session.CreatedAt = session.CreatedAt.UTC()
-		out = append(out, session)
-	}
-	return out, rows.Err()
+	return workspaceTmuxSessionsFromSQL(rows), nil
 }
 
 // DeleteWorkspaceTmuxSession removes one stored runtime tmux session.
@@ -2612,11 +2681,10 @@ func (d *DB) DeleteWorkspaceTmuxSession(
 	workspaceID string,
 	sessionName string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_workspace_tmux_sessions
-		WHERE workspace_id = ? AND session_name = ?`,
-		workspaceID, sessionName,
-	)
+	err := d.writeQueries.DeleteWorkspaceTmuxSession(ctx, dbsqlc.DeleteWorkspaceTmuxSessionParams{
+		WorkspaceID: workspaceID,
+		SessionName: sessionName,
+	})
 	if err != nil {
 		return fmt.Errorf("delete workspace tmux session: %w", err)
 	}
@@ -2631,17 +2699,16 @@ func (d *DB) DeleteWorkspaceTmuxSessionCreatedAt(
 	sessionName string,
 	createdAt time.Time,
 ) (bool, error) {
-	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_workspace_tmux_sessions
-		WHERE workspace_id = ? AND session_name = ? AND created_at = ?`,
-		workspaceID, sessionName, canonicalUTCTime(createdAt),
+	rows, err := d.writeQueries.DeleteWorkspaceTmuxSessionCreatedAt(
+		ctx,
+		dbsqlc.DeleteWorkspaceTmuxSessionCreatedAtParams{
+			WorkspaceID: workspaceID,
+			SessionName: sessionName,
+			CreatedAt:   canonicalUTCTime(createdAt),
+		},
 	)
 	if err != nil {
 		return false, fmt.Errorf("delete workspace tmux session: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("delete workspace tmux session rows: %w", err)
 	}
 	return rows > 0, nil
 }
@@ -2652,10 +2719,7 @@ func (d *DB) DeleteWorkspaceTmuxSessions(
 	ctx context.Context,
 	workspaceID string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_workspace_tmux_sessions
-		WHERE workspace_id = ?`, workspaceID,
-	)
+	err := d.writeQueries.DeleteWorkspaceTmuxSessions(ctx, workspaceID)
 	if err != nil {
 		return fmt.Errorf("delete workspace tmux sessions: %w", err)
 	}
@@ -2666,69 +2730,10 @@ func (d *DB) DeleteWorkspaceTmuxSessions(
 func (d *DB) DeleteWorkspace(
 	ctx context.Context, id string,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_workspaces WHERE id = ?`, id,
-	)
-	if err != nil {
+	if err := d.writeQueries.DeleteWorkspace(ctx, id); err != nil {
 		return fmt.Errorf("delete workspace: %w", err)
 	}
 	return nil
-}
-
-// workspaceSummaryColumns is the SELECT list shared by
-// ListWorkspaceSummaries and GetWorkspaceSummary.
-const workspaceSummaryColumns = `
-	w.id, w.platform_host, w.repo_owner, w.repo_name,
-	w.item_type, w.item_number, w.associated_pr_number,
-	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
-	w.worktree_path, w.tmux_session, w.status,
-	w.error_message, w.created_at,
-	CASE
-	    WHEN w.item_type = 'issue' THEN i.title
-	    ELSE m.title
-	END,
-	CASE
-	    WHEN w.item_type = 'issue' THEN i.state
-	    ELSE m.state
-	END,
-	m.is_draft, m.ci_status,
-	m.review_decision, m.additions, m.deletions`
-
-// workspaceSummaryJoins is the FROM/JOIN clause shared by
-// ListWorkspaceSummaries and GetWorkspaceSummary.
-const workspaceSummaryJoins = `
-	FROM middleman_workspaces w
-	LEFT JOIN middleman_repos r
-	    ON r.platform_host = w.platform_host
-	   AND r.owner = w.repo_owner
-	   AND r.name = w.repo_name
-	LEFT JOIN middleman_merge_requests m
-	    ON m.repo_id = r.id
-	   AND m.number = w.item_number
-	   AND w.item_type = 'pull_request'
-	LEFT JOIN middleman_issues i
-	    ON i.repo_id = r.id
-	   AND i.number = w.item_number
-	   AND w.item_type = 'issue'`
-
-func scanWorkspaceSummary(
-	scanner interface{ Scan(...any) error },
-) (*WorkspaceSummary, error) {
-	var s WorkspaceSummary
-	err := scanner.Scan(
-		&s.ID, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
-		&s.ItemType, &s.ItemNumber, &s.AssociatedPRNumber,
-		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
-		&s.WorktreePath, &s.TmuxSession, &s.Status,
-		&s.ErrorMessage, &s.CreatedAt,
-		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
-		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
-	)
-	if err != nil {
-		return nil, err
-	}
-	s.CreatedAt = s.CreatedAt.UTC()
-	return &s, nil
 }
 
 // ListWorkspaceSummaries returns all workspaces with joined MR
@@ -2736,28 +2741,17 @@ func scanWorkspaceSummary(
 func (d *DB) ListWorkspaceSummaries(
 	ctx context.Context,
 ) ([]WorkspaceSummary, error) {
-	query := "SELECT " + workspaceSummaryColumns +
-		workspaceSummaryJoins +
-		"\nORDER BY w.created_at DESC"
-	rows, err := d.ro.QueryContext(ctx, query)
+	rows, err := d.readQueries.ListWorkspaceSummaries(ctx)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"list workspace summaries: %w", err,
 		)
 	}
-	defer rows.Close()
-
-	var out []WorkspaceSummary
-	for rows.Next() {
-		s, err := scanWorkspaceSummary(rows)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"scan workspace summary: %w", err,
-			)
-		}
-		out = append(out, *s)
+	out := make([]WorkspaceSummary, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, workspaceSummaryFromListRow(row))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // GetWorkspaceSummary returns a single workspace with joined
@@ -2765,12 +2759,7 @@ func (d *DB) ListWorkspaceSummaries(
 func (d *DB) GetWorkspaceSummary(
 	ctx context.Context, id string,
 ) (*WorkspaceSummary, error) {
-	query := "SELECT " + workspaceSummaryColumns +
-		workspaceSummaryJoins +
-		"\nWHERE w.id = ?"
-	s, err := scanWorkspaceSummary(
-		d.ro.QueryRowContext(ctx, query, id),
-	)
+	row, err := d.readQueries.GetWorkspaceSummary(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -2779,35 +2768,6 @@ func (d *DB) GetWorkspaceSummary(
 			"get workspace summary: %w", err,
 		)
 	}
-	return s, nil
-}
-
-func scanWorktreeLinks(
-	rows *sql.Rows,
-) ([]WorktreeLink, error) {
-	var links []WorktreeLink
-	for rows.Next() {
-		var l WorktreeLink
-		var path, branch sql.NullString
-		var linkedAtStr string
-		if err := rows.Scan(
-			&l.ID, &l.MergeRequestID, &l.WorktreeKey,
-			&path, &branch, &linkedAtStr,
-		); err != nil {
-			return nil, fmt.Errorf(
-				"scan worktree link: %w", err,
-			)
-		}
-		t, err := time.Parse(time.RFC3339, linkedAtStr)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"parse linked_at %q: %w", linkedAtStr, err,
-			)
-		}
-		l.LinkedAt = t
-		l.WorktreePath = path.String
-		l.WorktreeBranch = branch.String
-		links = append(links, l)
-	}
-	return links, rows.Err()
+	s := workspaceSummaryFromGetRow(row)
+	return &s, nil
 }

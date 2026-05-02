@@ -15,6 +15,15 @@ type MiddlemanKanbanState struct {
 	UpdatedAt      time.Time
 }
 
+type MiddlemanMrWorktreeLink struct {
+	ID             int64
+	MergeRequestID int64
+	WorktreeKey    string
+	WorktreePath   sql.NullString
+	WorktreeBranch sql.NullString
+	LinkedAt       string
+}
+
 type MiddlemanRateLimit struct {
 	ID            int64
 	PlatformHost  string
@@ -25,4 +34,20 @@ type MiddlemanRateLimit struct {
 	RateLimit     int64
 	RateResetAt   sql.NullTime
 	UpdatedAt     time.Time
+}
+
+type MiddlemanWorkspaceSetupEvent struct {
+	ID          int64
+	WorkspaceID string
+	Stage       string
+	Outcome     string
+	Message     string
+	CreatedAt   time.Time
+}
+
+type MiddlemanWorkspaceTmuxSession struct {
+	WorkspaceID string
+	SessionName string
+	TargetKey   string
+	CreatedAt   time.Time
 }
