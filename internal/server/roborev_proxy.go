@@ -47,9 +47,7 @@ type roborevStatusResponse struct {
 	Endpoint  string `json:"endpoint"`
 }
 
-type roborevStatusOutput struct {
-	Body roborevStatusResponse
-}
+type roborevStatusOutput = bodyOutput[roborevStatusResponse]
 
 // getRoborevStatus probes the roborev daemon and reports whether
 // it is reachable and what version it advertises.

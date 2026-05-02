@@ -30,9 +30,7 @@ type listPullsInput struct {
 	Offset  int    `query:"offset"`
 }
 
-type listPullsOutput struct {
-	Body []mergeRequestResponse
-}
+type listPullsOutput = bodyOutput[[]mergeRequestResponse]
 
 type repoNumberInput struct {
 	Owner  string `path:"owner"`
@@ -40,13 +38,9 @@ type repoNumberInput struct {
 	Number int    `path:"number"`
 }
 
-type getPullOutput struct {
-	Body mergeRequestDetailResponse
-}
+type getPullOutput = bodyOutput[mergeRequestDetailResponse]
 
-type getMRImportMetadataOutput struct {
-	Body mrImportMetadataResponse
-}
+type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
 	Owner  string `path:"owner"`
@@ -57,9 +51,7 @@ type setKanbanStateInput struct {
 	}
 }
 
-type statusOnlyOutput struct {
-	Status int `status:"200"`
-}
+type statusOnlyOutput = okStatusOutput
 
 type postCommentInput struct {
 	Owner  string `path:"owner"`
@@ -70,10 +62,7 @@ type postCommentInput struct {
 	}
 }
 
-type postCommentOutput struct {
-	Status int `status:"201"`
-	Body   db.MREvent
-}
+type postCommentOutput = createdOutput[db.MREvent]
 
 type editCommentInput struct {
 	Owner     string `path:"owner"`
@@ -85,9 +74,7 @@ type editCommentInput struct {
 	}
 }
 
-type editCommentOutput struct {
-	Body db.MREvent
-}
+type editCommentOutput = bodyOutput[db.MREvent]
 
 type listIssuesInput struct {
 	Repo    string `query:"repo"`
@@ -98,9 +85,7 @@ type listIssuesInput struct {
 	Offset  int    `query:"offset"`
 }
 
-type listIssuesOutput struct {
-	Body []issueResponse
-}
+type listIssuesOutput = bodyOutput[[]issueResponse]
 
 type issueRepoNumberInput struct {
 	Owner        string `path:"owner"`
@@ -109,9 +94,7 @@ type issueRepoNumberInput struct {
 	PlatformHost string `query:"platform_host"`
 }
 
-type getIssueOutput struct {
-	Body issueDetailResponse
-}
+type getIssueOutput = bodyOutput[issueDetailResponse]
 
 type postIssueCommentInput struct {
 	Owner  string `path:"owner"`
@@ -123,10 +106,7 @@ type postIssueCommentInput struct {
 	}
 }
 
-type postIssueCommentOutput struct {
-	Status int `status:"201"`
-	Body   db.IssueEvent
-}
+type postIssueCommentOutput = createdOutput[db.IssueEvent]
 
 type editIssueCommentInput struct {
 	Owner     string `path:"owner"`
@@ -139,9 +119,7 @@ type editIssueCommentInput struct {
 	}
 }
 
-type editIssueCommentOutput struct {
-	Body db.IssueEvent
-}
+type editIssueCommentOutput = bodyOutput[db.IssueEvent]
 
 type createIssueInput struct {
 	Owner string `path:"owner"`
@@ -153,10 +131,7 @@ type createIssueInput struct {
 	}
 }
 
-type createIssueOutput struct {
-	Status int `status:"201"`
-	Body   issueResponse
-}
+type createIssueOutput = createdOutput[issueResponse]
 
 type starredInput struct {
 	Body starredRequest
@@ -167,9 +142,7 @@ type getRepoInput struct {
 	Name  string `path:"name"`
 }
 
-type getRepoOutput struct {
-	Body db.Repo
-}
+type getRepoOutput = bodyOutput[db.Repo]
 
 type commentAutocompleteInput struct {
 	Owner        string `path:"owner"`
@@ -180,9 +153,7 @@ type commentAutocompleteInput struct {
 	Limit        int    `query:"limit"`
 }
 
-type commentAutocompleteOutput struct {
-	Body commentAutocompleteResponse
-}
+type commentAutocompleteOutput = bodyOutput[commentAutocompleteResponse]
 
 type approvePRInput struct {
 	Owner  string `path:"owner"`
@@ -198,9 +169,7 @@ type actionStatusBody struct {
 	ApprovedCount int    `json:"approved_count,omitempty"`
 }
 
-type actionStatusOutput struct {
-	Body actionStatusBody
-}
+type actionStatusOutput = bodyOutput[actionStatusBody]
 
 type mergePRInput struct {
 	Owner  string `path:"owner"`
@@ -219,9 +188,7 @@ type mergePRBody struct {
 	Message string `json:"message"`
 }
 
-type mergePROutput struct {
-	Body mergePRBody
-}
+type mergePROutput = bodyOutput[mergePRBody]
 
 type editPRContentInput struct {
 	Owner  string `path:"owner"`
@@ -233,9 +200,7 @@ type editPRContentInput struct {
 	}
 }
 
-type editPRContentOutput struct {
-	Body mergeRequestDetailResponse
-}
+type editPRContentOutput = bodyOutput[mergeRequestDetailResponse]
 
 type githubStateInput struct {
 	Owner  string `path:"owner"`
@@ -247,55 +212,35 @@ type githubStateInput struct {
 	}
 }
 
-type githubStateOutput struct {
-	Body struct {
-		State string `json:"state"`
-	}
+type githubStateOutputBody struct {
+	State string `json:"state"`
 }
 
-type listReposOutput struct {
-	Body []db.Repo
-}
+type githubStateOutput = bodyOutput[githubStateOutputBody]
 
-type listRepoSummariesOutput struct {
-	Body []repoSummaryResponse
-}
+type listReposOutput = bodyOutput[[]db.Repo]
 
-type acceptedOutput struct {
-	Status int `status:"202"`
-}
+type listRepoSummariesOutput = bodyOutput[[]repoSummaryResponse]
 
-type syncPROutput struct {
-	Body mergeRequestDetailResponse
-}
+type acceptedOutput = acceptedStatusOutput
 
-type syncIssueOutput struct {
-	Body issueDetailResponse
-}
+type syncPROutput = bodyOutput[mergeRequestDetailResponse]
 
-type resolveItemOutput struct {
-	Body resolveItemResponse
-}
+type syncIssueOutput = bodyOutput[issueDetailResponse]
 
-type syncStatusOutput struct {
-	Body *ghclient.SyncStatus
-}
+type resolveItemOutput = bodyOutput[resolveItemResponse]
 
-type rateLimitsOutput struct {
-	Body rateLimitsResponse
-}
+type syncStatusOutput = bodyOutput[*ghclient.SyncStatus]
+
+type rateLimitsOutput = bodyOutput[rateLimitsResponse]
 
 type listStacksInput struct {
 	Repo string `query:"repo"`
 }
 
-type listStacksOutput struct {
-	Body []stackResponse
-}
+type listStacksOutput = bodyOutput[[]stackResponse]
 
-type getStackForPROutput struct {
-	Body stackContextResponse
-}
+type getStackForPROutput = bodyOutput[stackContextResponse]
 
 type createWorkspaceInput struct {
 	Body struct {
@@ -348,28 +293,19 @@ type deleteWorkspaceInput struct {
 	Force bool   `query:"force"`
 }
 
-type listWorkspacesOutput struct {
-	Body struct {
-		Workspaces []workspaceResponse `json:"workspaces"`
-	}
+type listWorkspacesOutputBody struct {
+	Workspaces []workspaceResponse `json:"workspaces"`
 }
 
-type getWorkspaceOutput struct {
-	Body workspaceResponse
-}
+type listWorkspacesOutput = bodyOutput[listWorkspacesOutputBody]
 
-type getWorkspaceRuntimeOutput struct {
-	Body workspaceRuntimeResponse
-}
+type getWorkspaceOutput = bodyOutput[workspaceResponse]
 
-type workspaceRuntimeSessionOutput struct {
-	Body localruntime.SessionInfo
-}
+type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
 
-type createWorkspaceOutput struct {
-	Status int `status:"202"`
-	Body   workspaceResponse
-}
+type workspaceRuntimeSessionOutput = bodyOutput[localruntime.SessionInfo]
+
+type createWorkspaceOutput = acceptedBodyOutput[workspaceResponse]
 
 type listActivityInput struct {
 	Repo   string   `query:"repo"`
@@ -379,9 +315,7 @@ type listActivityInput struct {
 	Since  string   `query:"since"`
 }
 
-type listActivityOutput struct {
-	Body activityResponse
-}
+type listActivityOutput = bodyOutput[activityResponse]
 
 func apiConfig(basePath string) huma.Config {
 	config := huma.DefaultConfig("middleman API", "0.1.0")
@@ -2273,9 +2207,7 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 
 // --- Commits ---
 
-type getCommitsOutput struct {
-	Body commitsResponse
-}
+type getCommitsOutput = bodyOutput[commitsResponse]
 
 func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
 	if s.clones == nil {
@@ -2326,9 +2258,7 @@ type getDiffInput struct {
 	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
-type getDiffOutput struct {
-	Body diffResponse
-}
+type getDiffOutput = bodyOutput[diffResponse]
 
 func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
 	if s.clones == nil {
@@ -2418,9 +2348,7 @@ type getFilesInput struct {
 	Number int    `path:"number"`
 }
 
-type getFilesOutput struct {
-	Body filesResponse
-}
+type getFilesOutput = bodyOutput[filesResponse]
 
 func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
 	if s.clones == nil {

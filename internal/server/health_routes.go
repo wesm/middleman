@@ -6,9 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-type healthOutput struct {
-	Body healthResponse
-}
+type healthOutput = bodyOutput[healthResponse]
 
 type healthResponse struct {
 	Status string `json:"status"`

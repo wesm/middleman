@@ -24,9 +24,7 @@ type repoPreviewRequest struct {
 	Pattern string `json:"pattern"`
 }
 
-type repoPreviewOutput struct {
-	Body repoPreviewResponse
-}
+type repoPreviewOutput = bodyOutput[repoPreviewResponse]
 
 type repoPreviewResponse struct {
 	Owner   string           `json:"owner"`
@@ -52,10 +50,7 @@ type bulkAddReposRequest struct {
 	Repos []bulkAddRepoRequest `json:"repos"`
 }
 
-type bulkAddReposOutput struct {
-	Status int `status:"201"`
-	Body   settingsResponse
-}
+type bulkAddReposOutput = createdOutput[settingsResponse]
 
 type bulkAddRepoRequest struct {
 	Owner string `json:"owner"`

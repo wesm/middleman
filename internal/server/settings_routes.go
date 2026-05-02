@@ -6,9 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-type getSettingsOutput struct {
-	Body settingsResponse
-}
+type getSettingsOutput = bodyOutput[settingsResponse]
 
 type updateSettingsInput struct {
 	Body updateSettingsRequest
@@ -26,9 +24,7 @@ type repoConfigInput struct {
 	Name  string `path:"name"`
 }
 
-type settingsOutput struct {
-	Body settingsResponse
-}
+type settingsOutput = bodyOutput[settingsResponse]
 
 func (s *Server) registerSettingsAPI(api huma.API) {
 	huma.Register(api, huma.Operation{

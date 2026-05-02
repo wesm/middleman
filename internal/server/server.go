@@ -50,11 +50,11 @@ type RepoRef struct {
 	Name  string `json:"name"`
 }
 
-type versionOutput struct {
-	Body struct {
-		Version string `json:"version"`
-	}
+type versionOutputBody struct {
+	Version string `json:"version"`
 }
+
+type versionOutput = bodyOutput[versionOutputBody]
 
 type ServerOptions struct {
 	EmbedConfig *EmbedConfig
