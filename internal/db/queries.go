@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	dbsqlc "github.com/wesm/middleman/internal/db/sqlc"
 )
 
 func sqlPlaceholders(count int) string {
@@ -361,21 +363,33 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 // on existing DBs where CASCADE may not be retrofitted.
 func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		queries := []string{
-			`DELETE FROM middleman_starred_items WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_kanban_state WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_mr_events WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_issue_events WHERE issue_id IN (SELECT id FROM middleman_issues WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_issues WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_repos WHERE platform_host != ?`,
-			`DELETE FROM middleman_rate_limits WHERE platform_host != ?`,
+		q := d.writeQueries.WithTx(tx)
+		if err := q.PurgeOtherHostStarredItems(ctx, keepHost); err != nil {
+			return err
 		}
-		for _, q := range queries {
-			if _, err := tx.ExecContext(ctx, q, keepHost); err != nil {
-				return err
-			}
+		if err := q.PurgeOtherHostWorktreeLinks(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostKanbanState(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostMergeRequestEvents(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostMergeRequests(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostIssueEvents(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostIssues(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostRepos(ctx, keepHost); err != nil {
+			return err
+		}
+		if err := q.PurgeOtherHostRateLimits(ctx, keepHost); err != nil {
+			return err
 		}
 		return nil
 	})
@@ -387,75 +401,109 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 // host is the platform hostname (e.g. "github.com" or a GHE hostname).
 func (d *DB) UpsertRepo(ctx context.Context, host, owner, name string) (int64, error) {
 	host, owner, name = canonicalRepoIdentifier(host, owner, name)
-	_, err := d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
-		 VALUES ('github', ?, ?, ?)
-		 ON CONFLICT(platform, platform_host, owner, name) DO NOTHING`,
-		host, owner, name,
-	)
+	id, err := d.writeQueries.UpsertRepo(ctx, dbsqlc.UpsertRepoParams{
+		PlatformHost: host,
+		Owner:        owner,
+		Name:         name,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("upsert repo: %w", err)
-	}
-	var id int64
-	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_repos
-		 WHERE platform = 'github' AND platform_host = ?
-		   AND owner = ? AND name = ?`,
-		host, owner, name,
-	).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("get repo id after upsert: %w", err)
 	}
 	return id, nil
 }
 
+func repoTime(t sql.NullTime) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	utc := t.Time.UTC()
+	return &utc
+}
+
+func repoString(s sql.NullString) string {
+	if !s.Valid {
+		return ""
+	}
+	return s.String
+}
+
+func repoBool(v int64) bool {
+	return v != 0
+}
+
+func boolInt64(v bool) int64 {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func nullUTCTime(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	utc := canonicalUTCTime(*t)
+	return sql.NullTime{Time: utc, Valid: true}
+}
+
+func repoFromListRow(row dbsqlc.ListReposRow) Repo {
+	r := Repo{
+		ID:                       row.ID,
+		Platform:                 row.Platform,
+		PlatformHost:             row.PlatformHost,
+		Owner:                    row.Owner,
+		Name:                     row.Name,
+		LastSyncStartedAt:        repoTime(row.LastSyncStartedAt),
+		LastSyncCompletedAt:      repoTime(row.LastSyncCompletedAt),
+		LastSyncError:            repoString(row.LastSyncError),
+		AllowSquashMerge:         repoBool(row.AllowSquashMerge),
+		AllowMergeCommit:         repoBool(row.AllowMergeCommit),
+		AllowRebaseMerge:         repoBool(row.AllowRebaseMerge),
+		BackfillPRPage:           int(row.BackfillPrPage),
+		BackfillPRComplete:       repoBool(row.BackfillPrComplete),
+		BackfillPRCompletedAt:    repoTime(row.BackfillPrCompletedAt),
+		BackfillIssuePage:        int(row.BackfillIssuePage),
+		BackfillIssueComplete:    repoBool(row.BackfillIssueComplete),
+		BackfillIssueCompletedAt: repoTime(row.BackfillIssueCompletedAt),
+		CreatedAt:                row.CreatedAt,
+	}
+	normalizeRepoTimestamps(&r)
+	return r
+}
+
+func repoFromOwnerNameRow(row dbsqlc.GetRepoByOwnerNameRow) Repo {
+	return repoFromListRow(dbsqlc.ListReposRow(row))
+}
+
+func repoFromIDRow(row dbsqlc.GetRepoByIDRow) Repo {
+	return repoFromListRow(dbsqlc.ListReposRow(row))
+}
+
+func repoFromHostOwnerNameRow(row dbsqlc.GetRepoByHostOwnerNameRow) Repo {
+	return repoFromListRow(dbsqlc.ListReposRow(row))
+}
+
 // ListRepos returns all repos ordered by owner, name.
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
-	rows, err := d.ro.QueryContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
-		        created_at
-		 FROM middleman_repos ORDER BY owner, name`,
-	)
+	rows, err := d.readQueries.ListRepos(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)
 	}
-	defer rows.Close()
 
 	var repos []Repo
-	for rows.Next() {
-		var r Repo
-		if err := rows.Scan(
-			&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
-			&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-			&r.LastSyncError,
-			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
-			&r.BackfillPRPage, &r.BackfillPRComplete,
-			&r.BackfillPRCompletedAt,
-			&r.BackfillIssuePage, &r.BackfillIssueComplete,
-			&r.BackfillIssueCompletedAt,
-			&r.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan repo: %w", err)
-		}
-		normalizeRepoTimestamps(&r)
-		repos = append(repos, r)
+	for _, row := range rows {
+		repos = append(repos, repoFromListRow(row))
 	}
-	return repos, rows.Err()
+	return repos, nil
 }
 
 // UpdateRepoSyncStarted records the time a sync began.
 func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) error {
 	t = canonicalUTCTime(t)
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET last_sync_started_at = ? WHERE id = ?`, t, id,
-	)
+	err := d.writeQueries.UpdateRepoSyncStarted(ctx, dbsqlc.UpdateRepoSyncStartedParams{
+		LastSyncStartedAt: sql.NullTime{Time: t, Valid: !t.IsZero()},
+		ID:                id,
+	})
 	if err != nil {
 		return fmt.Errorf("update repo sync started: %w", err)
 	}
@@ -465,10 +513,11 @@ func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) e
 // UpdateRepoSyncCompleted records the time and optional error a sync finished.
 func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time, syncErr string) error {
 	t = canonicalUTCTime(t)
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET last_sync_completed_at = ?, last_sync_error = ? WHERE id = ?`,
-		t, syncErr, id,
-	)
+	err := d.writeQueries.UpdateRepoSyncCompleted(ctx, dbsqlc.UpdateRepoSyncCompletedParams{
+		LastSyncCompletedAt: sql.NullTime{Time: t, Valid: !t.IsZero()},
+		LastSyncError:       sql.NullString{String: syncErr, Valid: true},
+		ID:                  id,
+	})
 	if err != nil {
 		return fmt.Errorf("update repo sync completed: %w", err)
 	}
@@ -481,72 +530,30 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 // safety net if stale data from a previous config exists in the database.
 func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var r Repo
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
-		        created_at
-		 FROM middleman_repos WHERE owner = ? AND name = ?
-		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
-	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
-		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-		&r.LastSyncError,
-		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
-		&r.CreatedAt,
-	)
+	row, err := d.readQueries.GetRepoByOwnerName(ctx, dbsqlc.GetRepoByOwnerNameParams{
+		Owner: owner,
+		Name:  name,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get repo by owner/name: %w", err)
 	}
-	normalizeRepoTimestamps(&r)
+	r := repoFromOwnerNameRow(row)
 	return &r, nil
 }
 
 // GetRepoByID returns the repo with the given ID, or nil if not found.
 func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
-	var r Repo
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
-		        created_at
-		 FROM middleman_repos WHERE id = ?`, id,
-	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
-		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-		&r.LastSyncError,
-		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
-		&r.CreatedAt,
-	)
+	row, err := d.readQueries.GetRepoByID(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get repo by id: %w", err)
 	}
-	normalizeRepoTimestamps(&r)
+	r := repoFromIDRow(row)
 	return &r, nil
 }
 
@@ -579,10 +586,12 @@ func (d *DB) UpdateRepoSettings(
 	id int64,
 	allowSquash, allowMerge, allowRebase bool,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
-		allowSquash, allowMerge, allowRebase, id,
-	)
+	err := d.writeQueries.UpdateRepoSettings(ctx, dbsqlc.UpdateRepoSettingsParams{
+		AllowSquashMerge: boolInt64(allowSquash),
+		AllowMergeCommit: boolInt64(allowMerge),
+		AllowRebaseMerge: boolInt64(allowRebase),
+		ID:               id,
+	})
 	return err
 }
 
@@ -1753,19 +1762,15 @@ func (d *DB) UpdateBackfillCursor(
 		BackfillIssueCompletedAt: issueCompletedAt,
 	}
 	canonicalizeRepoTimestamps(repo)
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_repos
-		SET backfill_pr_page = ?,
-		    backfill_pr_complete = ?,
-		    backfill_pr_completed_at = ?,
-		    backfill_issue_page = ?,
-		    backfill_issue_complete = ?,
-		    backfill_issue_completed_at = ?
-		WHERE id = ?`,
-		prPage, prComplete, repo.BackfillPRCompletedAt,
-		issuePage, issueComplete, repo.BackfillIssueCompletedAt,
-		repoID,
-	)
+	err := d.writeQueries.UpdateBackfillCursor(ctx, dbsqlc.UpdateBackfillCursorParams{
+		BackfillPrPage:           int64(prPage),
+		BackfillPrComplete:       boolInt64(prComplete),
+		BackfillPrCompletedAt:    nullUTCTime(repo.BackfillPRCompletedAt),
+		BackfillIssuePage:        int64(issuePage),
+		BackfillIssueComplete:    boolInt64(issueComplete),
+		BackfillIssueCompletedAt: nullUTCTime(repo.BackfillIssueCompletedAt),
+		ID:                       repoID,
+	})
 	if err != nil {
 		return fmt.Errorf("update backfill cursor: %w", err)
 	}
@@ -2281,31 +2286,11 @@ func (d *DB) GetRepoByHostOwnerName(
 	host, owner, name string,
 ) (*Repo, error) {
 	host, owner, name = canonicalRepoIdentifier(host, owner, name)
-	var r Repo
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
-		        backfill_pr_page, backfill_pr_complete,
-		        backfill_pr_completed_at,
-		        backfill_issue_page, backfill_issue_complete,
-		        backfill_issue_completed_at,
-		        created_at
-		 FROM middleman_repos
-		 WHERE platform_host = ? AND owner = ? AND name = ?`,
-		host, owner, name,
-	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
-		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
-		&r.LastSyncError,
-		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
-		&r.BackfillPRPage, &r.BackfillPRComplete,
-		&r.BackfillPRCompletedAt,
-		&r.BackfillIssuePage, &r.BackfillIssueComplete,
-		&r.BackfillIssueCompletedAt,
-		&r.CreatedAt,
-	)
+	row, err := d.readQueries.GetRepoByHostOwnerName(ctx, dbsqlc.GetRepoByHostOwnerNameParams{
+		PlatformHost: host,
+		Owner:        owner,
+		Name:         name,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -2314,7 +2299,7 @@ func (d *DB) GetRepoByHostOwnerName(
 			"get repo by host/owner/name: %w", err,
 		)
 	}
-	normalizeRepoTimestamps(&r)
+	r := repoFromHostOwnerNameRow(row)
 	return &r, nil
 }
 
