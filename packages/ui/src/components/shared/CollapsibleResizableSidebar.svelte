@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import LeftSidebarToggle from "./LeftSidebarToggle.svelte";
 
   interface Props {
     children?: Snippet | undefined;
@@ -93,15 +94,12 @@
     {/if}
   {:else if !hideSidebar && showCollapsedStrip}
     <aside class="sidebar sidebar--collapsed">
-      <button class="expand-btn" onclick={onExpand} title="Expand sidebar">
-        <svg width="14" height="14" viewBox="0 0 16 16"
-          fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="1" y="1" width="14" height="14" rx="2" />
-          <line x1="6" y1="1" x2="6" y2="15" />
-          <polyline points="8,6 10,8 8,10"
-            stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
+      <LeftSidebarToggle
+        state="collapsed"
+        label="sidebar"
+        onclick={onExpand}
+        class="left-sidebar-toggle--compact"
+      />
     </aside>
   {/if}
 
@@ -143,23 +141,6 @@
     width: 28px;
     align-items: center;
     padding-top: 6px;
-  }
-
-  .expand-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .expand-btn:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
   }
 
   .resize-handle {

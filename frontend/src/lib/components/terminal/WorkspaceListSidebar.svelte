@@ -9,6 +9,7 @@
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { client } from "../../api/runtime.js";
+  import { LeftSidebarToggle } from "@middleman/ui";
 
   interface Workspace {
     id: string;
@@ -46,9 +47,16 @@
   interface Props {
     selectedId: string;
     onOpenItemSidebar?: (workspaceId: string, tab: "pr" | "issue") => void;
+    isSidebarToggleEnabled?: boolean;
+    onCollapseSidebar?: (() => void) | undefined;
   }
 
-  const { selectedId, onOpenItemSidebar }: Props = $props();
+  const {
+    selectedId,
+    onOpenItemSidebar,
+    isSidebarToggleEnabled = false,
+    onCollapseSidebar,
+  }: Props = $props();
 
   const basePath = (
     window.__BASE_PATH__ ?? "/"
@@ -190,6 +198,14 @@
   <div class="sidebar-header">
     <span class="sidebar-header-label">Workspaces</span>
     <span class="sidebar-header-count">{workspaces.length}</span>
+    {#if isSidebarToggleEnabled && onCollapseSidebar}
+      <LeftSidebarToggle
+        state="expanded"
+        label="Workspaces sidebar"
+        onclick={onCollapseSidebar}
+        class="left-sidebar-toggle--push left-sidebar-toggle--compact"
+      />
+    {/if}
   </div>
   <div class="sidebar-list">
     {#each [...grouped] as [repoKey, items] (repoKey)}
@@ -217,7 +233,6 @@
           {@const ahead = ws.commits_ahead ?? 0}
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class={["ws-row", { selected: ws.id === selectedId }]}
             onclick={(e) => {
@@ -355,10 +370,10 @@
 
   .sidebar-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     height: 28px;
-    padding: 0 12px;
+    padding: 0 4px 0 12px;
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
   }

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function waitForPRList(page: Page): Promise<void> {
   await page.locator(".pull-item").first()
@@ -10,15 +10,23 @@ async function waitForIssueList(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
-async function sidebarWidth(sidebar: ReturnType<Page["locator"]>): Promise<number> {
+async function sidebarWidth(sidebar: Locator): Promise<number> {
   return Math.round(await sidebar.evaluate((node) =>
     node.getBoundingClientRect().width
   ));
 }
 
+function collapseToggle(sidebar: Locator): Locator {
+  return sidebar.getByRole("button", { name: "Collapse sidebar" });
+}
+
+function expandToggle(sidebar: Locator): Locator {
+  return sidebar.getByRole("button", { name: "Expand sidebar" });
+}
+
 async function dragResizeHandle(
   page: Page,
-  handle: ReturnType<Page["locator"]>,
+  handle: Locator,
   deltaX: number,
 ): Promise<void> {
   const box = await handle.boundingBox();
@@ -71,15 +79,12 @@ test.describe("collapsible sidebar", () => {
     await expect(sidebar).toBeVisible();
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
 
-    // Click the collapse button inside the sidebar.
-    await sidebar.locator(".sidebar-toggle").click();
+    await collapseToggle(sidebar).click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
-    // The expand button should now appear in the collapsed strip.
-    const expandBtn = sidebar.locator(".expand-btn");
+    const expandBtn = expandToggle(sidebar);
     await expect(expandBtn).toBeVisible();
 
-    // Click the expand button to restore the sidebar.
     await expandBtn.click();
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
   });
@@ -92,10 +97,10 @@ test.describe("collapsible sidebar", () => {
     await expect(sidebar).toBeVisible();
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
 
-    await sidebar.locator(".sidebar-toggle").click();
+    await collapseToggle(sidebar).click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
-    const expandBtn = sidebar.locator(".expand-btn");
+    const expandBtn = expandToggle(sidebar);
     await expect(expandBtn).toBeVisible();
 
     await expandBtn.click();
@@ -106,9 +111,8 @@ test.describe("collapsible sidebar", () => {
     await page.goto("/pulls");
     await waitForPRList(page);
 
-    // Collapse sidebar on list view.
     const sidebar = page.locator(".sidebar");
-    await sidebar.locator(".sidebar-toggle").click();
+    await collapseToggle(sidebar).click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
     // Navigate to board view (no sidebar strip).

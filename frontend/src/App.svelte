@@ -572,7 +572,14 @@
         <!-- Single mount across /workspaces and /terminal/{id};
              WorkspaceTerminalView reacts to workspaceId changes
              internally so the page doesn't flash on navigation. -->
-        <WorkspaceTerminalView workspaceId={wsId} />
+        <WorkspaceTerminalView
+          workspaceId={wsId}
+          isSidebarCollapsed={isSidebarCollapsed()}
+          sidebarWidth={getSidebarWidth()}
+          onSidebarResize={handleSidebarResize}
+          isSidebarToggleEnabled={isSidebarToggleEnabled()}
+          onToggleSidebar={toggleSidebar}
+        />
       {/if}
     </main>
 
