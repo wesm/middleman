@@ -8,6 +8,7 @@
     | "danger"
     | "info"
     | "merged"
+    | "canceled"
     | "workspace";
 </script>
 
@@ -195,6 +196,11 @@
   .chip--tone-muted {
     background: var(--bg-inset);
     color: var(--text-muted);
+  }
+
+  .chip--tone-canceled {
+    background: color-mix(in srgb, var(--review-canceled) 15%, transparent);
+    color: var(--review-canceled);
   }
 
   .chip--tone-neutral {

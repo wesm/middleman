@@ -776,15 +776,15 @@
     margin-left: 3px;
   }
 
-  .evt-label {
+  :global(.evt-label) {
     font-size: 12px;
     color: var(--text-secondary);
   }
 
-  .evt-label.evt-comment { color: var(--accent-amber); }
-  .evt-label.evt-review { color: var(--accent-green); }
-  .evt-label.evt-commit { color: var(--accent-teal); }
-  .evt-label.evt-force-push { color: var(--accent-red); }
+  :global(.evt-label.evt-comment) { color: var(--accent-amber); }
+  :global(.evt-label.evt-review) { color: var(--accent-green); }
+  :global(.evt-label.evt-commit) { color: var(--accent-teal); }
+  :global(.evt-label.evt-force-push) { color: var(--accent-red); }
 
   .col-repo {
     color: var(--text-muted);

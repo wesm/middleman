@@ -228,7 +228,9 @@
               uppercase={false}
               class="repo-chip repo-tag"
               style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
-            >{itemGroup.repoOwner}/{itemGroup.repoName}</Chip>
+            >
+              <span class="repo-chip__label">{itemGroup.repoOwner}/{itemGroup.repoName}</span>
+            </Chip>
           {/if}
           {#if itemGroup.itemState === "merged"}
             <ItemStateChip state="merged" />
@@ -395,9 +397,16 @@
 
   :global(.repo-chip) {
     flex-shrink: 1;
+    max-width: 40%;
+    min-width: 0;
+  }
+
+  :global(.repo-chip) .repo-chip__label {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 40%;
+    white-space: nowrap;
   }
 
   .threaded-view--compact {

@@ -21,4 +21,16 @@ describe("StatusBadge", () => {
     expect(chip?.classList.contains("status-badge")).toBe(true);
     expect(chip?.querySelector(".chip__dot")).not.toBeNull();
   });
+
+  it("keeps canceled reviews visually distinct from unknown statuses", () => {
+    render(StatusBadge, {
+      props: {
+        status: "canceled",
+      },
+    });
+
+    const chip = screen.getByText("canceled").closest(".chip");
+    expect(chip?.classList.contains("chip--tone-canceled")).toBe(true);
+    expect(chip?.classList.contains("status-canceled")).toBe(true);
+  });
 });

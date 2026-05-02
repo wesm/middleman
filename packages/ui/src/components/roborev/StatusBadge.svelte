@@ -18,6 +18,8 @@
         return "success";
       case "failed":
         return "danger";
+      case "canceled":
+        return "canceled";
       default:
         return "muted";
     }
