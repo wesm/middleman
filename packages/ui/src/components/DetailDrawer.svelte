@@ -38,12 +38,13 @@
       </span>
     </div>
     <div class="drawer-body">
-      {#key `${owner}/${name}/${number}`}
+      {#key `${platformHost ?? ""}/${owner}/${name}/${number}`}
         {#if itemType === "pr"}
           <PullDetail
             {owner}
             {name}
             {number}
+            {platformHost}
             {...(onPullsRefresh ? { onPullsRefresh } : {})}
           />
         {:else}

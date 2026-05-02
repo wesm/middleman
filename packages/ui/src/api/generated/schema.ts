@@ -3140,7 +3140,9 @@ export interface operations {
     };
     "set-kanban-state": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;

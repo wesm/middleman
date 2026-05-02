@@ -2138,6 +2138,7 @@ func TestAPISetKanbanState(t *testing.T) {
 		"acme",
 		"widget",
 		1,
+		nil,
 		generated.SetKanbanStateJSONRequestBody{Status: "reviewing"},
 	)
 	require.NoError(err)
@@ -2159,11 +2160,86 @@ func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 		"acme",
 		"widget",
 		1,
+		nil,
 		generated.SetKanbanStateJSONRequestBody{Status: "nonsense"},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
 	require.NotNil(t, resp.ApplicationproblemJSONDefault)
+}
+
+func TestAPISetKanbanStateRejectsAmbiguousRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPut,
+		"/api/v1/repos/acme/widget/pulls/1/state",
+		map[string]string{"status": "reviewing"},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+
+	githubRepo, err := database.GetRepoByHostOwnerName(t.Context(), "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(githubRepo)
+	githubPR, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), githubRepo.ID, 1)
+	require.NoError(err)
+	require.NotNil(githubPR)
+	assert.Equal("new", githubPR.KanbanStatus)
+
+	ghesRepo, err := database.GetRepoByHostOwnerName(t.Context(), "ghe.example.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(ghesRepo)
+	ghesPR, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), ghesRepo.ID, 1)
+	require.NoError(err)
+	require.NotNil(ghesPR)
+	assert.Equal("new", ghesPR.KanbanStatus)
+}
+
+func TestAPISetKanbanStateUsesPlatformHostQuery(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPut,
+		"/api/v1/repos/acme/widget/pulls/1/state?platform_host=ghe.example.com",
+		map[string]string{"status": "reviewing"},
+	)
+
+	require.Equal(http.StatusOK, rr.Code)
+
+	githubRepo, err := database.GetRepoByHostOwnerName(t.Context(), "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(githubRepo)
+	githubPR, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), githubRepo.ID, 1)
+	require.NoError(err)
+	require.NotNil(githubPR)
+	assert.Equal("new", githubPR.KanbanStatus)
+
+	ghesRepo, err := database.GetRepoByHostOwnerName(t.Context(), "ghe.example.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(ghesRepo)
+	ghesPR, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), ghesRepo.ID, 1)
+	require.NoError(err)
+	require.NotNil(ghesPR)
+	assert.Equal("reviewing", ghesPR.KanbanStatus)
 }
 
 func TestAPIListRepos(t *testing.T) {

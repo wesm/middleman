@@ -381,7 +381,14 @@
 
   function onKanbanChange(value: string): void {
     if (stalePR) return;
-    void detailStore.updateKanbanState(owner, name, number, value as KanbanStatus);
+    const currentPlatformHost = detailStore.getDetail()?.platform_host ?? platformHost;
+    void detailStore.updateKanbanState(
+      owner,
+      name,
+      number,
+      currentPlatformHost,
+      value as KanbanStatus,
+    );
   }
 
   function mergeActionLabel(settings: RepoSettings): string {

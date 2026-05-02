@@ -23,6 +23,7 @@
       owner: pr.repo_owner ?? "",
       name: pr.repo_name ?? "",
       number: pr.Number,
+      platformHost: pr.platform_host,
     }));
   }
 </script>

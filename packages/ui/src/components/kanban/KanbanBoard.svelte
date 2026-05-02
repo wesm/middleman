@@ -34,13 +34,19 @@
   ] as const;
 
   // --- Drawer state ---
-  let drawerPR = $state<{ owner: string; name: string; number: number } | null>(null);
+  let drawerPR = $state<{
+    owner: string;
+    name: string;
+    number: number;
+    platformHost?: string;
+  } | null>(null);
 
   function handleSelect(pr: PullRequest): void {
     drawerPR = {
       owner: pr.repo_owner ?? "",
       name: pr.repo_name ?? "",
       number: pr.Number,
+      platformHost: pr.platform_host,
     };
   }
 
@@ -54,11 +60,15 @@
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     status: KanbanStatus,
   ): Promise<void> {
     try {
       const { error } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
-        params: { path: { owner, name, number } },
+        params: {
+          path: { owner, name, number },
+          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+        },
         body: { status },
       });
       if (error) {
@@ -97,6 +107,7 @@
       owner={drawerPR.owner}
       name={drawerPR.name}
       number={drawerPR.number}
+      platformHost={drawerPR.platformHost}
       onClose={closeDrawer}
       onPullsRefresh={() => pulls.loadPulls({ state: "open" })}
     />

@@ -237,12 +237,14 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): KanbanStatus | undefined {
     const pr = pulls.find(
       (p) =>
         p.repo_owner === owner &&
         p.repo_name === name &&
-        p.Number === number,
+        p.Number === number &&
+        (platformHost === undefined || p.platform_host === platformHost),
     );
     return pr?.KanbanStatus as KanbanStatus | undefined;
   }
@@ -252,12 +254,14 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     status: KanbanStatus,
   ): void {
     pulls = pulls.map((pr) =>
       pr.repo_owner === owner &&
       pr.repo_name === name &&
-      pr.Number === number
+      pr.Number === number &&
+      (platformHost === undefined || pr.platform_host === platformHost)
         ? { ...pr, KanbanStatus: status }
         : pr,
     );

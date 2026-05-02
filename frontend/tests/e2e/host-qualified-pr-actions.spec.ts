@@ -66,6 +66,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   const seen: Record<string, string[]> = {
     detail: [],
     asyncSync: [],
+    state: [],
     ready: [],
     approve: [],
     workflows: [],
@@ -111,6 +112,15 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
       const url = new URL(route.request().url());
       seen.asyncSync.push(url.searchParams.get("platform_host") ?? "");
       await route.fulfill({ status: 202 });
+    },
+  );
+
+  await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/state(?:[?]|$)/,
+    async (route) => {
+      const url = new URL(route.request().url());
+      seen.state.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({ status: 200 });
     },
   );
 
@@ -194,6 +204,10 @@ test("host-qualified PR detail actions preserve platform_host", async ({ page })
     .toBeVisible();
   await expect.poll(() => seen.detail).toContain(platformHost);
   await expect.poll(() => seen.asyncSync).toContain(platformHost);
+
+  await page.getByRole("combobox", { name: /change workflow status/i }).click();
+  await page.getByRole("option", { name: "Reviewing" }).click();
+  await expect.poll(() => seen.state).toContain(platformHost);
 
   await page.locator(".btn--ready").click();
   await expect.poll(() => seen.ready).toContain(platformHost);

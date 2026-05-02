@@ -15,12 +15,14 @@ export interface DetailStoreOptions {
       owner: string,
       name: string,
       number: number,
+      platformHost: string | undefined,
       status: KanbanStatus,
     ) => void;
     getPullKanbanStatus?: (
       owner: string,
       name: string,
       number: number,
+      platformHost?: string | undefined,
     ) => KanbanStatus | undefined;
   };
   sync?: {
@@ -136,12 +138,14 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost?: string,
   ): boolean {
     return (
       detail !== null &&
       detail.repo_owner === owner &&
       detail.repo_name === name &&
-      detail.merge_request.Number === number
+      detail.merge_request.Number === number &&
+      (platformHost === undefined || detail.platform_host === platformHost)
     );
   }
 
@@ -409,9 +413,10 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    platformHost: string | undefined,
     status: KanbanStatus,
   ): Promise<void> {
-    const key = prKey(owner, name, number);
+    const key = prKey(owner, name, number, platformHost);
     const seq = (kanbanSeqByPR.get(key) ?? 0) + 1;
     kanbanSeqByPR.set(key, seq);
 
@@ -419,6 +424,7 @@ export function createDetailStore(
       owner,
       name,
       number,
+      platformHost,
     )
       ? (detail!.merge_request
           .KanbanStatus as KanbanStatus)
@@ -428,6 +434,7 @@ export function createDetailStore(
         owner,
         name,
         number,
+        platformHost,
       );
 
     if (prevDetailStatus !== undefined) {
@@ -443,6 +450,7 @@ export function createDetailStore(
       owner,
       name,
       number,
+      platformHost,
       status,
     );
 
@@ -450,11 +458,14 @@ export function createDetailStore(
       const { error: requestError } =
         await apiClient.PUT(
           "/repos/{owner}/{name}/pulls/{number}/state",
-          {
-            params: { path: { owner, name, number } },
-            body: { status },
-          },
-        );
+            {
+              params: {
+                path: { owner, name, number },
+                ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+              },
+              body: { status },
+            },
+          );
       if (requestError) {
         throw new Error(
           requestError.detail ??
@@ -470,7 +481,7 @@ export function createDetailStore(
             : String(err);
         if (
           prevDetailStatus !== undefined &&
-          isDetailShowing(owner, name, number)
+          isDetailShowing(owner, name, number, platformHost)
         ) {
           detail = {
             ...detail!,
@@ -485,14 +496,15 @@ export function createDetailStore(
             owner,
             name,
             number,
+            platformHost,
             prevPullsStatus,
           );
         }
         const reloads: Promise<void>[] = [];
         if (pullsDep) reloads.push(pullsDep.loadPulls());
-        if (isDetailShowing(owner, name, number)) {
+        if (isDetailShowing(owner, name, number, platformHost)) {
           reloads.push(
-            loadDetail(owner, name, number),
+            loadDetail(owner, name, number, { platformHost }),
           );
         }
         await Promise.all(reloads);
@@ -507,9 +519,9 @@ export function createDetailStore(
       const refreshes: Promise<void>[] = [
         refreshPullsIfActive(),
       ];
-      if (isDetailShowing(owner, name, number)) {
+      if (isDetailShowing(owner, name, number, platformHost)) {
         refreshes.push(
-          loadDetail(owner, name, number),
+          loadDetail(owner, name, number, { platformHost }),
         );
       }
       await Promise.all(refreshes);

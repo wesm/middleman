@@ -64,10 +64,11 @@ type resolveItemInput struct {
 type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	PlatformHost string `query:"platform_host"`
+	Body         struct {
 		Status string `json:"status"`
 	}
 }
@@ -863,9 +864,19 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 		return nil, huma.Error400BadRequest("status must be one of: new, reviewing, waiting, awaiting_merge")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	ref := repoNumberPathRef{
+		owner:        input.Owner,
+		name:         input.Name,
+		number:       input.Number,
+		platformHost: strings.TrimSpace(input.PlatformHost),
+	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
+		if errors.Is(err, errRepoAmbiguous) {
+			return nil, huma.Error400BadRequest(
+				"platform_host is required for ambiguous repo",
+			)
+		}
 		return nil, huma.Error404NotFound(err.Error())
 	}
 	if err := s.db.SetKanbanState(ctx, mrID, input.Body.Status); err != nil {

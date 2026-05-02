@@ -8,7 +8,13 @@
     color: string;
     pulls: PullRequest[];
     onSelect: (pr: PullRequest) => void;
-    onDrop: (owner: string, name: string, number: number, status: KanbanStatus) => void;
+    onDrop: (
+      owner: string,
+      name: string,
+      number: number,
+      platformHost: string | undefined,
+      status: KanbanStatus,
+    ) => void;
   }
 
   const { id, title, color, pulls, onSelect, onDrop }: Props = $props();
@@ -34,8 +40,9 @@
         owner: string;
         name: string;
         number: number;
+        platformHost?: string;
       };
-      onDrop(data.owner, data.name, data.number, id as KanbanStatus);
+      onDrop(data.owner, data.name, data.number, data.platformHost, id as KanbanStatus);
     } catch {
       // Invalid drag data
     }

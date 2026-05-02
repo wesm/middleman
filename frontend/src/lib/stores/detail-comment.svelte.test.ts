@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createDetailStore } from "@middleman/ui/stores/detail";
 import type { MiddlemanClient } from "@middleman/ui";
+import type { KanbanStatus } from "@middleman/ui/api/types";
 
 interface MockDetail {
   repo_owner: string;
   repo_name: string;
-  merge_request: { Number: number };
+  platform_host: string;
+  merge_request: { Number: number; KanbanStatus: string };
   events: unknown[];
 }
 
@@ -17,7 +19,8 @@ function makeDetail(
   return {
     repo_owner: "octo",
     repo_name: "repo",
-    merge_request: { Number: number },
+    platform_host: "ghe.example.com",
+    merge_request: { Number: number, KanbanStatus: "new" },
     events,
   };
 }
@@ -212,5 +215,59 @@ describe("createDetailStore submitComment", () => {
     await Promise.resolve();
 
     expect(store.getDetail()?.events).toHaveLength(1);
+  });
+});
+
+describe("createDetailStore updateKanbanState", () => {
+  it("passes platform_host through kanban updates and refreshes", async () => {
+    const detailData = makeDetail([], 1);
+    const client = {
+      GET: vi.fn(async () => ({ data: detailData })),
+      POST: vi.fn(),
+      PUT: vi.fn(async () => ({})),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const pulls = {
+      loadPulls: vi.fn(async () => undefined),
+      optimisticKanbanUpdate: vi.fn(),
+      getPullKanbanStatus: vi.fn((): KanbanStatus => "new"),
+    };
+    const store = createDetailStore({ client, pulls });
+
+    await store.loadDetail("octo", "repo", 1, {
+      sync: false,
+      platformHost: "ghe.example.com",
+    });
+    await store.updateKanbanState(
+      "octo",
+      "repo",
+      1,
+      "ghe.example.com",
+      "reviewing",
+    );
+
+    expect(client.PUT).toHaveBeenCalledWith(
+      "/repos/{owner}/{name}/pulls/{number}/state",
+      {
+        params: {
+          path: { owner: "octo", name: "repo", number: 1 },
+          query: { platform_host: "ghe.example.com" },
+        },
+        body: { status: "reviewing" },
+      },
+    );
+    expect(pulls.getPullKanbanStatus).toHaveBeenCalledWith(
+      "octo",
+      "repo",
+      1,
+      "ghe.example.com",
+    );
+    expect(pulls.optimisticKanbanUpdate).toHaveBeenCalledWith(
+      "octo",
+      "repo",
+      1,
+      "ghe.example.com",
+      "reviewing",
+    );
   });
 });

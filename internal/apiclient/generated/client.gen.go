@@ -986,6 +986,11 @@ type PostReposByOwnerByNamePullsByNumberReadyForReviewParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// SetKanbanStateParams defines parameters for SetKanbanState.
+type SetKanbanStateParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // PostReposByOwnerByNamePullsByNumberSyncParams defines parameters for PostReposByOwnerByNamePullsByNumberSync.
 type PostReposByOwnerByNamePullsByNumberSyncParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
@@ -1276,9 +1281,9 @@ type ClientInterface interface {
 	GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetKanbanStateWithBody request with any body
-	SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SetKanbanState(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberSync request
 	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1954,8 +1959,8 @@ func (c *Client) GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, ow
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetKanbanStateRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetKanbanStateRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1966,8 +1971,8 @@ func (c *Client) SetKanbanStateWithBody(ctx context.Context, owner string, name 
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetKanbanStateRequest(c.Server, owner, name, number, body)
+func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetKanbanStateRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4621,18 +4626,18 @@ func NewGetReposByOwnerByNamePullsByNumberStackRequest(server string, owner stri
 }
 
 // NewSetKanbanStateRequest calls the generic SetKanbanState builder with application/json body
-func NewSetKanbanStateRequest(server string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody) (*http.Request, error) {
+func NewSetKanbanStateRequest(server string, owner string, name string, number int64, params *SetKanbanStateParams, body SetKanbanStateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewSetKanbanStateRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewSetKanbanStateRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewSetKanbanStateRequestWithBody generates requests for SetKanbanState with any type of body
-func NewSetKanbanStateRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewSetKanbanStateRequestWithBody(server string, owner string, name string, number int64, params *SetKanbanStateParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4669,6 +4674,28 @@ func NewSetKanbanStateRequestWithBody(server string, owner string, name string, 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("PUT", queryURL.String(), body)
@@ -5690,9 +5717,9 @@ type ClientWithResponsesInterface interface {
 	GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberStackResponse, error)
 
 	// SetKanbanStateWithBodyWithResponse request with any body
-	SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
+	SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
-	SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
+	SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberSyncWithResponse request
 	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
@@ -7498,16 +7525,16 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberStackWithRespons
 }
 
 // SetKanbanStateWithBodyWithResponse request with arbitrary body returning *SetKanbanStateResponse
-func (c *ClientWithResponses) SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
-	rsp, err := c.SetKanbanStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
+	rsp, err := c.SetKanbanStateWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseSetKanbanStateResponse(rsp)
 }
 
-func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
-	rsp, err := c.SetKanbanState(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, params *SetKanbanStateParams, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
+	rsp, err := c.SetKanbanState(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

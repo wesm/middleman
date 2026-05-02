@@ -3621,6 +3621,11 @@ paths:
           schema:
             format: int64
             type: integer
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
