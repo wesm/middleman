@@ -4881,6 +4881,121 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	assert.Equal("closed", ghesIssue.State)
 }
 
+func TestAPISetIssueStateUsesPlatformHostQuery(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+
+	database, err := db.Open(
+		filepath.Join(t.TempDir(), "test.db"),
+	)
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	seedIssueOnHost(
+		t, database,
+		"github.com", "acme", "widget", 7,
+		"open", "GitHub issue",
+	)
+	seedIssueOnHost(
+		t, database,
+		"ghe.example.com", "acme", "widget", 7,
+		"open", "GHES issue",
+	)
+
+	var githubEditCalls int
+	var ghesEditCalls int
+	githubClient := &mockGH{
+		editIssueFn: func(_ context.Context, _, _ string, _ int, _ string) (*gh.Issue, error) {
+			githubEditCalls++
+			return nil, errors.New("github.com client should not edit issue")
+		},
+	}
+	ghesClient := &mockGH{
+		editIssueFn: func(_ context.Context, _, _ string, number int, state string) (*gh.Issue, error) {
+			ghesEditCalls++
+			url := fmt.Sprintf("https://ghe.example.com/acme/widget/issues/%d", number)
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			title := "GHES issue"
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				CreatedAt: &createdAt,
+				UpdatedAt: &updatedAt,
+				User:      &gh.User{Login: new("ghes-user")},
+			}, nil
+		},
+	}
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": ghesClient,
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(
+		database, syncer, nil, "/", nil, ServerOptions{},
+	)
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/github-state?platform_host=ghe.example.com",
+		strings.NewReader(`{"state":"closed"}`),
+	).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Zero(githubEditCalls)
+	assert.Equal(1, ghesEditCalls)
+
+	githubRepo, err := database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(githubRepo)
+	githubIssue, err := database.GetIssueByRepoIDAndNumber(
+		ctx, githubRepo.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(githubIssue)
+	assert.Equal("open", githubIssue.State)
+
+	ghesRepo, err := database.GetRepoByHostOwnerName(
+		ctx, "ghe.example.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(ghesRepo)
+	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
+		ctx, ghesRepo.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(ghesIssue)
+	assert.Equal("closed", ghesIssue.State)
+}
+
 // TestAPIIssueDataFromGraphQLSync verifies the API correctly serves
 // issue data that was persisted by the GraphQL sync path. The sync
 // path itself (GraphQL fetch → normalize → DB upsert) is tested in
@@ -6923,6 +7038,43 @@ func TestAPIApprovePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 	})
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/1/approve",
+		map[string]string{"body": "ship it"},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(reviewCalls)
+}
+
+func TestAPIApprovePRRejectsAmbiguousTrackedRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var reviewCalls int
+	mock := &mockGH{
+		createReviewFn: func(_ context.Context, _, _ string, _ int, _, body string) (*gh.PullRequestReview, error) {
+			reviewCalls++
+			id := int64(42)
+			state := "APPROVED"
+			submittedAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequestReview{
+				ID:          &id,
+				State:       &state,
+				Body:        &body,
+				SubmittedAt: &submittedAt,
+				User:        &gh.User{Login: new("reviewer")},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 
 	rr := doJSON(
 		t,

@@ -1899,7 +1899,7 @@ func (s *Server) setIssueGitHubState(
 		owner:        input.Owner,
 		name:         input.Name,
 		number:       input.Number,
-		platformHost: input.Body.PlatformHost,
+		platformHost: firstNonEmpty(input.PlatformHost, input.Body.PlatformHost),
 	})
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {

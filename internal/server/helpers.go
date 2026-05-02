@@ -67,11 +67,33 @@ func (s *Server) lookupRepo(
 	ctx context.Context,
 	owner, name, platformHost string,
 ) (*db.Repo, error) {
+	if err := s.requireTrackedRepoUnambiguous(owner, name, platformHost); err != nil {
+		return nil, err
+	}
 	return s.repoIdentity().LookupRepo(ctx, repoIdentityRef{
 		owner:        owner,
 		name:         name,
 		platformHost: platformHost,
 	})
+}
+
+func (s *Server) requireTrackedRepoUnambiguous(
+	owner, name, platformHost string,
+) error {
+	if strings.TrimSpace(platformHost) == "" &&
+		s.syncer.IsTrackedRepoAmbiguous(owner, name) {
+		return errRepoAmbiguous
+	}
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (s *Server) filterConfiguredRepoSummaries(
@@ -89,11 +111,21 @@ func (s *Server) filterConfiguredRepoSummaries(
 
 // lookupMRID resolves the internal MR id from the common route tuple.
 func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
+	if err := s.requireTrackedRepoUnambiguous(
+		ref.owner, ref.name, ref.platformHost,
+	); err != nil {
+		return 0, err
+	}
 	return s.repoIdentity().LookupMRID(ctx, ref)
 }
 
 // lookupIssueID resolves the internal issue id from the common route tuple.
 func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
+	if err := s.requireTrackedRepoUnambiguous(
+		ref.owner, ref.name, ref.platformHost,
+	); err != nil {
+		return 0, err
+	}
 	return s.repoIdentity().LookupIssueID(ctx, ref)
 }
 
@@ -101,6 +133,11 @@ func (s *Server) lookupIssue(
 	ctx context.Context,
 	ref repoNumberPathRef,
 ) (*db.Repo, *db.Issue, error) {
+	if err := s.requireTrackedRepoUnambiguous(
+		ref.owner, ref.name, ref.platformHost,
+	); err != nil {
+		return nil, nil, err
+	}
 	return s.repoIdentity().LookupIssue(ctx, ref)
 }
 
