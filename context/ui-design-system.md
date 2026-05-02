@@ -70,6 +70,18 @@ Intent:
 
 Do not add new native `<select>` controls for visible app UI unless there is a platform-specific accessibility need that cannot be met by `SelectDropdown`.
 
+### Overlays
+
+Use shared overlay primitives for dropdowns, popovers, menus, tooltips, and similar floating controls.
+
+Intent:
+
+- overlays should float above panes, sidebars, drawers, resize handles, and scroll containers
+- overflow-constrained parents must not clip menus or hide available choices
+- repeated positioning, collision, z-index, and outside-click behavior belongs in the shared primitive, not local screen CSS
+
+Before placing an overlay inside a split view, compact sidebar, drawer, or scrollable region, verify that it can extend past its trigger container without being cut off.
+
 ### GitHubLabels
 
 Use `GitHubLabels` for actual GitHub labels.

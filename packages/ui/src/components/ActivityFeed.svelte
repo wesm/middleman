@@ -242,7 +242,12 @@
     },
   ]);
 
-  const compactFilterSections = $derived.by(() => [
+  const currentViewDetail = $derived.by(() => {
+    const mode = activity.getViewMode() === "flat" ? "Flat" : "Threaded";
+    return `${mode} · ${activity.getTimeRange()}`;
+  });
+
+  const filterSections = $derived.by(() => [
     {
       title: "View",
       items: [
@@ -349,38 +354,19 @@
         <button class="seg-btn" class:active={activity.getItemFilter() === "prs"} onclick={() => handleItemFilterChange("prs")}>PRs</button>
         <button class="seg-btn" class:active={activity.getItemFilter() === "issues"} onclick={() => handleItemFilterChange("issues")}>Issues</button>
       </div>
-
-      {#if !compact}
-        <div class="segmented-control">
-          <button class="seg-btn" class:active={activity.getViewMode() === "flat"} onclick={() => handleViewModeChange("flat")}>Flat</button>
-          <button class="seg-btn" class:active={activity.getViewMode() === "threaded"} onclick={() => handleViewModeChange("threaded")}>Threaded</button>
-        </div>
-
-        {#if activity.getViewMode() === "threaded"}
-          <div class="segmented-control">
-            <button class="seg-btn" class:active={grouping.getGroupByRepo()} onclick={() => grouping.setGroupByRepo(true)}>By Repo</button>
-            <button class="seg-btn" class:active={!grouping.getGroupByRepo()} onclick={() => grouping.setGroupByRepo(false)}>All</button>
-          </div>
-        {/if}
-
-        <div class="segmented-control">
-          {#each TIME_RANGES as r (r.value)}
-            <button class="seg-btn" class:active={activity.getTimeRange() === r.value} onclick={() => handleTimeRangeChange(r.value)}>{r.label}</button>
-          {/each}
-        </div>
-      {/if}
     </div>
 
     <FilterDropdown
-      label="Filters"
+      label="View"
+      detail={currentViewDetail}
       active={hiddenFilterCount > 0}
       badgeCount={hiddenFilterCount}
-      title="Filter activity types"
-      sections={compact ? compactFilterSections : activityFilterSections}
-      minWidth={compact ? "220px" : "200px"}
+      title="View and filter activity"
+      sections={filterSections}
+      minWidth="220px"
       {...hiddenFilterCount > 0
         ? {
-            resetLabel: "Show all",
+            resetLabel: "Show hidden activity",
             onReset: resetFilters,
           }
         : {}}

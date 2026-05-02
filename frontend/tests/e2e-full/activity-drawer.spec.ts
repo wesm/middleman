@@ -952,6 +952,41 @@ test.describe("activity split view and detail drawers", () => {
     expect(resizedRailBox!.width).toBeGreaterThan(railBox!.width + 40);
   });
 
+  test("activity split view lets the View dropdown float past the rail splitter", async ({ page }) => {
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    await openActivityPRSplit(page);
+
+    const rail = page.locator(".activity-pane");
+    const viewButton = rail.locator(".filter-btn", { hasText: "View" });
+    await expect(viewButton).toBeVisible();
+    await viewButton.click();
+
+    const dropdown = page.locator(".activity-feed .filter-dropdown");
+    await expect(dropdown).toBeVisible();
+
+    const railBox = await rail.boundingBox();
+    const dropdownBox = await dropdown.boundingBox();
+    expect(railBox).not.toBeNull();
+    expect(dropdownBox).not.toBeNull();
+    const railRight = railBox!.x + railBox!.width;
+    const dropdownRight = dropdownBox!.x + dropdownBox!.width;
+    expect(dropdownRight).toBeGreaterThan(railRight + 8);
+
+    const itemBeyondRail = await page.evaluate(
+      ({ x, y }) => {
+        const element = document.elementFromPoint(x, y);
+        return element?.closest(".filter-dropdown") !== null;
+      },
+      {
+        x: railRight + 8,
+        y: dropdownBox!.y + 24,
+      },
+    );
+    expect(itemBeyondRail).toBe(true);
+  });
+
   test("activity split view can collapse and expand the activity rail", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);
