@@ -262,6 +262,19 @@
     }
   }
 
+  function openItemSidebar(targetId: string, tab: SidebarTab): void {
+    // Cross-workspace click: navigate first, then ensure
+    // the sidebar is open for the target tab.
+    if (targetId !== workspaceId) {
+      sidebarTab = tab;
+      sidebarOpen = true;
+      navigate(`/terminal/${targetId}`);
+      return;
+    }
+
+    handleSegmentClick(tab);
+  }
+
   function toggleRightSidebar(): void {
     sidebarOpen = !sidebarOpen;
   }
@@ -881,24 +894,7 @@
         selectedId={workspaceId}
         {isSidebarToggleEnabled}
         onCollapseSidebar={onToggleSidebar}
-        onOpenItemSidebar={(targetId, tab) => {
-          // Cross-workspace click: navigate first, then ensure
-          // the sidebar is open for the target tab.
-          if (targetId !== workspaceId) {
-            sidebarTab = tab;
-            sidebarOpen = true;
-            navigate(`/terminal/${targetId}`);
-            return;
-          }
-          // Same-workspace click: toggle, mirroring the seg-btn
-          // behavior in handleSegmentClick.
-          if (sidebarOpen && sidebarTab === tab) {
-            sidebarOpen = false;
-            return;
-          }
-          sidebarTab = tab;
-          sidebarOpen = true;
-        }}
+        onOpenItemSidebar={openItemSidebar}
       />
     {/snippet}
     <div class="terminal-main">

@@ -19,6 +19,9 @@
     class: className = undefined,
   }: Props = $props();
 
+  const ToggleIcon = $derived(
+    state === "collapsed" ? PanelLeftOpenIcon : PanelLeftCloseIcon,
+  );
   const action = $derived(
     state === "collapsed" ? "Expand" : "Collapse",
   );
@@ -36,19 +39,11 @@
   aria-label={accessibleLabel}
   type="button"
 >
-  {#if state === "collapsed"}
-    <PanelLeftOpenIcon
-      size="14"
-      strokeWidth="1.5"
-      aria-hidden="true"
-    />
-  {:else}
-    <PanelLeftCloseIcon
-      size="14"
-      strokeWidth="1.5"
-      aria-hidden="true"
-    />
-  {/if}
+  <ToggleIcon
+    size="14"
+    strokeWidth="1.5"
+    aria-hidden="true"
+  />
 </button>
 
 <style>
