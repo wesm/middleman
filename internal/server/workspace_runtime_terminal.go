@@ -253,6 +253,10 @@ func bridgeRuntimeAttachment(
 
 	select {
 	case <-attachment.Done:
+		select {
+		case <-outputDone:
+		case <-time.After(100 * time.Millisecond):
+		}
 		cancel()
 		writeRuntimeExit(conn, attachment.Info())
 		return true

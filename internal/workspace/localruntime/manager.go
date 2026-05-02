@@ -1496,7 +1496,6 @@ func (s *session) watch() SessionInfo {
 	info.TmuxSession = s.tmuxSession
 	s.mu.Unlock()
 
-	_ = s.ptmx.Close()
 	close(s.done)
 	slog.Debug(
 		"runtime session exited",
@@ -1516,6 +1515,7 @@ func (s *session) drainOutput() {
 			s.broadcast(buf[:n])
 		}
 		if err != nil {
+			_ = s.ptmx.Close()
 			s.closeSubscribers()
 			return
 		}

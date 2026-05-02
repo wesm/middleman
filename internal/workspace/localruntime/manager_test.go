@@ -797,6 +797,33 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 		"descendant child should die with the session leader")
 }
 
+func TestSessionWatchLeavesOutputOpenForDrain(t *testing.T) {
+	require := require.New(t)
+
+	readEnd, writeEnd, err := os.Pipe()
+	require.NoError(err)
+	defer writeEnd.Close()
+	defer readEnd.Close()
+
+	_, err = writeEnd.WriteString("final output")
+	require.NoError(err)
+
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(cmd.Start())
+	s := &session{
+		cmd:  cmd,
+		ptmx: readEnd,
+		done: make(chan struct{}),
+	}
+
+	s.watch()
+
+	buf := make([]byte, len("final output"))
+	_, err = readEnd.Read(buf)
+	require.NoError(err)
+	require.Equal("final output", string(buf))
+}
+
 func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
