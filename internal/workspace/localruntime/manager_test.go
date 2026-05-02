@@ -810,10 +810,12 @@ func TestSessionWatchLeavesOutputOpenForDrain(t *testing.T) {
 
 	cmd := exec.Command("sh", "-c", "exit 0")
 	require.NoError(cmd.Start())
+	outputDone := make(chan struct{})
 	s := &session{
-		cmd:  cmd,
-		ptmx: readEnd,
-		done: make(chan struct{}),
+		cmd:        cmd,
+		ptmx:       readEnd,
+		done:       make(chan struct{}),
+		outputDone: outputDone,
 	}
 
 	s.watch()
@@ -821,7 +823,35 @@ func TestSessionWatchLeavesOutputOpenForDrain(t *testing.T) {
 	buf := make([]byte, len("final output"))
 	_, err = readEnd.Read(buf)
 	require.NoError(err)
+	close(outputDone)
 	require.Equal("final output", string(buf))
+}
+
+func TestSessionWatchClosesPTYAfterPostExitDrainTimeout(t *testing.T) {
+	require := require.New(t)
+
+	readEnd, writeEnd, err := os.Pipe()
+	require.NoError(err)
+	defer readEnd.Close()
+	defer writeEnd.Close()
+
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(cmd.Start())
+	outputDone := make(chan struct{})
+	s := &session{
+		cmd:        cmd,
+		ptmx:       readEnd,
+		done:       make(chan struct{}),
+		outputDone: outputDone,
+	}
+
+	s.watch()
+	defer close(outputDone)
+
+	require.Eventually(func() bool {
+		_, err := readEnd.Stat()
+		return err != nil
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
