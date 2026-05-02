@@ -116,7 +116,10 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run tests (race detector)
-        run: go test -race ./... -shuffle=on
+        run: |
+          parallelism="$(nproc)"
+          echo "Running race detector with -p=${parallelism} -parallel=${parallelism}"
+          go test -race -p="${parallelism}" -parallel="${parallelism}" ./... -shuffle=on
 
   build:
     runs-on: ubuntu-latest
