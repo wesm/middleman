@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { acquireExclusiveLock } from "./exclusiveLock";
 
 export type E2EServerInfo = {
   host: string;
@@ -32,6 +33,7 @@ const startupTimeoutMs = 60_000;
 const pollIntervalMs = 100;
 const reachabilityTimeoutMs = 1_000;
 const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
+const workspaceTmuxLockName = "workspace-tmux";
 
 type ManagedChildLike = {
   pid?: number | undefined;
@@ -428,6 +430,34 @@ export async function startIsolatedE2EServerWithOptions(
       cleanupManagedServerProcess(started.child, isolatedInfoFile);
       await removeServerInfo(isolatedInfoFile);
       await rm(isolatedInfoDir, { force: true, recursive: true });
+    },
+  };
+}
+
+export async function startIsolatedWorkspaceE2EServer(): Promise<IsolatedE2EServer> {
+  return startIsolatedWorkspaceE2EServerWithOptions();
+}
+
+export async function startIsolatedWorkspaceE2EServerWithOptions(
+  options: IsolatedE2EServerOptions = {},
+): Promise<IsolatedE2EServer> {
+  const releaseLock = await acquireExclusiveLock(workspaceTmuxLockName);
+  let server: IsolatedE2EServer;
+  try {
+    server = await startIsolatedE2EServerWithOptions(options);
+  } catch (error) {
+    await releaseLock();
+    throw error;
+  }
+
+  return {
+    info: server.info,
+    stop: async () => {
+      try {
+        await server.stop();
+      } finally {
+        await releaseLock();
+      }
     },
   };
 }

@@ -1,7 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { access } from "node:fs/promises";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
-import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedE2EServer,
+  startIsolatedWorkspaceE2EServer,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -16,6 +20,8 @@ type WorkspaceStatusResponse = {
   status: string;
   error_message?: string | null;
 };
+
+const lockedWorkspaceTestTimeoutMs = 120_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
@@ -56,6 +62,8 @@ async function waitForWorkspaceReady(
 }
 
 test.describe("detail action buttons", () => {
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+
   test("issue detail creates a middleman workspace and opens its terminal", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
@@ -65,7 +73,7 @@ test.describe("detail action buttons", () => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
-      isolatedServer = await startIsolatedE2EServer();
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({
         baseURL: isolatedServer.info.base_url,
       });

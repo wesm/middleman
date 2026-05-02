@@ -1,10 +1,15 @@
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
-import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedWorkspaceE2EServer,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
 };
+
+const lockedWorkspaceTestTimeoutMs = 120_000;
 
 async function waitForWorkspaceReady(
   api: APIRequestContext,
@@ -27,11 +32,13 @@ async function waitForWorkspaceReady(
 }
 
 test.describe("workspace sidebar full-stack", () => {
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+
   test("issue workspaces expose the Issue tab and hide Reviews", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
-      isolatedServer = await startIsolatedE2EServer();
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({
         baseURL: isolatedServer.info.base_url,
       });

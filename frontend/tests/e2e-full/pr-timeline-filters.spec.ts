@@ -2,8 +2,26 @@ import { expect, test, type Page } from "@playwright/test";
 
 const storageKey = "middleman-pr-timeline-filter";
 
+async function gotoWithWebKitRetry(page: Page, url: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(url);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("WebKit encountered an internal error")) {
+        throw error;
+      }
+      lastError = error;
+      await page.waitForTimeout(250);
+    }
+  }
+  throw lastError;
+}
+
 async function openPRTimeline(page: Page): Promise<void> {
-  await page.goto("/pulls/acme/widgets/1");
+  await gotoWithWebKitRetry(page, "/pulls/acme/widgets/1");
   await page.locator(".pull-detail")
     .waitFor({ state: "visible", timeout: 10_000 });
   await expect(page.getByText("feat: add cache store")).toBeVisible();
@@ -18,7 +36,7 @@ async function openTimelineFilters(page: Page): Promise<void> {
 
 test.describe("PR timeline filters", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await gotoWithWebKitRetry(page, "/");
     await page.evaluate((key) => {
       localStorage.removeItem(key);
     }, storageKey);
