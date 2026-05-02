@@ -1895,11 +1895,15 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
+	platformHost := strings.TrimSpace(input.PlatformHost)
+	if platformHost == "" {
+		platformHost = strings.TrimSpace(input.Body.PlatformHost)
+	}
 	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
 		owner:        input.Owner,
 		name:         input.Name,
 		number:       input.Number,
-		platformHost: firstNonEmpty(input.PlatformHost, input.Body.PlatformHost),
+		platformHost: platformHost,
 	})
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
