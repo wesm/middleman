@@ -32,7 +32,7 @@ describe("exclusive e2e lock", () => {
     return root;
   }
 
-  it("creates a stable lock file in the configured temp root", async () => {
+  it("creates a stable lock path in the configured temp root", async () => {
     const root = await tempRoot();
 
     releaseFns.push(await acquireExclusiveLock("workspace-tmux", {
@@ -41,7 +41,7 @@ describe("exclusive e2e lock", () => {
 
     const info = await stat(exclusiveLockPath("workspace-tmux", root));
 
-    expect(info.isFile()).toBe(true);
+    expect(info.isDirectory()).toBe(true);
   });
 
   it("waits for an existing lock file before acquiring", async () => {

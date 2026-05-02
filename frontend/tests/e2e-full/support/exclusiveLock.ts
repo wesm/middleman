@@ -31,26 +31,74 @@ function lockMetadata(): string {
   }) + "\n";
 }
 
-function spawnLockProcess(lockFile: string): ChildProcess {
+function lockWorkerScript(): string {
+  return `
+    import { mkdir, rm, writeFile } from "node:fs/promises";
+    import path from "node:path";
+
+    const [lockDir, metadata] = process.argv.slice(1);
+    const waitMs = 100;
+    let releasing = false;
+
+    if (!lockDir || metadata === undefined) {
+      throw new Error("usage: lock-worker <lock-dir> <metadata>");
+    }
+
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function acquire() {
+      for (;;) {
+        try {
+          await mkdir(lockDir);
+          await writeFile(path.join(lockDir, "metadata.json"), metadata);
+          process.stdout.write("locked\\n");
+          return;
+        } catch (error) {
+          if (error?.code !== "EEXIST") {
+            throw error;
+          }
+          await delay(waitMs);
+        }
+      }
+    }
+
+    async function release() {
+      if (releasing) {
+        return;
+      }
+      releasing = true;
+      await rm(lockDir, { recursive: true, force: true });
+    }
+
+    process.stdin.resume();
+    process.stdin.on("end", async () => {
+      await release();
+      process.exit(0);
+    });
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+      process.on(signal, async () => {
+        await release();
+        process.exit(0);
+      });
+    }
+    process.on("exit", () => {
+      if (!releasing) {
+        void rm(lockDir, { recursive: true, force: true });
+      }
+    });
+
+    await acquire();
+  `;
+}
+
+function spawnLockProcess(lockPath: string): ChildProcess {
   return spawn(
-    "perl",
+    process.execPath,
     [
-      "-MFcntl=:flock",
-      "-MIO::Handle",
+      "--input-type=module",
       "-e",
-      `
-        my ($path, $metadata) = @ARGV;
-        open(my $fh, ">>", $path) or die "open $path: $!";
-        flock($fh, LOCK_EX) or die "flock $path: $!";
-        truncate($fh, 0) or die "truncate $path: $!";
-        seek($fh, 0, 0) or die "seek $path: $!";
-        print $fh $metadata or die "write $path: $!";
-        $fh->flush();
-        print STDOUT "locked\\n";
-        STDOUT->flush();
-        while (sysread(STDIN, my $buf, 8192)) {}
-      `,
-      lockFile,
+      lockWorkerScript(),
+      lockPath,
       lockMetadata(),
     ],
     {
@@ -118,9 +166,9 @@ export async function acquireExclusiveLock(
 ): Promise<() => Promise<void>> {
   const rootDir = options.rootDir ?? LOCK_ROOT;
   await mkdir(rootDir, { recursive: true });
-  const lockFile = exclusiveLockPath(name, rootDir);
+  const lockPath = exclusiveLockPath(name, rootDir);
 
-  const child = spawnLockProcess(lockFile);
+  const child = spawnLockProcess(lockPath);
   await waitForLockProcess(child);
 
   let released = false;
