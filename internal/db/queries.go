@@ -26,12 +26,11 @@ func canonicalRepoIdentifier(host, owner, name string) (string, string, string) 
 	return strings.ToLower(host), strings.ToLower(owner), strings.ToLower(name)
 }
 
-func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
-	var id int64
-	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM middleman_labels WHERE repo_id = ? AND name = ?`,
-		repoID, name,
-	).Scan(&id)
+func lookupLabelIDByNameTx(ctx context.Context, q *dbsqlc.Queries, repoID int64, name string) (int64, bool, error) {
+	id, err := q.LookupLabelIDByName(ctx, dbsqlc.LookupLabelIDByNameParams{
+		RepoID: repoID,
+		Name:   name,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -41,65 +40,47 @@ func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name s
 	return id, true, nil
 }
 
-func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.NullInt64, error) {
-	var platformID sql.NullInt64
-	err := tx.QueryRowContext(ctx,
-		`SELECT platform_id FROM middleman_labels WHERE id = ?`,
-		labelID,
-	).Scan(&platformID)
+func labelPlatformIDTx(ctx context.Context, q *dbsqlc.Queries, labelID int64) (sql.NullInt64, error) {
+	platformID, err := q.GetLabelPlatformID(ctx, labelID)
 	if err != nil {
 		return sql.NullInt64{}, err
 	}
 	return platformID, nil
 }
 
-func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_issue_labels (issue_id, label_id)
-		SELECT issue_id, ? FROM middleman_issue_labels WHERE label_id = ?
-		ON CONFLICT(issue_id, label_id) DO NOTHING`,
-		toLabelID, fromLabelID,
-	); err != nil {
+func mergeLabelRowAssociationsTx(ctx context.Context, q *dbsqlc.Queries, fromLabelID, toLabelID int64) error {
+	if err := q.MoveIssueLabelAssociations(ctx, dbsqlc.MoveIssueLabelAssociationsParams{
+		ToLabelID:   toLabelID,
+		FromLabelID: fromLabelID,
+	}); err != nil {
 		return fmt.Errorf("move issue label associations: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_issue_labels WHERE label_id = ?`,
-		fromLabelID,
-	); err != nil {
+	if err := q.DeleteIssueLabelAssociationsByLabel(ctx, fromLabelID); err != nil {
 		return fmt.Errorf("delete old issue label associations: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
-		SELECT merge_request_id, ? FROM middleman_merge_request_labels WHERE label_id = ?
-		ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
-		toLabelID, fromLabelID,
-	); err != nil {
+	if err := q.MoveMergeRequestLabelAssociations(ctx, dbsqlc.MoveMergeRequestLabelAssociationsParams{
+		ToLabelID:   toLabelID,
+		FromLabelID: fromLabelID,
+	}); err != nil {
 		return fmt.Errorf("move merge request label associations: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_merge_request_labels WHERE label_id = ?`,
-		fromLabelID,
-	); err != nil {
+	if err := q.DeleteMergeRequestLabelAssociationsByLabel(ctx, fromLabelID); err != nil {
 		return fmt.Errorf("delete old merge request label associations: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_labels WHERE id = ?`,
-		fromLabelID,
-	); err != nil {
+	if err := q.DeleteLabelByID(ctx, fromLabelID); err != nil {
 		return fmt.Errorf("delete old label row: %w", err)
 	}
 	return nil
 }
 
-func lookupLabelIDByPlatformIDTx(ctx context.Context, tx *sql.Tx, repoID, platformID int64) (int64, bool, error) {
+func lookupLabelIDByPlatformIDTx(ctx context.Context, q *dbsqlc.Queries, repoID, platformID int64) (int64, bool, error) {
 	if platformID == 0 {
 		return 0, false, nil
 	}
-	var id int64
-	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM middleman_labels WHERE repo_id = ? AND platform_id = ?`,
-		repoID, platformID,
-	).Scan(&id)
+	id, err := q.LookupLabelIDByPlatformID(ctx, dbsqlc.LookupLabelIDByPlatformIDParams{
+		RepoID:     repoID,
+		PlatformID: sql.NullInt64{Int64: platformID, Valid: true},
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -109,22 +90,22 @@ func lookupLabelIDByPlatformIDTx(ctx context.Context, tx *sql.Tx, repoID, platfo
 	return id, true, nil
 }
 
-func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Label) (int64, bool, error) {
-	platformID, foundByPlatform, err := lookupLabelIDByPlatformIDTx(ctx, tx, repoID, label.PlatformID)
+func labelIDForUpsertTx(ctx context.Context, q *dbsqlc.Queries, repoID int64, label Label) (int64, bool, error) {
+	platformID, foundByPlatform, err := lookupLabelIDByPlatformIDTx(ctx, q, repoID, label.PlatformID)
 	if err != nil {
 		return 0, false, fmt.Errorf("lookup label %s by platform id: %w", label.Name, err)
 	}
-	nameID, foundByName, err := lookupLabelIDByNameTx(ctx, tx, repoID, label.Name)
+	nameID, foundByName, err := lookupLabelIDByNameTx(ctx, q, repoID, label.Name)
 	if err != nil {
 		return 0, false, fmt.Errorf("lookup label %s by name: %w", label.Name, err)
 	}
 	if foundByPlatform && foundByName && platformID != nameID {
-		namePlatformID, err := labelPlatformIDTx(ctx, tx, nameID)
+		namePlatformID, err := labelPlatformIDTx(ctx, q, nameID)
 		if err != nil {
 			return 0, false, fmt.Errorf("lookup label %s platform id: %w", label.Name, err)
 		}
 		if !namePlatformID.Valid {
-			if err := mergeLabelRowAssociationsTx(ctx, tx, nameID, platformID); err != nil {
+			if err := mergeLabelRowAssociationsTx(ctx, q, nameID, platformID); err != nil {
 				return 0, false, fmt.Errorf("merge stale label %s into platform row: %w", label.Name, err)
 			}
 			return platformID, true, nil
@@ -140,12 +121,8 @@ func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Lab
 	return 0, false, nil
 }
 
-func repoIDForIssueTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, error) {
-	var repoID int64
-	err := tx.QueryRowContext(ctx,
-		`SELECT repo_id FROM middleman_issues WHERE id = ?`,
-		issueID,
-	).Scan(&repoID)
+func repoIDForIssueTx(ctx context.Context, q *dbsqlc.Queries, issueID int64) (int64, error) {
+	repoID, err := q.GetIssueRepoID(ctx, issueID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("issue %d not found", issueID)
 	}
@@ -155,12 +132,8 @@ func repoIDForIssueTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, er
 	return repoID, nil
 }
 
-func repoIDForMergeRequestTx(ctx context.Context, tx *sql.Tx, mrID int64) (int64, error) {
-	var repoID int64
-	err := tx.QueryRowContext(ctx,
-		`SELECT repo_id FROM middleman_merge_requests WHERE id = ?`,
-		mrID,
-	).Scan(&repoID)
+func repoIDForMergeRequestTx(ctx context.Context, q *dbsqlc.Queries, mrID int64) (int64, error) {
+	repoID, err := q.GetMergeRequestRepoID(ctx, mrID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("merge request %d not found", mrID)
 	}
@@ -170,38 +143,37 @@ func repoIDForMergeRequestTx(ctx context.Context, tx *sql.Tx, mrID int64) (int64
 	return repoID, nil
 }
 
-func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Label) (map[string]int64, error) {
+func upsertLabelsTx(ctx context.Context, q *dbsqlc.Queries, repoID int64, labels []Label) (map[string]int64, error) {
 	ids := make(map[string]int64, len(labels))
 	for _, label := range labels {
-		id, found, err := labelIDForUpsertTx(ctx, tx, repoID, label)
+		label.UpdatedAt = canonicalUTCTime(label.UpdatedAt)
+		id, found, err := labelIDForUpsertTx(ctx, q, repoID, label)
 		if err != nil {
 			return nil, err
 		}
 		if !found {
-			result, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_labels (repo_id, platform_id, name, description, color, is_default, updated_at)
-				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?)`,
-				repoID, label.PlatformID, label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
-			)
+			id, err = q.InsertLabel(ctx, dbsqlc.InsertLabelParams{
+				RepoID:      repoID,
+				PlatformID:  label.PlatformID,
+				Name:        label.Name,
+				Description: label.Description,
+				Color:       label.Color,
+				IsDefault:   boolInt64(label.IsDefault),
+				UpdatedAt:   label.UpdatedAt,
+			})
 			if err != nil {
 				return nil, fmt.Errorf("insert label %s: %w", label.Name, err)
 			}
-			id, err = result.LastInsertId()
-			if err != nil {
-				return nil, fmt.Errorf("label insert id %s: %w", label.Name, err)
-			}
 		} else {
-			_, err = tx.ExecContext(ctx, `
-				UPDATE middleman_labels
-				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
-				    name = ?,
-				    description = ?,
-				    color = ?,
-				    is_default = ?,
-				    updated_at = ?
-				WHERE id = ?`,
-				label.PlatformID, label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt, id,
-			)
+			err = q.UpdateLabel(ctx, dbsqlc.UpdateLabelParams{
+				PlatformID:  label.PlatformID,
+				Name:        label.Name,
+				Description: label.Description,
+				Color:       label.Color,
+				IsDefault:   boolInt64(label.IsDefault),
+				UpdatedAt:   label.UpdatedAt,
+				ID:          id,
+			})
 			if err != nil {
 				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
 			}
@@ -211,58 +183,58 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 	return ids, nil
 }
 
-func replaceIssueLabelsTx(ctx context.Context, tx *sql.Tx, repoID, issueID int64, labels []Label) error {
-	actualRepoID, err := repoIDForIssueTx(ctx, tx, issueID)
+func replaceIssueLabelsTx(ctx context.Context, q *dbsqlc.Queries, repoID, issueID int64, labels []Label) error {
+	actualRepoID, err := repoIDForIssueTx(ctx, q, issueID)
 	if err != nil {
 		return err
 	}
 	if actualRepoID != repoID {
 		return fmt.Errorf("issue %d belongs to repo %d, not repo %d", issueID, actualRepoID, repoID)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_issue_labels WHERE issue_id = ?`, issueID); err != nil {
+	if err := q.DeleteIssueLabelsByIssueID(ctx, issueID); err != nil {
 		return fmt.Errorf("delete issue labels: %w", err)
 	}
 	if len(labels) == 0 {
 		return nil
 	}
-	ids, err := upsertLabelsTx(ctx, tx, actualRepoID, labels)
+	ids, err := upsertLabelsTx(ctx, q, actualRepoID, labels)
 	if err != nil {
 		return err
 	}
 	for _, label := range labels {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO middleman_issue_labels (issue_id, label_id) VALUES (?, ?) ON CONFLICT(issue_id, label_id) DO NOTHING`,
-			issueID, ids[label.Name],
-		); err != nil {
+		if err := q.InsertIssueLabel(ctx, dbsqlc.InsertIssueLabelParams{
+			IssueID: issueID,
+			LabelID: ids[label.Name],
+		}); err != nil {
 			return fmt.Errorf("insert issue label %s: %w", label.Name, err)
 		}
 	}
 	return nil
 }
 
-func replaceMergeRequestLabelsTx(ctx context.Context, tx *sql.Tx, repoID, mrID int64, labels []Label) error {
-	actualRepoID, err := repoIDForMergeRequestTx(ctx, tx, mrID)
+func replaceMergeRequestLabelsTx(ctx context.Context, q *dbsqlc.Queries, repoID, mrID int64, labels []Label) error {
+	actualRepoID, err := repoIDForMergeRequestTx(ctx, q, mrID)
 	if err != nil {
 		return err
 	}
 	if actualRepoID != repoID {
 		return fmt.Errorf("merge request %d belongs to repo %d, not repo %d", mrID, actualRepoID, repoID)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_merge_request_labels WHERE merge_request_id = ?`, mrID); err != nil {
+	if err := q.DeleteMergeRequestLabelsByMRID(ctx, mrID); err != nil {
 		return fmt.Errorf("delete merge request labels: %w", err)
 	}
 	if len(labels) == 0 {
 		return nil
 	}
-	ids, err := upsertLabelsTx(ctx, tx, actualRepoID, labels)
+	ids, err := upsertLabelsTx(ctx, q, actualRepoID, labels)
 	if err != nil {
 		return err
 	}
 	for _, label := range labels {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO middleman_merge_request_labels (merge_request_id, label_id) VALUES (?, ?) ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
-			mrID, ids[label.Name],
-		); err != nil {
+		if err := q.InsertMergeRequestLabel(ctx, dbsqlc.InsertMergeRequestLabelParams{
+			MergeRequestID: mrID,
+			LabelID:        ids[label.Name],
+		}); err != nil {
 			return fmt.Errorf("insert merge request label %s: %w", label.Name, err)
 		}
 	}
@@ -271,20 +243,21 @@ func replaceMergeRequestLabelsTx(ctx context.Context, tx *sql.Tx, repoID, mrID i
 
 func (d *DB) UpsertLabels(ctx context.Context, repoID int64, labels []Label) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		_, err := upsertLabelsTx(ctx, tx, repoID, labels)
+		q := d.writeQueries.WithTx(tx)
+		_, err := upsertLabelsTx(ctx, q, repoID, labels)
 		return err
 	})
 }
 
 func (d *DB) ReplaceIssueLabels(ctx context.Context, repoID, issueID int64, labels []Label) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return replaceIssueLabelsTx(ctx, tx, repoID, issueID, labels)
+		return replaceIssueLabelsTx(ctx, d.writeQueries.WithTx(tx), repoID, issueID, labels)
 	})
 }
 
 func (d *DB) ReplaceMergeRequestLabels(ctx context.Context, repoID, mrID int64, labels []Label) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return replaceMergeRequestLabelsTx(ctx, tx, repoID, mrID, labels)
+		return replaceMergeRequestLabelsTx(ctx, d.writeQueries.WithTx(tx), repoID, mrID, labels)
 	})
 }
 
@@ -292,33 +265,23 @@ func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[i
 	if len(ids) == 0 {
 		return map[int64][]Label{}, nil
 	}
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
-	}
-	query := fmt.Sprintf(`
-		SELECT ml.merge_request_id, l.id, l.repo_id, COALESCE(l.platform_id, 0), l.name, l.description, l.color, l.is_default, l.updated_at
-		FROM middleman_merge_request_labels ml
-		JOIN middleman_labels l ON l.id = ml.label_id
-		WHERE ml.merge_request_id IN (%s)
-		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.readQueries.ListLabelsForMergeRequestIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("query merge request labels: %w", err)
 	}
-	defer rows.Close()
 
 	out := make(map[int64][]Label, len(ids))
-	for rows.Next() {
-		var ownerID int64
-		var label Label
-		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan merge request label: %w", err)
-		}
-		out[ownerID] = append(out[ownerID], label)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate merge request labels: %w", err)
+	for _, row := range rows {
+		out[row.MergeRequestID] = append(out[row.MergeRequestID], Label{
+			ID:          row.ID,
+			RepoID:      row.RepoID,
+			PlatformID:  row.PlatformID,
+			Name:        row.Name,
+			Description: row.Description,
+			Color:       row.Color,
+			IsDefault:   repoBool(row.IsDefault),
+			UpdatedAt:   row.UpdatedAt.UTC(),
+		})
 	}
 	return out, nil
 }
@@ -327,35 +290,105 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 	if len(ids) == 0 {
 		return map[int64][]Label{}, nil
 	}
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
-	}
-	query := fmt.Sprintf(`
-		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0), l.name, l.description, l.color, l.is_default, l.updated_at
-		FROM middleman_issue_labels il
-		JOIN middleman_labels l ON l.id = il.label_id
-		WHERE il.issue_id IN (%s)
-		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
-	rows, err := d.ro.QueryContext(ctx, query, args...)
+	rows, err := d.readQueries.ListLabelsForIssueIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("query issue labels: %w", err)
 	}
-	defer rows.Close()
 
 	out := make(map[int64][]Label, len(ids))
-	for rows.Next() {
-		var ownerID int64
-		var label Label
-		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan issue label: %w", err)
-		}
-		out[ownerID] = append(out[ownerID], label)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate issue labels: %w", err)
+	for _, row := range rows {
+		out[row.IssueID] = append(out[row.IssueID], Label{
+			ID:          row.ID,
+			RepoID:      row.RepoID,
+			PlatformID:  row.PlatformID,
+			Name:        row.Name,
+			Description: row.Description,
+			Color:       row.Color,
+			IsDefault:   repoBool(row.IsDefault),
+			UpdatedAt:   row.UpdatedAt.UTC(),
+		})
 	}
 	return out, nil
+}
+
+func mergeRequestFromOwnerNameRow(row dbsqlc.GetMergeRequestByOwnerNameNumberRow) MergeRequest {
+	return MergeRequest{
+		ID:                row.ID,
+		RepoID:            row.RepoID,
+		PlatformID:        row.PlatformID,
+		Number:            int(row.Number),
+		URL:               row.Url,
+		Title:             row.Title,
+		Author:            row.Author,
+		AuthorDisplayName: row.AuthorDisplayName,
+		State:             row.State,
+		IsDraft:           repoBool(row.IsDraft),
+		Body:              row.Body,
+		HeadBranch:        row.HeadBranch,
+		BaseBranch:        row.BaseBranch,
+		PlatformHeadSHA:   row.PlatformHeadSha,
+		PlatformBaseSHA:   row.PlatformBaseSha,
+		DiffHeadSHA:       row.DiffHeadSha,
+		DiffBaseSHA:       row.DiffBaseSha,
+		MergeBaseSHA:      row.MergeBaseSha,
+		HeadRepoCloneURL:  row.HeadRepoCloneUrl,
+		Additions:         int(row.Additions),
+		Deletions:         int(row.Deletions),
+		CommentCount:      int(row.CommentCount),
+		ReviewDecision:    row.ReviewDecision,
+		CIStatus:          row.CiStatus,
+		CIChecksJSON:      row.CiChecksJson,
+		CreatedAt:         row.CreatedAt.UTC(),
+		UpdatedAt:         row.UpdatedAt.UTC(),
+		LastActivityAt:    row.LastActivityAt.UTC(),
+		MergedAt:          timeFromNull(row.MergedAt),
+		ClosedAt:          timeFromNull(row.ClosedAt),
+		MergeableState:    row.MergeableState,
+		DetailFetchedAt:   timeFromNull(row.DetailFetchedAt),
+		CIHadPending:      repoBool(row.CiHadPending),
+		KanbanStatus:      row.KanbanStatus,
+		Starred:           boolFromSQLValue(row.Starred),
+	}
+}
+
+func mergeRequestFromRepoIDRow(row dbsqlc.GetMergeRequestByRepoIDAndNumberRow) MergeRequest {
+	return MergeRequest{
+		ID:                row.ID,
+		RepoID:            row.RepoID,
+		PlatformID:        row.PlatformID,
+		Number:            int(row.Number),
+		URL:               row.Url,
+		Title:             row.Title,
+		Author:            row.Author,
+		AuthorDisplayName: row.AuthorDisplayName,
+		State:             row.State,
+		IsDraft:           repoBool(row.IsDraft),
+		Body:              row.Body,
+		HeadBranch:        row.HeadBranch,
+		BaseBranch:        row.BaseBranch,
+		PlatformHeadSHA:   row.PlatformHeadSha,
+		PlatformBaseSHA:   row.PlatformBaseSha,
+		DiffHeadSHA:       row.DiffHeadSha,
+		DiffBaseSHA:       row.DiffBaseSha,
+		MergeBaseSHA:      row.MergeBaseSha,
+		HeadRepoCloneURL:  row.HeadRepoCloneUrl,
+		Additions:         int(row.Additions),
+		Deletions:         int(row.Deletions),
+		CommentCount:      int(row.CommentCount),
+		ReviewDecision:    row.ReviewDecision,
+		CIStatus:          row.CiStatus,
+		CIChecksJSON:      row.CiChecksJson,
+		CreatedAt:         row.CreatedAt.UTC(),
+		UpdatedAt:         row.UpdatedAt.UTC(),
+		LastActivityAt:    row.LastActivityAt.UTC(),
+		MergedAt:          timeFromNull(row.MergedAt),
+		ClosedAt:          timeFromNull(row.ClosedAt),
+		MergeableState:    row.MergeableState,
+		DetailFetchedAt:   timeFromNull(row.DetailFetchedAt),
+		CIHadPending:      repoBool(row.CiHadPending),
+		KanbanStatus:      row.KanbanStatus,
+		Starred:           boolFromSQLValue(row.Starred),
+	}
 }
 
 // PurgeOtherHosts deletes all data for platform hosts other
@@ -444,6 +477,58 @@ func nullUTCTime(t *time.Time) sql.NullTime {
 	}
 	utc := canonicalUTCTime(*t)
 	return sql.NullTime{Time: utc, Valid: true}
+}
+
+func timeFromNull(t sql.NullTime) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	utc := t.Time.UTC()
+	return &utc
+}
+
+func nullInt64FromPtr(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
+}
+
+func ptrFromNullInt64(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Int64
+}
+
+func boolFromSQLValue(v any) bool {
+	switch value := v.(type) {
+	case bool:
+		return value
+	case int64:
+		return value != 0
+	case int:
+		return value != 0
+	case []byte:
+		return string(value) != "" && string(value) != "0"
+	case string:
+		return value != "" && value != "0"
+	default:
+		return false
+	}
+}
+
+func stringFromSQLValue(v any) string {
+	switch value := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case []byte:
+		return string(value)
+	default:
+		return fmt.Sprint(value)
+	}
 }
 
 func repoFromListRow(row dbsqlc.ListReposRow) Repo {
@@ -603,65 +688,44 @@ func (d *DB) UpdateRepoSettings(
 // On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
 	canonicalizeMergeRequestTimestamps(mr)
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_merge_requests
-		    (repo_id, platform_id, number, url, title, author, author_display_name,
-		     state, is_draft, body, head_branch, base_branch,
-		     platform_head_sha, platform_base_sha,
-		     head_repo_clone_url,
-		     additions, deletions, comment_count,
-		     review_decision, ci_status, ci_checks_json,
-		     detail_fetched_at, ci_had_pending,
-		     created_at, updated_at,
-		     last_activity_at, merged_at, closed_at, mergeable_state)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(repo_id, number) DO UPDATE SET
-		    platform_id          = excluded.platform_id,
-		    url                  = excluded.url,
-		    title                = excluded.title,
-		    author               = excluded.author,
-		    author_display_name  = excluded.author_display_name,
-		    state                = excluded.state,
-		    is_draft             = excluded.is_draft,
-		    body                 = excluded.body,
-		    head_branch          = excluded.head_branch,
-		    base_branch          = excluded.base_branch,
-		    platform_head_sha    = excluded.platform_head_sha,
-		    platform_base_sha    = excluded.platform_base_sha,
-		    head_repo_clone_url  = excluded.head_repo_clone_url,
-		    additions            = excluded.additions,
-		    deletions            = excluded.deletions,
-		    comment_count        = excluded.comment_count,
-		    review_decision      = excluded.review_decision,
-		    ci_status            = excluded.ci_status,
-		    ci_checks_json       = excluded.ci_checks_json,
-		    detail_fetched_at    = COALESCE(middleman_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
-		    ci_had_pending       = middleman_merge_requests.ci_had_pending,
-		    updated_at           = excluded.updated_at,
-		    last_activity_at     = excluded.last_activity_at,
-		    merged_at            = excluded.merged_at,
-		    closed_at            = excluded.closed_at,
-		    mergeable_state      = excluded.mergeable_state
-		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
-		mr.RepoID, mr.PlatformID, mr.Number, mr.URL, mr.Title,
-		mr.Author, mr.AuthorDisplayName,
-		mr.State, mr.IsDraft, mr.Body, mr.HeadBranch, mr.BaseBranch,
-		mr.PlatformHeadSHA, mr.PlatformBaseSHA,
-		mr.HeadRepoCloneURL,
-		mr.Additions, mr.Deletions, mr.CommentCount, mr.ReviewDecision,
-		mr.CIStatus, mr.CIChecksJSON,
-		mr.DetailFetchedAt, mr.CIHadPending,
-		mr.CreatedAt, mr.UpdatedAt,
-		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState,
-	)
+	err := d.writeQueries.UpsertMergeRequest(ctx, dbsqlc.UpsertMergeRequestParams{
+		RepoID:            mr.RepoID,
+		PlatformID:        mr.PlatformID,
+		Number:            int64(mr.Number),
+		Url:               mr.URL,
+		Title:             mr.Title,
+		Author:            mr.Author,
+		AuthorDisplayName: mr.AuthorDisplayName,
+		State:             mr.State,
+		IsDraft:           boolInt64(mr.IsDraft),
+		Body:              mr.Body,
+		HeadBranch:        mr.HeadBranch,
+		BaseBranch:        mr.BaseBranch,
+		PlatformHeadSha:   mr.PlatformHeadSHA,
+		PlatformBaseSha:   mr.PlatformBaseSHA,
+		HeadRepoCloneUrl:  mr.HeadRepoCloneURL,
+		Additions:         int64(mr.Additions),
+		Deletions:         int64(mr.Deletions),
+		CommentCount:      int64(mr.CommentCount),
+		ReviewDecision:    mr.ReviewDecision,
+		CiStatus:          mr.CIStatus,
+		CiChecksJson:      mr.CIChecksJSON,
+		DetailFetchedAt:   nullUTCTime(mr.DetailFetchedAt),
+		CiHadPending:      boolInt64(mr.CIHadPending),
+		CreatedAt:         mr.CreatedAt,
+		UpdatedAt:         mr.UpdatedAt,
+		LastActivityAt:    mr.LastActivityAt,
+		MergedAt:          nullUTCTime(mr.MergedAt),
+		ClosedAt:          nullUTCTime(mr.ClosedAt),
+		MergeableState:    mr.MergeableState,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("upsert merge request: %w", err)
 	}
-	var id int64
-	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`,
-		mr.RepoID, mr.Number,
-	).Scan(&id)
+	id, err := d.readQueries.GetMergeRequestIDByRepoIDAndNumber(ctx, dbsqlc.GetMergeRequestIDByRepoIDAndNumberParams{
+		RepoID: mr.RepoID,
+		Number: int64(mr.Number),
+	})
 	if err != nil {
 		return 0, fmt.Errorf("get mr id after upsert: %w", err)
 	}
@@ -671,48 +735,18 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 // GetMergeRequest returns a merge request by repo owner/name and MR number, or nil if not found.
 func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int) (*MergeRequest, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var mr MergeRequest
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
-		       p.author, p.author_display_name, p.state, p.is_draft,
-		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha,
-		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
-		       p.head_repo_clone_url,
-		       p.additions, p.deletions, p.comment_count, p.review_decision,
-		       p.ci_status, p.ci_checks_json,
-		       p.created_at, p.updated_at, p.last_activity_at,
-		       p.merged_at, p.closed_at, p.mergeable_state,
-		       p.detail_fetched_at, p.ci_had_pending,
-		       COALESCE(k.status, '') AS kanban_status,
-		       (s.number IS NOT NULL) AS starred
-		FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
-		LEFT JOIN middleman_starred_items s
-		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
-		owner, name, number,
-	).Scan(
-		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
-		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
-		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
-		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-		&mr.HeadRepoCloneURL,
-		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
-		&mr.CIStatus, &mr.CIChecksJSON,
-		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
-		&mr.DetailFetchedAt, &mr.CIHadPending,
-		&mr.KanbanStatus, &mr.Starred,
-	)
+	row, err := d.readQueries.GetMergeRequestByOwnerNameNumber(ctx, dbsqlc.GetMergeRequestByOwnerNameNumberParams{
+		Owner:  owner,
+		Name:   name,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get merge request: %w", err)
 	}
+	mr := mergeRequestFromOwnerNameRow(row)
 	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load merge request labels: %w", err)
@@ -723,47 +757,17 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 
 // GetMergeRequestByRepoIDAndNumber returns a merge request by repo ID and number.
 func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*MergeRequest, error) {
-	var mr MergeRequest
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
-		       p.author, p.author_display_name, p.state, p.is_draft,
-		       p.body, p.head_branch, p.base_branch,
-		       p.platform_head_sha, p.platform_base_sha,
-		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
-		       p.head_repo_clone_url,
-		       p.additions, p.deletions, p.comment_count, p.review_decision,
-		       p.ci_status, p.ci_checks_json,
-		       p.created_at, p.updated_at, p.last_activity_at,
-		       p.merged_at, p.closed_at, p.mergeable_state,
-		       p.detail_fetched_at, p.ci_had_pending,
-		       COALESCE(k.status, '') AS kanban_status,
-		       (s.number IS NOT NULL) AS starred
-		FROM middleman_merge_requests p
-		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
-		LEFT JOIN middleman_starred_items s
-		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
-		WHERE p.repo_id = ? AND p.number = ?`,
-		repoID, number,
-	).Scan(
-		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
-		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
-		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
-		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-		&mr.HeadRepoCloneURL,
-		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
-		&mr.CIStatus, &mr.CIChecksJSON,
-		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
-		&mr.DetailFetchedAt, &mr.CIHadPending,
-		&mr.KanbanStatus, &mr.Starred,
-	)
+	row, err := d.readQueries.GetMergeRequestByRepoIDAndNumber(ctx, dbsqlc.GetMergeRequestByRepoIDAndNumberParams{
+		RepoID: repoID,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get merge request by repo id: %w", err)
 	}
+	mr := mergeRequestFromRepoIDRow(row)
 	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load merge request labels: %w", err)
@@ -897,31 +901,21 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_mr_events
-			    (merge_request_id, platform_id, event_type, author, summary, body,
-			     metadata_json, created_at, dedupe_key)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
-			    platform_id   = excluded.platform_id,
-			    event_type    = excluded.event_type,
-			    author        = excluded.author,
-			    summary       = excluded.summary,
-			    body          = excluded.body,
-			    metadata_json = excluded.metadata_json,
-			    created_at    = excluded.created_at`)
-		if err != nil {
-			return fmt.Errorf("prepare upsert mr events: %w", err)
-		}
-		defer stmt.Close()
-
+		q := d.writeQueries.WithTx(tx)
 		for i := range events {
 			e := &events[i]
 			canonicalizeMREventTimestamps(e)
-			if _, err := stmt.ExecContext(ctx,
-				e.MergeRequestID, e.PlatformID, e.EventType, e.Author, e.Summary, e.Body,
-				e.MetadataJSON, e.CreatedAt, e.DedupeKey,
-			); err != nil {
+			if err := q.UpsertMREvent(ctx, dbsqlc.UpsertMREventParams{
+				MergeRequestID: e.MergeRequestID,
+				PlatformID:     nullInt64FromPtr(e.PlatformID),
+				EventType:      e.EventType,
+				Author:         e.Author,
+				Summary:        e.Summary,
+				Body:           e.Body,
+				MetadataJson:   e.MetadataJSON,
+				CreatedAt:      e.CreatedAt,
+				DedupeKey:      e.DedupeKey,
+			}); err != nil {
 				return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
 			}
 		}
@@ -934,18 +928,10 @@ func (d *DB) MRCommentEventExists(
 	mrID int64,
 	platformID int64,
 ) (bool, error) {
-	var exists bool
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM middleman_mr_events
-			WHERE merge_request_id = ?
-			  AND platform_id = ?
-			  AND event_type = 'issue_comment'
-		 )`,
-		mrID,
-		platformID,
-	).Scan(&exists)
+	exists, err := d.readQueries.MRCommentEventExists(ctx, dbsqlc.MRCommentEventExistsParams{
+		MergeRequestID: mrID,
+		PlatformID:     sql.NullInt64{Int64: platformID, Valid: true},
+	})
 	if err != nil {
 		return false, fmt.Errorf("check mr comment event exists: %w", err)
 	}
@@ -959,16 +945,16 @@ func (d *DB) DeleteMissingMRCommentEvents(
 	mrID int64,
 	dedupeKeys []string,
 ) error {
-	query := `DELETE FROM middleman_mr_events
-		WHERE merge_request_id = ? AND event_type = 'issue_comment'`
-	args := []any{mrID}
+	var err error
 	if len(dedupeKeys) > 0 {
-		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(dedupeKeys)) + `)`
-		for _, key := range dedupeKeys {
-			args = append(args, key)
-		}
+		err = d.writeQueries.DeleteMissingMRCommentEvents(ctx, dbsqlc.DeleteMissingMRCommentEventsParams{
+			MergeRequestID: mrID,
+			DedupeKeys:     dedupeKeys,
+		})
+	} else {
+		err = d.writeQueries.DeleteAllMRCommentEvents(ctx, mrID)
 	}
-	if _, err := d.rw.ExecContext(ctx, query, args...); err != nil {
+	if err != nil {
 		return fmt.Errorf("delete missing mr comment events: %w", err)
 	}
 	return nil
@@ -980,71 +966,57 @@ func (d *DB) DeleteMissingMRCommentEvents(
 // paths use this to avoid regressing last_activity_at to a comment-derived
 // value when reviews or commits with a newer timestamp are already stored.
 func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (time.Time, error) {
-	var createdAt sql.NullString
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT MAX(created_at) FROM middleman_mr_events
-		WHERE merge_request_id = ? AND event_type != 'issue_comment'`,
-		mrID,
-	).Scan(&createdAt)
+	createdAtValue, err := d.readQueries.GetMRLatestNonCommentEventTime(ctx, mrID)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("query latest non-comment mr event: %w", err)
 	}
-	if !createdAt.Valid {
+	createdAt := stringFromSQLValue(createdAtValue)
+	if createdAt == "" {
 		return time.Time{}, nil
 	}
-	t, err := parseDBTime(createdAt.String)
+	t, err := parseDBTime(createdAt)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("parse latest non-comment mr event time %q: %w", createdAt.String, err)
+		return time.Time{}, fmt.Errorf("parse latest non-comment mr event time %q: %w", createdAt, err)
 	}
 	return t, nil
 }
 
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
 func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, merge_request_id, platform_id, event_type, author, summary, body,
-		       metadata_json, created_at, dedupe_key
-		FROM middleman_mr_events
-		WHERE merge_request_id = ?
-		ORDER BY created_at DESC`, mrID,
-	)
+	rows, err := d.readQueries.ListMREvents(ctx, mrID)
 	if err != nil {
 		return nil, fmt.Errorf("list mr events: %w", err)
 	}
-	defer rows.Close()
 
 	var events []MREvent
-	for rows.Next() {
-		var e MREvent
-		var createdAtStr string
-		if err := rows.Scan(
-			&e.ID, &e.MergeRequestID, &e.PlatformID, &e.EventType, &e.Author, &e.Summary,
-			&e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
-		); err != nil {
-			return nil, fmt.Errorf("scan mr event: %w", err)
-		}
-		t, err := parseDBTime(createdAtStr)
+	for _, row := range rows {
+		t, err := parseDBTime(row.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"parse mr event created_at %q: %w",
-				createdAtStr, err)
+				row.CreatedAt, err)
 		}
-		e.CreatedAt = t
-		events = append(events, e)
+		events = append(events, MREvent{
+			ID:             row.ID,
+			MergeRequestID: row.MergeRequestID,
+			PlatformID:     ptrFromNullInt64(row.PlatformID),
+			EventType:      row.EventType,
+			Author:         row.Author,
+			Summary:        row.Summary,
+			Body:           row.Body,
+			MetadataJSON:   row.MetadataJson,
+			CreatedAt:      t,
+			DedupeKey:      row.DedupeKey,
+		})
 	}
-	return events, rows.Err()
+	return events, nil
 }
 
 // --- Kanban ---
 
 // EnsureKanbanState creates a kanban row with status "new" if one does not exist.
 func (d *DB) EnsureKanbanState(ctx context.Context, mrID int64) error {
-	_, err := d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_kanban_state (merge_request_id, status) VALUES (?, 'new')
-		 ON CONFLICT(merge_request_id) DO NOTHING`,
-		mrID,
-	)
-	if err != nil {
+	if err := d.writeQueries.EnsureKanbanState(ctx, mrID); err != nil {
 		return fmt.Errorf("ensure kanban state: %w", err)
 	}
 	return nil
@@ -1052,15 +1024,10 @@ func (d *DB) EnsureKanbanState(ctx context.Context, mrID int64) error {
 
 // SetKanbanState sets the kanban status for a merge request (upsert).
 func (d *DB) SetKanbanState(ctx context.Context, mrID int64, status string) error {
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_kanban_state (merge_request_id, status, updated_at)
-		VALUES (?, ?, datetime('now'))
-		ON CONFLICT(merge_request_id) DO UPDATE SET
-		    status     = excluded.status,
-		    updated_at = excluded.updated_at`,
-		mrID, status,
-	)
-	if err != nil {
+	if err := d.writeQueries.SetKanbanState(ctx, dbsqlc.SetKanbanStateParams{
+		MergeRequestID: mrID,
+		Status:         status,
+	}); err != nil {
 		return fmt.Errorf("set kanban state: %w", err)
 	}
 	return nil
@@ -1068,17 +1035,18 @@ func (d *DB) SetKanbanState(ctx context.Context, mrID int64, status string) erro
 
 // GetKanbanState returns the kanban state for a merge request, or nil if not found.
 func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, error) {
-	var k KanbanState
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT merge_request_id, status, updated_at FROM middleman_kanban_state WHERE merge_request_id = ?`, mrID,
-	).Scan(&k.MergeRequestID, &k.Status, &k.UpdatedAt)
+	row, err := d.readQueries.GetKanbanState(ctx, mrID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get kanban state: %w", err)
 	}
-	return &k, nil
+	return &KanbanState{
+		MergeRequestID: row.MergeRequestID,
+		Status:         row.Status,
+		UpdatedAt:      row.UpdatedAt.UTC(),
+	}, nil
 }
 
 // --- Helpers ---
@@ -1086,13 +1054,11 @@ func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, erro
 // GetMRIDByRepoAndNumber returns the internal MR ID for a given repo+number.
 func (d *DB) GetMRIDByRepoAndNumber(ctx context.Context, owner, name string, number int) (int64, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var id int64
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.id FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
-		owner, name, number,
-	).Scan(&id)
+	id, err := d.readQueries.GetMRIDByOwnerNameNumber(ctx, dbsqlc.GetMRIDByOwnerNameNumberParams{
+		Owner:  owner,
+		Name:   name,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("MR %s/%s#%d not found", owner, name, number)
 	}
@@ -1109,26 +1075,19 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 	repoID int64,
 	stillOpen map[int]bool,
 ) ([]int, error) {
-	rows, err := d.ro.QueryContext(ctx,
-		`SELECT number FROM middleman_merge_requests WHERE repo_id = ? AND state = 'open'`,
-		repoID,
-	)
+	rows, err := d.readQueries.ListOpenMRNumbersByRepo(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("get previously open mrs: %w", err)
 	}
-	defer rows.Close()
 
 	var closed []int
-	for rows.Next() {
-		var n int
-		if err := rows.Scan(&n); err != nil {
-			return nil, fmt.Errorf("scan mr number: %w", err)
-		}
+	for _, row := range rows {
+		n := int(row)
 		if !stillOpen[n] {
 			closed = append(closed, n)
 		}
 	}
-	return closed, rows.Err()
+	return closed, nil
 }
 
 // MRDerivedFields holds computed fields that are refreshed after fetching timeline events.
@@ -1154,14 +1113,14 @@ func (d *DB) UpdateMRTitleBody(
 	title, body string,
 	updatedAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET title = ?, body = ?, updated_at = ?,
-		    last_activity_at = MAX(last_activity_at, ?)
-		WHERE id = ? AND updated_at <= ?`,
-		title, body, updatedAt, updatedAt, id, updatedAt,
-	)
-	if err != nil {
+	updatedAt = canonicalUTCTime(updatedAt)
+	if err := d.writeQueries.UpdateMRTitleBody(ctx, dbsqlc.UpdateMRTitleBodyParams{
+		Title:          title,
+		Body:           body,
+		UpdatedAt:      updatedAt,
+		LastActivityAt: updatedAt,
+		ID:             id,
+	}); err != nil {
 		return fmt.Errorf("update mr title/body: %w", err)
 	}
 	return nil
@@ -1174,14 +1133,14 @@ func (d *DB) UpdateMRDerivedFields(
 	number int,
 	fields MRDerivedFields,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET review_decision = ?, comment_count = ?, last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt,
-		repoID, number,
-	)
-	if err != nil {
+	fields.LastActivityAt = canonicalUTCTime(fields.LastActivityAt)
+	if err := d.writeQueries.UpdateMRDerivedFields(ctx, dbsqlc.UpdateMRDerivedFieldsParams{
+		ReviewDecision: fields.ReviewDecision,
+		CommentCount:   int64(fields.CommentCount),
+		LastActivityAt: fields.LastActivityAt,
+		RepoID:         repoID,
+		Number:         int64(number),
+	}); err != nil {
 		return fmt.Errorf("update mr derived fields: %w", err)
 	}
 	return nil
@@ -1215,14 +1174,12 @@ func (d *DB) UpdateMRCIStatus(
 	ciStatus string,
 	ciChecksJSON string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET ci_status = ?, ci_checks_json = ?
-		WHERE repo_id = ? AND number = ?`,
-		ciStatus, ciChecksJSON,
-		repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdateMRCIStatus(ctx, dbsqlc.UpdateMRCIStatusParams{
+		CiStatus:     ciStatus,
+		CiChecksJson: ciChecksJSON,
+		RepoID:       repoID,
+		Number:       int64(number),
+	}); err != nil {
 		return fmt.Errorf("update mr ci status: %w", err)
 	}
 	return nil
@@ -1237,13 +1194,10 @@ func (d *DB) ClearMRCI(
 	repoID int64,
 	number int,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET ci_status = '', ci_checks_json = '', ci_had_pending = 0
-		WHERE repo_id = ? AND number = ?`,
-		repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.ClearMRCI(ctx, dbsqlc.ClearMRCIParams{
+		RepoID: repoID,
+		Number: int64(number),
+	}); err != nil {
 		return fmt.Errorf("clear mr ci: %w", err)
 	}
 	return nil
@@ -1261,16 +1215,18 @@ func (d *DB) UpdateClosedMRState(
 	mergedAt, closedAt *time.Time,
 	platformHeadSHA, platformBaseSHA string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET state = ?, merged_at = ?, closed_at = ?,
-		    updated_at = ?, last_activity_at = ?,
-		    platform_head_sha = ?, platform_base_sha = ?
-		WHERE repo_id = ? AND number = ?`,
-		state, mergedAt, closedAt, updatedAt, updatedAt,
-		platformHeadSHA, platformBaseSHA, repoID, number,
-	)
-	if err != nil {
+	updatedAt = canonicalUTCTime(updatedAt)
+	if err := d.writeQueries.UpdateClosedMRState(ctx, dbsqlc.UpdateClosedMRStateParams{
+		State:           state,
+		MergedAt:        nullUTCTime(mergedAt),
+		ClosedAt:        nullUTCTime(closedAt),
+		UpdatedAt:       updatedAt,
+		LastActivityAt:  updatedAt,
+		PlatformHeadSha: platformHeadSHA,
+		PlatformBaseSha: platformBaseSHA,
+		RepoID:          repoID,
+		Number:          int64(number),
+	}); err != nil {
 		return fmt.Errorf("update closed MR state: %w", err)
 	}
 	return nil
@@ -1279,13 +1235,13 @@ func (d *DB) UpdateClosedMRState(
 // UpdateDiffSHAs stores the locally-verified diff SHAs for a merge request.
 // Called after a successful bare clone fetch and merge-base computation.
 func (d *DB) UpdateDiffSHAs(ctx context.Context, repoID int64, number int, diffHead, diffBase, mergeBase string) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_merge_requests
-		 SET diff_head_sha = ?, diff_base_sha = ?, merge_base_sha = ?
-		 WHERE repo_id = ? AND number = ?`,
-		diffHead, diffBase, mergeBase, repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdateDiffSHAs(ctx, dbsqlc.UpdateDiffSHAsParams{
+		DiffHeadSha:  diffHead,
+		DiffBaseSha:  diffBase,
+		MergeBaseSha: mergeBase,
+		RepoID:       repoID,
+		Number:       int64(number),
+	}); err != nil {
 		return fmt.Errorf("update diff SHAs for MR %d: %w", number, err)
 	}
 	return nil
@@ -1298,13 +1254,12 @@ func (d *DB) UpdatePlatformSHAs(
 	repoID int64, number int,
 	platformHead, platformBase string,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_merge_requests
-		 SET platform_head_sha = ?, platform_base_sha = ?
-		 WHERE repo_id = ? AND number = ?`,
-		platformHead, platformBase, repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdatePlatformSHAs(ctx, dbsqlc.UpdatePlatformSHAsParams{
+		PlatformHeadSha: platformHead,
+		PlatformBaseSha: platformBase,
+		RepoID:          repoID,
+		Number:          int64(number),
+	}); err != nil {
 		return fmt.Errorf(
 			"update platform SHAs for MR %d: %w", number, err)
 	}
@@ -1335,23 +1290,24 @@ func (s *DiffSHAs) Stale() bool {
 // GetDiffSHAs returns the diff-related SHAs for a merge request.
 func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var s DiffSHAs
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.platform_head_sha, p.platform_base_sha,
-		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
-		       p.state
-		FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
-		owner, name, number,
-	).Scan(&s.PlatformHeadSHA, &s.PlatformBaseSHA,
-		&s.DiffHeadSHA, &s.DiffBaseSHA, &s.MergeBaseSHA,
-		&s.State)
+	row, err := d.readQueries.GetDiffSHAs(ctx, dbsqlc.GetDiffSHAsParams{
+		Owner:  owner,
+		Name:   name,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get diff SHAs: %w", err)
+	}
+	s := DiffSHAs{
+		PlatformHeadSHA: row.PlatformHeadSha,
+		PlatformBaseSHA: row.PlatformBaseSha,
+		DiffHeadSHA:     row.DiffHeadSha,
+		DiffBaseSHA:     row.DiffBaseSha,
+		MergeBaseSHA:    row.MergeBaseSha,
+		State:           row.State,
 	}
 	return &s, nil
 }
@@ -1365,14 +1321,15 @@ func (d *DB) UpdateMRState(
 	mergedAt, closedAt *time.Time,
 ) error {
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET state = ?, merged_at = ?, closed_at = ?,
-		    updated_at = ?, last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		state, mergedAt, closedAt, now, now, repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdateMRState(ctx, dbsqlc.UpdateMRStateParams{
+		State:          state,
+		MergedAt:       nullUTCTime(mergedAt),
+		ClosedAt:       nullUTCTime(closedAt),
+		UpdatedAt:      now,
+		LastActivityAt: now,
+		RepoID:         repoID,
+		Number:         int64(number),
+	}); err != nil {
 		return fmt.Errorf("update mr state: %w", err)
 	}
 	return nil
@@ -1710,17 +1667,13 @@ func (d *DB) UpdateMRDetailFetched(
 	platformHost, repoOwner, repoName = canonicalRepoIdentifier(
 		platformHost, repoOwner, repoName,
 	)
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
-		SET detail_fetched_at = datetime('now'),
-		    ci_had_pending = ?
-		WHERE repo_id = (
-		    SELECT id FROM middleman_repos
-		    WHERE platform_host = ? AND owner = ? AND name = ?
-		) AND number = ?`,
-		ciHadPending, platformHost, repoOwner, repoName, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdateMRDetailFetched(ctx, dbsqlc.UpdateMRDetailFetchedParams{
+		CiHadPending: boolInt64(ciHadPending),
+		PlatformHost: platformHost,
+		Owner:        repoOwner,
+		Name:         repoName,
+		Number:       int64(number),
+	}); err != nil {
 		return fmt.Errorf("update mr detail fetched: %w", err)
 	}
 	return nil
@@ -2047,13 +2000,11 @@ func (d *DB) ListCommentAutocompleteReferences(
 func (d *DB) SetStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_starred_items (item_type, repo_id, number)
-		VALUES (?, ?, ?)
-		ON CONFLICT(item_type, repo_id, number) DO NOTHING`,
-		itemType, repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.SetStarred(ctx, dbsqlc.SetStarredParams{
+		ItemType: itemType,
+		RepoID:   repoID,
+		Number:   int64(number),
+	}); err != nil {
 		return fmt.Errorf("set starred: %w", err)
 	}
 	return nil
@@ -2063,12 +2014,11 @@ func (d *DB) SetStarred(
 func (d *DB) UnsetStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_starred_items
-		WHERE item_type = ? AND repo_id = ? AND number = ?`,
-		itemType, repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UnsetStarred(ctx, dbsqlc.UnsetStarredParams{
+		ItemType: itemType,
+		RepoID:   repoID,
+		Number:   int64(number),
+	}); err != nil {
 		return fmt.Errorf("unset starred: %w", err)
 	}
 	return nil
@@ -2078,16 +2028,15 @@ func (d *DB) UnsetStarred(
 func (d *DB) IsStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) (bool, error) {
-	var count int
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM middleman_starred_items
-		WHERE item_type = ? AND repo_id = ? AND number = ?`,
-		itemType, repoID, number,
-	).Scan(&count)
+	starred, err := d.readQueries.IsStarred(ctx, dbsqlc.IsStarredParams{
+		ItemType: itemType,
+		RepoID:   repoID,
+		Number:   int64(number),
+	})
 	if err != nil {
 		return false, fmt.Errorf("is starred: %w", err)
 	}
-	return count > 0, nil
+	return starred, nil
 }
 
 // --- Rate Limits ---
@@ -2102,22 +2051,16 @@ func (d *DB) UpsertRateLimit(
 	rateLimit int,
 	rateResetAt *time.Time,
 ) error {
-	_, err := d.rw.Exec(`
-		INSERT INTO middleman_rate_limits
-		    (platform_host, api_type, requests_hour, hour_start,
-		     rate_remaining, rate_limit, rate_reset_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-		ON CONFLICT(platform_host, api_type) DO UPDATE SET
-		    requests_hour  = excluded.requests_hour,
-		    hour_start     = excluded.hour_start,
-		    rate_remaining = excluded.rate_remaining,
-		    rate_limit     = excluded.rate_limit,
-		    rate_reset_at  = excluded.rate_reset_at,
-		    updated_at     = datetime('now')`,
-		platformHost, apiType, requestsHour, hourStart,
-		rateRemaining, rateLimit, rateResetAt,
-	)
-	if err != nil {
+	hourStart = canonicalUTCTime(hourStart)
+	if err := d.writeQueries.UpsertRateLimit(context.Background(), dbsqlc.UpsertRateLimitParams{
+		PlatformHost:  platformHost,
+		ApiType:       apiType,
+		RequestsHour:  int64(requestsHour),
+		HourStart:     hourStart,
+		RateRemaining: int64(rateRemaining),
+		RateLimit:     int64(rateLimit),
+		RateResetAt:   nullUTCTime(rateResetAt),
+	}); err != nil {
 		return fmt.Errorf("upsert rate limit: %w", err)
 	}
 	return nil
@@ -2129,24 +2072,27 @@ func (d *DB) GetRateLimit(
 	platformHost string,
 	apiType string,
 ) (*RateLimit, error) {
-	var r RateLimit
-	err := d.ro.QueryRow(`
-		SELECT id, platform_host, api_type, requests_hour, hour_start,
-		       rate_remaining, rate_limit, rate_reset_at, updated_at
-		FROM middleman_rate_limits
-		WHERE platform_host = ? AND api_type = ?`,
-		platformHost, apiType,
-	).Scan(
-		&r.ID, &r.PlatformHost, &r.APIType, &r.RequestsHour, &r.HourStart,
-		&r.RateRemaining, &r.RateLimit, &r.RateResetAt, &r.UpdatedAt,
-	)
+	row, err := d.readQueries.GetRateLimit(context.Background(), dbsqlc.GetRateLimitParams{
+		PlatformHost: platformHost,
+		ApiType:      apiType,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get rate limit: %w", err)
 	}
-	return &r, nil
+	return &RateLimit{
+		ID:            row.ID,
+		PlatformHost:  row.PlatformHost,
+		APIType:       row.ApiType,
+		RequestsHour:  int(row.RequestsHour),
+		HourStart:     row.HourStart.UTC(),
+		RateRemaining: int(row.RateRemaining),
+		RateLimit:     int(row.RateLimit),
+		RateResetAt:   timeFromNull(row.RateResetAt),
+		UpdatedAt:     row.UpdatedAt.UTC(),
+	}, nil
 }
 
 // --- Worktree Links ---

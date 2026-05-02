@@ -3,3 +3,26 @@
 //   sqlc v1.31.1
 
 package sqlc
+
+import (
+	"database/sql"
+	"time"
+)
+
+type MiddlemanKanbanState struct {
+	MergeRequestID int64
+	Status         string
+	UpdatedAt      time.Time
+}
+
+type MiddlemanRateLimit struct {
+	ID            int64
+	PlatformHost  string
+	ApiType       string
+	RequestsHour  int64
+	HourStart     time.Time
+	RateRemaining int64
+	RateLimit     int64
+	RateResetAt   sql.NullTime
+	UpdatedAt     time.Time
+}
