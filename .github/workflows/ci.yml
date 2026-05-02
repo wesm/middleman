@@ -98,6 +98,23 @@ jobs:
       - name: Run integration tests (git-dependent)
         run: go test -tags integration ./... -v -shuffle=on
 
+  race:
+    name: go test -race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Stub frontend embed dir
+        run: |
+          mkdir -p internal/web/dist
+          echo ok > internal/web/dist/stub.html
+
       - name: Run tests (race detector)
         run: go test -race ./... -shuffle=on
 
