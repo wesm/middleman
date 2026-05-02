@@ -79,19 +79,20 @@ func walkChain(
 		if len(children) == 0 {
 			break
 		}
-		// Prefer open child over merged; within same state, lowest number wins.
-		current = children[0]
-		if current.State != "open" {
-			for _, c := range children[1:] {
-				if c.State == "open" {
-					current = c
-					break
-				}
-			}
-		}
+		current = preferredChild(children)
 	}
 
 	return chain
+}
+
+func preferredChild(children []db.MergeRequest) db.MergeRequest {
+	// Children inherit deterministic number ordering from DetectChains.
+	for _, child := range children {
+		if child.State == "open" {
+			return child
+		}
+	}
+	return children[0]
 }
 
 func hasOpenMember(chain []db.MergeRequest) bool {

@@ -157,11 +157,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		return stacks, make(map[int64][]StackMemberWithPR), nil
 	}
 
-	// Fetch members for all stacks.
-	placeholders := make([]string, len(stackIDs))
 	memberArgs := make([]any, len(stackIDs))
 	for i, id := range stackIDs {
-		placeholders[i] = "?"
 		memberArgs[i] = id
 	}
 	memberQuery := `
@@ -169,7 +166,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft, p.base_branch
 		FROM middleman_stack_members sm
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
-		WHERE sm.stack_id IN (` + strings.Join(placeholders, ",") + `)
+		WHERE sm.stack_id IN (` + sqlPlaceholders(len(stackIDs)) + `)
 		ORDER BY sm.stack_id, sm.position`
 
 	mRows, err := d.ro.QueryContext(ctx, memberQuery, memberArgs...)
@@ -202,16 +199,14 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 		}
 		return nil
 	}
-	placeholders := make([]string, len(activeStackIDs))
 	args := make([]any, 0, len(activeStackIDs)+1)
 	args = append(args, repoID)
-	for i, id := range activeStackIDs {
-		placeholders[i] = "?"
+	for _, id := range activeStackIDs {
 		args = append(args, id)
 	}
 	_, err := d.rw.ExecContext(ctx,
 		`DELETE FROM middleman_stacks WHERE repo_id = ? AND id NOT IN (`+
-			strings.Join(placeholders, ",")+`)`,
+			sqlPlaceholders(len(activeStackIDs))+`)`,
 		args...,
 	)
 	if err != nil {

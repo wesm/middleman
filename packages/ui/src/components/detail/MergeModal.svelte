@@ -34,9 +34,7 @@
     method: Method;
   };
 
-  // Props are stable for the lifetime of this modal, so we
-  // intentionally capture their initial values for editable fields.
-  const methods: MethodOption[] = $derived.by(() => {
+  function buildMethods(): MethodOption[] {
     const out: MethodOption[] = [];
     if (allowSquash) {
       out.push({ value: "squash", label: "Squash and merge" });
@@ -51,28 +49,29 @@
       out.push({ value: "rebase", label: "Rebase and merge" });
     }
     return out;
-  });
+  }
 
-  const coAuthorName = $derived(prAuthorDisplayName || prAuthor);
-  const coAuthor = $derived(
-    `Co-authored-by: ${coAuthorName} <${prAuthor}@users.noreply.github.com>`
-  );
+  const methods = buildMethods();
 
-  let selectedMethod = $state<Method>("squash");
-  let commitTitle = $state("");
-  let commitMessage = $state("");
-  let initialized = $state(false);
+  function initialCommitTitle(): string {
+    return `${prTitle} (#${number})`;
+  }
 
-  // Seed editable fields once on first render.
-  $effect(() => {
-    if (initialized) return;
-    selectedMethod = methods[0]?.value ?? "squash";
-    commitTitle = `${prTitle} (#${number})`;
-    commitMessage = prBody
-      ? `${prBody}\n\n${coAuthor}`
-      : coAuthor;
-    initialized = true;
-  });
+  function initialCoAuthor(): string {
+    const coAuthorName = prAuthorDisplayName || prAuthor;
+    return `Co-authored-by: ${coAuthorName} <${prAuthor}@users.noreply.github.com>`;
+  }
+
+  function initialCommitMessage(): string {
+    const coAuthor = initialCoAuthor();
+    return prBody ? `${prBody}\n\n${coAuthor}` : coAuthor;
+  }
+
+  // Props are stable for the lifetime of this modal, so these
+  // editable fields intentionally capture their initial values.
+  let selectedMethod = $state<Method>(methods[0]?.value ?? "squash");
+  let commitTitle = $state(initialCommitTitle());
+  let commitMessage = $state(initialCommitMessage());
 
   let merging = $state(false);
   let error = $state<string | null>(null);
@@ -148,7 +147,7 @@
         <div class="field" role="group" aria-label="Merge method">
           <span class="field-label">Merge method</span>
           <div class="method-options">
-            {#each methods as m}
+            {#each methods as m (m.value)}
               <label
                 class="method-option"
                 class:method-option--active={selectedMethod === m.value}

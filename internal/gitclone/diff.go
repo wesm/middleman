@@ -112,14 +112,7 @@ func (m *Manager) Diff(
 	}
 
 	// Step 2: Get file metadata from --raw -z (with rename/copy detection).
-	rawArgs := []string{
-		"diff", "--raw", "-z", "-M", "-C",
-		"--find-copies-harder", mergeBase, headSHA,
-	}
-	if hideWhitespace {
-		rawArgs = append(rawArgs[:2],
-			append([]string{"-w"}, rawArgs[2:]...)...)
-	}
+	rawArgs := diffRawArgs(mergeBase, headSHA, hideWhitespace)
 	rawOut, err := m.git(ctx, host, clonePath, rawArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --raw: %w", err)
@@ -165,43 +158,33 @@ func (m *Manager) Diff(
 func (m *Manager) computeWhitespaceOnlyCount(
 	ctx context.Context, host, clonePath, mergeBase, headSHA string,
 ) (int, error) {
-	// Non-whitespace-ignoring pass.
-	out1, err := m.git(ctx, host, clonePath,
-		"diff", "--raw", "-z", "--no-renames", mergeBase, headSHA)
+	whitespaceOnlyFiles, err := m.whitespaceOnlyFiles(ctx, host, clonePath, mergeBase, headSHA)
 	if err != nil {
 		return 0, err
 	}
-	// Whitespace-ignoring pass.
-	out2, err := m.git(ctx, host, clonePath,
-		"diff", "--raw", "-z", "--no-renames", "-w", mergeBase, headSHA)
-	if err != nil {
-		return 0, err
-	}
-
-	allFiles := parseRawZPaths(out1)
-	wFiles := parseRawZPaths(out2)
-
-	count := 0
-	for f := range allFiles {
-		if !wFiles[f] {
-			count++
-		}
-	}
-	return count, nil
+	return len(whitespaceOnlyFiles), nil
 }
 
 func (m *Manager) getWhitespaceOnlyFiles(
 	ctx context.Context, host, clonePath, mergeBase, headSHA string,
 ) map[string]bool {
-	out1, err := m.git(ctx, host, clonePath,
-		"diff", "--raw", "-z", "--no-renames", mergeBase, headSHA)
+	files, err := m.whitespaceOnlyFiles(ctx, host, clonePath, mergeBase, headSHA)
 	if err != nil {
 		return nil
 	}
-	out2, err := m.git(ctx, host, clonePath,
-		"diff", "--raw", "-z", "--no-renames", "-w", mergeBase, headSHA)
+	return files
+}
+
+func (m *Manager) whitespaceOnlyFiles(
+	ctx context.Context, host, clonePath, mergeBase, headSHA string,
+) (map[string]bool, error) {
+	out1, err := m.git(ctx, host, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
 	if err != nil {
-		return nil
+		return nil, err
+	}
+	out2, err := m.git(ctx, host, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, true)...)
+	if err != nil {
+		return nil, err
 	}
 
 	allFiles := parseRawZPaths(out1)
@@ -213,7 +196,26 @@ func (m *Manager) getWhitespaceOnlyFiles(
 			result[f] = true
 		}
 	}
-	return result
+	return result, nil
+}
+
+func diffRawArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
+	args := []string{
+		"diff", "--raw", "-z", "-M", "-C",
+		"--find-copies-harder", mergeBase, headSHA,
+	}
+	if hideWhitespace {
+		return append(args[:2], append([]string{"-w"}, args[2:]...)...)
+	}
+	return args
+}
+
+func diffRawNoRenameArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
+	args := []string{"diff", "--raw", "-z", "--no-renames", mergeBase, headSHA}
+	if hideWhitespace {
+		return append(args[:4], append([]string{"-w"}, args[4:]...)...)
+	}
+	return args
 }
 
 // parseRawZPaths extracts just the file paths from --raw -z output.
