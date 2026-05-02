@@ -39,6 +39,12 @@ Apply these checks to every new or modified test:
    - Do not compute the expected value with the same production logic being tested.
    - Use literals, independently constructed fixtures, small hand-checked examples, or invariant/property assertions.
 
+7. **Do not test upstream functionality**
+   - Do not write tests whose real claim is that a trusted framework, SDK, standard library, database, parser, router, or generated client works as documented.
+   - For example, do not test that Huma parses URL path parameters, query strings, status codes, or OpenAPI wiring correctly unless your code adds behavior around that parsing.
+   - Test your contract at the boundary: that you registered the route you intend, pass the values you received into your domain code correctly, handle errors, and shape responses according to your API contract.
+   - If an upstream behavior is surprising or previously regressed in your usage, write a narrow characterization test around your integration point and name the upstream assumption explicitly.
+
 ## Mutation Thought Experiment
 
 Before finishing, mentally mutate the production code:
@@ -48,6 +54,7 @@ Before finishing, mentally mutate the production code:
 - Skip the state change.
 - Return an empty or default value.
 - Remove one important side effect.
+- Replace an upstream library with a broken fake only where your code's boundary handling should notice.
 
 At least one relevant test should fail for each realistic mutation. If none would fail, the test is probably tautological.
 
@@ -58,6 +65,8 @@ At least one relevant test should fail for each realistic mutation. If none woul
 - The test name promises behavior that is not asserted.
 - The only possible failure is a panic, thrown exception, missing selector, or server crash.
 - The test changed after a failure but the production behavior was not investigated.
+- The test would still be meaningful if your application code were deleted and only the framework/library remained.
+- The test asserts documented upstream mechanics, such as route parsing, JSON decoding, SQL placeholder behavior, or generated client serialization, without asserting your code's decision or contract.
 
 ## Practical Pattern
 
