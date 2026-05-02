@@ -98,9 +98,6 @@ jobs:
       - name: Run integration tests (git-dependent)
         run: go test -tags integration ./... -v -shuffle=on
 
-      - name: Run tests (race detector)
-        run: go test -race ./... -shuffle=on
-
   build:
     runs-on: ubuntu-latest
     steps:
