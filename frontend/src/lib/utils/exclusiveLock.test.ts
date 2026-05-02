@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, rm, stat, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -83,5 +83,22 @@ describe("exclusive e2e lock", () => {
     await expect(acquireExclusiveLock("workspace-tmux", {
       rootDir: root,
     })).rejects.toThrow("lock root is not a safe directory");
+  });
+
+  it("recovers a stale lock with a dead owner process", async () => {
+    const root = await tempRoot();
+    const lockPath = exclusiveLockPath("workspace-tmux", root);
+    await mkdir(lockPath);
+    await writeFile(path.join(lockPath, "metadata.json"), JSON.stringify({
+      created_at: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
+      pid: 999_999_999,
+    }) + "\n");
+
+    releaseFns.push(await acquireExclusiveLock("workspace-tmux", {
+      rootDir: root,
+    }));
+
+    const info = await stat(lockPath);
+    expect(info.isDirectory()).toBe(true);
   });
 });

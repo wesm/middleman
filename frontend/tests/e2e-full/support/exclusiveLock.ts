@@ -4,9 +4,18 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
+function lockRootSuffix(): string {
+  try {
+    const uid = os.userInfo().uid;
+    return typeof uid === "number" ? String(uid) : "user";
+  } catch {
+    return "user";
+  }
+}
+
 const LOCK_ROOT = path.join(
   os.tmpdir(),
-  `middleman-playwright-locks-${typeof os.userInfo().uid === "number" ? os.userInfo().uid : "user"}`,
+  `middleman-playwright-locks-${lockRootSuffix()}`,
 );
 export type ExclusiveLockOptions = {
   rootDir?: string;
@@ -36,7 +45,7 @@ function lockMetadata(): string {
 
 function lockWorkerScript(): string {
   return `
-    import { mkdir, rm, writeFile } from "node:fs/promises";
+    import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
     import { rmSync } from "node:fs";
     import path from "node:path";
 
@@ -45,6 +54,8 @@ function lockWorkerScript(): string {
       : process.argv.slice(1);
     const [lockDir, metadata] = args;
     const waitMs = 100;
+    const staleLockMs = 10 * 60 * 1000;
+    const metadataGraceMs = 5_000;
     let acquired = false;
     let releasing = false;
 
@@ -54,17 +65,78 @@ function lockWorkerScript(): string {
 
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    function ownerIsAlive(pid) {
+      if (!Number.isInteger(pid) || pid <= 0) {
+        return false;
+      }
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        return error?.code === "EPERM";
+      }
+    }
+
+    async function lockAgeMs() {
+      try {
+        const info = await stat(lockDir);
+        return Date.now() - info.mtimeMs;
+      } catch {
+        return 0;
+      }
+    }
+
+    async function removeStaleLockIfNeeded() {
+      const metadataPath = path.join(lockDir, "metadata.json");
+      let parsed;
+      try {
+        parsed = JSON.parse(await readFile(metadataPath, "utf8"));
+      } catch {
+        if (await lockAgeMs() <= metadataGraceMs) {
+          return false;
+        }
+        await rm(lockDir, { recursive: true, force: true });
+        return true;
+      }
+
+      const createdAtMs = Date.parse(parsed.created_at);
+      if (
+        Number.isFinite(createdAtMs) &&
+        Date.now() - createdAtMs > staleLockMs
+      ) {
+        await rm(lockDir, { recursive: true, force: true });
+        return true;
+      }
+
+      if (!ownerIsAlive(parsed.pid)) {
+        await rm(lockDir, { recursive: true, force: true });
+        return true;
+      }
+
+      return false;
+    }
+
+    function ownerMetadata() {
+      return JSON.stringify({
+        ...JSON.parse(metadata),
+        pid: process.pid,
+      }) + "\\n";
+    }
+
     async function acquire() {
       for (;;) {
         try {
           await mkdir(lockDir);
           acquired = true;
-          await writeFile(path.join(lockDir, "metadata.json"), metadata);
+          await writeFile(path.join(lockDir, "metadata.json"), ownerMetadata());
           process.stdout.write("locked\\n");
           return;
         } catch (error) {
           if (error?.code !== "EEXIST") {
             throw error;
+          }
+          if (await removeStaleLockIfNeeded()) {
+            continue;
           }
           await delay(waitMs);
         }
@@ -190,11 +262,28 @@ async function stopLockProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
-  child.stdin?.end();
-  await new Promise<void>((resolve, reject) => {
-    child.once("exit", () => resolve());
-    child.once("error", reject);
+  const exitPromise = new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      child.off("exit", onExit);
+      child.off("error", onError);
+    };
+    const onExit = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    child.once("exit", onExit);
+    child.once("error", onError);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      onExit();
+    }
   });
+  child.stdin?.end();
+  await exitPromise;
 }
 
 export async function acquireExclusiveLock(
