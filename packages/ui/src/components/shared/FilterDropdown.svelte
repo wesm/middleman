@@ -1,6 +1,7 @@
 <script lang="ts">
   import FunnelIcon from "@lucide/svelte/icons/funnel";
   import ArrowUpDownIcon from "@lucide/svelte/icons/arrow-up-down";
+  import { tick } from "svelte";
 
   interface FilterDropdownItem {
     id: string;
@@ -52,6 +53,7 @@
   let isOpen = $state(false);
   let buttonRef = $state<HTMLButtonElement>();
   let dropdownRef = $state<HTMLDivElement>();
+  let dropdownStyle = $state("");
 
   const isActive = $derived(active || badgeCount > 0);
   const hasReset = $derived(
@@ -64,6 +66,10 @@
 
   $effect(() => {
     if (!isOpen) return;
+
+    function updatePosition(): void {
+      positionDropdown();
+    }
 
     function handleMousedown(event: MouseEvent): void {
       const target = event.target as Node;
@@ -80,6 +86,8 @@
 
     document.addEventListener("mousedown", handleMousedown);
     document.addEventListener("keydown", handleKeydown);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
     return () => {
       document.removeEventListener(
         "mousedown",
@@ -89,12 +97,53 @@
         "keydown",
         handleKeydown,
       );
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
     };
   });
 
-  function toggleOpen(): void {
+  function positionDropdown(): void {
+    if (!buttonRef || !dropdownRef) return;
+
+    const trigger = buttonRef.getBoundingClientRect();
+    const dropdownWidth = dropdownRef.offsetWidth;
+    const gap = 4;
+    const viewportPadding = 8;
+    let left = align === "end"
+      ? trigger.right - dropdownWidth
+      : trigger.left;
+    left = Math.min(
+      Math.max(viewportPadding, left),
+      Math.max(viewportPadding, window.innerWidth - dropdownWidth - viewportPadding),
+    );
+
+    const dropdownHeight = dropdownRef.offsetHeight;
+    const below = trigger.bottom + gap;
+    const above = trigger.top - dropdownHeight - gap;
+    const top = below + dropdownHeight > window.innerHeight - viewportPadding
+      ? Math.max(viewportPadding, above)
+      : below;
+
+    dropdownStyle = [
+      `left: ${left}px`,
+      `top: ${top}px`,
+      `min-width: ${minWidth}`,
+    ].join("; ");
+  }
+
+  async function openDropdown(): Promise<void> {
+    isOpen = true;
+    await tick();
+    positionDropdown();
+  }
+
+  async function toggleOpen(): Promise<void> {
     if (disabled) return;
-    isOpen = !isOpen;
+    if (isOpen) {
+      isOpen = false;
+      return;
+    }
+    await openDropdown();
   }
 
   function handleSelect(item: FilterDropdownItem): void {
@@ -140,7 +189,7 @@
       class="filter-dropdown"
       class:filter-dropdown--align-end={align === "end"}
       bind:this={dropdownRef}
-      style:min-width={minWidth}
+      style={dropdownStyle}
     >
       {#each sections as section, index (section.title ?? `section-${index}`)}
         {#if index > 0}
@@ -242,21 +291,17 @@
   }
 
   .filter-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    margin-top: 4px;
+    position: fixed;
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-md);
-    z-index: 50;
+    z-index: 1000;
     padding: 4px 0;
   }
 
   .filter-dropdown--align-end {
-    left: auto;
-    right: 0;
+    transform-origin: top right;
   }
 
   .filter-section-title {
