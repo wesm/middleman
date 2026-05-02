@@ -45,6 +45,12 @@ Apply these checks to every new or modified test:
    - Test your contract at the boundary: that you registered the route you intend, pass the values you received into your domain code correctly, handle errors, and shape responses according to your API contract.
    - If an upstream behavior is surprising or previously regressed in your usage, write a narrow characterization test around your integration point and name the upstream assumption explicitly.
 
+8. **Avoid blindingly obvious current-code assertions**
+   - Do not write tests that only assert the implementation is written the way it is currently written.
+   - Examples: a constructor assigns constructor arguments to fields; a getter returns its backing field; a trivial wrapper forwards one argument unchanged; a constant equals its literal; a data-only struct stores the values you just set.
+   - Test these only when there is behavior beyond storage or forwarding: validation, normalization, defaulting, derived values, defensive copying, side effects, permissions, error handling, compatibility guarantees, or a public contract that has regressed before.
+   - Prefer testing the first meaningful consumer-visible behavior that depends on those fields instead of testing the field assignment directly.
+
 ## Mutation Thought Experiment
 
 Before finishing, mentally mutate the production code:
@@ -55,6 +61,7 @@ Before finishing, mentally mutate the production code:
 - Return an empty or default value.
 - Remove one important side effect.
 - Replace an upstream library with a broken fake only where your code's boundary handling should notice.
+- Rename or rearrange private fields while preserving behavior.
 
 At least one relevant test should fail for each realistic mutation. If none would fail, the test is probably tautological.
 
@@ -67,6 +74,8 @@ At least one relevant test should fail for each realistic mutation. If none woul
 - The test changed after a failure but the production behavior was not investigated.
 - The test would still be meaningful if your application code were deleted and only the framework/library remained.
 - The test asserts documented upstream mechanics, such as route parsing, JSON decoding, SQL placeholder behavior, or generated client serialization, without asserting your code's decision or contract.
+- The test would fail after a harmless refactor that leaves all public behavior unchanged.
+- The test is mostly a line-by-line translation of the constructor, getter, setter, mapper, or wrapper it claims to verify.
 
 ## Practical Pattern
 
