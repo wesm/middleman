@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/config"
 )
 
@@ -157,16 +158,8 @@ func resolveConfiguredRepo(
 				ErrConfiguredRepoArchived, raw.Owner, raw.Name,
 			)
 		}
-		canonicalOwner := repo.GetOwner().GetLogin()
-		if canonicalOwner == "" {
-			canonicalOwner = raw.Owner
-		}
 		status.MatchedRepoCount = 1
-		return status, []RepoRef{{
-			Owner:        canonicalRepoOwner(canonicalOwner),
-			Name:         canonicalRepoName(repo.GetName()),
-			PlatformHost: canonicalRepoHost(host),
-		}}, nil
+		return status, []RepoRef{repoRefFromRepository(raw, host, repo)}, nil
 	}
 
 	repos, err := client.ListRepositoriesByOwner(ctx, raw.Owner)
@@ -195,18 +188,22 @@ func resolveConfiguredRepo(
 		if !matched {
 			continue
 		}
-		canonicalOwner := repo.GetOwner().GetLogin()
-		if canonicalOwner == "" {
-			canonicalOwner = raw.Owner
-		}
-		matches = append(matches, RepoRef{
-			Owner:        canonicalRepoOwner(canonicalOwner),
-			Name:         canonicalRepoName(repo.GetName()),
-			PlatformHost: canonicalRepoHost(host),
-		})
+		matches = append(matches, repoRefFromRepository(raw, host, repo))
 	}
 	status.MatchedRepoCount = len(matches)
 	return status, matches, nil
+}
+
+func repoRefFromRepository(raw config.Repo, host string, repo *gh.Repository) RepoRef {
+	owner := repo.GetOwner().GetLogin()
+	if owner == "" {
+		owner = raw.Owner
+	}
+	return RepoRef{
+		Owner:        canonicalRepoOwner(owner),
+		Name:         canonicalRepoName(repo.GetName()),
+		PlatformHost: canonicalRepoHost(host),
+	}
 }
 
 func appendExpandedRepo(

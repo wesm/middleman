@@ -11,6 +11,10 @@
   const stores = getStores();
   const logStore = stores.roborevLog;
   let container: HTMLElement | undefined;
+  const lines = $derived(logStore?.getLines() ?? []);
+  const lineCount = $derived(lines.length);
+  const isStreaming = $derived(logStore?.isStreaming() ?? false);
+  const followMode = $derived(logStore?.getFollowMode() ?? false);
 
   $effect(() => {
     if (!logStore) return;
@@ -27,8 +31,8 @@
 
   $effect(() => {
     if (!logStore || !container) return;
-    void logStore.getLines().length;
-    if (logStore.getFollowMode()) {
+    void lineCount;
+    if (followMode) {
       container.scrollTop = container.scrollHeight;
     }
   });
@@ -46,16 +50,16 @@
 <div class="log-viewer">
   <div class="log-toolbar">
     <span class="log-status">
-      {#if logStore?.isStreaming()}
+      {#if isStreaming}
         <span class="streaming-dot"></span>
         Streaming...
       {:else}
-        {logStore?.getLines().length ?? 0} lines
+        {lineCount} lines
       {/if}
     </span>
     <button
       class="follow-btn"
-      class:active={logStore?.getFollowMode()}
+      class:active={followMode}
       onclick={() => logStore?.toggleFollow()}
       title="Auto-scroll to bottom"
     >
@@ -67,12 +71,12 @@
     bind:this={container}
   >
     {#if logStore}
-      {#each logStore.getLines() as line}
+      {#each lines as line, index (`${line.ts}:${index}`)}
         <div class="log-line {lineClass(line.lineType)}">
           <span class="log-text">{line.text}</span>
         </div>
       {/each}
-      {#if !logStore.isStreaming() && logStore.getLines().length === 0}
+      {#if !isStreaming && lineCount === 0}
         <div class="log-empty">
           No log output available.
         </div>

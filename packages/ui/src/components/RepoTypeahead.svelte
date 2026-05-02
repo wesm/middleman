@@ -144,7 +144,7 @@
         onmousedown={() => select(undefined)}
         onmouseenter={() => (highlightIndex = 0)}
       >All repos</li>
-      {#each filtered as option, i}
+      {#each filtered as option, i (option.value)}
         <li
           class="typeahead-option"
           class:highlighted={i + 1 === highlightIndex}
@@ -154,7 +154,7 @@
           onmousedown={() => select(option.value)}
           onmouseenter={() => (highlightIndex = i + 1)}
         >
-          {#each highlightSegments(option.value, query) as seg}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+          {#each highlightSegments(option.value, query) as seg, segmentIndex (`${segmentIndex}:${seg.text}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
         </li>
       {:else}
         <li class="typeahead-empty">No matching repos</li>

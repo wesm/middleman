@@ -295,14 +295,7 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 		t := gh.Timestamp{Time: *gql.ClosedAt}
 		pr.ClosedAt = &t
 	}
-	for _, l := range gql.Labels.Nodes {
-		pr.Labels = append(pr.Labels, &gh.Label{
-			Name:        new(l.Name),
-			Color:       new(l.Color),
-			Description: new(l.Description),
-			Default:     new(l.IsDefault),
-		})
-	}
+	pr.Labels = adaptLabels(gql.Labels.Nodes)
 
 	if gql.HeadRepository != nil {
 		cloneURL := gql.HeadRepository.URL
@@ -339,16 +332,22 @@ func adaptIssue(gql *gqlIssue) *gh.Issue {
 		t := gh.Timestamp{Time: *gql.ClosedAt}
 		issue.ClosedAt = &t
 	}
-	for _, l := range gql.Labels.Nodes {
-		issue.Labels = append(issue.Labels, &gh.Label{
-			Name:        new(l.Name),
-			Color:       new(l.Color),
-			Description: new(l.Description),
-			Default:     new(l.IsDefault),
-		})
-	}
+	issue.Labels = adaptLabels(gql.Labels.Nodes)
 
 	return issue
+}
+
+func adaptLabels(labels []gqlLabel) []*gh.Label {
+	out := make([]*gh.Label, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, &gh.Label{
+			Name:        new(label.Name),
+			Color:       new(label.Color),
+			Description: new(label.Description),
+			Default:     new(label.IsDefault),
+		})
+	}
+	return out
 }
 
 func stateToREST(graphqlState string) string {
