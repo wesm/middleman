@@ -19,6 +19,7 @@ Before writing the test body, answer these:
 - **What example proves it?** Use concrete inputs and literal expected outputs. Do not compute expected values with production logic.
 - **What break would this catch?** Name the wrong branch, missing side effect, wrong argument, boundary case, or contract violation.
 - **Do we own it?** Test our choices at framework, SDK, database, and service boundaries. Do not re-test documented dependency mechanics.
+- **Can you state it?** Given this setup, when the user/system does X, then Y observable behavior changes. If Y is not assertable, the test is not ready.
 
 ## Required Checks
 
@@ -65,7 +66,7 @@ Apply these checks to every new or modified test:
 
 ## Mutation Thought Experiment
 
-Before finishing, mentally mutate the production code:
+Before finishing, mentally mutate the production code. At least one relevant test should fail for each realistic mutation.
 
 - Wrong constant or argument.
 - Wrong branch handler.
@@ -76,26 +77,13 @@ Before finishing, mentally mutate the production code:
 - Renamed or rearranged private fields with behavior preserved.
 - Missing validation for zero, empty, nil, unauthorized, or malformed input.
 
-At least one relevant test should fail for each realistic mutation. If none fail, the test is probably tautological.
+If none fail, the test is probably tautological.
 
 ## Red Flags
 
-- Only proves a mock was called, not the dependency, argument, or branch.
 - Reuses the same setup/assertion object, guaranteeing equality.
-- Promises behavior the test never asserts.
 - Can fail only through panic, exception, missing selector, or server crash.
-- Changes expectations without investigating production behavior.
 - Still matters if only the framework/library remains.
-- Asserts upstream mechanics, not your decision or contract.
-- Fails after a harmless behavior-preserving refactor.
 - Translates a constructor, getter, setter, mapper, or wrapper line by line.
 - Exists for coverage without checking side effects, boundaries, or outcomes.
 - Hides expected values behind loops, formatters, builders, or helpers.
-
-## Practical Pattern
-
-For each test, write this sentence:
-
-> Given this setup, when the user/system does X, then Y observable behavior changes.
-
-If Y is not assertable, the test is not ready.
