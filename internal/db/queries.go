@@ -11,14 +11,6 @@ import (
 	dbsqlc "github.com/wesm/middleman/internal/db/sqlc"
 )
 
-func sqlPlaceholders(count int) string {
-	parts := make([]string, count)
-	for i := range parts {
-		parts[i] = "?"
-	}
-	return strings.Join(parts, ",")
-}
-
 func canonicalRepoIdentifier(host, owner, name string) (string, string, string) {
 	if host == "" {
 		host = "github.com"
@@ -388,6 +380,50 @@ func mergeRequestFromRepoIDRow(row dbsqlc.GetMergeRequestByRepoIDAndNumberRow) M
 		CIHadPending:      repoBool(row.CiHadPending),
 		KanbanStatus:      row.KanbanStatus,
 		Starred:           boolFromSQLValue(row.Starred),
+	}
+}
+
+func issueFromOwnerNameRow(row dbsqlc.GetIssueByOwnerNameNumberRow) Issue {
+	return Issue{
+		ID:              row.ID,
+		RepoID:          row.RepoID,
+		PlatformID:      row.PlatformID,
+		Number:          int(row.Number),
+		URL:             row.Url,
+		Title:           row.Title,
+		Author:          row.Author,
+		State:           row.State,
+		Body:            row.Body,
+		CommentCount:    int(row.CommentCount),
+		LabelsJSON:      row.LabelsJson,
+		CreatedAt:       row.CreatedAt.UTC(),
+		UpdatedAt:       row.UpdatedAt.UTC(),
+		LastActivityAt:  row.LastActivityAt.UTC(),
+		ClosedAt:        timeFromNull(row.ClosedAt),
+		DetailFetchedAt: timeFromNull(row.DetailFetchedAt),
+		Starred:         boolFromSQLValue(row.Starred),
+	}
+}
+
+func issueFromRepoIDRow(row dbsqlc.GetIssueByRepoIDAndNumberRow) Issue {
+	return Issue{
+		ID:              row.ID,
+		RepoID:          row.RepoID,
+		PlatformID:      row.PlatformID,
+		Number:          int(row.Number),
+		URL:             row.Url,
+		Title:           row.Title,
+		Author:          row.Author,
+		State:           row.State,
+		Body:            row.Body,
+		CommentCount:    int(row.CommentCount),
+		LabelsJSON:      row.LabelsJson,
+		CreatedAt:       row.CreatedAt.UTC(),
+		UpdatedAt:       row.UpdatedAt.UTC(),
+		LastActivityAt:  row.LastActivityAt.UTC(),
+		ClosedAt:        timeFromNull(row.ClosedAt),
+		DetailFetchedAt: timeFromNull(row.DetailFetchedAt),
+		Starred:         boolFromSQLValue(row.Starred),
 	}
 }
 
@@ -1153,14 +1189,13 @@ func (d *DB) UpdateIssueDerivedFields(
 	number int,
 	fields IssueDerivedFields,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues
-		SET comment_count = ?, last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		fields.CommentCount, fields.LastActivityAt,
-		repoID, number,
-	)
-	if err != nil {
+	fields.LastActivityAt = canonicalUTCTime(fields.LastActivityAt)
+	if err := d.writeQueries.UpdateIssueDerivedFields(ctx, dbsqlc.UpdateIssueDerivedFieldsParams{
+		CommentCount:   int64(fields.CommentCount),
+		LastActivityAt: fields.LastActivityAt,
+		RepoID:         repoID,
+		Number:         int64(number),
+	}); err != nil {
 		return fmt.Errorf("update issue derived fields: %w", err)
 	}
 	return nil
@@ -1343,40 +1378,29 @@ func (d *DB) UpdateMRState(
 // On conflict (repo_id, number), stale snapshots are ignored wholesale.
 func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	canonicalizeIssueTimestamps(issue)
-	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_issues
-		    (repo_id, platform_id, number, url, title, author, state,
-		     body, comment_count, labels_json, detail_fetched_at,
-		     created_at, updated_at, last_activity_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(repo_id, number) DO UPDATE SET
-		    platform_id       = excluded.platform_id,
-		    url               = excluded.url,
-		    title             = excluded.title,
-		    author            = excluded.author,
-		    state             = excluded.state,
-		    body              = excluded.body,
-		    comment_count     = excluded.comment_count,
-		    labels_json       = excluded.labels_json,
-		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
-		    updated_at        = excluded.updated_at,
-		    last_activity_at  = excluded.last_activity_at,
-		    closed_at         = excluded.closed_at
-		WHERE excluded.updated_at >= middleman_issues.updated_at`,
-		issue.RepoID, issue.PlatformID, issue.Number, issue.URL,
-		issue.Title, issue.Author, issue.State,
-		issue.Body, issue.CommentCount, issue.LabelsJSON,
-		issue.DetailFetchedAt,
-		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpsertIssue(ctx, dbsqlc.UpsertIssueParams{
+		RepoID:          issue.RepoID,
+		PlatformID:      issue.PlatformID,
+		Number:          int64(issue.Number),
+		Url:             issue.URL,
+		Title:           issue.Title,
+		Author:          issue.Author,
+		State:           issue.State,
+		Body:            issue.Body,
+		CommentCount:    int64(issue.CommentCount),
+		LabelsJson:      issue.LabelsJSON,
+		DetailFetchedAt: nullUTCTime(issue.DetailFetchedAt),
+		CreatedAt:       issue.CreatedAt,
+		UpdatedAt:       issue.UpdatedAt,
+		LastActivityAt:  issue.LastActivityAt,
+		ClosedAt:        nullUTCTime(issue.ClosedAt),
+	}); err != nil {
 		return 0, fmt.Errorf("upsert issue: %w", err)
 	}
-	var id int64
-	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_issues WHERE repo_id = ? AND number = ?`,
-		issue.RepoID, issue.Number,
-	).Scan(&id)
+	id, err := d.readQueries.GetIssueIDByRepoIDAndNumber(ctx, dbsqlc.GetIssueIDByRepoIDAndNumberParams{
+		RepoID: issue.RepoID,
+		Number: int64(issue.Number),
+	})
 	if err != nil {
 		return 0, fmt.Errorf("get issue id after upsert: %w", err)
 	}
@@ -1388,33 +1412,18 @@ func (d *DB) GetIssue(
 	ctx context.Context, owner, name string, number int,
 ) (*Issue, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var issue Issue
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
-		       i.detail_fetched_at,
-		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred
-		FROM middleman_issues i
-		JOIN middleman_repos r ON r.id = i.repo_id
-		LEFT JOIN middleman_starred_items s
-		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		WHERE r.owner = ? AND r.name = ? AND i.number = ?`,
-		owner, name, number,
-	).Scan(
-		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
-		&issue.URL, &issue.Title, &issue.Author, &issue.State,
-		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
-		&issue.DetailFetchedAt,
-		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-		&issue.ClosedAt, &issue.Starred,
-	)
+	row, err := d.readQueries.GetIssueByOwnerNameNumber(ctx, dbsqlc.GetIssueByOwnerNameNumberParams{
+		Owner:  owner,
+		Name:   name,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
 	}
+	issue := issueFromOwnerNameRow(row)
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load issue labels: %w", err)
@@ -1425,32 +1434,17 @@ func (d *DB) GetIssue(
 
 // GetIssueByRepoIDAndNumber returns an issue by repo ID and number.
 func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*Issue, error) {
-	var issue Issue
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
-		       i.detail_fetched_at,
-		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred
-		FROM middleman_issues i
-		LEFT JOIN middleman_starred_items s
-		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		WHERE i.repo_id = ? AND i.number = ?`,
-		repoID, number,
-	).Scan(
-		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
-		&issue.URL, &issue.Title, &issue.Author, &issue.State,
-		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
-		&issue.DetailFetchedAt,
-		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-		&issue.ClosedAt, &issue.Starred,
-	)
+	row, err := d.readQueries.GetIssueByRepoIDAndNumber(ctx, dbsqlc.GetIssueByRepoIDAndNumberParams{
+		RepoID: repoID,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue by repo id: %w", err)
 	}
+	issue := issueFromRepoIDRow(row)
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load issue labels: %w", err)
@@ -1557,13 +1551,11 @@ func (d *DB) GetIssueIDByRepoAndNumber(
 	ctx context.Context, owner, name string, number int,
 ) (int64, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var id int64
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT i.id FROM middleman_issues i
-		JOIN middleman_repos r ON r.id = i.repo_id
-		WHERE r.owner = ? AND r.name = ? AND i.number = ?`,
-		owner, name, number,
-	).Scan(&id)
+	id, err := d.readQueries.GetIssueIDByOwnerNameNumber(ctx, dbsqlc.GetIssueIDByOwnerNameNumberParams{
+		Owner:  owner,
+		Name:   name,
+		Number: int64(number),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("issue %s/%s#%d not found", owner, name, number)
 	}
@@ -1579,11 +1571,10 @@ func (d *DB) GetIssueIDByRepoAndNumber(
 func (d *DB) ResolveItemNumber(
 	ctx context.Context, repoID int64, number int,
 ) (itemType string, found bool, err error) {
-	var exists int
-	err = d.ro.QueryRowContext(ctx,
-		`SELECT 1 FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`,
-		repoID, number,
-	).Scan(&exists)
+	_, err = d.readQueries.GetMergeRequestIDByRepoIDAndNumber(ctx, dbsqlc.GetMergeRequestIDByRepoIDAndNumberParams{
+		RepoID: repoID,
+		Number: int64(number),
+	})
 	if err == nil {
 		return "pr", true, nil
 	}
@@ -1591,10 +1582,10 @@ func (d *DB) ResolveItemNumber(
 		return "", false, fmt.Errorf("check merge_requests: %w", err)
 	}
 
-	err = d.ro.QueryRowContext(ctx,
-		`SELECT 1 FROM middleman_issues WHERE repo_id = ? AND number = ?`,
-		repoID, number,
-	).Scan(&exists)
+	_, err = d.readQueries.GetIssueIDByRepoIDAndNumber(ctx, dbsqlc.GetIssueIDByRepoIDAndNumberParams{
+		RepoID: repoID,
+		Number: int64(number),
+	})
 	if err == nil {
 		return "issue", true, nil
 	}
@@ -1614,13 +1605,14 @@ func (d *DB) UpdateIssueState(
 	closedAt *time.Time,
 ) error {
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues SET state = ?, closed_at = ?,
-		    updated_at = ?, last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		state, closedAt, now, now, repoID, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdateIssueState(ctx, dbsqlc.UpdateIssueStateParams{
+		State:          state,
+		ClosedAt:       nullUTCTime(closedAt),
+		UpdatedAt:      now,
+		LastActivityAt: now,
+		RepoID:         repoID,
+		Number:         int64(number),
+	}); err != nil {
 		return fmt.Errorf("update issue state: %w", err)
 	}
 	return nil
@@ -1633,26 +1625,19 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 	repoID int64,
 	stillOpen map[int]bool,
 ) ([]int, error) {
-	rows, err := d.ro.QueryContext(ctx,
-		`SELECT number FROM middleman_issues WHERE repo_id = ? AND state = 'open'`,
-		repoID,
-	)
+	rows, err := d.readQueries.ListOpenIssueNumbersByRepo(ctx, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("get previously open issues: %w", err)
 	}
-	defer rows.Close()
 
 	var closed []int
-	for rows.Next() {
-		var n int
-		if err := rows.Scan(&n); err != nil {
-			return nil, fmt.Errorf("scan issue number: %w", err)
-		}
+	for _, row := range rows {
+		n := int(row)
 		if !stillOpen[n] {
 			closed = append(closed, n)
 		}
 	}
-	return closed, rows.Err()
+	return closed, nil
 }
 
 // --- Detail Fetch Tracking ---
@@ -1688,16 +1673,12 @@ func (d *DB) UpdateIssueDetailFetched(
 	platformHost, repoOwner, repoName = canonicalRepoIdentifier(
 		platformHost, repoOwner, repoName,
 	)
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues
-		SET detail_fetched_at = datetime('now')
-		WHERE repo_id = (
-		    SELECT id FROM middleman_repos
-		    WHERE platform_host = ? AND owner = ? AND name = ?
-		) AND number = ?`,
-		platformHost, repoOwner, repoName, number,
-	)
-	if err != nil {
+	if err := d.writeQueries.UpdateIssueDetailFetched(ctx, dbsqlc.UpdateIssueDetailFetchedParams{
+		PlatformHost: platformHost,
+		Owner:        repoOwner,
+		Name:         repoName,
+		Number:       int64(number),
+	}); err != nil {
 		return fmt.Errorf("update issue detail fetched: %w", err)
 	}
 	return nil
@@ -1740,33 +1721,21 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_issue_events
-			    (issue_id, platform_id, event_type, author, summary, body,
-			     metadata_json, created_at, dedupe_key)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(dedupe_key) DO UPDATE SET
-			    issue_id       = excluded.issue_id,
-			    platform_id    = excluded.platform_id,
-			    event_type     = excluded.event_type,
-			    author         = excluded.author,
-			    summary        = excluded.summary,
-			    body           = excluded.body,
-			    metadata_json  = excluded.metadata_json,
-			    created_at     = excluded.created_at`)
-		if err != nil {
-			return fmt.Errorf("prepare upsert issue events: %w", err)
-		}
-		defer stmt.Close()
-
+		q := d.writeQueries.WithTx(tx)
 		for i := range events {
 			e := &events[i]
 			canonicalizeIssueEventTimestamps(e)
-			if _, err := stmt.ExecContext(ctx,
-				e.IssueID, e.PlatformID, e.EventType, e.Author,
-				e.Summary, e.Body, e.MetadataJSON, e.CreatedAt,
-				e.DedupeKey,
-			); err != nil {
+			if err := q.UpsertIssueEvent(ctx, dbsqlc.UpsertIssueEventParams{
+				IssueID:      e.IssueID,
+				PlatformID:   nullInt64FromPtr(e.PlatformID),
+				EventType:    e.EventType,
+				Author:       e.Author,
+				Summary:      e.Summary,
+				Body:         e.Body,
+				MetadataJson: e.MetadataJSON,
+				CreatedAt:    e.CreatedAt,
+				DedupeKey:    e.DedupeKey,
+			}); err != nil {
 				return fmt.Errorf("insert issue event (dedupe_key=%s): %w", e.DedupeKey, err)
 			}
 		}
@@ -1779,18 +1748,10 @@ func (d *DB) IssueCommentEventExists(
 	issueID int64,
 	platformID int64,
 ) (bool, error) {
-	var exists bool
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM middleman_issue_events
-			WHERE issue_id = ?
-			  AND platform_id = ?
-			  AND event_type = 'issue_comment'
-		)`,
-		issueID,
-		platformID,
-	).Scan(&exists)
+	exists, err := d.readQueries.IssueCommentEventExists(ctx, dbsqlc.IssueCommentEventExistsParams{
+		IssueID:    issueID,
+		PlatformID: sql.NullInt64{Int64: platformID, Valid: true},
+	})
 	if err != nil {
 		return false, fmt.Errorf("check issue comment event exists: %w", err)
 	}
@@ -1804,16 +1765,16 @@ func (d *DB) DeleteMissingIssueCommentEvents(
 	issueID int64,
 	dedupeKeys []string,
 ) error {
-	query := `DELETE FROM middleman_issue_events
-		WHERE issue_id = ? AND event_type = 'issue_comment'`
-	args := []any{issueID}
+	var err error
 	if len(dedupeKeys) > 0 {
-		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(dedupeKeys)) + `)`
-		for _, key := range dedupeKeys {
-			args = append(args, key)
-		}
+		err = d.writeQueries.DeleteMissingIssueCommentEvents(ctx, dbsqlc.DeleteMissingIssueCommentEventsParams{
+			IssueID:    issueID,
+			DedupeKeys: dedupeKeys,
+		})
+	} else {
+		err = d.writeQueries.DeleteAllIssueCommentEvents(ctx, issueID)
 	}
-	if _, err := d.rw.ExecContext(ctx, query, args...); err != nil {
+	if err != nil {
 		return fmt.Errorf("delete missing issue comment events: %w", err)
 	}
 	return nil
@@ -1821,38 +1782,33 @@ func (d *DB) DeleteMissingIssueCommentEvents(
 
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.
 func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, issue_id, platform_id, event_type, author, summary, body,
-		       metadata_json, created_at, dedupe_key
-		FROM middleman_issue_events
-		WHERE issue_id = ?
-		ORDER BY created_at DESC`, issueID,
-	)
+	rows, err := d.readQueries.ListIssueEvents(ctx, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("list issue events: %w", err)
 	}
-	defer rows.Close()
 
 	var events []IssueEvent
-	for rows.Next() {
-		var e IssueEvent
-		var createdAtStr string
-		if err := rows.Scan(
-			&e.ID, &e.IssueID, &e.PlatformID, &e.EventType, &e.Author,
-			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
-		); err != nil {
-			return nil, fmt.Errorf("scan issue event: %w", err)
-		}
-		t, err := parseDBTime(createdAtStr)
+	for _, row := range rows {
+		t, err := parseDBTime(row.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"parse issue event created_at %q: %w",
-				createdAtStr, err)
+				row.CreatedAt, err)
 		}
-		e.CreatedAt = t
-		events = append(events, e)
+		events = append(events, IssueEvent{
+			ID:           row.ID,
+			IssueID:      row.IssueID,
+			PlatformID:   ptrFromNullInt64(row.PlatformID),
+			EventType:    row.EventType,
+			Author:       row.Author,
+			Summary:      row.Summary,
+			Body:         row.Body,
+			MetadataJSON: row.MetadataJson,
+			CreatedAt:    t,
+			DedupeKey:    row.DedupeKey,
+		})
 	}
-	return events, rows.Err()
+	return events, nil
 }
 
 // ListCommentAutocompleteUsers returns repo-scoped username suggestions for comment mentions.
