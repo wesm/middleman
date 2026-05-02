@@ -1,14 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
-test.describe("PR detail branch info", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1");
-    await page.locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
-  });
+async function gotoPRDetail(page: Page) {
+  await page.goto("/pulls/acme/widgets/1");
+  await page.locator(".pull-detail")
+    .waitFor({ state: "visible", timeout: 10_000 });
+}
 
+test.describe("PR detail branch info", () => {
   test("shows head and base branch buttons", async ({ page }) => {
+    await gotoPRDetail(page);
+
     const metaBranch = page.locator(".meta-branch");
     await expect(metaBranch).toBeVisible();
 
@@ -24,6 +26,8 @@ test.describe("PR detail branch info", () => {
   test("click branch shows copied feedback", async ({
     page, context, browserName,
   }) => {
+    await gotoPRDetail(page);
+
     if (browserName === "chromium") {
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     }
@@ -42,7 +46,7 @@ test.describe("PR detail branch info", () => {
   });
 
   test("summarizes changed lines by category in the popover", async ({ page }) => {
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -84,9 +88,7 @@ test.describe("PR detail branch info", () => {
       });
     });
 
-    await page.goto("/pulls/acme/widgets/1");
-    await page.locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await gotoPRDetail(page);
 
     const trigger = page.locator(".diff-summary-trigger");
     await expect(trigger).toHaveText("+240/-30");
