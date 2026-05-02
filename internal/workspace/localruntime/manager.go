@@ -1496,6 +1496,14 @@ func (s *session) watch() SessionInfo {
 	info.TmuxSession = s.tmuxSession
 	s.mu.Unlock()
 
+	// Do not close ptmx here. cmd.Wait only tells us the session leader
+	// exited; the PTY reader may still have kernel-buffered output to
+	// broadcast. Closing the master at this point races that final output.
+	// drainOutput owns the natural EOF path and explicit Stop/Detach still
+	// close ptmx when callers intentionally tear down a live terminal. A
+	// process that daemonizes while holding the slave PTY open will keep the
+	// terminal stream alive until it releases the slave, which is preferable
+	// to timing out and truncating ordinary final output.
 	close(s.done)
 	slog.Debug(
 		"runtime session exited",

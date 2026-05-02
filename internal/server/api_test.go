@@ -10447,6 +10447,11 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
 	require := require.New(t)
+	// This intentionally goes through the generated HTTP client, the real
+	// httptest server, and the terminal websocket rather than attaching to
+	// localruntime directly. The helper exits quickly after printing the
+	// observed PTY size, so receiving size:41:177 exercises the full path
+	// that must preserve final terminal output before the exit frame wins.
 	disableTmuxAgentSessions := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
