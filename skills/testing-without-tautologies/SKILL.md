@@ -11,6 +11,15 @@ Tests should fail when the behavior they protect is broken. A passing test is on
 
 Before writing or changing a test, ask: "What production change should make this test fail?" If the answer is unclear, redesign the test.
 
+## Quality Gate
+
+Before writing the test body, answer these:
+
+- **Who uses this behavior?** Prefer the public API, HTTP contract, rendered UI, CLI output, persisted data, or caller-visible result over private state and helper internals.
+- **What exact example proves it?** Use concrete inputs and literal expected outputs. Do not compute expected values with the same logic as production code.
+- **What meaningful mutation would this catch?** Name the broken branch, missing side effect, wrong argument, bad boundary case, or contract violation that should fail the test.
+- **Is this our responsibility?** Test our decisions at framework, SDK, database, and service boundaries. Do not re-test the dependency's documented mechanics.
+
 ## Required Checks
 
 Apply these checks to every new or modified test:
@@ -30,6 +39,7 @@ Apply these checks to every new or modified test:
 4. **Never mock the behavior under test**
    - Mock dependencies, boundaries, and slow or nondeterministic collaborators.
    - Do not replace the method, component, handler, query, reducer, or workflow whose behavior the test claims to verify.
+   - Prefer real in-process collaborators and framework-provided test utilities when they keep the test fast and focused.
 
 5. **Investigate failures before changing expectations**
    - Do not flip expected values just to make a failing test pass.
@@ -38,12 +48,14 @@ Apply these checks to every new or modified test:
 6. **Avoid mirror assertions**
    - Do not compute the expected value with the same production logic being tested.
    - Use literals, independently constructed fixtures, small hand-checked examples, or invariant/property assertions.
+   - Keep test logic simple enough that a reviewer can verify the expected value by inspection.
 
 7. **Do not test upstream functionality**
    - Do not write tests whose real claim is that a trusted framework, SDK, standard library, database, parser, router, or generated client works as documented.
    - For example, do not test that Huma parses URL path parameters, query strings, status codes, or OpenAPI wiring correctly unless your code adds behavior around that parsing.
    - Test your contract at the boundary: that you registered the route you intend, pass the values you received into your domain code correctly, handle errors, and shape responses according to your API contract.
    - If an upstream behavior is surprising or previously regressed in your usage, write a narrow characterization test around your integration point and name the upstream assumption explicitly.
+   - When a fake external service stands in for a real one, test the consumer behavior and prefer a contract/verified fake check for the fake itself.
 
 8. **Avoid blindingly obvious current-code assertions**
    - Do not write tests that only assert the implementation is written the way it is currently written.
@@ -62,6 +74,7 @@ Before finishing, mentally mutate the production code:
 - Remove one important side effect.
 - Replace an upstream library with a broken fake only where your code's boundary handling should notice.
 - Rename or rearrange private fields while preserving behavior.
+- Remove validation for a boundary value such as zero, empty, nil, unauthorized, or malformed input.
 
 At least one relevant test should fail for each realistic mutation. If none would fail, the test is probably tautological.
 
@@ -76,6 +89,8 @@ At least one relevant test should fail for each realistic mutation. If none woul
 - The test asserts documented upstream mechanics, such as route parsing, JSON decoding, SQL placeholder behavior, or generated client serialization, without asserting your code's decision or contract.
 - The test would fail after a harmless refactor that leaves all public behavior unchanged.
 - The test is mostly a line-by-line translation of the constructor, getter, setter, mapper, or wrapper it claims to verify.
+- The test exists mainly to raise coverage numbers, but it does not check side effects, boundaries, or observable outcomes.
+- The expected value is assembled through loops, conditionals, formatters, builders, or helpers that hide what the test is actually proving.
 
 ## Practical Pattern
 
