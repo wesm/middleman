@@ -767,7 +767,7 @@ describe("comment draft persistence", () => {
     await fireEvent.keyDown(getCommentEditor(), { key: "Enter", metaKey: true });
 
     await waitFor(() => {
-      expect(submitSpy).toHaveBeenCalledWith("octo", "repo", 1, "@al");
+      expect(submitSpy).toHaveBeenCalledWith("octo", "repo", 1, undefined, "@al");
     });
   });
 
@@ -814,7 +814,13 @@ describe("comment draft persistence", () => {
     await fireEvent.keyDown(getCommentEditor(), { key: "Enter", metaKey: true });
 
     await waitFor(() => {
-      expect(submitSpy).toHaveBeenCalledWith("octo", "repo", 1, "hello @alice");
+      expect(submitSpy).toHaveBeenCalledWith(
+        "octo",
+        "repo",
+        1,
+        undefined,
+        "hello @alice",
+      );
     });
   });
 });
