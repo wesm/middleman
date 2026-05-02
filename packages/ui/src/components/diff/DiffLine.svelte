@@ -35,7 +35,7 @@
     class:marker--add={type === "add"}
     class:marker--del={type === "delete"}
   >{marker}</span>
-  <pre class="code">{#each tokens as span}<span style:--dc={span.darkColor} style:--lc={span.lightColor}>{span.content}</span>{/each}{#if noNewline}<span class="no-newline"> (no newline at end of file)</span>{/if}</pre>
+  <pre class="code">{#each tokens as span, index (index)}<span style:--dc={span.darkColor} style:--lc={span.lightColor}>{span.content}</span>{/each}{#if noNewline}<span class="no-newline"> (no newline at end of file)</span>{/if}</pre>
 </div>
 
 <style>
@@ -106,6 +106,13 @@
     white-space: pre;
     background: transparent;
     border: none;
+  }
+
+  :global(.diff-area--word-wrap) .code {
+    flex-basis: 0;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   /* Token colors via CSS custom properties — theme switch is pure CSS,

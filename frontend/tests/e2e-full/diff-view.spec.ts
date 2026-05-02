@@ -226,6 +226,7 @@ test.describe("diff view", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-word-wrap");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -357,6 +358,23 @@ test.describe("diff view", () => {
     await expect(segments.nth(2)).not.toHaveClass(/segment--active/);
   });
 
+  test("word wrap toggle changes diff line wrapping", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const wrapToggle = page.getByRole("switch", { name: "Word wrap" });
+    const firstCodeLine = page.locator(".diff-line .code").first();
+
+    await expect(wrapToggle).toHaveAttribute("aria-checked", "false");
+    await expect(firstCodeLine).toHaveCSS("white-space", "pre");
+
+    await wrapToggle.click();
+
+    await expect(wrapToggle).toHaveAttribute("aria-checked", "true");
+    await expect(firstCodeLine).toHaveCSS("white-space", "pre-wrap");
+  });
+
   test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -423,7 +441,7 @@ test.describe("diff view", () => {
     const initialCount = fetchCount;
 
     // Toggle hide whitespace on.
-    await page.locator(".toggle-switch").click();
+    await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
 
     // Wait for the re-fetch to land and assert it actually happened.
     await expect.poll(() => fetchCount).toBeGreaterThan(initialCount);
@@ -734,6 +752,7 @@ test.describe("diff view performance", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-word-wrap");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -799,7 +818,7 @@ test.describe("diff view performance", () => {
 
     // Toggle whitespace -- triggers a re-fetch with ?whitespace=hide
     // which returns fewer files.
-    await page.locator(".toggle-switch").click();
+    await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
 
     // Count should drop to 45, proving the re-fetch and re-render completed.
     await expect(page.locator(".diff-file .file-header")).toHaveCount(45, { timeout: 15_000 });
@@ -1013,7 +1032,7 @@ test.describe("diff view (git-backed)", () => {
     await expect(page.locator(".diff-file")).toHaveCount(4);
 
     // Toggle hide whitespace.
-    await page.locator(".toggle-switch").click();
+    await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
 
     // README.md is whitespace-only and should be hidden.
     await expect(page.locator(".diff-file")).toHaveCount(3, { timeout: 10_000 });

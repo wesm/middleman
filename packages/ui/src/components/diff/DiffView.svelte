@@ -30,6 +30,7 @@
   const loading = $derived(diffStore.isDiffLoading());
   const error = $derived(diffStore.getDiffError());
   const tabWidth = $derived(diffStore.getTabWidth());
+  const wordWrap = $derived(diffStore.getWordWrap());
 
   function scrollToFile(path: string): void {
     if (!diffArea) return;
@@ -137,6 +138,7 @@
       <div class="diff-main">
         <div
           class="diff-area"
+          class:diff-area--word-wrap={wordWrap}
           bind:this={diffArea}
           onscroll={onDiffScroll}
           style:tab-size={tabWidth}
