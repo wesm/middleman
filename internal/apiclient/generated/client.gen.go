@@ -947,6 +947,11 @@ type PostReposByOwnerByNameItemsByNumberResolveParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams defines parameters for PostReposByOwnerByNamePullsByNumberApproveWorkflows.
+type PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
 type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -959,6 +964,16 @@ type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// PostReposByOwnerByNamePullsByNumberMergeParams defines parameters for PostReposByOwnerByNamePullsByNumberMerge.
+type PostReposByOwnerByNamePullsByNumberMergeParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
+// PostReposByOwnerByNamePullsByNumberReadyForReviewParams defines parameters for PostReposByOwnerByNamePullsByNumberReadyForReview.
+type PostReposByOwnerByNamePullsByNumberReadyForReviewParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
 // ListStacksParams defines parameters for ListStacks.
@@ -1200,7 +1215,7 @@ type ClientInterface interface {
 	PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWorkflows request
-	PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostPrCommentWithBody request with any body
 	PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1230,12 +1245,12 @@ type ClientInterface interface {
 	GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberMergeWithBody request with any body
-	PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberReadyForReview request
-	PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberReadyForReviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberStack request
 	GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1739,8 +1754,8 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context,
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(c.Server, owner, name, number)
+func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1871,8 +1886,8 @@ func (c *Client) GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Co
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1883,8 +1898,8 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Co
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberMergeRequest(c.Server, owner, name, number, body)
+func (c *Client) PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberMergeRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1895,8 +1910,8 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, o
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(c.Server, owner, name, number)
+func (c *Client) PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberReadyForReviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3819,7 +3834,7 @@ func NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server string,
 }
 
 // NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest generates requests for PostReposByOwnerByNamePullsByNumberApproveWorkflows
-func NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3856,6 +3871,28 @@ func NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(server string
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -4319,18 +4356,18 @@ func NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest(server string, o
 }
 
 // NewPostReposByOwnerByNamePullsByNumberMergeRequest calls the generic PostReposByOwnerByNamePullsByNumberMerge builder with application/json body
-func NewPostReposByOwnerByNamePullsByNumberMergeRequest(server string, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberMergeRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody generates requests for PostReposByOwnerByNamePullsByNumberMerge with any type of body
-func NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4369,6 +4406,28 @@ func NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server string, o
 		return nil, err
 	}
 
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
 	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
@@ -4380,7 +4439,7 @@ func NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server string, o
 }
 
 // NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest generates requests for PostReposByOwnerByNamePullsByNumberReadyForReview
-func NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(server string, owner string, name string, number int64) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberReadyForReviewParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4417,6 +4476,28 @@ func NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(server string, 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -5460,7 +5541,7 @@ type ClientWithResponsesInterface interface {
 	PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse request
-	PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error)
+	PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error)
 
 	// PostPrCommentWithBodyWithResponse request with any body
 	PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
@@ -5490,12 +5571,12 @@ type ClientWithResponsesInterface interface {
 	GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse request with any body
-	PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
+	PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
 
-	PostReposByOwnerByNamePullsByNumberMergeWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
+	PostReposByOwnerByNamePullsByNumberMergeWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse request
-	PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error)
+	PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberReadyForReviewParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error)
 
 	// GetReposByOwnerByNamePullsByNumberStackWithResponse request
 	GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberStackResponse, error)
@@ -7178,8 +7259,8 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithResp
 }
 
 // PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse request returning *PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7274,16 +7355,16 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberImportMetadataWi
 }
 
 // PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostReposByOwnerByNamePullsByNumberMergeResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParsePostReposByOwnerByNamePullsByNumberMergeResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberMerge(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberMergeParams, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberMerge(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7291,8 +7372,8 @@ func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithRespon
 }
 
 // PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse request returning *PostReposByOwnerByNamePullsByNumberReadyForReviewResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberReadyForReview(ctx, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberReadyForReviewParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberReadyForReview(ctx, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

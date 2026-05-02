@@ -608,6 +608,7 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -637,6 +638,7 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -663,6 +665,7 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -692,6 +695,7 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -721,6 +725,7 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -750,6 +755,7 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -772,6 +778,7 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 		generated.MergePRInputBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
@@ -1109,6 +1116,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1160,6 +1168,7 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1229,6 +1238,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -1364,6 +1374,7 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1488,6 +1499,7 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1555,6 +1567,7 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3248,6 +3261,7 @@ func TestAPIReadyForReview(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -4026,6 +4040,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -4597,6 +4612,32 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(ghesIssue)
 	assert.Equal("GHES synced issue", ghesIssue.Title)
+}
+
+func TestAPISyncIssueRejectsAmbiguousTrackedRepoBeforeSync(t *testing.T) {
+	assert := Assert.New(t)
+	var getIssueCalls int
+	mock := &mockGH{
+		getIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
+			getIssueCalls++
+			return nil, nil
+		},
+	}
+	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/issues/7/sync",
+		nil,
+	)
+
+	assert.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(getIssueCalls)
 }
 
 func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
@@ -6553,6 +6594,7 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -6571,6 +6613,7 @@ func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -6635,6 +6678,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6688,6 +6732,7 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6696,6 +6741,151 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(pr)
 	require.False(pr.IsDraft)
+}
+
+func TestAPIReadyForReviewRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var readyCalls int
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			readyCalls++
+			return nil, nil
+		},
+	}
+	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/1/ready-for-review",
+		nil,
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(readyCalls)
+}
+
+func TestAPIMergePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var mergeCalls int
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			mergeCalls++
+			return nil, nil
+		},
+	}
+	srv, _ := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/1/merge",
+		map[string]string{
+			"commit_title":   "title",
+			"commit_message": "body",
+			"method":         "squash",
+		},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(mergeCalls)
+}
+
+func TestAPIMergePRUsesPlatformHostQuery(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+	seedPROnHost(t, database, "github.com", "acme", "widget", 7)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 7)
+
+	var githubMergeCalls int
+	var ghesMergeCalls int
+	githubClient := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			githubMergeCalls++
+			return nil, errors.New("github.com client should not merge")
+		},
+	}
+	ghesClient := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, number int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			ghesMergeCalls++
+			merged := true
+			sha := "merge-sha"
+			msg := fmt.Sprintf("merged #%d", number)
+			return &gh.PullRequestMergeResult{
+				Merged:  &merged,
+				SHA:     &sha,
+				Message: &msg,
+			}, nil
+		},
+	}
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": ghesClient,
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/7/merge?platform_host=ghe.example.com",
+		map[string]string{
+			"commit_title":   "title",
+			"commit_message": "body",
+			"method":         "squash",
+		},
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Zero(githubMergeCalls)
+	assert.Equal(1, ghesMergeCalls)
+
+	githubRepo, err := database.GetRepoByHostOwnerName(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(githubRepo)
+	githubPR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, githubRepo.ID, 7)
+	require.NoError(err)
+	require.NotNil(githubPR)
+	assert.Equal("open", githubPR.State)
+
+	ghesRepo, err := database.GetRepoByHostOwnerName(ctx, "ghe.example.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(ghesRepo)
+	ghesPR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, ghesRepo.ID, 7)
+	require.NoError(err)
+	require.NotNil(ghesPR)
+	assert.Equal("merged", ghesPR.State)
+	assert.NotNil(ghesPR.ClosedAt)
+	assert.NotNil(ghesPR.MergedAt)
 }
 
 func TestAPIClosePR422Merged(t *testing.T) {

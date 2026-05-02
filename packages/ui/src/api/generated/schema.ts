@@ -2742,7 +2742,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-approve-workflows": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -3027,7 +3029,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-merge": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -3064,7 +3068,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-ready-for-review": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;

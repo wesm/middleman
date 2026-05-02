@@ -3169,6 +3169,11 @@ paths:
           schema:
             format: int64
             type: integer
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
       responses:
         "200":
           content:
@@ -3488,6 +3493,11 @@ paths:
           schema:
             format: int64
             type: integer
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
@@ -3528,6 +3538,11 @@ paths:
           schema:
             format: int64
             type: integer
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
       responses:
         "200":
           content:

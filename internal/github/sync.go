@@ -534,6 +534,22 @@ func (s *Syncer) ClientForRepo(
 	)
 }
 
+// ClientForRepoOnHost returns the Client for a tracked repo on a specific
+// platform host, or an error if that host-qualified repo is not tracked.
+func (s *Syncer) ClientForRepoOnHost(
+	owner, name, host string,
+) (Client, error) {
+	if host == "" {
+		host = "github.com"
+	}
+	if !s.isTrackedRepoOnHost(owner, name, host) {
+		return nil, fmt.Errorf(
+			"repo %s/%s on %s is not tracked", owner, name, host,
+		)
+	}
+	return s.clientFor(RepoRef{Owner: owner, Name: name, PlatformHost: host})
+}
+
 // ClientForHost returns the Client for a specific host,
 // or an error if no client is configured for that host.
 func (s *Syncer) ClientForHost(
@@ -3819,6 +3835,15 @@ func (s *Syncer) IsTrackedRepoOnHost(owner, name, host string) bool {
 // Returns an error if the repo is not in the configured repo list.
 func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) error {
 	return s.syncMRWithHost(ctx, owner, name, number, "")
+}
+
+// SyncMROnHost fetches fresh data for a single MR from a specific tracked host.
+func (s *Syncer) SyncMROnHost(
+	ctx context.Context,
+	host, owner, name string,
+	number int,
+) error {
+	return s.syncMRWithHost(ctx, owner, name, number, host)
 }
 
 // syncMRWithHost is the internal implementation of SyncMR.
