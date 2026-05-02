@@ -797,6 +797,63 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 		"descendant child should die with the session leader")
 }
 
+func TestSessionWatchLeavesOutputOpenForDrain(t *testing.T) {
+	require := require.New(t)
+
+	readEnd, writeEnd, err := os.Pipe()
+	require.NoError(err)
+	defer writeEnd.Close()
+	defer readEnd.Close()
+
+	_, err = writeEnd.WriteString("final output")
+	require.NoError(err)
+
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(cmd.Start())
+	outputDone := make(chan struct{})
+	s := &session{
+		cmd:        cmd,
+		ptmx:       readEnd,
+		done:       make(chan struct{}),
+		outputDone: outputDone,
+	}
+
+	s.watch()
+
+	buf := make([]byte, len("final output"))
+	_, err = readEnd.Read(buf)
+	require.NoError(err)
+	close(outputDone)
+	require.Equal("final output", string(buf))
+}
+
+func TestSessionWatchClosesPTYAfterPostExitDrainTimeout(t *testing.T) {
+	require := require.New(t)
+
+	readEnd, writeEnd, err := os.Pipe()
+	require.NoError(err)
+	defer readEnd.Close()
+	defer writeEnd.Close()
+
+	cmd := exec.Command("sh", "-c", "exit 0")
+	require.NoError(cmd.Start())
+	outputDone := make(chan struct{})
+	s := &session{
+		cmd:        cmd,
+		ptmx:       readEnd,
+		done:       make(chan struct{}),
+		outputDone: outputDone,
+	}
+
+	s.watch()
+	defer close(outputDone)
+
+	require.Eventually(func() bool {
+		_, err := readEnd.Stat()
+		return err != nil
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")

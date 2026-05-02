@@ -253,6 +253,16 @@ func bridgeRuntimeAttachment(
 
 	select {
 	case <-attachment.Done:
+		// attachment.Done reports process exit, not that every byte read
+		// from the PTY has reached the websocket. Give the output goroutine
+		// a short chance to observe the closed output channel first so a
+		// fast-exiting command can still deliver its final terminal repaint.
+		// Keep this bounded: a slow or disconnected browser must not hold the
+		// session exit frame forever.
+		select {
+		case <-outputDone:
+		case <-time.After(100 * time.Millisecond):
+		}
 		cancel()
 		writeRuntimeExit(conn, attachment.Info())
 		return true

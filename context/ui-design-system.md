@@ -47,6 +47,8 @@ Do not create new local `.badge`, `.pill`, or `.chip` geometry when `Chip` fits.
 
 In this repo, the standard term is **chip**, not pill.
 
+When a screen needs semantic chip color, extend `Chip` with a named tone class such as `chip--blue`, `chip--green`, or `chip--red` instead of redefining local badge geometry. Screens may keep legacy class names for test selectors during migration, but sizing, casing, and spacing should come from `Chip`.
+
 ### ActionButton
 
 Use `ActionButton` for repeated action styling.

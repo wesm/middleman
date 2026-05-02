@@ -108,6 +108,12 @@ type Manager struct {
 // startup output entirely.
 const maxSessionOutputReplay = 64 * 1024
 
+// postExitPTYDrainTimeout bounds how long a naturally exited session can keep
+// the PTY master open after cmd.Wait returns. Normal exits should reach PTY EOF
+// immediately after the kernel buffer is drained; the timeout exists for the
+// daemonized-child case where a descendant keeps the slave side open forever.
+const postExitPTYDrainTimeout = 250 * time.Millisecond
+
 var (
 	alternateScreenEnterSequences = [][]byte{
 		[]byte("\x1b[?47h"),
@@ -134,6 +140,7 @@ type session struct {
 	ptmx                  *os.File
 	tmuxSession           string
 	done                  chan struct{}
+	outputDone            chan struct{}
 	subscribers           map[chan []byte]struct{}
 	outputBuffer          []byte
 	outputClosed          bool
@@ -1461,6 +1468,7 @@ func startSession(
 		cmd:         cmd,
 		ptmx:        ptmx,
 		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
 		subscribers: make(map[chan []byte]struct{}),
 	}
 	go s.drainOutput()
@@ -1496,7 +1504,13 @@ func (s *session) watch() SessionInfo {
 	info.TmuxSession = s.tmuxSession
 	s.mu.Unlock()
 
-	_ = s.ptmx.Close()
+	// Do not close ptmx immediately. cmd.Wait only tells us the session
+	// leader exited; the PTY reader may still have kernel-buffered output to
+	// broadcast, and closing the master here races that final output. The
+	// natural EOF path belongs to drainOutput, but keep it bounded so a
+	// daemonized child that holds the slave PTY open cannot leak this session's
+	// reader goroutine and master descriptor forever.
+	s.closePTYAfterPostExitDrainDeadline()
 	close(s.done)
 	slog.Debug(
 		"runtime session exited",
@@ -1509,6 +1523,9 @@ func (s *session) watch() SessionInfo {
 }
 
 func (s *session) drainOutput() {
+	if s.outputDone != nil {
+		defer close(s.outputDone)
+	}
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := s.ptmx.Read(buf)
@@ -1516,10 +1533,24 @@ func (s *session) drainOutput() {
 			s.broadcast(buf[:n])
 		}
 		if err != nil {
+			_ = s.ptmx.Close()
 			s.closeSubscribers()
 			return
 		}
 	}
+}
+
+func (s *session) closePTYAfterPostExitDrainDeadline() {
+	if s.ptmx == nil || s.outputDone == nil {
+		return
+	}
+	go func() {
+		select {
+		case <-s.outputDone:
+		case <-time.After(postExitPTYDrainTimeout):
+			_ = s.ptmx.Close()
+		}
+	}()
 }
 
 func (s *session) broadcast(data []byte) {

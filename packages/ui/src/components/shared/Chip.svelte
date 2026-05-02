@@ -139,6 +139,11 @@
     color: var(--accent-amber);
   }
 
+  .chip--blue {
+    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+    color: var(--accent-blue);
+  }
+
   .chip--purple,
   .chip--closed {
     background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
