@@ -1,0 +1,12 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    schema: "internal/db/sqlc/schema.sql"
+    queries: "internal/db/sqlc/queries"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/db/sqlc"
+        # The schema snapshot is a straight migration concat and can include
+        # migration-only temp tables; keep generated Go limited to query use.
+        omit_unused_structs: true
