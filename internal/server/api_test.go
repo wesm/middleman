@@ -72,6 +72,7 @@ type mockGH struct {
 	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
 	createIssueFn             func(context.Context, string, string, string, string) (*gh.Issue, error)
 	getUserFn                 func(context.Context, string) (*gh.User, error)
+	createReviewFn            func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
@@ -303,8 +304,11 @@ func (m *mockGH) GetRepository(
 }
 
 func (m *mockGH) CreateReview(
-	_ context.Context, _, _ string, _ int, _ string, _ string,
+	ctx context.Context, owner, repo string, number int, event, body string,
 ) (*gh.PullRequestReview, error) {
+	if m.createReviewFn != nil {
+		return m.createReviewFn(ctx, owner, repo, number, event, body)
+	}
 	id := int64(99)
 	state := "APPROVED"
 	return &gh.PullRequestReview{ID: &id, State: &state}, nil
@@ -6810,6 +6814,101 @@ func TestAPIReadyForReviewRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 	assert.Zero(readyCalls)
 }
 
+func TestAPIApprovePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	var reviewCalls int
+	mock := &mockGH{
+		createReviewFn: func(_ context.Context, _, _ string, _ int, _, _ string) (*gh.PullRequestReview, error) {
+			reviewCalls++
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 1)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/1/approve",
+		map[string]string{"body": "ship it"},
+	)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	assert.Zero(reviewCalls)
+}
+
+func TestAPIApprovePRUsesPlatformHostQuery(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+	seedPROnHost(t, database, "github.com", "acme", "widget", 7)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 7)
+
+	var githubReviewCalls int
+	var ghesReviewCalls int
+	githubClient := &mockGH{
+		createReviewFn: func(_ context.Context, _, _ string, _ int, _, _ string) (*gh.PullRequestReview, error) {
+			githubReviewCalls++
+			return nil, errors.New("github.com client should not approve")
+		},
+	}
+	ghesClient := &mockGH{
+		createReviewFn: func(_ context.Context, _, _ string, number int, _, body string) (*gh.PullRequestReview, error) {
+			ghesReviewCalls++
+			id := int64(7700 + number)
+			state := "APPROVED"
+			submittedAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequestReview{
+				ID:          &id,
+				State:       &state,
+				Body:        &body,
+				SubmittedAt: &submittedAt,
+				User:        &gh.User{Login: new("reviewer")},
+			}, nil
+		},
+	}
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com":      githubClient,
+			"ghe.example.com": ghesClient,
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/repos/acme/widget/pulls/7/approve?platform_host=ghe.example.com",
+		map[string]string{"body": "ship it"},
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Zero(githubReviewCalls)
+	assert.Equal(1, ghesReviewCalls)
+}
+
 func TestAPIMergePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -6962,6 +7061,50 @@ func TestAPIClosePR422Merged(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusConflict, resp.StatusCode())
+}
+
+func TestAPIGetPullAmbiguousOwnerNameRequiresPlatformHost(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 7)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 7)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		t.Context(), "acme", "widget", 7, nil,
+	)
+
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIGetPullUsesPlatformHostQuery(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+	})
+	seedPROnHost(t, database, "github.com", "acme", "widget", 7)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 7)
+	client := setupTestClient(t, srv)
+	platformHost := "ghe.example.com"
+
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
+		t.Context(), "acme", "widget", 7,
+		&generated.GetReposByOwnerByNamePullsByNumberParams{
+			PlatformHost: &platformHost,
+		},
+	)
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.Equal("ghe.example.com", resp.JSON200.PlatformHost)
+	assert.Equal("https://ghe.example.com/acme/widget/pull/7", resp.JSON200.MergeRequest.URL)
 }
 
 func TestResolveItem_PR(t *testing.T) {
@@ -12061,9 +12204,12 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	ctx := t.Context()
 
 	// PR on github.com
+	githubHost := "github.com"
 	r1, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", 10,
-		nil,
+		&generated.GetReposByOwnerByNamePullsByNumberParams{
+			PlatformHost: &githubHost,
+		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, r1.StatusCode())
@@ -12071,9 +12217,12 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert.Equal("github.com", r1.JSON200.PlatformHost)
 
 	// PR on ghe.example.com (same owner/name, different number)
+	ghesHost := "ghe.example.com"
 	r2, err := client.HTTP.GetReposByOwnerByNamePullsByNumberWithResponse(
 		ctx, "acme", "widget", 20,
-		nil,
+		&generated.GetReposByOwnerByNamePullsByNumberParams{
+			PlatformHost: &ghesHost,
+		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, r2.StatusCode())

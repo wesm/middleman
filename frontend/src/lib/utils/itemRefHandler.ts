@@ -57,7 +57,7 @@ async function resolveAndNavigate(
       owner,
       name,
       number,
-      data.item_type === "issue" ? platformHost : undefined,
+      platformHost,
     );
     navigate(path);
   } catch {

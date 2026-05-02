@@ -67,6 +67,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
     detail: [],
     asyncSync: [],
     ready: [],
+    approve: [],
     workflows: [],
     merge: [],
     resolve: [],
@@ -127,6 +128,19 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   );
 
   await page.route(
+    /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/approve(?:[?]|$)/,
+    async (route) => {
+      const url = new URL(route.request().url());
+      seen.approve.push(url.searchParams.get("platform_host") ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "approved" }),
+      });
+    },
+  );
+
+  await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/approve-workflows(?:[?]|$)/,
     async (route) => {
       const url = new URL(route.request().url());
@@ -161,7 +175,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          item_type: "issue",
+          item_type: "pr",
           number: 7,
           repo_tracked: true,
         }),
@@ -184,6 +198,10 @@ test("host-qualified PR detail actions preserve platform_host", async ({ page })
   await page.locator(".btn--ready").click();
   await expect.poll(() => seen.ready).toContain(platformHost);
 
+  await page.locator(".btn--approve").click();
+  await page.getByRole("button", { name: /^Approve$/ }).click();
+  await expect.poll(() => seen.approve).toContain(platformHost);
+
   await page.locator(".btn--workflow-approval").click();
   await expect.poll(() => seen.workflows).toContain(platformHost);
 
@@ -193,5 +211,5 @@ test("host-qualified PR detail actions preserve platform_host", async ({ page })
 
   await page.locator(".markdown-body .item-ref", { hasText: "#7" }).click();
   await expect.poll(() => seen.resolve).toContain(platformHost);
-  await expect(page).toHaveURL(/\/issues\/acme\/widgets\/7\?platform_host=ghe\.example\.com$/);
+  await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/7\?platform_host=ghe\.example\.com$/);
 });

@@ -952,6 +952,11 @@ type GetReposByOwnerByNamePullsByNumberParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
+// PostReposByOwnerByNamePullsByNumberApproveParams defines parameters for PostReposByOwnerByNamePullsByNumberApprove.
+type PostReposByOwnerByNamePullsByNumberApproveParams struct {
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams defines parameters for PostReposByOwnerByNamePullsByNumberApproveWorkflows.
 type PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
@@ -1225,9 +1230,9 @@ type ClientInterface interface {
 	EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWithBody request with any body
-	PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWorkflows request
 	PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1745,8 +1750,8 @@ func (c *Client) EditPrContent(ctx context.Context, owner string, name string, n
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(c.Server, owner, name, number, contentType, body)
+func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(c.Server, owner, name, number, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1757,8 +1762,8 @@ func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberApproveRequest(c.Server, owner, name, number, body)
+func (c *Client) PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostReposByOwnerByNamePullsByNumberApproveRequest(c.Server, owner, name, number, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3810,18 +3815,18 @@ func NewEditPrContentRequestWithBody(server string, owner string, name string, n
 }
 
 // NewPostReposByOwnerByNamePullsByNumberApproveRequest calls the generic PostReposByOwnerByNamePullsByNumberApprove builder with application/json body
-func NewPostReposByOwnerByNamePullsByNumberApproveRequest(server string, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberApproveRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server, owner, name, number, "application/json", bodyReader)
+	return NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server, owner, name, number, params, "application/json", bodyReader)
 }
 
 // NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody generates requests for PostReposByOwnerByNamePullsByNumberApprove with any type of body
-func NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server string, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3858,6 +3863,28 @@ func NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server string,
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), body)
@@ -5617,9 +5644,9 @@ type ClientWithResponsesInterface interface {
 	EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with any body
-	PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
+	PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
 
-	PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
+	PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
 
 	// PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse request
 	PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveWorkflowsParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error)
@@ -7323,16 +7350,16 @@ func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, own
 }
 
 // PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostReposByOwnerByNamePullsByNumberApproveResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx, owner, name, number, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParsePostReposByOwnerByNamePullsByNumberApproveResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberApprove(ctx, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNamePullsByNumberApproveParams, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
+	rsp, err := c.PostReposByOwnerByNamePullsByNumberApprove(ctx, owner, name, number, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

@@ -797,6 +797,7 @@
             {owner}
             {name}
             {number}
+            platformHost={detail.platform_host}
             size="sm"
             disabled={stalePR}
           />

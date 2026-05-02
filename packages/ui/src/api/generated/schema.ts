@@ -2707,7 +2707,9 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-approve": {
         parameters: {
-            query?: never;
+            query?: {
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;

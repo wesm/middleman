@@ -10,6 +10,7 @@
     owner: string;
     name: string;
     number: number;
+    platformHost?: string | undefined;
     size?: "sm" | "md";
     disabled?: boolean;
   }
@@ -18,6 +19,7 @@
     owner,
     name,
     number,
+    platformHost,
     size = "md",
     disabled = false,
   }: Props = $props();
@@ -44,7 +46,10 @@
     error = null;
     try {
       const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/approve", {
-        params: { path: { owner, name, number } },
+        params: {
+          path: { owner, name, number },
+          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
+        },
         body: { body: body.trim() },
       });
       if (error) {
@@ -52,7 +57,7 @@
       }
       body = "";
       expanded = false;
-      await detail.loadDetail(owner, name, number);
+      await detail.loadDetail(owner, name, number, { platformHost });
       await pulls.loadPulls();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
