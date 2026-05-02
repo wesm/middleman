@@ -9,6 +9,9 @@
     localDateLabel,
     parseAPITimestamp,
   } from "../utils/time.js";
+  import Chip from "./shared/Chip.svelte";
+  import ItemKindChip from "./shared/ItemKindChip.svelte";
+  import ItemStateChip from "./shared/ItemStateChip.svelte";
 
   const { grouping } = getStores();
   import { repoColor } from "../utils/repo-color.js";
@@ -216,19 +219,23 @@
           class:selected={isSelectedItemGroup(itemGroup)}
           onclick={() => handleItemClick(itemGroup)}
         >
-          <span class="item-badge" class:badge-pr={itemGroup.itemType === "pr"} class:badge-issue={itemGroup.itemType === "issue"}>
-            {itemGroup.itemType === "pr" ? "PR" : "Issue"}
-          </span>
+          <ItemKindChip
+            kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
+          />
           {#if !grouping.getGroupByRepo()}
-            <span
-              class="repo-tag"
+            <Chip
+              size="xs"
+              uppercase={false}
+              class="repo-chip repo-tag"
               style="color: {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {repoColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
-            >{itemGroup.repoOwner}/{itemGroup.repoName}</span>
+            >
+              <span class="repo-chip__label">{itemGroup.repoOwner}/{itemGroup.repoName}</span>
+            </Chip>
           {/if}
           {#if itemGroup.itemState === "merged"}
-            <span class="state-tag state-merged">Merged</span>
+            <ItemStateChip state="merged" />
           {:else if itemGroup.itemState === "closed"}
-            <span class="state-tag state-closed">Closed</span>
+            <ItemStateChip state="closed" />
           {/if}
           <span class="item-ref">#{itemGroup.itemNumber}</span>
           <span class="item-title">{itemGroup.itemTitle}</span>
@@ -314,42 +321,6 @@
     box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 
-  .item-badge {
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    padding: 1px 4px;
-    border-radius: 3px;
-    flex-shrink: 0;
-  }
-
-  .badge-pr {
-    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
-    color: var(--accent-blue);
-  }
-  .badge-issue {
-    background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
-    color: var(--accent-purple);
-  }
-
-  .state-tag {
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    padding: 1px 4px;
-    border-radius: 3px;
-    flex-shrink: 0;
-  }
-  .state-merged {
-    background: color-mix(in srgb, var(--accent-purple) 20%, transparent);
-    color: var(--accent-purple);
-  }
-  .state-closed {
-    background: color-mix(in srgb, var(--accent-red) 15%, transparent);
-    color: var(--accent-red);
-  }
-
   .item-ref {
     font-size: 12px;
     color: var(--text-muted);
@@ -424,16 +395,18 @@
     font-size: 13px;
   }
 
-  .repo-tag {
-    font-size: 9px;
-    font-weight: 600;
-    padding: 1px 4px;
-    border-radius: 3px;
+  :global(.repo-chip) {
     flex-shrink: 1;
-    white-space: nowrap;
+    max-width: 40%;
+    min-width: 0;
+  }
+
+  :global(.repo-chip) .repo-chip__label {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 40%;
+    white-space: nowrap;
   }
 
   .threaded-view--compact {

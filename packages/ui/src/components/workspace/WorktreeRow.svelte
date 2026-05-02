@@ -1,9 +1,11 @@
 <script lang="ts">
   import type {
     WorkspaceActivity,
-    WorkspaceLinkedPR,
     WorkspaceWorktree,
   } from "../../api/types.js";
+  import Chip, {
+    type ChipTone,
+  } from "../shared/Chip.svelte";
 
   interface Props {
     worktree: WorkspaceWorktree;
@@ -46,6 +48,21 @@
     running: "var(--accent-blue)",
     needsAttention: "var(--accent-amber)",
   };
+
+  function linkedPRTone(state: string): ChipTone {
+    switch (state) {
+      case "open":
+        return "success";
+      case "merged":
+        return "merged";
+      case "closed":
+        return "danger";
+      case "draft":
+        return "muted";
+      default:
+        return "muted";
+    }
+  }
 
   function handleContextMenu(e: MouseEvent): void {
     e.preventDefault();
@@ -134,10 +151,10 @@
     <span class="name-row">
       <span class="name">{title}</span>
       {#if worktree.isPrimary}
-        <span class="kind-badge root-badge">ROOT</span>
+        <Chip size="xs" tone="info">ROOT</Chip>
       {/if}
       {#if worktree.sessionBackend === "localTmux"}
-        <span class="kind-badge tmux-badge">tmux</span>
+        <Chip size="xs" tone="warning">tmux</Chip>
       {/if}
       {#if worktree.isStale}
         <span class="stale-icon" title="Stale worktree">⚠</span>
@@ -159,12 +176,12 @@
     {#if worktree.linkedPR || worktree.diff || showBranch}
       <span class="meta-row">
         {#if worktree.linkedPR}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span
-            class="pr-badge pr-{worktree.linkedPR.state}"
+          <Chip
+            size="xs"
+            tone={linkedPRTone(worktree.linkedPR.state)}
+            uppercase={false}
+            class={`workspace-pr-chip chip--state-${worktree.linkedPR.state}`}
             title="PR #{worktree.linkedPR.number}"
-            onclick={(e: MouseEvent) => e.stopPropagation()}
           >
             #{worktree.linkedPR.number} {worktree.linkedPR.state.toUpperCase()}
             {#if worktree.linkedPR.checksStatus === "success"}
@@ -202,7 +219,7 @@
                 />
               </svg>
             {/if}
-          </span>
+          </Chip>
         {/if}
 
         {#if worktree.diff}
@@ -328,6 +345,11 @@
     min-width: 0;
   }
 
+  .name-row :global(.chip),
+  .meta-row :global(.chip) {
+    flex-shrink: 0;
+  }
+
   .name {
     font-size: 13px;
     font-weight: 600;
@@ -335,29 +357,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .kind-badge {
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    padding: 1px 5px;
-    border-radius: 3px;
-    flex-shrink: 0;
-  }
-
-  .root-badge {
-    background: color-mix(
-      in srgb, var(--accent-blue) 15%, transparent
-    );
-    color: var(--accent-blue);
-  }
-
-  .tmux-badge {
-    background: color-mix(
-      in srgb, var(--accent-amber) 15%, transparent
-    );
-    color: var(--accent-amber);
   }
 
   .stale-icon {
@@ -396,46 +395,6 @@
     gap: 6px;
     padding-left: 0;
     font-size: 11px;
-  }
-
-  .pr-badge {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 10px;
-    font-weight: 600;
-    background: none;
-    border: none;
-    padding: 1px 6px;
-    border-radius: 3px;
-  }
-
-  .pr-open {
-    color: var(--accent-green);
-    background: color-mix(
-      in srgb, var(--accent-green) 12%, transparent
-    );
-  }
-
-  .pr-merged {
-    color: var(--accent-purple);
-    background: color-mix(
-      in srgb, var(--accent-purple) 12%, transparent
-    );
-  }
-
-  .pr-closed {
-    color: var(--accent-red);
-    background: color-mix(
-      in srgb, var(--accent-red) 12%, transparent
-    );
-  }
-
-  .pr-draft {
-    color: var(--text-muted);
-    background: color-mix(
-      in srgb, var(--text-muted) 12%, transparent
-    );
   }
 
   .checks-icon {

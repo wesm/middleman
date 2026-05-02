@@ -28,13 +28,14 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 ### Chip
 
-Use `Chip` for compact status and metadata UI.
+Use `Chip` and its semantic chip wrappers for compact status and metadata UI.
 
 Intent:
 
 - one shared geometry for small labeled UI
 - consistent vertical alignment, spacing, casing, and density
 - reusable across detail views, sidebars, and compact status surfaces
+- semantic tone, dot, kind, and state semantics at the call site
 
 Use it for:
 
@@ -43,7 +44,14 @@ Use it for:
 - repo and count badges
 - other compact metadata markers
 
-Do not create new local `.badge`, `.pill`, or `.chip` geometry when `Chip` fits.
+Use `Chip` directly when the caller already knows the semantic `tone`
+(`success`, `warning`, `danger`, `info`, `merged`, `workspace`, `muted`,
+or `neutral`) or needs the shared dotted status treatment. Use
+`ItemKindChip` for PR/issue kind and `ItemStateChip` for PR/issue state
+rather than repeating kind/state class maps in feature components.
+
+Do not create new local `.badge`, `.pill`, `.tag`, or `.chip` geometry when
+`Chip`, `ItemKindChip`, or `ItemStateChip` fits.
 
 In this repo, the standard term is **chip**, not pill.
 

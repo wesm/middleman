@@ -1,23 +1,39 @@
+<script module lang="ts">
+  export type ChipSize = "xs" | "sm" | "md";
+  export type ChipTone =
+    | "muted"
+    | "neutral"
+    | "success"
+    | "warning"
+    | "danger"
+    | "info"
+    | "merged"
+    | "canceled"
+    | "workspace";
+</script>
+
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  type Size = "sm" | "md";
-
   interface Props {
-    size?: Size;
+    size?: ChipSize;
+    tone?: ChipTone;
+    dot?: boolean;
     interactive?: boolean;
     uppercase?: boolean;
-    title?: string;
-    style?: string;
-    expanded?: boolean;
+    title?: string | undefined;
+    style?: string | undefined;
+    expanded?: boolean | undefined;
     disabled?: boolean;
     class?: string;
-    onclick?: (event: MouseEvent) => void;
-    children?: Snippet;
+    onclick?: ((event: MouseEvent) => void) | undefined;
+    children?: Snippet | undefined;
   }
 
   let {
     size = "md",
+    tone = undefined,
+    dot = false,
     interactive = false,
     uppercase = true,
     title = undefined,
@@ -37,6 +53,7 @@
     class={[
       "chip",
       `chip--${size}`,
+      tone ? `chip--tone-${tone}` : undefined,
       {
         "chip--interactive": interactive,
         "chip--plain-case": !uppercase,
@@ -48,16 +65,13 @@
     aria-expanded={expanded}
     {disabled}
     onclick={onclick}
-  >
-    {#if children}
-      {@render children()}
-    {/if}
-  </button>
+  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}{@render children()}{/if}</button>
 {:else}
   <span
     class={[
       "chip",
       `chip--${size}`,
+      tone ? `chip--tone-${tone}` : undefined,
       {
         "chip--plain-case": !uppercase,
       },
@@ -65,11 +79,7 @@
     ]}
     {title}
     {style}
-  >
-    {#if children}
-      {@render children()}
-    {/if}
-  </span>
+  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}{@render children()}{/if}</span>
 {/if}
 
 <style>
@@ -85,6 +95,14 @@
     text-transform: uppercase;
     vertical-align: middle;
     white-space: nowrap;
+  }
+
+  .chip--xs {
+    min-height: 16px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9px;
+    line-height: 1.15;
   }
 
   .chip--sm {
@@ -123,18 +141,35 @@
     letter-spacing: normal;
   }
 
+  .chip__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  .chip--xs .chip__dot {
+    width: 5px;
+    height: 5px;
+  }
+
   .chip--green,
-  .chip--open {
+  .chip--open,
+  .chip--tone-success {
     background: color-mix(in srgb, var(--accent-green) 15%, transparent);
     color: var(--accent-green);
   }
 
-  .chip--red {
+  .chip--red,
+  .chip--tone-danger {
     background: color-mix(in srgb, var(--accent-red) 15%, transparent);
     color: var(--accent-red);
   }
 
-  .chip--amber {
+  .chip--amber,
+  .chip--draft,
+  .chip--tone-warning {
     background: color-mix(in srgb, var(--accent-amber) 15%, transparent);
     color: var(--accent-amber);
   }
@@ -145,17 +180,36 @@
   }
 
   .chip--purple,
-  .chip--closed {
+  .chip--closed,
+  .chip--tone-merged {
     background: color-mix(in srgb, var(--accent-purple) 15%, transparent);
     color: var(--accent-purple);
   }
 
-  .chip--muted {
+  .chip--blue,
+  .chip--tone-info {
+    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+    color: var(--accent-blue);
+  }
+
+  .chip--muted,
+  .chip--tone-muted {
     background: var(--bg-inset);
     color: var(--text-muted);
   }
 
-  .chip--teal {
+  .chip--tone-canceled {
+    background: color-mix(in srgb, var(--review-canceled) 15%, transparent);
+    color: var(--review-canceled);
+  }
+
+  .chip--tone-neutral {
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+  }
+
+  .chip--teal,
+  .chip--tone-workspace {
     background: color-mix(
       in srgb,
       var(--accent-teal, var(--accent-green)) 15%,

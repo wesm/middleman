@@ -119,6 +119,12 @@ export {
   default as Chip,
 } from "./components/shared/Chip.svelte";
 export {
+  default as ItemKindChip,
+} from "./components/shared/ItemKindChip.svelte";
+export {
+  default as ItemStateChip,
+} from "./components/shared/ItemStateChip.svelte";
+export {
   default as CollapsibleResizableSidebar,
 } from "./components/shared/CollapsibleResizableSidebar.svelte";
 export {
