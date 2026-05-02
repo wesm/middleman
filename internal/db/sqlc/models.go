@@ -36,6 +36,15 @@ type MiddlemanRateLimit struct {
 	UpdatedAt     time.Time
 }
 
+type MiddlemanStack struct {
+	ID         int64
+	RepoID     int64
+	BaseNumber int64
+	Name       string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type MiddlemanWorkspaceSetupEvent struct {
 	ID          int64
 	WorkspaceID string

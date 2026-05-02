@@ -1825,63 +1825,27 @@ func (d *DB) ListCommentAutocompleteUsers(
 	containsQuery := "%" + strings.ToLower(query) + "%"
 	prefixQuery := strings.ToLower(query) + "%"
 
-	rows, err := d.ro.QueryContext(ctx, `
-		WITH repo AS (
-			SELECT id
-			FROM middleman_repos
-			WHERE platform_host = ? AND owner = ? AND name = ?
-		), candidates AS (
-			SELECT mr.author AS login, mr.last_activity_at AS last_seen
-			FROM middleman_merge_requests mr
-			WHERE mr.repo_id = (SELECT id FROM repo)
-			UNION ALL
-			SELECT i.author AS login, i.last_activity_at AS last_seen
-			FROM middleman_issues i
-			WHERE i.repo_id = (SELECT id FROM repo)
-			UNION ALL
-			SELECT e.author AS login, e.created_at AS last_seen
-			FROM middleman_mr_events e
-			JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
-			WHERE mr.repo_id = (SELECT id FROM repo)
-			UNION ALL
-			SELECT e.author AS login, e.created_at AS last_seen
-			FROM middleman_issue_events e
-			JOIN middleman_issues i ON i.id = e.issue_id
-			WHERE i.repo_id = (SELECT id FROM repo)
-		), ranked AS (
-			SELECT login, MAX(last_seen) AS last_seen
-			FROM candidates
-			WHERE login <> ''
-			  AND (? = '' OR LOWER(login) LIKE ?)
-			GROUP BY login
-		)
-		SELECT login
-		FROM ranked
-		ORDER BY
-			CASE WHEN ? <> '' AND LOWER(login) LIKE ? THEN 0 ELSE 1 END,
-			last_seen DESC,
-			login ASC
-		LIMIT ?`,
-		platformHost, owner, name,
-		query, containsQuery,
-		query, prefixQuery,
-		limit,
-	)
+	repo, err := d.readQueries.GetRepoByHostOwnerName(ctx, dbsqlc.GetRepoByHostOwnerNameParams{
+		PlatformHost: platformHost,
+		Owner:        owner,
+		Name:         name,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup comment autocomplete repo: %w", err)
+	}
+
+	users, err := d.readQueries.ListCommentAutocompleteUsers(ctx, dbsqlc.ListCommentAutocompleteUsersParams{
+		Query:         query,
+		PrefixQuery:   prefixQuery,
+		RepoID:        repo.ID,
+		ContainsQuery: containsQuery,
+		Limit:         int64(limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list comment autocomplete users: %w", err)
-	}
-	defer rows.Close()
-
-	users := make([]string, 0, limit)
-	for rows.Next() {
-		var login string
-		if err := rows.Scan(&login); err != nil {
-			return nil, fmt.Errorf("scan comment autocomplete user: %w", err)
-		}
-		users = append(users, login)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate comment autocomplete users: %w", err)
 	}
 	return users, nil
 }
@@ -1900,52 +1864,36 @@ func (d *DB) ListCommentAutocompleteReferences(
 	titleQuery := "%" + strings.ToLower(query) + "%"
 	numberPrefix := query + "%"
 
-	rows, err := d.ro.QueryContext(ctx, `
-		WITH repo AS (
-			SELECT id
-			FROM middleman_repos
-			WHERE platform_host = ? AND owner = ? AND name = ?
-		), candidates AS (
-			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
-			FROM middleman_merge_requests mr
-			WHERE mr.repo_id = (SELECT id FROM repo)
-			UNION ALL
-			SELECT 'issue' AS kind, i.number, i.title, i.state, i.last_activity_at
-			FROM middleman_issues i
-			WHERE i.repo_id = (SELECT id FROM repo)
-		)
-		SELECT kind, number, title, state
-		FROM candidates
-		WHERE ? = ''
-		   OR CAST(number AS TEXT) LIKE ?
-		   OR LOWER(title) LIKE ?
-		ORDER BY
-			CASE WHEN ? <> '' AND CAST(number AS TEXT) LIKE ? THEN 0 ELSE 1 END,
-			CASE WHEN ? <> '' AND LOWER(title) LIKE ? THEN 0 ELSE 1 END,
-			last_activity_at DESC,
-			number DESC
-		LIMIT ?`,
-		platformHost, owner, name,
-		query, numberPrefix, titleQuery,
-		query, numberPrefix,
-		query, titleQuery,
-		limit,
-	)
+	repo, err := d.readQueries.GetRepoByHostOwnerName(ctx, dbsqlc.GetRepoByHostOwnerNameParams{
+		PlatformHost: platformHost,
+		Owner:        owner,
+		Name:         name,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return []CommentAutocompleteReference{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup comment autocomplete repo: %w", err)
+	}
+
+	rows, err := d.readQueries.ListCommentAutocompleteReferences(ctx, dbsqlc.ListCommentAutocompleteReferencesParams{
+		Query:        query,
+		NumberPrefix: numberPrefix,
+		TitleQuery:   titleQuery,
+		RepoID:       repo.ID,
+		Limit:        int64(limit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list comment autocomplete references: %w", err)
 	}
-	defer rows.Close()
-
-	references := make([]CommentAutocompleteReference, 0, limit)
-	for rows.Next() {
-		var ref CommentAutocompleteReference
-		if err := rows.Scan(&ref.Kind, &ref.Number, &ref.Title, &ref.State); err != nil {
-			return nil, fmt.Errorf("scan comment autocomplete reference: %w", err)
-		}
-		references = append(references, ref)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate comment autocomplete references: %w", err)
+	references := make([]CommentAutocompleteReference, 0, len(rows))
+	for _, row := range rows {
+		references = append(references, CommentAutocompleteReference{
+			Kind:   row.Kind,
+			Number: int(row.Number),
+			Title:  row.Title,
+			State:  row.State,
+		})
 	}
 	return references, nil
 }
