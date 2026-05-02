@@ -160,7 +160,7 @@ test.describe("grouping toggle", () => {
     await page.locator(".threaded-view").waitFor({ state: "visible", timeout: 10_000 });
 
     // Now grouping controls should be available from the view dropdown.
-    dropdown = page.locator(".activity-feed .filter-dropdown");
+    dropdown = await openActivityViewDropdown(page);
     await expect(dropdown.locator(".filter-item", { hasText: /By repo/i }))
       .toBeVisible();
   });

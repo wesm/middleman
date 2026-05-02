@@ -127,7 +127,6 @@
     dropdownStyle = [
       `left: ${left}px`,
       `top: ${top}px`,
-      `min-width: ${minWidth}`,
     ].join("; ");
   }
 
@@ -190,6 +189,7 @@
       class:filter-dropdown--align-end={align === "end"}
       bind:this={dropdownRef}
       style={dropdownStyle}
+      style:min-width={minWidth}
     >
       {#each sections as section, index (section.title ?? `section-${index}`)}
         {#if index > 0}
