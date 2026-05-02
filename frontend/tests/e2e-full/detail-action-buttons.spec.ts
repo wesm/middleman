@@ -502,7 +502,7 @@ test.describe("detail action buttons", () => {
 
   test("narrow actions menu shows state change failures after closing", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/github-state", async (route) => {
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/github-state*", async (route) => {
       await route.fulfill({
         status: 500,
         contentType: "application/json",

@@ -1252,7 +1252,7 @@ test.describe("activity split view and detail drawers", () => {
     // still shows widgets#1 as open), but the kanban board reads only
     // from the mocked /pulls endpoint.
     await page.route(
-      "**/api/v1/repos/*/*/pulls/*/github-state",
+      "**/api/v1/repos/*/*/pulls/*/github-state*",
       async (route) => {
         pullsContainsWidgets1 = false;
         await route.fulfill({
