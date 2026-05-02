@@ -58,6 +58,17 @@ describe("activity selection URL state", () => {
     });
   });
 
+  it("parses PR platform host", () => {
+    expect(parseActivitySelection("?selected=pr:acme/widgets/1&platform_host=ghe.example.com")).toEqual({
+      itemType: "pr",
+      owner: "acme",
+      name: "widgets",
+      number: 1,
+      platformHost: "ghe.example.com",
+      detailTab: "conversation",
+    });
+  });
+
   it("preserves existing Activity filters when writing selection", () => {
     const next = buildActivitySelectionSearch("?range=30d&view=threaded", {
       itemType: "pr",
@@ -98,7 +109,7 @@ describe("activity selection URL state", () => {
     expect(next.has("selected_tab")).toBe(false);
   });
 
-  it("overwrites an issue selection with a PR and drops platform host", () => {
+  it("overwrites an issue selection with a PR and drops stale platform host", () => {
     const next = buildActivitySelectionSearch(
       "?selected=issue:acme/widgets/10&platform_host=ghe.example.com&search=bug",
       {
@@ -115,6 +126,20 @@ describe("activity selection URL state", () => {
     expect(next.has("platform_host")).toBe(false);
   });
 
+  it("writes PR platform host when present", () => {
+    const next = buildActivitySelectionSearch("?range=7d", {
+      itemType: "pr",
+      owner: "acme",
+      name: "widgets",
+      number: 1,
+      platformHost: "ghe.example.com",
+      detailTab: "conversation",
+    });
+
+    expect(next.get("selected")).toBe("pr:acme/widgets/1");
+    expect(next.get("platform_host")).toBe("ghe.example.com");
+  });
+
   it("builds destination routes for matching tabs", () => {
     const pr: ActivitySelection = {
       itemType: "pr",
@@ -128,6 +153,21 @@ describe("activity selection URL state", () => {
       "/pulls/acme/widgets/1/files",
     );
     expect(activitySelectionToRoute(pr, "issues")).toBeNull();
+  });
+
+  it("builds PR destination routes with platform host", () => {
+    const pr: ActivitySelection = {
+      itemType: "pr",
+      owner: "acme",
+      name: "widgets",
+      number: 1,
+      platformHost: "ghe.example.com",
+      detailTab: "files",
+    };
+
+    expect(activitySelectionToRoute(pr, "pulls")).toBe(
+      "/pulls/acme/widgets/1/files?platform_host=ghe.example.com",
+    );
   });
 
   it("builds issue destination routes with platform host", () => {

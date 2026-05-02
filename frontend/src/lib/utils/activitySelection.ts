@@ -30,8 +30,7 @@ export function parseActivitySelection(search: string): ActivitySelection | null
       ? "files"
       : "conversation";
 
-  const platformHost =
-    itemType === "issue" ? (sp.get("platform_host") ?? undefined) : undefined;
+  const platformHost = sp.get("platform_host") ?? undefined;
 
   return {
     itemType,
@@ -61,7 +60,7 @@ export function buildActivitySelectionSearch(
   if (selection.itemType === "pr" && selection.detailTab === "files") {
     sp.set("selected_tab", "files");
   }
-  if (selection.itemType === "issue" && selection.platformHost) {
+  if (selection.platformHost) {
     sp.set("platform_host", selection.platformHost);
   }
   return sp;
@@ -75,7 +74,10 @@ export function activitySelectionToRoute(
   if (destination === "pulls") {
     if (selection.itemType !== "pr") return null;
     const suffix = selection.detailTab === "files" ? "/files" : "";
-    return `/pulls/${selection.owner}/${selection.name}/${selection.number}${suffix}`;
+    const qs = selection.platformHost
+      ? `?platform_host=${encodeURIComponent(selection.platformHost)}`
+      : "";
+    return `/pulls/${selection.owner}/${selection.name}/${selection.number}${suffix}${qs}`;
   }
 
   if (selection.itemType !== "issue") return null;

@@ -553,8 +553,11 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".actions-menu-popover")).toBeVisible();
 
       const readyResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
         return response.request().method() === "POST"
-          && response.url() === `${baseURL}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+          && url.origin === new URL(baseURL).origin
+          && url.pathname === "/api/v1/repos/acme/widgets/pulls/6/ready-for-review"
+          && url.searchParams.get("platform_host") === "github.com";
       });
       await page.locator(".actions-menu-popover .btn--ready").click();
       expect((await readyResponse).status()).toBe(200);
@@ -624,9 +627,11 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".pull-detail")).toBeVisible();
 
       const readyResponsePromise = page.waitForResponse((response) => {
-        const url = response.url();
+        const url = new URL(response.url());
         return response.request().method() === "POST"
-          && url === `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+          && url.origin === new URL(server.info.base_url).origin
+          && url.pathname === "/api/v1/repos/acme/widgets/pulls/6/ready-for-review"
+          && url.searchParams.get("platform_host") === "github.com";
       });
 
       await page.locator(".btn--ready").click();
