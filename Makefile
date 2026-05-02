@@ -25,7 +25,7 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        db-schema-generate sqlc-generate \
+        db-schema-generate sqlc-generate sqlc-check \
         dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check \
         frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
 
@@ -95,7 +95,7 @@ script-tests:
 	bun test scripts/*.test.mjs
 
 # Run lightweight generated-client/Huma guardrails
-guardrail-check: frontend-api-client-check huma-route-check script-tests
+guardrail-check: frontend-api-client-check huma-route-check script-tests sqlc-check
 
 
 # Regenerate the checked-in OpenAPI document and generated clients
@@ -143,6 +143,10 @@ db-schema-generate:
 # Regenerate sqlc code from the checked-in schema snapshot and queries.
 sqlc-generate: db-schema-generate
 	go tool sqlc generate
+
+# Verify checked-in sqlc artifacts match migrations and query files.
+sqlc-check: sqlc-generate
+	git diff --exit-code -- sqlc.yaml internal/db/sqlc
 
 # Ensure air is installed for backend live reload
 check-air:
@@ -268,6 +272,7 @@ help:
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo "  db-schema-generate - Regenerate sqlc schema snapshot from migrations"
 	@echo "  sqlc-generate  - Regenerate sqlc Go code from schema and queries"
+	@echo "  sqlc-check     - Verify checked-in sqlc artifacts are current"
 	@echo ""
 	@echo "  test           - Run all tests"
 	@echo "  test-short     - Run fast tests only"
