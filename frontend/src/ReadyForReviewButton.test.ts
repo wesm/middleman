@@ -76,8 +76,8 @@ describe("ReadyForReviewButton", () => {
       {
         params: {
           path: { owner: "wesm", name: "middleman", number: 141 },
-          query: { platform_host: "ghe.example.com" },
         },
+        body: { platform_host: "ghe.example.com" },
       },
     );
   });

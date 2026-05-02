@@ -155,8 +155,11 @@ components:
           type: string
         body:
           type: string
+        platform_host:
+          type: string
       required:
         - body
+        - platform_host
       type: object
     BulkAddRepoRequest:
       additionalProperties: false
@@ -308,6 +311,7 @@ components:
       required:
         - title
         - body
+        - platform_host
       type: object
     CreateIssueWorkspaceInputBody:
       additionalProperties: false
@@ -426,8 +430,11 @@ components:
           type: string
         body:
           type: string
+        platform_host:
+          type: string
       required:
         - body
+        - platform_host
       type: object
     EditIssueCommentInputBody:
       additionalProperties: false
@@ -445,6 +452,7 @@ components:
           type: string
       required:
         - body
+        - platform_host
       type: object
     EditPRContentInputBody:
       additionalProperties: false
@@ -458,8 +466,12 @@ components:
           type: string
         body:
           type: string
+        platform_host:
+          type: string
         title:
           type: string
+      required:
+        - platform_host
       type: object
     ErrorDetail:
       additionalProperties: false
@@ -558,6 +570,7 @@ components:
           type: string
       required:
         - state
+        - platform_host
       type: object
     GithubStateOutputBody:
       additionalProperties: false
@@ -1033,10 +1046,13 @@ components:
           type: string
         method:
           type: string
+        platform_host:
+          type: string
       required:
         - commit_title
         - commit_message
         - method
+        - platform_host
       type: object
     MergeRequest:
       additionalProperties: false
@@ -1405,8 +1421,11 @@ components:
           type: string
         body:
           type: string
+        platform_host:
+          type: string
       required:
         - body
+        - platform_host
       type: object
     PostIssueCommentInputBody:
       additionalProperties: false
@@ -1424,6 +1443,22 @@ components:
           type: string
       required:
         - body
+        - platform_host
+      type: object
+    PrActionInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PrActionInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        platform_host:
+          type: string
+      required:
+        - platform_host
       type: object
     RateLimitHostStatus:
       additionalProperties: false
@@ -1906,10 +1941,13 @@ components:
           format: uri
           readOnly: true
           type: string
+        platform_host:
+          type: string
         status:
           type: string
       required:
         - status
+        - platform_host
       type: object
     SettingsResponse:
       additionalProperties: false
@@ -2071,6 +2109,7 @@ components:
         - owner
         - name
         - number
+        - platform_host
       type: object
     SyncStatus:
       additionalProperties: false
@@ -2867,11 +2906,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3100,11 +3134,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3144,11 +3173,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3189,11 +3213,12 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrActionInputBody"
+        required: true
       responses:
         "200":
           content:
@@ -3228,11 +3253,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3278,11 +3298,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3465,11 +3480,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3543,11 +3553,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:
@@ -3588,11 +3593,12 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrActionInputBody"
+        required: true
       responses:
         "200":
           content:
@@ -3661,11 +3667,6 @@ paths:
           schema:
             format: int64
             type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
       requestBody:
         content:
           application/json:

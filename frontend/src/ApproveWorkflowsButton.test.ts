@@ -63,6 +63,7 @@ describe("ApproveWorkflowsButton", () => {
         params: {
           path: { owner: "acme", name: "widget", number: 7 },
         },
+        body: { platform_host: "" },
       },
     );
     expect(mockRefreshDetailOnly).toHaveBeenCalledWith(
@@ -98,8 +99,8 @@ describe("ApproveWorkflowsButton", () => {
       {
         params: {
           path: { owner: "acme", name: "widget", number: 7 },
-          query: { platform_host: "ghe.example.com" },
         },
+        body: { platform_host: "ghe.example.com" },
       },
     );
   });

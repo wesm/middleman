@@ -47,10 +47,12 @@ type prDetailInput struct {
 }
 
 type prActionInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		PlatformHost string `json:"platform_host"`
+	}
 }
 
 type getPullOutput = bodyOutput[mergeRequestDetailResponse]
@@ -65,37 +67,37 @@ type resolveItemInput struct {
 type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
-		Status string `json:"status"`
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		Status       string `json:"status"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
 type statusOnlyOutput = okStatusOutput
 
 type postCommentInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
-		Body string `json:"body"`
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
 type postCommentOutput = createdOutput[db.MREvent]
 
 type editCommentInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	CommentID    int64  `path:"comment_id"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
-		Body string `json:"body"`
+	Owner     string `path:"owner"`
+	Name      string `path:"name"`
+	Number    int    `path:"number"`
+	CommentID int64  `path:"comment_id"`
+	Body      struct {
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
@@ -127,7 +129,7 @@ type postIssueCommentInput struct {
 	Number int    `path:"number"`
 	Body   struct {
 		Body         string `json:"body"`
-		PlatformHost string `json:"platform_host,omitempty"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
@@ -140,7 +142,7 @@ type editIssueCommentInput struct {
 	CommentID int64  `path:"comment_id"`
 	Body      struct {
 		Body         string `json:"body"`
-		PlatformHost string `json:"platform_host,omitempty"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
@@ -152,7 +154,7 @@ type createIssueInput struct {
 	Body  struct {
 		Title        string `json:"title"`
 		Body         string `json:"body"`
-		PlatformHost string `json:"platform_host,omitempty"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
@@ -181,12 +183,12 @@ type commentAutocompleteInput struct {
 type commentAutocompleteOutput = bodyOutput[commentAutocompleteResponse]
 
 type approvePRInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
-		Body string `json:"body"`
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		Body         string `json:"body"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
@@ -198,14 +200,14 @@ type actionStatusBody struct {
 type actionStatusOutput = bodyOutput[actionStatusBody]
 
 type mergePRInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
 		CommitTitle   string `json:"commit_title"`
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
+		PlatformHost  string `json:"platform_host"`
 	}
 }
 
@@ -218,26 +220,25 @@ type mergePRBody struct {
 type mergePROutput = bodyOutput[mergePRBody]
 
 type editPRContentInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
-		Title *string `json:"title,omitempty"`
-		Body  *string `json:"body,omitempty"`
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
+		Title        *string `json:"title,omitempty"`
+		Body         *string `json:"body,omitempty"`
+		PlatformHost string  `json:"platform_host"`
 	}
 }
 
 type editPRContentOutput = bodyOutput[mergeRequestDetailResponse]
 
 type githubStateInput struct {
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
-	Body         struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Body   struct {
 		State        string `json:"state"`
-		PlatformHost string `json:"platform_host,omitempty"`
+		PlatformHost string `json:"platform_host"`
 	}
 }
 
@@ -873,7 +874,7 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 		owner:        input.Owner,
 		name:         input.Name,
 		number:       input.Number,
-		platformHost: strings.TrimSpace(input.PlatformHost),
+		platformHost: strings.TrimSpace(input.Body.PlatformHost),
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
@@ -903,7 +904,7 @@ func (s *Server) editPRContent(
 		return nil, huma.Error400BadRequest("title must not be blank")
 	}
 
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -996,7 +997,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1041,7 +1042,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1480,7 +1481,7 @@ func (s *Server) getCommentAutocomplete(
 }
 
 func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1517,7 +1518,7 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 }
 
 func (s *Server) approveWorkflows(ctx context.Context, input *prActionInput) (*actionStatusOutput, error) {
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1616,7 +1617,7 @@ func (s *Server) syncMRAfterPRAction(
 }
 
 func (s *Server) readyForReview(ctx context.Context, input *prActionInput) (*actionStatusOutput, error) {
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1703,7 +1704,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error400BadRequest("invalid merge method: must be merge, squash, or rebase")
 	}
 
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1795,7 +1796,7 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	platformHost := strings.TrimSpace(input.PlatformHost)
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
@@ -1895,10 +1896,7 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
-	platformHost := strings.TrimSpace(input.PlatformHost)
-	if platformHost == "" {
-		platformHost = strings.TrimSpace(input.Body.PlatformHost)
-	}
+	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
 		owner:        input.Owner,
 		name:         input.Name,

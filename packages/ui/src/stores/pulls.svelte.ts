@@ -282,7 +282,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
             owner,
             name,
             number,
-            ...(platformHost ? { platform_host: platformHost } : {}),
+            platform_host: platformHost ?? "",
           },
         });
         if (error) {
@@ -297,7 +297,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
             owner,
             name,
             number,
-            ...(platformHost ? { platform_host: platformHost } : {}),
+            platform_host: platformHost ?? "",
           },
         });
         if (error) {

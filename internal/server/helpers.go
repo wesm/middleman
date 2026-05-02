@@ -22,7 +22,7 @@ type starredRequest struct {
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
 	Number       int    `json:"number"`
-	PlatformHost string `json:"platform_host,omitempty"`
+	PlatformHost string `json:"platform_host"`
 }
 
 var errRepoNotFound = repoidentity.ErrNotFound

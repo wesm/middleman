@@ -616,11 +616,11 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -646,11 +646,11 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -673,11 +673,11 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -703,11 +703,11 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -733,11 +733,11 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -763,11 +763,11 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -786,11 +786,11 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.MergePRInputBody{
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
 			CommitTitle:   "title",
 			CommitMessage: "msg",
 			Method:        "squash",
+			PlatformHost:  "github.com",
 		},
 	)
 	require.NoError(err)
@@ -1130,7 +1130,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberApproveWorkflowsJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1182,7 +1182,7 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberApproveWorkflowsJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1252,7 +1252,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberApproveWorkflowsJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -1389,7 +1389,7 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberApproveWorkflowsJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1515,7 +1515,7 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberApproveWorkflowsJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -1583,7 +1583,7 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberApproveWorkflowsJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -2142,8 +2142,10 @@ func TestAPISetKanbanState(t *testing.T) {
 		"acme",
 		"widget",
 		1,
-		nil,
-		generated.SetKanbanStateJSONRequestBody{Status: "reviewing"},
+		generated.SetKanbanStateJSONRequestBody{
+			Status:       "reviewing",
+			PlatformHost: "github.com",
+		},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -2164,8 +2166,10 @@ func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 		"acme",
 		"widget",
 		1,
-		nil,
-		generated.SetKanbanStateJSONRequestBody{Status: "nonsense"},
+		generated.SetKanbanStateJSONRequestBody{
+			Status:       "nonsense",
+			PlatformHost: "github.com",
+		},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
@@ -2187,7 +2191,10 @@ func TestAPISetKanbanStateRejectsAmbiguousRepo(t *testing.T) {
 		srv,
 		http.MethodPut,
 		"/api/v1/repos/acme/widget/pulls/1/state",
-		map[string]string{"status": "reviewing"},
+		map[string]string{
+			"status":        "reviewing",
+			"platform_host": "",
+		},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
@@ -2209,7 +2216,7 @@ func TestAPISetKanbanStateRejectsAmbiguousRepo(t *testing.T) {
 	assert.Equal("new", ghesPR.KanbanStatus)
 }
 
-func TestAPISetKanbanStateUsesPlatformHostQuery(t *testing.T) {
+func TestAPISetKanbanStateUsesPlatformHostBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
@@ -2223,8 +2230,11 @@ func TestAPISetKanbanStateUsesPlatformHostQuery(t *testing.T) {
 		t,
 		srv,
 		http.MethodPut,
-		"/api/v1/repos/acme/widget/pulls/1/state?platform_host=ghe.example.com",
-		map[string]string{"status": "reviewing"},
+		"/api/v1/repos/acme/widget/pulls/1/state",
+		map[string]string{
+			"status":        "reviewing",
+			"platform_host": "ghe.example.com",
+		},
 	)
 
 	require.Equal(http.StatusOK, rr.Code)
@@ -2869,8 +2879,7 @@ func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 		"acme",
 		"widget",
 		7,
-		nil,
-		generated.PostPrCommentJSONRequestBody{Body: "looks good"},
+		generated.PostPrCommentJSONRequestBody{Body: "looks good", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusCreated, resp.StatusCode())
@@ -2913,7 +2922,7 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/7/comments/9876",
-		strings.NewReader(`{"body":"edited body"}`),
+		strings.NewReader(`{"body":"edited body","platform_host":"github.com"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -2957,7 +2966,7 @@ func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/7/comments/5555",
-		strings.NewReader(`{"body":"wrong target"}`),
+		strings.NewReader(`{"body":"wrong target","platform_host":"github.com"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -3004,7 +3013,7 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPatch,
 		"/api/v1/repos/acme/widget/issues/5/comments/1234",
-		strings.NewReader(`{"body":"edited issue body"}`),
+		strings.NewReader(`{"body":"edited issue body","platform_host":"github.com"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -3048,7 +3057,7 @@ func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPatch,
 		"/api/v1/repos/acme/widget/issues/5/comments/6666",
-		strings.NewReader(`{"body":"wrong target"}`),
+		strings.NewReader(`{"body":"wrong target","platform_host":"github.com"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -3364,7 +3373,7 @@ func TestAPIReadyForReview(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberReadyForReviewJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3529,8 +3538,7 @@ func TestAPIClosePR(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+		generated.SetPrGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3556,8 +3564,7 @@ func TestAPIReopenPR(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		ctx, "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "open"},
+		generated.SetPrGithubStateJSONRequestBody{State: "open", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3582,8 +3589,7 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		ctx, "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "open"},
+		generated.SetPrGithubStateJSONRequestBody{State: "open", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode())
@@ -3596,8 +3602,7 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "nonsense"},
+		generated.SetPrGithubStateJSONRequestBody{State: "nonsense", PlatformHost: "github.com"},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
@@ -3614,8 +3619,7 @@ func TestAPICloseIssue(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
-		nil,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3634,8 +3638,7 @@ func TestAPIReopenIssue(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
-		nil,
-		generated.SetIssueGithubStateJSONRequestBody{State: "open"},
+		generated.SetIssueGithubStateJSONRequestBody{State: "open", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -3706,8 +3709,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+		generated.SetPrGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -4157,7 +4159,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberReadyForReviewJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -4242,8 +4244,7 @@ func TestAPISyncIssueDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
-		nil,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -4881,7 +4882,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	assert.Equal("closed", ghesIssue.State)
 }
 
-func TestAPISetIssueStateUsesPlatformHostQuery(t *testing.T) {
+func TestAPISetIssueStateIgnoresPlatformHostQuery(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := context.Background()
@@ -4967,9 +4968,9 @@ func TestAPISetIssueStateUsesPlatformHostQuery(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 	assert.Zero(githubEditCalls)
-	assert.Equal(1, ghesEditCalls)
+	assert.Zero(ghesEditCalls)
 
 	githubRepo, err := database.GetRepoByHostOwnerName(
 		ctx, "github.com", "acme", "widget",
@@ -4993,7 +4994,7 @@ func TestAPISetIssueStateUsesPlatformHostQuery(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NotNil(ghesIssue)
-	assert.Equal("closed", ghesIssue.State)
+	assert.Equal("open", ghesIssue.State)
 }
 
 // TestAPIIssueDataFromGraphQLSync verifies the API correctly serves
@@ -6715,8 +6716,7 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		ctx, "acme", "widget", 5,
-		nil,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusNotFound, resp.StatusCode())
@@ -6742,8 +6742,7 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+		generated.SetPrGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -6776,8 +6775,7 @@ func TestAPICloseIssue422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
-		nil,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -6819,8 +6817,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+		generated.SetPrGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6844,7 +6841,7 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberReadyForReviewJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -6863,7 +6860,7 @@ func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberReadyForReviewJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -6928,7 +6925,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberReadyForReviewJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -6982,7 +6979,7 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 
 	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
+		generated.PostReposByOwnerByNamePullsByNumberReadyForReviewJSONRequestBody{PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -7015,7 +7012,7 @@ func TestAPIReadyForReviewRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/v1/repos/acme/widget/pulls/1/ready-for-review",
-		nil,
+		map[string]string{"platform_host": ""},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
@@ -7044,7 +7041,7 @@ func TestAPIApprovePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/v1/repos/acme/widget/pulls/1/approve",
-		map[string]string{"body": "ship it"},
+		map[string]string{"body": "ship it", "platform_host": ""},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
@@ -7081,7 +7078,7 @@ func TestAPIApprovePRRejectsAmbiguousTrackedRepoBeforeMutation(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/v1/repos/acme/widget/pulls/1/approve",
-		map[string]string{"body": "ship it"},
+		map[string]string{"body": "ship it", "platform_host": ""},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
@@ -7110,7 +7107,7 @@ func TestAPISetPRGitHubStateRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/v1/repos/acme/widget/pulls/1/github-state",
-		map[string]string{"state": "closed"},
+		map[string]string{"state": "closed", "platform_host": ""},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
@@ -7139,7 +7136,7 @@ func TestAPIEditPRContentRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 		srv,
 		http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"title": "New title"},
+		map[string]string{"title": "New title", "platform_host": ""},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
@@ -7169,14 +7166,14 @@ func TestAPIPostPrCommentRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/v1/repos/acme/widget/pulls/1/comments",
-		map[string]string{"body": "hello"},
+		map[string]string{"body": "hello", "platform_host": ""},
 	)
 
 	require.Equal(http.StatusBadRequest, rr.Code)
 	assert.Zero(commentCalls)
 }
 
-func TestAPIApprovePRUsesPlatformHostQuery(t *testing.T) {
+func TestAPIApprovePRUsesPlatformHostBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -7233,8 +7230,11 @@ func TestAPIApprovePRUsesPlatformHostQuery(t *testing.T) {
 		t,
 		srv,
 		http.MethodPost,
-		"/api/v1/repos/acme/widget/pulls/7/approve?platform_host=ghe.example.com",
-		map[string]string{"body": "ship it"},
+		"/api/v1/repos/acme/widget/pulls/7/approve",
+		map[string]string{
+			"body":          "ship it",
+			"platform_host": "ghe.example.com",
+		},
 	)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -7268,6 +7268,7 @@ func TestAPIMergePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 			"commit_title":   "title",
 			"commit_message": "body",
 			"method":         "squash",
+			"platform_host":  "",
 		},
 	)
 
@@ -7275,7 +7276,7 @@ func TestAPIMergePRRejectsAmbiguousRepoBeforeMutation(t *testing.T) {
 	assert.Zero(mergeCalls)
 }
 
-func TestAPIMergePRUsesPlatformHostQuery(t *testing.T) {
+func TestAPIMergePRUsesPlatformHostBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -7331,11 +7332,12 @@ func TestAPIMergePRUsesPlatformHostQuery(t *testing.T) {
 		t,
 		srv,
 		http.MethodPost,
-		"/api/v1/repos/acme/widget/pulls/7/merge?platform_host=ghe.example.com",
+		"/api/v1/repos/acme/widget/pulls/7/merge",
 		map[string]string{
 			"commit_title":   "title",
 			"commit_message": "body",
 			"method":         "squash",
+			"platform_host":  "ghe.example.com",
 		},
 	)
 
@@ -7390,8 +7392,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
 		t.Context(), "acme", "widget", 1,
-		nil,
-		generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+		generated.SetPrGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusConflict, resp.StatusCode())
@@ -7643,8 +7644,7 @@ func TestAPICloseIssue422AlreadyClosed(t *testing.T) {
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(
 		t.Context(), "acme", "widget", 5,
-		nil,
-		generated.SetIssueGithubStateJSONRequestBody{State: "closed"},
+		generated.SetIssueGithubStateJSONRequestBody{State: "closed", PlatformHost: "github.com"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -12742,7 +12742,7 @@ func TestAPIEditPRTitleAndBody(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"title": "updated title", "body": "updated body"})
+		map[string]string{"title": "updated title", "body": "updated body", "platform_host": "github.com"})
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -12760,7 +12760,7 @@ func TestAPIEditPRTitleOnly(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"title": "new title"})
+		map[string]string{"title": "new title", "platform_host": "github.com"})
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -12778,7 +12778,7 @@ func TestAPIEditPRBodyOnly(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"body": "new body"})
+		map[string]string{"body": "new body", "platform_host": "github.com"})
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -12796,7 +12796,7 @@ func TestAPIEditPRClearBody(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"body": ""})
+		map[string]string{"body": "", "platform_host": "github.com"})
 	require.Equal(http.StatusOK, rr.Code)
 
 	mr, err := database.GetMergeRequest(
@@ -12814,7 +12814,7 @@ func TestAPIEditPRNoFields400(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]any{})
+		map[string]any{"platform_host": "github.com"})
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
 
@@ -12825,7 +12825,7 @@ func TestAPIEditPRBlankTitle400(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"title": "   "})
+		map[string]string{"title": "   ", "platform_host": "github.com"})
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
 
@@ -12849,7 +12849,7 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 
 	rr := doJSON(t, srv, http.MethodPatch,
 		"/api/v1/repos/acme/widget/pulls/1",
-		map[string]string{"title": "changed title"})
+		map[string]string{"title": "changed title", "platform_host": "github.com"})
 	require.Equal(http.StatusOK, rr.Code)
 
 	after, err := database.GetMergeRequest(ctx, "acme", "widget", 1)

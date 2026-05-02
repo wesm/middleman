@@ -917,6 +917,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            platform_host: string;
         };
         BulkAddRepoRequest: {
             name: string;
@@ -986,7 +987,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
-            platform_host?: string;
+            platform_host: string;
             title: string;
         };
         CreateIssueWorkspaceInputBody: {
@@ -1045,6 +1046,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            platform_host: string;
         };
         EditIssueCommentInputBody: {
             /**
@@ -1054,7 +1056,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
-            platform_host?: string;
+            platform_host: string;
         };
         EditPRContentInputBody: {
             /**
@@ -1064,6 +1066,7 @@ export interface components {
              */
             readonly $schema?: string;
             body?: string;
+            platform_host: string;
             title?: string;
         };
         ErrorDetail: {
@@ -1130,7 +1133,7 @@ export interface components {
              * @example /api/v1/schemas/GithubStateInputBody.json
              */
             readonly $schema?: string;
-            platform_host?: string;
+            platform_host: string;
             state: string;
         };
         GithubStateOutputBody: {
@@ -1344,6 +1347,7 @@ export interface components {
             commit_message: string;
             commit_title: string;
             method: string;
+            platform_host: string;
         };
         MergeRequest: {
             /** Format: int64 */
@@ -1488,6 +1492,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            platform_host: string;
         };
         PostIssueCommentInputBody: {
             /**
@@ -1497,7 +1502,16 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
-            platform_host?: string;
+            platform_host: string;
+        };
+        PrActionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PrActionInputBody.json
+             */
+            readonly $schema?: string;
+            platform_host: string;
         };
         RateLimitHostStatus: {
             /** Format: int64 */
@@ -1708,6 +1722,7 @@ export interface components {
              * @example /api/v1/schemas/SetKanbanStateInputBody.json
              */
             readonly $schema?: string;
+            platform_host: string;
             status: string;
         };
         SettingsResponse: {
@@ -1774,7 +1789,7 @@ export interface components {
             /** Format: int64 */
             number: number;
             owner: string;
-            platform_host?: string;
+            platform_host: string;
         };
         SyncStatus: {
             /**
@@ -2458,9 +2473,7 @@ export interface operations {
     };
     "set-issue-github-state": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -2672,9 +2685,7 @@ export interface operations {
     };
     "edit-pr-content": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -2711,9 +2722,7 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-approve": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -2750,9 +2759,7 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-approve-workflows": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -2761,7 +2768,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrActionInputBody"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -2785,9 +2796,7 @@ export interface operations {
     };
     "post-pr-comment": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -2824,9 +2833,7 @@ export interface operations {
     };
     "edit-pr-comment": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -2976,9 +2983,7 @@ export interface operations {
     };
     "set-pr-github-state": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -3048,9 +3053,7 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-merge": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -3087,9 +3090,7 @@ export interface operations {
     };
     "post-repos-by-owner-by-name-pulls-by-number-ready-for-review": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;
@@ -3098,7 +3099,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrActionInputBody"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -3155,9 +3160,7 @@ export interface operations {
     };
     "set-kanban-state": {
         parameters: {
-            query?: {
-                platform_host?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 owner: string;

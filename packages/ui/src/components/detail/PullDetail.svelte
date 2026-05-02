@@ -315,11 +315,11 @@
         {
           params: {
             path: { owner, name, number },
-            ...(detail?.platform_host
-              ? { query: { platform_host: detail.platform_host } }
-              : {}),
           },
-          body: { state: newState },
+          body: {
+            state: newState,
+            platform_host: detail?.platform_host ?? "",
+          },
         },
       );
       if (requestError) {

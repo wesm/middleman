@@ -41,8 +41,8 @@
       const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/ready-for-review", {
         params: {
           path: { owner, name, number },
-          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
         },
+        body: { platform_host: platformHost ?? "" },
       });
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to mark pull request ready for review");

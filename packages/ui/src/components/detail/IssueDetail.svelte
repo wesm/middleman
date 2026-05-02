@@ -154,9 +154,7 @@
           params: { path: { owner, name, number } },
           body: {
             state: newState,
-            ...(detail && {
-              platform_host: detail.platform_host,
-            }),
+            platform_host: detail?.platform_host ?? platformHost ?? "",
           },
         },
       );

@@ -91,9 +91,8 @@ describe("ApproveButton tooltips", () => {
       {
         params: {
           path: { owner: "acme", name: "widget", number: 7 },
-          query: { platform_host: "ghe.example.com" },
         },
-        body: { body: "" },
+        body: { body: "", platform_host: "ghe.example.com" },
       },
     );
     expect(mockLoadDetail).toHaveBeenCalledWith(

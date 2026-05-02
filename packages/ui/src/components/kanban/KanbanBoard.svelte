@@ -67,9 +67,8 @@
       const { error } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
         params: {
           path: { owner, name, number },
-          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
         },
-        body: { status },
+        body: { status, platform_host: platformHost ?? "" },
       });
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to update kanban state");

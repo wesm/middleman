@@ -33,6 +33,7 @@
     commit_title: string;
     commit_message: string;
     method: Method;
+    platform_host: string;
   };
 
   function buildMethods(): MethodOption[] {
@@ -85,11 +86,11 @@
         commit_title: commitTitle,
         commit_message: commitMessage,
         method: selectedMethod,
+        platform_host: platformHost ?? "",
       };
       const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/merge", {
         params: {
           path: { owner, name, number },
-          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
         },
         body: params,
       });

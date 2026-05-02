@@ -50,9 +50,8 @@ describe("createDetailStore submitComment", () => {
       {
         params: {
           path: { owner: "octo", name: "repo", number: 1 },
-          query: { platform_host: "ghe.example.com" },
         },
-        body: { body: "hello" },
+        body: { body: "hello", platform_host: "ghe.example.com" },
       },
     );
   });
@@ -282,9 +281,8 @@ describe("createDetailStore updateKanbanState", () => {
       {
         params: {
           path: { owner: "octo", name: "repo", number: 1 },
-          query: { platform_host: "ghe.example.com" },
         },
-        body: { status: "reviewing" },
+        body: { status: "reviewing", platform_host: "ghe.example.com" },
       },
     );
     expect(pulls.getPullKanbanStatus).toHaveBeenCalledWith(

@@ -458,14 +458,13 @@ export function createDetailStore(
       const { error: requestError } =
         await apiClient.PUT(
           "/repos/{owner}/{name}/pulls/{number}/state",
-            {
-              params: {
-                path: { owner, name, number },
-                ...(platformHost ? { query: { platform_host: platformHost } } : {}),
-              },
-              body: { status },
+          {
+            params: {
+              path: { owner, name, number },
             },
-          );
+            body: { status, platform_host: platformHost ?? "" },
+          },
+        );
       if (requestError) {
         throw new Error(
           requestError.detail ??
@@ -562,9 +561,8 @@ export function createDetailStore(
           {
             params: {
               path: { owner, name, number },
-              ...(platformHost ? { query: { platform_host: platformHost } } : {}),
             },
-            body: fields,
+            body: { ...fields, platform_host: platformHost ?? "" },
           },
         );
       if (requestError) {
@@ -657,7 +655,7 @@ export function createDetailStore(
               owner,
               name,
               number,
-              ...(platformHost ? { platform_host: platformHost } : {}),
+              platform_host: platformHost ?? "",
             },
           });
         if (requestError) {
@@ -675,7 +673,7 @@ export function createDetailStore(
               owner,
               name,
               number,
-              ...(platformHost ? { platform_host: platformHost } : {}),
+              platform_host: platformHost ?? "",
             },
           });
         if (requestError) {
@@ -718,9 +716,8 @@ export function createDetailStore(
           {
             params: {
               path: { owner, name, number },
-              ...(platformHost ? { query: { platform_host: platformHost } } : {}),
             },
-            body: { body },
+            body: { body, platform_host: platformHost ?? "" },
           },
         );
       if (requestError) {
@@ -770,9 +767,8 @@ export function createDetailStore(
               number,
               comment_id: commentID,
             },
-            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
           },
-          body: { body },
+          body: { body, platform_host: platformHost ?? "" },
         },
       );
       if (requestError) {

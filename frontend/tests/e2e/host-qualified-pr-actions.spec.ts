@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
@@ -58,6 +58,11 @@ function hostedPRDetail() {
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
   };
+}
+
+function requestBodyPlatformHost(route: Route): string {
+  const body = route.request().postDataJSON() as { platform_host?: string } | null;
+  return body?.platform_host ?? "";
 }
 
 async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
@@ -123,8 +128,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/state(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.state.push(url.searchParams.get("platform_host") ?? "");
+      seen.state.push(requestBodyPlatformHost(route));
       await route.fulfill({ status: 200 });
     },
   );
@@ -132,8 +136,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/github-state(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.githubState.push(url.searchParams.get("platform_host") ?? "");
+      seen.githubState.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -145,8 +148,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/comments(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.comments.push(url.searchParams.get("platform_host") ?? "");
+      seen.comments.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 201,
         contentType: "application/json",
@@ -214,8 +216,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42(?:[?]|$)/,
     async (route) => {
       if (route.request().method() !== "PATCH") return route.fallback();
-      const url = new URL(route.request().url());
-      seen.content.push(url.searchParams.get("platform_host") ?? "");
+      seen.content.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -227,8 +228,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/ready-for-review(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.ready.push(url.searchParams.get("platform_host") ?? "");
+      seen.ready.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -240,8 +240,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/approve(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.approve.push(url.searchParams.get("platform_host") ?? "");
+      seen.approve.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -253,8 +252,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/approve-workflows(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.workflows.push(url.searchParams.get("platform_host") ?? "");
+      seen.workflows.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -266,8 +264,7 @@ async function setupHostedPR(page: Page): Promise<Record<string, string[]>> {
   await page.route(
     /\/api\/v1\/repos\/acme\/widgets\/pulls\/42\/merge(?:[?]|$)/,
     async (route) => {
-      const url = new URL(route.request().url());
-      seen.merge.push(url.searchParams.get("platform_host") ?? "");
+      seen.merge.push(requestBodyPlatformHost(route));
       await route.fulfill({
         status: 200,
         contentType: "application/json",

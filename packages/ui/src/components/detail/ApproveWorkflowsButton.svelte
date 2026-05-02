@@ -50,8 +50,8 @@
         {
           params: {
             path: { owner, name, number },
-            ...(platformHost ? { query: { platform_host: platformHost } } : {}),
           },
+          body: { platform_host: platformHost ?? "" },
         },
       );
       if (requestError) {

@@ -48,9 +48,8 @@
       const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/approve", {
         params: {
           path: { owner, name, number },
-          ...(platformHost ? { query: { platform_host: platformHost } } : {}),
         },
-        body: { body: body.trim() },
+        body: { body: body.trim(), platform_host: platformHost ?? "" },
       });
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to approve pull request");

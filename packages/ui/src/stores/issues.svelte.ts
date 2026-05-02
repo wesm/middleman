@@ -508,9 +508,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           params: { path: { owner, name, number } },
           body: {
             body,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
+            platform_host: platformHost ?? "",
           },
         },
       );
@@ -561,9 +559,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           },
           body: {
             body,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
+            platform_host: platformHost ?? "",
           },
         },
       );
@@ -596,9 +592,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             owner,
             name,
             number,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
+            platform_host: platformHost ?? "",
           },
         });
         if (requestError) {
@@ -613,9 +607,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             owner,
             name,
             number,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
+            platform_host: platformHost ?? "",
           },
         });
         if (requestError) {
