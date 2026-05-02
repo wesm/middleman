@@ -72,11 +72,15 @@ test.describe("collapsible sidebar", () => {
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
 
     // Click the collapse button inside the sidebar.
-    await sidebar.locator(".sidebar-toggle").click();
+    await sidebar
+      .getByRole("button", { name: "Collapse sidebar" })
+      .click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
     // The expand button should now appear in the collapsed strip.
-    const expandBtn = sidebar.locator(".expand-btn");
+    const expandBtn = sidebar.getByRole("button", {
+      name: "Expand sidebar",
+    });
     await expect(expandBtn).toBeVisible();
 
     // Click the expand button to restore the sidebar.
@@ -92,10 +96,14 @@ test.describe("collapsible sidebar", () => {
     await expect(sidebar).toBeVisible();
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
 
-    await sidebar.locator(".sidebar-toggle").click();
+    await sidebar
+      .getByRole("button", { name: "Collapse sidebar" })
+      .click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
-    const expandBtn = sidebar.locator(".expand-btn");
+    const expandBtn = sidebar.getByRole("button", {
+      name: "Expand sidebar",
+    });
     await expect(expandBtn).toBeVisible();
 
     await expandBtn.click();
@@ -108,7 +116,9 @@ test.describe("collapsible sidebar", () => {
 
     // Collapse sidebar on list view.
     const sidebar = page.locator(".sidebar");
-    await sidebar.locator(".sidebar-toggle").click();
+    await sidebar
+      .getByRole("button", { name: "Collapse sidebar" })
+      .click();
     await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
     // Navigate to board view (no sidebar strip).

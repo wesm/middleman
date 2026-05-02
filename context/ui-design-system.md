@@ -68,6 +68,18 @@ Intent:
 
 If a new repeated button treatment is needed, extend `ActionButton` rather than creating another local button pattern.
 
+### LeftSidebarToggle
+
+Use `LeftSidebarToggle` for collapse and expand controls on left-side navigation rails.
+
+Intent:
+
+- one shared icon, size, hover, and accessible label contract for left-sidebar collapse affordances
+- consistent expanded/collapsed direction across PR, issue, activity, and workspace sidebars
+- avoid one-off SVG buttons or local `.sidebar-toggle` styling in each rail
+
+Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous.
+
 ### SelectDropdown
 
 Use `SelectDropdown` for single-value selection controls in the UI.

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import PanelLeftCloseIcon from "@lucide/svelte/icons/panel-left-close";
-  import PanelLeftOpenIcon from "@lucide/svelte/icons/panel-left-open";
   import { onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import ActivityFeed
     from "../components/ActivityFeed.svelte";
+  import LeftSidebarToggle
+    from "../components/shared/LeftSidebarToggle.svelte";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
 
@@ -181,34 +181,22 @@
   >
     {#if activeDrawer && activityPaneCollapsed}
       <div class="activity-collapsed-strip">
-        <button
-          class="activity-sidebar-toggle"
+        <LeftSidebarToggle
+          state="collapsed"
+          label="Activity sidebar"
           onclick={expandActivityPane}
-          title="Expand Activity sidebar"
-          type="button"
-        >
-          <PanelLeftOpenIcon
-            size="14"
-            strokeWidth="1.5"
-            aria-hidden="true"
-          />
-        </button>
+          class="left-sidebar-toggle--compact"
+        />
       </div>
     {:else if activeDrawer}
       <div class="activity-rail-header">
         <span>Activity</span>
-        <button
-          class="activity-sidebar-toggle"
+        <LeftSidebarToggle
+          state="expanded"
+          label="Activity sidebar"
           onclick={collapseActivityPane}
-          title="Collapse Activity sidebar"
-          type="button"
-        >
-          <PanelLeftCloseIcon
-            size="14"
-            strokeWidth="1.5"
-            aria-hidden="true"
-          />
-        </button>
+          class="left-sidebar-toggle--compact"
+        />
       </div>
     {/if}
     <div class="activity-feed-wrap">
@@ -340,21 +328,6 @@
     justify-content: center;
     padding-top: 6px;
     background: var(--bg-surface);
-  }
-
-  .activity-sidebar-toggle {
-    width: 22px;
-    height: 22px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-  }
-
-  .activity-sidebar-toggle:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
   }
 
   .activity-detail-header span {

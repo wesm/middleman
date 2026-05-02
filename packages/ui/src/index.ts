@@ -128,6 +128,9 @@ export {
   default as CollapsibleResizableSidebar,
 } from "./components/shared/CollapsibleResizableSidebar.svelte";
 export {
+  default as LeftSidebarToggle,
+} from "./components/shared/LeftSidebarToggle.svelte";
+export {
   default as FilterDropdown,
 } from "./components/shared/FilterDropdown.svelte";
 export {

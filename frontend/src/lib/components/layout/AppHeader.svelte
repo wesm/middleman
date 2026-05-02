@@ -27,7 +27,9 @@
 
   const hasSidebarStrip = $derived(
     getPage() === "issues"
-    || (getPage() === "pulls" && getView() === "list"),
+    || (getPage() === "pulls" && getView() === "list")
+    || getPage() === "workspaces"
+    || getPage() === "terminal",
   );
 
   const stores = getStores();

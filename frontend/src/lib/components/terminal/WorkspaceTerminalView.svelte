@@ -54,9 +54,23 @@
     createdAt: string;
   }
 
+  interface Props {
+    workspaceId: string;
+    isSidebarCollapsed?: boolean;
+    sidebarWidth?: number;
+    onSidebarResize?: (width: number) => void;
+    isSidebarToggleEnabled?: boolean;
+    onToggleSidebar?: () => void;
+  }
+
   const {
     workspaceId,
-  }: { workspaceId: string } = $props();
+    isSidebarCollapsed = false,
+    sidebarWidth: externalWorkspaceListWidth = undefined,
+    onSidebarResize = undefined,
+    isSidebarToggleEnabled = false,
+    onToggleSidebar = undefined,
+  }: Props = $props();
 
   const basePath = (
     window.__BASE_PATH__ ?? "/"
@@ -154,6 +168,11 @@
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
+  const currentWorkspaceListWidth = $derived(
+    clampWorkspaceListWidth(
+      externalWorkspaceListWidth ?? workspaceListWidth,
+    ),
+  );
 
   // Runtime is only "live" when both the runtime fetch and the
   // workspace fetch resolve for the current route. Without the
@@ -227,6 +246,7 @@
     );
   });
   $effect(() => {
+    if (externalWorkspaceListWidth !== undefined) return;
     localStorage.setItem(
       WORKSPACE_LIST_WIDTH_KEY,
       String(workspaceListWidth),
@@ -242,8 +262,22 @@
     }
   }
 
-  function toggleSidebar(): void {
+  function toggleRightSidebar(): void {
     sidebarOpen = !sidebarOpen;
+  }
+
+  function handleWorkspaceListResize(width: number): void {
+    const clamped = clampWorkspaceListWidth(width);
+    if (onSidebarResize) {
+      onSidebarResize(clamped);
+    } else {
+      workspaceListWidth = clamped;
+    }
+    requestAnimationFrame(() => {
+      if (containerEl) {
+        clampRightSidebarWidth(containerEl.clientWidth);
+      }
+    });
   }
 
   let containerEl = $state<HTMLElement | null>(null);
@@ -324,7 +358,7 @@
         !e.defaultPrevented
       ) {
         e.preventDefault();
-        toggleSidebar();
+        toggleRightSidebar();
       }
     }
     window.addEventListener("keydown", onKeydown);
@@ -833,22 +867,20 @@
 
 <div class="terminal-view">
   <CollapsibleResizableSidebar
-    sidebarWidth={workspaceListWidth}
+    isCollapsed={isSidebarCollapsed}
+    sidebarWidth={currentWorkspaceListWidth}
     minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
     maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
-    onSidebarResize={(width) => {
-      workspaceListWidth = clampWorkspaceListWidth(width);
-      requestAnimationFrame(() => {
-        if (containerEl) {
-          clampRightSidebarWidth(containerEl.clientWidth);
-        }
-      });
-    }}
+    onSidebarResize={handleWorkspaceListResize}
+    showCollapsedStrip={isSidebarToggleEnabled}
+    onExpand={onToggleSidebar}
     mainOverflow="hidden"
   >
     {#snippet sidebar()}
       <WorkspaceListSidebar
         selectedId={workspaceId}
+        {isSidebarToggleEnabled}
+        onCollapseSidebar={onToggleSidebar}
         onOpenItemSidebar={(targetId, tab) => {
           // Cross-workspace click: navigate first, then ensure
           // the sidebar is open for the target tab.

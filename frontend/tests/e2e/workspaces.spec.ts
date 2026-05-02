@@ -13,6 +13,23 @@ test("workspaces route renders the terminal workspace list shell", async ({ page
   ).toBeVisible();
 });
 
+test("workspaces sidebar collapses and expands through the shared control", async ({ page }) => {
+  await page.goto("/workspaces");
+
+  const sidebar = page.locator(".sidebar").first();
+  await expect(sidebar).toBeVisible();
+
+  await sidebar
+    .getByRole("button", { name: "Collapse Workspaces sidebar" })
+    .click();
+  await expect(sidebar).toHaveClass(/sidebar--collapsed/);
+
+  await sidebar
+    .getByRole("button", { name: "Expand sidebar" })
+    .click();
+  await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
+});
+
 test("AppHeader workspaces tab navigates to /workspaces", async ({ page }) => {
   await page.goto("/pulls");
   await page

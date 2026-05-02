@@ -393,4 +393,24 @@ describe("WorkspaceTerminalView", () => {
 
     expect(sockets).toHaveLength(1);
   });
+
+  it("shows a workspace sidebar collapse button", async () => {
+    const onToggleSidebar = vi.fn();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        isSidebarToggleEnabled: true,
+        onToggleSidebar,
+      },
+    });
+
+    const collapseButton = await screen.findByRole("button", {
+      name: "Collapse Workspaces sidebar",
+    });
+
+    await fireEvent.click(collapseButton);
+
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
 });

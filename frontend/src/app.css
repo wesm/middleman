@@ -320,19 +320,3 @@ a.item-ref {
 a.item-ref:hover {
   text-decoration: underline;
 }
-
-/* Sidebar collapse toggle (used in PullList, IssueList, AppHeader) */
-.sidebar-toggle {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.sidebar-toggle:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}

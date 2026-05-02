@@ -4,6 +4,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import PullItem from "./PullItem.svelte";
   import Chip from "../shared/Chip.svelte";
+  import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
 
   const { pulls, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
@@ -156,15 +157,12 @@
       >All</button>
     </div>
     {#if isSidebarToggleEnabled()}
-      <button class="sidebar-toggle" onclick={toggleSidebar} title="Collapse sidebar">
-        <svg width="14" height="14" viewBox="0 0 16 16"
-          fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="1" y="1" width="14" height="14" rx="2" />
-          <line x1="6" y1="1" x2="6" y2="15" />
-          <polyline points="10,6 8,8 10,10"
-            stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
+      <LeftSidebarToggle
+        state="expanded"
+        label="sidebar"
+        onclick={toggleSidebar}
+        class="left-sidebar-toggle--push"
+      />
     {/if}
   </div>
   <div class="search-bar">
@@ -338,25 +336,6 @@
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
     background: var(--bg-surface);
-  }
-
-  .sidebar-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    margin-left: auto;
-    flex-shrink: 0;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .sidebar-toggle:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
   }
 
   .search-bar {
