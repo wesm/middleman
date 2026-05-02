@@ -21,6 +21,8 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+const lockedWorkspaceTestTimeoutMs = 120_000;
+
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
     execFileSync(command, args, { stdio: "ignore" });
@@ -60,6 +62,8 @@ async function waitForWorkspaceReady(
 }
 
 test.describe("detail action buttons", () => {
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+
   test("issue detail creates a middleman workspace and opens its terminal", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

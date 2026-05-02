@@ -10,6 +10,8 @@ type WorkspaceStatusResponse = {
   status: string;
 };
 
+const lockedWorkspaceTestTimeoutMs = 120_000;
+
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
     execFileSync(command, args, { stdio: "ignore" });
@@ -58,6 +60,8 @@ async function createIssueWorkspace(
 }
 
 test.describe("workspace tab persistence", () => {
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+
   test("opening tmux tab keeps Home pane mounted across tab switches", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

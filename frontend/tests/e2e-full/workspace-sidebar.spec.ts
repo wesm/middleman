@@ -9,6 +9,8 @@ type WorkspaceStatusResponse = {
   status: string;
 };
 
+const lockedWorkspaceTestTimeoutMs = 120_000;
+
 async function waitForWorkspaceReady(
   api: APIRequestContext,
   workspaceId: string,
@@ -30,6 +32,8 @@ async function waitForWorkspaceReady(
 }
 
 test.describe("workspace sidebar full-stack", () => {
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+
   test("issue workspaces expose the Issue tab and hide Reviews", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

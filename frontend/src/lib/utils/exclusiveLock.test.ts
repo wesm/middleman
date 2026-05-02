@@ -1,8 +1,9 @@
 // @vitest-environment node
 
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acquireExclusiveLock,
@@ -40,8 +41,10 @@ describe("exclusive e2e lock", () => {
     }));
 
     const info = await stat(exclusiveLockPath("workspace-tmux", root));
+    const rootInfo = await stat(root);
 
     expect(info.isDirectory()).toBe(true);
+    expect(rootInfo.mode & 0o777).toBe(0o700);
   });
 
   it("waits for an existing lock file before acquiring", async () => {
@@ -68,5 +71,17 @@ describe("exclusive e2e lock", () => {
     const secondRelease = await secondReleasePromise;
     releaseFns.push(secondRelease);
     expect(secondAcquired).toBe(true);
+  });
+
+  it("rejects a symlinked lock root", async () => {
+    const target = await tempRoot();
+    const root = path.join(os.tmpdir(), `middleman-lock-link-${process.pid}`);
+    tempRoots.push(root);
+    await rm(root, { force: true, recursive: true });
+    await symlink(target, root);
+
+    await expect(acquireExclusiveLock("workspace-tmux", {
+      rootDir: root,
+    })).rejects.toThrow("lock root is not a safe directory");
   });
 });
