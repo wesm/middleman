@@ -137,6 +137,39 @@ describe("ActivityFeed compact mode", () => {
     ).toHaveLength(2);
   });
 
+  it("highlights only the matching host for host-qualified PR selection", () => {
+    items.value = [
+      activityItem("github", {
+        item_title: "GitHub copy",
+        platform_host: "github.com",
+      }),
+      activityItem("ghes", {
+        item_title: "GHES copy",
+        item_url: "https://ghe.example.com/acme/widgets/pull/1",
+        platform_host: "ghe.example.com",
+      }),
+    ];
+
+    const { container } = render(ActivityFeed, {
+      props: {
+        compact: true,
+        selectedItem: {
+          itemType: "pr",
+          owner: "acme",
+          name: "widgets",
+          number: 1,
+          platformHost: "ghe.example.com",
+        },
+      },
+    });
+
+    const selectedRows = container.querySelectorAll(
+      ".activity-compact-row.selected",
+    );
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]?.textContent).toContain("GHES copy");
+  });
+
   it("uses shared semantic chips for compact item kind and state", () => {
     items.value = [
       activityItem("merged", {

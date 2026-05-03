@@ -11,19 +11,16 @@ vi.mock("../api/runtime.js", () => ({
   },
 }));
 
-vi.mock("../stores/router.svelte.js", () => ({
-  buildItemRoute: (
-    type: "pr" | "issue",
-    owner: string,
-    name: string,
-    number: number,
-    platformHost?: string,
-  ) => {
-    const hostQuery = platformHost ? `?platform_host=${platformHost}` : "";
-    return `/${type}/${owner}/${name}/${number}${hostQuery}`;
-  },
-  navigate: mocks.navigate,
-}));
+vi.mock("../stores/router.svelte.js", async () => {
+  const actual = await vi.importActual<typeof import("../stores/router.svelte.js")>(
+    "../stores/router.svelte.js",
+  );
+
+  return {
+    ...actual,
+    navigate: mocks.navigate,
+  };
+});
 
 vi.mock("../stores/flash.svelte.js", () => ({
   showFlash: vi.fn(),
@@ -80,7 +77,7 @@ describe("itemRefHandler", () => {
       },
     );
     expect(mocks.navigate).toHaveBeenCalledWith(
-      "/pr/acme/widget/42?platform_host=ghe.example.com",
+      "/pulls/acme/widget/42?platform_host=ghe.example.com",
     );
   });
 

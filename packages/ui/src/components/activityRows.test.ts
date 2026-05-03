@@ -9,6 +9,7 @@ function item(
   id: string,
   activity_type: string,
   author: string,
+  platformHost = "github.com",
 ): ActivityItem {
   return {
     id,
@@ -16,10 +17,11 @@ function item(
     activity_type,
     repo_owner: "acme",
     repo_name: "widgets",
+    platform_host: platformHost,
     item_type: "pr",
     item_number: 7,
     item_title: "Rewrite branch",
-    item_url: "https://github.com/acme/widgets/pull/7",
+    item_url: `https://${platformHost}/acme/widgets/pull/7`,
     item_state: "open",
     author,
     created_at: new Date(Number(id) * 1000).toISOString(),
@@ -57,5 +59,18 @@ describe("collapseActivityCommitRuns", () => {
         && rows[1]!.activity_type,
     ).toBe("force_push");
     expect(isCollapsedActivityRow(rows[2]!)).toBe(true);
+  });
+
+  it("does not collapse commits from duplicate repos on different hosts", () => {
+    const rows = collapseActivityCommitRuns([
+      item("5", "commit", "alice", "github.com"),
+      item("4", "commit", "alice", "ghe.example.com"),
+      item("3", "commit", "alice", "ghe.example.com"),
+    ]);
+
+    expect(rows).toHaveLength(3);
+    expect(isCollapsedActivityRow(rows[0]!)).toBe(false);
+    expect(isCollapsedActivityRow(rows[1]!)).toBe(false);
+    expect(isCollapsedActivityRow(rows[2]!)).toBe(false);
   });
 });

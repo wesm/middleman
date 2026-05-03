@@ -20,6 +20,10 @@ export function isCollapsedActivityRow(
   return "kind" in row && row.kind === "collapsed";
 }
 
+function activityHost(item: ActivityItem): string {
+  return item.platform_host || "github.com";
+}
+
 export function collapseActivityCommitRuns(
   items: ActivityItem[],
 ): ActivityRow[] {
@@ -43,6 +47,7 @@ export function collapseActivityCommitRuns(
         || next.repo_owner !== item.repo_owner
         || next.repo_name !== item.repo_name
         || next.item_number !== item.item_number
+        || activityHost(next) !== activityHost(item)
       ) {
         break;
       }

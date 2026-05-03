@@ -330,9 +330,8 @@
       && selectedItem.owner === item.repo_owner
       && selectedItem.name === item.repo_name
       && selectedItem.number === item.item_number
-      && (item.item_type !== "issue"
-        || !selectedItem.platformHost
-        || selectedItem.platformHost === item.platform_host);
+      && (!selectedItem.platformHost
+        || selectedItem.platformHost === (item.platform_host || "github.com"));
   }
 
   function handleLinkClick(e: Event, url: string): void {
