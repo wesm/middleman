@@ -24,6 +24,29 @@ func canonicalRepoIdentifier(host, owner, name string) (string, string, string) 
 	return strings.ToLower(host), strings.ToLower(owner), strings.ToLower(name)
 }
 
+type mergeRequestScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanMergeRequest(scanner mergeRequestScanner) (MergeRequest, error) {
+	var mr MergeRequest
+	err := scanner.Scan(
+		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
+		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
+		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
+		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
+		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
+		&mr.HeadRepoCloneURL,
+		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
+		&mr.CIStatus, &mr.CIChecksJSON,
+		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
+		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
+		&mr.DetailFetchedAt, &mr.CIHadPending,
+		&mr.KanbanStatus, &mr.Starred,
+	)
+	return mr, err
+}
+
 func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx,
@@ -706,8 +729,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 // GetMergeRequest returns a merge request by repo owner/name and MR number, or nil if not found.
 func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int) (*MergeRequest, error) {
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
-	var mr MergeRequest
-	err := d.ro.QueryRowContext(ctx, `
+	mr, err := scanMergeRequest(d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
@@ -728,20 +750,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
 		owner, name, number,
-	).Scan(
-		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
-		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
-		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
-		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-		&mr.HeadRepoCloneURL,
-		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
-		&mr.CIStatus, &mr.CIChecksJSON,
-		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
-		&mr.DetailFetchedAt, &mr.CIHadPending,
-		&mr.KanbanStatus, &mr.Starred,
-	)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -758,8 +767,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 
 // GetMergeRequestByRepoIDAndNumber returns a merge request by repo ID and number.
 func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*MergeRequest, error) {
-	var mr MergeRequest
-	err := d.ro.QueryRowContext(ctx, `
+	mr, err := scanMergeRequest(d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
@@ -779,20 +787,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE p.repo_id = ? AND p.number = ?`,
 		repoID, number,
-	).Scan(
-		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
-		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
-		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
-		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-		&mr.HeadRepoCloneURL,
-		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
-		&mr.CIStatus, &mr.CIChecksJSON,
-		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
-		&mr.DetailFetchedAt, &mr.CIHadPending,
-		&mr.KanbanStatus, &mr.Starred,
-	)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -888,21 +883,8 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	var mrs []MergeRequest
 	var mrIDs []int64
 	for rows.Next() {
-		var mr MergeRequest
-		if err := rows.Scan(
-			&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
-			&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
-			&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
-			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
-			&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-			&mr.HeadRepoCloneURL,
-			&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
-			&mr.CIStatus, &mr.CIChecksJSON,
-			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
-			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
-			&mr.DetailFetchedAt, &mr.CIHadPending,
-			&mr.KanbanStatus, &mr.Starred,
-		); err != nil {
+		mr, err := scanMergeRequest(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan merge request: %w", err)
 		}
 		mrs = append(mrs, mr)

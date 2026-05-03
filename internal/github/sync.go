@@ -3761,35 +3761,31 @@ func (s *Syncer) backfillRepo(
 
 // IsTrackedRepo checks whether the given repo is in the configured list.
 func (s *Syncer) IsTrackedRepo(owner, name string) bool {
-	s.reposMu.Lock()
-	repos := s.repos
-	s.reposMu.Unlock()
-	for _, r := range repos {
-		if strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name) {
-			return true
-		}
-	}
-	return false
+	return len(s.matchingTrackedRepos(owner, name)) > 0
 }
 
 // IsTrackedRepoAmbiguous checks whether owner/name matches more than one
 // configured repo and therefore needs an explicit platform host.
 func (s *Syncer) IsTrackedRepoAmbiguous(owner, name string) bool {
+	return len(s.matchingTrackedRepos(owner, name)) > 1
+}
+
+func (s *Syncer) matchingTrackedRepos(owner, name string) []RepoRef {
 	s.reposMu.Lock()
-	repos := s.repos
-	s.reposMu.Unlock()
-	matches := 0
-	for _, r := range repos {
-		if strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name) {
-			matches++
-			if matches > 1 {
-				return true
-			}
+	defer s.reposMu.Unlock()
+
+	var matches []RepoRef
+	for _, repo := range s.repos {
+		if sameRepoName(repo, owner, name) {
+			matches = append(matches, repo)
 		}
 	}
-	return false
+	return matches
+}
+
+func sameRepoName(repo RepoRef, owner, name string) bool {
+	return strings.EqualFold(repo.Owner, owner) &&
+		strings.EqualFold(repo.Name, name)
 }
 
 // TrackedRepos returns a snapshot of the tracked repositories.
@@ -3804,24 +3800,20 @@ func (s *Syncer) TrackedRepos() []RepoRef {
 // is in the configured list. Used by the watched-MR path where the
 // host is known and must match exactly.
 func (s *Syncer) isTrackedRepoOnHost(owner, name, host string) bool {
-	if host == "" {
-		host = "github.com"
-	}
-	s.reposMu.Lock()
-	repos := s.repos
-	s.reposMu.Unlock()
-	for _, r := range repos {
-		rHost := r.PlatformHost
-		if rHost == "" {
-			rHost = "github.com"
-		}
-		if strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name) &&
-			strings.EqualFold(rHost, host) {
+	host = defaultPlatformHost(host)
+	for _, repo := range s.matchingTrackedRepos(owner, name) {
+		if strings.EqualFold(defaultPlatformHost(repo.PlatformHost), host) {
 			return true
 		}
 	}
 	return false
+}
+
+func defaultPlatformHost(host string) string {
+	if host == "" {
+		return "github.com"
+	}
+	return host
 }
 
 // IsTrackedRepoOnHost checks whether the given repo on a specific host

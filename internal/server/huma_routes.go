@@ -907,15 +907,7 @@ func (s *Server) editPRContent(
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
@@ -1000,15 +992,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
@@ -1045,15 +1029,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
@@ -1484,15 +1460,7 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
@@ -1521,15 +1489,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *prActionInput) (*a
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoObj.ID, input.Number)
 	if err != nil {
@@ -1620,15 +1580,7 @@ func (s *Server) readyForReview(ctx context.Context, input *prActionInput) (*act
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
@@ -1707,15 +1659,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
@@ -1799,15 +1743,7 @@ func (s *Server) setPRGitHubState(
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
 	repoObj, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
-		if errors.Is(err, errRepoAmbiguous) {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("get repo: " + err.Error())
+		return nil, repoIdentityError(err)
 	}
 
 	client, err := s.syncer.ClientForRepoOnHost(repoObj.Owner, repoObj.Name, repoObj.PlatformHost)
