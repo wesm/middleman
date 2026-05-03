@@ -9,14 +9,13 @@ import (
 	"github.com/wesm/middleman/internal/db"
 )
 
-func TestLookupRepoRequiresPlatformHostWhenOwnerNameIsAmbiguous(t *testing.T) {
+func TestLookupRepoRequiresPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
 	store := &fakeStore{
 		repos: []db.Repo{
 			{ID: 1, PlatformHost: "github.com", Owner: "acme", Name: "widget"},
-			{ID: 2, PlatformHost: "ghe.example.com", Owner: "acme", Name: "widget"},
 		},
 	}
 	module := New(store)
@@ -25,17 +24,18 @@ func TestLookupRepoRequiresPlatformHostWhenOwnerNameIsAmbiguous(t *testing.T) {
 		Owner: " Acme ",
 		Name:  "Widget",
 	})
-	require.ErrorIs(err, ErrAmbiguous)
+	require.ErrorIs(err, ErrMissingPlatformHost)
 	assert.Nil(repo)
+	assert.Zero(store.listReposByOwnerNameCalls)
 
 	repo, err = module.LookupRepo(t.Context(), Ref{
 		Owner:        " Acme ",
 		Name:         "Widget",
-		PlatformHost: "GHE.EXAMPLE.COM",
+		PlatformHost: "GITHUB.COM",
 	})
 	require.NoError(err)
 	require.NotNil(repo)
-	assert.EqualValues(2, repo.ID)
+	assert.EqualValues(1, repo.ID)
 }
 
 func TestLookupIssueUsesRepoIDAfterHostSelection(t *testing.T) {
@@ -70,9 +70,10 @@ func TestResolveLocalItemTreatsMissingLocalRepoAsUnresolved(t *testing.T) {
 	require := require.New(t)
 
 	result, err := New(&fakeStore{}).ResolveLocalItem(t.Context(), NumberRef{
-		Owner:  "acme",
-		Name:   "widget",
-		Number: 99,
+		Owner:        "acme",
+		Name:         "widget",
+		Number:       99,
+		PlatformHost: "github.com",
 	})
 	require.NoError(err)
 	assert.False(result.Found)
@@ -80,16 +81,18 @@ func TestResolveLocalItemTreatsMissingLocalRepoAsUnresolved(t *testing.T) {
 }
 
 type fakeStore struct {
-	repos  []db.Repo
-	mrs    map[int64]map[int]*db.MergeRequest
-	issues map[int64]map[int]*db.Issue
-	items  map[int64]map[int]string
+	repos                     []db.Repo
+	mrs                       map[int64]map[int]*db.MergeRequest
+	issues                    map[int64]map[int]*db.Issue
+	items                     map[int64]map[int]string
+	listReposByOwnerNameCalls int
 }
 
 func (f *fakeStore) ListReposByOwnerName(
 	_ context.Context,
 	owner, name string,
 ) ([]db.Repo, error) {
+	f.listReposByOwnerNameCalls++
 	var repos []db.Repo
 	for _, repo := range f.repos {
 		if repo.Owner == owner && repo.Name == name {

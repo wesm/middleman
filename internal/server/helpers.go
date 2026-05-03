@@ -67,14 +67,26 @@ func (s *Server) lookupRepo(
 	ctx context.Context,
 	owner, name, platformHost string,
 ) (*db.Repo, error) {
-	if err := s.requireTrackedRepoUnambiguous(owner, name, platformHost); err != nil {
+	resolvedHost, err := s.resolveRepoHost(owner, name, platformHost)
+	if err != nil {
 		return nil, err
 	}
 	return s.repoIdentity().LookupRepo(ctx, repoIdentityRef{
 		owner:        owner,
 		name:         name,
-		platformHost: platformHost,
+		platformHost: resolvedHost,
 	})
+}
+
+func (s *Server) resolveRepoHost(owner, name, platformHost string) (string, error) {
+	platformHost = strings.TrimSpace(platformHost)
+	if err := s.requireTrackedRepoUnambiguous(owner, name, platformHost); err != nil {
+		return "", err
+	}
+	if platformHost != "" {
+		return platformHost, nil
+	}
+	return s.syncer.HostForRepo(owner, name), nil
 }
 
 func (s *Server) requireTrackedRepoUnambiguous(
@@ -102,34 +114,40 @@ func (s *Server) filterConfiguredRepoSummaries(
 
 // lookupMRID resolves the internal MR id from the common route tuple.
 func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	if err := s.requireTrackedRepoUnambiguous(
-		ref.owner, ref.name, ref.platformHost,
-	); err != nil {
+	resolved, err := s.resolveNumberPathRef(ref)
+	if err != nil {
 		return 0, err
 	}
-	return s.repoIdentity().LookupMRID(ctx, ref)
+	return s.repoIdentity().LookupMRID(ctx, resolved)
 }
 
 // lookupIssueID resolves the internal issue id from the common route tuple.
 func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
-	if err := s.requireTrackedRepoUnambiguous(
-		ref.owner, ref.name, ref.platformHost,
-	); err != nil {
+	resolved, err := s.resolveNumberPathRef(ref)
+	if err != nil {
 		return 0, err
 	}
-	return s.repoIdentity().LookupIssueID(ctx, ref)
+	return s.repoIdentity().LookupIssueID(ctx, resolved)
 }
 
 func (s *Server) lookupIssue(
 	ctx context.Context,
 	ref repoNumberPathRef,
 ) (*db.Repo, *db.Issue, error) {
-	if err := s.requireTrackedRepoUnambiguous(
-		ref.owner, ref.name, ref.platformHost,
-	); err != nil {
+	resolved, err := s.resolveNumberPathRef(ref)
+	if err != nil {
 		return nil, nil, err
 	}
-	return s.repoIdentity().LookupIssue(ctx, ref)
+	return s.repoIdentity().LookupIssue(ctx, resolved)
+}
+
+func (s *Server) resolveNumberPathRef(ref repoNumberPathRef) (repoNumberPathRef, error) {
+	platformHost, err := s.resolveRepoHost(ref.owner, ref.name, ref.platformHost)
+	if err != nil {
+		return repoNumberPathRef{}, err
+	}
+	ref.platformHost = platformHost
+	return ref, nil
 }
 
 // parseRepoFilter splits the repo query parameter when it is in owner/name or

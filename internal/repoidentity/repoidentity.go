@@ -11,7 +11,6 @@ import (
 
 // Store is the persistence surface needed to resolve repository identity.
 type Store interface {
-	ListReposByOwnerName(ctx context.Context, owner, name string) ([]db.Repo, error)
 	GetRepoByHostOwnerName(
 		ctx context.Context,
 		platformHost, owner, name string,
@@ -53,8 +52,9 @@ type ResolvedLocalItem struct {
 }
 
 var (
-	ErrAmbiguous = errors.New("repo ambiguous")
-	ErrNotFound  = errors.New("repo not found")
+	ErrAmbiguous           = errors.New("repo ambiguous")
+	ErrMissingPlatformHost = errors.New("platform host is required")
+	ErrNotFound            = errors.New("repo not found")
 )
 
 type Module struct {
@@ -67,21 +67,10 @@ func New(store Store) Module {
 
 func (m Module) LookupRepo(ctx context.Context, ref Ref) (*db.Repo, error) {
 	ref = normalizeRef(ref)
-	if ref.PlatformHost != "" {
-		return m.lookupRepoOnHost(ctx, ref)
+	if ref.PlatformHost == "" {
+		return nil, ErrMissingPlatformHost
 	}
-	repos, err := m.store.ListReposByOwnerName(ctx, ref.Owner, ref.Name)
-	if err != nil {
-		return nil, fmt.Errorf("list matching repos: %w", err)
-	}
-	switch len(repos) {
-	case 0:
-		return nil, ErrNotFound
-	case 1:
-		return &repos[0], nil
-	default:
-		return nil, ErrAmbiguous
-	}
+	return m.lookupRepoOnHost(ctx, ref)
 }
 
 func (m Module) LookupRepoID(ctx context.Context, ref Ref) (int64, error) {

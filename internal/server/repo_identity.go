@@ -19,7 +19,10 @@ type repositoryIdentityModule struct {
 
 type resolvedLocalItem = repoidentity.ResolvedLocalItem
 
-var errRepoAmbiguous = repoidentity.ErrAmbiguous
+var (
+	errRepoAmbiguous           = repoidentity.ErrAmbiguous
+	errRepoMissingPlatformHost = repoidentity.ErrMissingPlatformHost
+)
 
 func (s *Server) repoIdentity() repositoryIdentityModule {
 	return repositoryIdentityModule{module: repoidentity.New(s.db)}

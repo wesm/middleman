@@ -2769,6 +2769,44 @@ func TestAPICreateIssue(t *testing.T) {
 	assert.Equal("a2eeef", issue.Labels[0].Color)
 }
 
+func TestAPICreateIssueRejectsAmbiguousTrackedRepoBeforeMutation(t *testing.T) {
+	require := require.New(t)
+	githubCalled := false
+	mock := &mockGH{
+		createIssueFn: func(_ context.Context, _, _, _, _ string) (*gh.Issue, error) {
+			githubCalled = true
+			return nil, errors.New("should reject before GitHub mutation")
+		},
+	}
+	srv, database := setupTestServerWithRepos(
+		t,
+		mock,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widgets", PlatformHost: "ghe.example.com"},
+		},
+	)
+	client := setupTestClient(t, srv)
+	_, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widgets")
+	require.NoError(err)
+
+	resp, err := client.HTTP.CreateIssueWithResponse(
+		t.Context(),
+		"acme",
+		"widgets",
+		generated.CreateIssueJSONRequestBody{Title: "Ambiguous", Body: "No host"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
+	require.False(githubCalled)
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
+	require.Contains(
+		*resp.ApplicationproblemJSONDefault.Detail,
+		"platform_host is required for ambiguous repo",
+	)
+}
+
 func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -3403,6 +3441,39 @@ func TestAPISetStarred(t *testing.T) {
 	starred, err := database.IsStarred(t.Context(), "pr", 1, 1)
 	require.NoError(err)
 	require.True(starred)
+}
+
+func TestAPISetStarredRejectsAmbiguousTrackedRepo(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(
+		t,
+		&mockGH{},
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+		},
+	)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SetStarredWithResponse(t.Context(), generated.SetStarredJSONRequestBody{
+		ItemType: "pr",
+		Owner:    "acme",
+		Name:     "widget",
+		Number:   1,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode())
+	require.NotNil(resp.ApplicationproblemJSONDefault)
+	require.NotNil(resp.ApplicationproblemJSONDefault.Detail)
+	require.Contains(
+		*resp.ApplicationproblemJSONDefault.Detail,
+		"platform_host is required for ambiguous repo",
+	)
+
+	starred, err := database.IsStarred(t.Context(), "pr", 1, 1)
+	require.NoError(err)
+	require.False(starred)
 }
 
 func TestAPIUnsetStarred(t *testing.T) {

@@ -1134,11 +1134,7 @@ func (s *Server) createIssue(
 	}
 
 	platformHost := strings.TrimSpace(input.Body.PlatformHost)
-	repo, err := s.repoIdentity().LookupRepo(ctx, repoIdentityRef{
-		owner:        input.Owner,
-		name:         input.Name,
-		platformHost: platformHost,
-	})
+	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
 			return nil, huma.Error400BadRequest(
@@ -2302,12 +2298,16 @@ func (s *Server) resolveItem(
 		)
 	}
 
-	localItem, err := s.repoIdentity().ResolveLocalItem(ctx, repoNumberPathRef{
+	localItemRef, err := s.resolveNumberPathRef(repoNumberPathRef{
 		owner:        owner,
 		name:         name,
 		number:       number,
 		platformHost: platformHost,
 	})
+	if err != nil {
+		return nil, repoIdentityError(err)
+	}
+	localItem, err := s.repoIdentity().ResolveLocalItem(ctx, localItemRef)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
 			return nil, huma.Error400BadRequest(
@@ -2328,16 +2328,9 @@ func (s *Server) resolveItem(
 		}, nil
 	}
 
-	var itemType string
-	if platformHost != "" {
-		itemType, err = s.syncer.SyncItemByNumberOnHost(
-			ctx, platformHost, owner, name, number,
-		)
-	} else {
-		itemType, err = s.syncer.SyncItemByNumber(
-			ctx, owner, name, number,
-		)
-	}
+	itemType, err := s.syncer.SyncItemByNumberOnHost(
+		ctx, localItemRef.platformHost, owner, name, number,
+	)
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
 	// the result as success here. The resolve response has no warnings
@@ -2385,11 +2378,7 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, huma.Error400BadRequest("item_type must be 'pr' or 'issue'")
 	}
 
-	repoID, err := s.repoIdentity().LookupRepoID(ctx, repoIdentityRef{
-		owner:        body.Owner,
-		name:         body.Name,
-		platformHost: body.PlatformHost,
-	})
+	repo, err := s.lookupRepo(ctx, body.Owner, body.Name, body.PlatformHost)
 	if err != nil {
 		if errors.Is(err, errRepoAmbiguous) {
 			return 0, huma.Error400BadRequest(
@@ -2402,7 +2391,7 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 		return 0, huma.Error500InternalServerError("repo lookup failed")
 	}
 
-	return repoID, nil
+	return repo.ID, nil
 }
 
 // --- Commits ---
@@ -2438,7 +2427,7 @@ func (s *Server) diffRefsForPR(
 }
 
 func repoIdentityError(err error) error {
-	if errors.Is(err, errRepoAmbiguous) {
+	if errors.Is(err, errRepoAmbiguous) || errors.Is(err, errRepoMissingPlatformHost) {
 		return huma.Error400BadRequest(
 			"platform_host is required for ambiguous repo",
 		)

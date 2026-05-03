@@ -8,7 +8,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 )
 
-func TestRepositoryIdentityRequiresPlatformHostWhenOwnerNameIsAmbiguous(t *testing.T) {
+func TestRepositoryIdentityRequiresPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -23,7 +23,7 @@ func TestRepositoryIdentityRequiresPlatformHostWhenOwnerNameIsAmbiguous(t *testi
 		owner: "acme",
 		name:  "widget",
 	})
-	require.ErrorIs(err, errRepoAmbiguous)
+	require.ErrorIs(err, errRepoMissingPlatformHost)
 	assert.Nil(repo)
 
 	repo, err = srv.repoIdentity().LookupRepo(ctx, repoIdentityRef{
@@ -80,9 +80,10 @@ func TestRepositoryIdentityTreatsMissingLocalRepoAsUnresolvedItem(t *testing.T) 
 	srv, _ := setupTestServer(t)
 
 	result, err := srv.repoIdentity().ResolveLocalItem(t.Context(), repoNumberPathRef{
-		owner:  "acme",
-		name:   "widget",
-		number: 99,
+		owner:        "acme",
+		name:         "widget",
+		number:       99,
+		platformHost: "github.com",
 	})
 	require.NoError(err)
 	assert.False(result.Found)
@@ -93,8 +94,9 @@ func TestRepositoryIdentityReturnsNotFoundForMissingRepo(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	repo, err := srv.repoIdentity().LookupRepo(t.Context(), repoIdentityRef{
-		owner: "missing",
-		name:  "repo",
+		owner:        "missing",
+		name:         "repo",
+		platformHost: "github.com",
 	})
 	require.ErrorIs(t, err, errRepoNotFound)
 	require.Nil(t, repo)

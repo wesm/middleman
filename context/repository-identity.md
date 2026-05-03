@@ -14,20 +14,24 @@ enough for that operation.
 ## Server Boundary
 
 HTTP handlers should resolve repositories through the repository identity
-module in `internal/repoidentity`. `internal/server/repo_identity.go` is only
-the adapter from route-local structs to that module. Handlers should not
-repeat:
+module in `internal/repoidentity`, but only after the server boundary has a
+concrete `platform_host`. `internal/server/repo_identity.go` is only the
+adapter from route-local structs to that module. The module must not perform
+hostless owner/name guessing, because host is a mandatory part of repository
+identity.
 
-- whether `owner/name` is enough;
+Handlers should centralize:
+
+- whether omitted `platform_host` can be derived from an unambiguous tracked repo;
 - when omitted `platform_host` must be rejected as ambiguous;
 - how not-found and ambiguity errors are represented;
 - how a repo row becomes the stable `repo_id` used for item lookups.
 
 The server uses strict identity resolution for routes that operate on one
-repository: if the caller omits `platform_host`, `owner/name` must resolve to
-exactly one known repo. `repoidentity.ErrAmbiguous` is a client input problem
-and should map to HTTP 400 with a message asking for `platform_host`; it should
-not be collapsed into a generic 500.
+repository: if the caller omits `platform_host`, the handler must derive it
+from exactly one configured repo before calling `repoidentity`. Ambiguous input
+is a client problem and should map to HTTP 400 with a message asking for
+`platform_host`; it should not be collapsed into a generic 500.
 
 ## Item Resolution
 
