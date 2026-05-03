@@ -556,11 +556,14 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST"
           && url.origin === new URL(baseURL).origin
-          && url.pathname === "/api/v1/repos/acme/widgets/pulls/6/ready-for-review"
-          && url.searchParams.get("platform_host") === "github.com";
+          && url.pathname === "/api/v1/repos/acme/widgets/pulls/6/ready-for-review";
       });
       await page.locator(".actions-menu-popover .btn--ready").click();
-      expect((await readyResponse).status()).toBe(200);
+      const response = await readyResponse;
+      expect(response.status()).toBe(200);
+      expect(response.request().postDataJSON()).toMatchObject({
+        platform_host: "github.com",
+      });
       await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
@@ -630,14 +633,16 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST"
           && url.origin === new URL(server.info.base_url).origin
-          && url.pathname === "/api/v1/repos/acme/widgets/pulls/6/ready-for-review"
-          && url.searchParams.get("platform_host") === "github.com";
+          && url.pathname === "/api/v1/repos/acme/widgets/pulls/6/ready-for-review";
       });
 
       await page.locator(".btn--ready").click();
 
       const readyResponse = await readyResponsePromise;
       expect(readyResponse.status()).toBe(200);
+      expect(readyResponse.request().postDataJSON()).toMatchObject({
+        platform_host: "github.com",
+      });
       expect((await readyResponse.json()).status).toBe("ready_for_review");
 
       await expect(page.locator(".btn--ready")).toHaveCount(0);
