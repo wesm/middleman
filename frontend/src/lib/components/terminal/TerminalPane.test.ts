@@ -213,6 +213,40 @@ describe("TerminalPane", () => {
     );
   });
 
+  it("sends terminal byte payloads as raw WebSocket bytes", async () => {
+    await renderStarted({ workspaceId: "ws-123" });
+    const dataHandler = mockOnData.mock.calls[0]?.[0] as
+      | ((data: Uint8Array) => void)
+      | undefined;
+    expect(dataHandler).toBeDefined();
+
+    socketAt(0).sent = [];
+    dataHandler?.(new Uint8Array([0, 0xff, 0x1b]));
+
+    const sent = socketAt(0).sent[0];
+    expect(sent).toBeInstanceOf(ArrayBuffer);
+    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
+      0, 0xff, 0x1b,
+    ]);
+  });
+
+  it("sends terminal ArrayBuffer payloads as raw WebSocket bytes", async () => {
+    await renderStarted({ workspaceId: "ws-123" });
+    const dataHandler = mockOnData.mock.calls[0]?.[0] as
+      | ((data: ArrayBuffer) => void)
+      | undefined;
+    expect(dataHandler).toBeDefined();
+
+    socketAt(0).sent = [];
+    dataHandler?.(new Uint8Array([0x80, 0x81]).buffer);
+
+    const sent = socketAt(0).sent[0];
+    expect(sent).toBeInstanceOf(ArrayBuffer);
+    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
+      0x80, 0x81,
+    ]);
+  });
+
   it("does not open a websocket when initialStatus is exited", async () => {
     await renderStarted({
       websocketPath:

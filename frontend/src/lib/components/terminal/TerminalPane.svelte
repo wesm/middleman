@@ -45,6 +45,8 @@
   let exited = false;
   const encoder = new TextEncoder();
 
+  type TerminalInputData = string | ArrayBuffer | ArrayBufferView;
+
   const MAX_RECONNECT_DELAY = 30000;
   let ghosttyInitPromise: Promise<void> | null = null;
 
@@ -147,6 +149,29 @@
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type, cols, rows }));
     }
+  }
+
+  function sendTerminalInput(data: TerminalInputData): void {
+    if (ws?.readyState !== WebSocket.OPEN) return;
+
+    if (typeof data === "string") {
+      ws.send(encoder.encode(data));
+      return;
+    }
+    if (data instanceof ArrayBuffer) {
+      ws.send(data);
+      return;
+    }
+    ws.send(arrayBufferFromView(data));
+  }
+
+  function arrayBufferFromView(view: ArrayBufferView): ArrayBuffer {
+    const bytes = new Uint8Array(
+      view.buffer,
+      view.byteOffset,
+      view.byteLength,
+    );
+    return bytes.slice().buffer;
   }
 
   function refreshVisibleTerminal(): void {
@@ -327,9 +352,7 @@
       fit.fit();
 
       term.onData((data: string) => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(encoder.encode(data));
-        }
+        sendTerminalInput(data as TerminalInputData);
       });
 
       resizeObserver = new ResizeObserver(() => {
