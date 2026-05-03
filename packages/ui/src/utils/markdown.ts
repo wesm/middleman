@@ -8,6 +8,15 @@ interface RepoContext {
   platformHost?: string | undefined;
 }
 
+const itemRefTokenAttr = "data-middleman-item-ref-token";
+let activeItemRefToken = "";
+
+function trustedItemRefToken(): string {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
   return {
     name: "itemRef",
@@ -65,13 +74,32 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       const platformHostAttr = t.platformHost
         ? ` data-platform-host="${t.platformHost}"`
         : "";
-      return `<a class="item-ref" href="${href}" data-middleman-item-ref="true" data-owner="${t.owner}" data-name="${t.name}" data-number="${t.number}"${platformHostAttr}>${t.text}</a>`;
+      const tokenAttr = activeItemRefToken
+        ? ` ${itemRefTokenAttr}="${activeItemRefToken}"`
+        : "";
+      return `<a class="item-ref" href="${href}"${tokenAttr} data-owner="${t.owner}" data-name="${t.name}" data-number="${t.number}"${platformHostAttr}>${t.text}</a>`;
     },
   };
 }
 
 const htmlCache = new Map<string, string>();
 const markedCache = new Map<string, Marked>();
+
+function trustGeneratedItemRefs(html: string, token: string): string {
+  if (typeof document === "undefined") {
+    return html;
+  }
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  for (const element of template.content.querySelectorAll(`[${itemRefTokenAttr}]`)) {
+    if (element.getAttribute(itemRefTokenAttr) === token) {
+      element.setAttribute("data-middleman-item-ref", "true");
+    }
+    element.removeAttribute(itemRefTokenAttr);
+  }
+  return template.innerHTML;
+}
 
 function getMarked(repo?: RepoContext): Marked {
   const key = repo ? `${repo.platformHost ?? ""}:${repo.owner}/${repo.name}` : "";
@@ -95,8 +123,17 @@ export function renderMarkdown(
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
-  const html = DOMPurify.sanitize(
-    getMarked(repo).parse(raw) as string,
+  const token = trustedItemRefToken();
+  activeItemRefToken = token;
+  let parsed: string;
+  try {
+    parsed = getMarked(repo).parse(raw) as string;
+  } finally {
+    activeItemRefToken = "";
+  }
+
+  const sanitized = DOMPurify.sanitize(
+    parsed,
     {
       ADD_ATTR: [
         "target",
@@ -104,10 +141,12 @@ export function renderMarkdown(
         "data-name",
         "data-number",
         "data-platform-host",
-        "data-middleman-item-ref",
+        itemRefTokenAttr,
       ],
+      FORBID_ATTR: ["data-middleman-item-ref"],
     },
   );
+  const html = trustGeneratedItemRefs(sanitized, token);
   if (htmlCache.size > 500) htmlCache.clear();
   htmlCache.set(key, html);
   return html;
