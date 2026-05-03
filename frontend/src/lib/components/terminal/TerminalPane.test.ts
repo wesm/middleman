@@ -7,6 +7,7 @@ const mockOpen = vi.fn();
 const mockLoadAddon = vi.fn();
 const mockOnData = vi.fn();
 const mockDispose = vi.fn();
+const mockInit = vi.fn().mockResolvedValue(undefined);
 const terminalCtor = vi.fn();
 const terminalWrite = vi.fn();
 
@@ -48,7 +49,7 @@ vi.mock("@middleman/ui", () => ({
 }));
 
 vi.mock("ghostty-web", () => ({
-  init: vi.fn().mockResolvedValue(undefined),
+  init: (...args: []) => mockInit(...args),
   FitAddon: vi.fn().mockImplementation(() => ({
     fit: mockFit,
   })),
@@ -80,6 +81,7 @@ describe("TerminalPane", () => {
     mockLoadAddon.mockReset();
     mockOnData.mockReset();
     mockDispose.mockReset();
+    mockInit.mockClear();
     terminalWrite.mockReset();
     sockets = [];
 
@@ -122,6 +124,17 @@ describe("TerminalPane", () => {
         fontFamily: "\"Fira Code\", monospace",
       }),
     );
+  });
+
+  it("does not initialize ghostty-web more than once across terminal panes", async () => {
+    const initCallsBefore = mockInit.mock.calls.length;
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    render(TerminalPane, { props: { workspaceId: "ws-456" } });
+
+    await waitFor(() => expect(terminalCtor).toHaveBeenCalledTimes(2));
+
+    expect(mockInit.mock.calls.length - initCallsBefore).toBeLessThanOrEqual(1);
   });
 
   it("uses the /ws terminal route for the default workspace socket", async () => {

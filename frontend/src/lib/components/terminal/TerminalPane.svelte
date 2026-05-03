@@ -1,11 +1,18 @@
+<script module lang="ts">
+  import { init as initGhostty } from "ghostty-web";
+
+  let ghosttyInitPromise: Promise<void> | null = null;
+
+  function ensureGhosttyInitialized(): Promise<void> {
+    ghosttyInitPromise ??= initGhostty();
+    return ghosttyInitPromise;
+  }
+</script>
+
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
-  import {
-    init as initGhostty,
-    FitAddon,
-    Terminal,
-  } from "ghostty-web";
+  import { FitAddon, Terminal } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
 
   interface TerminalPaneProps {
@@ -48,12 +55,6 @@
   type TerminalInputData = string | ArrayBuffer | ArrayBufferView;
 
   const MAX_RECONNECT_DELAY = 30000;
-  let ghosttyInitPromise: Promise<void> | null = null;
-
-  function ensureGhosttyInitialized(): Promise<void> {
-    ghosttyInitPromise ??= initGhostty();
-    return ghosttyInitPromise;
-  }
 
   function defaultTerminalFontFamily(): string {
     const rootFontFamily = getComputedStyle(
