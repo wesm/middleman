@@ -1,0 +1,77 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { createDetailStore } from "@middleman/ui/stores/detail";
+import { createIssuesStore } from "@middleman/ui/stores/issues";
+import type { MiddlemanClient } from "@middleman/ui";
+
+describe("provider-aware detail API routes", () => {
+  it("loads PR detail through the provider item endpoint", async () => {
+    const client = {
+      GET: vi.fn(async () => ({
+        data: {
+          repo_owner: "Group/SubGroup",
+          repo_name: "Project",
+          merge_request: { Number: 12 },
+          events: [],
+        },
+      })),
+      POST: vi.fn(),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("Group/SubGroup", "Project", 12, {
+      sync: false,
+      provider: "gitlab",
+      platformHost: "gitlab.example.com:8443",
+      repoPath: "Group/SubGroup/Project",
+    } as never);
+
+    expect(client.GET).toHaveBeenCalledWith("/items/pull-request", {
+      params: {
+        query: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com:8443",
+          repo_path: "Group/SubGroup/Project",
+          number: 12,
+        },
+      },
+    });
+  });
+
+  it("loads issue detail through the provider item endpoint", async () => {
+    const client = {
+      GET: vi.fn(async () => ({
+        data: {
+          repo_owner: "Group/SubGroup",
+          repo_name: "Project",
+          issue: { Number: 7 },
+          events: [],
+        },
+      })),
+      POST: vi.fn(),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const store = createIssuesStore({ client });
+
+    await store.loadIssueDetail("Group/SubGroup", "Project", 7, {
+      sync: false,
+      provider: "gitlab",
+      platformHost: "gitlab.example.com:8443",
+      repoPath: "Group/SubGroup/Project",
+    } as never);
+
+    expect(client.GET).toHaveBeenCalledWith("/items/issue", {
+      params: {
+        query: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com:8443",
+          repo_path: "Group/SubGroup/Project",
+          number: 7,
+        },
+      },
+    });
+  });
+});

@@ -977,8 +977,40 @@ type GetIssueByRepoRefParams struct {
 	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
 }
 
+// SyncIssueByRepoRefParams defines parameters for SyncIssueByRepoRef.
+type SyncIssueByRepoRefParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
+}
+
+// EnqueueIssueSyncByRepoRefParams defines parameters for EnqueueIssueSyncByRepoRef.
+type EnqueueIssueSyncByRepoRefParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
+}
+
 // GetPullRequestByRepoRefParams defines parameters for GetPullRequestByRepoRef.
 type GetPullRequestByRepoRefParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
+}
+
+// SyncPullRequestByRepoRefParams defines parameters for SyncPullRequestByRepoRef.
+type SyncPullRequestByRepoRefParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
+}
+
+// EnqueuePullRequestSyncByRepoRefParams defines parameters for EnqueuePullRequestSyncByRepoRef.
+type EnqueuePullRequestSyncByRepoRefParams struct {
 	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
@@ -1200,8 +1232,20 @@ type ClientInterface interface {
 	// GetIssueByRepoRef request
 	GetIssueByRepoRef(ctx context.Context, params *GetIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SyncIssueByRepoRef request
+	SyncIssueByRepoRef(ctx context.Context, params *SyncIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueueIssueSyncByRepoRef request
+	EnqueueIssueSyncByRepoRef(ctx context.Context, params *EnqueueIssueSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetPullRequestByRepoRef request
 	GetPullRequestByRepoRef(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SyncPullRequestByRepoRef request
+	SyncPullRequestByRepoRef(ctx context.Context, params *SyncPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueuePullRequestSyncByRepoRef request
+	EnqueuePullRequestSyncByRepoRef(ctx context.Context, params *EnqueuePullRequestSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1457,8 +1501,56 @@ func (c *Client) GetIssueByRepoRef(ctx context.Context, params *GetIssueByRepoRe
 	return c.Client.Do(req)
 }
 
+func (c *Client) SyncIssueByRepoRef(ctx context.Context, params *SyncIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncIssueByRepoRefRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueueIssueSyncByRepoRef(ctx context.Context, params *EnqueueIssueSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueueIssueSyncByRepoRefRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetPullRequestByRepoRef(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPullRequestByRepoRefRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SyncPullRequestByRepoRef(ctx context.Context, params *SyncPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncPullRequestByRepoRefRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueuePullRequestSyncByRepoRef(ctx context.Context, params *EnqueuePullRequestSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueuePullRequestSyncByRepoRefRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2735,6 +2827,200 @@ func NewGetIssueByRepoRefRequest(server string, params *GetIssueByRepoRefParams)
 	return req, nil
 }
 
+// NewSyncIssueByRepoRefRequest generates requests for SyncIssueByRepoRef
+func NewSyncIssueByRepoRefRequest(server string, params *SyncIssueByRepoRefParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/items/issue/sync")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Number != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", *params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnqueueIssueSyncByRepoRefRequest generates requests for EnqueueIssueSyncByRepoRef
+func NewEnqueueIssueSyncByRepoRefRequest(server string, params *EnqueueIssueSyncByRepoRefParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/items/issue/sync/async")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Number != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", *params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetPullRequestByRepoRefRequest generates requests for GetPullRequestByRepoRef
 func NewGetPullRequestByRepoRefRequest(server string, params *GetPullRequestByRepoRefParams) (*http.Request, error) {
 	var err error
@@ -2825,6 +3111,200 @@ func NewGetPullRequestByRepoRefRequest(server string, params *GetPullRequestByRe
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSyncPullRequestByRepoRefRequest generates requests for SyncPullRequestByRepoRef
+func NewSyncPullRequestByRepoRefRequest(server string, params *SyncPullRequestByRepoRefParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/items/pull-request/sync")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Number != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", *params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnqueuePullRequestSyncByRepoRefRequest generates requests for EnqueuePullRequestSyncByRepoRef
+func NewEnqueuePullRequestSyncByRepoRefRequest(server string, params *EnqueuePullRequestSyncByRepoRefParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/items/pull-request/sync/async")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Number != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", *params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -5738,8 +6218,20 @@ type ClientWithResponsesInterface interface {
 	// GetIssueByRepoRefWithResponse request
 	GetIssueByRepoRefWithResponse(ctx context.Context, params *GetIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*GetIssueByRepoRefResponse, error)
 
+	// SyncIssueByRepoRefWithResponse request
+	SyncIssueByRepoRefWithResponse(ctx context.Context, params *SyncIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*SyncIssueByRepoRefResponse, error)
+
+	// EnqueueIssueSyncByRepoRefWithResponse request
+	EnqueueIssueSyncByRepoRefWithResponse(ctx context.Context, params *EnqueueIssueSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncByRepoRefResponse, error)
+
 	// GetPullRequestByRepoRefWithResponse request
 	GetPullRequestByRepoRefWithResponse(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*GetPullRequestByRepoRefResponse, error)
+
+	// SyncPullRequestByRepoRefWithResponse request
+	SyncPullRequestByRepoRefWithResponse(ctx context.Context, params *SyncPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*SyncPullRequestByRepoRefResponse, error)
+
+	// EnqueuePullRequestSyncByRepoRefWithResponse request
+	EnqueuePullRequestSyncByRepoRefWithResponse(ctx context.Context, params *EnqueuePullRequestSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*EnqueuePullRequestSyncByRepoRefResponse, error)
 
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
@@ -6016,6 +6508,51 @@ func (r GetIssueByRepoRefResponse) StatusCode() int {
 	return 0
 }
 
+type SyncIssueByRepoRefResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SyncIssueByRepoRefResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SyncIssueByRepoRefResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueueIssueSyncByRepoRefResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueueIssueSyncByRepoRefResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueueIssueSyncByRepoRefResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetPullRequestByRepoRefResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -6033,6 +6570,51 @@ func (r GetPullRequestByRepoRefResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetPullRequestByRepoRefResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SyncPullRequestByRepoRefResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SyncPullRequestByRepoRefResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SyncPullRequestByRepoRefResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueuePullRequestSyncByRepoRefResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueuePullRequestSyncByRepoRefResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueuePullRequestSyncByRepoRefResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -7322,6 +7904,24 @@ func (c *ClientWithResponses) GetIssueByRepoRefWithResponse(ctx context.Context,
 	return ParseGetIssueByRepoRefResponse(rsp)
 }
 
+// SyncIssueByRepoRefWithResponse request returning *SyncIssueByRepoRefResponse
+func (c *ClientWithResponses) SyncIssueByRepoRefWithResponse(ctx context.Context, params *SyncIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*SyncIssueByRepoRefResponse, error) {
+	rsp, err := c.SyncIssueByRepoRef(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSyncIssueByRepoRefResponse(rsp)
+}
+
+// EnqueueIssueSyncByRepoRefWithResponse request returning *EnqueueIssueSyncByRepoRefResponse
+func (c *ClientWithResponses) EnqueueIssueSyncByRepoRefWithResponse(ctx context.Context, params *EnqueueIssueSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncByRepoRefResponse, error) {
+	rsp, err := c.EnqueueIssueSyncByRepoRef(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueueIssueSyncByRepoRefResponse(rsp)
+}
+
 // GetPullRequestByRepoRefWithResponse request returning *GetPullRequestByRepoRefResponse
 func (c *ClientWithResponses) GetPullRequestByRepoRefWithResponse(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*GetPullRequestByRepoRefResponse, error) {
 	rsp, err := c.GetPullRequestByRepoRef(ctx, params, reqEditors...)
@@ -7329,6 +7929,24 @@ func (c *ClientWithResponses) GetPullRequestByRepoRefWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseGetPullRequestByRepoRefResponse(rsp)
+}
+
+// SyncPullRequestByRepoRefWithResponse request returning *SyncPullRequestByRepoRefResponse
+func (c *ClientWithResponses) SyncPullRequestByRepoRefWithResponse(ctx context.Context, params *SyncPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*SyncPullRequestByRepoRefResponse, error) {
+	rsp, err := c.SyncPullRequestByRepoRef(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSyncPullRequestByRepoRefResponse(rsp)
+}
+
+// EnqueuePullRequestSyncByRepoRefWithResponse request returning *EnqueuePullRequestSyncByRepoRefResponse
+func (c *ClientWithResponses) EnqueuePullRequestSyncByRepoRefWithResponse(ctx context.Context, params *EnqueuePullRequestSyncByRepoRefParams, reqEditors ...RequestEditorFn) (*EnqueuePullRequestSyncByRepoRefResponse, error) {
+	rsp, err := c.EnqueuePullRequestSyncByRepoRef(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueuePullRequestSyncByRepoRefResponse(rsp)
 }
 
 // ListPullsWithResponse request returning *ListPullsResponse
@@ -8085,6 +8703,65 @@ func ParseGetIssueByRepoRefResponse(rsp *http.Response) (*GetIssueByRepoRefRespo
 	return response, nil
 }
 
+// ParseSyncIssueByRepoRefResponse parses an HTTP response from a SyncIssueByRepoRefWithResponse call
+func ParseSyncIssueByRepoRefResponse(rsp *http.Response) (*SyncIssueByRepoRefResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SyncIssueByRepoRefResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueueIssueSyncByRepoRefResponse parses an HTTP response from a EnqueueIssueSyncByRepoRefWithResponse call
+func ParseEnqueueIssueSyncByRepoRefResponse(rsp *http.Response) (*EnqueueIssueSyncByRepoRefResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueueIssueSyncByRepoRefResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetPullRequestByRepoRefResponse parses an HTTP response from a GetPullRequestByRepoRefWithResponse call
 func ParseGetPullRequestByRepoRefResponse(rsp *http.Response) (*GetPullRequestByRepoRefResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8106,6 +8783,65 @@ func ParseGetPullRequestByRepoRefResponse(rsp *http.Response) (*GetPullRequestBy
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSyncPullRequestByRepoRefResponse parses an HTTP response from a SyncPullRequestByRepoRefWithResponse call
+func ParseSyncPullRequestByRepoRefResponse(rsp *http.Response) (*SyncPullRequestByRepoRefResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SyncPullRequestByRepoRefResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueuePullRequestSyncByRepoRefResponse parses an HTTP response from a EnqueuePullRequestSyncByRepoRefWithResponse call
+func ParseEnqueuePullRequestSyncByRepoRefResponse(rsp *http.Response) (*EnqueuePullRequestSyncByRepoRefResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueuePullRequestSyncByRepoRefResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

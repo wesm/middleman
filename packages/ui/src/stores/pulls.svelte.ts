@@ -6,6 +6,15 @@ export type FetchPullResult =
   | { status: "not-found" }
   | { status: "error"; message: string };
 
+export interface PullSelection {
+  owner: string;
+  name: string;
+  number: number;
+  provider?: string | undefined;
+  platformHost?: string | undefined;
+  repoPath?: string | undefined;
+}
+
 type PullsParams = {
   repo?: string;
   state?: string;
@@ -45,9 +54,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let filterStarred = $state(false);
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
-  let selectedPR = $state<
-    { owner: string; name: string; number: number } | null
-  >(null);
+  let selectedPR = $state<PullSelection | null>(null);
 
   // --- reads ---
 
@@ -63,11 +70,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return storeError;
   }
 
-  function getSelectedPR(): {
-    owner: string;
-    name: string;
-    number: number;
-  } | null {
+  function getSelectedPR(): PullSelection | null {
     return selectedPR;
   }
 
@@ -131,11 +134,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (sel === null) {
       const first = list[0];
       if (first !== undefined) {
-        selectPR(
-          first.repo_owner ?? "",
-          first.repo_name ?? "",
-          first.Number,
-        );
+        selectPRFromPull(first);
       }
       return;
     }
@@ -145,14 +144,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         (pr.repo_name ?? "") === sel.name &&
         pr.Number === sel.number,
     );
-    const next = list[idx + 1];
-    if (next !== undefined) {
-      selectPR(
-        next.repo_owner ?? "",
-        next.repo_name ?? "",
-        next.Number,
-      );
-    }
+      const next = list[idx + 1];
+      if (next !== undefined) {
+        selectPRFromPull(next);
+      }
   }
 
   function selectPrevPR(): void {
@@ -162,11 +157,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (sel === null) {
       const last = list[list.length - 1];
       if (last !== undefined) {
-        selectPR(
-          last.repo_owner ?? "",
-          last.repo_name ?? "",
-          last.Number,
-        );
+        selectPRFromPull(last);
       }
       return;
     }
@@ -179,11 +170,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (idx > 0) {
       const prev = list[idx - 1];
       if (prev !== undefined) {
-        selectPR(
-          prev.repo_owner ?? "",
-          prev.repo_name ?? "",
-          prev.Number,
-        );
+        selectPRFromPull(prev);
       }
     }
   }
@@ -208,8 +195,29 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    provider?: string,
+    platformHost?: string,
+    repoPath?: string,
   ): void {
-    selectedPR = { owner, name, number };
+    selectedPR = {
+      owner,
+      name,
+      number,
+      ...(provider && { provider }),
+      ...(platformHost && { platformHost }),
+      ...(repoPath && { repoPath }),
+    };
+  }
+
+  function selectPRFromPull(pr: PullRequest): void {
+    selectPR(
+      pr.repo_owner ?? "",
+      pr.repo_name ?? "",
+      pr.Number,
+      pr.repo?.provider,
+      pr.repo?.platform_host ?? pr.platform_host,
+      pr.repo?.repo_path,
+    );
   }
 
   function clearSelection(): void {
@@ -298,10 +306,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
   ): Promise<FetchPullResult> {
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}",
+        "/items/pull-request",
         {
           params: {
-            path: { owner, name, number },
+            query: {
+              provider: "github",
+              platform_host: "github.com",
+              repo_path: `${owner}/${name}`,
+              number,
+            },
           },
         },
       );

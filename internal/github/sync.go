@@ -5124,6 +5124,28 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 	return s.syncMRWithHost(ctx, owner, name, number, "")
 }
 
+// SyncMROnProvider fetches fresh data for a single MR from a specific
+// configured provider host.
+func (s *Syncer) SyncMROnProvider(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+) error {
+	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	if !ok {
+		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
+		return fmt.Errorf(
+			"repo %s/%s on %s/%s is not tracked",
+			owner, name, kind, host,
+		)
+	}
+	repo.Owner = owner
+	repo.Name = name
+	repo.PlatformHost = repoHost(repo)
+	return s.syncMRForRepo(ctx, repo, number)
+}
+
 // syncMRWithHost is the internal implementation of SyncMR.
 // When hostHint is non-empty it is used instead of resolving via
 // s.hostFor, avoiding ambiguity when the same owner/name exists on
@@ -5394,6 +5416,37 @@ func (s *Syncer) SyncIssueOnHost(
 	number int,
 ) error {
 	return s.syncIssueWithHost(ctx, owner, name, number, host)
+}
+
+// SyncIssueOnProvider fetches fresh issue data for a specific configured
+// provider host.
+func (s *Syncer) SyncIssueOnProvider(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+) error {
+	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	if !ok {
+		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
+		return fmt.Errorf(
+			"repo %s/%s on %s/%s is not tracked",
+			owner, name, kind, host,
+		)
+	}
+	repo.Owner = owner
+	repo.Name = name
+	repo.PlatformHost = repoHost(repo)
+
+	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	if err != nil {
+		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
+	}
+
+	if _, err := s.fetchIssueDetail(ctx, repo, repoID, number); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Syncer) syncIssueWithHost(

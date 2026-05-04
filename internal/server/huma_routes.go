@@ -357,6 +357,17 @@ func (s *Server) registerAPI(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/items/pull-request",
 	}, s.getProviderPull)
+	huma.Register(api, huma.Operation{
+		OperationID: "sync-pull-request-by-repo-ref",
+		Method:      http.MethodPost,
+		Path:        "/items/pull-request/sync",
+	}, s.syncProviderPR)
+	huma.Register(api, huma.Operation{
+		OperationID:   "enqueue-pull-request-sync-by-repo-ref",
+		Method:        http.MethodPost,
+		Path:          "/items/pull-request/sync/async",
+		DefaultStatus: http.StatusAccepted,
+	}, s.enqueueProviderPRSync)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/import-metadata", s.getMRImportMetadata)
 	huma.Register(api, huma.Operation{
@@ -390,6 +401,17 @@ func (s *Server) registerAPI(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/items/issue",
 	}, s.getProviderIssue)
+	huma.Register(api, huma.Operation{
+		OperationID: "sync-issue-by-repo-ref",
+		Method:      http.MethodPost,
+		Path:        "/items/issue/sync",
+	}, s.syncProviderIssue)
+	huma.Register(api, huma.Operation{
+		OperationID:   "enqueue-issue-sync-by-repo-ref",
+		Method:        http.MethodPost,
+		Path:          "/items/issue/sync/async",
+		DefaultStatus: http.StatusAccepted,
+	}, s.enqueueProviderIssueSync)
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-issue",
 		Method:        http.MethodPost,
@@ -692,6 +714,100 @@ func (s *Server) getProviderPull(
 	}
 
 	return &getPullOutput{Body: body}, nil
+}
+
+func (s *Server) syncProviderPR(
+	ctx context.Context,
+	input *getProviderPullInput,
+) (*syncPROutput, error) {
+	if input.Number <= 0 {
+		return nil, huma.Error400BadRequest("number must be positive")
+	}
+	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		RepoPath:     input.RepoPath,
+	})
+	if err != nil {
+		if errors.Is(err, errRepoPathRequired) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	kind := repoProviderKind(*repo)
+
+	var diffErr *ghclient.DiffSyncError
+	syncErr := s.syncer.SyncMROnProvider(
+		ctx, kind, repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+	)
+	if syncErr != nil && !errors.As(syncErr, &diffErr) {
+		if strings.Contains(syncErr.Error(), "is not tracked") {
+			return nil, huma.Error403Forbidden(syncErr.Error())
+		}
+		return nil, huma.Error502BadGateway("sync PR: " + syncErr.Error())
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found after sync")
+	}
+
+	body, err := s.buildPullDetailResponse(ctx, mr, workflowCheckRuns)
+	if err != nil {
+		return nil, err
+	}
+	if diffErr != nil {
+		body.Warnings = []string{diffErr.UserMessage()}
+	}
+	return &syncPROutput{Body: body}, nil
+}
+
+func (s *Server) enqueueProviderPRSync(
+	ctx context.Context,
+	input *getProviderPullInput,
+) (*acceptedOutput, error) {
+	if input.Number <= 0 {
+		return nil, huma.Error400BadRequest("number must be positive")
+	}
+	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		RepoPath:     input.RepoPath,
+	})
+	if err != nil {
+		if errors.Is(err, errRepoPathRequired) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	kind := repoProviderKind(*repo)
+	key := "pr:" + string(kind) + ":" + repoProviderHost(*repo) + ":" +
+		repo.RepoPath + "#" + strconv.Itoa(input.Number)
+	s.enqueueDetailSync(
+		key,
+		[]any{
+			"type", "pr",
+			"provider", string(kind),
+			"platform_host", repoProviderHost(*repo),
+			"repo_path", repo.RepoPath,
+			"number", input.Number,
+		},
+		func(ctx context.Context) error {
+			return s.syncer.SyncMROnProvider(
+				ctx, kind, repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+			)
+		},
+	)
+	return &acceptedOutput{Status: http.StatusAccepted}, nil
 }
 
 func (s *Server) buildPullDetailResponse(
@@ -1291,6 +1407,94 @@ func (s *Server) getProviderIssue(
 		return nil, err
 	}
 	return &getIssueOutput{Body: issueResp}, nil
+}
+
+func (s *Server) syncProviderIssue(
+	ctx context.Context,
+	input *getProviderIssueInput,
+) (*syncIssueOutput, error) {
+	if input.Number <= 0 {
+		return nil, huma.Error400BadRequest("number must be positive")
+	}
+	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		RepoPath:     input.RepoPath,
+	})
+	if err != nil {
+		if errors.Is(err, errRepoPathRequired) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	kind := repoProviderKind(*repo)
+	if err := s.syncer.SyncIssueOnProvider(
+		ctx, kind, repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+	); err != nil {
+		if strings.Contains(err.Error(), "is not tracked") {
+			return nil, huma.Error403Forbidden(err.Error())
+		}
+		return nil, huma.Error502BadGateway("sync issue: " + err.Error())
+	}
+
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found after sync")
+	}
+
+	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
+	if err != nil {
+		return nil, err
+	}
+	return &syncIssueOutput{Body: issueResp}, nil
+}
+
+func (s *Server) enqueueProviderIssueSync(
+	ctx context.Context,
+	input *getProviderIssueInput,
+) (*acceptedOutput, error) {
+	if input.Number <= 0 {
+		return nil, huma.Error400BadRequest("number must be positive")
+	}
+	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		RepoPath:     input.RepoPath,
+	})
+	if err != nil {
+		if errors.Is(err, errRepoPathRequired) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	kind := repoProviderKind(*repo)
+	key := "issue:" + string(kind) + ":" + repoProviderHost(*repo) + ":" +
+		repo.RepoPath + "#" + strconv.Itoa(input.Number)
+	s.enqueueDetailSync(
+		key,
+		[]any{
+			"type", "issue",
+			"provider", string(kind),
+			"platform_host", repoProviderHost(*repo),
+			"repo_path", repo.RepoPath,
+			"number", input.Number,
+		},
+		func(ctx context.Context) error {
+			return s.syncer.SyncIssueOnProvider(
+				ctx, kind, repoProviderHost(*repo), repo.Owner, repo.Name, input.Number,
+			)
+		},
+	)
+	return &acceptedOutput{Status: http.StatusAccepted}, nil
 }
 
 func (s *Server) buildIssueDetailResponse(

@@ -2604,6 +2604,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+  /items/issue/sync:
+    post:
+      operationId: sync-issue-by-repo-ref
+      parameters:
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: repo_path
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: number
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /items/issue/sync/async:
+    post:
+      operationId: enqueue-issue-sync-by-repo-ref
+      parameters:
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: repo_path
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: number
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /items/pull-request:
     get:
       operationId: get-pull-request-by-repo-ref
@@ -2636,6 +2708,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/MergeRequestDetailResponse"
           description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /items/pull-request/sync:
+    post:
+      operationId: sync-pull-request-by-repo-ref
+      parameters:
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: repo_path
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: number
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /items/pull-request/sync/async:
+    post:
+      operationId: enqueue-pull-request-sync-by-repo-ref
+      parameters:
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: repo_path
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: number
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "202":
+          description: Accepted
         default:
           content:
             application/problem+json:

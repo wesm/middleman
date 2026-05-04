@@ -125,7 +125,7 @@ describe("activity selection URL state", () => {
     };
 
     expect(activitySelectionToRoute(pr, "pulls")).toBe(
-      "/pulls/acme/widgets/1/files",
+      "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
     );
     expect(activitySelectionToRoute(pr, "issues")).toBeNull();
   });
@@ -141,7 +141,7 @@ describe("activity selection URL state", () => {
     };
 
     expect(activitySelectionToRoute(issue, "issues")).toBe(
-      "/issues/acme/widgets/10?platform_host=ghe.example.com",
+      "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=10",
     );
     expect(activitySelectionToRoute(issue, "pulls")).toBeNull();
   });

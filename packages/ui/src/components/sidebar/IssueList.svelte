@@ -49,12 +49,21 @@
       owner: issue.repo_owner ?? "",
       name: issue.repo_name ?? "",
       number: issue.Number,
+      provider: issue.repo?.provider,
       platformHost: issue.platform_host,
+      repoPath: issue.repo?.repo_path,
     };
   }
 
   function handleSelect(ref: IssueRouteRef): void {
-    issues.selectIssue(ref.owner, ref.name, ref.number, ref.platformHost);
+    issues.selectIssue(
+      ref.owner,
+      ref.name,
+      ref.number,
+      ref.platformHost,
+      ref.provider,
+      ref.repoPath,
+    );
     navigate(buildIssueRoute(ref));
   }
 

@@ -105,8 +105,10 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 		}
 		if ref.owner != "" {
 			r.Platform = ref.platform
-			r.PlatformHost = ref.host
-			hadPlatformHost = true
+			if !hadPlatformHost {
+				r.PlatformHost = ref.host
+				hadPlatformHost = true
+			}
 			r.Owner = ref.owner
 			r.Name = ref.name
 			r.RepoPath = ref.owner + "/" + ref.name
@@ -187,7 +189,7 @@ func parseRepoRef(raw, configuredPlatform string) (parsedRepoRef, error) {
 		if err != nil {
 			return parsedRepoRef{}, fmt.Errorf("invalid SSH URI %q: %w", raw, err)
 		}
-		host = strings.ToLower(u.Host)
+		host = strings.ToLower(u.Hostname())
 		path = strings.TrimPrefix(u.Path, "/")
 	case strings.HasPrefix(raw, "http://") ||
 		strings.HasPrefix(raw, "https://"):

@@ -1105,13 +1105,37 @@ name = "arrow"
 	Assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
 }
 
-func TestLoadGitLabSSHURIWithPortPreservesPlatformHost(t *testing.T) {
+func TestLoadGitLabSSHURIWithPortDoesNotUseSSHPortAsPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
 platform = "gitlab"
 owner = "ignored"
-name = "ssh://git@gitlab.example.com:8443/group/project.git"
+name = "ssh://git@gitlab.example.com:2222/group/project.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.example.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("group", cfg.Repos[0].Owner)
+	assert.Equal("project", cfg.Repos[0].Name)
+}
+
+func TestLoadGitLabSSHURIWithPortKeepsExplicitPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com:8443"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com:8443"
+owner = "ignored"
+name = "ssh://git@gitlab.example.com:2222/group/project.git"
 `)
 
 	cfg, err := Load(path)

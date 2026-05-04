@@ -183,6 +183,9 @@
           route.selected.owner,
           route.selected.name,
           route.selected.number,
+          route.selected.provider,
+          route.selected.platformHost,
+          route.selected.repoPath,
         );
       } else {
         stores.pulls.clearSelection();
@@ -197,6 +200,8 @@
           route.selected.name,
           route.selected.number,
           route.selected.platformHost,
+          route.selected.provider,
+          route.selected.repoPath,
         );
       } else {
         stores.issues.clearIssueSelection();

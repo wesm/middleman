@@ -77,6 +77,9 @@
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
+    platformHost?: string | undefined;
+    repoPath?: string | undefined;
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -87,6 +90,9 @@
     owner,
     name,
     number,
+    provider,
+    platformHost,
+    repoPath,
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
@@ -131,7 +137,8 @@
     return (
       d.repo_owner !== owner ||
       d.repo_name !== name ||
-      (d.merge_request?.Number ?? -1) !== number
+      (d.merge_request?.Number ?? -1) !== number ||
+      (d.platform_host || "github.com") !== (platformHost ?? "github.com")
     );
   });
 
@@ -139,15 +146,32 @@
     const requestOwner = owner;
     const requestName = name;
     const requestNumber = number;
+    const requestProvider = provider;
+    const requestPlatformHost = platformHost;
+    const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     untrack(() => {
       void detailStore.loadDetail(
         requestOwner,
         requestName,
         requestNumber,
-        { sync: requestAutoSync },
+        {
+          sync: requestAutoSync,
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
       );
-      detailStore.startDetailPolling(requestOwner, requestName, requestNumber);
+      detailStore.startDetailPolling(
+        requestOwner,
+        requestName,
+        requestNumber,
+        {
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
+      );
     });
     return () => detailStore.stopDetailPolling();
   });
@@ -331,7 +355,11 @@
             ?? "failed to change PR state",
         );
       }
-      await detailStore.loadDetail(owner, name, number);
+      await detailStore.loadDetail(owner, name, number, {
+        ...(provider && { provider }),
+        ...(platformHost && { platformHost }),
+        ...(repoPath && { repoPath }),
+      });
       await refreshPulls();
       await activity.loadActivity();
     } catch (err) {
@@ -1035,7 +1063,11 @@
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {
             showMergeModal = false;
-            void detailStore.loadDetail(owner, name, number);
+            void detailStore.loadDetail(owner, name, number, {
+              ...(provider && { provider }),
+              ...(platformHost && { platformHost }),
+              ...(repoPath && { repoPath }),
+            });
             void pulls.loadPulls();
             void activity.loadActivity();
           }}

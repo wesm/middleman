@@ -115,6 +115,9 @@
         owner={selectedPR.owner}
         name={selectedPR.name}
         number={selectedPR.number}
+        provider={selectedPR.provider}
+        platformHost={selectedPR.platformHost}
+        repoPath={selectedPR.repoPath}
         autoSync={autoSyncDetail}
         hideTabs={true}
       />

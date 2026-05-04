@@ -47,7 +47,9 @@
       owner={selectedIssue.owner}
       name={selectedIssue.name}
       number={selectedIssue.number}
+      provider={selectedIssue.provider}
       platformHost={selectedIssue.platformHost}
+      repoPath={selectedIssue.repoPath}
       autoSync={autoSyncDetail}
     />
   {:else}

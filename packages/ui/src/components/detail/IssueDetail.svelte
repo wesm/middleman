@@ -51,7 +51,9 @@
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
     autoSync?: IssueDetailSyncMode;
   }
 
@@ -59,7 +61,9 @@
     owner,
     name,
     number,
+    provider,
     platformHost,
+    repoPath,
     autoSync = "background",
   }: Props = $props();
 
@@ -100,21 +104,31 @@
     const requestOwner = owner;
     const requestName = name;
     const requestNumber = number;
+    const requestProvider = provider;
     const requestPlatformHost = platformHost;
+    const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     untrack(() => {
       void issues.loadIssueDetail(
         requestOwner,
         requestName,
         requestNumber,
-        requestPlatformHost,
-        { sync: requestAutoSync },
+        {
+          sync: requestAutoSync,
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
       );
       issues.startIssueDetailPolling(
         requestOwner,
         requestName,
         requestNumber,
-        requestPlatformHost,
+        {
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
       );
     });
     return () => issues.stopIssueDetailPolling();

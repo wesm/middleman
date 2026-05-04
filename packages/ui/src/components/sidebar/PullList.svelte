@@ -79,11 +79,21 @@
       owner: pr.repo_owner ?? "",
       name: pr.repo_name ?? "",
       number: pr.Number,
+      provider: pr.repo?.provider,
+      platformHost: pr.repo?.platform_host ?? pr.platform_host,
+      repoPath: pr.repo?.repo_path,
     };
   }
 
   function handleSelect(ref: PullRequestRouteRef): void {
-    pulls.selectPR(ref.owner, ref.name, ref.number);
+    pulls.selectPR(
+      ref.owner,
+      ref.name,
+      ref.number,
+      ref.provider,
+      ref.platformHost,
+      ref.repoPath,
+    );
     if (_getDetailTab() === "files") {
       navigate(buildPullRequestFilesRoute(ref));
     } else {
@@ -96,7 +106,8 @@
     return sel !== null
       && sel.owner === ref.owner
       && sel.name === ref.name
-      && sel.number === ref.number;
+      && sel.number === ref.number
+      && sel.platformHost === ref.platformHost;
   }
 
   const selectedVisiblePR = $derived.by(() => {
@@ -105,7 +116,8 @@
     const pr = pulls.getPulls().find(
       (p) => (p.repo_owner ?? "") === sel.owner
         && (p.repo_name ?? "") === sel.name
-        && p.Number === sel.number,
+        && p.Number === sel.number
+        && (!sel.platformHost || p.platform_host === sel.platformHost),
     );
     if (!pr) return null;
     // In byRepo mode, a user-collapsed repo group hides the PR row — treat

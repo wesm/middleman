@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test.describe("provider capabilities", () => {
   test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({ page }) => {
     await page.goto(
-      "/issues/group/project/11?platform_host=gitlab.example.com",
+      "/issues/detail?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject&number=11",
     );
 
     const detail = page.locator(".issue-detail");
@@ -22,7 +22,7 @@ test.describe("provider capabilities", () => {
     ).toBeVisible();
 
     const response = await page.request.get(
-      "/api/v1/repos/group/project/issues/11?platform_host=gitlab.example.com",
+      "/api/v1/items/issue?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject&number=11",
     );
     expect(response.ok()).toBeTruthy();
     const body = await response.json();

@@ -30,11 +30,11 @@ export type FocusListRouteRef = {
 };
 
 export function buildPullRequestRoute(ref: PullRequestRouteRef): string {
-  return `/pulls/${ref.owner}/${ref.name}/${ref.number}`;
+  return buildProviderPullRequestRoute(providerRouteRef(ref));
 }
 
 export function buildPullRequestFilesRoute(ref: PullRequestRouteRef): string {
-  return `${buildPullRequestRoute(ref)}/files`;
+  return buildProviderPullRequestFilesRoute(providerRouteRef(ref));
 }
 
 export function buildProviderPullRequestRoute(ref: ProviderRouteRef & { number: number }): string {
@@ -48,7 +48,7 @@ export function buildProviderPullRequestFilesRoute(
 }
 
 export function buildIssueRoute(ref: IssueRouteRef): string {
-  return `/issues/${ref.owner}/${ref.name}/${ref.number}${platformHostQuery(ref.platformHost)}`;
+  return buildProviderIssueRoute(providerRouteRef(ref));
 }
 
 export function buildProviderIssueRoute(ref: ProviderRouteRef & { number: number }): string {
@@ -78,10 +78,6 @@ export function buildRoutedItemRoute(
   return options.focus ? buildFocusIssueRoute(ref) : buildIssueRoute(ref);
 }
 
-function platformHostQuery(platformHost: string | undefined): string {
-  return platformHost ? `?platform_host=${encodeURIComponent(platformHost)}` : "";
-}
-
 function providerItemQuery(ref: ProviderRouteRef & { number: number }): string {
   const params: Array<[string, string]> = [
     ["provider", ref.provider],
@@ -90,4 +86,17 @@ function providerItemQuery(ref: ProviderRouteRef & { number: number }): string {
     ["number", ref.number.toString()],
   ];
   return `?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&")}`;
+}
+
+function platformHostQuery(platformHost: string | undefined): string {
+  return platformHost ? `?platform_host=${encodeURIComponent(platformHost)}` : "";
+}
+
+function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { number: number } {
+  return {
+    provider: ref.provider ?? "github",
+    platformHost: ref.platformHost ?? "github.com",
+    repoPath: ref.repoPath ?? `${ref.owner}/${ref.name}`,
+    number: ref.number,
+  };
 }
