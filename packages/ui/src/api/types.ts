@@ -98,6 +98,8 @@ export interface FilesResult {
   files: DiffFile[];
 }
 
+export type FilePreview = components["schemas"]["FilePreviewResponse"];
+
 export interface DiffFile {
   path: string;
   old_path: string;

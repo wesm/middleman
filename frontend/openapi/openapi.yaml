@@ -520,6 +520,34 @@ components:
           format: uri
           type: string
       type: object
+    FilePreviewResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FilePreviewResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          type: string
+        encoding:
+          type: string
+        media_type:
+          type: string
+        path:
+          type: string
+        size:
+          format: int64
+          type: integer
+      required:
+        - path
+        - media_type
+        - encoding
+        - content
+        - size
+      type: object
     FilesResponse:
       additionalProperties: false
       properties:
@@ -3356,6 +3384,68 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get repos by owner by name pulls by number diff
+  /repos/{owner}/{name}/pulls/{number}/file-preview:
+    get:
+      operationId: get-repos-by-owner-by-name-pulls-by-number-file-preview
+      parameters:
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - description: Changed file path to preview
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Changed file path to preview
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePreviewResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get repos by owner by name pulls by number file preview
   /repos/{owner}/{name}/pulls/{number}/files:
     get:
       operationId: get-repos-by-owner-by-name-pulls-by-number-files

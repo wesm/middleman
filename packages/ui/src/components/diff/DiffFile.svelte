@@ -7,6 +7,7 @@
   import { tokenizeLineDual, langFromPath, type DualToken } from "../../utils/highlight.js";
   import DiffLineComponent from "./DiffLine.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
+  import DiffRichPreview from "./DiffRichPreview.svelte";
 
   interface Props {
     file: DiffFileType;
@@ -19,6 +20,10 @@
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
+  const richPreview = $derived(diffStore.getRichPreview());
+  const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
+  const showRichPreview = $derived(richPreview && supportsRichPreview(file.path));
+  const richPreviewKey = $derived(`${file.path}:${filePreviewGeneration}`);
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -172,6 +177,25 @@
     }
     return f.path;
   }
+
+  function supportsRichPreview(path: string): boolean {
+    const idx = path.lastIndexOf(".");
+    const ext = idx >= 0 ? path.slice(idx).toLowerCase() : "";
+    return [
+      ".avif",
+      ".gif",
+      ".jpeg",
+      ".jpg",
+      ".markdown",
+      ".md",
+      ".mdown",
+      ".mkd",
+      ".pdf",
+      ".png",
+      ".svg",
+      ".webp",
+    ].includes(ext);
+  }
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
@@ -189,7 +213,17 @@
   </button>
   {#if !collapsed}
     <div class="file-content">
-      {#if renderedFile.is_binary}
+      {#if showRichPreview}
+        {#key richPreviewKey}
+          <DiffRichPreview
+            {file}
+            {owner}
+            {name}
+            {number}
+            active={inViewport}
+          />
+        {/key}
+      {:else if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
         <div class="file-rows">

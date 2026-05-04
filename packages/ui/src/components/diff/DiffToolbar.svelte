@@ -72,6 +72,20 @@
         <span class="toggle-knob"></span>
       </button>
     </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Rich preview</span>
+      <button
+        class="toggle-switch"
+        class:toggle-switch--on={diff.getRichPreview()}
+        role="switch"
+        aria-label="Rich preview"
+        aria-checked={diff.getRichPreview()}
+        title={diff.getRichPreview() ? "Show unified diff" : "Show rich file previews"}
+        onclick={() => diff.setRichPreview(!diff.getRichPreview())}
+      >
+        <span class="toggle-knob"></span>
+      </button>
+    </div>
   </div>
 </div>
 

@@ -156,6 +156,39 @@ const largeDiff = makeLargeDiff();
 // Stale fixture reuses small diff with stale flag.
 const staleDiff = { ...smallDiff, stale: true };
 
+const previewDiff: DiffResult = {
+  ...smallDiff,
+  files: [
+    {
+      path: "docs/preview.md",
+      old_path: "docs/preview.md",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 4,
+      deletions: 3,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 5,
+          new_start: 1,
+          new_count: 6,
+          lines: [
+            { type: "context", content: "# Rendered preview", old_num: 1, new_num: 1 },
+            { type: "context", content: "", old_num: 2, new_num: 2 },
+            { type: "delete", content: "Old paragraph that should be highlighted.", old_num: 3 },
+            { type: "add", content: "New paragraph that should be highlighted.", new_num: 3 },
+            { type: "context", content: "", old_num: 4, new_num: 4 },
+            { type: "delete", content: "- [ ] Markdown task", old_num: 5 },
+            { type: "add", content: "- [x] Markdown task", new_num: 5 },
+          ],
+        },
+      ],
+    },
+    ...smallDiff.files,
+  ],
+};
+
 // --- Helpers ---
 
 function filesFromDiff(fixture: DiffResult): FilesResult {
@@ -183,6 +216,44 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(fixture),
+    });
+  });
+}
+
+async function mockFilePreviewApi(page: Page): Promise<void> {
+  await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.searchParams.get("path");
+    if (path === "docs/preview.md") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path,
+          media_type: "text/markdown; charset=utf-8",
+          encoding: "base64",
+          content: btoa("# Rendered preview\n\n- [x] Markdown task\n"),
+        }),
+      });
+      return;
+    }
+    if (path === "assets/logo.png") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path,
+          media_type: "image/png",
+          encoding: "base64",
+          content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8AARQAFAAH/Adf2d8wAAAAASUVORK5CYII=",
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "preview unavailable" }),
     });
   });
 }
@@ -227,6 +298,7 @@ test.describe("diff view", () => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
       localStorage.removeItem("diff-word-wrap");
+      localStorage.removeItem("diff-rich-preview");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -373,6 +445,100 @@ test.describe("diff view", () => {
 
     await expect(wrapToggle).toHaveAttribute("aria-checked", "true");
     await expect(firstCodeLine).toHaveCSS("white-space", "pre-wrap");
+  });
+
+  test("rich preview toggle renders markdown and browser images", async ({ page }) => {
+    await mockDiffApi(page, previewDiff);
+    await mockFilePreviewApi(page);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const previewToggle = page.getByRole("switch", { name: "Rich preview" });
+    await expect(previewToggle).toHaveAttribute("aria-checked", "false");
+
+    await previewToggle.click();
+    await expect(previewToggle).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByLabel("After markdown preview")
+      .getByRole("heading", { name: "Rendered preview" }))
+      .toBeVisible();
+    await expect(page.locator(".markdown-rich-diff"))
+      .toContainText("Markdown task");
+    await expect(page.locator(".markdown-rich-diff__block--delete", {
+      hasText: "Old paragraph that should be highlighted.",
+    }))
+      .toContainText("Old paragraph that should be highlighted.");
+    await expect(page.locator(".markdown-rich-diff__block--add", {
+      hasText: "New paragraph that should be highlighted.",
+    }))
+      .toContainText("New paragraph that should be highlighted.");
+
+    const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await expect(handlerFile.locator(".diff-line--del").first()).toBeVisible();
+    await expect(handlerFile.locator(".diff-line--add").first()).toBeVisible();
+    await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
+
+    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+    await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']"))
+      .toBeVisible();
+  });
+
+  test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {
+    const firstLogo =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8AARQAFAAH/Adf2d8wAAAAASUVORK5CYII=";
+    const secondLogo =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+    const logoResponses = [firstLogo, secondLogo];
+    let diffFetchCount = 0;
+    let previewFetchCount = 0;
+
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(smallDiff)),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+      diffFetchCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(smallDiff),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+      const content = logoResponses[Math.min(previewFetchCount, logoResponses.length - 1)]!;
+      previewFetchCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "assets/logo.png",
+          media_type: "image/png",
+          encoding: "base64",
+          content,
+        }),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+
+    const image = page.locator(".diff-image-preview img[alt='assets/logo.png']");
+    await expect(image).toHaveAttribute("src", `data:image/png;base64,${firstLogo}`);
+    expect(previewFetchCount).toBe(1);
+
+    const initialDiffFetchCount = diffFetchCount;
+    await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
+    await expect.poll(() => diffFetchCount).toBeGreaterThan(initialDiffFetchCount);
+    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+
+    await expect.poll(() => previewFetchCount).toBe(2);
+    await expect(image).toHaveAttribute("src", `data:image/png;base64,${secondLogo}`);
   });
 
   test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
@@ -851,6 +1017,7 @@ test.describe("diff view (git-backed)", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-rich-preview");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -929,6 +1096,49 @@ test.describe("diff view (git-backed)", () => {
         .toBeVisible();
       await expect(page.locator('[data-file-path="internal/cache_test.go"]'))
         .toHaveCount(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("rich preview uses real diff data for markdown and keeps source diffs", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const advanceResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-diff-summary/advance-head`,
+      );
+      expect(advanceResponse.ok()).toBe(true);
+
+      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await waitForSidebarFilesLoaded(page);
+
+      await page.getByRole("switch", { name: "Rich preview" }).click();
+
+      const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
+      await expect(handlerFile.locator(".diff-line--del").first()).toBeVisible();
+      await expect(handlerFile.locator(".diff-line--add").first()).toBeVisible();
+      await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
+
+      const categoryFilter = page.getByRole("group", {
+        name: "Filter changed files",
+      });
+      await categoryFilter.getByRole("button", { name: "Plans/docs (2)" })
+        .click();
+
+      const planFile = page.locator('[data-file-path="docs/cache-plan.md"]');
+      await expect(planFile.locator(".markdown-rich-diff__block--add"))
+        .toContainText("Cache refresh plan");
+      await expect(planFile.locator(".markdown-rich-diff__block--add"))
+        .toContainText("Verify changed-file summaries refresh");
+
+      const previewResponse = await page.request.get(
+        `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/1/file-preview?path=internal/cache.go`,
+      );
+      expect(previewResponse.ok()).toBe(true);
+      const previewBody = await previewResponse.json();
+      expect(previewBody.media_type).toContain("text/");
+      expect(previewBody.content.length).toBeGreaterThan(0);
     } finally {
       await server.stop();
     }

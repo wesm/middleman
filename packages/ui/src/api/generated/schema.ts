@@ -451,6 +451,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{name}/pulls/{number}/file-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repos by owner by name pulls by number file preview */
+        get: operations["get-repos-by-owner-by-name-pulls-by-number-file-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{name}/pulls/{number}/files": {
         parameters: {
             query?: never;
@@ -1112,6 +1129,20 @@ export interface components {
              * @example https://example.com/errors/example
              */
             type: string;
+        };
+        FilePreviewResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FilePreviewResponse.json
+             */
+            readonly $schema?: string;
+            content: string;
+            encoding: string;
+            media_type: string;
+            path: string;
+            /** Format: int64 */
+            size: number;
         };
         FilesResponse: {
             /**
@@ -2907,6 +2938,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-repos-by-owner-by-name-pulls-by-number-file-preview": {
+        parameters: {
+            query?: {
+                /** @description Changed file path to preview */
+                path?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilePreviewResponse"];
                 };
             };
             /** @description Error */
