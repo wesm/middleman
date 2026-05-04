@@ -32,6 +32,22 @@ async function selectActivityViewItem(
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
 
+async function selectPullGrouping(
+  page: Page,
+  label: string | RegExp,
+): Promise<void> {
+  const groupButton = page.locator(".group-btn", { hasText: label });
+  if (await groupButton.isVisible()) {
+    await groupButton.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+    .last()
+    .click();
+}
+
 test.describe("grouping toggle", () => {
   test.beforeEach(async ({ page }) => {
     // Clear persisted grouping once before first app bootstrap so tests start
@@ -56,7 +72,7 @@ test.describe("grouping toggle", () => {
 
   test("PR list ungrouped shows repo badges and no headers", async ({ page }) => {
     // Click "All" in group toggle.
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectPullGrouping(page, "All");
 
     // Repo headers should disappear.
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
@@ -73,7 +89,7 @@ test.describe("grouping toggle", () => {
 
   test("toggle persists across page reload", async ({ page }) => {
     // Switch to ungrouped.
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectPullGrouping(page, "All");
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
     // Verify persisted state in a fresh page in same browser context.
@@ -90,7 +106,7 @@ test.describe("grouping toggle", () => {
 
   test("toggle syncs from PRs to issues", async ({ page }) => {
     // Switch to ungrouped in PR list.
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectPullGrouping(page, "All");
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
     // Navigate to issues.
@@ -104,7 +120,7 @@ test.describe("grouping toggle", () => {
 
   test("toggle syncs to activity threaded view", async ({ page }) => {
     // Switch to ungrouped in PR list.
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectPullGrouping(page, "All");
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
     // Navigate to activity.
@@ -189,7 +205,7 @@ test.describe("grouping toggle", () => {
 
   test("j/k navigation follows flat order in ungrouped mode", async ({ page }) => {
     // Switch to ungrouped.
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectPullGrouping(page, "All");
     await expect(page.locator(".repo-header")).toHaveCount(0, { timeout: 5_000 });
 
     // Capture the visible flat order of items.

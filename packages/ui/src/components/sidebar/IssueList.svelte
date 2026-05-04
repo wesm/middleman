@@ -2,6 +2,7 @@
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
   import Chip from "../shared/Chip.svelte";
+  import FilterDropdown from "../shared/FilterDropdown.svelte";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
   import type { Issue } from "../../api/types.js";
   import {
@@ -12,6 +13,21 @@
   const { issues, sync, grouping, collapsedRepos, settings } = getStores();
   const navigate = getNavigate();
   const { isEmbedded, isSidebarToggleEnabled, toggleSidebar } = getSidebar();
+
+  interface Props {
+    sidebarWidth?: number;
+  }
+
+  const { sidebarWidth = 340 }: Props = $props();
+
+  const issueStateOptions = ["open", "closed", "all"] as const;
+  const groupingOptions = [
+    { byRepo: true, label: "By Repo" },
+    { byRepo: false, label: "All" },
+  ];
+  // Playwright-measured with a buffered "9999 issues" count label:
+  // the full issue filter row first fits at 373px.
+  const COMPACT_FILTER_MAX_WIDTH = 372;
 
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -44,6 +60,47 @@
     }, 300);
   }
 
+  function issueStateLabel(state: string): string {
+    if (state === "open") return "Open";
+    if (state === "closed") return "Closed";
+    return "All";
+  }
+
+  function setIssueState(state: string): void {
+    issues.setIssueFilterState(state);
+    void issues.loadIssues();
+  }
+
+  const compactFilterSections = $derived.by(() => [
+    {
+      title: "State",
+      items: issueStateOptions.map((state) => ({
+        id: `state-${state}`,
+        label: issueStateLabel(state),
+        active: issues.getIssueFilterState() === state,
+        closeOnSelect: true,
+        onSelect: () => setIssueState(state),
+      })),
+    },
+    {
+      title: "Group",
+      items: groupingOptions.map((option) => ({
+        id: `group-${option.byRepo ? "byRepo" : "all"}`,
+        label: option.label,
+        active: grouping.getGroupByRepo() === option.byRepo,
+        closeOnSelect: true,
+        onSelect: () => grouping.setGroupByRepo(option.byRepo),
+      })),
+    },
+  ]);
+
+  const hasCompactFilterChanges = $derived(
+    issues.getIssueFilterState() !== "open" || !grouping.getGroupByRepo(),
+  );
+  const useCompactFilters = $derived(
+    sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
+  );
+
   function routeRefForIssue(issue: Issue): IssueRouteRef {
     return {
       owner: issue.repo_owner ?? "",
@@ -69,30 +126,38 @@
 </script>
 
 <div class="issue-list">
-  <div class="filter-bar">
+  <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="sm" uppercase={false} class="chip--muted list-count-chip">
       {issues.getIssues().length} issues
     </Chip>
     <div class="state-toggle">
-      {#each ["open", "closed", "all"] as s (s)}
+      {#each issueStateOptions as s (s)}
         <button
           class="state-btn"
           class:state-btn--active={issues.getIssueFilterState() === s}
-          onclick={() => { issues.setIssueFilterState(s); void issues.loadIssues(); }}
-        >{s === "open" ? "Open" : s === "closed" ? "Closed" : "All"}</button>
+          onclick={() => setIssueState(s)}
+        >{issueStateLabel(s)}</button>
       {/each}
     </div>
     <div class="group-toggle">
-      <button
-        class="group-btn"
-        class:group-btn--active={grouping.getGroupByRepo()}
-        onclick={() => grouping.setGroupByRepo(true)}
-      >By Repo</button>
-      <button
-        class="group-btn"
-        class:group-btn--active={!grouping.getGroupByRepo()}
-        onclick={() => grouping.setGroupByRepo(false)}
-      >All</button>
+      {#each groupingOptions as option (option.label)}
+        <button
+          class="group-btn"
+          class:group-btn--active={grouping.getGroupByRepo() === option.byRepo}
+          onclick={() => grouping.setGroupByRepo(option.byRepo)}
+        >{option.label}</button>
+      {/each}
+    </div>
+    <div class="compact-filter-menu">
+      <FilterDropdown
+        label="Filters"
+        title="Filters"
+        icon="more"
+        active={hasCompactFilterChanges}
+        showBadge={false}
+        sections={compactFilterSections}
+        minWidth="160px"
+      />
     </div>
     {#if isSidebarToggleEnabled()}
       <LeftSidebarToggle
@@ -228,6 +293,7 @@
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
     background: var(--bg-surface);
+    overflow: hidden;
   }
 
   .search-bar {
@@ -431,7 +497,27 @@
     background: var(--bg-inset);
     border-radius: 6px;
     padding: 2px;
+    animation: sidebar-filter-pop-out 120ms ease-out;
+    transform-origin: right center;
   }
+
+  .compact-filter-menu {
+    display: none;
+    flex-shrink: 0;
+    transform-origin: left center;
+  }
+
+  .compact-filter-menu :global(.filter-btn) {
+    width: 26px;
+    justify-content: center;
+    padding: 3px;
+  }
+
+  .compact-filter-menu :global(.filter-trigger-label),
+  .compact-filter-menu :global(.filter-trigger-detail) {
+    display: none;
+  }
+
   .state-btn {
     font-size: 11px;
     padding: 2px 8px;
@@ -460,6 +546,8 @@
     background: var(--bg-inset);
     border-radius: 6px;
     padding: 2px;
+    animation: sidebar-filter-pop-out 120ms ease-out;
+    transform-origin: right center;
   }
   .group-btn {
     font-size: 11px;
@@ -475,5 +563,45 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .filter-bar--compact .state-toggle,
+  .filter-bar--compact .group-toggle {
+    display: none;
+  }
+
+  .filter-bar--compact .compact-filter-menu {
+    display: block;
+    animation: sidebar-filter-collapse-in 120ms ease-out;
+  }
+
+  @keyframes sidebar-filter-collapse-in {
+    from {
+      opacity: 0.2;
+      transform: translateX(-10px) scale(0.82);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @keyframes sidebar-filter-pop-out {
+    from {
+      opacity: 0;
+      transform: translateX(8px) scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .state-toggle,
+    .group-toggle,
+    .filter-bar--compact .compact-filter-menu {
+      animation: none;
+    }
   }
 </style>

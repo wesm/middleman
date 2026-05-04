@@ -1,6 +1,7 @@
 <script lang="ts">
   import FunnelIcon from "@lucide/svelte/icons/funnel";
   import ArrowUpDownIcon from "@lucide/svelte/icons/arrow-up-down";
+  import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import { tick } from "svelte";
 
   interface FilterDropdownItem {
@@ -31,7 +32,7 @@
     onReset?: () => void;
     minWidth?: string;
     align?: "start" | "end";
-    icon?: "filter" | "sort";
+    icon?: "filter" | "sort" | "more";
   }
 
   let {
@@ -165,12 +166,15 @@
     class:filter-active={isActive}
     bind:this={buttonRef}
     onclick={toggleOpen}
+    aria-label={label}
     {title}
     {disabled}
     type="button"
   >
     {#if icon === "sort"}
       <ArrowUpDownIcon size={12} strokeWidth={2} aria-hidden="true" />
+    {:else if icon === "more"}
+      <EllipsisIcon size={14} strokeWidth={2.2} aria-hidden="true" />
     {:else}
       <FunnelIcon size={12} strokeWidth={2} aria-hidden="true" />
     {/if}

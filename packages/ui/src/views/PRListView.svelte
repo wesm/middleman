@@ -72,6 +72,7 @@
     <PullList
       getDetailTab={() => detailTab}
       showSelectedDiffSidebar={false}
+      {sidebarWidth}
     />
   {/snippet}
 
