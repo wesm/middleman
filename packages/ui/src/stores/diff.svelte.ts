@@ -501,6 +501,79 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     }
   }
 
+  function resetDiffScopeState(): void {
+    scope = { kind: "head" };
+    fileCategoryFilter = "all";
+    commits = null;
+    commitsLoading = false;
+    commitsError = null;
+  }
+
+  function startDiffLoad(): {
+    diffAc: AbortController;
+    filesAc: AbortController;
+  } {
+    abortController?.abort();
+    fileListAbortController?.abort();
+    const diffAc = new AbortController();
+    const filesAc = new AbortController();
+    abortController = diffAc;
+    fileListAbortController = filesAc;
+
+    diff = null;
+    fileList = null;
+    loading = true;
+    fileListLoading = true;
+    storeError = null;
+
+    return { diffAc, filesAc };
+  }
+
+  function filesLoadIsCurrent(filesAc: AbortController): boolean {
+    return fileListAbortController === filesAc;
+  }
+
+  function diffLoadIsCurrent(diffAc: AbortController): boolean {
+    return abortController === diffAc;
+  }
+
+  function finishFilesLoad(filesAc: AbortController): void {
+    if (!filesAc.signal.aborted && filesLoadIsCurrent(filesAc)) {
+      fileListLoading = false;
+    }
+  }
+
+  function finishDiffLoad(diffAc: AbortController): void {
+    if (!diffAc.signal.aborted && diffLoadIsCurrent(diffAc)) {
+      loading = false;
+    }
+  }
+
+  function applyFilesResult(data: FilesResponse): void {
+    fileList = normalizeFilesResult(data);
+    setActiveIfNeeded(getVisibleFileList()?.files);
+  }
+
+  function applyDiffResult(data: DiffResponse): void {
+    diff = normalizeDiffResult(data);
+    setActiveIfNeeded(getVisibleDiffFiles());
+  }
+
+  function failDiffLoad(
+    err: unknown,
+    diffAc: AbortController,
+    filesAc: AbortController,
+  ): void {
+    if (diffAc.signal.aborted || !diffLoadIsCurrent(diffAc)) return;
+
+    storeError = err instanceof Error ? err.message : String(err);
+    diff = null;
+    fileList = null;
+    fileListAbortController = null;
+    filesAc.abort();
+    fileListLoading = false;
+  }
+
   async function loadDiff(
     owner: string,
     name: string,
@@ -516,25 +589,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     clearFilePreviewCache();
     currentWorkspaceID = "";
     if (prChanged) {
-      scope = { kind: "head" };
-      fileCategoryFilter = "all";
-      commits = null;
-      commitsLoading = false;
-      commitsError = null;
+      resetDiffScopeState();
     }
 
-    abortController?.abort();
-    fileListAbortController?.abort();
-    const diffAc = new AbortController();
-    const filesAc = new AbortController();
-    abortController = diffAc;
-    fileListAbortController = filesAc;
-
-    diff = null;
-    fileList = null;
-    loading = true;
-    fileListLoading = true;
-    storeError = null;
+    const { diffAc, filesAc } = startDiffLoad();
 
     const filesPromise = (async () => {
       try {
@@ -545,22 +603,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             signal: filesAc.signal,
           },
         );
-        if (fileListAbortController !== filesAc) return;
+        if (!filesLoadIsCurrent(filesAc)) return;
         if (!data) return;
-        const result = normalizeFilesResult(data);
-        fileList = result;
-        setActiveIfNeeded(getVisibleFileList()?.files);
+        applyFilesResult(data);
       } catch {
         if (filesAc.signal.aborted) return;
-        if (fileListAbortController !== filesAc) return;
+        if (!filesLoadIsCurrent(filesAc)) return;
         fileList = null;
       } finally {
-        if (
-          !filesAc.signal.aborted &&
-          fileListAbortController === filesAc
-        ) {
-          fileListLoading = false;
-        }
+        finishFilesLoad(filesAc);
       }
     })();
 
@@ -576,31 +627,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             signal: diffAc.signal,
           },
         );
-        if (abortController !== diffAc) return;
+        if (!diffLoadIsCurrent(diffAc)) return;
         if (!data) {
           throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
         }
-        const result = normalizeDiffResult(data);
-        diff = result;
-        setActiveIfNeeded(getVisibleDiffFiles());
+        applyDiffResult(data);
       } catch (_err) {
-        if (diffAc.signal.aborted) return;
-        if (abortController !== diffAc) return;
-        storeError =
-          _err instanceof Error ? _err.message : String(_err);
-        diff = null;
-        fileList = null;
-        // Invalidate and abort /files so a late response cannot repopulate.
-        fileListAbortController = null;
-        filesAc.abort();
-        fileListLoading = false;
+        failDiffLoad(_err, diffAc, filesAc);
       } finally {
-        if (
-          !diffAc.signal.aborted &&
-          abortController === diffAc
-        ) {
-          loading = false;
-        }
+        finishDiffLoad(diffAc);
       }
     })();
 
@@ -620,25 +655,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentName = "";
     currentNumber = 0;
     if (workspaceChanged) {
-      scope = { kind: "head" };
-      fileCategoryFilter = "all";
-      commits = null;
-      commitsLoading = false;
-      commitsError = null;
+      resetDiffScopeState();
     }
 
-    abortController?.abort();
-    fileListAbortController?.abort();
-    const diffAc = new AbortController();
-    const filesAc = new AbortController();
-    abortController = diffAc;
-    fileListAbortController = filesAc;
-
-    diff = null;
-    fileList = null;
-    loading = true;
-    fileListLoading = true;
-    storeError = null;
+    const { diffAc, filesAc } = startDiffLoad();
 
     const filesPromise = (async () => {
       try {
@@ -652,22 +672,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             signal: filesAc.signal,
           },
         );
-        if (fileListAbortController !== filesAc) return;
+        if (!filesLoadIsCurrent(filesAc)) return;
         if (!data) return;
-        const result = normalizeFilesResult(data);
-        fileList = result;
-        setActiveIfNeeded(getVisibleFileList()?.files);
+        applyFilesResult(data);
       } catch {
         if (filesAc.signal.aborted) return;
-        if (fileListAbortController !== filesAc) return;
+        if (!filesLoadIsCurrent(filesAc)) return;
         fileList = null;
       } finally {
-        if (
-          !filesAc.signal.aborted &&
-          fileListAbortController === filesAc
-        ) {
-          fileListLoading = false;
-        }
+        finishFilesLoad(filesAc);
       }
     })();
 
@@ -683,30 +696,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             signal: diffAc.signal,
           },
         );
-        if (abortController !== diffAc) return;
+        if (!diffLoadIsCurrent(diffAc)) return;
         if (!data) {
           throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
         }
-        const result = normalizeDiffResult(data);
-        diff = result;
-        setActiveIfNeeded(getVisibleDiffFiles());
+        applyDiffResult(data);
       } catch (_err) {
-        if (diffAc.signal.aborted) return;
-        if (abortController !== diffAc) return;
-        storeError =
-          _err instanceof Error ? _err.message : String(_err);
-        diff = null;
-        fileList = null;
-        fileListAbortController = null;
-        filesAc.abort();
-        fileListLoading = false;
+        failDiffLoad(_err, diffAc, filesAc);
       } finally {
-        if (
-          !diffAc.signal.aborted &&
-          abortController === diffAc
-        ) {
-          loading = false;
-        }
+        finishDiffLoad(diffAc);
       }
     })();
 

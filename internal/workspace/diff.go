@@ -52,16 +52,7 @@ func WorktreeDiffFiles(
 	if err != nil {
 		return nil, false, fmt.Errorf("git diff --numstat: %w", err)
 	}
-	counts := parseWorktreeNumstatZ(numstatOut)
-	for i := range files {
-		if count, ok := counts[files[i].Path]; ok {
-			files[i].Additions = count.additions
-			files[i].Deletions = count.deletions
-		}
-		if files[i].Hunks == nil {
-			files[i].Hunks = []gitclone.Hunk{}
-		}
-	}
+	applyWorktreeNumstat(files, parseWorktreeNumstatZ(numstatOut))
 	files = append(files, worktreeUntrackedFiles(ctx, dir, false)...)
 	return files, true, nil
 }
@@ -82,25 +73,19 @@ func WorktreeDiff(
 		return nil, false, fmt.Errorf("whitespace count: %w", err)
 	}
 
-	rawArgs := []string{
+	rawArgs := addWorktreeWhitespaceFlag([]string{
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}
-	if hideWhitespace {
-		rawArgs = append(rawArgs[:2], append([]string{"-w"}, rawArgs[2:]...)...)
-	}
+	}, hideWhitespace)
 	rawOut, err := worktreeGitOutput(ctx, dir, rawArgs...)
 	if err != nil {
 		return nil, false, fmt.Errorf("git diff --raw: %w", err)
 	}
 	files := gitclone.ParseRawZ(rawOut)
 
-	patchArgs := []string{
+	patchArgs := addWorktreeWhitespaceFlag([]string{
 		"diff", "-M", "-C", "--find-copies-harder", "-U3", baseRef,
-	}
-	if hideWhitespace {
-		patchArgs = append(patchArgs[:2], append([]string{"-w"}, patchArgs[2:]...)...)
-	}
+	}, hideWhitespace)
 	patchOut, err := worktreeGitOutput(ctx, dir, patchArgs...)
 	if err != nil {
 		return nil, false, fmt.Errorf("git diff patch: %w", err)
@@ -124,6 +109,35 @@ func WorktreeDiff(
 		WhitespaceOnlyCount: wsCount,
 		Files:               files,
 	}, true, nil
+}
+
+func applyWorktreeNumstat(
+	files []gitclone.DiffFile,
+	counts map[string]worktreeNumstatCount,
+) {
+	for i := range files {
+		if count, ok := counts[files[i].Path]; ok {
+			files[i].Additions = count.additions
+			files[i].Deletions = count.deletions
+		}
+		if files[i].Hunks == nil {
+			files[i].Hunks = []gitclone.Hunk{}
+		}
+	}
+}
+
+func addWorktreeWhitespaceFlag(
+	args []string,
+	hideWhitespace bool,
+) []string {
+	if !hideWhitespace {
+		return args
+	}
+	withWhitespace := make([]string, 0, len(args)+1)
+	withWhitespace = append(withWhitespace, args[:2]...)
+	withWhitespace = append(withWhitespace, "-w")
+	withWhitespace = append(withWhitespace, args[2:]...)
+	return withWhitespace
 }
 
 func worktreeUntrackedFiles(
