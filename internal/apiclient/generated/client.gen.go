@@ -251,6 +251,17 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// FilePreviewResponse defines model for FilePreviewResponse.
+type FilePreviewResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	Content   string  `json:"content"`
+	Encoding  string  `json:"encoding"`
+	MediaType string  `json:"media_type"`
+	Path      string  `json:"path"`
+	Size      int64   `json:"size"`
+}
+
 // FilesResponse defines model for FilesResponse.
 type FilesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -956,6 +967,21 @@ type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// GetReposByOwnerByNamePullsByNumberFilePreviewParams defines parameters for GetReposByOwnerByNamePullsByNumberFilePreview.
+type GetReposByOwnerByNamePullsByNumberFilePreviewParams struct {
+	// Path Changed file path to preview
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
 // ListStacksParams defines parameters for ListStacks.
 type ListStacksParams struct {
 	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
@@ -1212,6 +1238,9 @@ type ClientInterface interface {
 
 	// GetReposByOwnerByNamePullsByNumberDiff request
 	GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetReposByOwnerByNamePullsByNumberFilePreview request
+	GetReposByOwnerByNamePullsByNumberFilePreview(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByNamePullsByNumberFiles request
 	GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1808,6 +1837,18 @@ func (c *Client) GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, 
 
 func (c *Client) GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetReposByOwnerByNamePullsByNumberDiffRequest(c.Server, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetReposByOwnerByNamePullsByNumberFilePreview(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReposByOwnerByNamePullsByNumberFilePreviewRequest(c.Server, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4134,6 +4175,124 @@ func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner strin
 	return req, nil
 }
 
+// NewGetReposByOwnerByNamePullsByNumberFilePreviewRequest generates requests for GetReposByOwnerByNamePullsByNumberFilePreview
+func NewGetReposByOwnerByNamePullsByNumberFilePreviewRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/file-preview", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetReposByOwnerByNamePullsByNumberFilesRequest generates requests for GetReposByOwnerByNamePullsByNumberFiles
 func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -5451,6 +5610,9 @@ type ClientWithResponsesInterface interface {
 	// GetReposByOwnerByNamePullsByNumberDiffWithResponse request
 	GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error)
 
+	// GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse request
+	GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilePreviewResponse, error)
+
 	// GetReposByOwnerByNamePullsByNumberFilesWithResponse request
 	GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error)
 
@@ -6211,6 +6373,29 @@ func (r GetReposByOwnerByNamePullsByNumberDiffResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetReposByOwnerByNamePullsByNumberDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetReposByOwnerByNamePullsByNumberFilePreviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilePreviewResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReposByOwnerByNamePullsByNumberFilePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReposByOwnerByNamePullsByNumberFilePreviewResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -7209,6 +7394,15 @@ func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberDiffWithResponse
 		return nil, err
 	}
 	return ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp)
+}
+
+// GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse request returning *GetReposByOwnerByNamePullsByNumberFilePreviewResponse
+func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilePreviewResponse, error) {
+	rsp, err := c.GetReposByOwnerByNamePullsByNumberFilePreview(ctx, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReposByOwnerByNamePullsByNumberFilePreviewResponse(rsp)
 }
 
 // GetReposByOwnerByNamePullsByNumberFilesWithResponse request returning *GetReposByOwnerByNamePullsByNumberFilesResponse
@@ -8453,6 +8647,39 @@ func ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp *http.Response) (*G
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReposByOwnerByNamePullsByNumberFilePreviewResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse call
+func ParseGetReposByOwnerByNamePullsByNumberFilePreviewResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberFilePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReposByOwnerByNamePullsByNumberFilePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilePreviewResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

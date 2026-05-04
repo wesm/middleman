@@ -150,6 +150,14 @@ type filesResponse struct {
 	Files []gitclone.DiffFile `json:"files"`
 }
 
+type filePreviewResponse struct {
+	Path      string `json:"path"`
+	MediaType string `json:"media_type"`
+	Encoding  string `json:"encoding"`
+	Content   string `json:"content"`
+	Size      int64  `json:"size"`
+}
+
 type mrImportMetadataResponse struct {
 	Number           int    `json:"number"`
 	HeadBranch       string `json:"head_branch"`

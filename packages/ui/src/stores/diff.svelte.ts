@@ -1,5 +1,6 @@
 import type {
   DiffResult,
+  FilePreview,
   FilesResult,
   CommitInfo,
 } from "../api/types.js";
@@ -136,6 +137,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let wordWrap = $state(
     safeGetItem("diff-word-wrap") === "true",
   );
+  let richPreview = $state(
+    safeGetItem("diff-rich-preview") === "true",
+  );
   let hideWhitespace = $state(
     safeGetItem("diff-hide-whitespace") === "true",
   );
@@ -150,6 +154,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let commitsLoading = $state(false);
   let commitsError = $state<string | null>(null);
   let scope = $state<DiffScope>({ kind: "head" });
+  const filePreviewCache = new Map<string, Promise<FilePreview>>();
 
   let currentOwner = $state("");
   let currentName = $state("");
@@ -204,6 +209,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
   function getWordWrap(): boolean {
     return wordWrap;
+  }
+  function getRichPreview(): boolean {
+    return richPreview;
   }
   function getHideWhitespace(): boolean {
     return hideWhitespace;
@@ -266,6 +274,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function setWordWrap(v: boolean): void {
     wordWrap = v;
     safeSetItem("diff-word-wrap", String(v));
+  }
+
+  function setRichPreview(v: boolean): void {
+    richPreview = v;
+    safeSetItem("diff-rich-preview", String(v));
   }
 
   function setHideWhitespace(v: boolean): void {
@@ -362,6 +375,54 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     };
   }
 
+  function scopeCacheKey(): string {
+    if (scope.kind === "head") return "head";
+    if (scope.kind === "commit") return `commit:${scope.sha}`;
+    return `range:${scope.fromSha}:${scope.toSha}`;
+  }
+
+  async function loadFilePreview(
+    owner: string,
+    name: string,
+    number: number,
+    path: string,
+  ): Promise<FilePreview> {
+    const key = `${owner}/${name}#${number}:${scopeCacheKey()}:${path}`;
+    const cached = filePreviewCache.get(key);
+    if (cached) return cached;
+
+    const request = (async () => {
+      const { data, error, response } = await apiClient.GET(
+        "/repos/{owner}/{name}/pulls/{number}/file-preview",
+        {
+          params: {
+            path: { owner, name, number },
+            query: {
+              path,
+              ...(scope.kind === "commit" && { commit: scope.sha }),
+              ...(scope.kind === "range" && {
+                from: scope.fromSha,
+                to: scope.toSha,
+              }),
+            },
+          },
+        },
+      );
+      if (!data) {
+        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+      }
+      return data as FilePreview;
+    })();
+
+    filePreviewCache.set(key, request);
+    try {
+      return await request;
+    } catch (err) {
+      filePreviewCache.delete(key);
+      throw err;
+    }
+  }
+
   function setActiveIfNeeded(
     files: { path: string }[] | undefined,
   ): void {
@@ -390,6 +451,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       commits = null;
       commitsLoading = false;
       commitsError = null;
+      filePreviewCache.clear();
     }
 
     abortController?.abort();
@@ -494,6 +556,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     commitsLoading = false;
     commitsError = null;
     scope = { kind: "head" };
+    filePreviewCache.clear();
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
@@ -549,6 +612,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function selectCommit(sha: string): void {
     scope = { kind: "commit", sha };
+    filePreviewCache.clear();
     if (currentOwner && currentName && currentNumber) {
       void loadDiff(currentOwner, currentName, currentNumber);
     }
@@ -561,6 +625,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (fromIdx === -1 || toIdx === -1) return;
     const [older, newer] = fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
     scope = { kind: "range", fromSha: older, toSha: newer };
+    filePreviewCache.clear();
     if (currentOwner && currentName && currentNumber) {
       void loadDiff(currentOwner, currentName, currentNumber);
     }
@@ -568,6 +633,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function resetToHead(): void {
     scope = { kind: "head" };
+    filePreviewCache.clear();
     if (currentOwner && currentName && currentNumber) {
       void loadDiff(currentOwner, currentName, currentNumber);
     }
@@ -623,6 +689,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     isFileListLoading,
     getTabWidth,
     getWordWrap,
+    getRichPreview,
     getHideWhitespace,
     getFileCategoryFilter,
     getActiveFile,
@@ -635,10 +702,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     consumeScrollTarget,
     setTabWidth,
     setWordWrap,
+    setRichPreview,
     setHideWhitespace,
     isFileCollapsed,
     toggleFileCollapsed,
     loadDiff,
+    loadFilePreview,
     clearDiff,
     getScope,
     getCommits,

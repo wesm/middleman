@@ -7,6 +7,13 @@ type DiffResult struct {
 	Files               []DiffFile `json:"files"`
 }
 
+// FileContent is the raw content for one file at a git revision.
+type FileContent struct {
+	Path string
+	Data []byte
+	Size int64
+}
+
 // DiffFile represents one file in a diff.
 type DiffFile struct {
 	Path             string `json:"path"`

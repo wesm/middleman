@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"log/slog"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -481,6 +484,7 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/commits", s.getCommits)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
+	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/file-preview", s.getFilePreview)
 	huma.Get(api, "/stacks", s.listStacks)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/stack", s.getStackForPR)
 
@@ -2260,11 +2264,17 @@ type getDiffInput struct {
 
 type getDiffOutput = bodyOutput[diffResponse]
 
-func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
-	if s.clones == nil {
-		return nil, huma.Error503ServiceUnavailable("diff view not available: clone manager not configured")
-	}
+type resolvedDiffRange struct {
+	host     string
+	fromSHA  string
+	toSHA    string
+	diffSHAs *db.DiffSHAs
+}
 
+func (s *Server) resolveDiffRange(
+	ctx context.Context,
+	input *getDiffInput,
+) (*resolvedDiffRange, error) {
 	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to look up PR")
@@ -2277,9 +2287,6 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	}
 
 	host := s.syncer.HostForRepo(input.Owner, input.Name)
-	hideWhitespace := input.Whitespace == "hide"
-
-	// Determine diff range based on scope query params.
 	diffFrom := shas.MergeBaseSHA
 	diffTo := shas.DiffHeadSHA
 
@@ -2322,7 +2329,26 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		return nil, huma.Error400BadRequest("invalid scope: use 'commit' alone or 'from'+'to' together")
 	}
 
-	result, err := s.clones.Diff(ctx, host, input.Owner, input.Name, diffFrom, diffTo, hideWhitespace)
+	return &resolvedDiffRange{
+		host:     host,
+		fromSHA:  diffFrom,
+		toSHA:    diffTo,
+		diffSHAs: shas,
+	}, nil
+}
+
+func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
+	if s.clones == nil {
+		return nil, huma.Error503ServiceUnavailable("diff view not available: clone manager not configured")
+	}
+
+	resolved, err := s.resolveDiffRange(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	hideWhitespace := input.Whitespace == "hide"
+	result, err := s.clones.Diff(ctx, resolved.host, input.Owner, input.Name, resolved.fromSHA, resolved.toSHA, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
@@ -2331,13 +2357,132 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		return nil, huma.Error502BadGateway("failed to compute diff")
 	}
 
-	result.Stale = shas.Stale()
+	result.Stale = resolved.diffSHAs.Stale()
 
 	return &getDiffOutput{Body: diffResponse{
 		Stale:               result.Stale,
 		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
 		Files:               result.Files,
 	}}, nil
+}
+
+// --- File preview ---
+
+const maxFilePreviewBytes int64 = 4 * 1024 * 1024
+
+type getFilePreviewInput struct {
+	Owner  string `path:"owner"`
+	Name   string `path:"name"`
+	Number int    `path:"number"`
+	Path   string `query:"path" doc:"Changed file path to preview"`
+	Commit string `query:"commit" doc:"Scope to a single commit SHA"`
+	From   string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To     string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+}
+
+type getFilePreviewOutput = bodyOutput[filePreviewResponse]
+
+func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput) (*getFilePreviewOutput, error) {
+	if s.clones == nil {
+		return nil, huma.Error503ServiceUnavailable("file preview not available: clone manager not configured")
+	}
+	if strings.TrimSpace(input.Path) == "" {
+		return nil, huma.Error400BadRequest("path is required")
+	}
+
+	resolved, err := s.resolveDiffRange(ctx, &getDiffInput{
+		Owner:  input.Owner,
+		Name:   input.Name,
+		Number: input.Number,
+		Commit: input.Commit,
+		From:   input.From,
+		To:     input.To,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	previewRef := resolved.toSHA
+	previewPath := input.Path
+	files, err := s.clones.DiffFiles(
+		ctx,
+		resolved.host,
+		input.Owner,
+		input.Name,
+		resolved.fromSHA,
+		resolved.toSHA,
+	)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, huma.Error404NotFound("file preview not available: referenced commit not found")
+		}
+		slog.Error("failed to validate preview path", "owner", input.Owner, "name", input.Name, "number", input.Number, "path", input.Path, "err", err)
+		return nil, huma.Error502BadGateway("failed to validate file preview")
+	}
+	found := false
+	for _, file := range files {
+		if file.Path != input.Path {
+			continue
+		}
+		found = true
+		if file.Status == "deleted" {
+			previewRef = resolved.fromSHA
+			previewPath = file.OldPath
+		}
+		break
+	}
+	if !found {
+		return nil, huma.Error404NotFound("file preview not available: file is not changed in this diff")
+	}
+
+	content, err := s.clones.FileContent(
+		ctx,
+		resolved.host,
+		input.Owner,
+		input.Name,
+		previewRef,
+		previewPath,
+		maxFilePreviewBytes,
+	)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, huma.Error404NotFound("file preview not available: referenced file not found")
+		}
+		if errors.Is(err, gitclone.ErrTooLarge) {
+			return nil, huma.Error413RequestEntityTooLarge("file preview is too large")
+		}
+		slog.Error("failed to read file preview", "owner", input.Owner, "name", input.Name, "number", input.Number, "path", input.Path, "err", err)
+		return nil, huma.Error502BadGateway("failed to read file preview")
+	}
+
+	return &getFilePreviewOutput{Body: filePreviewResponse{
+		Path:      content.Path,
+		MediaType: previewMediaType(content.Path, content.Data),
+		Encoding:  "base64",
+		Content:   base64.StdEncoding.EncodeToString(content.Data),
+		Size:      content.Size,
+	}}, nil
+}
+
+func previewMediaType(path string, data []byte) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".mdown", ".mkd":
+		return "text/markdown; charset=utf-8"
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".jsonc":
+		return "application/jsonc; charset=utf-8"
+	case ".toml":
+		return "application/toml; charset=utf-8"
+	case ".yaml", ".yml":
+		return "application/yaml; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	}
+	if mediaType := mime.TypeByExtension(filepath.Ext(path)); mediaType != "" {
+		return mediaType
+	}
+	return http.DetectContentType(data)
 }
 
 // --- Files (lightweight) ---

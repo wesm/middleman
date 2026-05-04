@@ -3,10 +3,14 @@ package gitclone
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 )
+
+// ErrTooLarge is returned when a requested blob exceeds the caller's limit.
+var ErrTooLarge = errors.New("git blob too large")
 
 // DiffFiles returns file metadata (path, status, renames) without patch
 // content. It combines git diff --raw and --numstat, which is much faster
@@ -216,6 +220,37 @@ func diffRawNoRenameArgs(mergeBase, headSHA string, hideWhitespace bool) []strin
 		return append(args[:4], append([]string{"-w"}, args[4:]...)...)
 	}
 	return args
+}
+
+// FileContent returns one file's blob content at ref. maxBytes guards API
+// callers from accidentally loading very large assets into memory.
+func (m *Manager) FileContent(
+	ctx context.Context,
+	host, owner, name, ref, filePath string,
+	maxBytes int64,
+) (*FileContent, error) {
+	clonePath := m.ClonePath(host, owner, name)
+	object := ref + ":" + filePath
+	sizeOut, err := m.git(ctx, host, clonePath, "cat-file", "-s", object)
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file -s: %w", err)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(sizeOut)), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse blob size: %w", err)
+	}
+	if maxBytes > 0 && size > maxBytes {
+		return nil, fmt.Errorf("%w: %d bytes", ErrTooLarge, size)
+	}
+	data, err := m.git(ctx, host, clonePath, "cat-file", "blob", object)
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file blob: %w", err)
+	}
+	return &FileContent{
+		Path: filePath,
+		Data: data,
+		Size: size,
+	}, nil
 }
 
 // parseRawZPaths extracts just the file paths from --raw -z output.

@@ -156,6 +156,35 @@ const largeDiff = makeLargeDiff();
 // Stale fixture reuses small diff with stale flag.
 const staleDiff = { ...smallDiff, stale: true };
 
+const previewDiff: DiffResult = {
+  ...smallDiff,
+  files: [
+    {
+      path: "docs/preview.md",
+      old_path: "docs/preview.md",
+      status: "added",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 3,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 0,
+          old_count: 0,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "add", content: "# Rendered preview", new_num: 1 },
+            { type: "add", content: "", new_num: 2 },
+            { type: "add", content: "- [x] Markdown task", new_num: 3 },
+          ],
+        },
+      ],
+    },
+    ...smallDiff.files,
+  ],
+};
+
 // --- Helpers ---
 
 function filesFromDiff(fixture: DiffResult): FilesResult {
@@ -183,6 +212,44 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(fixture),
+    });
+  });
+}
+
+async function mockFilePreviewApi(page: Page): Promise<void> {
+  await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.searchParams.get("path");
+    if (path === "docs/preview.md") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path,
+          media_type: "text/markdown; charset=utf-8",
+          encoding: "base64",
+          content: btoa("# Rendered preview\n\n- [x] Markdown task\n"),
+        }),
+      });
+      return;
+    }
+    if (path === "assets/logo.png") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path,
+          media_type: "image/png",
+          encoding: "base64",
+          content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8AARQAFAAH/Adf2d8wAAAAASUVORK5CYII=",
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "preview unavailable" }),
     });
   });
 }
@@ -227,6 +294,7 @@ test.describe("diff view", () => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
       localStorage.removeItem("diff-word-wrap");
+      localStorage.removeItem("diff-rich-preview");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -373,6 +441,27 @@ test.describe("diff view", () => {
 
     await expect(wrapToggle).toHaveAttribute("aria-checked", "true");
     await expect(firstCodeLine).toHaveCSS("white-space", "pre-wrap");
+  });
+
+  test("rich preview toggle renders markdown and browser images", async ({ page }) => {
+    await mockDiffApi(page, previewDiff);
+    await mockFilePreviewApi(page);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const previewToggle = page.getByRole("switch", { name: "Rich preview" });
+    await expect(previewToggle).toHaveAttribute("aria-checked", "false");
+
+    await previewToggle.click();
+    await expect(previewToggle).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("heading", { name: "Rendered preview" }))
+      .toBeVisible();
+    await expect(page.locator(".diff-rich-preview.markdown-body"))
+      .toContainText("Markdown task");
+
+    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+    await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']"))
+      .toBeVisible();
   });
 
   test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
