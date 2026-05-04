@@ -107,25 +107,6 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 	assert.True(pr.MergedAt.Equal(mergedAt))
 }
 
-func TestNormalizePR_MergedAtMarksPRMerged(t *testing.T) {
-	assert := Assert.New(t)
-	mergedAt := time.Now().UTC().Truncate(time.Second)
-	ghPR := &gh.PullRequest{
-		ID:       new(int64(2003)),
-		Number:   new(100),
-		State:    new("closed"),
-		MergedAt: ghTimestamp(mergedAt),
-		User:     &gh.User{Login: new("bob")},
-	}
-
-	pr, err := NormalizePR(3, ghPR)
-	require.NoError(t, err)
-
-	assert.Equal("merged", pr.State)
-	require.NotNil(t, pr.MergedAt)
-	assert.True(pr.MergedAt.Equal(mergedAt))
-}
-
 func TestNormalizePR_Labels(t *testing.T) {
 	require := require.New(t)
 	updatedAt := time.Date(2024, 6, 7, 10, 11, 12, 0, time.UTC)

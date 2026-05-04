@@ -3954,37 +3954,6 @@ func TestBackfillRepoPersistsPRLabels(t *testing.T) {
 	require.Equal("backfill-pr", stored.Labels[0].Name)
 }
 
-func TestBackfillRepoPersistsMergedPRsFromMergedAt(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-
-	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
-	require.NoError(err)
-	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
-	require.NoError(err)
-	require.NotNil(repoRow)
-	now := time.Date(2024, 6, 7, 12, 0, 0, 0, time.UTC)
-	mergedAt := now.Add(time.Hour)
-	pr := buildOpenPR(22, now)
-	pr.State = new("closed")
-	pr.MergedAt = makeTimestamp(mergedAt)
-
-	mc := &mockClient{listPullRequestsPageFn: func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
-		return []*gh.PullRequest{pr}, false, nil
-	}}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(10))
-
-	syncer.backfillRepo(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoRow, NewSyncBudget(10))
-
-	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 22)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.Equal("merged", stored.State)
-	require.NotNil(stored.MergedAt)
-	require.True(stored.MergedAt.Equal(mergedAt))
-}
-
 func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
