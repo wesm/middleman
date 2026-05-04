@@ -14,6 +14,7 @@ frontend/tests/demo/screenshots/
 .idea/
 .vscode/
 tmp/
+scripts/e2e/gitlab/fixture-data/
 *.swp
 .DS_Store
 *.db
