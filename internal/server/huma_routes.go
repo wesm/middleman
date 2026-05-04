@@ -2428,6 +2428,9 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 		if file.Status == "deleted" {
 			previewRef = resolved.fromSHA
 			previewPath = file.OldPath
+			if previewPath == "" {
+				previewPath = file.Path
+			}
 		}
 		break
 	}

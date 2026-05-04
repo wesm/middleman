@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -7865,6 +7866,50 @@ func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
 	assert.Contains(rr.Body.String(), `"media_type":"text/plain; charset=utf-8"`)
 	assert.Contains(rr.Body.String(), `"encoding":"base64"`)
 	assert.Contains(rr.Body.String(), `"content":"Y29udGVudCA1Cg=="`)
+}
+
+func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	seedPR(t, database, "acme", "widgets", 1)
+	diffRepo, err := testutil.SetupDiffRepo(ctx, dir, database)
+	require.NoError(err)
+
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+		Clones: diffRepo.Manager,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	path := "config.yaml"
+	resp, err := client.HTTP.GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse(
+		ctx, "acme", "widgets", 1,
+		&generated.GetReposByOwnerByNamePullsByNumberFilePreviewParams{Path: &path},
+	)
+
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	assert.Equal(path, resp.JSON200.Path)
+	decoded, err := base64.StdEncoding.DecodeString(resp.JSON200.Content)
+	require.NoError(err)
+	assert.Contains(string(decoded), "wal_mode: true")
 }
 
 func TestAPIGetDiff_Range(t *testing.T) {
