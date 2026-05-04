@@ -1,11 +1,13 @@
 import type {
   ConfigRepo,
+  TerminalRenderer,
   TerminalSettings,
 } from "../api/types.js";
 
 export function createSettingsStore() {
   let repos = $state<ConfigRepo[]>([]);
   let terminalFontFamily = $state("");
+  let terminalRenderer = $state<TerminalRenderer>("xterm");
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -27,6 +29,16 @@ export function createSettingsStore() {
     terminalFontFamily = fontFamily ?? "";
   }
 
+  function getTerminalRenderer(): TerminalRenderer {
+    return terminalRenderer;
+  }
+
+  function setTerminalRenderer(
+    renderer: TerminalSettings["renderer"] | null | undefined,
+  ): void {
+    terminalRenderer = renderer === "ghostty-web" ? "ghostty-web" : "xterm";
+  }
+
   function hasConfiguredRepos(): boolean {
     return repos.length > 0;
   }
@@ -40,6 +52,8 @@ export function createSettingsStore() {
     setConfiguredRepos,
     getTerminalFontFamily,
     setTerminalFontFamily,
+    getTerminalRenderer,
+    setTerminalRenderer,
     hasConfiguredRepos,
     isSettingsLoaded,
   };

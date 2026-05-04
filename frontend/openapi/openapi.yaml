@@ -2129,8 +2129,11 @@ components:
       properties:
         font_family:
           type: string
+        renderer:
+          type: string
       required:
         - font_family
+        - renderer
       type: object
     UpdateSettingsRequest:
       additionalProperties: false

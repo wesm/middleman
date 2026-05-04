@@ -26,6 +26,7 @@
       settingsStore.setTerminalFontFamily(
         settings.terminal.font_family,
       );
+      settingsStore.setTerminalRenderer(settings.terminal.renderer);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -58,6 +59,7 @@
           settingsStore.setTerminalFontFamily(
             terminal.font_family,
           );
+          settingsStore.setTerminalRenderer(terminal.renderer);
         }}
       />
     </SettingsSection>

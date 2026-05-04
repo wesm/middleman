@@ -11,14 +11,11 @@ const mocks = vi.hoisted(() => ({
   ensureWorkspaceShell: vi.fn(),
   getWorkspaceRuntime: vi.fn(),
   launchWorkspaceSession: vi.fn(),
-  mockClearTextureAtlas: vi.fn(),
   mockDispose: vi.fn(),
   mockFit: vi.fn(),
   mockLoadAddon: vi.fn(),
-  mockOnBinary: vi.fn(),
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
-  mockRefresh: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   terminalWrite: vi.fn(),
 }));
@@ -46,14 +43,14 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation((options) => ({
     cols: 80,
     rows: 24,
-    open: mocks.mockOpen,
-    loadAddon: mocks.mockLoadAddon,
-    onData: mocks.mockOnData,
-    onBinary: mocks.mockOnBinary,
+    clearTextureAtlas: vi.fn(),
     dispose: mocks.mockDispose,
+    loadAddon: mocks.mockLoadAddon,
+    onBinary: vi.fn(),
+    onData: mocks.mockOnData,
+    open: mocks.mockOpen,
+    refresh: vi.fn(),
     write: mocks.terminalWrite,
-    refresh: mocks.mockRefresh,
-    clearTextureAtlas: mocks.mockClearTextureAtlas,
     options: { ...options },
   })),
 }));
@@ -65,7 +62,29 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation(() => ({})),
+  WebglAddon: vi.fn().mockImplementation(() => ({
+    dispose: vi.fn(),
+    onContextLoss: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
+vi.mock("ghostty-web", () => ({
+  init: vi.fn().mockResolvedValue(undefined),
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: mocks.mockFit,
+  })),
+  Terminal: vi.fn().mockImplementation((options) => ({
+    cols: 80,
+    rows: 24,
+    open: mocks.mockOpen,
+    loadAddon: mocks.mockLoadAddon,
+    onData: mocks.mockOnData,
+    dispose: mocks.mockDispose,
+    write: mocks.terminalWrite,
+    options: { ...options },
+  })),
 }));
 
 vi.mock("@middleman/ui", async (importOriginal) => {
@@ -75,6 +94,7 @@ vi.mock("@middleman/ui", async (importOriginal) => {
     getStores: () => ({
       settings: {
         getTerminalFontFamily: () => "",
+        getTerminalRenderer: () => "ghostty-web",
       },
     }),
   };

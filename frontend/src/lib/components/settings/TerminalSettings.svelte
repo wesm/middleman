@@ -18,15 +18,20 @@
 
   let saving = $state(false);
   let draft = $state("");
+  let rendererDraft = $state<TerminalSettingsType["renderer"]>("xterm");
 
   function normalizeFontFamily(value: string): string {
     return value.trim();
   }
 
   const currentFontFamily = $derived(terminal.font_family);
+  const currentRenderer = $derived(
+    terminal.renderer === "ghostty-web" ? "ghostty-web" : "xterm",
+  );
   const normalizedDraft = $derived(normalizeFontFamily(draft));
   const isDirty = $derived(
-    normalizedDraft !== currentFontFamily,
+    normalizedDraft !== currentFontFamily ||
+      rendererDraft !== currentRenderer,
   );
   const canSave = $derived(
     !saving && isDirty,
@@ -34,18 +39,20 @@
 
   onMount(() => {
     draft = terminal.font_family;
+    rendererDraft = currentRenderer;
   });
 
   async function save(): Promise<void> {
     if (embedded) return;
     draft = normalizedDraft;
-    if (normalizedDraft === currentFontFamily) return;
+    if (normalizedDraft === currentFontFamily && rendererDraft === currentRenderer) return;
 
     saving = true;
     try {
       const settings = await updateSettings({
         terminal: {
           font_family: normalizedDraft,
+          renderer: rendererDraft,
         },
       });
       draft = settings.terminal.font_family;
@@ -53,8 +60,10 @@
       settingsStore.setTerminalFontFamily(
         settings.terminal.font_family,
       );
+      settingsStore.setTerminalRenderer(settings.terminal.renderer);
     } catch (err) {
       draft = currentFontFamily;
+      rendererDraft = currentRenderer;
       console.warn("Failed to save terminal settings:", err);
     } finally {
       saving = false;
@@ -72,6 +81,7 @@
       void save();
     } else if (event.key === "Escape") {
       draft = currentFontFamily;
+      rendererDraft = currentRenderer;
     }
   }
 </script>
@@ -88,6 +98,19 @@
       disabled={saving}
       onkeydown={handleKeydown}
     />
+  </label>
+
+  <label class="renderer-field" for="terminal-renderer">
+    <span class="setting-label">Terminal renderer</span>
+    <select
+      id="terminal-renderer"
+      class="renderer-select"
+      bind:value={rendererDraft}
+      disabled={saving}
+    >
+      <option value="xterm">xterm.js</option>
+      <option value="ghostty-web">ghostty-web</option>
+    </select>
   </label>
 
   <div class="setting-actions">
@@ -122,7 +145,8 @@
     gap: 10px;
   }
 
-  .font-field {
+  .font-field,
+  .renderer-field {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -133,7 +157,8 @@
     color: var(--text-secondary);
   }
 
-  .font-input {
+  .font-input,
+  .renderer-select {
     width: 100%;
     font-family: var(--font-mono);
   }

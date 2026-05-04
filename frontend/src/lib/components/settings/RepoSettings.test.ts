@@ -130,7 +130,7 @@ describe("RepoSettings", () => {
         hide_closed: false,
         hide_bots: false,
       },
-      terminal: { font_family: "" },
+      terminal: { font_family: "", renderer: "xterm" },
       agents: [],
     });
     render(RepoSettings, {

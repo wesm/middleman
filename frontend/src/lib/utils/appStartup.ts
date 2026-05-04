@@ -57,6 +57,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         stores.settings.setTerminalFontFamily(
           settings.terminal.font_family,
         );
+        stores.settings.setTerminalRenderer(settings.terminal.renderer);
         stores.activity.hydrateDefaults(settings.activity);
       }
     } catch (err) {

@@ -62,8 +62,11 @@ export interface ActivitySettings {
   hide_bots: boolean;
 }
 
+export type TerminalRenderer = "xterm" | "ghostty-web";
+
 export interface TerminalSettings {
   font_family: string;
+  renderer: TerminalRenderer;
 }
 
 export interface AgentSettings {
