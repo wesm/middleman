@@ -58,7 +58,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		Deletions:         ghPR.GetDeletions(),
 	}
 
-	if ghPR.GetMerged() {
+	if pullRequestWasMerged(ghPR) {
 		mr.State = "merged"
 	}
 
@@ -92,6 +92,10 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 	mr.Labels = normalizeLabels(ghPR.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
 
 	return mr, nil
+}
+
+func pullRequestWasMerged(ghPR *gh.PullRequest) bool {
+	return ghPR.GetMerged() || ghPR.MergedAt != nil
 }
 
 // NormalizeCommentEvent converts a GitHub IssueComment to a db.MREvent.
