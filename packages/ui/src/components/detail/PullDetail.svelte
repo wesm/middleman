@@ -69,7 +69,7 @@
   };
 
   function currentCapabilities(): ProviderCapabilities {
-    return detailStore.getDetail()?.repo.capabilities
+    return detailStore.getDetail()?.repo?.capabilities
       ?? defaultProviderCapabilities;
   }
 
@@ -540,7 +540,7 @@
   {@const detail = detailStore.getDetail()}
   {#if detail !== null && !stalePR}
     {@const pr = detail.merge_request}
-    {@const capabilities = detail.repo.capabilities ?? defaultProviderCapabilities}
+    {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     <div class="pull-detail-wrap">
       {#if stalePR && detailStore.getDetailError() !== null}
         <div class="detail-load-error" data-testid="detail-load-error">

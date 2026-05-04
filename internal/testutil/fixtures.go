@@ -299,7 +299,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	// tools#10/#11/#12: open stacked PR chain (auth refactor).
 	// Forms: main <- feat/auth-base <- feat/auth-retry <- feat/auth-ui
 	stackBase := now.Add(-4 * 24 * time.Hour)
-	for i, pr := range []struct {
+	stackPRs := []struct {
 		num                int
 		title, head, base  string
 		ci, review, author string
@@ -307,7 +307,21 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		{10, "Auth: extract token refresh helper", "feat/auth-base", "main", "success", "APPROVED", "alice"},
 		{11, "Auth: add retry with backoff", "feat/auth-retry", "feat/auth-base", "success", "", "alice"},
 		{12, "Auth: error handling UI", "feat/auth-ui", "feat/auth-retry", "pending", "", "alice"},
-	} {
+	}
+	buildToolsStackFixturePR := func(i int) *gh.PullRequest {
+		pr := stackPRs[i]
+		created := stackBase.Add(time.Duration(i) * time.Hour)
+		return setPRBranches(
+			setPRStats(
+				buildGHPR("acme", "tools", int64(2010+i), pr.num, pr.title, pr.author, "open", false, "", created, created),
+				50+i*10,
+				5,
+			),
+			pr.head,
+			pr.base,
+		)
+	}
+	for i, pr := range stackPRs {
 		created := stackBase.Add(time.Duration(i) * time.Hour)
 		_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 			RepoID:            toolsID,
@@ -651,6 +665,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 		"acme/tools": {
 			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20),
+			buildToolsStackFixturePR(0),
+			buildToolsStackFixturePR(1),
+			buildToolsStackFixturePR(2),
 		},
 	}
 
@@ -667,6 +684,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		"acme/tools": {
 			setPRStats(buildGHPR("acme", "tools", 2001, 1, "Add CLI flag parser", "dave", "open", false, "", t1Created, now.Add(-18*time.Hour)), 180, 20),
 			setPRStats(buildGHPR("acme", "tools", 2002, 2, "Initial project setup", "alice", "merged", false, "", now.Add(-62*24*time.Hour), t2Merged), 500, 0),
+			buildToolsStackFixturePR(0),
+			buildToolsStackFixturePR(1),
+			buildToolsStackFixturePR(2),
 		},
 	}
 
@@ -792,6 +812,18 @@ func setPRHeadSHA(pr *gh.PullRequest, sha string) *gh.PullRequest {
 		pr.Head = &gh.PullRequestBranch{}
 	}
 	pr.Head.SHA = &sha
+	return pr
+}
+
+func setPRBranches(pr *gh.PullRequest, head, base string) *gh.PullRequest {
+	if pr.Head == nil {
+		pr.Head = &gh.PullRequestBranch{}
+	}
+	if pr.Base == nil {
+		pr.Base = &gh.PullRequestBranch{}
+	}
+	pr.Head.Ref = &head
+	pr.Base.Ref = &base
 	return pr
 }
 

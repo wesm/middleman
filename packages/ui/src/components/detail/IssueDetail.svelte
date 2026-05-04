@@ -43,7 +43,7 @@
   };
 
   function currentCapabilities(): ProviderCapabilities {
-    return issues.getIssueDetail()?.repo.capabilities
+    return issues.getIssueDetail()?.repo?.capabilities
       ?? defaultProviderCapabilities;
   }
 
@@ -394,7 +394,7 @@
   {#if detail !== null && !staleIssue}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
-    {@const capabilities = detail.repo.capabilities ?? defaultProviderCapabilities}
+    {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     <div class="issue-detail">
       <div class="issue-detail-content">
       {#if staleIssue && issues.getIssueDetailError() !== null}
