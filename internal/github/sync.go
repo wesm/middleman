@@ -102,6 +102,7 @@ type RepoRef struct {
 
 // RepoSyncResult holds the outcome of syncing a single repo.
 type RepoSyncResult struct {
+	Platform     platform.Kind
 	Owner        string
 	Name         string
 	PlatformHost string
@@ -425,6 +426,19 @@ func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 		_ = registry.Register(provider)
 	}
 	return registry
+}
+
+func NewProviderRegistry(
+	clients map[string]Client,
+	providers ...platform.Provider,
+) (*platform.Registry, error) {
+	registry := registryFromGitHubClients(clients)
+	for _, provider := range providers {
+		if err := registry.Register(provider); err != nil {
+			return nil, err
+		}
+	}
+	return registry, nil
 }
 
 func (p gitHubClientProvider) Platform() platform.Kind {
@@ -1436,6 +1450,7 @@ func (s *Syncer) runOnce(
 			host = "github.com"
 		}
 		results[i] = RepoSyncResult{
+			Platform:     repoPlatform(r),
 			Owner:        r.Owner,
 			Name:         r.Name,
 			PlatformHost: host,

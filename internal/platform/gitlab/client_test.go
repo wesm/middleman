@@ -301,7 +301,7 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	mrEvents, err := client.ListMergeRequestEvents(context.Background(), ref, 7)
 	require.NoError(err)
 	require.Len(mrEvents, 2)
-	assert.Equal("note", mrEvents[0].EventType)
+	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("commit", mrEvents[1].EventType)
 
 	issues, err := client.ListOpenIssues(context.Background(), ref)
@@ -316,7 +316,7 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	issueEvents, err := client.ListIssueEvents(context.Background(), ref, 5)
 	require.NoError(err)
 	require.Len(issueEvents, 1)
-	assert.Equal("note", issueEvents[0].EventType)
+	assert.Equal("issue_comment", issueEvents[0].EventType)
 
 	releases, err := client.ListReleases(context.Background(), ref)
 	require.NoError(err)

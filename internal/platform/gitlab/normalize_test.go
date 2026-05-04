@@ -178,13 +178,13 @@ func TestNormalizeNotesDropsSystemNotes(t *testing.T) {
 
 	mrEvents := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
 	require.Len(mrEvents, 1)
-	assert.Equal("note", mrEvents[0].EventType)
+	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("visible", mrEvents[0].Body)
 	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:note:1", mrEvents[0].DedupeKey)
 
 	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
 	require.Len(issueEvents, 1)
-	assert.Equal("note", issueEvents[0].EventType)
+	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("visible", issueEvents[0].Body)
 	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:note:1", issueEvents[0].DedupeKey)
 }

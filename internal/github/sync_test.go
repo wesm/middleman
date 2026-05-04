@@ -3025,6 +3025,8 @@ func TestSyncRunReturnsOptionalReaderErrorWhenMissingIssueReader(t *testing.T) {
 	syncer.RunOnce(t.Context())
 
 	require.Len(results, 1)
+	require.Equal(platform.KindGitLab, results[0].Platform)
+	require.Equal("gitlab.com", results[0].PlatformHost)
 	require.Contains(results[0].Error, "read_issues")
 }
 
@@ -3246,10 +3248,12 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 	require.Len(gotResults, 2)
 	assert.Equal("acme", gotResults[0].Owner)
 	assert.Equal("widget", gotResults[0].Name)
+	assert.Equal(platform.KindGitHub, gotResults[0].Platform)
 	assert.Equal("github.com", gotResults[0].PlatformHost)
 	assert.Empty(gotResults[0].Error)
 	assert.Equal("acme", gotResults[1].Owner)
 	assert.Equal("lib", gotResults[1].Name)
+	assert.Equal(platform.KindGitHub, gotResults[1].Platform)
 	assert.Equal("github.com", gotResults[1].PlatformHost)
 	assert.Empty(gotResults[1].Error)
 }
@@ -3653,6 +3657,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	// github.com repo should have synced (no error).
 	assert.Equal("pub", gotResults[0].Owner)
 	assert.Equal("repo", gotResults[0].Name)
+	assert.Equal(platform.KindGitHub, gotResults[0].Platform)
 	assert.Equal("github.com", gotResults[0].PlatformHost)
 	assert.Empty(gotResults[0].Error,
 		"github.com repo should sync normally")
@@ -3660,6 +3665,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	// ghe.corp.com repo should be skipped due to throttle.
 	assert.Equal("corp", gotResults[1].Owner)
 	assert.Equal("internal", gotResults[1].Name)
+	assert.Equal(platform.KindGitHub, gotResults[1].Platform)
 	assert.Equal("ghe.corp.com", gotResults[1].PlatformHost)
 	assert.Equal("skipped: rate limit throttled", gotResults[1].Error,
 		"ghe.corp.com repo should be skipped when paused")
