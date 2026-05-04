@@ -112,16 +112,74 @@ func TestDetailRefreshPlannerBuildsItemsForTrackedRepos(t *testing.T) {
 	assert.True(issue.IsOpen)
 }
 
-func TestDetailRefreshPlannerRepoKeysDefaultHostAndSeparateHosts(t *testing.T) {
+func TestDetailRefreshPlannerSeparatesReposByHost(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
 
-	tracked := detailTrackedRepoSet([]RepoRef{
-		{Owner: "owner", Name: "repo"},
-		{PlatformHost: "ghe.corp.example", Owner: "owner", Name: "repo"},
+	githubRepoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	require.NoError(err)
+	gheRepoID, err := d.UpsertRepo(ctx, "ghe.corp.example", "owner", "repo")
+	require.NoError(err)
+
+	now := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	for _, row := range []struct {
+		repoID int64
+		number int
+		url    string
+	}{
+		{
+			repoID: githubRepoID,
+			number: 7,
+			url:    "https://github.com/owner/repo/pull/7",
+		},
+		{
+			repoID: gheRepoID,
+			number: 8,
+			url:    "https://ghe.corp.example/owner/repo/pull/8",
+		},
+	} {
+		_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:          row.repoID,
+			PlatformID:      int64(100 + row.number),
+			Number:          row.number,
+			URL:             row.url,
+			Title:           "Tracked PR",
+			Author:          "alice",
+			State:           "open",
+			HeadBranch:      "feature",
+			BaseBranch:      "main",
+			PlatformHeadSHA: "abc123",
+			PlatformBaseSHA: "def456",
+			CreatedAt:       now.Add(-2 * time.Hour),
+			UpdatedAt:       now,
+			LastActivityAt:  now,
+		})
+		require.NoError(err)
+	}
+
+	planner := newDetailRefreshPlanner(d)
+	githubPlan := planner.Build(ctx, detailRefreshPlanInput{
+		TrackedRepos: []RepoRef{{Owner: "owner", Name: "repo"}},
+	})
+	ghePlan := planner.Build(ctx, detailRefreshPlanInput{
+		TrackedRepos: []RepoRef{{
+			PlatformHost: "ghe.corp.example",
+			Owner:        "owner",
+			Name:         "repo",
+		}},
 	})
 
-	assert.True(tracked[detailRepoKey("github.com", "owner", "repo")])
-	assert.True(tracked[detailRepoKey("", "owner", "repo")])
-	assert.True(tracked[detailRepoKey("ghe.corp.example", "owner", "repo")])
-	assert.False(tracked[detailRepoKey("gitlab.example", "owner", "repo")])
+	require.NoError(githubPlan.PullRequestListErr)
+	require.NoError(githubPlan.IssueListErr)
+	require.Len(githubPlan.Items, 1)
+	assert.Equal("github.com", githubPlan.Items[0].PlatformHost)
+	assert.Equal(7, githubPlan.Items[0].Number)
+
+	require.NoError(ghePlan.PullRequestListErr)
+	require.NoError(ghePlan.IssueListErr)
+	require.Len(ghePlan.Items, 1)
+	assert.Equal("ghe.corp.example", ghePlan.Items[0].PlatformHost)
+	assert.Equal(8, ghePlan.Items[0].Number)
 }
