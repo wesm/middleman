@@ -15,7 +15,8 @@
 - GitLab API v4 Projects API supports project metadata and uses `path_with_namespace`, `web_url`, visibility, archived state, and repository properties.
 - GitLab API v4 Merge Requests API lists project merge requests with project-scoped `iid`, global `id`, branches, author, labels, draft/work-in-progress flags, merge status, timestamps, and `web_url`.
 - GitLab API v4 accepts personal/project/group access tokens through token headers such as `PRIVATE-TOKEN`; the Go client also supports custom base URLs for self-hosted instances.
-- Context7 reports the old `github.com/xanzy/go-gitlab` client as moved to `gitlab.com/gitlab-org/api/client-go`; use the moved GitLab-owned module rather than adding the deprecated import path.
+- GitLab's Go API client docs are at <https://pkg.go.dev/gitlab.com/gitlab-org/api/client-go>. Use `gitlab.com/gitlab-org/api/client-go` as the module/import path.
+- Context7 reports the old `github.com/xanzy/go-gitlab` client as moved to `gitlab.com/gitlab-org/api/client-go`; do not add the deprecated import path or copy examples that still import `github.com/xanzy/go-gitlab`.
 
 ## Scope
 
@@ -506,6 +507,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - Modify: `go.sum`
 
 - [ ] Add `gitlab.com/gitlab-org/api/client-go` with `go get gitlab.com/gitlab-org/api/client-go`.
+- [ ] Import the GitLab client as `gitlab "gitlab.com/gitlab-org/api/client-go"` and use the package docs at <https://pkg.go.dev/gitlab.com/gitlab-org/api/client-go> as the source of truth for client APIs.
 - [ ] Build clients with `gitlab.NewClient(token, gitlab.WithBaseURL("https://<host>/api/v4"))`.
 - [ ] Implement exact project lookup by URL-escaped `path_with_namespace`.
 - [ ] Implement namespace listing for repo preview. For groups, use group project listing with subgroups when available; for users, fall back to project search/listing filtered by namespace path.
