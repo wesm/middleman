@@ -678,6 +678,9 @@ func (p gitHubClientProvider) CreateMergeRequestComment(
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
 	}
+	if comment == nil {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no comment")
+	}
 	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
 }
 
@@ -690,6 +693,9 @@ func (p gitHubClientProvider) EditMergeRequestComment(
 	comment, err := p.client.EditIssueComment(ctx, ref.Owner, ref.Name, commentID, body)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
+	}
+	if comment == nil {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no comment")
 	}
 	return platformgithub.NormalizeCommentEvent(ref, 0, comment), nil
 }
@@ -704,6 +710,9 @@ func (p gitHubClientProvider) CreateIssueComment(
 	if err != nil {
 		return platform.IssueEvent{}, err
 	}
+	if comment == nil {
+		return platform.IssueEvent{}, fmt.Errorf("provider returned no comment")
+	}
 	return platformgithub.NormalizeIssueCommentEvent(ref, number, comment), nil
 }
 
@@ -716,6 +725,9 @@ func (p gitHubClientProvider) EditIssueComment(
 	comment, err := p.client.EditIssueComment(ctx, ref.Owner, ref.Name, commentID, body)
 	if err != nil {
 		return platform.IssueEvent{}, err
+	}
+	if comment == nil {
+		return platform.IssueEvent{}, fmt.Errorf("provider returned no comment")
 	}
 	return platformgithub.NormalizeIssueCommentEvent(ref, 0, comment), nil
 }
@@ -733,7 +745,7 @@ func (p gitHubClientProvider) SetMergeRequestState(
 		return platform.MergeRequest{}, err
 	}
 	if ghPR == nil {
-		return platform.MergeRequest{}, nil
+		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
 	}
 	return platformgithub.NormalizePullRequest(ref, ghPR)
 }
@@ -749,7 +761,7 @@ func (p gitHubClientProvider) SetIssueState(
 		return platform.Issue{}, err
 	}
 	if ghIssue == nil {
-		return platform.Issue{}, nil
+		return platform.Issue{}, fmt.Errorf("provider returned no issue")
 	}
 	return platformgithub.NormalizeIssue(ref, ghIssue)
 }
@@ -767,6 +779,9 @@ func (p gitHubClientProvider) MergeMergeRequest(
 	)
 	if err != nil {
 		return platform.MergeResult{}, err
+	}
+	if result == nil {
+		return platform.MergeResult{}, fmt.Errorf("provider returned no merge result")
 	}
 	return platform.MergeResult{
 		Merged:  result.GetMerged(),
@@ -797,7 +812,7 @@ func (p gitHubClientProvider) MarkReadyForReview(
 		return platform.MergeRequest{}, err
 	}
 	if pr == nil {
-		return platform.MergeRequest{}, nil
+		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
 	}
 	return platformgithub.NormalizePullRequest(ref, pr)
 }
@@ -813,7 +828,7 @@ func (p gitHubClientProvider) CreateIssue(
 		return platform.Issue{}, err
 	}
 	if issue == nil {
-		return platform.Issue{}, nil
+		return platform.Issue{}, fmt.Errorf("provider returned no issue")
 	}
 	return platformgithub.NormalizeIssue(ref, issue)
 }
@@ -827,6 +842,9 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 	review, err := p.client.CreateReview(ctx, ref.Owner, ref.Name, number, "APPROVE", body)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
+	}
+	if review == nil {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
 	}
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
 }
@@ -845,7 +863,7 @@ func (p gitHubClientProvider) EditMergeRequestContent(
 		return platform.MergeRequest{}, err
 	}
 	if pr == nil {
-		return platform.MergeRequest{}, nil
+		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
 	}
 	return platformgithub.NormalizePullRequest(ref, pr)
 }
