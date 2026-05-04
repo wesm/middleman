@@ -453,12 +453,8 @@ func run(
 			issue:       gitLabIssue,
 			issueEvents: gitLabIssueEvents,
 			caps: platform.Capabilities{
-				ReadRepositories:  true,
-				ReadMergeRequests: true,
-				ReadIssues:        true,
-				ReadComments:      true,
-				ReadReleases:      true,
-				ReadCI:            true,
+				ReadIssues:   true,
+				ReadComments: true,
 			},
 		},
 	)

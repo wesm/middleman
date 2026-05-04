@@ -20,5 +20,20 @@ test.describe("provider capabilities", () => {
     await expect(
       detail.getByRole("button", { name: "Copy comment" }),
     ).toBeVisible();
+
+    const response = await page.request.get(
+      "/api/v1/repos/group/project/issues/11?platform_host=gitlab.example.com",
+    );
+    expect(response.ok()).toBeTruthy();
+    const body = await response.json();
+    expect(body.repo.capabilities).toMatchObject({
+      read_repositories: false,
+      read_merge_requests: false,
+      read_issues: true,
+      read_comments: true,
+      read_releases: false,
+      read_ci: false,
+      comment_mutation: false,
+    });
   });
 });
