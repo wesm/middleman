@@ -84,6 +84,8 @@ type mockGH struct {
 	listReleasesFn            func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listTagsFn                func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
 	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listPullRequestsPageFn    func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	listIssuesPageFn          func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	listCheckRunsForRefFn     func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	getCombinedStatusFn       func(context.Context, string, string, string) (*gh.CombinedStatus, error)
 	listOpenPRsErr            error
@@ -368,14 +370,20 @@ func (m *mockGH) EditIssue(
 }
 
 func (m *mockGH) ListPullRequestsPage(
-	_ context.Context, _, _, _ string, _ int,
+	ctx context.Context, owner, repo, state string, page int,
 ) ([]*gh.PullRequest, bool, error) {
+	if m.listPullRequestsPageFn != nil {
+		return m.listPullRequestsPageFn(ctx, owner, repo, state, page)
+	}
 	return nil, false, nil
 }
 
 func (m *mockGH) ListIssuesPage(
-	_ context.Context, _, _, _ string, _ int,
+	ctx context.Context, owner, repo, state string, page int,
 ) ([]*gh.Issue, bool, error) {
+	if m.listIssuesPageFn != nil {
+		return m.listIssuesPageFn(ctx, owner, repo, state, page)
+	}
 	return nil, false, nil
 }
 
@@ -4246,6 +4254,88 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
 	require.NoError(err)
 	require.Equal(http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2024, 6, 7, 12, 0, 0, 0, time.UTC)
+	mergedAt := now.Add(time.Hour)
+	number := 42
+	platformID := int64(42000)
+	title := "Backfilled merged PR"
+	state := "closed"
+	url := "https://github.com/acme/widget/pull/42"
+	author := "alice"
+	headRef := "feature"
+	headSHA := "abc123def456"
+	baseRef := "main"
+	baseSHA := "def456abc123"
+	mock := &mockGH{
+		listPullRequestsPageFn: func(_ context.Context, owner, repo, listState string, page int) ([]*gh.PullRequest, bool, error) {
+			require.Equal("acme", owner)
+			require.Equal("widget", repo)
+			require.Equal("closed", listState)
+			require.Equal(1, page)
+			return []*gh.PullRequest{{
+				ID:        &platformID,
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				ClosedAt:  &gh.Timestamp{Time: mergedAt},
+				MergedAt:  &gh.Timestamp{Time: mergedAt},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+					SHA: &baseSHA,
+				},
+			}}, false, nil
+		},
+	}
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	srv.syncer.RunOnce(ctx)
+
+	client := setupTestClient(t, srv)
+	filterState := "closed"
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &filterState})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+
+	apiPR := (*resp.JSON200)[0]
+	assert.Equal(int64(number), apiPR.Number)
+	assert.Equal(title, apiPR.Title)
+	assert.Equal("merged", apiPR.State)
+	require.NotNil(apiPR.MergedAt)
+	assert.True(apiPR.MergedAt.Equal(mergedAt))
 }
 
 func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {

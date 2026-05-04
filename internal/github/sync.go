@@ -4149,7 +4149,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	}
 
 	state := ghPR.GetState()
-	if ghPR.GetMerged() {
+	if pullRequestWasMerged(ghPR) {
 		state = "merged"
 	}
 
@@ -4201,7 +4201,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		headSHA := ghPR.GetHead().GetSHA()
 		baseSHA := ghPR.GetBase().GetSHA()
 
-		if ghPR.GetMerged() {
+		if pullRequestWasMerged(ghPR) {
 			if err := s.computeMergedMRDiffSHAs(ctx, repo, repoID, number, ghPR.GetMergeCommitSHA(), false); err != nil {
 				slog.Warn("compute merged PR diff SHAs failed",
 					"repo", repo.Owner+"/"+repo.Name,
