@@ -57,11 +57,12 @@ This split keeps the first release useful and testable without dragging every pl
 - Create migration `internal/db/migrations/000017_platform_repo_identity.down.sql`.
 - Modify `internal/config/config.go`: add explicit `platform`, `platform_host`, and platform token config while preserving `github_token_env` and old repo entries.
 - Modify `cmd/middleman/main.go`, `middleman.go`, and `cmd/e2e-server/main.go`: build a provider registry instead of `map[string]ghclient.Client`.
-- Modify `internal/server/repo_import_handlers.go`: accept platform/host in preview and bulk add requests.
+- Create or modify `internal/server/repo_ref.go`: parse and validate provider-aware repository references from query/body payloads.
+- Modify `internal/server/repo_import_handlers.go`: accept provider/host in preview and bulk add requests.
 - Modify `internal/server/settings_handlers.go`: expose configured repo statuses with platform and host.
-- Modify `internal/server/api_types.go` and `internal/server/huma_routes.go`: add platform/host fields to PR/MR detail responses and gate unsupported actions by capability.
+- Modify `internal/server/api_types.go` and `internal/server/huma_routes.go`: add provider/host fields, platform-aware repo-reference routes, stable error codes, and capability-gated actions.
 - Regenerate `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/*`, and `frontend/src/lib/api/generated/*` with `make api-generate`.
-- Modify `packages/ui/src/api/types.ts` and affected stores/components only where generated types require platform/host threading.
+- Modify `packages/ui/src/api/types.ts` and affected stores/components only where generated types require provider/host threading.
 - Modify `context/github-sync-invariants.md`: generalize identity rules to platform sync invariants and leave a GitHub-specific section for GraphQL-only behavior.
 - Add `context/platform-sync-invariants.md`: provider identity, capability, normalization, and test rules.
 - Add `docs/config/gitlab.md` or update `README.md`: GitLab config examples and supported/unsupported features.
@@ -129,7 +130,7 @@ Rules:
 
 ### Provider Interfaces
 
-Keep interfaces narrow enough that future providers can implement a useful subset.
+Keep the base provider interface to metadata and capabilities only. Feature support is discovered through optional interfaces so future providers can implement a useful subset without adding no-op methods or fake unsupported behavior.
 
 ```go
 package platform
@@ -148,6 +149,12 @@ type Capabilities struct {
 	ReadyForReview bool
 }
 
+type Provider interface {
+	Platform() Kind
+	Host() string
+	Capabilities() Capabilities
+}
+
 type RepositoryReader interface {
 	GetRepository(ctx context.Context, ref RepoRef) (Repository, error)
 	ListRepositories(ctx context.Context, owner string, opts RepositoryListOptions) ([]Repository, error)
@@ -164,18 +171,62 @@ type IssueReader interface {
 	GetIssue(ctx context.Context, ref RepoRef, number int) (Issue, error)
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
 }
+```
 
-type ProviderClient interface {
-	Platform() Kind
-	Host() string
-	Capabilities() Capabilities
-	RepositoryReader
-	MergeRequestReader
-	IssueReader
+The registry stores `Provider` values and exposes helpers such as `RepositoryReader(platform, host)`, `MergeRequestReader(platform, host)`, and `IssueReader(platform, host)` that return typed missing-capability errors when the provider does not implement the requested optional interface. GitHub can implement extra mutation interfaces. GitLab first implements read interfaces and advertises mutation capabilities as false.
+
+### API Repository Identity
+
+GitLab nested namespaces make the existing `/repos/{owner}/{name}` route family unsafe because `owner` can contain `/`. New platform-aware endpoints should follow GitLab's own convention: carry the full repository path as one URL-escaped parameter, where `group/subgroup/project` becomes `group%2Fsubgroup%2Fproject`. Handlers decode that value into `owner = "group/subgroup"` and `name = "project"` before looking up the repo.
+
+Rules:
+
+- Keep existing GitHub-compatible routes such as `/repos/{owner}/{name}/pulls/{number}` working for GitHub and GitHub Enterprise.
+- Add canonical platform-aware routes for every repo-scoped read, refresh, and mutation path before exposing GitLab rows. These routes use `repo_path` as one escaped path parameter:
+
+```text
+GET  /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/pull-requests/12
+POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/pull-requests/12/refresh
+POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/issues/7/refresh
+POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/pull-requests/12/actions
+```
+
+- Request-body routes may use the same escaped repo path or the structured repo ref shape when the action already has a JSON body:
+
+```json
+{
+  "repo": {
+    "provider": "gitlab",
+    "platform_host": "gitlab.com",
+    "repo_path": "group/subgroup/project"
+  },
+  "number": 12
 }
 ```
 
-GitHub can implement extra mutation interfaces. GitLab first implements the read interfaces and advertises mutation capabilities as false.
+- JSON request and response bodies use `provider` as the client-facing discriminator. Server internals can map `provider` to the existing `platform` storage field. New route path segments should also use `providers/{provider}` so generated clients expose `Provider` consistently.
+- Generated clients and frontend route refs must carry `provider`, `platform_host`, `repo_path`, and `number`; helper methods can split `repo_path` into `owner/name` only at DB and provider boundaries. For GitHub UI URLs, `provider` and default `github.com` host may remain omitted in the visible route only when the route helper can reconstruct the full repo ref.
+- Add e2e coverage for `group/subgroup/project` detail load and refresh through the escaped route shape before GitLab sync is considered complete.
+
+### Error Taxonomy
+
+Platform errors need stable machine-readable codes so the UI can distinguish unsupported actions from missing auth or permission problems.
+
+```go
+type PlatformErrorCode string
+
+const (
+	ErrCodeUnsupportedCapability PlatformErrorCode = "unsupported_capability"
+	ErrCodeProviderNotConfigured PlatformErrorCode = "provider_not_configured"
+	ErrCodeMissingToken          PlatformErrorCode = "missing_token"
+	ErrCodeInvalidRepoRef        PlatformErrorCode = "invalid_repo_ref"
+	ErrCodePermissionDenied      PlatformErrorCode = "permission_denied"
+	ErrCodeNotFound              PlatformErrorCode = "not_found"
+	ErrCodeRateLimited           PlatformErrorCode = "rate_limited"
+)
+```
+
+Server handlers should return these codes in JSON error details for platform-aware routes. GitHub legacy routes may keep their current text messages until they are migrated, but new GitLab paths must use the coded errors from the start.
 
 ### GitLab Mapping
 
@@ -197,6 +248,42 @@ Map GitLab fields into middleman rows as follows:
 - `head_pipeline.status` -> `ci_status` and one synthesized `db.CICheck` named `GitLab Pipeline`.
 - GitLab labels become `db.Label` rows. If GitLab returns only names for an endpoint, store color as empty and update richer label fields when the project labels endpoint is available.
 
+### GitLab CI Mapping
+
+Middleman stores one aggregate `ci_status` plus a JSON list of checks. GitLab starts with a single synthesized check for the MR head pipeline.
+
+| GitLab pipeline status | Middleman check status | Middleman conclusion | Aggregate `ci_status` |
+| --- | --- | --- | --- |
+| `created`, `waiting_for_resource`, `preparing`, `pending`, `running` | `in_progress` | empty | `pending` |
+| `success` | `completed` | `success` | `success` |
+| `failed` | `completed` | `failure` | `failure` |
+| `canceled`, `cancelled` | `completed` | `cancelled` | `failure` |
+| `skipped` | `completed` | `skipped` | `success` |
+| `manual`, `scheduled` | `queued` | empty | `pending` |
+| unknown non-empty status | `completed` | `neutral` | `neutral` |
+| missing pipeline | empty list | empty | empty |
+
+If the MR list response omits `head_pipeline`, detail sync should request the MR detail endpoint once before concluding CI is missing. If both omit pipeline data, leave `ci_status` and `ci_checks_json` empty rather than carrying stale data across a head SHA change.
+
+### Existing Row Backfill
+
+Migration `000017` must be safe for existing databases:
+
+- Existing rows keep `platform = 'github'` and their current `platform_host`.
+- `platform_repo_id`, `web_url`, `clone_url`, and `default_branch` default to empty strings in SQL so the migration is instant and reversible.
+- The first successful provider sync fills these fields from provider repository metadata.
+- For GitHub rows, a failed repository metadata fetch must not block PR/issue sync; it only leaves the new fields empty for that cycle.
+- For GitLab rows, exact project resolution must fill `platform_repo_id` before sync proceeds when the project is reachable.
+
+### Self-Hosted GitLab URLs
+
+GitLab host configuration is host-only in the first milestone:
+
+- `platform_host = "gitlab.example.com"` maps to API base URL `https://gitlab.example.com/api/v4`.
+- A host value with `https://` or a trailing slash is normalized to the hostname and rejected if it includes a non-root path.
+- GitLab installations under a subpath, such as `https://example.com/gitlab`, are explicitly unsupported in this milestone and should fail validation with `invalid_repo_ref`.
+- Custom CA and insecure TLS settings are out of scope. Users must rely on the host OS trust store.
+
 ## Implementation Tasks
 
 ### Task 1: Add Neutral Platform Types
@@ -205,11 +292,13 @@ Map GitLab fields into middleman rows as follows:
 - Create: `internal/platform/types.go`
 - Create: `internal/platform/client.go`
 - Create: `internal/platform/registry.go`
+- Create: `internal/platform/errors.go`
 - Test: `internal/platform/registry_test.go`
 
-- [ ] Write tests for registry lookup by `(platform, host)`, missing client errors, and capability lookup.
+- [ ] Write tests for registry lookup by `(platform, host)`, missing client errors, optional reader lookup, and capability lookup.
 - [ ] Add `Kind`, `RepoRef`, `Repository`, `MergeRequest`, `Issue`, `Label`, `MergeRequestEvent`, `IssueEvent`, `Release`, `Tag`, `CICheck`, and `Capabilities`.
-- [ ] Add narrow reader and optional mutation interfaces.
+- [ ] Add base `Provider` plus narrow reader and optional mutation interfaces; do not embed reader interfaces in `Provider`.
+- [ ] Add `PlatformErrorCode` constants and typed errors for unsupported capability, missing provider, missing token, invalid repo ref, permission denied, not found, and rate limited.
 - [ ] Run `go test ./internal/platform -shuffle=on`.
 - [ ] Commit: `feat: define provider-neutral platform contracts`.
 
@@ -235,6 +324,7 @@ CREATE INDEX IF NOT EXISTS idx_repos_platform_repo_id
 ```
 
 - [ ] Replace `UpsertRepo(ctx, host, owner, name)` with `UpsertRepo(ctx, identity db.RepoIdentity)`.
+- [ ] Add `UpdateRepoProviderMetadata(ctx, repoID, metadata)` for `platform_repo_id`, `web_url`, `clone_url`, and `default_branch`.
 - [ ] Keep a small compatibility helper for GitHub-heavy tests:
 
 ```go
@@ -244,7 +334,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 ```
 
 - [ ] Update queries to select and scan new repo fields.
-- [ ] Add tests that GitHub upserts still use `platform = 'github'`, GitLab upserts use `platform = 'gitlab'`, and the same host/owner/name on different platforms creates different rows.
+- [ ] Add migration tests proving existing rows keep `platform = 'github'`, new metadata fields default to empty strings, GitHub upserts still use `platform = 'github'`, GitLab upserts use `platform = 'gitlab'`, and the same host/owner/name on different platforms creates different rows.
+- [ ] Add query tests proving provider metadata can be filled after the initial upsert without changing the repo identity.
 - [ ] Run `go test ./internal/db -shuffle=on`.
 - [ ] Commit: `feat: persist provider-aware repository identity`.
 
@@ -260,7 +351,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Keep `GitHubToken()` and add `TokenForPlatformHost(platform, host, repoTokenEnv string)`.
 - [ ] Teach URL parsing to accept GitLab HTTP/SSH URLs, including nested namespace paths.
 - [ ] Reject ambiguous GitLab URLs with fewer than two path segments.
-- [ ] Add tests for old GitHub config, GitHub Enterprise config, GitLab env token config, nested GitLab namespace config, duplicate detection across platform/host, and token env conflicts scoped to `(platform, host)`.
+- [ ] Normalize `https://gitlab.example.com/` to `gitlab.example.com`; reject `https://example.com/gitlab` subpath installs with `invalid_repo_ref`.
+- [ ] Add tests for old GitHub config, GitHub Enterprise config, GitLab env token config, nested GitLab namespace config, self-hosted GitLab host normalization, subpath rejection, duplicate detection across platform/host, and token env conflicts scoped to `(platform, host)`.
 - [ ] Run `go test ./internal/config -shuffle=on`.
 - [ ] Commit: `feat: configure repositories by platform`.
 
@@ -279,7 +371,51 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Run `go test ./internal/github ./internal/platform/github -shuffle=on`.
 - [ ] Commit: `refactor: adapt GitHub data through platform models`.
 
-### Task 5: Convert Syncer To Provider Clients
+### Task 5: Add Platform-Aware Repo Routes
+
+**Files:**
+- Create: `internal/server/repo_ref.go`
+- Modify: `internal/server/huma_routes.go`
+- Modify: `internal/server/api_types.go`
+- Modify: `packages/ui/src/routes.ts`
+- Modify: `packages/ui/src/api/types.ts`
+- Test: `internal/server/api_test.go`
+- Test: `packages/ui/src/routes.test.ts`
+
+- [ ] Add `RepoRefInput`/`RepoRefResponse` API shapes with `provider`, `platform_host`, and `repo_path`.
+- [ ] Add parser tests for `repo_path = "owner/repo"` and `repo_path = "group/subgroup/project"`.
+- [ ] Add platform-aware routes using escaped `repo_path` as one route parameter:
+
+```text
+GET /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}
+GET /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}
+POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/refresh
+POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/refresh
+```
+
+- [ ] Keep existing GitHub routes as compatibility wrappers that build a full repo ref and call the same handler internals.
+- [ ] Return coded platform errors from new routes for invalid repo refs, missing provider clients, and unsupported capabilities.
+- [ ] Run `make api-generate` immediately after the route contract changes.
+- [ ] Run `go test ./internal/server -run 'Test.*RepoRef|Test.*Pull.*Route|Test.*Issue.*Route' -shuffle=on`.
+- [ ] Run frontend route/type tests that cover escaped nested GitLab repo paths.
+- [ ] Commit: `feat: add platform-aware repository routes`.
+
+### Task 6: Wire Syncer Registry Lookup
+
+**Files:**
+- Modify: `internal/github/sync.go`
+- Modify: `internal/github/repo_config_resolver.go`
+- Test: `internal/github/sync_test.go`
+- Test: `internal/github/repo_config_resolver_test.go`
+
+- [ ] Change `Syncer.clients` from `map[string]Client` to the platform registry while keeping all configured clients GitHub adapters.
+- [ ] Change syncer client lookup to request optional `RepositoryReader`, `MergeRequestReader`, and `IssueReader` interfaces as needed.
+- [ ] Keep public method behavior unchanged for existing GitHub callers.
+- [ ] Add tests for missing provider, missing optional reader, and duplicate owner/name on different platforms.
+- [ ] Run `go test ./internal/github -run 'Test.*Client|Test.*Resolve|Test.*Tracked' -shuffle=on`.
+- [ ] Commit: `refactor: resolve sync clients through platform registry`.
+
+### Task 7: Propagate Full RepoRef Through Sync Paths
 
 **Files:**
 - Modify: `internal/github/sync.go`
@@ -288,17 +424,28 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Test: `internal/github/sync_test.go`
 - Test: `internal/github/repo_config_resolver_test.go`
 
-- [ ] Change `Syncer.clients` from `map[string]Client` to a platform registry keyed by `(platform, host)`.
-- [ ] Change `RepoRef` to carry `Platform`, `Host`, `Owner`, `Name`, and `PlatformRepoID`.
-- [ ] Update `syncRepo`, `indexSyncRepo`, `SyncMR`, `SyncIssue`, detail queue, backfill, and watched MR paths to pass a full `RepoRef`.
+- [ ] Change `RepoRef` to carry `Platform`, `Host`, `Owner`, `Name`, `RepoPath`, and `PlatformRepoID`.
+- [ ] Update `syncRepo`, `indexSyncRepo`, `SyncMR`, `SyncIssue`, detail queue, backfill, and watched MR paths to pass a full `RepoRef` instead of reconstructing host/owner/name at call sites.
+- [ ] Add tests proving the same `owner/name/number` on GitHub and GitLab resolves to the intended platform row and does not cross-sync.
+- [ ] Run `go test ./internal/github -run 'Test.*Sync|Test.*Issue|Test.*MR' -shuffle=on`.
+- [ ] Commit: `refactor: thread full repository refs through sync`.
+
+### Task 8: Preserve GitHub Optimizations And Diff Behavior
+
+**Files:**
+- Modify: `internal/github/sync.go`
+- Modify: `internal/platform/client.go`
+- Test: `internal/github/sync_test.go`
+- Test: `internal/github/merged_diff_test.go`
+
 - [ ] Preserve GitHub GraphQL bulk fetch as a GitHub-only optimization behind an optional `BulkMergeRequestFetcher` interface.
 - [ ] Preserve ETag invalidation as an optional conditional-list capability. GitLab can no-op initially.
 - [ ] Use provider-supplied clone URLs for diff sync instead of formatting `https://host/owner/name.git`.
-- [ ] Add tests proving duplicate owner/name on GitHub and GitLab do not cross-sync, GitHub behavior is unchanged, and unsupported provider capabilities do not panic.
-- [ ] Run `go test ./internal/github -shuffle=on`.
-- [ ] Commit: `refactor: sync repositories through platform clients`.
+- [ ] Add tests proving GitHub GraphQL bulk fetch still runs when available, ETag invalidation still recovers failed GitHub list syncs, and diff clone URLs support GitLab nested namespace paths.
+- [ ] Run `go test ./internal/github -run 'Test.*GraphQL|Test.*ETag|Test.*Diff|Test.*Merged' -shuffle=on`.
+- [ ] Commit: `refactor: keep GitHub sync optimizations optional`.
 
-### Task 6: Add GitLab Client And Normalization
+### Task 9: Add GitLab Client And Normalization
 
 **Files:**
 - Create: `internal/platform/gitlab/client.go`
@@ -315,11 +462,12 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Implement MR list/detail pagination with project `id` when known and encoded `path_with_namespace` when not.
 - [ ] Implement issues, comments, commits, releases, tags, and basic pipeline status reads.
 - [ ] Normalize GitLab `iid` as middleman `number`; never use the global MR id as `number`.
-- [ ] Add httptest fixtures for paginated GitLab responses and self-hosted base URL construction.
+- [ ] Implement the GitLab CI mapping table exactly: pending/running statuses become `pending`, success and skipped become `success`, failed/canceled become `failure`, manual/scheduled become `pending`, unknown statuses become `neutral`, and missing pipelines leave CI empty.
+- [ ] Add httptest fixtures for paginated GitLab responses, pipeline status mapping, missing pipeline fallback, and self-hosted base URL construction.
 - [ ] Run `go test ./internal/platform/gitlab -shuffle=on`.
 - [ ] Commit: `feat: add GitLab read client`.
 
-### Task 7: Wire Runtime Client Construction
+### Task 10: Wire Runtime Client Construction
 
 **Files:**
 - Modify: `cmd/middleman/main.go`
@@ -337,7 +485,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Run `go test ./cmd/middleman . -shuffle=on`.
 - [ ] Commit: `feat: wire platform registry at startup`.
 
-### Task 8: Platform-Aware Repository Import
+### Task 11: Provider-Aware Repository Import
 
 **Files:**
 - Modify: `internal/server/repo_import_handlers.go`
@@ -350,23 +498,24 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 
 ```json
 {
-  "platform": "gitlab",
+  "provider": "gitlab",
   "platform_host": "gitlab.com",
   "owner": "my-group/subgroup",
   "pattern": "service-*"
 }
 ```
 
-- [ ] Default omitted `platform` to `github` and omitted `platform_host` to the platform default.
-- [ ] Return platform and host on preview rows.
-- [ ] Update bulk add request rows to include platform and host.
+- [ ] Default omitted `provider` to `github` and omitted `platform_host` to the provider default.
+- [ ] Return provider and host on preview rows.
+- [ ] Update bulk add request rows to include provider, host, and `repo_path`.
 - [ ] Validate exact rows through the matching provider registry client.
 - [ ] Keep old GitHub-only requests working.
 - [ ] Add full-stack e2e coverage using a fake GitLab API server and real SQLite: preview GitLab repos, add one exact repo, trigger syncer tracked repo update.
+- [ ] Run `make api-generate` immediately after changing preview or bulk request/response contracts.
 - [ ] Run `go test ./internal/server -run 'Test.*Repo.*' -shuffle=on`.
 - [ ] Commit: `feat: import repositories from configured platforms`.
 
-### Task 9: Gate Provider-Specific Actions
+### Task 12: Gate Provider-Specific Actions
 
 **Files:**
 - Modify: `internal/server/huma_routes.go`
@@ -377,7 +526,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Test: affected frontend component tests
 
 - [ ] Add capabilities to repository or item detail responses.
-- [ ] Return `409 Conflict` or `501 Not Implemented` for mutation routes when the provider lacks the capability, with a stable machine-readable error code.
+- [ ] Return `409 Conflict` or `501 Not Implemented` for mutation routes when the provider lacks the capability, with `unsupported_capability`.
+- [ ] Return `provider_not_configured`, `missing_token`, `invalid_repo_ref`, `permission_denied`, `not_found`, and `rate_limited` from the new platform-aware route family where applicable.
 - [ ] Hide or disable unsupported action buttons in the frontend for GitLab rows.
 - [ ] Keep GitHub action behavior unchanged.
 - [ ] Run `make api-generate`.
@@ -385,7 +535,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Run `bun test` in affected frontend/package workspaces according to existing package scripts.
 - [ ] Commit: `feat: expose platform action capabilities`.
 
-### Task 10: GitLab Sync E2E
+### Task 13: GitLab Sync E2E
 
 **Files:**
 - Create or modify: `internal/server/gitlab_sync_e2e_test.go`
@@ -398,11 +548,12 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Assert repo row has `platform = 'gitlab'`, GitLab host, namespace path, project id, web URL, clone URL, and default branch.
 - [ ] Assert MR row has `number = iid`, `platform_id = id`, draft/state/branches/labels/CI status populated.
 - [ ] Assert issue row and comments/events are populated.
+- [ ] Assert nested namespace detail and refresh calls work through `/repos/group%2Fsubgroup%2Fproject/...` style platform-aware routes.
 - [ ] Assert GitHub rows remain absent.
 - [ ] Run `go test ./internal/server -run TestGitLabSync -shuffle=on`.
 - [ ] Commit: `test: cover GitLab repository sync end to end`.
 
-### Task 11: Documentation And Invariants
+### Task 14: Documentation And Invariants
 
 **Files:**
 - Create: `context/platform-sync-invariants.md`
@@ -411,7 +562,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Modify: `config.example.toml`
 
 - [ ] Document identity as `(platform, platform_host, owner, name)`.
-- [ ] Document GitLab nested namespace handling.
+- [ ] Document GitLab nested namespace handling and escaped `repo_path` route conventions.
 - [ ] Document supported GitLab features and unsupported mutation actions.
 - [ ] Document token env configuration for GitLab and self-hosted GitLab.
 - [ ] Run `go test ./... -shuffle=on`.
@@ -434,7 +585,7 @@ Do not run `npm` commands; use Bun for frontend work.
 
 ## Risk Notes
 
-- GitLab nested namespaces are the main identity wrinkle. The plan stores the full namespace in `owner`, but API routes that use `/repos/{owner}/{name}` cannot safely represent owners containing `/`; routes and generated clients must thread platform/host and should move toward query/body repo refs for detail actions.
+- GitLab nested namespaces are the main identity wrinkle. The plan stores the full namespace in `owner`; new routes must carry a single escaped `repo_path` parameter and generated JSON types must thread `provider`, `platform_host`, and `repo_path` everywhere they address a repo-scoped item.
 - GitHub GraphQL bulk sync should stay GitHub-specific. Trying to model GitLab through the GitHub GraphQL bulk fetcher will make the abstraction brittle.
 - Mutation parity is intentionally not part of the first GitLab milestone. Capability flags make this visible and prevent GitLab rows from showing buttons that cannot work.
 - Rate limits are not identical across providers. The DB can keep `api_type`, but provider clients should name buckets as `rest`, `graphql`, or `gitlab-rest` as needed.
