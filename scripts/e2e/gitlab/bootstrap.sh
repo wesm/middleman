@@ -30,7 +30,7 @@ def request(method, path, token=None, data=None, form=None, expected=(200, 201))
     headers = {}
     body = None
     if token:
-        headers["PRIVATE-TOKEN"] = token
+        headers["Authorization"] = f"Bearer {token}"
     if data is not None:
         body = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
@@ -59,11 +59,19 @@ def wait_for_gitlab():
     deadline = time.monotonic() + int(os.environ.get("GITLAB_READY_TIMEOUT_SECONDS", "1200"))
     while time.monotonic() < deadline:
         try:
-            request("GET", "/version")
-            return
+            req = urllib.request.Request(f"{base_url}/users/sign_in", method="HEAD")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                if resp.status == 200 and resp.headers.get("X-Gitlab-Meta"):
+                    return
+                raise RuntimeError(f"unexpected readiness response {resp.status}")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 200 and exc.headers.get("X-Gitlab-Meta"):
+                return
         except Exception:
             time.sleep(5)
-    raise RuntimeError(f"GitLab API did not become ready at {api_url}")
+            continue
+        time.sleep(5)
+    raise RuntimeError(f"GitLab did not become ready at {base_url}")
 
 
 def root_token():

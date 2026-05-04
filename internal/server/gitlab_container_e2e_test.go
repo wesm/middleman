@@ -66,7 +66,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 					"puma['worker_processes'] = 0\n" +
 					"sidekiq['concurrency'] = 5\n",
 			},
-			WaitingFor: wait.ForHTTP("/api/v4/version").
+			WaitingFor: wait.ForHTTP("/users/sign_in").
 				WithPort("80/tcp").
 				WithStartupTimeout(20 * time.Minute).
 				WithStatusCodeMatcher(func(status int) bool {

@@ -8,7 +8,7 @@ Run the Go e2e test:
 MIDDLEMAN_GITLAB_CONTAINER_E2E=1 make test-gitlab-container
 ```
 
-The test starts `gitlab/gitlab-ce:18.9.5-ce.0` through testcontainers, waits for the API, runs `bootstrap.sh`, and syncs the seeded project into a real SQLite database. Override the image with `MIDDLEMAN_GITLAB_IMAGE` when checking a different GitLab release.
+The test starts `gitlab/gitlab-ce:18.9.5-ce.0` through testcontainers, waits for GitLab Rails to serve the sign-in page, runs `bootstrap.sh`, and syncs the seeded project into a real SQLite database. Override the image with `MIDDLEMAN_GITLAB_IMAGE` when checking a different GitLab release.
 
 The test expects a working Docker runtime with Ryuk enabled. CI jobs that run this target must provide Docker access to the test process. Only set `TESTCONTAINERS_HOST_OVERRIDE` when the Go test itself runs inside another container and mapped ports are reachable through a non-default host.
 

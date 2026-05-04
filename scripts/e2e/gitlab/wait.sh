@@ -8,7 +8,7 @@ TIMEOUT_SECONDS="${GITLAB_READY_TIMEOUT_SECONDS:-1200}"
 DEADLINE=$((SECONDS + TIMEOUT_SECONDS))
 
 while [ "$SECONDS" -lt "$DEADLINE" ]; do
-  if curl -fsS "$GITLAB_URL/api/v4/version" >/dev/null 2>&1; then
+  if curl -fsSI "$GITLAB_URL/users/sign_in" 2>/dev/null | grep -qi '^X-Gitlab-Meta:'; then
     printf 'GitLab ready at %s\n' "$GITLAB_URL"
     exit 0
   fi
