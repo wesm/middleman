@@ -61,7 +61,7 @@
       </button>
     </div>
   </div>
-  <DiffToolbar />
+  <DiffToolbar compact />
   <div class="workspace-diff-layout">
     <aside class="workspace-diff-sidebar">
       <DiffSidebar showCommits={false} {resetKey} />
