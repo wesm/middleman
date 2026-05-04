@@ -2313,10 +2313,16 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	)
 	require.NoError(err)
 	require.Equal([]ghclient.RepoRef{{
-		Platform:     platform.KindGitLab,
-		Owner:        "group/subgroup",
-		Name:         "project",
-		PlatformHost: "gitlab.example.com",
+		Platform:           platform.KindGitLab,
+		Owner:              "group/subgroup",
+		Name:               "project",
+		PlatformHost:       "gitlab.example.com",
+		RepoPath:           "group/subgroup/project",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/subgroup/project",
+		CloneURL:           "https://gitlab.example.com/group/subgroup/project.git",
+		DefaultBranch:      "main",
 	}}, repos)
 
 	syncer := ghclient.NewSyncerWithRegistry(

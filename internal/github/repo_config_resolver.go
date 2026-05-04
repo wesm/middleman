@@ -29,13 +29,29 @@ func canonicalRepoHost(host string) string {
 }
 
 func canonicalRepoRef(repo RepoRef) RepoRef {
+	kind := repoPlatform(repo)
 	out := RepoRef{
-		Owner:        canonicalRepoOwner(repo.Owner),
-		Name:         canonicalRepoName(repo.Name),
-		PlatformHost: canonicalRepoHost(repo.PlatformHost),
+		Owner:              strings.TrimSpace(repo.Owner),
+		Name:               strings.TrimSpace(repo.Name),
+		PlatformHost:       canonicalRepoHost(repo.PlatformHost),
+		RepoPath:           strings.TrimSpace(repo.RepoPath),
+		PlatformRepoID:     repo.PlatformRepoID,
+		PlatformExternalID: strings.TrimSpace(repo.PlatformExternalID),
+		WebURL:             strings.TrimSpace(repo.WebURL),
+		CloneURL:           strings.TrimSpace(repo.CloneURL),
+		DefaultBranch:      strings.TrimSpace(repo.DefaultBranch),
 	}
-	if kind := repoPlatform(repo); kind != platform.KindGitHub {
+	if kind == platform.KindGitHub {
+		out.Owner = canonicalRepoOwner(out.Owner)
+		out.Name = canonicalRepoName(out.Name)
+		if out.RepoPath != "" {
+			out.RepoPath = canonicalRepoName(out.RepoPath)
+		}
+	} else {
 		out.Platform = kind
+	}
+	if out.RepoPath == "" {
+		out.RepoPath = out.Owner + "/" + out.Name
 	}
 	return out
 }
@@ -264,19 +280,42 @@ func repoRefFromRepository(
 		name = raw.Name
 	}
 	ref := RepoRef{
-		Owner:        canonicalRepoOwner(owner),
-		Name:         canonicalRepoName(name),
-		PlatformHost: canonicalRepoHost(host),
+		Owner:              strings.TrimSpace(owner),
+		Name:               strings.TrimSpace(name),
+		PlatformHost:       canonicalRepoHost(host),
+		RepoPath:           strings.TrimSpace(repo.Ref.RepoPath),
+		PlatformRepoID:     repo.PlatformID,
+		PlatformExternalID: repo.PlatformExternalID,
+		WebURL:             repo.WebURL,
+		CloneURL:           repo.CloneURL,
+		DefaultBranch:      repo.DefaultBranch,
+	}
+	if ref.PlatformRepoID == 0 {
+		ref.PlatformRepoID = repo.Ref.PlatformID
+	}
+	if ref.PlatformExternalID == "" {
+		ref.PlatformExternalID = repo.Ref.PlatformExternalID
+	}
+	if ref.WebURL == "" {
+		ref.WebURL = repo.Ref.WebURL
+	}
+	if ref.CloneURL == "" {
+		ref.CloneURL = repo.Ref.CloneURL
+	}
+	if ref.DefaultBranch == "" {
+		ref.DefaultBranch = repo.Ref.DefaultBranch
 	}
 	if kind != platform.KindGitHub {
 		ref.Platform = kind
+	} else {
+		ref.Owner = canonicalRepoOwner(ref.Owner)
+		ref.Name = canonicalRepoName(ref.Name)
+		ref.RepoPath = canonicalRepoName(ref.RepoPath)
 	}
-	return RepoRef{
-		Platform:     ref.Platform,
-		Owner:        ref.Owner,
-		Name:         ref.Name,
-		PlatformHost: ref.PlatformHost,
+	if ref.RepoPath == "" {
+		ref.RepoPath = ref.Owner + "/" + ref.Name
 	}
+	return ref
 }
 
 func appendExpandedRepo(

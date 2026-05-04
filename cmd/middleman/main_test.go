@@ -53,6 +53,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		Owner:        "roborev-dev",
 		Name:         "middleman",
 		PlatformHost: "github.com",
+		RepoPath:     "roborev-dev/middleman",
 	}}, repos)
 }
 
@@ -129,6 +130,7 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 		PlatformHost: "gitlab.com",
 		Owner:        "group/subgroup",
 		Name:         "project",
+		RepoPath:     "group/subgroup/project",
 	}}, repos)
 }
 

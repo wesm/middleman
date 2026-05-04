@@ -2486,6 +2486,35 @@ func TestRepoFailKeyIncludesProvider(t *testing.T) {
 	assert.Equal("gitlab/code.example.com/acme/widget", repoFailKey(gitlabRepo))
 }
 
+func TestPlatformRepoRefPreservesFullProviderRef(t *testing.T) {
+	assert := Assert.New(t)
+	repo := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "Group/SubGroup",
+		Name:               "Project",
+		RepoPath:           "Group/SubGroup/Project",
+		PlatformRepoID:     42,
+		PlatformExternalID: "gid://gitlab/Project/42",
+		WebURL:             "https://gitlab.example.com/Group/SubGroup/Project",
+		CloneURL:           "https://gitlab.example.com/Group/SubGroup/Project.git",
+		DefaultBranch:      "main",
+	}
+
+	ref := platformRepoRef(repo)
+
+	assert.Equal(platform.KindGitLab, ref.Platform)
+	assert.Equal("gitlab.example.com", ref.Host)
+	assert.Equal("Group/SubGroup", ref.Owner)
+	assert.Equal("Project", ref.Name)
+	assert.Equal("Group/SubGroup/Project", ref.RepoPath)
+	assert.Equal(int64(42), ref.PlatformID)
+	assert.Equal("gid://gitlab/Project/42", ref.PlatformExternalID)
+	assert.Equal("https://gitlab.example.com/Group/SubGroup/Project", ref.WebURL)
+	assert.Equal("https://gitlab.example.com/Group/SubGroup/Project.git", ref.CloneURL)
+	assert.Equal("main", ref.DefaultBranch)
+}
+
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -4051,6 +4080,68 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 	require.NotNil(mr)
 	assert.Equal("fresh gitlab MR", mr.Title)
 	assert.NotNil(mr.DetailFetchedAt)
+}
+
+func TestDetailQueueWatchedKeyIncludesProviderIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	host := "code.example.com"
+	now := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
+	githubRepo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: host,
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	gitlabRepo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: host,
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	githubRepoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(githubRepo)))
+	require.NoError(err)
+	gitlabRepoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(gitlabRepo)))
+	require.NoError(err)
+	for _, repoID := range []int64{githubRepoID, gitlabRepoID} {
+		_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:         repoID,
+			PlatformID:     repoID * 100,
+			Number:         7,
+			Title:          "same number",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	syncer := NewSyncer(nil, d, nil, []RepoRef{
+		githubRepo,
+		gitlabRepo,
+	}, time.Minute, nil, nil)
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Platform:     platform.KindGitLab,
+		PlatformHost: host,
+		Owner:        "acme",
+		Name:         "widget",
+		Number:       7,
+	}})
+
+	items := syncer.buildDetailQueueItems(ctx)
+
+	require.Len(items, 2)
+	watchedByPlatform := map[platform.Kind]bool{}
+	for _, item := range items {
+		watchedByPlatform[item.Platform] = item.Watched
+	}
+	assert.False(watchedByPlatform[platform.KindGitHub])
+	assert.True(watchedByPlatform[platform.KindGitLab])
 }
 
 func TestDetailDrainRespectsBudget(t *testing.T) {

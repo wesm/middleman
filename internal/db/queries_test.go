@@ -1880,6 +1880,70 @@ func TestGetPRIDByRepoAndNumber(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestGetDiffSHAsByRepoIDScopesDuplicateProviderRepos(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	githubID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	gitlabID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	now := time.Now().UTC()
+	_, err = d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:          githubID,
+		PlatformID:      1001,
+		Number:          7,
+		Title:           "github",
+		State:           "merged",
+		PlatformHeadSHA: "github-head",
+		PlatformBaseSHA: "github-base",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:          gitlabID,
+		PlatformID:      2001,
+		Number:          7,
+		Title:           "gitlab",
+		State:           "merged",
+		PlatformHeadSHA: "gitlab-head",
+		PlatformBaseSHA: "gitlab-base",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateDiffSHAs(
+		ctx, githubID, 7,
+		"github-diff-head", "github-diff-base", "github-merge-base",
+	))
+
+	gitlabSHAs, err := d.GetDiffSHAsByRepoID(ctx, gitlabID, 7)
+	require.NoError(err)
+	require.NotNil(gitlabSHAs)
+	assert.Equal("gitlab-head", gitlabSHAs.PlatformHeadSHA)
+	assert.Empty(gitlabSHAs.DiffHeadSHA)
+
+	githubSHAs, err := d.GetDiffSHAsByRepoID(ctx, githubID, 7)
+	require.NoError(err)
+	require.NotNil(githubSHAs)
+	assert.Equal("github-head", githubSHAs.PlatformHeadSHA)
+	assert.Equal("github-diff-head", githubSHAs.DiffHeadSHA)
+}
+
 func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 	d := openTestDB(t)
 

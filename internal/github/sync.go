@@ -92,12 +92,18 @@ func (e *DiffSyncError) UserMessage() string {
 	}
 }
 
-// RepoRef identifies a GitHub repository.
+// RepoRef identifies a repository on a configured provider.
 type RepoRef struct {
-	Platform     platform.Kind
-	Owner        string
-	Name         string
-	PlatformHost string // "github.com" or GHE hostname
+	Platform           platform.Kind
+	Owner              string
+	Name               string
+	PlatformHost       string
+	RepoPath           string
+	PlatformRepoID     int64
+	PlatformExternalID string
+	WebURL             string
+	CloneURL           string
+	DefaultBranch      string
 }
 
 // RepoSyncResult holds the outcome of syncing a single repo.
@@ -114,7 +120,8 @@ type WatchedMR struct {
 	Owner        string
 	Name         string
 	Number       int
-	PlatformHost string // "github.com" or GHE hostname
+	Platform     platform.Kind
+	PlatformHost string
 }
 
 // defaultParallelism is the worker pool size used by RunOnce when
@@ -787,12 +794,21 @@ func repoHost(repo RepoRef) string {
 }
 
 func platformRepoRef(repo RepoRef) platform.RepoRef {
+	repoPath := repo.RepoPath
+	if repoPath == "" {
+		repoPath = repo.Owner + "/" + repo.Name
+	}
 	return platform.RepoRef{
-		Platform: repoPlatform(repo),
-		Host:     repoHost(repo),
-		Owner:    repo.Owner,
-		Name:     repo.Name,
-		RepoPath: repo.Owner + "/" + repo.Name,
+		Platform:           repoPlatform(repo),
+		Host:               repoHost(repo),
+		Owner:              repo.Owner,
+		Name:               repo.Name,
+		RepoPath:           repoPath,
+		PlatformID:         repo.PlatformRepoID,
+		PlatformExternalID: repo.PlatformExternalID,
+		WebURL:             repo.WebURL,
+		CloneURL:           repo.CloneURL,
+		DefaultBranch:      repo.DefaultBranch,
 	}
 }
 
@@ -1173,7 +1189,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		if err := s.syncMRWithHost(ctx, mr.Owner, mr.Name, mr.Number, host); err != nil {
+		if err := s.syncMRWithWatchedRef(ctx, mr); err != nil {
 			slog.Warn("fast-sync watched MR failed",
 				"owner", mr.Owner,
 				"name", mr.Name,
@@ -1186,6 +1202,19 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	s.advanceNextSync(
 		eligibleHosts, s.nextWatchSyncAfter, watchInt,
 	)
+}
+
+func watchedMRPlatform(mr WatchedMR) platform.Kind {
+	if mr.Platform != "" {
+		return mr.Platform
+	}
+	return platform.KindGitHub
+}
+
+func watchedMRKey(mr WatchedMR) string {
+	return detailRepoKey(
+		watchedMRPlatform(mr), mr.PlatformHost, mr.Owner, mr.Name,
+	) + fmt.Sprintf("#%d", mr.Number)
 }
 
 // stopGracePeriod bounds how long Stop will wait for in-flight work
@@ -4254,10 +4283,7 @@ func (s *Syncer) buildDetailQueueItems(
 	s.watchMu.Lock()
 	watched := make(map[string]bool, len(s.watchedMRs))
 	for _, w := range s.watchedMRs {
-		key := fmt.Sprintf(
-			"%s/%s#%d", w.Owner, w.Name, w.Number,
-		)
-		watched[key] = true
+		watched[watchedMRKey(w)] = true
 	}
 	s.watchMu.Unlock()
 
@@ -4282,9 +4308,10 @@ func (s *Syncer) buildDetailQueueItems(
 		if !trackedRepos[repoKey] {
 			continue
 		}
-		watchKey := fmt.Sprintf(
-			"%s/%s#%d", repo.Owner, repo.Name, pr.Number,
-		)
+		watchKey := detailRepoKey(
+			platform.Kind(repo.Platform), repo.PlatformHost,
+			repo.Owner, repo.Name,
+		) + fmt.Sprintf("#%d", pr.Number)
 		items = append(items, QueueItem{
 			Type:            QueueItemPR,
 			Platform:        platform.Kind(repo.Platform),
@@ -4633,7 +4660,34 @@ func (s *Syncer) syncMRWithHost(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
+	return s.syncMRForRepo(ctx, repo, number)
+}
 
+func (s *Syncer) syncMRWithWatchedRef(
+	ctx context.Context,
+	mr WatchedMR,
+) error {
+	kind := watchedMRPlatform(mr)
+	repo, ok := s.trackedRepoByIdentity(
+		kind, mr.Owner, mr.Name, mr.PlatformHost,
+	)
+	if !ok {
+		host := repoHost(RepoRef{Platform: kind, PlatformHost: mr.PlatformHost})
+		return fmt.Errorf(
+			"repo %s/%s on %s/%s is not tracked",
+			mr.Owner, mr.Name, kind, host,
+		)
+	}
+	return s.syncMRForRepo(ctx, repo, mr.Number)
+}
+
+func (s *Syncer) syncMRForRepo(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+) error {
+	owner := repo.Owner
+	name := repo.Name
 	mrReader, err := s.mergeRequestReaderFor(repo)
 	if err != nil {
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
@@ -5103,7 +5157,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	}
 
 	if !force {
-		existing, err := s.db.GetDiffSHAs(ctx, repo.Owner, repo.Name, number)
+		existing, err := s.db.GetDiffSHAsByRepoID(ctx, repoID, number)
 		if err != nil {
 			return &DiffSyncError{
 				Code: DiffSyncCodeInternal,

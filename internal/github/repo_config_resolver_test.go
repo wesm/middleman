@@ -48,6 +48,7 @@ func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widgets-api",
 		PlatformHost: "github.com",
+		RepoPath:     "acme/widgets-api",
 	}}, result.Expanded)
 }
 
@@ -90,8 +91,8 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 
 	assert.Len(result.Expanded, 2)
 	assert.ElementsMatch([]RepoRef{
-		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
-		{Owner: "acme", Name: "widgets-api", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widgets", PlatformHost: "github.com", RepoPath: "acme/widgets"},
+		{Owner: "acme", Name: "widgets-api", PlatformHost: "github.com", RepoPath: "acme/widgets-api"},
 	}, result.Expanded)
 }
 
@@ -131,6 +132,7 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widgets",
 		PlatformHost: "github.com",
+		RepoPath:     "acme/widgets",
 	}}, result.Expanded)
 }
 
@@ -158,6 +160,7 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 		Owner:        "org",
 		Name:         "foo",
 		PlatformHost: "github.com",
+		RepoPath:     "org/foo",
 	}}, result.Expanded)
 }
 
@@ -210,6 +213,7 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 		Owner:        "acme",
 		Name:         "widget-api",
 		PlatformHost: "github.com",
+		RepoPath:     "acme/widget-api",
 	}}, result.Expanded)
 }
 
@@ -298,12 +302,14 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 			PlatformHost: "code.example.com",
 			Owner:        "acme",
 			Name:         "widget",
+			RepoPath:     "acme/widget",
 		},
 		{
 			Platform:     platform.KindGitLab,
 			PlatformHost: "code.example.com",
 			Owner:        "acme",
 			Name:         "widget",
+			RepoPath:     "acme/widget",
 		},
 	}, result.Expanded)
 }
@@ -412,6 +418,7 @@ func TestResolveConfiguredReposWithRegistryUsesNonGitHubProvider(t *testing.T) {
 		PlatformHost: "gitlab.com",
 		Owner:        "acme/subgroup",
 		Name:         "widget",
+		RepoPath:     "acme/subgroup/widget",
 	}}, result.Expanded)
 }
 

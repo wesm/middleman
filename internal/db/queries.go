@@ -2119,15 +2119,29 @@ func (s *DiffSHAs) Stale() bool {
 // GetDiffSHAs returns the diff-related SHAs for a merge request.
 func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
 	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+	return d.getDiffSHAs(
+		ctx,
+		`JOIN middleman_repos r ON r.id = p.repo_id
+		 WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
+		owner, name, number,
+	)
+}
+
+// GetDiffSHAsByRepoID returns the diff-related SHAs for a merge request
+// scoped to a specific repository row.
+func (d *DB) GetDiffSHAsByRepoID(ctx context.Context, repoID int64, number int) (*DiffSHAs, error) {
+	return d.getDiffSHAs(ctx, `WHERE p.repo_id = ? AND p.number = ?`, repoID, number)
+}
+
+func (d *DB) getDiffSHAs(ctx context.Context, where string, args ...any) (*DiffSHAs, error) {
 	var s DiffSHAs
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.state
 		FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
-		owner, name, number,
+		`+where,
+		args...,
 	).Scan(&s.PlatformHeadSHA, &s.PlatformBaseSHA,
 		&s.DiffHeadSHA, &s.DiffBaseSHA, &s.MergeBaseSHA,
 		&s.State)
