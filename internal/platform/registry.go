@@ -132,3 +132,102 @@ func (r *Registry) CIReader(kind Kind, host string) (CIReader, error) {
 	}
 	return reader, nil
 }
+
+func (r *Registry) CommentMutator(kind Kind, host string) (CommentMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(CommentMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "comment_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) StateMutator(kind Kind, host string) (StateMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(StateMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "state_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) MergeMutator(kind Kind, host string) (MergeMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(MergeMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "merge_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) WorkflowApprovalMutator(kind Kind, host string) (WorkflowApprovalMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(WorkflowApprovalMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "workflow_approval")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) ReadyForReviewMutator(kind Kind, host string) (ReadyForReviewMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(ReadyForReviewMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "ready_for_review")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) IssueMutator(kind Kind, host string) (IssueMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(IssueMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "issue_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) ReviewMutator(kind Kind, host string) (ReviewMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(ReviewMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "review_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) MergeRequestContentMutator(
+	kind Kind,
+	host string,
+) (MergeRequestContentMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(MergeRequestContentMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "state_mutation")
+	}
+	return mutator, nil
+}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	platformpkg "github.com/wesm/middleman/internal/platform"
 )
 
 const (
@@ -27,8 +28,7 @@ const (
 	defaultBasePath          = "/"
 	defaultSyncBudgetPerHour = 500
 	defaultPlatform          = "github"
-	defaultPlatformHost      = "github.com"
-	defaultGitLabHost        = "gitlab.com"
+	defaultPlatformHost      = platformpkg.DefaultGitHubHost
 )
 
 type Repo struct {
@@ -58,12 +58,10 @@ func (r Repo) HasNameGlob() bool {
 // defaulting to the provider's public host when empty.
 func (r Repo) PlatformHostOrDefault() string {
 	if r.PlatformHost == "" {
-		switch r.PlatformOrDefault() {
-		case "gitlab":
-			return defaultGitLabHost
-		default:
-			return defaultPlatformHost
+		if host, ok := platformpkg.DefaultHost(platformpkg.Kind(r.PlatformOrDefault())); ok {
+			return host
 		}
+		return defaultPlatformHost
 	}
 	return r.PlatformHost
 }
@@ -118,15 +116,14 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 
 	r.RepoPath = cleanPath(strings.TrimSpace(r.RepoPath))
 	if r.RepoPath != "" && (strings.TrimSpace(r.Owner) == "" || strings.TrimSpace(r.Name) == "") {
-		switch r.Platform {
-		case "gitlab":
+		if platformpkg.AllowsNestedOwner(platformpkg.Kind(r.Platform)) {
 			owner, name, err := splitGitLabPath("repo_path", r.RepoPath)
 			if err != nil {
 				return err
 			}
 			r.Owner = owner
 			r.Name = name
-		default:
+		} else {
 			owner, name, err := splitGitHubPath("repo_path", r.RepoPath)
 			if err != nil {
 				return err
@@ -139,7 +136,7 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
-	if r.Platform == defaultPlatform {
+	if platformpkg.LowercaseRepoNames(platformpkg.Kind(r.Platform)) {
 		r.Owner = strings.ToLower(r.Owner)
 		r.Name = strings.ToLower(r.Name)
 		if r.RepoPath != "" {
@@ -221,19 +218,7 @@ func parseRepoRef(raw, configuredPlatform string) (parsedRepoRef, error) {
 	}
 
 	path = cleanPath(path)
-	switch refPlatform {
-	case "github":
-		owner, name, err := splitGitHubPath(raw, path)
-		if err != nil {
-			return parsedRepoRef{}, err
-		}
-		return parsedRepoRef{
-			platform: refPlatform,
-			host:     normalizePublicHost(host),
-			owner:    owner,
-			name:     name,
-		}, nil
-	case "gitlab":
+	if platformpkg.AllowsNestedOwner(platformpkg.Kind(refPlatform)) {
 		owner, name, err := splitGitLabPath(raw, path)
 		if err != nil {
 			return parsedRepoRef{}, err
@@ -244,8 +229,18 @@ func parseRepoRef(raw, configuredPlatform string) (parsedRepoRef, error) {
 			owner:    owner,
 			name:     name,
 		}, nil
-	default:
-		return parsedRepoRef{}, fmt.Errorf("unsupported platform %q", refPlatform)
+	}
+	{
+		owner, name, err := splitGitHubPath(raw, path)
+		if err != nil {
+			return parsedRepoRef{}, err
+		}
+		return parsedRepoRef{
+			platform: refPlatform,
+			host:     normalizePublicHost(host),
+			owner:    owner,
+			name:     name,
+		}, nil
 	}
 }
 
@@ -285,17 +280,16 @@ func stripGitLabWebUISuffix(parts []string) []string {
 func platformForRepoRefHost(host, configuredPlatform string) (string, bool) {
 	host = normalizePublicHost(host)
 	matchHost := hostNameForMatch(host)
-	switch configuredPlatform {
-	case "gitlab":
-		return "gitlab", true
-	case "github":
+	if configuredPlatform != defaultPlatform {
+		return configuredPlatform, true
+	}
+	if configuredPlatform == defaultPlatform {
 		if matchHost == defaultPlatformHost {
-			return "github", true
+			return defaultPlatform, true
 		}
 		return "", false
-	default:
-		return "", false
 	}
+	return "", false
 }
 
 func hostNameForMatch(host string) string {
@@ -314,16 +308,11 @@ func normalizePublicHost(host string) string {
 }
 
 func normalizePlatform(raw string) (string, error) {
-	platform := strings.ToLower(strings.TrimSpace(raw))
-	if platform == "" {
-		platform = defaultPlatform
+	kind, err := platformpkg.NormalizeKind(raw)
+	if err != nil {
+		return "", err
 	}
-	switch platform {
-	case "github", "gitlab":
-		return platform, nil
-	default:
-		return "", fmt.Errorf("unsupported platform %q", raw)
-	}
+	return string(kind), nil
 }
 
 func normalizePlatformHost(platform, raw string) (string, error) {
@@ -333,10 +322,10 @@ func normalizePlatformHost(platform, raw string) (string, error) {
 	}
 	host := strings.ToLower(strings.TrimSpace(raw))
 	if host == "" {
-		if platform == "gitlab" {
-			return defaultGitLabHost, nil
+		if defaultHost, ok := platformpkg.DefaultHost(platformpkg.Kind(platform)); ok {
+			return defaultHost, nil
 		}
-		return defaultPlatformHost, nil
+		return "", fmt.Errorf("platform_host is required for platform %q", platform)
 	}
 	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
 		u, err := url.Parse(host)

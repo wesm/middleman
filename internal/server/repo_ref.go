@@ -34,15 +34,16 @@ func (s *Server) lookupRepoByRefInput(
 	provider := strings.TrimSpace(input.Provider)
 	host := strings.TrimSpace(input.PlatformHost)
 	repoPath := strings.Trim(input.RepoPath, "/ ")
-	if provider == "" {
-		provider = "github"
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return nil, err
 	}
+	provider = string(kind)
 	if host == "" {
-		switch provider {
-		case "gitlab":
-			host = "gitlab.com"
-		default:
-			host = "github.com"
+		var ok bool
+		host, ok = platform.DefaultHost(kind)
+		if !ok {
+			return nil, fmt.Errorf("platform_host is required for provider %q", kind)
 		}
 	}
 	if repoPath == "" {
@@ -65,7 +66,7 @@ func (s *Server) lookupRepoByRefInput(
 func repoRefFromRepo(repo db.Repo) repoRefResponse {
 	provider := strings.TrimSpace(repo.Platform)
 	if provider == "" {
-		provider = "github"
+		provider = string(platform.KindGitHub)
 	}
 	repoPath := strings.TrimSpace(repo.RepoPath)
 	if repoPath == "" {
@@ -113,7 +114,7 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 func repoRefFromParts(provider, host, owner, name string) repoRefResponse {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
-		provider = "github"
+		provider = string(platform.KindGitHub)
 	}
 	return repoRefResponse{
 		Provider:     provider,
@@ -171,11 +172,27 @@ func repoProviderHost(repo db.Repo) string {
 	if strings.TrimSpace(repo.PlatformHost) != "" {
 		return repo.PlatformHost
 	}
-	switch repoProviderKind(repo) {
-	case platform.KindGitLab:
-		return "gitlab.com"
-	default:
-		return "github.com"
+	if host, ok := platform.DefaultHost(repoProviderKind(repo)); ok {
+		return host
+	}
+	return platform.DefaultGitHubHost
+}
+
+func platformRepoRefFromDB(repo db.Repo) platform.RepoRef {
+	repoPath := strings.TrimSpace(repo.RepoPath)
+	if repoPath == "" {
+		repoPath = repo.Owner + "/" + repo.Name
+	}
+	return platform.RepoRef{
+		Platform:           repoProviderKind(repo),
+		Host:               repoProviderHost(repo),
+		Owner:              repo.Owner,
+		Name:               repo.Name,
+		RepoPath:           repoPath,
+		PlatformExternalID: repo.PlatformRepoID,
+		WebURL:             repo.WebURL,
+		CloneURL:           repo.CloneURL,
+		DefaultBranch:      repo.DefaultBranch,
 	}
 }
 

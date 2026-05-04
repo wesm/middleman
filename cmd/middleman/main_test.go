@@ -144,6 +144,42 @@ func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHost(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	called := false
+	startup, err := buildProviderStartup(
+		database,
+		&config.Config{},
+		map[string]string{providerHostKey("codeberg", "codeberg.org"): "codeberg-token"},
+		map[string]providerFactory{
+			"codeberg": func(input providerFactoryInput) (providerFactoryOutput, error) {
+				called = true
+				assert.Equal("codeberg.org", input.host)
+				assert.Equal("codeberg-token", input.token)
+				return providerFactoryOutput{
+					provider: mainTestRepositoryReader{
+						kind: platform.Kind("codeberg"),
+						host: input.host,
+					},
+				}, nil
+			},
+		},
+	)
+	require.NoError(err)
+	assert.True(called)
+	assert.Equal("codeberg-token", startup.cloneTokens["codeberg.org"])
+
+	reader, err := startup.registry.RepositoryReader(platform.Kind("codeberg"), "codeberg.org")
+	require.NoError(err)
+	assert.NotNil(reader)
+}
+
 func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

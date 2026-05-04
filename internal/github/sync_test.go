@@ -137,20 +137,23 @@ type syncTestReadProvider struct {
 
 type syncTestMergeRequestOnlyProvider struct {
 	syncTestProvider
+	mergeRequests []platform.MergeRequest
+	listMRCalls   atomic.Int32
 }
 
-func (p syncTestMergeRequestOnlyProvider) Capabilities() platform.Capabilities {
+func (p *syncTestMergeRequestOnlyProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadMergeRequests: true}
 }
 
-func (p syncTestMergeRequestOnlyProvider) ListOpenMergeRequests(
+func (p *syncTestMergeRequestOnlyProvider) ListOpenMergeRequests(
 	context.Context,
 	platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
-	return nil, nil
+	p.listMRCalls.Add(1)
+	return p.mergeRequests, nil
 }
 
-func (p syncTestMergeRequestOnlyProvider) GetMergeRequest(
+func (p *syncTestMergeRequestOnlyProvider) GetMergeRequest(
 	context.Context,
 	platform.RepoRef,
 	int,
@@ -158,7 +161,46 @@ func (p syncTestMergeRequestOnlyProvider) GetMergeRequest(
 	return platform.MergeRequest{}, nil
 }
 
-func (p syncTestMergeRequestOnlyProvider) ListMergeRequestEvents(
+type syncTestIssueOnlyProvider struct {
+	syncTestProvider
+	issues         []platform.Issue
+	listIssueCalls atomic.Int32
+}
+
+func (p *syncTestIssueOnlyProvider) Capabilities() platform.Capabilities {
+	return platform.Capabilities{ReadIssues: true}
+}
+
+func (p *syncTestIssueOnlyProvider) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.Issue, error) {
+	p.listIssueCalls.Add(1)
+	return p.issues, nil
+}
+
+func (p *syncTestIssueOnlyProvider) GetIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (platform.Issue, error) {
+	for _, issue := range p.issues {
+		if issue.Number == number {
+			return issue, nil
+		}
+	}
+	return platform.Issue{}, errors.New("missing issue")
+}
+
+func (p *syncTestIssueOnlyProvider) ListIssueEvents(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.IssueEvent, error) {
+	return nil, nil
+}
+
+func (p *syncTestMergeRequestOnlyProvider) ListMergeRequestEvents(
 	context.Context,
 	platform.RepoRef,
 	int,
@@ -3200,21 +3242,40 @@ func TestSyncRunUsesProviderReadersForIndexSync(t *testing.T) {
 	assert.Equal("Provider issue", issue.Title)
 }
 
-func TestSyncRunReturnsOptionalReaderErrorWhenMissingIssueReader(t *testing.T) {
+func TestSyncRunAllowsMergeRequestOnlyProvider(t *testing.T) {
+	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	repo := RepoRef{
 		Platform:     platform.KindGitLab,
 		PlatformHost: "gitlab.com",
 		Owner:        "acme",
 		Name:         "widget",
 	}
-	registry, err := platform.NewRegistry(syncTestMergeRequestOnlyProvider{
+	provider := &syncTestMergeRequestOnlyProvider{
 		syncTestProvider: syncTestProvider{
 			kind: platform.KindGitLab,
 			host: "gitlab.com",
 		},
-	})
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     1001,
+			Number:         7,
+			URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+			Title:          "MR-only provider",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "abc123",
+			BaseSHA:        "def456",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
@@ -3229,7 +3290,64 @@ func TestSyncRunReturnsOptionalReaderErrorWhenMissingIssueReader(t *testing.T) {
 	require.Len(results, 1)
 	require.Equal(platform.KindGitLab, results[0].Platform)
 	require.Equal("gitlab.com", results[0].PlatformHost)
-	require.Contains(results[0].Error, "read_issues")
+	require.Empty(results[0].Error)
+	assert.Equal(int32(1), provider.listMRCalls.Load())
+	mr, err := d.GetMergeRequest(t.Context(), "acme", "widget", 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("MR-only provider", mr.Title)
+}
+
+func TestSyncRunAllowsIssueOnlyProvider(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	provider := &syncTestIssueOnlyProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.com",
+		},
+		issues: []platform.Issue{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     2001,
+			Number:         11,
+			URL:            "https://gitlab.com/acme/widget/-/issues/11",
+			Title:          "Issue-only provider",
+			Author:         "grace",
+			State:          "open",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	syncer.clients = registry
+
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(r []RepoSyncResult) {
+		results = r
+	})
+	syncer.RunOnce(t.Context())
+
+	require.Len(results, 1)
+	require.Equal(platform.KindGitLab, results[0].Platform)
+	require.Equal("gitlab.com", results[0].PlatformHost)
+	require.Empty(results[0].Error)
+	assert.Equal(int32(1), provider.listIssueCalls.Load())
+	issue, err := d.GetIssue(t.Context(), "acme", "widget", 11)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("Issue-only provider", issue.Title)
 }
 
 func TestSyncMRUsesProviderMergeRequestReader(t *testing.T) {

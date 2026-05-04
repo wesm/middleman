@@ -9,6 +9,11 @@ const (
 	KindGitLab Kind = "gitlab"
 )
 
+const (
+	DefaultGitHubHost = "github.com"
+	DefaultGitLabHost = "gitlab.com"
+)
+
 type RepoRef struct {
 	Platform           Kind
 	Host               string
@@ -168,6 +173,12 @@ type CICheck struct {
 	App                string
 	StartedAt          *time.Time
 	CompletedAt        *time.Time
+}
+
+type MergeResult struct {
+	Merged  bool
+	SHA     string
+	Message string
 }
 
 type Capabilities struct {

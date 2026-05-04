@@ -21,7 +21,6 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
-	gitlabclient "github.com/wesm/middleman/internal/platform/gitlab"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/web"
@@ -272,142 +271,32 @@ func run(configPath string) error {
 	}
 	defer database.Close()
 
-	// Build provider/host tokens from repo config first, so
-	// explicit token_env overrides are honored per provider.
-	providerTokens := make(map[string]string, len(cfg.Repos)+len(cfg.Platforms)+1)
-	for _, r := range cfg.Repos {
-		platformName := r.PlatformOrDefault()
-		host := r.PlatformHostOrDefault()
-		key := providerHostKey(platformName, host)
-		if _, seen := providerTokens[key]; seen {
-			continue
-		}
-		token := cfg.ResolveRepoToken(r)
-		if token == "" {
-			return fmt.Errorf(
-				"no token for %s host %s (repo %s/%s)",
-				platformName, host, r.Owner, r.Name,
-			)
-		}
-		providerTokens[key] = token
-	}
-	for _, p := range cfg.Platforms {
-		key := providerHostKey(p.Type, p.Host)
-		if _, seen := providerTokens[key]; seen {
-			continue
-		}
-		token := cfg.TokenForPlatformHost(p.Type, p.Host, "")
-		if token != "" {
-			providerTokens[key] = token
-		}
-	}
-	// Seed github.com from the global token if available and no
-	// repo/platform already provided one, so the settings UI can
-	// validate GitHub repos even with empty or GHE-only configs.
-	globalGitHubToken := cfg.GitHubToken()
-	defaultGitHubKey := providerHostKey("github", "github.com")
-	if globalGitHubToken != "" {
-		if _, ok := providerTokens[defaultGitHubKey]; !ok {
-			providerTokens[defaultGitHubKey] = globalGitHubToken
-		}
-	}
-	if err := validateProviderHostKeys(providerTokens); err != nil {
+	providerTokens, err := collectProviderTokens(cfg)
+	if err != nil {
 		return err
 	}
 
-	rateTrackers := make(
-		map[string]*ghclient.RateTracker, len(providerTokens),
+	startup, err := buildProviderStartup(
+		database, cfg, providerTokens, defaultProviderFactories(),
 	)
-	budgetPerHour := cfg.BudgetPerHour()
-	budgets := make(
-		map[string]*ghclient.SyncBudget, len(providerTokens),
-	)
-	clients := make(
-		map[string]ghclient.Client, len(providerTokens),
-	)
-	providers := make(
-		[]platform.Provider, 0, len(providerTokens),
-	)
-	cloneTokens := make(
-		map[string]string, len(providerTokens),
-	)
-	githubTokens := make(map[string]string, len(providerTokens))
-	for key, token := range providerTokens {
-		platformName, host := splitProviderHostKey(key)
-		rateKey := ghclient.RateBucketKey(platformName, host)
-		if _, ok := rateTrackers[rateKey]; !ok {
-			rateTrackers[rateKey] = ghclient.NewPlatformRateTracker(
-				database, platformName, host, "rest",
-			)
-		}
-		if budgetPerHour > 0 {
-			if _, ok := budgets[rateKey]; !ok {
-				budgets[rateKey] = ghclient.NewSyncBudget(
-					budgetPerHour,
-				)
-			}
-		}
-		switch platformName {
-		case "github":
-			c, err := ghclient.NewClient(
-				token, host, rateTrackers[rateKey], budgets[rateKey],
-			)
-			if err != nil {
-				return fmt.Errorf(
-					"create GitHub client for %s: %w", host, err,
-				)
-			}
-			clients[host] = c
-			githubTokens[host] = token
-		case "gitlab":
-			c, err := gitlabclient.NewClient(
-				host, token,
-				gitlabclient.WithRateTracker(rateTrackers[rateKey]),
-			)
-			if err != nil {
-				return fmt.Errorf(
-					"create GitLab client for %s: %w", host, err,
-				)
-			}
-			providers = append(providers, c)
-		default:
-			return fmt.Errorf("unsupported platform %q", platformName)
-		}
-		if _, ok := cloneTokens[host]; !ok {
-			cloneTokens[host] = token
-		}
-	}
-
-	registry, err := ghclient.NewProviderRegistry(clients, providers...)
 	if err != nil {
-		return fmt.Errorf("create provider registry: %w", err)
+		return err
 	}
 
 	repos := resolveStartupRepos(
-		context.Background(), cfg, registry, database,
+		context.Background(), cfg, startup.registry, database,
 	)
 	slog.Debug("startup repos resolved", "count", len(repos))
 
 	cloneMgr := gitclone.New(
-		filepath.Join(cfg.DataDir, "clones"), cloneTokens,
+		filepath.Join(cfg.DataDir, "clones"), startup.cloneTokens,
 	)
 
 	syncer := ghclient.NewSyncerWithRegistry(
-		registry, database, cloneMgr, repos,
-		cfg.SyncDuration(), rateTrackers, budgets,
+		startup.registry, database, cloneMgr, repos,
+		cfg.SyncDuration(), startup.rateTrackers, startup.budgets,
 	)
-
-	fetchers := make(
-		map[string]*ghclient.GraphQLFetcher, len(githubTokens),
-	)
-	for host, token := range githubTokens {
-		rateKey := ghclient.RateBucketKey("github", host)
-		gqlRT := ghclient.NewPlatformRateTracker(database, "github", host, "graphql")
-		fetchers[host] = ghclient.NewGraphQLFetcher(
-			token, host, gqlRT, budgets[rateKey],
-		)
-	}
-	syncer.SetFetchers(fetchers)
+	syncer.SetFetchers(startup.fetchers)
 
 	assets, err := web.Assets()
 	if err != nil {
@@ -560,10 +449,10 @@ func repoHost(repo ghclient.RepoRef) string {
 	if repo.PlatformHost != "" {
 		return strings.ToLower(repo.PlatformHost)
 	}
-	if repoPlatform(repo) == platform.KindGitLab {
-		return "gitlab.com"
+	if host, ok := platform.DefaultHost(repoPlatform(repo)); ok {
+		return host
 	}
-	return "github.com"
+	return platform.DefaultGitHubHost
 }
 
 // fallbackGlobFromDB returns repos from the database that match
@@ -592,7 +481,7 @@ func fallbackGlobFromDB(
 		}
 		dbHost := r.PlatformHost
 		if dbHost == "" {
-			dbHost = "github.com"
+			dbHost = platform.DefaultGitHubHost
 		}
 		if dbPlatform != rawPlatform ||
 			!strings.EqualFold(dbHost, host) ||

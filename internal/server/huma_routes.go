@@ -921,7 +921,9 @@ func (s *Server) editPRContent(
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.MergeRequestContentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -938,39 +940,30 @@ func (s *Server) editPRContent(
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	opts := ghclient.EditPullRequestOpts{
-		Title: input.Body.Title,
-		Body:  input.Body.Body,
-	}
-	ghPR, err := client.EditPullRequest(
-		ctx, input.Owner, input.Name, input.Number, opts,
+	updatedMR, err := mutator.EditMergeRequestContent(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
-		)
-	}
-	if ghPR == nil {
-		return nil, huma.Error502BadGateway(
-			"GitHub API returned no pull request",
+			"provider API error: " + err.Error(),
 		)
 	}
 
 	newTitle := mr.Title
-	if ghPR.Title != nil {
-		newTitle = ghPR.GetTitle()
+	if updatedMR.Title != "" {
+		newTitle = updatedMR.Title
 	} else if input.Body.Title != nil {
 		newTitle = *input.Body.Title
 	}
 	newBody := mr.Body
-	if ghPR.Body != nil {
-		newBody = ghPR.GetBody()
+	if updatedMR.Body != "" {
+		newBody = updatedMR.Body
 	} else if input.Body.Body != nil {
 		newBody = *input.Body.Body
 	}
 	updatedAt := s.now().UTC()
-	if ghPR.UpdatedAt != nil {
-		updatedAt = ghPR.UpdatedAt.UTC()
+	if !updatedMR.UpdatedAt.IsZero() {
+		updatedAt = updatedMR.UpdatedAt.UTC()
 	}
 	if err := s.db.UpdateMRTitleBody(
 		ctx, mr.ID, newTitle, newBody, updatedAt,
@@ -1011,14 +1004,18 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	platformEvent, err := mutator.CreateMergeRequestComment(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("create comment on GitHub failed")
+		return nil, huma.Error502BadGateway("create comment on provider failed")
 	}
 
 	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
@@ -1027,7 +1024,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		_ = err
 	}
@@ -1047,7 +1044,9 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1066,14 +1065,15 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error404NotFound("comment not found for pull request")
 	}
 
-	comment, err := client.EditIssueComment(
-		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	platformEvent, err := mutator.EditMergeRequestComment(
+		ctx, platformRepoRefFromDB(*repo), input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
+		return nil, huma.Error502BadGateway("edit comment on provider failed")
 	}
+	platformEvent.MergeRequestNumber = input.Number
 
-	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		return nil, huma.Error500InternalServerError("persist edited comment failed")
 	}
@@ -1179,31 +1179,23 @@ func (s *Server) createIssue(
 		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.IssueMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	ghIssue, err := client.CreateIssue(
-		ctx, input.Owner, input.Name, title, input.Body.Body,
+	platformIssue, err := mutator.CreateIssue(
+		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
-		)
-	}
-	if ghIssue == nil {
-		return nil, huma.Error502BadGateway(
-			"GitHub API returned no issue",
+			"provider API error: " + err.Error(),
 		)
 	}
 
-	issue, err := ghclient.NormalizeIssue(repo.ID, ghIssue)
-	if err != nil {
-		return nil, huma.Error502BadGateway(
-			"normalize issue failed: " + err.Error(),
-		)
-	}
+	issue := platform.DBIssue(repo.ID, platformIssue)
 	issueID, err := s.db.UpsertIssue(ctx, issue)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
@@ -1358,16 +1350,18 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.CreateIssueComment(
-		ctx, input.Owner, input.Name, input.Number, input.Body.Body,
+	platformEvent, err := mutator.CreateIssueComment(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("create comment on GitHub failed")
+		return nil, huma.Error502BadGateway("create comment on provider failed")
 	}
 
 	ref := repoNumberPathRef{
@@ -1381,7 +1375,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	event := ghclient.NormalizeIssueCommentEvent(issueID, comment)
+	event := platform.DBIssueEvent(issueID, platformEvent)
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
 		_ = err
 	}
@@ -1407,7 +1401,9 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1431,14 +1427,15 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		return nil, huma.Error404NotFound("comment not found for issue")
 	}
 
-	comment, err := client.EditIssueComment(
-		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	platformEvent, err := mutator.EditIssueComment(
+		ctx, platformRepoRefFromDB(*repo), input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
+		return nil, huma.Error502BadGateway("edit comment on provider failed")
 	}
+	platformEvent.IssueNumber = input.Number
 
-	event := ghclient.NormalizeIssueCommentEvent(issueID, comment)
+	event := platform.DBIssueEvent(issueID, platformEvent)
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
 		return nil, huma.Error500InternalServerError("persist edited comment failed")
 	}
@@ -1533,20 +1530,24 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.ReviewMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	review, err := client.CreateReview(ctx, input.Owner, input.Name, input.Number, "APPROVE", input.Body.Body)
+	platformEvent, err := mutator.ApproveMergeRequest(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("GitHub API error")
+		return nil, huma.Error502BadGateway("provider API error")
 	}
 
 	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
 	mrID, lookupErr := s.lookupMRID(ctx, ref)
 	if lookupErr == nil {
-		event := ghclient.NormalizeReviewEvent(mrID, review)
+		event := platform.DBMREvent(mrID, platformEvent)
 		_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
 	}
 
@@ -1570,6 +1571,12 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+	mutator, err := s.syncer.WorkflowApprovalMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1600,7 +1607,9 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	approvedCount := 0
 	for _, run := range pending {
-		if err := client.ApproveWorkflowRun(ctx, input.Owner, input.Name, run.GetID()); err != nil {
+		if err := mutator.ApproveWorkflow(
+			ctx, platformRepoRefFromDB(*repo), strconv.FormatInt(run.GetID(), 10),
+		); err != nil {
 			if approvedCount > 0 {
 				if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
 					slog.Warn("sync after workflow approval failure", "err", syncErr)
@@ -1629,12 +1638,14 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.ReadyForReviewMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	pr, err := client.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
+	pr, err := mutator.MarkReadyForReview(ctx, platformRepoRefFromDB(*repo), input.Number)
 	if err != nil {
 		type readyForReviewFailure interface {
 			StatusCode() int
@@ -1669,19 +1680,15 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 		)
 		return nil, huma.Error502BadGateway(err.Error())
 	}
-	if pr == nil {
-		// No PR payload means we cannot verify GitHub accepted the
-		// transition, so don't claim success or poison the cache.
-		return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+	if pr.Number == 0 {
+		return nil, huma.Error502BadGateway("provider API returned no pull request")
 	}
 
 	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
 	if err == nil && repoObj != nil {
-		normalized, normalizeErr := ghclient.NormalizePR(repoObj.ID, pr)
-		if normalizeErr == nil {
-			if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
-				_ = s.db.EnsureKanbanState(ctx, mrID)
-			}
+		normalized := platform.DBMergeRequest(repoObj.ID, pr)
+		if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
+			_ = s.db.EnsureKanbanState(ctx, mrID)
 		}
 	}
 
@@ -1701,15 +1708,16 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.MergeMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	result, err := client.MergePullRequest(
+	result, err := mutator.MergeMergeRequest(
 		ctx,
-		input.Owner,
-		input.Name,
+		platformRepoRefFromDB(*repo),
 		input.Number,
 		input.Body.CommitTitle,
 		input.Body.CommitMessage,
@@ -1758,9 +1766,9 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 	return &mergePROutput{
 		Body: mergePRBody{
-			Merged:  result.GetMerged(),
-			SHA:     result.GetSHA(),
-			Message: result.GetMessage(),
+			Merged:  result.Merged,
+			SHA:     result.SHA,
+			Message: result.Message,
 		},
 	}, nil
 }
@@ -1781,7 +1789,9 @@ func (s *Server) setPRGitHubState(
 		return nil, err
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.StateMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1803,9 +1813,8 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	if _, err := client.EditPullRequest(
-		ctx, input.Owner, input.Name,
-		input.Number, ghclient.EditPullRequestOpts{State: &input.Body.State},
+	if _, err := mutator.SetMergeRequestState(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
@@ -1815,6 +1824,10 @@ func (s *Server) setPRGitHubState(
 				ctx, input.Owner, input.Name,
 			)
 			if repoErr == nil {
+				client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
+				if clientErr != nil {
+					return nil, huma.Error404NotFound(clientErr.Error())
+				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
@@ -1899,20 +1912,25 @@ func (s *Server) setIssueGitHubState(
 		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.StateMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	if _, err := client.EditIssue(
-		ctx, input.Owner, input.Name,
-		input.Number, input.Body.State,
+	if _, err := mutator.SetIssueState(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state. If already in the
 			// requested state (concurrent edit), treat as success.
+			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
+			if clientErr != nil {
+				return nil, huma.Error404NotFound(clientErr.Error())
+			}
 			ghIssue, fetchErr := client.GetIssue(
 				ctx, input.Owner, input.Name, input.Number,
 			)

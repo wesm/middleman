@@ -77,14 +77,9 @@ type resolvedBulkRepo struct {
 }
 
 func normalizeImportPlatform(provider, host string) (platform.Kind, string, error) {
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	if provider == "" {
-		provider = "github"
-	}
-	switch provider {
-	case "github", "gitlab":
-	default:
-		return "", "", fmt.Errorf("unsupported provider %q", provider)
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return "", "", err
 	}
 	host = strings.ToLower(strings.TrimSpace(host))
 	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
@@ -99,13 +94,13 @@ func normalizeImportPlatform(provider, host string) (platform.Kind, string, erro
 		return "", "", fmt.Errorf("platform_host must be a host")
 	}
 	if host == "" {
-		if provider == "gitlab" {
-			host = "gitlab.com"
-		} else {
-			host = "github.com"
+		var ok bool
+		host, ok = platform.DefaultHost(kind)
+		if !ok {
+			return "", "", fmt.Errorf("platform_host is required for provider %q", kind)
 		}
 	}
-	return platform.Kind(provider), host, nil
+	return kind, host, nil
 }
 
 func importRequestHost(host, platformHost string) string {
@@ -124,7 +119,7 @@ func normalizeImportOwnerPattern(
 	if owner == "" || pattern == "" {
 		return "", "", fmt.Errorf("owner and pattern are required")
 	}
-	if provider == platform.KindGitHub && strings.Contains(owner, "/") {
+	if !platform.AllowsNestedOwner(provider) && strings.Contains(owner, "/") {
 		return "", "", fmt.Errorf("owner must not contain /")
 	}
 	if strings.ContainsAny(owner, "*?[]") {
@@ -166,7 +161,7 @@ func normalizeExactRepoInput(raw bulkAddRepoRequest) (config.Repo, error) {
 	if owner == "" || name == "" {
 		return config.Repo{}, fmt.Errorf("owner and name are required")
 	}
-	if provider == platform.KindGitHub && strings.Contains(owner, "/") {
+	if !platform.AllowsNestedOwner(provider) && strings.Contains(owner, "/") {
 		return config.Repo{}, fmt.Errorf("bulk add only accepts exact owner/name repositories")
 	}
 	if strings.Contains(name, "/") ||
@@ -183,7 +178,7 @@ func normalizeExactRepoInput(raw bulkAddRepoRequest) (config.Repo, error) {
 		Platform:     string(provider),
 		PlatformHost: host,
 	}
-	if provider == platform.KindGitHub && host == "github.com" {
+	if provider == platform.KindGitHub && host == platform.DefaultGitHubHost {
 		repo.Platform = ""
 		repo.PlatformHost = ""
 		repo.RepoPath = ""

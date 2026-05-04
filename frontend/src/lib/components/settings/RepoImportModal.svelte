@@ -3,6 +3,7 @@
   import type { Settings } from "@middleman/ui/api/types";
   import { bulkAddRepos, previewRepos, type RepoPreviewRow } from "../../api/settings.js";
   import RepoPreviewTable from "./RepoPreviewTable.svelte";
+  import { defaultRepoImportProvider, repoImportProvider, repoImportProviders } from "./repoImportProviders.js";
   import {
     applyRangeSelection,
     filterRows,
@@ -24,7 +25,7 @@
   let { open, onClose, onImported }: Props = $props();
 
   let patternInput = $state("");
-  let provider = $state<"github" | "gitlab">("github");
+  let provider = $state("github");
   let hostInput = $state("github.com");
   let rows = $state.raw<RepoPreviewRow[]>([]);
   let selected = $state<Set<string>>(new Set());
@@ -46,6 +47,7 @@
   const selectableVisibleCount = $derived(visibleRows.filter((row) => !row.already_configured).length);
   const selectedCount = $derived(visibleRows.filter((row) => selected.has(rowKey(row)) && !row.already_configured).length);
   const submitRows = $derived(selectedRowsForSubmit(sortedRows, selected, visibilityFilters));
+  const providerMeta = $derived(repoImportProvider(provider));
 
   $effect(() => {
     if (open) {
@@ -68,8 +70,8 @@
 
   function resetAll(): void {
     patternInput = "";
-    provider = "github";
-    hostInput = "github.com";
+    provider = defaultRepoImportProvider.id;
+    hostInput = defaultRepoImportProvider.defaultHost;
     resetPreviewState();
     error = null;
     loading = false;
@@ -85,9 +87,9 @@
     loading = false;
   }
 
-  function handleProviderChange(value: "github" | "gitlab"): void {
+  function handleProviderChange(value: string): void {
     provider = value;
-    hostInput = value === "gitlab" ? "gitlab.com" : "github.com";
+    hostInput = repoImportProvider(value).defaultHost;
     requestToken += 1;
     resetPreviewState();
     error = null;
@@ -98,7 +100,7 @@
     if (loading) return;
     let parsed: { owner: string; pattern: string };
     try {
-      parsed = parseImportPattern(patternInput, provider === "gitlab");
+      parsed = parseImportPattern(patternInput, providerMeta.allowNestedOwner);
     } catch (err) {
       resetPreviewState();
       error = err instanceof Error ? err.message : String(err);
@@ -216,17 +218,18 @@
           <span>Provider</span>
           <select
             value={provider}
-            onchange={(event) => handleProviderChange(event.currentTarget.value as "github" | "gitlab")}
+            onchange={(event) => handleProviderChange(event.currentTarget.value)}
           >
-            <option value="github">GitHub</option>
-            <option value="gitlab">GitLab</option>
+            {#each repoImportProviders as option (option.id)}
+              <option value={option.id}>{option.label}</option>
+            {/each}
           </select>
         </label>
         <label class="host-field">
           <span>Host</span>
           <input
             value={hostInput}
-            placeholder={provider === "gitlab" ? "gitlab.com" : "github.com"}
+            placeholder={providerMeta.defaultHost}
             oninput={(event) => { hostInput = event.currentTarget.value; }}
           />
         </label>
@@ -235,7 +238,7 @@
           <input
             bind:this={inputEl}
             value={patternInput}
-            placeholder={provider === "gitlab" ? "group/subgroup/pattern" : "owner/pattern"}
+            placeholder={providerMeta.ownerPatternPlaceholder}
             oninput={(event) => handlePatternInput(event.currentTarget.value)}
             onkeydown={(event) => { if (event.key === "Enter" && !loading) void handlePreview(); }}
           />

@@ -51,17 +51,31 @@ type CommentMutator interface {
 		ref RepoRef,
 		number int,
 		body string,
-	) error
-	CreateIssueComment(ctx context.Context, ref RepoRef, number int, body string) error
+	) (MergeRequestEvent, error)
+	EditMergeRequestComment(
+		ctx context.Context,
+		ref RepoRef,
+		commentID int64,
+		body string,
+	) (MergeRequestEvent, error)
+	CreateIssueComment(ctx context.Context, ref RepoRef, number int, body string) (IssueEvent, error)
+	EditIssueComment(ctx context.Context, ref RepoRef, commentID int64, body string) (IssueEvent, error)
 }
 
 type StateMutator interface {
-	CloseMergeRequest(ctx context.Context, ref RepoRef, number int) error
-	CloseIssue(ctx context.Context, ref RepoRef, number int) error
+	SetMergeRequestState(ctx context.Context, ref RepoRef, number int, state string) (MergeRequest, error)
+	SetIssueState(ctx context.Context, ref RepoRef, number int, state string) (Issue, error)
 }
 
 type MergeMutator interface {
-	MergeMergeRequest(ctx context.Context, ref RepoRef, number int) error
+	MergeMergeRequest(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		commitTitle string,
+		commitMessage string,
+		method string,
+	) (MergeResult, error)
 }
 
 type WorkflowApprovalMutator interface {
@@ -69,5 +83,23 @@ type WorkflowApprovalMutator interface {
 }
 
 type ReadyForReviewMutator interface {
-	MarkReadyForReview(ctx context.Context, ref RepoRef, number int) error
+	MarkReadyForReview(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
+}
+
+type IssueMutator interface {
+	CreateIssue(ctx context.Context, ref RepoRef, title string, body string) (Issue, error)
+}
+
+type ReviewMutator interface {
+	ApproveMergeRequest(ctx context.Context, ref RepoRef, number int, body string) (MergeRequestEvent, error)
+}
+
+type MergeRequestContentMutator interface {
+	EditMergeRequestContent(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		title *string,
+		body *string,
+	) (MergeRequest, error)
 }

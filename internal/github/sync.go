@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,10 @@ import (
 	platformgithub "github.com/wesm/middleman/internal/platform/github"
 	"golang.org/x/sync/singleflight"
 )
+
+func parseInt64(raw string) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+}
 
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
@@ -663,6 +668,188 @@ func (p gitHubClientProvider) ListIssueEvents(
 	return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_issue_events")
 }
 
+func (p gitHubClientProvider) CreateMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	comment, err := p.client.CreateIssueComment(ctx, ref.Owner, ref.Name, number, body)
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
+}
+
+func (p gitHubClientProvider) EditMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	commentID int64,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	comment, err := p.client.EditIssueComment(ctx, ref.Owner, ref.Name, commentID, body)
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	return platformgithub.NormalizeCommentEvent(ref, 0, comment), nil
+}
+
+func (p gitHubClientProvider) CreateIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+) (platform.IssueEvent, error) {
+	comment, err := p.client.CreateIssueComment(ctx, ref.Owner, ref.Name, number, body)
+	if err != nil {
+		return platform.IssueEvent{}, err
+	}
+	return platformgithub.NormalizeIssueCommentEvent(ref, number, comment), nil
+}
+
+func (p gitHubClientProvider) EditIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	commentID int64,
+	body string,
+) (platform.IssueEvent, error) {
+	comment, err := p.client.EditIssueComment(ctx, ref.Owner, ref.Name, commentID, body)
+	if err != nil {
+		return platform.IssueEvent{}, err
+	}
+	return platformgithub.NormalizeIssueCommentEvent(ref, 0, comment), nil
+}
+
+func (p gitHubClientProvider) SetMergeRequestState(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	state string,
+) (platform.MergeRequest, error) {
+	ghPR, err := p.client.EditPullRequest(
+		ctx, ref.Owner, ref.Name, number, EditPullRequestOpts{State: &state},
+	)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	if ghPR == nil {
+		return platform.MergeRequest{}, nil
+	}
+	return platformgithub.NormalizePullRequest(ref, ghPR)
+}
+
+func (p gitHubClientProvider) SetIssueState(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	state string,
+) (platform.Issue, error) {
+	ghIssue, err := p.client.EditIssue(ctx, ref.Owner, ref.Name, number, state)
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	if ghIssue == nil {
+		return platform.Issue{}, nil
+	}
+	return platformgithub.NormalizeIssue(ref, ghIssue)
+}
+
+func (p gitHubClientProvider) MergeMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commitTitle string,
+	commitMessage string,
+	method string,
+) (platform.MergeResult, error) {
+	result, err := p.client.MergePullRequest(
+		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method,
+	)
+	if err != nil {
+		return platform.MergeResult{}, err
+	}
+	return platform.MergeResult{
+		Merged:  result.GetMerged(),
+		SHA:     result.GetSHA(),
+		Message: result.GetMessage(),
+	}, nil
+}
+
+func (p gitHubClientProvider) ApproveWorkflow(
+	ctx context.Context,
+	ref platform.RepoRef,
+	runID string,
+) error {
+	parsed, err := parseInt64(runID)
+	if err != nil {
+		return err
+	}
+	return p.client.ApproveWorkflowRun(ctx, ref.Owner, ref.Name, parsed)
+}
+
+func (p gitHubClientProvider) MarkReadyForReview(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	pr, err := p.client.MarkPullRequestReadyForReview(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	if pr == nil {
+		return platform.MergeRequest{}, nil
+	}
+	return platformgithub.NormalizePullRequest(ref, pr)
+}
+
+func (p gitHubClientProvider) CreateIssue(
+	ctx context.Context,
+	ref platform.RepoRef,
+	title string,
+	body string,
+) (platform.Issue, error) {
+	issue, err := p.client.CreateIssue(ctx, ref.Owner, ref.Name, title, body)
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	if issue == nil {
+		return platform.Issue{}, nil
+	}
+	return platformgithub.NormalizeIssue(ref, issue)
+}
+
+func (p gitHubClientProvider) ApproveMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	review, err := p.client.CreateReview(ctx, ref.Owner, ref.Name, number, "APPROVE", body)
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
+}
+
+func (p gitHubClientProvider) EditMergeRequestContent(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	title *string,
+	body *string,
+) (platform.MergeRequest, error) {
+	pr, err := p.client.EditPullRequest(
+		ctx, ref.Owner, ref.Name, number, EditPullRequestOpts{Title: title, Body: body},
+	)
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	if pr == nil {
+		return platform.MergeRequest{}, nil
+	}
+	return platformgithub.NormalizePullRequest(ref, pr)
+}
+
 // SetWatchInterval sets the fast-sync interval for watched MRs.
 // Must be called before Start.
 func (s *Syncer) SetWatchInterval(d time.Duration) {
@@ -790,10 +977,10 @@ func repoHost(repo RepoRef) string {
 	if repo.PlatformHost != "" {
 		return canonicalRepoHost(repo.PlatformHost)
 	}
-	if repoPlatform(repo) == platform.KindGitLab {
-		return "gitlab.com"
+	if host, ok := platform.DefaultHost(repoPlatform(repo)); ok {
+		return host
 	}
-	return "github.com"
+	return platform.DefaultGitHubHost
 }
 
 func rateBucketKeyFor(kind platform.Kind, host string) string {
@@ -915,12 +1102,11 @@ func (s *Syncer) ProviderCapabilities(
 		kind = platform.KindGitHub
 	}
 	if strings.TrimSpace(host) == "" {
-		switch kind {
-		case platform.KindGitLab:
-			host = "gitlab.com"
-		default:
-			host = "github.com"
+		defaultHost, ok := platform.DefaultHost(kind)
+		if !ok {
+			return platform.Capabilities{}, platform.ProviderNotConfigured(kind, "")
 		}
+		host = defaultHost
 	}
 	return s.clients.Capabilities(kind, canonicalRepoHost(host))
 }
@@ -930,6 +1116,62 @@ func (s *Syncer) RepositoryReader(
 	host string,
 ) (platform.RepositoryReader, error) {
 	return s.clients.RepositoryReader(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) CommentMutator(
+	kind platform.Kind,
+	host string,
+) (platform.CommentMutator, error) {
+	return s.clients.CommentMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) StateMutator(
+	kind platform.Kind,
+	host string,
+) (platform.StateMutator, error) {
+	return s.clients.StateMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) MergeMutator(
+	kind platform.Kind,
+	host string,
+) (platform.MergeMutator, error) {
+	return s.clients.MergeMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) WorkflowApprovalMutator(
+	kind platform.Kind,
+	host string,
+) (platform.WorkflowApprovalMutator, error) {
+	return s.clients.WorkflowApprovalMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) ReadyForReviewMutator(
+	kind platform.Kind,
+	host string,
+) (platform.ReadyForReviewMutator, error) {
+	return s.clients.ReadyForReviewMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) IssueMutator(
+	kind platform.Kind,
+	host string,
+) (platform.IssueMutator, error) {
+	return s.clients.IssueMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) ReviewMutator(
+	kind platform.Kind,
+	host string,
+) (platform.ReviewMutator, error) {
+	return s.clients.ReviewMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) MergeRequestContentMutator(
+	kind platform.Kind,
+	host string,
+) (platform.MergeRequestContentMutator, error) {
+	return s.clients.MergeRequestContentMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ResolveConfiguredRepo(
@@ -2059,9 +2301,9 @@ func (s *Syncer) indexSyncRepo(
 	repoID int64,
 	cloneFetchOK bool,
 ) error {
-	mrReader, err := s.mergeRequestReaderFor(repo)
+	caps, err := s.ProviderCapabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
-		return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		return fmt.Errorf("resolve provider capabilities for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	gitHubClient, hasGitHubClient := s.optionalGitHubClientFor(repo)
 	platformRef := platformRepoRef(repo)
@@ -2092,148 +2334,156 @@ func (s *Syncer) indexSyncRepo(
 	// forces refresh on the paths that actually failed.
 	var failedScope failScope
 
-	openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
 	prListUnchanged := false
-	if err != nil {
-		// 304 Not Modified means the open-PR list is byte-identical
-		// to the previous fetch. No PR opened, no PR closed, no
-		// metadata on any open PR changed. Skip per-PR upserts and
-		// closure detection — both ran on the previous sync that
-		// produced the cached etag.
-		if IsNotModified(err) {
-			prListUnchanged = true
-		} else {
-			s.markRepoFailed(repo, failMR)
-			return fmt.Errorf("list open PRs: %w", err)
+	if caps.ReadMergeRequests {
+		mrReader, err := s.mergeRequestReaderFor(repo)
+		if err != nil {
+			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
-	}
+		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
+		if err != nil {
+			// 304 Not Modified means the open-PR list is byte-identical
+			// to the previous fetch. No PR opened, no PR closed, no
+			// metadata on any open PR changed. Skip per-PR upserts and
+			// closure detection — both ran on the previous sync that
+			// produced the cached etag.
+			if IsNotModified(err) {
+				prListUnchanged = true
+			} else {
+				s.markRepoFailed(repo, failMR)
+				return fmt.Errorf("list open PRs: %w", err)
+			}
+		}
 
-	if prListUnchanged {
-		// 304 — nothing to do. The detail drain handles CI
-		// updates for PRs with pending checks via priority scoring.
-	} else {
-		// GraphQL path: if fetcher available and not rate-limited,
-		// do a bulk fetch that replaces both index upsert and
-		// detail drain for complete PRs.
-		graphQLDone := false
-		if fetcher := s.fetcherFor(repo); fetcher != nil {
-			if backoff, _ := fetcher.ShouldBackoff(); !backoff {
-				result, gqlErr := fetcher.FetchRepoPRs(
-					ctx, repo.Owner, repo.Name,
-				)
-				if gqlErr != nil {
-					slog.Warn("GraphQL fetch failed, falling back to REST index",
-						"repo", repo.Owner+"/"+repo.Name,
-						"err", gqlErr,
+		if prListUnchanged {
+			// 304 — nothing to do. The detail drain handles CI
+			// updates for PRs with pending checks via priority scoring.
+		} else {
+			// GraphQL path: if fetcher available and not rate-limited,
+			// do a bulk fetch that replaces both index upsert and
+			// detail drain for complete PRs.
+			graphQLDone := false
+			if fetcher := s.fetcherFor(repo); fetcher != nil {
+				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+					result, gqlErr := fetcher.FetchRepoPRs(
+						ctx, repo.Owner, repo.Name,
 					)
-				} else {
-					if err := s.doSyncRepoGraphQL(
-						ctx, repo, repoID, result, cloneFetchOK,
-					); err != nil {
-						failedScope |= failMR
+					if gqlErr != nil {
+						slog.Warn("GraphQL fetch failed, falling back to REST index",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", gqlErr,
+						)
+					} else {
+						if err := s.doSyncRepoGraphQL(
+							ctx, repo, repoID, result, cloneFetchOK,
+						); err != nil {
+							failedScope |= failMR
+						}
+						graphQLDone = true
 					}
-					graphQLDone = true
+				}
+			}
+
+			if !graphQLDone {
+				if err := s.syncMergeRequestsFromList(
+					ctx, mrReader, repo, repoID, openMRs, cloneFetchOK,
+				); err != nil {
+					slog.Error("merge request sync failed",
+						"repo", repo.Owner+"/"+repo.Name,
+						"err", err,
+					)
+					failedScope |= failMR
 				}
 			}
 		}
-
-		if !graphQLDone {
-			if err := s.syncMergeRequestsFromList(
-				ctx, mrReader, repo, repoID, openMRs, cloneFetchOK,
-			); err != nil {
-				slog.Error("merge request sync failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"err", err,
-				)
-				failedScope |= failMR
-			}
-		}
-	}
-
-	issueReader, err := s.issueReaderFor(repo)
-	if err != nil {
-		slog.Error("resolve issue reader failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"err", err,
-		)
-		failedScope |= failIssues
-		if failedScope != 0 {
-			s.markRepoFailed(repo, failedScope)
-		}
-		return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.
 	// Same structure as PR sync: REST list first (ETag gate),
 	// then GraphQL if available, REST fallback if not.
-	var openIssues []platform.Issue
-	var ghIssues []*gh.Issue
-	_, useGitHubIssuePath := issueReader.(interface {
-		ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
-	})
-	var issueListErr error
-	if rawIssueReader, ok := issueReader.(interface {
-		ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
-	}); ok && hasGitHubClient {
-		ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
-	} else {
-		openIssues, issueListErr = issueReader.ListOpenIssues(ctx, platformRef)
-	}
 	issueListUnchanged := false
-	if issueListErr != nil {
-		if IsNotModified(issueListErr) {
-			// 304: open issue list unchanged, skip.
-			issueListUnchanged = true
-		} else {
-			slog.Error("list open issues failed",
+	if caps.ReadIssues {
+		issueReader, err := s.issueReaderFor(repo)
+		if err != nil {
+			slog.Error("resolve issue reader failed",
 				"repo", repo.Owner+"/"+repo.Name,
-				"err", issueListErr,
+				"err", err,
 			)
 			failedScope |= failIssues
-		}
-	} else {
-		graphQLIssuesDone := false
-		if fetcher := s.fetcherFor(repo); fetcher != nil {
-			if backoff, _ := fetcher.ShouldBackoff(); !backoff {
-				issueResult, gqlErr := fetcher.FetchRepoIssues(
-					ctx, repo.Owner, repo.Name,
-				)
-				if gqlErr != nil {
-					slog.Warn("GraphQL issue fetch failed, falling back to REST",
-						"repo", repo.Owner+"/"+repo.Name,
-						"err", gqlErr,
-					)
-				} else {
-					if err := s.doSyncRepoGraphQLIssues(
-						ctx, repo, repoID, issueResult,
-					); err != nil {
-						failedScope |= failIssues
-					}
-					graphQLIssuesDone = true
-				}
+			if failedScope != 0 {
+				s.markRepoFailed(repo, failedScope)
 			}
+			return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 
-		if !graphQLIssuesDone {
-			if useGitHubIssuePath && hasGitHubClient {
-				if err := s.syncIssuesFromList(
-					ctx, gitHubClient, repo, repoID, ghIssues, forceIssues,
-				); err != nil {
-					slog.Error("REST issue sync failed",
-						"repo", repo.Owner+"/"+repo.Name,
-						"err", err,
-					)
-					failedScope |= failIssues
-				}
+		var openIssues []platform.Issue
+		var ghIssues []*gh.Issue
+		_, useGitHubIssuePath := issueReader.(interface {
+			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
+		})
+		var issueListErr error
+		if rawIssueReader, ok := issueReader.(interface {
+			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
+		}); ok && hasGitHubClient {
+			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
+		} else {
+			openIssues, issueListErr = issueReader.ListOpenIssues(ctx, platformRef)
+		}
+		if issueListErr != nil {
+			if IsNotModified(issueListErr) {
+				// 304: open issue list unchanged, skip.
+				issueListUnchanged = true
 			} else {
-				if err := s.syncPlatformIssuesFromList(
-					ctx, issueReader, repo, repoID, openIssues, forceIssues,
-				); err != nil {
-					slog.Error("issue sync failed",
-						"repo", repo.Owner+"/"+repo.Name,
-						"err", err,
+				slog.Error("list open issues failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", issueListErr,
+				)
+				failedScope |= failIssues
+			}
+		} else {
+			graphQLIssuesDone := false
+			if fetcher := s.fetcherFor(repo); fetcher != nil {
+				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+					issueResult, gqlErr := fetcher.FetchRepoIssues(
+						ctx, repo.Owner, repo.Name,
 					)
-					failedScope |= failIssues
+					if gqlErr != nil {
+						slog.Warn("GraphQL issue fetch failed, falling back to REST",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", gqlErr,
+						)
+					} else {
+						if err := s.doSyncRepoGraphQLIssues(
+							ctx, repo, repoID, issueResult,
+						); err != nil {
+							failedScope |= failIssues
+						}
+						graphQLIssuesDone = true
+					}
+				}
+			}
+
+			if !graphQLIssuesDone {
+				if useGitHubIssuePath && hasGitHubClient {
+					if err := s.syncIssuesFromList(
+						ctx, gitHubClient, repo, repoID, ghIssues, forceIssues,
+					); err != nil {
+						slog.Error("REST issue sync failed",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", err,
+						)
+						failedScope |= failIssues
+					}
+				} else {
+					if err := s.syncPlatformIssuesFromList(
+						ctx, issueReader, repo, repoID, openIssues, forceIssues,
+					); err != nil {
+						slog.Error("issue sync failed",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", err,
+						)
+						failedScope |= failIssues
+					}
 				}
 			}
 		}
@@ -2249,10 +2499,10 @@ func (s *Syncer) indexSyncRepo(
 		s.clearRepoFailed(repo)
 	}
 
-	if prListUnchanged && failedScope&failMR == 0 {
+	if caps.ReadMergeRequests && prListUnchanged && failedScope&failMR == 0 {
 		s.refreshRepoPRComments(ctx, repo)
 	}
-	if issueListUnchanged && failedScope&failIssues == 0 {
+	if caps.ReadIssues && issueListUnchanged && failedScope&failIssues == 0 {
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
