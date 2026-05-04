@@ -143,6 +143,9 @@ async function expectCompactFilterBar(
   ).toBeVisible();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
+  await expectFastAnimation(
+    filterBar.locator(".compact-filter-menu"),
+  );
 }
 
 async function expectExpandedFilterBar(
@@ -153,6 +156,7 @@ async function expectExpandedFilterBar(
   ).toBeHidden();
   await expect(filterBar.locator(".state-toggle")).toBeVisible();
   await expect(filterBar.locator(".group-toggle")).toBeVisible();
+  await expectFastAnimation(filterBar.locator(".state-toggle"));
   const filterMetrics = await filterBar.evaluate((node) => ({
     clientWidth: node.clientWidth,
     scrollWidth: node.scrollWidth,
@@ -160,6 +164,23 @@ async function expectExpandedFilterBar(
   expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(
     filterMetrics.clientWidth,
   );
+}
+
+async function expectFastAnimation(locator: Locator): Promise<void> {
+  const durationMs = await locator.evaluate((node) => {
+    const durations = getComputedStyle(node)
+      .animationDuration.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) =>
+        value.endsWith("ms")
+          ? Number.parseFloat(value)
+          : Number.parseFloat(value) * 1000
+      );
+    return Math.max(...durations);
+  });
+  expect(durationMs).toBeGreaterThan(0);
+  expect(durationMs).toBeLessThanOrEqual(150);
 }
 
 test.describe("collapsible sidebar", () => {

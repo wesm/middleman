@@ -643,11 +643,14 @@
     background: var(--bg-inset);
     border-radius: 6px;
     padding: 2px;
+    animation: sidebar-filter-pop-out 120ms ease-out;
+    transform-origin: right center;
   }
 
   .compact-filter-menu {
     display: none;
     flex-shrink: 0;
+    transform-origin: left center;
   }
 
   .compact-filter-menu :global(.filter-btn) {
@@ -689,6 +692,8 @@
     background: var(--bg-inset);
     border-radius: 6px;
     padding: 2px;
+    animation: sidebar-filter-pop-out 120ms ease-out;
+    transform-origin: right center;
   }
   .group-btn {
     font-size: 11px;
@@ -713,6 +718,37 @@
 
   .filter-bar--compact .compact-filter-menu {
     display: block;
+    animation: sidebar-filter-collapse-in 120ms ease-out;
+  }
+
+  @keyframes sidebar-filter-collapse-in {
+    from {
+      opacity: 0.2;
+      transform: translateX(-10px) scale(0.82);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @keyframes sidebar-filter-pop-out {
+    from {
+      opacity: 0;
+      transform: translateX(8px) scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .state-toggle,
+    .group-toggle,
+    .filter-bar--compact .compact-filter-menu {
+      animation: none;
+    }
   }
 
   .diff-files-wrap {
