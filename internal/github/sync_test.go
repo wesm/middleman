@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +23,8 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/platform"
 )
 
@@ -33,6 +37,21 @@ func openTestDB(t *testing.T) *db.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 	return d
+}
+
+func setupBareRemoteForSyncTest(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main", remote)
+	cmd.Dir = dir
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git init --bare failed: %s", out)
+	return remote
 }
 
 // testBudget builds a per-host budget map for use in NewSyncer calls.
@@ -2513,6 +2532,160 @@ func TestPlatformRepoRefPreservesFullProviderRef(t *testing.T) {
 	assert.Equal("https://gitlab.example.com/Group/SubGroup/Project", ref.WebURL)
 	assert.Equal("https://gitlab.example.com/Group/SubGroup/Project.git", ref.CloneURL)
 	assert.Equal("main", ref.DefaultBranch)
+}
+
+func TestCloneRemoteURLUsesProviderCloneURLAndRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+
+	gitlabRepo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "Group/SubGroup",
+		Name:         "Project",
+		RepoPath:     "Group/SubGroup/Project",
+		CloneURL:     "https://gitlab.example.com/Group/SubGroup/Project.git",
+	}
+	assert.Equal(
+		"https://gitlab.example.com/Group/SubGroup/Project.git",
+		cloneRemoteURL(gitlabRepo),
+	)
+
+	gitlabRepo.CloneURL = ""
+	assert.Equal(
+		"https://gitlab.example.com/Group/SubGroup/Project.git",
+		cloneRemoteURL(gitlabRepo),
+	)
+
+	githubRepo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	assert.Equal("https://github.com/acme/widget.git", cloneRemoteURL(githubRepo))
+}
+
+func TestFetcherForSkipsNonGitHubRepoOnSameHost(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	fetcher := NewGraphQLFetcher("token", "code.example.com", nil, nil)
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, nil)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"code.example.com": fetcher,
+	})
+
+	assert.Same(fetcher, syncer.fetcherFor(RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}))
+	assert.Nil(syncer.fetcherFor(RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}))
+}
+
+func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	remote := setupBareRemoteForSyncTest(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group/subgroup",
+		Name:         "project",
+		RepoPath:     "group/subgroup/project",
+		CloneURL:     remote,
+	}
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
+
+	require.NoError(syncer.syncRepo(ctx, repo))
+	require.FileExists(filepath.Join(
+		clones.ClonePath("gitlab.example.com", "group/subgroup", "project"),
+		"HEAD",
+	))
+}
+
+func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	remote := setupBareRemoteForSyncTest(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group/subgroup",
+		Name:         "project",
+		RepoPath:     "group/subgroup/project",
+		CloneURL:     remote,
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://gitlab.example.com/group/subgroup/project/-/merge_requests/7",
+		Title:          "stale MR",
+		Author:         "ada",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
+		},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     1001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/subgroup/project/-/merge_requests/7",
+			Title:          "fresh MR",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	rateKey := RateBucketKey("gitlab", "gitlab.example.com")
+	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
+		rateKey: NewSyncBudget(100),
+	})
+
+	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true})
+
+	assert.Equal(int32(1), provider.getMRCalls.Load())
+	require.FileExists(filepath.Join(
+		clones.ClonePath("gitlab.example.com", "group/subgroup", "project"),
+		"HEAD",
+	))
 }
 
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {

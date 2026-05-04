@@ -733,21 +733,21 @@ func (s *Syncer) SetOnStatusChange(fn func(status *SyncStatus)) {
 	s.onStatusChange = fn
 }
 
-// SetFetchers registers GraphQL fetchers keyed by platform host.
+// SetFetchers registers GitHub GraphQL fetchers keyed by platform host.
 func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
 	s.fetchers = fetchers
 }
 
-// fetcherFor returns the GraphQL fetcher for a repo's host,
+// fetcherFor returns the GitHub GraphQL fetcher for a repo's host,
 // or nil if none is configured.
 func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 	if s.fetchers == nil {
 		return nil
 	}
-	host := repo.PlatformHost
-	if host == "" {
-		host = "github.com"
+	if repoPlatform(repo) != platform.KindGitHub {
+		return nil
 	}
+	host := repoHost(repo)
 	return s.fetchers[host]
 }
 
@@ -822,6 +822,17 @@ func platformRepoRef(repo RepoRef) platform.RepoRef {
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
 	}
+}
+
+func cloneRemoteURL(repo RepoRef) string {
+	if repo.CloneURL != "" {
+		return repo.CloneURL
+	}
+	repoPath := repo.RepoPath
+	if repoPath == "" {
+		repoPath = strings.Trim(repo.Owner+"/"+repo.Name, "/")
+	}
+	return fmt.Sprintf("https://%s/%s.git", repoHost(repo), strings.Trim(repoPath, "/"))
 }
 
 func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
@@ -1646,8 +1657,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	host := repoHost(repo)
 	cloneFetchOK := false
 	if s.clones != nil {
-		remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, repo.Owner, repo.Name)
-		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, remoteURL); err != nil {
+		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -4222,13 +4232,9 @@ func (s *Syncer) drainDetailQueue(
 		// Compute diff SHAs if clone available.
 		cloneFetchOK := false
 		if s.clones != nil {
-			remoteURL := fmt.Sprintf(
-				"https://%s/%s/%s.git",
-				host, qi.RepoOwner, qi.RepoName,
-			)
 			if cloneErr := s.clones.EnsureClone(
 				ctx, host, qi.RepoOwner, qi.RepoName,
-				remoteURL,
+				cloneRemoteURL(repo),
 			); cloneErr != nil {
 				slog.Warn("detail drain: bare clone failed",
 					"repo", qi.RepoOwner+"/"+qi.RepoName,
@@ -4835,12 +4841,8 @@ func (s *Syncer) syncMRDiff(
 	if s.clones == nil {
 		return nil
 	}
-	host := repo.PlatformHost
-	if host == "" {
-		host = "github.com"
-	}
-	remoteURL := fmt.Sprintf("https://%s/%s/%s.git", host, repo.Owner, repo.Name)
-	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, remoteURL); err != nil {
+	host := repoHost(repo)
+	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCloneUnavailable,
 			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
