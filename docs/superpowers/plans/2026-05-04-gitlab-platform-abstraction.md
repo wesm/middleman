@@ -17,6 +17,7 @@
 - GitLab API v4 accepts personal/project/group access tokens through token headers such as `PRIVATE-TOKEN`; the Go client also supports custom base URLs for self-hosted instances.
 - GitLab's Go API client docs are at <https://pkg.go.dev/gitlab.com/gitlab-org/api/client-go>. Use `gitlab.com/gitlab-org/api/client-go` as the module/import path.
 - Context7 reports the old `github.com/xanzy/go-gitlab` client as moved to `gitlab.com/gitlab-org/api/client-go`; do not add the deprecated import path or copy examples that still import `github.com/xanzy/go-gitlab`.
+- The official GitLab Community Edition Docker image is `gitlab/gitlab-ce` on Docker Hub. GitLab's Docker installation docs recommend Docker Compose or Docker Engine, `GITLAB_OMNIBUS_CONFIG` for pre-configuration, mounted config/log/data volumes, and waiting for the instance to become responsive before use.
 
 ## Scope
 
@@ -34,6 +35,7 @@
 - GitLab mutations: comments, close/reopen, approvals, merge, ready-for-review equivalents.
 - GitLab review/discussion parity beyond comments and commits.
 - GitLab project glob import across all accessible token associations.
+- Always-on CI against a real GitLab CE container. Containerized GitLab e2e is valuable but too slow and heavy for the default test suite.
 - New UI vocabulary that renames "pull request" to a neutral "change request" everywhere.
 
 This split keeps the first release useful and testable without dragging every platform-specific action into the abstraction at once.
@@ -50,6 +52,10 @@ This split keeps the first release useful and testable without dragging every pl
 - Create `internal/platform/gitlab/normalize.go`: map GitLab projects, MRs, issues, comments, labels, releases, tags, commits, and pipeline status into neutral types.
 - Create `internal/platform/gitlab/client_test.go`: httptest coverage for exact project lookup, namespace listing, MR pagination, issue pagination, comments, labels, and pipeline mapping.
 - Create `internal/platform/gitlab/normalize_test.go`: unit coverage for state, draft, branch, author, label, timestamp, URL, and CI status normalization.
+- Create `scripts/e2e/gitlab/docker-compose.yml`: optional GitLab CE fixture using a pinned `gitlab/gitlab-ce` image tag, temp volumes, loopback HTTP port, and `GITLAB_OMNIBUS_CONFIG`.
+- Create `scripts/e2e/gitlab/wait.sh`: waits for the container health/readiness endpoint and API availability before tests begin.
+- Create `scripts/e2e/gitlab/bootstrap.sh`: idempotently seeds groups, subgroups, projects, branches, merge requests, issues, labels, notes, tags, and releases for real GitLab compatibility tests.
+- Create `scripts/e2e/gitlab/README.md`: documents resource cost, image tag policy, required Docker privileges, cleanup, and how to run the optional fixture.
 - Modify `internal/github/client.go`: keep the live GitHub transport initially, but prepare it to be consumed by `internal/platform/github`; do not add GitLab paths here.
 - Modify `internal/github/sync.go` or move to `internal/syncer/sync.go`: replace direct `github.Client` calls with `platform.Client` capability interfaces and provider-neutral persistence helpers.
 - Modify `internal/github/repo_config_resolver.go` or move to `internal/platform/config_resolver.go`: resolve configured repos through provider repository discovery.
@@ -383,6 +389,25 @@ Preview/import must also be bounded for large GitLab instances:
 - If the first provider request fails, return the typed platform error and no preview rows.
 - If later pages fail after at least one successful page, return the successful rows with `truncated = true` and `partial_errors` populated.
 - Exact repository add is not a partial operation: project lookup must either resolve one project and add it, or fail with a typed platform error.
+
+### GitLab E2E Test Tiers
+
+Use two e2e tiers instead of making every test boot a real GitLab instance:
+
+- Fast e2e tier: always-on tests use `httptest.Server` fake GitLab API responses and real SQLite. These cover sync contracts, edge cases, timeouts, pagination, route identity, and provider-scoped persistence deterministically.
+- Container compatibility tier: opt-in tests boot `gitlab/gitlab-ce` with Docker Compose, run the bootstrap script, and then exercise middleman's GitLab client against the real GitLab API.
+
+Container fixture rules:
+
+- Gate the container tier behind an explicit env var such as `MIDDLEMAN_GITLAB_CONTAINER_E2E=1` and a make target such as `make test-gitlab-container`. Do not run it in `make test-short`.
+- Pin `GITLAB_CE_IMAGE` to a known `gitlab/gitlab-ce:<version>-ce.0` tag in CI. Avoid `latest` for repeatable tests, but allow local override through an environment variable.
+- Use temporary host directories for `/etc/gitlab`, `/var/log/gitlab`, and `/var/opt/gitlab`; cleanup must remove the container, network, and volumes unless `MIDDLEMAN_KEEP_GITLAB_FIXTURE=1` is set for debugging.
+- Configure loopback-only HTTP access with `external_url 'http://127.0.0.1:<port>'` through `GITLAB_OMNIBUS_CONFIG`. HTTPS, custom CAs, SSH clone, and runners stay out of scope for this fixture.
+- Bootstrap should be idempotent and write a JSON manifest containing the base URL, token env var name, project ids, canonical `path_with_namespace` values, MR iids, issue iids, tag names, release names, and expected API-visible URLs.
+- Prefer GitLab Rails runner or documented API calls for bootstrap. The script should create a dedicated test user or token, not depend on a human login session.
+- Seed at least: `middleman/top-level`, `middleman/subgroup/nested-project`, a project with mixed-case display names where GitLab canonicalization can be observed, one archived project for preview filtering, one open MR with labels and notes, one open issue with labels and notes, commits on source and target branches, a tag, and a release.
+- CI pipeline status in the real-container tier is optional unless the fixture also provisions a runner or uses GitLab-supported commit status APIs. The fake API tier remains the required coverage for every CI status mapping branch.
+- Give the fixture a long startup budget, such as 10 minutes, and fail with a clear message that includes recent container logs when GitLab never becomes ready.
 
 ### GitLab CI Mapping
 
@@ -820,6 +845,28 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Run `go test ./internal/server -run TestGitLabSync -shuffle=on`.
 - [ ] Commit: `test: cover GitLab repository sync end to end`.
 
+### Task 13A: Optional Real GitLab CE Container E2E
+
+**Files:**
+- Create: `scripts/e2e/gitlab/docker-compose.yml`
+- Create: `scripts/e2e/gitlab/wait.sh`
+- Create: `scripts/e2e/gitlab/bootstrap.sh`
+- Create: `scripts/e2e/gitlab/README.md`
+- Create or modify: `internal/server/gitlab_container_e2e_test.go`
+- Modify: `Makefile`
+
+- [ ] Add `make test-gitlab-container` that requires `MIDDLEMAN_GITLAB_CONTAINER_E2E=1`, Docker, and Docker Compose.
+- [ ] Use `gitlab/gitlab-ce` with a pinned `GITLAB_CE_IMAGE` default, loopback-only HTTP port, temporary volumes, and `GITLAB_OMNIBUS_CONFIG` for `external_url`.
+- [ ] Add `wait.sh` to wait for GitLab readiness and print recent container logs on timeout.
+- [ ] Add `bootstrap.sh` to idempotently create the seeded groups, subgroups, projects, branches, merge requests, issues, labels, notes, tags, and releases described in GitLab E2E Test Tiers.
+- [ ] Have bootstrap emit a fixture manifest JSON consumed by the Go e2e test instead of hard-coding ids that GitLab assigns dynamically.
+- [ ] Configure middleman against the container base URL through test-only provider base URL injection and run a real sync into SQLite.
+- [ ] Assert exact project lookup, namespace preview, archived filtering, nested namespace path preservation, MR/issue sync, comments/events, labels, tags, and releases against the real GitLab API.
+- [ ] Keep CI pipeline mapping assertions in the fake API e2e unless the container fixture provisions a supported status source.
+- [ ] Ensure cleanup removes containers, networks, and temp volumes by default; preserve them only when `MIDDLEMAN_KEEP_GITLAB_FIXTURE=1`.
+- [ ] Run `MIDDLEMAN_GITLAB_CONTAINER_E2E=1 make test-gitlab-container` locally or in an opt-in CI job before marking GitLab support production-ready.
+- [ ] Commit: `test: add optional GitLab CE container e2e fixture`.
+
 ### Task 14: Documentation And Invariants
 
 **Files:**
@@ -845,6 +892,7 @@ git diff --exit-code -- frontend/openapi/openapi.yaml internal/apiclient/generat
 go test ./... -shuffle=on
 make frontend
 make test-short
+MIDDLEMAN_GITLAB_CONTAINER_E2E=1 make test-gitlab-container  # opt-in before production-ready GitLab support
 ```
 
 If `make api-generate` changes files, commit the generated artifacts and rerun the affected Go/frontend tests after generation. If frontend action gating or route behavior changes are visible, also run the relevant Playwright e2e tests rather than relying only on unit tests.
@@ -857,11 +905,12 @@ Do not run `npm` commands; use Bun for frontend work.
 - GitHub GraphQL bulk sync should stay GitHub-specific. Trying to model GitLab through the GitHub GraphQL bulk fetcher will make the abstraction brittle.
 - Mutation parity is intentionally not part of the first GitLab milestone. Capability flags make this visible and prevent GitLab rows from showing buttons that cannot work.
 - Rate limits are not identical across providers. Rate-limit rows must be keyed by `(platform, platform_host, api_type)` so GitHub REST, GitHub GraphQL, and GitLab REST cannot overwrite each other.
+- The GitLab CE container fixture is a compatibility check, not the default correctness harness. Keep fake API e2e coverage for every edge case because the real container is slow, stateful, and harder to diagnose.
 - Keep `db.MergeRequest` as the local row type for now. Renaming database and generated API vocabulary to "change request" is a separate migration-sized project.
 
 ## Self-Review
 
-- Spec coverage: covers GitLab repo fetching, GitLab MR/issue sync, GitHub migration into an abstraction, future provider extensibility, config, DB, server, frontend, docs, and tests.
+- Spec coverage: covers GitLab repo fetching, GitLab MR/issue sync, GitHub migration into an abstraction, future provider extensibility, config, DB, server, frontend, fake API e2e, optional GitLab CE container e2e, docs, and tests.
 - Placeholder scan: no placeholder markers, deferred code stubs, or unnamed files remain.
 - Type consistency: the plan consistently uses `platform.Kind`, `platform.RepoRef`, `Capabilities`, and provider reader interfaces.
 - Scope check: this is one large but coherent platform-enablement project. If execution feels too broad, split after Task 5: first land the abstraction with GitHub unchanged, then land GitLab as a second branch.
