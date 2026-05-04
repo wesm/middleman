@@ -23,10 +23,14 @@
   const { diff } = getStores();
 
   let base = $state<WorkspaceDiffBase>("head");
+  let loadedKey = "";
   const resetKey = $derived(`${workspaceID}:${base}`);
 
   $effect(() => {
     if (!active) return;
+    const key = `${workspaceID}:${base}`;
+    if (loadedKey === key) return;
+    loadedKey = key;
     void diff.loadWorkspaceDiff(workspaceID, base);
   });
 
@@ -68,6 +72,7 @@
         name={repoName}
         number={itemNumber}
         loadOnMount={false}
+        keyboardActive={false}
       />
     </div>
   </div>

@@ -60,7 +60,10 @@ async function createIssueWorkspace(
 }
 
 test.describe("workspace tab persistence", () => {
-  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+  test.describe.configure({
+    mode: "serial",
+    timeout: lockedWorkspaceTestTimeoutMs,
+  });
 
   test("opening tmux tab keeps Home pane mounted across tab switches", async ({ page }) => {
     test.skip(
@@ -186,6 +189,63 @@ test.describe("workspace tab persistence", () => {
         `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
       );
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("shows workspace diff in the right sidebar without adding a stage pane", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const workspace = await createIssueWorkspace(api, 12);
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${workspace.id}`,
+      );
+
+      const stage = page.locator(".workspace-stage");
+      const panes = stage.locator(":scope > .stage-pane");
+      const homeTab = page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "Home",
+      });
+
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "Diff",
+      })).toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+
+      const diffResponse = page.waitForResponse((response) =>
+        response
+          .url()
+          .includes(`/api/v1/workspaces/${workspace.id}/diff`) &&
+        response.request().method() === "GET",
+      );
+      await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
+      expect((await diffResponse).ok()).toBe(true);
+      await expect(panes).toHaveCount(1);
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+
+      await page.locator(".launch-trigger").click();
+      await page.locator(".launch-option", { hasText: "tmux" }).click();
+      await expect(page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "tmux",
+      })).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
+      await expect(panes).toHaveCount(2);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

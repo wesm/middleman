@@ -142,6 +142,7 @@
   function loadSidebarTab(): SidebarTab {
     const v = localStorage.getItem(SIDEBAR_TAB_KEY);
     if (v === "diff") return "diff";
+    if (v === "pr") return "pr";
     if (v === "issue") return "issue";
     if (v === "reviews") return "reviews";
     return "diff";

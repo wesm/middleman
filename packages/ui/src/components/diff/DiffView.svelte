@@ -10,9 +10,16 @@
     name: string;
     number: number;
     loadOnMount?: boolean;
+    keyboardActive?: boolean;
   }
 
-  const { owner, name, number, loadOnMount = true }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    loadOnMount = true,
+    keyboardActive = true,
+  }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
   let scrollRaf = 0;
@@ -112,6 +119,7 @@
   }
 
   $effect(() => {
+    if (!keyboardActive) return;
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
   });
