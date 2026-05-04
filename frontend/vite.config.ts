@@ -24,6 +24,7 @@ const uiGeneratedClient = path.resolve(process.cwd(), "../packages/ui/src/api/ge
 const uiGeneratedSchema = path.resolve(process.cwd(), "../packages/ui/src/api/generated/schema.ts");
 const uiApiTypes = path.resolve(process.cwd(), "../packages/ui/src/api/types.ts");
 const uiApiCsrf = path.resolve(process.cwd(), "../packages/ui/src/api/csrf.ts");
+const uiRoutes = path.resolve(process.cwd(), "../packages/ui/src/routes.ts");
 const uiStoreDetail = path.resolve(process.cwd(), "../packages/ui/src/stores/detail.svelte.ts");
 const uiStoreEvents = path.resolve(process.cwd(), "../packages/ui/src/stores/events.svelte.ts");
 const uiStorePulls = path.resolve(process.cwd(), "../packages/ui/src/stores/pulls.svelte.ts");
@@ -165,6 +166,10 @@ const config = {
       {
         find: /^@middleman\/ui\/api\/csrf$/,
         replacement: uiApiCsrf,
+      },
+      {
+        find: /^@middleman\/ui\/routes$/,
+        replacement: uiRoutes,
       },
       {
         find: /^@middleman\/ui\/stores\/detail$/,

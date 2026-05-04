@@ -6,16 +6,12 @@
   import IssueDetail
     from "../components/detail/IssueDetail.svelte";
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
+  import type { IssueRouteRef } from "../routes.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
 
   interface Props {
-    selectedIssue?: {
-      owner: string;
-      name: string;
-      number: number;
-      platformHost?: string | undefined;
-    } | null;
+    selectedIssue?: IssueRouteRef | null;
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;

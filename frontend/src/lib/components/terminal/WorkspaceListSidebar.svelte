@@ -1,9 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import {
-    navigate,
-    buildItemRoute,
-  } from "../../stores/router.svelte.ts";
+  import { navigate } from "../../stores/router.svelte.ts";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";

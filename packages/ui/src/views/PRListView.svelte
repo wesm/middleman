@@ -12,16 +12,17 @@
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
+  import {
+    buildPullRequestFilesRoute,
+    buildPullRequestRoute,
+    type PullRequestRouteRef,
+  } from "../routes.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
 
   interface Props {
-    selectedPR?: {
-      owner: string;
-      name: string;
-      number: number;
-    } | null;
+    selectedPR?: PullRequestRouteRef | null;
     detailTab?: "conversation" | "files";
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
@@ -52,8 +53,8 @@
     if (selectedPR === null) return;
     navigate(
       tab === "files"
-        ? `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}/files`
-        : `/pulls/${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`,
+        ? buildPullRequestFilesRoute(selectedPR)
+        : buildPullRequestRoute(selectedPR),
     );
   }
 </script>

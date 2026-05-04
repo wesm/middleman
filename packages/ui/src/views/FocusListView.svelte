@@ -3,6 +3,13 @@
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
+  import type { Issue, PullRequest } from "../api/types.js";
+  import {
+    buildFocusIssueRoute,
+    buildFocusPullRequestRoute,
+    type IssueRouteRef,
+    type PullRequestRouteRef,
+  } from "../routes.js";
 
   const { pulls, issues, sync, settings, grouping } = getStores();
   const navigate = getNavigate();
@@ -91,23 +98,29 @@
     }, 300);
   }
 
-  function handlePRSelect(
-    owner: string,
-    name: string,
-    number: number,
-  ): void {
-    navigate(`/focus/pr/${owner}/${name}/${number}`);
+  function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
+    return {
+      owner: pr.repo_owner ?? "",
+      name: pr.repo_name ?? "",
+      number: pr.Number,
+    };
   }
 
-  function handleIssueSelect(
-    owner: string,
-    name: string,
-    number: number,
-    platformHost: string,
-  ): void {
-    navigate(
-      `/focus/issue/${owner}/${name}/${number}?platform_host=${encodeURIComponent(platformHost)}`,
-    );
+  function routeRefForIssue(issue: Issue): IssueRouteRef {
+    return {
+      owner: issue.repo_owner ?? "",
+      name: issue.repo_name ?? "",
+      number: issue.Number,
+      platformHost: issue.platform_host,
+    };
+  }
+
+  function handlePRSelect(ref: PullRequestRouteRef): void {
+    navigate(buildFocusPullRequestRoute(ref));
+  }
+
+  function handleIssueSelect(ref: IssueRouteRef): void {
+    navigate(buildFocusIssueRoute(ref));
   }
 
   // Filter state accessors for PRs.
@@ -256,34 +269,26 @@
           <div class="workflow-group">
             <h3 class="group-header">{wg.label}</h3>
             {#each wg.items as pr (pr.ID)}
+              {@const prRef = routeRefForPull(pr)}
               <PullItem
                 {pr}
                 showRepo={!repo}
                 selected={false}
                 {importAction}
-                onclick={() =>
-                  handlePRSelect(
-                    pr.repo_owner ?? "",
-                    pr.repo_name ?? "",
-                    pr.Number,
-                  )}
+                onclick={() => handlePRSelect(prRef)}
               />
             {/each}
           </div>
         {/each}
       {:else}
         {#each prItems as pr (pr.ID)}
+          {@const prRef = routeRefForPull(pr)}
           <PullItem
             {pr}
             showRepo={!repo}
             selected={false}
             {importAction}
-            onclick={() =>
-              handlePRSelect(
-                pr.repo_owner ?? "",
-                pr.repo_name ?? "",
-                pr.Number,
-              )}
+            onclick={() => handlePRSelect(prRef)}
           />
         {/each}
       {/if}
@@ -305,17 +310,12 @@
         <p class="state-message">No issues found.</p>
       {:else}
         {#each issueItems as issue (issue.ID)}
+          {@const issueRef = routeRefForIssue(issue)}
           <IssueItem
             {issue}
             showRepo={!repo}
             selected={false}
-            onclick={() =>
-              handleIssueSelect(
-                issue.repo_owner ?? "",
-                issue.repo_name ?? "",
-                issue.Number,
-                issue.platform_host,
-              )}
+            onclick={() => handleIssueSelect(issueRef)}
           />
         {/each}
       {/if}

@@ -11,6 +11,11 @@
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
+  import {
+    buildPullRequestFilesRoute,
+    buildPullRequestRoute,
+    type RoutedItemRef,
+  } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
@@ -53,7 +58,6 @@
     isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
-    type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
     buildActivitySelectionSearch,
@@ -200,7 +204,7 @@
     }
   });
 
-  type DrawerItem = RoutableItemRef & {
+  type DrawerItem = RoutedItemRef & {
     detailTab: ActivityDetailTab;
   };
 
@@ -276,8 +280,8 @@
     const tab = getDetailTab();
     const path =
       tab === "files"
-        ? `/pulls/${sel.owner}/${sel.name}/${sel.number}/files`
-        : `/pulls/${sel.owner}/${sel.name}/${sel.number}`;
+        ? buildPullRequestFilesRoute(sel)
+        : buildPullRequestRoute(sel);
     if (getSelectedPRFromRoute()) {
       replaceUrl(path);
     } else {
@@ -344,13 +348,9 @@
         e.preventDefault();
         const tab = getDetailTab();
         if (tab === "conversation") {
-          navigate(
-            `/pulls/${sel.owner}/${sel.name}/${sel.number}/files`,
-          );
+          navigate(buildPullRequestFilesRoute(sel));
         } else {
-          navigate(
-            `/pulls/${sel.owner}/${sel.name}/${sel.number}`,
-          );
+          navigate(buildPullRequestRoute(sel));
         }
         return;
       }

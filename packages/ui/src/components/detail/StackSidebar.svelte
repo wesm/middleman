@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { getClient, getNavigate, getStores } from "../../context.js";
+  import {
+    buildPullRequestRoute,
+    type PullRequestRouteRef,
+  } from "../../routes.js";
 
   const client = getClient();
   const navigate = getNavigate();
   const { sync } = getStores();
 
-  interface Props {
-    owner: string;
-    name: string;
-    number: number;
-  }
+  type Props = PullRequestRouteRef;
 
   const { owner, name, number }: Props = $props();
 
@@ -122,7 +122,7 @@
     <div class="stack-header">STACK &middot; {data.stack_name}</div>
 
     <div class="stack-chain">
-      {#each data.members as member, i}
+      {#each data.members as member, i (member.number)}
         {@const isCurrent = member.number === number}
         {@const outline = isOutline(member)}
         {@const ci = ciLabel(member)}
@@ -149,7 +149,10 @@
             {#if isCurrent}
               <div class="current-label">You are here</div>
             {/if}
-            <button class="member-link" onclick={() => navigate(`/pulls/${owner}/${name}/${member.number}`)}>
+            <button
+              class="member-link"
+              onclick={() => navigate(buildPullRequestRoute({ owner, name, number: member.number }))}
+            >
               #{member.number} {member.title}
             </button>
             {#if ci || review}
