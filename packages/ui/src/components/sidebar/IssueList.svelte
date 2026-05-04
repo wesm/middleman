@@ -25,8 +25,9 @@
     { byRepo: true, label: "By Repo" },
     { byRepo: false, label: "All" },
   ];
-  // Playwright-measured: the full issue filter row first fits at 363px.
-  const COMPACT_FILTER_MAX_WIDTH = 362;
+  // Playwright-measured with a buffered "9999 issues" count label:
+  // the full issue filter row first fits at 373px.
+  const COMPACT_FILTER_MAX_WIDTH = 372;
 
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;

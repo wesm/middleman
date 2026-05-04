@@ -43,8 +43,9 @@
     { value: "byWorkflow", label: "Status" },
     { value: "flat", label: "All" },
   ];
-  // Playwright-measured: the full PR filter row first fits at 382px.
-  const COMPACT_FILTER_MAX_WIDTH = 381;
+  // Playwright-measured with a buffered "9999 PRs" count label:
+  // the full PR filter row first fits at 396px.
+  const COMPACT_FILTER_MAX_WIDTH = 395;
 
   interface Props {
     getDetailTab?: () => string;

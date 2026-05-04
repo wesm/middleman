@@ -282,12 +282,12 @@ test.describe("collapsible sidebar", () => {
     );
   });
 
-  test("pull filters switch at the measured 382px fit point", async ({ page }) => {
+  test("pull filters switch at the buffered 396px fit point", async ({ page }) => {
     await expectCompactFilterBar(
       await setPersistedSidebarWidth(
         page,
         "/pulls",
-        381,
+        395,
         waitForPRList,
       ),
     );
@@ -295,18 +295,18 @@ test.describe("collapsible sidebar", () => {
       await setPersistedSidebarWidth(
         page,
         "/pulls",
-        382,
+        396,
         waitForPRList,
       ),
     );
   });
 
-  test("issue filters switch at the measured 363px fit point", async ({ page }) => {
+  test("issue filters switch at the buffered 373px fit point", async ({ page }) => {
     await expectCompactFilterBar(
       await setPersistedSidebarWidth(
         page,
         "/issues",
-        362,
+        372,
         waitForIssueList,
       ),
     );
@@ -314,7 +314,7 @@ test.describe("collapsible sidebar", () => {
       await setPersistedSidebarWidth(
         page,
         "/issues",
-        363,
+        373,
         waitForIssueList,
       ),
     );
