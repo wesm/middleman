@@ -43,19 +43,22 @@ This split keeps the first release useful and testable without dragging every pl
 - Create `internal/platform/types.go`: provider-neutral repository, merge request, issue, event, label, release, tag, CI, identity, capability, and state types.
 - Create `internal/platform/client.go`: small interfaces for provider capabilities: repository discovery, change request read sync, issue read sync, comment read sync, release/tag sync, CI sync, and optional mutation actions.
 - Create `internal/platform/registry.go`: keyed provider registry by `(platform, host)` with client lookup, capability lookup, and host display helpers.
-- Create `internal/platform/github/adapter.go`: wraps existing GitHub client data into neutral `platform` types.
-- Create `internal/platform/github/normalize.go`: move GitHub normalization out of `internal/github/normalize.go` behind the neutral output shape.
+- Create `internal/platform/persist.go`: provider-neutral persistence helpers that convert platform read models into DB rows and keep sync orchestration out of provider adapters.
+- Create `internal/platform/github/adapter.go`: wraps existing GitHub transport data into neutral `platform` types without importing from `internal/github` packages that import the adapter.
+- Create `internal/platform/github/normalize.go`: move GitHub SDK normalization behind the neutral output shape while keeping package dependencies acyclic.
 - Create `internal/platform/gitlab/client.go`: GitLab API client construction, auth, base URL handling, pagination, and rate tracking.
 - Create `internal/platform/gitlab/normalize.go`: map GitLab projects, MRs, issues, comments, labels, releases, tags, commits, and pipeline status into neutral types.
 - Create `internal/platform/gitlab/client_test.go`: httptest coverage for exact project lookup, namespace listing, MR pagination, issue pagination, comments, labels, and pipeline mapping.
 - Create `internal/platform/gitlab/normalize_test.go`: unit coverage for state, draft, branch, author, label, timestamp, URL, and CI status normalization.
 - Modify `internal/github/client.go`: keep the live GitHub transport initially, but prepare it to be consumed by `internal/platform/github`; do not add GitLab paths here.
-- Modify `internal/github/sync.go` or move to `internal/syncer/sync.go`: replace direct `github.Client` calls with `platform.Client` capability interfaces.
+- Modify `internal/github/sync.go` or move to `internal/syncer/sync.go`: replace direct `github.Client` calls with `platform.Client` capability interfaces and provider-neutral persistence helpers.
 - Modify `internal/github/repo_config_resolver.go` or move to `internal/platform/config_resolver.go`: resolve configured repos through provider repository discovery.
 - Modify `internal/db/types.go`: add explicit `RepoIdentity` and preserve `db.MergeRequest` as the local change request row.
 - Modify `internal/db/queries.go`: replace hard-coded GitHub repo upserts with platform-aware upserts.
-- Create migration `internal/db/migrations/000017_platform_repo_identity.up.sql`: add stable provider repo fields needed for GitLab nested namespaces and future providers.
+- Create migration `internal/db/migrations/000017_platform_repo_identity.up.sql`: add stable provider repo fields, provider-aware lookup keys, and external id uniqueness needed for GitLab nested namespaces and future providers.
 - Create migration `internal/db/migrations/000017_platform_repo_identity.down.sql`.
+- Create migration `internal/db/migrations/000018_provider_scoped_items.up.sql`: add provider-aware workspace/activity/rate-limit/item external id fields where the existing schema still assumes GitHub-shaped repository identity.
+- Create migration `internal/db/migrations/000018_provider_scoped_items.down.sql`.
 - Modify `internal/config/config.go`: add explicit `platform`, `platform_host`, and platform token config while preserving `github_token_env` and old repo entries.
 - Modify `cmd/middleman/main.go`, `middleman.go`, and `cmd/e2e-server/main.go`: build a provider registry instead of `map[string]ghclient.Client`.
 - Create or modify `internal/server/repo_ref.go`: parse and validate provider-aware repository references from query/body payloads.
@@ -89,6 +92,7 @@ type RepoRef struct {
 	Host           string
 	Owner          string
 	Name           string
+	RepoPath       string
 	PlatformRepoID string
 	WebURL         string
 	CloneURL       string
@@ -96,11 +100,52 @@ type RepoRef struct {
 }
 
 func (r RepoRef) DisplayName() string {
+	if r.RepoPath != "" {
+		return r.RepoPath
+	}
 	return r.Owner + "/" + r.Name
 }
 ```
 
-For GitHub, `Owner` remains the owner/org login and `Name` remains the repository name. For GitLab, `Owner` is the full namespace path without the project slug, so `group/subgroup/project` is stored as `Owner: "group/subgroup", Name: "project"`. The GitLab project `id` is stored as `PlatformRepoID` so sync can survive namespace path changes later.
+For GitHub, `Owner` remains the owner/org login and `Name` remains the repository name. For GitLab, `Owner` is the full namespace path without the project slug, so `group/subgroup/project` is stored as `Owner: "group/subgroup", Name: "project"`, and `RepoPath` is the canonical full provider path. The GitLab project `id` is stored as `PlatformRepoID` so sync can survive namespace path changes later.
+
+### Provider-Aware Storage Identity
+
+The database cannot keep treating every repo path as a lower-cased GitHub owner/name pair. Existing lower-case triggers and helper functions must become provider-aware before GitLab rows are inserted.
+
+Rules:
+
+- GitHub keeps the current case-folded lookup behavior.
+- GitLab stores display identity using the canonical `path_with_namespace` returned by GitLab and preserves spelling in `owner`, `name`, and `repo_path`.
+- Provider lookup keys may be separate normalized columns, such as `owner_key`, `name_key`, and `repo_path_key`, or centralized query helpers, but the behavior must be covered by migration and query tests.
+- Existing case-fold triggers from earlier migrations must be superseded by a new migration that only applies GitHub-style case-folding where appropriate. Do not edit already-landed migration files.
+- `platform_repo_id` must have a partial unique index on `(platform, platform_host, platform_repo_id)` where the value is not empty.
+- Add an `UpsertRepoByProviderID` or equivalent reconciliation query. When a provider returns a stable repo id, sync should prefer that identity, update `owner/name/repo_path` on rename, and avoid creating a duplicate row.
+- The old `(platform, platform_host, owner, name)` uniqueness remains as the fallback before a provider id is known.
+
+### Workspace, Activity, And List Identity
+
+Workspace, starred/activity, list/search, dashboard, and settings rows must not infer a repository from `owner/name` alone. Every repo-scoped API response and filter that can cross repository boundaries must carry `provider`, `platform_host`, and `repo_path`.
+
+Rules:
+
+- Workspace associations should store either `repo_id` or the full provider ref. If they store denormalized fields, those fields must include provider and host.
+- Activity filters and dedupe keys must include provider identity whenever they refer to a repository, merge request, issue, commit, label, or event.
+- List/search/dashboard responses should include a reusable `RepoRefResponse` shape so frontend stores have one identity model for GitHub, GitLab, and future providers.
+- UI helpers may omit `provider = github` and `platform_host = github.com` only for visible legacy GitHub URLs; internal state and generated API types must keep the full identity.
+
+### Acyclic Package Layout
+
+The GitHub migration must avoid an adapter cycle. The safe dependency direction is:
+
+```text
+internal/platform         -> neutral types only
+internal/github           -> GitHub transport and legacy compatibility
+internal/platform/github  -> imports internal/platform plus GitHub SDK/transport helpers
+internal/syncer or sync   -> imports internal/platform and provider adapters
+```
+
+`internal/github/normalize.go` must not import `internal/platform/github` if the adapter imports anything from `internal/github`. Either keep GitHub transport in `internal/github` and put the adapter in a package that imports it, or move normalization into a package that imports only SDK types, `internal/platform`, and `internal/db`. Add a package import test or `go test ./...` checkpoint immediately after the adapter lands so cycles are caught before later tasks build on them.
 
 ### Config
 
@@ -234,6 +279,7 @@ Only one route family should be implemented for new provider-aware clients after
 - Legacy GitHub routes should return the new `provider`, `platform_host`, and `repo_path` fields in response bodies as soon as the response types change. Compatibility is route-level, not response-shape-level, because frontend stores need one item identity shape.
 - Generated clients and frontend route refs must carry `provider`, `platform_host`, `repo_path`, and `number`; helper methods can split `repo_path` into `owner/name` only at DB and provider boundaries. For GitHub UI URLs, `provider` and default `github.com` host may remain omitted in the visible route only when the route helper can reconstruct the full repo ref.
 - Add e2e coverage for `group/subgroup/project` detail load and refresh through the Task 5 route shape before GitLab sync is considered complete.
+- The route proof must exercise the checked-in generated Go API client and frontend route helpers, not only the server handler. Tests should prove exactly one encode/decode cycle for `repo_path = "group/subgroup/project"`, including base path middleware and a `platform_host` that contains a port.
 
 ### Error Taxonomy
 
@@ -267,6 +313,18 @@ Server handlers should return these codes in JSON error details for platform-awa
 
 Provider clients should wrap raw GitHub/GitLab errors into typed platform errors at the transport boundary when status codes are known. HTTP handlers should only map typed platform errors to response codes and should avoid parsing raw provider error strings.
 
+### Provider-Scoped Item And Event IDs
+
+GitHub and GitLab both expose numeric ids for the first milestone, but those ids are not globally unique across providers, repositories, or item kinds.
+
+Rules:
+
+- Keep existing numeric `platform_id` columns for GitHub compatibility and GitLab's numeric `id` values.
+- Add `platform_external_id TEXT NOT NULL DEFAULT ''` where future providers may expose string ids for merge requests, issues, events, labels, releases, tags, and CI checks.
+- Event dedupe keys must include provider, host, repo id or repo ref, parent item kind, parent item number or provider id, event kind, and provider event id or external id.
+- Add collision tests where GitHub and GitLab return the same numeric event id, where two GitLab projects return the same note id, and where an MR note and issue note share an id.
+- Labels should be unique per `(repo_id, name)` for display, but provider label ids or external ids should be stored when available and scoped by provider/repo.
+
 ### GitLab Mapping
 
 Map GitLab fields into middleman rows as follows:
@@ -286,6 +344,33 @@ Map GitLab fields into middleman rows as follows:
 - `merge_requests.merge_status` / `detailed_merge_status` -> `mergeable_state`.
 - `head_pipeline.status` -> `ci_status` and one synthesized `db.CICheck` named `GitLab Pipeline`.
 - GitLab labels become `db.Label` rows. If GitLab returns only names for an endpoint, store color as empty and update richer label fields when the project labels endpoint is available.
+
+### GitLab Client Path Handling
+
+GitLab's HTTP API documents project identifiers as either numeric ids or URL-encoded paths. In the Go client, project-scoped method parameters should receive the raw `path_with_namespace` string, such as `group/subgroup/project`, unless middleman is constructing a raw HTTP URL itself. Passing an already escaped path such as `group%2Fsubgroup%2Fproject` into client-go methods risks double escaping.
+
+Rules:
+
+- Use numeric project ids after exact project lookup whenever possible.
+- Before the project id is known, pass raw `path_with_namespace` values to client-go project methods and let the client encode path parameters.
+- Escape `repo_path` exactly once in middleman's own Huma route helpers and generated-client route helpers.
+- Add httptest assertions for raw path input, escaped route input, and a regression case where already escaped input must not produce a double-escaped GitLab request path.
+
+### GitLab Namespace And Discussion Mapping
+
+Repo import/preview must define how namespaces are resolved:
+
+- Treat preview `owner` as a namespace path. Try group lookup/listing first; if the provider reports not found or not a group, try user/project listing filtered to that namespace.
+- For groups, include subgroup projects in the first milestone when the GitLab API supports it, paginate all result pages, exclude archived projects by default, and return archived status in preview rows if the API includes it.
+- Pattern matching applies to canonical `path_with_namespace` and project `name`. Keep matching case-insensitive for UI convenience, but persist the canonical provider path returned by lookup.
+- Exact repository add must call project lookup and store the canonical `path_with_namespace`, project id, default branch, web URL, and clone URL from the response.
+
+Comments and event sync start with:
+
+- Merge request notes and issue notes: store non-system notes as comments/events.
+- System notes: exclude from comment counts in the first milestone unless they are explicitly mapped to a known middleman event kind; document unsupported system-note parity.
+- MR commits: store commit events from the MR commits endpoint.
+- Discussions: do not attempt full threaded discussion parity in the first milestone. If the API endpoint returns discussions, flatten resolvable notes only when they map cleanly to existing event rows; otherwise leave the review/discussion parity follow-up intact.
 
 ### GitLab CI Mapping
 
@@ -313,6 +398,16 @@ Migration `000017` must be safe for existing databases:
 - The first successful provider sync fills these fields from provider repository metadata.
 - For GitHub rows, a failed repository metadata fetch must not block PR/issue sync; it only leaves the new fields empty for that cycle.
 - For GitLab rows, exact project resolution must fill `platform_repo_id` before sync proceeds when the project is reachable.
+
+### Provider-Aware Rate Limits
+
+Rate-limit storage must distinguish providers and hosts, because GitHub REST, GitHub GraphQL, and GitLab REST have different buckets and reset semantics.
+
+Rules:
+
+- Migrate rate-limit rows to key by `(platform, platform_host, api_type)` where `api_type` is a provider-local bucket such as `rest`, `graphql`, or `gitlab-rest`.
+- Existing GitHub rows backfill to `platform = 'github'`.
+- Add tests proving GitHub REST and GitLab REST rate-limit rows do not overwrite each other on the same host string.
 
 ### Self-Hosted GitLab URLs
 
@@ -345,6 +440,7 @@ Standing rule for API work: every task that changes Huma routes, request schemas
 
 - [ ] Write tests for registry lookup by `(platform, host)`, missing client errors, optional reader lookup, and capability lookup.
 - [ ] Add `Kind`, `RepoRef`, `Repository`, `MergeRequest`, `Issue`, `Label`, `MergeRequestEvent`, `IssueEvent`, `Release`, `Tag`, `CICheck`, and `Capabilities`.
+- [ ] Give repo-scoped platform models both numeric `PlatformID` and string `PlatformExternalID` fields where future providers may not expose integer ids.
 - [ ] Add base `Provider` plus narrow reader and optional mutation interfaces; do not embed reader interfaces in `Provider`.
 - [ ] Add `PlatformErrorCode` constants and typed errors for unsupported capability, missing provider, missing token, invalid repo ref, permission denied, not found, and rate limited.
 - [ ] Run `go test ./internal/platform -shuffle=on`.
@@ -357,22 +453,30 @@ Standing rule for API work: every task that changes Huma routes, request schemas
 - Modify: `internal/db/queries.go`
 - Create: `internal/db/migrations/000017_platform_repo_identity.up.sql`
 - Create: `internal/db/migrations/000017_platform_repo_identity.down.sql`
+- Create: `internal/db/migrations/000018_provider_scoped_items.up.sql`
+- Create: `internal/db/migrations/000018_provider_scoped_items.down.sql`
 - Test: `internal/db/queries_test.go`
 
 - [ ] Add migration:
 
 ```sql
 ALTER TABLE middleman_repos ADD COLUMN platform_repo_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_repos ADD COLUMN repo_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_repos ADD COLUMN owner_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_repos ADD COLUMN name_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_repos ADD COLUMN repo_path_key TEXT NOT NULL DEFAULT '';
 ALTER TABLE middleman_repos ADD COLUMN web_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE middleman_repos ADD COLUMN clone_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE middleman_repos ADD COLUMN default_branch TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_repos_platform_repo_id
+CREATE UNIQUE INDEX IF NOT EXISTS idx_repos_platform_repo_id
     ON middleman_repos(platform, platform_host, platform_repo_id)
     WHERE platform_repo_id <> '';
 ```
 
 - [ ] Replace `UpsertRepo(ctx, host, owner, name)` with `UpsertRepo(ctx, identity db.RepoIdentity)`.
+- [ ] Add `UpsertRepoByProviderID(ctx, identity db.RepoIdentity)` or equivalent reconciliation that updates owner/name/repo_path on provider rename instead of creating a new row.
 - [ ] Add `UpdateRepoProviderMetadata(ctx, repoID, metadata)` for `platform_repo_id`, `web_url`, `clone_url`, and `default_branch`.
+- [ ] Replace or supersede existing lower-case repo triggers with provider-aware canonicalization. GitHub keys are case-folded; GitLab display fields preserve canonical provider spelling while lookup keys are derived from provider-canonical paths.
 - [ ] Keep a small compatibility helper for GitHub-heavy tests:
 
 ```go
@@ -383,7 +487,12 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 
 - [ ] Update queries to select and scan new repo fields.
 - [ ] Add migration tests proving existing rows keep `platform = 'github'`, new metadata fields default to empty strings, GitHub upserts still use `platform = 'github'`, GitLab upserts use `platform = 'gitlab'`, and the same host/owner/name on different platforms creates different rows.
+- [ ] Add migration and query tests proving GitHub rows still case-fold, GitLab rows preserve canonical `path_with_namespace`, lookup keys prevent duplicates, and `platform_repo_id` uniqueness updates renamed repos.
 - [ ] Add query tests proving provider metadata can be filled after the initial upsert without changing the repo identity.
+- [ ] Add provider-aware workspace/activity/list/rate-limit migration work in `000018`: workspace associations must use `repo_id` or full provider refs; activity filters and dedupe keys must include provider identity; rate-limit rows must key by `(platform, platform_host, api_type)`.
+- [ ] Add `platform_external_id` fields where future providers may expose string ids for item/event/label/release/tag/check identity, while keeping existing numeric `platform_id` columns for GitHub and GitLab.
+- [ ] Add collision tests for same numeric event id across providers, same GitLab note id across projects, and same note id on MR versus issue events.
+- [ ] Add tests proving GitHub REST, GitHub GraphQL, and GitLab REST rate-limit buckets do not overwrite each other.
 - [ ] Run `go test ./internal/db -shuffle=on`.
 - [ ] Commit: `feat: persist provider-aware repository identity`.
 
@@ -414,7 +523,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Modify: `internal/github/sync_test.go`
 
 - [ ] Move GitHub normalization logic to return `platform.MergeRequest`, `platform.Issue`, and event types.
-- [ ] Keep compatibility functions `NormalizePR`, `NormalizeIssue`, and event normalizers until the syncer is migrated; they should call the adapter and convert to DB rows.
+- [ ] Keep compatibility functions `NormalizePR`, `NormalizeIssue`, and event normalizers until the syncer is migrated, but keep package dependencies acyclic. If the adapter imports `internal/github`, compatibility wrappers must not import the adapter back.
+- [ ] Add a short package-layout check in the task review: `go test ./internal/github ./internal/platform/github -shuffle=on` must pass before syncer work starts, so import cycles are caught early.
 - [ ] Add adapter tests proving GitHub PR number/id/state/draft/branches/labels/CI events match current persisted DB behavior.
 - [ ] Run `go test ./internal/github ./internal/platform/github -shuffle=on`.
 - [ ] Commit: `refactor: adapt GitHub data through platform models`.
@@ -431,9 +541,11 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Test: `packages/ui/src/routes.test.ts`
 
 - [ ] Write the first server integration test before adding the final route contract. It must issue a real HTTP request with `group%2Fsubgroup%2Fproject` and assert the handler receives one `repo_path` value, not split path segments.
+- [ ] Extend the route proof through the generated Go API client and frontend route helper, including base path middleware and a `platform_host` with a port. The test must prove exactly one encode/decode cycle for `repo_path = "group/subgroup/project"`.
 - [ ] If Huma/server routing cannot preserve `%2F` as one parameter, switch this task to the query/body fallback route shape from the API Repository Identity section before proceeding.
 - [ ] Add `RepoRefInput`/`RepoRefResponse` API shapes with `provider`, `platform_host`, and `repo_path`.
 - [ ] Add parser tests for `repo_path = "owner/repo"` and `repo_path = "group/subgroup/project"`.
+- [ ] Update list/search/dashboard/workspace/starred/activity response types to carry `RepoRefResponse` rather than ad hoc owner/name fields.
 - [ ] Add the selected platform-aware route family. Use escaped `repo_path` as one route parameter if the router proof passes; otherwise use the fallback query/body routes from the API Repository Identity section:
 
 ```text
@@ -456,11 +568,14 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 **Files:**
 - Modify: `internal/github/sync.go`
 - Modify: `internal/github/repo_config_resolver.go`
+- Create or modify: `internal/platform/persist.go`
 - Test: `internal/github/sync_test.go`
 - Test: `internal/github/repo_config_resolver_test.go`
 
 - [ ] Change `Syncer.clients` from `map[string]Client` to the platform registry while keeping all configured clients GitHub adapters.
 - [ ] Change syncer client lookup to request optional `RepositoryReader`, `MergeRequestReader`, and `IssueReader` interfaces as needed.
+- [ ] Move provider-model-to-DB persistence into provider-neutral helpers so GitLab does not need to mimic GitHub-specific sync internals.
+- [ ] Keep GitHub GraphQL bulk fetch, ETag invalidation, and detailed diff behavior as optional paths layered around the neutral persistence flow.
 - [ ] Keep public method behavior unchanged for existing GitHub callers.
 - [ ] Add tests for missing provider, missing optional reader, and duplicate owner/name on different platforms.
 - [ ] Run `go test ./internal/github -run 'Test.*Client|Test.*Resolve|Test.*Tracked' -shuffle=on`.
@@ -509,13 +624,16 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Add `gitlab.com/gitlab-org/api/client-go` with `go get gitlab.com/gitlab-org/api/client-go`.
 - [ ] Import the GitLab client as `gitlab "gitlab.com/gitlab-org/api/client-go"` and use the package docs at <https://pkg.go.dev/gitlab.com/gitlab-org/api/client-go> as the source of truth for client APIs.
 - [ ] Build clients with `gitlab.NewClient(token, gitlab.WithBaseURL("https://<host>/api/v4"))`.
-- [ ] Implement exact project lookup by URL-escaped `path_with_namespace`.
-- [ ] Implement namespace listing for repo preview. For groups, use group project listing with subgroups when available; for users, fall back to project search/listing filtered by namespace path.
-- [ ] Implement MR list/detail pagination with project `id` when known and encoded `path_with_namespace` when not.
-- [ ] Implement issues, comments, commits, releases, tags, and basic pipeline status reads.
+- [ ] Add a constructor option for test-only base URL injection or provider registry injection so e2e tests can point the GitLab client at `httptest.Server` without weakening production host validation.
+- [ ] Implement exact project lookup using raw `path_with_namespace` when calling client-go methods, not pre-escaped strings. Use numeric project ids for later project-scoped calls after lookup succeeds.
+- [ ] Add tests proving raw `group/subgroup/project` produces the expected GitLab request and already escaped `group%2Fsubgroup%2Fproject` is rejected or normalized before it can double-escape.
+- [ ] Implement namespace listing for repo preview. For groups, use group project listing with subgroups when available; for users, fall back to project search/listing filtered by namespace path; paginate all pages and exclude archived projects by default.
+- [ ] Implement MR list/detail pagination with project `id` when known and raw `path_with_namespace` when not.
+- [ ] Implement issues, MR notes, issue notes, MR commits, releases, tags, and basic pipeline status reads.
+- [ ] Store non-system notes as comments/events, exclude system notes unless explicitly mapped to a known middleman event kind, and keep full threaded discussion parity out of the first milestone.
 - [ ] Normalize GitLab `iid` as middleman `number`; never use the global MR id as `number`.
 - [ ] Implement the GitLab CI mapping table exactly: pending/running statuses become `pending`, success and skipped become `success`, failed/canceled become `failure`, manual/scheduled become `pending`, unknown statuses become `neutral`, and missing pipelines leave CI empty.
-- [ ] Add httptest fixtures for paginated GitLab responses, pipeline status mapping, missing pipeline fallback, and self-hosted base URL construction.
+- [ ] Add httptest fixtures for paginated GitLab responses, namespace group/user fallback, archived project filtering, non-system/system note handling, pipeline status mapping, missing pipeline fallback, and self-hosted base URL construction.
 - [ ] Run `go test ./internal/platform/gitlab -shuffle=on`.
 - [ ] Commit: `feat: add GitLab read client`.
 
@@ -559,11 +677,13 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 
 - [ ] Default omitted `provider` to `github` and omitted `platform_host` to the provider default.
 - [ ] Return provider and host on preview rows.
+- [ ] Return a full `RepoRefResponse` on preview, settings, workspace, starred/activity, list, and search rows so generated clients never have to reconstruct provider identity from owner/name alone.
 - [ ] Update bulk add request rows to include provider, host, and `repo_path`.
 - [ ] Validate exact rows through the matching provider registry client.
+- [ ] Resolve GitLab preview namespaces with the group-first/user-fallback rules from GitLab Namespace And Discussion Mapping, including subgroup pagination and archived-project filtering.
 - [ ] Store the provider-canonical `repo_path` returned by lookup. GitHub paths continue to case-fold; GitLab paths preserve `path_with_namespace`.
 - [ ] Keep old GitHub-only requests working.
-- [ ] Add full-stack e2e coverage using a fake GitLab API server and real SQLite: preview GitLab repos, add one exact repo, trigger syncer tracked repo update.
+- [ ] Add full-stack e2e coverage using a fake GitLab API server and real SQLite through test-only provider registry or base URL injection: preview GitLab repos, add one exact repo, trigger syncer tracked repo update.
 - [ ] Run `make api-generate` immediately after changing preview or bulk request/response contracts.
 - [ ] Run `go test ./internal/server -run 'Test.*Repo.*' -shuffle=on`.
 - [ ] Commit: `feat: import repositories from configured platforms`.
@@ -596,12 +716,14 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - Test: `internal/server/gitlab_sync_e2e_test.go`
 
 - [ ] Start a fake GitLab API server with endpoints for project lookup, MRs, issues, comments, releases, tags, commits, and pipeline status.
-- [ ] Configure middleman with one GitLab repo and token env var.
+- [ ] Configure middleman with one GitLab repo and token env var, and route the provider through test-only registry/base URL injection rather than relying on production `https://<host>/api/v4` construction.
 - [ ] Run the syncer once against real SQLite.
 - [ ] Assert repo row has `platform = 'gitlab'`, GitLab host, namespace path, project id, web URL, clone URL, and default branch.
 - [ ] Assert MR row has `number = iid`, `platform_id = id`, draft/state/branches/labels/CI status populated.
 - [ ] Assert issue row and comments/events are populated.
 - [ ] Assert nested namespace detail and refresh calls work through the Task 5 route shape selected by the router proof: escaped `repo_path` path parameter when supported, otherwise the query/body fallback.
+- [ ] Assert list/search/dashboard/workspace/starred/activity API responses include `provider`, `platform_host`, and `repo_path` for GitLab rows.
+- [ ] Assert provider-scoped event dedupe does not collapse GitHub and GitLab rows with the same provider event id.
 - [ ] Assert GitHub rows remain absent.
 - [ ] Run `go test ./internal/server -run TestGitLabSync -shuffle=on`.
 - [ ] Commit: `test: cover GitLab repository sync end to end`.
@@ -641,7 +763,7 @@ Do not run `npm` commands; use Bun for frontend work.
 - GitLab nested namespaces are the main identity wrinkle. The plan stores the full namespace in `owner`; Task 5 must prove the server can preserve a single escaped `repo_path` route parameter before using that route shape. If the proof fails, the implementation must use the query/body fallback while still threading `provider`, `platform_host`, and `repo_path` everywhere it addresses a repo-scoped item.
 - GitHub GraphQL bulk sync should stay GitHub-specific. Trying to model GitLab through the GitHub GraphQL bulk fetcher will make the abstraction brittle.
 - Mutation parity is intentionally not part of the first GitLab milestone. Capability flags make this visible and prevent GitLab rows from showing buttons that cannot work.
-- Rate limits are not identical across providers. The DB can keep `api_type`, but provider clients should name buckets as `rest`, `graphql`, or `gitlab-rest` as needed.
+- Rate limits are not identical across providers. Rate-limit rows must be keyed by `(platform, platform_host, api_type)` so GitHub REST, GitHub GraphQL, and GitLab REST cannot overwrite each other.
 - Keep `db.MergeRequest` as the local row type for now. Renaming database and generated API vocabulary to "change request" is a separate migration-sized project.
 
 ## Self-Review
