@@ -211,12 +211,12 @@ func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func toRepoSummaryResponse(
+func (s *Server) toRepoSummaryResponse(
 	summary db.RepoSummary,
 	defaultPlatformHost string,
 ) repoSummaryResponse {
 	resp := repoSummaryResponse{
-		Repo:                repoRefFromRepo(summary.Repo),
+		Repo:                s.repoRefFromRepo(summary.Repo),
 		PlatformHost:        summary.Repo.PlatformHost,
 		DefaultPlatformHost: defaultPlatformHost,
 		Owner:               summary.Repo.Owner,

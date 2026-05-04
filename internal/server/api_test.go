@@ -7296,6 +7296,276 @@ func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
 	assert.Equal(int64(12), body.MergeRequest.Number)
 }
 
+func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, _ := setupGitLabCapabilityServer(t)
+
+	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, rawPulls.Code, rawPulls.Body.String())
+	var pulls []map[string]any
+	require.NoError(json.NewDecoder(rawPulls.Body).Decode(&pulls))
+	require.Len(pulls, 1)
+	pullRepo := pulls[0]["repo"].(map[string]any)
+	pullCaps := pullRepo["capabilities"].(map[string]any)
+	assert.Equal(true, pullCaps["read_merge_requests"])
+	assert.Equal(true, pullCaps["read_issues"])
+	assert.Equal(false, pullCaps["comment_mutation"])
+	assert.Equal(false, pullCaps["state_mutation"])
+	assert.Equal(false, pullCaps["merge_mutation"])
+	assert.Equal(false, pullCaps["review_mutation"])
+	assert.Equal(false, pullCaps["workflow_approval"])
+	assert.Equal(false, pullCaps["ready_for_review"])
+	assert.Equal(false, pullCaps["issue_mutation"])
+
+	rawDetail := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/items/pull-request?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject&number=7",
+		nil,
+	)
+	require.Equal(http.StatusOK, rawDetail.Code, rawDetail.Body.String())
+	var detail map[string]any
+	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
+	detailRepo := detail["repo"].(map[string]any)
+	detailCaps := detailRepo["capabilities"].(map[string]any)
+	assert.Equal(true, detailCaps["read_merge_requests"])
+	assert.Equal(false, detailCaps["merge_mutation"])
+
+	rawSummaries := doJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
+	require.Equal(http.StatusOK, rawSummaries.Code, rawSummaries.Body.String())
+	var summaries []map[string]any
+	require.NoError(json.NewDecoder(rawSummaries.Body).Decode(&summaries))
+	require.Len(summaries, 1)
+	summaryRepo := summaries[0]["repo"].(map[string]any)
+	summaryCaps := summaryRepo["capabilities"].(map[string]any)
+	assert.Equal(true, summaryCaps["read_repositories"])
+	assert.Equal(false, summaryCaps["issue_mutation"])
+
+	rawRepos := doJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
+	require.Equal(http.StatusOK, rawRepos.Code, rawRepos.Body.String())
+	var repos []map[string]any
+	require.NoError(json.NewDecoder(rawRepos.Body).Decode(&repos))
+	require.Len(repos, 1)
+	repoCaps := repos[0]["capabilities"].(map[string]any)
+	assert.Equal(true, repoCaps["read_repositories"])
+	assert.Equal(false, repoCaps["comment_mutation"])
+}
+
+func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) {
+	srv, _ := setupGitLabCapabilityServer(t)
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       any
+		capability string
+	}{
+		{
+			name:       "PR comment",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/pulls/7/comments",
+			body:       map[string]string{"body": "hello"},
+			capability: "comment_mutation",
+		},
+		{
+			name:       "PR content",
+			method:     http.MethodPatch,
+			path:       "/api/v1/repos/group/project/pulls/7",
+			body:       map[string]string{"title": "Updated title"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "review approval",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/pulls/7/approve",
+			body:       map[string]string{"body": "looks good"},
+			capability: "review_mutation",
+		},
+		{
+			name:       "workflow approval",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/pulls/7/approve-workflows",
+			body:       nil,
+			capability: "workflow_approval",
+		},
+		{
+			name:       "ready for review",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/pulls/7/ready-for-review",
+			body:       nil,
+			capability: "ready_for_review",
+		},
+		{
+			name:   "merge",
+			method: http.MethodPost,
+			path:   "/api/v1/repos/group/project/pulls/7/merge",
+			body: map[string]string{
+				"method":         "squash",
+				"commit_title":   "Merge MR",
+				"commit_message": "Merge GitLab MR",
+			},
+			capability: "merge_mutation",
+		},
+		{
+			name:       "PR state",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/pulls/7/github-state",
+			body:       map[string]string{"state": "closed"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "issue creation",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/issues",
+			body:       map[string]string{"title": "New issue", "body": "Issue body"},
+			capability: "issue_mutation",
+		},
+		{
+			name:       "issue comment",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/issues/11/comments",
+			body:       map[string]string{"body": "hello"},
+			capability: "comment_mutation",
+		},
+		{
+			name:       "issue state",
+			method:     http.MethodPost,
+			path:       "/api/v1/repos/group/project/issues/11/github-state",
+			body:       map[string]string{"state": "closed"},
+			capability: "state_mutation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			assertUnsupportedCapabilityProblem(
+				t, rr.Body, "gitlab", "gitlab.example.com", tt.capability,
+			)
+		})
+	}
+}
+
+func setupGitLabCapabilityServer(t *testing.T) (*Server, *db.DB) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               ref,
+			PlatformID:         7001,
+			PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+			Number:             7,
+			URL:                "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:              "GitLab provider MR",
+			Author:             "ada",
+			State:              "open",
+			IsDraft:            true,
+			HeadBranch:         "feature/gitlab",
+			BaseBranch:         "main",
+			HeadSHA:            "abc123",
+			BaseSHA:            "def456",
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+		issues: []platform.Issue{{
+			Repo:               ref,
+			PlatformID:         8001,
+			PlatformExternalID: "gid://gitlab/Issue/8001",
+			Number:             11,
+			URL:                "https://gitlab.example.com/group/project/-/issues/11",
+			Title:              "GitLab provider issue",
+			Author:             "grace",
+			State:              "open",
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "group",
+		Name:               "project",
+		PlatformHost:       "gitlab.example.com",
+		RepoPath:           "group/project",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	return srv, database
+}
+
+func assertUnsupportedCapabilityProblem(
+	t *testing.T,
+	body io.Reader,
+	provider, host, capability string,
+) {
+	t.Helper()
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	var problem struct {
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+		Detail string `json:"detail"`
+		Errors []struct {
+			Message  string         `json:"message"`
+			Location string         `json:"location"`
+			Value    map[string]any `json:"value"`
+		} `json:"errors"`
+	}
+	require.NoError(json.NewDecoder(body).Decode(&problem))
+	assert.Equal(http.StatusText(http.StatusConflict), problem.Title)
+	assert.Equal(http.StatusConflict, problem.Status)
+	assert.Contains(problem.Detail, "Unsupported provider capability")
+	require.Len(problem.Errors, 1)
+	assert.Equal("unsupported_capability", problem.Errors[0].Message)
+	assert.Equal("provider.capabilities", problem.Errors[0].Location)
+	assert.Equal("unsupported_capability", problem.Errors[0].Value["code"])
+	assert.Equal(provider, problem.Errors[0].Value["provider"])
+	assert.Equal(host, problem.Errors[0].Value["platform_host"])
+	assert.Equal(capability, problem.Errors[0].Value["capability"])
+}
+
 func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

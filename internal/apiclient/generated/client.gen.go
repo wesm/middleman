@@ -583,6 +583,23 @@ type PostIssueCommentInputBody struct {
 	PlatformHost *string `json:"platform_host,omitempty"`
 }
 
+// ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
+type ProviderCapabilitiesResponse struct {
+	CommentMutation   bool `json:"comment_mutation"`
+	IssueMutation     bool `json:"issue_mutation"`
+	MergeMutation     bool `json:"merge_mutation"`
+	ReadCi            bool `json:"read_ci"`
+	ReadComments      bool `json:"read_comments"`
+	ReadIssues        bool `json:"read_issues"`
+	ReadMergeRequests bool `json:"read_merge_requests"`
+	ReadReleases      bool `json:"read_releases"`
+	ReadRepositories  bool `json:"read_repositories"`
+	ReadyForReview    bool `json:"ready_for_review"`
+	ReviewMutation    bool `json:"review_mutation"`
+	StateMutation     bool `json:"state_mutation"`
+	WorkflowApproval  bool `json:"workflow_approval"`
+}
+
 // RateLimitHostStatus defines model for RateLimitHostStatus.
 type RateLimitHostStatus struct {
 	BudgetLimit        int64  `json:"budget_limit"`
@@ -610,30 +627,6 @@ type RateLimitsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string                        `json:"$schema,omitempty"`
 	Hosts  map[string]RateLimitHostStatus `json:"hosts"`
-}
-
-// Repo defines model for Repo.
-type Repo struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema                   *string    `json:"$schema,omitempty"`
-	AllowMergeCommit         bool       `json:"AllowMergeCommit"`
-	AllowRebaseMerge         bool       `json:"AllowRebaseMerge"`
-	AllowSquashMerge         bool       `json:"AllowSquashMerge"`
-	BackfillIssueComplete    bool       `json:"BackfillIssueComplete"`
-	BackfillIssueCompletedAt *time.Time `json:"BackfillIssueCompletedAt"`
-	BackfillIssuePage        int64      `json:"BackfillIssuePage"`
-	BackfillPRComplete       bool       `json:"BackfillPRComplete"`
-	BackfillPRCompletedAt    *time.Time `json:"BackfillPRCompletedAt"`
-	BackfillPRPage           int64      `json:"BackfillPRPage"`
-	CreatedAt                time.Time  `json:"CreatedAt"`
-	ID                       int64      `json:"ID"`
-	LastSyncCompletedAt      *time.Time `json:"LastSyncCompletedAt"`
-	LastSyncError            string     `json:"LastSyncError"`
-	LastSyncStartedAt        *time.Time `json:"LastSyncStartedAt"`
-	Name                     string     `json:"Name"`
-	Owner                    string     `json:"Owner"`
-	Platform                 string     `json:"Platform"`
-	PlatformHost             string     `json:"PlatformHost"`
 }
 
 // RepoPreviewRequest defines model for RepoPreviewRequest.
@@ -674,11 +667,37 @@ type RepoPreviewRow struct {
 
 // RepoRefResponse defines model for RepoRefResponse.
 type RepoRefResponse struct {
-	Name         string `json:"name"`
-	Owner        string `json:"owner"`
-	PlatformHost string `json:"platform_host"`
-	Provider     string `json:"provider"`
-	RepoPath     string `json:"repo_path"`
+	Capabilities ProviderCapabilitiesResponse `json:"capabilities"`
+	Name         string                       `json:"name"`
+	Owner        string                       `json:"owner"`
+	PlatformHost string                       `json:"platform_host"`
+	Provider     string                       `json:"provider"`
+	RepoPath     string                       `json:"repo_path"`
+}
+
+// RepoResponse defines model for RepoResponse.
+type RepoResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                   *string                      `json:"$schema,omitempty"`
+	AllowMergeCommit         bool                         `json:"AllowMergeCommit"`
+	AllowRebaseMerge         bool                         `json:"AllowRebaseMerge"`
+	AllowSquashMerge         bool                         `json:"AllowSquashMerge"`
+	BackfillIssueComplete    bool                         `json:"BackfillIssueComplete"`
+	BackfillIssueCompletedAt *time.Time                   `json:"BackfillIssueCompletedAt"`
+	BackfillIssuePage        int64                        `json:"BackfillIssuePage"`
+	BackfillPRComplete       bool                         `json:"BackfillPRComplete"`
+	BackfillPRCompletedAt    *time.Time                   `json:"BackfillPRCompletedAt"`
+	BackfillPRPage           int64                        `json:"BackfillPRPage"`
+	CreatedAt                time.Time                    `json:"CreatedAt"`
+	ID                       int64                        `json:"ID"`
+	LastSyncCompletedAt      *time.Time                   `json:"LastSyncCompletedAt"`
+	LastSyncError            string                       `json:"LastSyncError"`
+	LastSyncStartedAt        *time.Time                   `json:"LastSyncStartedAt"`
+	Name                     string                       `json:"Name"`
+	Owner                    string                       `json:"Owner"`
+	Platform                 string                       `json:"Platform"`
+	PlatformHost             string                       `json:"PlatformHost"`
+	Capabilities             ProviderCapabilitiesResponse `json:"capabilities"`
 }
 
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
@@ -6069,7 +6088,7 @@ func (r GetRateLimitsResponse) StatusCode() int {
 type ListReposResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *[]Repo
+	JSON200                       *[]RepoResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -6206,7 +6225,7 @@ func (r DeleteRepoResponse) StatusCode() int {
 type GetReposByOwnerByNameResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *Repo
+	JSON200                       *RepoResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -8180,7 +8199,7 @@ func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Repo
+		var dest []RepoResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -8371,7 +8390,7 @@ func ParseGetReposByOwnerByNameResponse(rsp *http.Response) (*GetReposByOwnerByN
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Repo
+		var dest RepoResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

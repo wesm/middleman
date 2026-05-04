@@ -212,16 +212,18 @@
       {/if}
     </div>
 
-    <div class="repo-card__actions">
-      <ActionButton
-        size="sm"
-        tone="neutral"
-        surface="outline"
-        onclick={onopencomposer}
-      >
-        New issue
-      </ActionButton>
-    </div>
+    {#if summary.repo.capabilities.issue_mutation}
+      <div class="repo-card__actions">
+        <ActionButton
+          size="sm"
+          tone="neutral"
+          surface="outline"
+          onclick={onopencomposer}
+        >
+          New issue
+        </ActionButton>
+      </div>
+    {/if}
   </div>
 
   <RepoMetricGrid {metrics} compact />

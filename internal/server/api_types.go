@@ -14,6 +14,44 @@ type worktreeLinkResponse struct {
 	WorktreeBranch string `json:"worktree_branch,omitempty"`
 }
 
+type providerCapabilitiesResponse struct {
+	ReadRepositories  bool `json:"read_repositories"`
+	ReadMergeRequests bool `json:"read_merge_requests"`
+	ReadIssues        bool `json:"read_issues"`
+	ReadComments      bool `json:"read_comments"`
+	ReadReleases      bool `json:"read_releases"`
+	ReadCI            bool `json:"read_ci"`
+	CommentMutation   bool `json:"comment_mutation"`
+	StateMutation     bool `json:"state_mutation"`
+	MergeMutation     bool `json:"merge_mutation"`
+	ReviewMutation    bool `json:"review_mutation"`
+	WorkflowApproval  bool `json:"workflow_approval"`
+	ReadyForReview    bool `json:"ready_for_review"`
+	IssueMutation     bool `json:"issue_mutation"`
+}
+
+type repoResponse struct {
+	ID                       int64
+	Platform                 string
+	PlatformHost             string
+	Owner                    string
+	Name                     string
+	LastSyncStartedAt        *time.Time
+	LastSyncCompletedAt      *time.Time
+	LastSyncError            string
+	AllowSquashMerge         bool
+	AllowMergeCommit         bool
+	AllowRebaseMerge         bool
+	BackfillPRPage           int
+	BackfillPRComplete       bool
+	BackfillPRCompletedAt    *time.Time
+	BackfillIssuePage        int
+	BackfillIssueComplete    bool
+	BackfillIssueCompletedAt *time.Time
+	CreatedAt                time.Time
+	Capabilities             providerCapabilitiesResponse `json:"capabilities"`
+}
+
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
 type mergeRequestResponse struct {
 	db.MergeRequest

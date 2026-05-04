@@ -1,4 +1,5 @@
 import type {
+  ProviderCapabilities,
   RepoSummary,
   RepoSummaryAuthor,
   RepoSummaryCommitPointResponse,
@@ -27,6 +28,22 @@ export type RepoFilter = "all" | "prs" | "issues" | "stale";
 export type RepoSort = "name" | "open-prs" | "open-issues" | "activity" | "stale";
 
 export const staleReleaseCommitThreshold = 50;
+
+export const defaultProviderCapabilities: ProviderCapabilities = {
+  read_repositories: true,
+  read_merge_requests: true,
+  read_issues: true,
+  read_comments: true,
+  read_releases: true,
+  read_ci: true,
+  comment_mutation: true,
+  state_mutation: true,
+  merge_mutation: true,
+  review_mutation: true,
+  workflow_approval: true,
+  ready_for_review: true,
+  issue_mutation: true,
+};
 
 export function repoKey(summary: {
   platform_host?: string;
@@ -94,6 +111,14 @@ export function normalizeSummaries(
 ): RepoSummaryCard[] {
   return (data ?? []).map((summary) => ({
     ...summary,
+    repo: {
+      provider: summary.repo?.provider ?? "github",
+      platform_host: summary.repo?.platform_host ?? summary.platform_host,
+      repo_path: summary.repo?.repo_path ?? `${summary.owner}/${summary.name}`,
+      owner: summary.repo?.owner ?? summary.owner,
+      name: summary.repo?.name ?? summary.name,
+      capabilities: summary.repo?.capabilities ?? defaultProviderCapabilities,
+    },
     default_platform_host: summary.default_platform_host || "github.com",
     active_authors: summary.active_authors ?? [],
     recent_issues: summary.recent_issues ?? [],

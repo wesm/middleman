@@ -180,8 +180,10 @@ type Capabilities struct {
 	CommentMutation   bool
 	StateMutation     bool
 	MergeMutation     bool
+	ReviewMutation    bool
 	WorkflowApproval  bool
 	ReadyForReview    bool
+	IssueMutation     bool
 }
 
 type RepositoryListOptions struct {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import type { ProviderCapabilities } from "../../api/types.js";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
@@ -24,6 +25,27 @@
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
+
+  const defaultProviderCapabilities: ProviderCapabilities = {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_comments: true,
+    read_releases: true,
+    read_ci: true,
+    comment_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    issue_mutation: true,
+  };
+
+  function currentCapabilities(): ProviderCapabilities {
+    return issues.getIssueDetail()?.repo.capabilities
+      ?? defaultProviderCapabilities;
+  }
 
   interface Props {
     owner: string;
@@ -144,6 +166,7 @@
     newState: "open" | "closed",
   ): Promise<void> {
     if (staleIssue) return;
+    if (!currentCapabilities().state_mutation) return;
     stateSubmitting = true;
     stateError = null;
     try {
@@ -371,6 +394,7 @@
   {#if detail !== null && !staleIssue}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
+    {@const capabilities = detail.repo.capabilities ?? defaultProviderCapabilities}
     <div class="issue-detail">
       <div class="issue-detail-content">
       {#if staleIssue && issues.getIssueDetailError() !== null}
@@ -500,7 +524,7 @@
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {/if}
-        {#if issue.State === "open"}
+        {#if issue.State === "open" && capabilities.state_mutation}
           <ActionButton
             class="btn--close"
             disabled={stateSubmitting || staleIssue}
@@ -513,7 +537,7 @@
           >
             <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
-        {:else}
+        {:else if capabilities.state_mutation}
           <ActionButton
             class="btn--reopen"
             disabled={stateSubmitting || staleIssue}
@@ -559,7 +583,7 @@
           {name}
           {number}
           platformHost={detail.platform_host}
-          disabled={staleIssue}
+          disabled={staleIssue || !capabilities.comment_mutation}
         />
       </div>
 

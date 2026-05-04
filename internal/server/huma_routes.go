@@ -157,7 +157,7 @@ type getRepoInput struct {
 	Name  string `path:"name"`
 }
 
-type getRepoOutput = bodyOutput[db.Repo]
+type getRepoOutput = bodyOutput[repoResponse]
 
 type commentAutocompleteInput struct {
 	Owner        string `path:"owner"`
@@ -233,7 +233,7 @@ type githubStateOutputBody struct {
 
 type githubStateOutput = bodyOutput[githubStateOutputBody]
 
-type listReposOutput = bodyOutput[[]db.Repo]
+type listReposOutput = bodyOutput[[]repoResponse]
 
 type listRepoSummariesOutput = bodyOutput[[]repoSummaryResponse]
 
@@ -624,7 +624,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		}
 		resp := mergeRequestResponse{
 			MergeRequest:  mr,
-			Repo:          repoRefFromRepo(rp),
+			Repo:          s.repoRefFromRepo(rp),
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
 			PlatformHost:  rp.PlatformHost,
@@ -723,7 +723,7 @@ func (s *Server) buildPullDetailResponse(
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
 		Events:           events,
-		Repo:             repoRefFromRepo(*repo),
+		Repo:             s.repoRefFromRepo(*repo),
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,
 		PlatformHost:     repo.PlatformHost,
@@ -914,7 +914,14 @@ func (s *Server) editPRContent(
 		return nil, huma.Error400BadRequest("title must not be blank")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityStateMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -997,7 +1004,14 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityCommentMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1026,7 +1040,14 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityCommentMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1103,7 +1124,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		}
 		resp := issueResponse{
 			Issue:        issue,
-			Repo:         repoRefFromRepo(rp),
+			Repo:         s.repoRefFromRepo(rp),
 			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
 			RepoName:     rp.Name,
@@ -1153,6 +1174,9 @@ func (s *Server) createIssue(
 			return nil, huma.Error404NotFound("repo not found")
 		}
 		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityIssueMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
@@ -1204,7 +1228,7 @@ func (s *Server) createIssue(
 
 	out := issueResponse{
 		Issue:        *savedIssue,
-		Repo:         repoRefFromRepo(*repo),
+		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1293,7 +1317,7 @@ func (s *Server) buildIssueDetailResponse(
 	issueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
-		Repo:         repoRefFromRepo(*repo),
+		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1329,6 +1353,9 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 			return nil, huma.Error404NotFound(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("repo lookup failed")
+	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
@@ -1375,6 +1402,9 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 			return nil, huma.Error404NotFound(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("repo lookup failed")
+	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
@@ -1443,7 +1473,7 @@ func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutp
 	if err != nil {
 		return nil, huma.Error404NotFound("repo not found")
 	}
-	return &getRepoOutput{Body: *repo}, nil
+	return &getRepoOutput{Body: s.repoResponse(*repo)}, nil
 }
 
 func (s *Server) getCommentAutocomplete(
@@ -1496,7 +1526,14 @@ func (s *Server) getCommentAutocomplete(
 }
 
 func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityReviewMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1517,6 +1554,13 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 }
 
 func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityWorkflowApproval,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
@@ -1525,7 +1569,7 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1578,7 +1622,14 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 }
 
 func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityReadyForReview,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1643,7 +1694,14 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error400BadRequest("invalid merge method: must be merge, squash, or rebase")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityMergeMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1716,7 +1774,14 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoCapability(
+		ctx, input.Owner, input.Name, "", capabilityStateMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1830,6 +1895,9 @@ func (s *Server) setIssueGitHubState(
 			"get issue: " + err.Error(),
 		)
 	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityStateMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
+	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
@@ -1902,7 +1970,12 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 		repos = s.filterConfiguredRepos(repos)
 	}
 
-	return &listReposOutput{Body: repos}, nil
+	out := make([]repoResponse, 0, len(repos))
+	for _, repo := range repos {
+		out = append(out, s.repoResponse(repo))
+	}
+
+	return &listReposOutput{Body: out}, nil
 }
 
 func (s *Server) listRepoSummaries(
@@ -1921,7 +1994,7 @@ func (s *Server) listRepoSummaries(
 	defaultPlatformHost := s.defaultPlatformHost()
 	out := make([]repoSummaryResponse, 0, len(summaries))
 	for _, summary := range summaries {
-		out = append(out, toRepoSummaryResponse(
+		out = append(out, s.toRepoSummaryResponse(
 			summary, defaultPlatformHost,
 		))
 	}
@@ -2086,7 +2159,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	syncIssueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
-		Repo:         repoRefFromRepo(*repo),
+		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,

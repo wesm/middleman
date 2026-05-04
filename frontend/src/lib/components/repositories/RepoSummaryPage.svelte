@@ -207,6 +207,7 @@
   }
 
   function openComposer(summary: RepoSummaryCardData): void {
+    if (!summary.repo.capabilities.issue_mutation) return;
     const key = repoStateKey(summary);
     composerSummary = summary;
     issueErrorByRepo[key] = null;
@@ -239,6 +240,7 @@
   async function submitIssue(
     summary: RepoSummaryCardData,
   ): Promise<void> {
+    if (!summary.repo.capabilities.issue_mutation) return;
     const key = repoStateKey(summary);
     if (issueSubmittingByRepo[key]) return;
 

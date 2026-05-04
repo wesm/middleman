@@ -468,8 +468,10 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		CommentMutation:   true,
 		StateMutation:     true,
 		MergeMutation:     true,
+		ReviewMutation:    true,
 		WorkflowApproval:  true,
 		ReadyForReview:    true,
+		IssueMutation:     true,
 	}
 }
 
@@ -891,6 +893,24 @@ func (s *Syncer) ClientForHost(
 	host string,
 ) (Client, error) {
 	return s.clientFor(RepoRef{PlatformHost: host})
+}
+
+func (s *Syncer) ProviderCapabilities(
+	kind platform.Kind,
+	host string,
+) (platform.Capabilities, error) {
+	if kind == "" {
+		kind = platform.KindGitHub
+	}
+	if strings.TrimSpace(host) == "" {
+		switch kind {
+		case platform.KindGitLab:
+			host = "gitlab.com"
+		default:
+			host = "github.com"
+		}
+	}
+	return s.clients.Capabilities(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) RepositoryReader(

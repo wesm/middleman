@@ -1552,6 +1552,21 @@ export interface components {
             body: string;
             platform_host?: string;
         };
+        ProviderCapabilitiesResponse: {
+            comment_mutation: boolean;
+            issue_mutation: boolean;
+            merge_mutation: boolean;
+            read_ci: boolean;
+            read_comments: boolean;
+            read_issues: boolean;
+            read_merge_requests: boolean;
+            read_releases: boolean;
+            read_repositories: boolean;
+            ready_for_review: boolean;
+            review_mutation: boolean;
+            state_mutation: boolean;
+            workflow_approval: boolean;
+        };
         RateLimitHostStatus: {
             /** Format: int64 */
             budget_limit: number;
@@ -1593,40 +1608,6 @@ export interface components {
                 [key: string]: components["schemas"]["RateLimitHostStatus"];
             };
         };
-        Repo: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/Repo.json
-             */
-            readonly $schema?: string;
-            AllowMergeCommit: boolean;
-            AllowRebaseMerge: boolean;
-            AllowSquashMerge: boolean;
-            BackfillIssueComplete: boolean;
-            /** Format: date-time */
-            BackfillIssueCompletedAt: string | null;
-            /** Format: int64 */
-            BackfillIssuePage: number;
-            BackfillPRComplete: boolean;
-            /** Format: date-time */
-            BackfillPRCompletedAt: string | null;
-            /** Format: int64 */
-            BackfillPRPage: number;
-            /** Format: date-time */
-            CreatedAt: string;
-            /** Format: int64 */
-            ID: number;
-            /** Format: date-time */
-            LastSyncCompletedAt: string | null;
-            LastSyncError: string;
-            /** Format: date-time */
-            LastSyncStartedAt: string | null;
-            Name: string;
-            Owner: string;
-            Platform: string;
-            PlatformHost: string;
-        };
         RepoPreviewRequest: {
             /**
              * Format: uri
@@ -1666,11 +1647,47 @@ export interface components {
             repo_path: string;
         };
         RepoRefResponse: {
+            capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
             name: string;
             owner: string;
             platform_host: string;
             provider: string;
             repo_path: string;
+        };
+        RepoResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoResponse.json
+             */
+            readonly $schema?: string;
+            AllowMergeCommit: boolean;
+            AllowRebaseMerge: boolean;
+            AllowSquashMerge: boolean;
+            BackfillIssueComplete: boolean;
+            /** Format: date-time */
+            BackfillIssueCompletedAt: string | null;
+            /** Format: int64 */
+            BackfillIssuePage: number;
+            BackfillPRComplete: boolean;
+            /** Format: date-time */
+            BackfillPRCompletedAt: string | null;
+            /** Format: int64 */
+            BackfillPRPage: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: date-time */
+            LastSyncCompletedAt: string | null;
+            LastSyncError: string;
+            /** Format: date-time */
+            LastSyncStartedAt: string | null;
+            Name: string;
+            Owner: string;
+            Platform: string;
+            PlatformHost: string;
+            capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
         };
         RepoSummaryAuthorResponse: {
             /** Format: int64 */
@@ -2209,7 +2226,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Repo"][] | null;
+                    "application/json": components["schemas"]["RepoResponse"][] | null;
                 };
             };
             /** @description Error */
@@ -2369,7 +2386,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Repo"];
+                    "application/json": components["schemas"]["RepoResponse"];
                 };
             };
             /** @description Error */

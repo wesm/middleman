@@ -1,6 +1,10 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { DiffFile, KanbanStatus } from "../../api/types.js";
+  import type {
+    DiffFile,
+    KanbanStatus,
+    ProviderCapabilities,
+  } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import {
     getStores, getClient, getActions,
@@ -47,6 +51,27 @@
   const actions = getActions();
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
+
+  const defaultProviderCapabilities: ProviderCapabilities = {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_comments: true,
+    read_releases: true,
+    read_ci: true,
+    comment_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    issue_mutation: true,
+  };
+
+  function currentCapabilities(): ProviderCapabilities {
+    return detailStore.getDetail()?.repo.capabilities
+      ?? defaultProviderCapabilities;
+  }
 
   interface Props {
     owner: string;
@@ -194,6 +219,7 @@
   }
 
   function startEditTitle(): void {
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
     titleDraft = mr.Title;
@@ -207,6 +233,7 @@
 
   async function saveTitle(): Promise<void> {
     if (stalePR) return;
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     const trimmed = titleDraft.trim();
     if (!trimmed || trimmed === mr?.Title) {
@@ -242,6 +269,7 @@
   let savingBody = $state(false);
 
   function startEditBody(): void {
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
     bodyDraft = mr.Body;
@@ -255,6 +283,7 @@
 
   async function saveBody(): Promise<void> {
     if (stalePR) return;
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (bodyDraft === mr?.Body) {
       cancelEditBody();
@@ -284,6 +313,7 @@
     newState: "open" | "closed",
   ): Promise<void> {
     if (stalePR) return;
+    if (!currentCapabilities().state_mutation) return;
     stateSubmitting = true;
     stateError = null;
     try {
@@ -510,6 +540,7 @@
   {@const detail = detailStore.getDetail()}
   {#if detail !== null && !stalePR}
     {@const pr = detail.merge_request}
+    {@const capabilities = detail.repo.capabilities ?? defaultProviderCapabilities}
     <div class="pull-detail-wrap">
       {#if stalePR && detailStore.getDetailError() !== null}
         <div class="detail-load-error" data-testid="detail-load-error">
@@ -591,7 +622,7 @@
               Cancel
             </button>
           </div>
-        {:else}
+        {:else if capabilities.state_mutation}
           <div class="title-line">
             <h2 class="detail-title">{pr.Title}</h2>
             <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
@@ -762,7 +793,7 @@
 
       {#snippet primaryActionButtons()}
         {#if pr.State === "open"}
-          {#if pr.IsDraft}
+          {#if pr.IsDraft && capabilities.ready_for_review}
             <ReadyForReviewButton
               {owner}
               {name}
@@ -772,14 +803,16 @@
               oncompleted={closeActionMenu}
             />
           {/if}
-          <ApproveButton
-            {owner}
-            {name}
-            {number}
-            size="sm"
-            disabled={stalePR}
-          />
-          {#if workflowApproval?.checked && workflowApproval.required}
+          {#if capabilities.review_mutation}
+            <ApproveButton
+              {owner}
+              {name}
+              {number}
+              size="sm"
+              disabled={stalePR}
+            />
+          {/if}
+          {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
             <ApproveWorkflowsButton
               {owner}
               {name}
@@ -790,7 +823,7 @@
               oncompleted={closeActionMenu}
             />
           {/if}
-          {#if repoSettings}
+          {#if repoSettings && capabilities.merge_mutation}
             {@const mergeSettings = repoSettings}
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
             <ActionButton
@@ -818,39 +851,43 @@
               {/snippet}
             </ActionButton>
           {/if}
-          <ActionButton
-            class="btn--close"
-            disabled={stateSubmitting || stalePR}
-            onclick={() => {
-              if (stalePR) return;
-              closeActionMenu();
-              handleStateChange("closed");
-            }}
-            tone="danger"
-            surface="outline"
-            size="sm"
-            label={stateSubmitting ? "Closing..." : "Close"}
-            shortLabel={stateSubmitting ? "Closing..." : "Close"}
-          >
-            <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          {#if capabilities.state_mutation}
+            <ActionButton
+              class="btn--close"
+              disabled={stateSubmitting || stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                closeActionMenu();
+                handleStateChange("closed");
+              }}
+              tone="danger"
+              surface="outline"
+              size="sm"
+              label={stateSubmitting ? "Closing..." : "Close"}
+              shortLabel={stateSubmitting ? "Closing..." : "Close"}
+            >
+              <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {/if}
         {:else if pr.State === "closed"}
-          <ActionButton
-            class="btn--reopen"
-            disabled={stateSubmitting || stalePR}
-            onclick={() => {
-              if (stalePR) return;
-              closeActionMenu();
-              handleStateChange("open");
-            }}
-            tone="success"
-            surface="solid"
-            size="sm"
-            label={stateSubmitting ? "Reopening..." : "Reopen"}
-            shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
-          >
-            <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          {#if capabilities.state_mutation}
+            <ActionButton
+              class="btn--reopen"
+              disabled={stateSubmitting || stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                closeActionMenu();
+                handleStateChange("open");
+              }}
+              tone="success"
+              surface="solid"
+              size="sm"
+              label={stateSubmitting ? "Reopening..." : "Reopen"}
+              shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
+            >
+              <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {/if}
         {/if}
       {/snippet}
 
@@ -981,7 +1018,7 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings && !stalePR && !hasMergeConflicts(pr)}
+      {#if showMergeModal && repoSettings && capabilities.merge_mutation && !stalePR && !hasMergeConflicts(pr)}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal
@@ -1009,7 +1046,7 @@
       <div class="section body-section">
         <div class="section-header">
           <span class="section-title-inline">Description</span>
-          {#if !editingBody}
+          {#if !editingBody && capabilities.state_mutation}
             <button
               class="edit-body-btn"
               onclick={startEditBody}
@@ -1066,7 +1103,7 @@
             </button>
             <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { owner, name })}</div>
           </div>
-        {:else}
+        {:else if capabilities.state_mutation}
           <button class="add-description-btn" onclick={startEditBody}>
             Add a description
           </button>
@@ -1080,7 +1117,7 @@
           {name}
           {number}
           platformHost={detail.platform_host}
-          disabled={stalePR}
+          disabled={stalePR || !capabilities.comment_mutation}
         />
       </div>
 

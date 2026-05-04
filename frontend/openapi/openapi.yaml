@@ -1478,6 +1478,50 @@ components:
       required:
         - body
       type: object
+    ProviderCapabilitiesResponse:
+      additionalProperties: false
+      properties:
+        comment_mutation:
+          type: boolean
+        issue_mutation:
+          type: boolean
+        merge_mutation:
+          type: boolean
+        read_ci:
+          type: boolean
+        read_comments:
+          type: boolean
+        read_issues:
+          type: boolean
+        read_merge_requests:
+          type: boolean
+        read_releases:
+          type: boolean
+        read_repositories:
+          type: boolean
+        ready_for_review:
+          type: boolean
+        review_mutation:
+          type: boolean
+        state_mutation:
+          type: boolean
+        workflow_approval:
+          type: boolean
+      required:
+        - read_repositories
+        - read_merge_requests
+        - read_issues
+        - read_comments
+        - read_releases
+        - read_ci
+        - comment_mutation
+        - state_mutation
+        - merge_mutation
+        - review_mutation
+        - workflow_approval
+        - ready_for_review
+        - issue_mutation
+      type: object
     RateLimitHostStatus:
       additionalProperties: false
       properties:
@@ -1563,88 +1607,6 @@ components:
           type: object
       required:
         - hosts
-      type: object
-    Repo:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/Repo.json
-          format: uri
-          readOnly: true
-          type: string
-        AllowMergeCommit:
-          type: boolean
-        AllowRebaseMerge:
-          type: boolean
-        AllowSquashMerge:
-          type: boolean
-        BackfillIssueComplete:
-          type: boolean
-        BackfillIssueCompletedAt:
-          format: date-time
-          type:
-            - string
-            - "null"
-        BackfillIssuePage:
-          format: int64
-          type: integer
-        BackfillPRComplete:
-          type: boolean
-        BackfillPRCompletedAt:
-          format: date-time
-          type:
-            - string
-            - "null"
-        BackfillPRPage:
-          format: int64
-          type: integer
-        CreatedAt:
-          format: date-time
-          type: string
-        ID:
-          format: int64
-          type: integer
-        LastSyncCompletedAt:
-          format: date-time
-          type:
-            - string
-            - "null"
-        LastSyncError:
-          type: string
-        LastSyncStartedAt:
-          format: date-time
-          type:
-            - string
-            - "null"
-        Name:
-          type: string
-        Owner:
-          type: string
-        Platform:
-          type: string
-        PlatformHost:
-          type: string
-      required:
-        - ID
-        - Platform
-        - PlatformHost
-        - Owner
-        - Name
-        - LastSyncStartedAt
-        - LastSyncCompletedAt
-        - LastSyncError
-        - AllowSquashMerge
-        - AllowMergeCommit
-        - AllowRebaseMerge
-        - BackfillPRPage
-        - BackfillPRComplete
-        - BackfillPRCompletedAt
-        - BackfillIssuePage
-        - BackfillIssueComplete
-        - BackfillIssueCompletedAt
-        - CreatedAt
       type: object
     RepoPreviewRequest:
       additionalProperties: false
@@ -1743,6 +1705,8 @@ components:
     RepoRefResponse:
       additionalProperties: false
       properties:
+        capabilities:
+          $ref: "#/components/schemas/ProviderCapabilitiesResponse"
         name:
           type: string
         owner:
@@ -1759,6 +1723,92 @@ components:
         - repo_path
         - owner
         - name
+        - capabilities
+      type: object
+    RepoResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        AllowMergeCommit:
+          type: boolean
+        AllowRebaseMerge:
+          type: boolean
+        AllowSquashMerge:
+          type: boolean
+        BackfillIssueComplete:
+          type: boolean
+        BackfillIssueCompletedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        BackfillIssuePage:
+          format: int64
+          type: integer
+        BackfillPRComplete:
+          type: boolean
+        BackfillPRCompletedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        BackfillPRPage:
+          format: int64
+          type: integer
+        CreatedAt:
+          format: date-time
+          type: string
+        ID:
+          format: int64
+          type: integer
+        LastSyncCompletedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        LastSyncError:
+          type: string
+        LastSyncStartedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        Name:
+          type: string
+        Owner:
+          type: string
+        Platform:
+          type: string
+        PlatformHost:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/ProviderCapabilitiesResponse"
+      required:
+        - ID
+        - Platform
+        - PlatformHost
+        - Owner
+        - Name
+        - LastSyncStartedAt
+        - LastSyncCompletedAt
+        - LastSyncError
+        - AllowSquashMerge
+        - AllowMergeCommit
+        - AllowRebaseMerge
+        - BackfillPRPage
+        - BackfillPRComplete
+        - BackfillPRCompletedAt
+        - BackfillIssuePage
+        - BackfillIssueComplete
+        - BackfillIssueCompletedAt
+        - CreatedAt
+        - capabilities
       type: object
     RepoSummaryAuthorResponse:
       additionalProperties: false
@@ -2677,7 +2727,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/Repo"
+                  $ref: "#/components/schemas/RepoResponse"
                 type:
                   - array
                   - "null"
@@ -2825,7 +2875,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Repo"
+                $ref: "#/components/schemas/RepoResponse"
           description: OK
         default:
           content:
