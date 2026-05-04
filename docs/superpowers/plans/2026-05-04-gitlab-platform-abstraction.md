@@ -200,6 +200,22 @@ POST /api/v1/items/pull-request/refresh
 POST /api/v1/items/issue/refresh
 ```
 
+Fallback route matrix:
+
+| Workflow | Method | Preferred escaped-path route | Fallback route | Fallback identity fields |
+| --- | --- | --- | --- | --- |
+| PR detail | `GET` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}` | `/api/v1/items/pull-request` | query: `provider`, `platform_host`, `repo_path`, `number` |
+| Issue detail | `GET` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}` | `/api/v1/items/issue` | query: `provider`, `platform_host`, `repo_path`, `number` |
+| PR refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/refresh` | `/api/v1/items/pull-request/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
+| Issue refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/refresh` | `/api/v1/items/issue/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
+| PR comments/events refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/events/refresh` | `/api/v1/items/pull-request/events/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
+| Issue comments/events refresh | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/events/refresh` | `/api/v1/items/issue/events/refresh` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number` |
+| PR action/mutation | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}/actions` | `/api/v1/items/pull-request/actions` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`, `action`, action-specific fields |
+| Issue action/mutation | `POST` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues/{number}/actions` | `/api/v1/items/issue/actions` | JSON body: `repo.provider`, `repo.platform_host`, `repo.repo_path`, `number`, `action`, action-specific fields |
+| Repo detail/settings | `GET` | `/api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}` | `/api/v1/repo` | query: `provider`, `platform_host`, `repo_path` |
+
+Only one route family should be implemented for new provider-aware clients after the Task 5 router proof: the escaped-path family if it works, otherwise the fallback family above. Existing GitHub compatibility routes remain wrappers either way.
+
 - Request-body routes may use the same escaped repo path or the structured repo ref shape when the action already has a JSON body:
 
 ```json
@@ -417,7 +433,7 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] If Huma/server routing cannot preserve `%2F` as one parameter, switch this task to the query/body fallback route shape from the API Repository Identity section before proceeding.
 - [ ] Add `RepoRefInput`/`RepoRefResponse` API shapes with `provider`, `platform_host`, and `repo_path`.
 - [ ] Add parser tests for `repo_path = "owner/repo"` and `repo_path = "group/subgroup/project"`.
-- [ ] Add platform-aware routes using escaped `repo_path` as one route parameter:
+- [ ] Add the selected platform-aware route family. Use escaped `repo_path` as one route parameter if the router proof passes; otherwise use the fallback query/body routes from the API Repository Identity section:
 
 ```text
 GET /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/pull-requests/{number}
@@ -431,7 +447,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Return coded platform errors from new routes for invalid repo refs, missing provider clients, and unsupported capabilities.
 - [ ] Run `make api-generate` immediately after the route contract changes.
 - [ ] Run `go test ./internal/server -run 'Test.*RepoRef|Test.*Pull.*Route|Test.*Issue.*Route' -shuffle=on`.
-- [ ] Run frontend route/type tests that cover escaped nested GitLab repo paths.
+- [ ] Run frontend route/type tests that cover the selected nested GitLab repo-path route family.
 - [ ] Commit: `feat: add platform-aware repository routes`.
 
 ### Task 6: Wire Syncer Registry Lookup
