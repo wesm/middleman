@@ -929,6 +929,22 @@ type ListIssuesParams struct {
 	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetIssueByRepoRefParams defines parameters for GetIssueByRepoRef.
+type GetIssueByRepoRefParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
+}
+
+// GetPullRequestByRepoRefParams defines parameters for GetPullRequestByRepoRef.
+type GetPullRequestByRepoRefParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+	RepoPath     *string `form:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Number       *int64  `form:"number,omitempty" json:"number,omitempty"`
+}
+
 // ListPullsParams defines parameters for ListPulls.
 type ListPullsParams struct {
 	Repo    *string `form:"repo,omitempty" json:"repo,omitempty"`
@@ -1140,6 +1156,12 @@ type ClientInterface interface {
 
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetIssueByRepoRef request
+	GetIssueByRepoRef(ctx context.Context, params *GetIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullRequestByRepoRef request
+	GetPullRequestByRepoRef(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1373,6 +1395,30 @@ func (c *Client) StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn
 
 func (c *Client) ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListIssuesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetIssueByRepoRef(ctx context.Context, params *GetIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIssueByRepoRefRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullRequestByRepoRef(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullRequestByRepoRefRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2528,6 +2574,200 @@ func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Reques
 		if params.Offset != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetIssueByRepoRefRequest generates requests for GetIssueByRepoRef
+func NewGetIssueByRepoRefRequest(server string, params *GetIssueByRepoRefParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/items/issue")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Number != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", *params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPullRequestByRepoRefRequest generates requests for GetPullRequestByRepoRef
+func NewGetPullRequestByRepoRefRequest(server string, params *GetPullRequestByRepoRefParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/items/pull-request")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RepoPath != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo_path", *params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Number != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "number", *params.Number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -5455,6 +5695,12 @@ type ClientWithResponsesInterface interface {
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
 
+	// GetIssueByRepoRefWithResponse request
+	GetIssueByRepoRefWithResponse(ctx context.Context, params *GetIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*GetIssueByRepoRefResponse, error)
+
+	// GetPullRequestByRepoRefWithResponse request
+	GetPullRequestByRepoRefWithResponse(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*GetPullRequestByRepoRefResponse, error)
+
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
 
@@ -5701,6 +5947,52 @@ func (r ListIssuesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListIssuesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetIssueByRepoRefResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetIssueByRepoRefResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetIssueByRepoRefResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullRequestByRepoRefResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullRequestByRepoRefResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullRequestByRepoRefResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -6981,6 +7273,24 @@ func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params
 	return ParseListIssuesResponse(rsp)
 }
 
+// GetIssueByRepoRefWithResponse request returning *GetIssueByRepoRefResponse
+func (c *ClientWithResponses) GetIssueByRepoRefWithResponse(ctx context.Context, params *GetIssueByRepoRefParams, reqEditors ...RequestEditorFn) (*GetIssueByRepoRefResponse, error) {
+	rsp, err := c.GetIssueByRepoRef(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetIssueByRepoRefResponse(rsp)
+}
+
+// GetPullRequestByRepoRefWithResponse request returning *GetPullRequestByRepoRefResponse
+func (c *ClientWithResponses) GetPullRequestByRepoRefWithResponse(ctx context.Context, params *GetPullRequestByRepoRefParams, reqEditors ...RequestEditorFn) (*GetPullRequestByRepoRefResponse, error) {
+	rsp, err := c.GetPullRequestByRepoRef(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullRequestByRepoRefResponse(rsp)
+}
+
 // ListPullsWithResponse request returning *ListPullsResponse
 func (c *ClientWithResponses) ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error) {
 	rsp, err := c.ListPulls(ctx, params, reqEditors...)
@@ -7685,6 +7995,72 @@ func ParseListIssuesResponse(rsp *http.Response) (*ListIssuesResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest []IssueResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetIssueByRepoRefResponse parses an HTTP response from a GetIssueByRepoRefWithResponse call
+func ParseGetIssueByRepoRefResponse(rsp *http.Response) (*GetIssueByRepoRefResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetIssueByRepoRefResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullRequestByRepoRefResponse parses an HTTP response from a GetPullRequestByRepoRefWithResponse call
+func ParseGetPullRequestByRepoRefResponse(rsp *http.Response) (*GetPullRequestByRepoRefResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullRequestByRepoRefResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

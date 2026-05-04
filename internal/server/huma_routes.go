@@ -41,6 +41,13 @@ type repoNumberInput struct {
 
 type getPullOutput = bodyOutput[mergeRequestDetailResponse]
 
+type getProviderPullInput struct {
+	Provider     string `query:"provider"`
+	PlatformHost string `query:"platform_host"`
+	RepoPath     string `query:"repo_path"`
+	Number       int    `query:"number"`
+}
+
 type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
@@ -96,6 +103,13 @@ type issueRepoNumberInput struct {
 }
 
 type getIssueOutput = bodyOutput[issueDetailResponse]
+
+type getProviderIssueInput struct {
+	Provider     string `query:"provider"`
+	PlatformHost string `query:"platform_host"`
+	RepoPath     string `query:"repo_path"`
+	Number       int    `query:"number"`
+}
 
 type postIssueCommentInput struct {
 	Owner  string `path:"owner"`
@@ -338,6 +352,11 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity)
 	huma.Get(api, "/pulls", s.listPulls)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-pull-request-by-repo-ref",
+		Method:      http.MethodGet,
+		Path:        "/items/pull-request",
+	}, s.getProviderPull)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
 	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/import-metadata", s.getMRImportMetadata)
 	huma.Register(api, huma.Operation{
@@ -366,6 +385,11 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.editComment)
 
 	huma.Get(api, "/issues", s.listIssues)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-issue-by-repo-ref",
+		Method:      http.MethodGet,
+		Path:        "/items/issue",
+	}, s.getProviderIssue)
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-issue",
 		Method:        http.MethodPost,
@@ -618,6 +642,43 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 
 func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullOutput, error) {
 	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request failed")
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+
+	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	return &getPullOutput{Body: body}, nil
+}
+
+func (s *Server) getProviderPull(
+	ctx context.Context,
+	input *getProviderPullInput,
+) (*getPullOutput, error) {
+	if input.Number <= 0 {
+		return nil, huma.Error400BadRequest("number must be positive")
+	}
+	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		RepoPath:     input.RepoPath,
+	})
+	if err != nil {
+		if errors.Is(err, errRepoPathRequired) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
@@ -1173,9 +1234,57 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 		return nil, huma.Error500InternalServerError("get issue failed")
 	}
 
+	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
+	if err != nil {
+		return nil, err
+	}
+	return &getIssueOutput{Body: issueResp}, nil
+}
+
+func (s *Server) getProviderIssue(
+	ctx context.Context,
+	input *getProviderIssueInput,
+) (*getIssueOutput, error) {
+	if input.Number <= 0 {
+		return nil, huma.Error400BadRequest("number must be positive")
+	}
+	repo, err := s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		RepoPath:     input.RepoPath,
+	})
+	if err != nil {
+		if errors.Is(err, errRepoPathRequired) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		if errors.Is(err, errRepoNotFound) {
+			return nil, huma.Error404NotFound("repo not found")
+		}
+		return nil, huma.Error500InternalServerError("get repo failed")
+	}
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get issue failed")
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found")
+	}
+
+	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
+	if err != nil {
+		return nil, err
+	}
+	return &getIssueOutput{Body: issueResp}, nil
+}
+
+func (s *Server) buildIssueDetailResponse(
+	ctx context.Context,
+	repo *db.Repo,
+	issue *db.Issue,
+) (issueDetailResponse, error) {
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list issue events failed")
+		return issueDetailResponse{}, huma.Error500InternalServerError("list issue events failed")
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
@@ -1204,7 +1313,7 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 			}
 		}
 	}
-	return &getIssueOutput{Body: issueResp}, nil
+	return issueResp, nil
 }
 
 func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {

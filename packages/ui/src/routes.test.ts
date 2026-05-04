@@ -4,6 +4,9 @@ import {
   buildFocusListRoute,
   buildFocusPullRequestRoute,
   buildIssueRoute,
+  buildProviderIssueRoute,
+  buildProviderPullRequestFilesRoute,
+  buildProviderPullRequestRoute,
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
   buildRoutedItemRoute,
@@ -36,6 +39,25 @@ describe("route item builders", () => {
         number: 7,
       }),
     ).toBe("/issues/acme/widgets/7");
+  });
+
+  it("builds provider repo-path routes with escaped refs", () => {
+    const deep = {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com:8443",
+      repoPath: "Group/SubGroup/SubGroup 2/My_Project.v2",
+      number: 12,
+    };
+
+    expect(buildProviderPullRequestRoute(deep)).toBe(
+      "/pulls/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
+    expect(buildProviderPullRequestFilesRoute(deep)).toBe(
+      "/pulls/detail/files?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
+    expect(buildProviderIssueRoute(deep)).toBe(
+      "/issues/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
   });
 
   it("builds focus item and list routes", () => {

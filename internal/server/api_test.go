@@ -7246,6 +7246,108 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 	require.Contains(body, `"worktree_key":"wt-detail"`)
 }
 
+func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repoPath := "Group/SubGroup/SubGroup 2/My_Project.v2"
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com:8443",
+		Owner:        "Group/SubGroup/SubGroup 2",
+		Name:         "My_Project.v2",
+		RepoPath:     repoPath,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     12000,
+		Number:         12,
+		URL:            "https://gitlab.example.com/Group/SubGroup/SubGroup%202/My_Project.v2/-/merge_requests/12",
+		Title:          "Nested GitLab MR",
+		Author:         "testuser",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	path := "/api/v1/items/pull-request?" +
+		"provider=gitlab&" +
+		"platform_host=gitlab.example.com%3A8443&" +
+		"repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&" +
+		"number=12"
+	rr := doJSON(t, srv, http.MethodGet, path, nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body generated.MergeRequestDetailResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	assert.Equal("gitlab", body.Repo.Provider)
+	assert.Equal("gitlab.example.com:8443", body.Repo.PlatformHost)
+	assert.Equal(repoPath, body.Repo.RepoPath)
+	assert.Equal("Group/SubGroup/SubGroup 2", body.Repo.Owner)
+	assert.Equal("My_Project.v2", body.Repo.Name)
+	assert.Equal(int64(12), body.MergeRequest.Number)
+}
+
+func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	provider := "gitlab"
+	host := "gitlab.example.test:8443"
+	repoPath := "Team One/Sub Team/project+#1"
+	number := int64(7)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     provider,
+		PlatformHost: host,
+		Owner:        "Team One/Sub Team",
+		Name:         "project+#1",
+		RepoPath:     repoPath,
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     7000,
+		Number:         int(number),
+		URL:            "https://gitlab.example.test/Team%20One/Sub%20Team/project%2B%231/-/issues/7",
+		Title:          "Special chars issue",
+		Author:         "testuser",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	resp, err := client.HTTP.GetIssueByRepoRefWithResponse(ctx, &generated.GetIssueByRepoRefParams{
+		Provider:     &provider,
+		PlatformHost: &host,
+		RepoPath:     &repoPath,
+		Number:       &number,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON200)
+
+	assert.Equal(provider, resp.JSON200.Repo.Provider)
+	assert.Equal(host, resp.JSON200.Repo.PlatformHost)
+	assert.Equal(repoPath, resp.JSON200.Repo.RepoPath)
+	assert.Equal("Team One/Sub Team", resp.JSON200.Repo.Owner)
+	assert.Equal("project+#1", resp.JSON200.Repo.Name)
+	assert.Equal(number, resp.JSON200.Issue.Number)
+}
+
 func TestMRListEmptyLinksWhenNone(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
