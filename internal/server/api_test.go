@@ -3330,6 +3330,111 @@ func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
 	require.Empty(events)
 }
 
+func TestAPIPostIssueCommentRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		createIssueCommentFn: func(context.Context, string, string, int, string) (*gh.IssueComment, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostIssueCommentWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		5,
+		generated.PostIssueCommentJSONRequestBody{Body: "Looks good"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	events, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	require.Empty(events)
+}
+
+func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	mock := &mockGH{
+		editIssueCommentFn: func(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 1)
+	commentID := int64(42)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Body:           "original body",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "comment-42",
+	}}))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.EditPrCommentWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		1,
+		commentID,
+		generated.EditPrCommentJSONRequestBody{Body: "edited body"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	events, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("original body", events[0].Body)
+}
+
+func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	mock := &mockGH{
+		editIssueCommentFn: func(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
+	commentID := int64(42)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Body:       "original body",
+		CreatedAt:  time.Now().UTC(),
+		DedupeKey:  "issue-comment-42",
+	}}))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.EditIssueCommentWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		5,
+		commentID,
+		generated.EditIssueCommentJSONRequestBody{Body: "edited body"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	events, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("original body", events[0].Body)
+}
+
 func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
 	require := require.New(t)
 
