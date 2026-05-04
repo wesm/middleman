@@ -24,6 +24,56 @@ func canonicalRepoIdentifier(host, owner, name string) (string, string, string) 
 	return strings.ToLower(host), strings.ToLower(owner), strings.ToLower(name)
 }
 
+func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
+	return canonicalRepoIdentity(RepoIdentity{
+		Platform:     "github",
+		PlatformHost: host,
+		Owner:        owner,
+		Name:         name,
+	})
+}
+
+func canonicalRepoIdentity(identity RepoIdentity) RepoIdentity {
+	identity.Platform = strings.ToLower(strings.TrimSpace(identity.Platform))
+	if identity.Platform == "" {
+		identity.Platform = "github"
+	}
+	identity.PlatformHost = strings.ToLower(strings.TrimSpace(identity.PlatformHost))
+	if identity.PlatformHost == "" && identity.Platform == "github" {
+		identity.PlatformHost = "github.com"
+	}
+	identity.Owner = strings.TrimSpace(identity.Owner)
+	identity.Name = strings.TrimSpace(identity.Name)
+	if identity.Platform == "github" {
+		identity.Owner = strings.ToLower(identity.Owner)
+		identity.Name = strings.ToLower(identity.Name)
+	}
+	if identity.RepoPath == "" {
+		identity.RepoPath = identity.Owner + "/" + identity.Name
+	} else {
+		identity.RepoPath = strings.TrimSpace(identity.RepoPath)
+		if identity.Platform == "github" {
+			identity.RepoPath = strings.ToLower(identity.RepoPath)
+		}
+	}
+	if identity.OwnerKey == "" {
+		identity.OwnerKey = strings.ToLower(identity.Owner)
+	} else {
+		identity.OwnerKey = strings.ToLower(strings.TrimSpace(identity.OwnerKey))
+	}
+	if identity.NameKey == "" {
+		identity.NameKey = strings.ToLower(identity.Name)
+	} else {
+		identity.NameKey = strings.ToLower(strings.TrimSpace(identity.NameKey))
+	}
+	if identity.RepoPathKey == "" {
+		identity.RepoPathKey = strings.ToLower(identity.RepoPath)
+	} else {
+		identity.RepoPathKey = strings.ToLower(strings.TrimSpace(identity.RepoPathKey))
+	}
+	return identity
+}
+
 func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx,
@@ -384,24 +434,94 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 // --- Repos ---
 
 // UpsertRepo inserts a repo if it does not exist, then returns its ID.
-// host is the platform hostname (e.g. "github.com" or a GHE hostname).
-func (d *DB) UpsertRepo(ctx context.Context, host, owner, name string) (int64, error) {
-	host, owner, name = canonicalRepoIdentifier(host, owner, name)
-	_, err := d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_repos (platform, platform_host, owner, name)
-		 VALUES ('github', ?, ?, ?)
-		 ON CONFLICT(platform, platform_host, owner, name) DO NOTHING`,
-		host, owner, name,
+// It accepts either a RepoIdentity or the legacy (host, owner, name) string
+// triple, which is treated as a GitHub identity.
+func (d *DB) UpsertRepo(ctx context.Context, args ...any) (int64, error) {
+	identity, err := repoIdentityFromUpsertArgs(args)
+	if err != nil {
+		return 0, err
+	}
+	return d.upsertRepoIdentity(ctx, identity)
+}
+
+func repoIdentityFromUpsertArgs(args []any) (RepoIdentity, error) {
+	switch len(args) {
+	case 1:
+		identity, ok := args[0].(RepoIdentity)
+		if !ok {
+			return RepoIdentity{}, fmt.Errorf("upsert repo: expected RepoIdentity")
+		}
+		return canonicalRepoIdentity(identity), nil
+	case 3:
+		host, ok := args[0].(string)
+		if !ok {
+			return RepoIdentity{}, fmt.Errorf("upsert repo: expected host string")
+		}
+		owner, ok := args[1].(string)
+		if !ok {
+			return RepoIdentity{}, fmt.Errorf("upsert repo: expected owner string")
+		}
+		name, ok := args[2].(string)
+		if !ok {
+			return RepoIdentity{}, fmt.Errorf("upsert repo: expected name string")
+		}
+		return GitHubRepoIdentity(host, owner, name), nil
+	default:
+		return RepoIdentity{}, fmt.Errorf("upsert repo: expected RepoIdentity or host/owner/name")
+	}
+}
+
+func (d *DB) upsertRepoIdentity(ctx context.Context, identity RepoIdentity) (int64, error) {
+	var id int64
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		id, err = upsertRepoIdentityTx(ctx, tx, identity)
+		return err
+	})
+	return id, err
+}
+
+func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity) (int64, error) {
+	identity = canonicalRepoIdentity(identity)
+	if id, found, err := lookupRepoIDByIdentityTx(ctx, tx, identity); err != nil {
+		return 0, err
+	} else if found {
+		if err := updateRepoIdentityTx(ctx, tx, id, identity); err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO middleman_repos (
+		     platform, platform_host, platform_repo_id,
+		     owner, name, repo_path,
+		     owner_key, name_key, repo_path_key
+		 )
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(platform, platform_host, owner, name) DO UPDATE SET
+		     repo_path = excluded.repo_path,
+		     owner_key = excluded.owner_key,
+		     name_key = excluded.name_key,
+		     repo_path_key = excluded.repo_path_key,
+		     platform_repo_id = CASE
+		         WHEN middleman_repos.platform_repo_id = ''
+		         THEN excluded.platform_repo_id
+		         ELSE middleman_repos.platform_repo_id
+		     END`,
+		identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
+		identity.Owner, identity.Name, identity.RepoPath,
+		identity.OwnerKey, identity.NameKey, identity.RepoPathKey,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert repo: %w", err)
 	}
 	var id int64
-	err = d.ro.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`SELECT id FROM middleman_repos
-		 WHERE platform = 'github' AND platform_host = ?
-		   AND owner = ? AND name = ?`,
-		host, owner, name,
+		 WHERE platform = ? AND platform_host = ?
+		   AND owner_key = ? AND name_key = ?`,
+		identity.Platform, identity.PlatformHost, identity.OwnerKey, identity.NameKey,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("get repo id after upsert: %w", err)
@@ -409,10 +529,383 @@ func (d *DB) UpsertRepo(ctx context.Context, host, owner, name string) (int64, e
 	return id, nil
 }
 
+func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) (int64, error) {
+	identity = canonicalRepoIdentity(identity)
+	if identity.PlatformRepoID == "" {
+		return 0, fmt.Errorf("upsert repo by provider id: platform repo id is required")
+	}
+
+	var id int64
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		sourceID, sourceFound, err := lookupRepoIDByProviderIDTx(ctx, tx, identity)
+		if err != nil {
+			return err
+		}
+
+		targetID, targetFound, err := lookupRepoIDByIdentityTx(ctx, tx, identity)
+		if err != nil {
+			return err
+		}
+
+		if sourceFound && targetFound && sourceID != targetID {
+			if err := mergeRepoRowsTx(ctx, tx, sourceID, targetID); err != nil {
+				return err
+			}
+			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
+				return err
+			}
+			id = targetID
+			return nil
+		}
+
+		if sourceFound {
+			if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
+				return err
+			}
+			id = sourceID
+			return nil
+		}
+
+		id, err = upsertRepoIdentityTx(ctx, tx, identity)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func lookupRepoIDByProviderIDTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+) (int64, bool, error) {
+	var id int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT id
+		 FROM middleman_repos
+		 WHERE platform = ?
+		   AND platform_host = ?
+		   AND platform_repo_id = ?`,
+		identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("lookup repo by provider id: %w", err)
+	}
+	return id, true, nil
+}
+
+func lookupRepoIDByIdentityTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+) (int64, bool, error) {
+	var id int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT id
+		 FROM middleman_repos
+		 WHERE platform = ?
+		   AND platform_host = ?
+		   AND owner_key = ?
+		   AND name_key = ?`,
+		identity.Platform, identity.PlatformHost, identity.OwnerKey, identity.NameKey,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("lookup repo by identity: %w", err)
+	}
+	return id, true, nil
+}
+
+func updateRepoIdentityTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	identity RepoIdentity,
+) error {
+	_, err := tx.ExecContext(ctx,
+		`UPDATE middleman_repos
+		 SET platform_repo_id = CASE
+		         WHEN ? <> ''
+		         THEN ?
+		         ELSE platform_repo_id
+		     END,
+		     owner = ?,
+		     name = ?,
+		     repo_path = ?,
+		     owner_key = ?,
+		     name_key = ?,
+		     repo_path_key = ?
+		 WHERE id = ?`,
+		identity.PlatformRepoID,
+		identity.PlatformRepoID,
+		identity.Owner,
+		identity.Name,
+		identity.RepoPath,
+		identity.OwnerKey,
+		identity.NameKey,
+		identity.RepoPathKey,
+		repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update repo identity: %w", err)
+	}
+	return nil
+}
+
+func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
+	if fromRepoID == toRepoID {
+		return nil
+	}
+
+	steps := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "copy source repo metadata",
+			sql: `UPDATE middleman_repos
+			      SET web_url = CASE
+			              WHEN web_url = ''
+			              THEN (SELECT web_url FROM middleman_repos WHERE id = ?)
+			              ELSE web_url
+			          END,
+			          clone_url = CASE
+			              WHEN clone_url = ''
+			              THEN (SELECT clone_url FROM middleman_repos WHERE id = ?)
+			              ELSE clone_url
+			          END,
+			          default_branch = CASE
+			              WHEN default_branch = ''
+			              THEN (SELECT default_branch FROM middleman_repos WHERE id = ?)
+			              ELSE default_branch
+			          END
+			      WHERE id = ?`,
+			args: []any{fromRepoID, fromRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "move merge requests",
+			sql: `UPDATE middleman_merge_requests
+			      SET repo_id = ?
+			      WHERE repo_id = ?
+			        AND NOT EXISTS (
+			            SELECT 1
+			            FROM middleman_merge_requests AS target
+			            WHERE target.repo_id = ?
+			              AND (
+			                  target.number = middleman_merge_requests.number
+			                  OR target.platform_id = middleman_merge_requests.platform_id
+			              )
+			        )`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "drop duplicate merge requests",
+			sql:  `DELETE FROM middleman_merge_requests WHERE repo_id = ?`,
+			args: []any{fromRepoID},
+		},
+		{
+			name: "move issues",
+			sql: `UPDATE middleman_issues
+			      SET repo_id = ?
+			      WHERE repo_id = ?
+			        AND NOT EXISTS (
+			            SELECT 1
+			            FROM middleman_issues AS target
+			            WHERE target.repo_id = ?
+			              AND (
+			                  target.number = middleman_issues.number
+			                  OR target.platform_id = middleman_issues.platform_id
+			              )
+			        )`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "drop duplicate issues",
+			sql:  `DELETE FROM middleman_issues WHERE repo_id = ?`,
+			args: []any{fromRepoID},
+		},
+		{
+			name: "move labels",
+			sql: `UPDATE middleman_labels
+			      SET repo_id = ?
+			      WHERE repo_id = ?
+			        AND NOT EXISTS (
+			            SELECT 1
+			            FROM middleman_labels AS target
+			            WHERE target.repo_id = ?
+			              AND (
+			                  target.name = middleman_labels.name
+			                  OR (
+			                      target.platform_id IS NOT NULL
+			                      AND middleman_labels.platform_id IS NOT NULL
+			                      AND target.platform_id = middleman_labels.platform_id
+			                  )
+			              )
+			        )`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "copy issue label associations to duplicate labels",
+			sql: `WITH source_label_targets AS (
+			          SELECT source.id AS source_label_id,
+			                 target.id AS target_label_id,
+			                 ROW_NUMBER() OVER (
+			                     PARTITION BY source.id
+			                     ORDER BY
+			                         CASE
+			                             WHEN target.platform_id IS NOT NULL
+			                                  AND source.platform_id IS NOT NULL
+			                                  AND target.platform_id = source.platform_id
+			                             THEN 0
+			                             ELSE 1
+			                         END,
+			                         target.id
+			                 ) AS target_rank
+			          FROM middleman_labels AS source
+			          JOIN middleman_labels AS target
+			              ON target.repo_id = ?
+			             AND (
+			                 target.name = source.name
+			                 OR (
+			                     target.platform_id IS NOT NULL
+			                     AND source.platform_id IS NOT NULL
+			                     AND target.platform_id = source.platform_id
+			                 )
+			             )
+			          WHERE source.repo_id = ?
+			      )
+			      INSERT INTO middleman_issue_labels (issue_id, label_id)
+			      SELECT il.issue_id, slt.target_label_id
+			      FROM middleman_issue_labels AS il
+			      JOIN source_label_targets AS slt
+			          ON slt.source_label_id = il.label_id
+			         AND slt.target_rank = 1
+			      ON CONFLICT(issue_id, label_id) DO NOTHING`,
+			args: []any{toRepoID, fromRepoID},
+		},
+		{
+			name: "copy merge request label associations to duplicate labels",
+			sql: `WITH source_label_targets AS (
+			          SELECT source.id AS source_label_id,
+			                 target.id AS target_label_id,
+			                 ROW_NUMBER() OVER (
+			                     PARTITION BY source.id
+			                     ORDER BY
+			                         CASE
+			                             WHEN target.platform_id IS NOT NULL
+			                                  AND source.platform_id IS NOT NULL
+			                                  AND target.platform_id = source.platform_id
+			                             THEN 0
+			                             ELSE 1
+			                         END,
+			                         target.id
+			                 ) AS target_rank
+			          FROM middleman_labels AS source
+			          JOIN middleman_labels AS target
+			              ON target.repo_id = ?
+			             AND (
+			                 target.name = source.name
+			                 OR (
+			                     target.platform_id IS NOT NULL
+			                     AND source.platform_id IS NOT NULL
+			                     AND target.platform_id = source.platform_id
+			                 )
+			             )
+			          WHERE source.repo_id = ?
+			      )
+			      INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
+			      SELECT mrl.merge_request_id, slt.target_label_id
+			      FROM middleman_merge_request_labels AS mrl
+			      JOIN source_label_targets AS slt
+			          ON slt.source_label_id = mrl.label_id
+			         AND slt.target_rank = 1
+			      ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
+			args: []any{toRepoID, fromRepoID},
+		},
+		{
+			name: "drop duplicate labels",
+			sql:  `DELETE FROM middleman_labels WHERE repo_id = ?`,
+			args: []any{fromRepoID},
+		},
+		{
+			name: "copy starred items",
+			sql: `INSERT OR IGNORE INTO middleman_starred_items (
+			          item_type, repo_id, number, starred_at
+			      )
+			      SELECT item_type, ?, number, starred_at
+			      FROM middleman_starred_items
+			      WHERE repo_id = ?`,
+			args: []any{toRepoID, fromRepoID},
+		},
+		{
+			name: "delete source starred items",
+			sql:  `DELETE FROM middleman_starred_items WHERE repo_id = ?`,
+			args: []any{fromRepoID},
+		},
+		{
+			name: "move stacks",
+			sql: `UPDATE middleman_stacks
+			      SET repo_id = ?
+			      WHERE repo_id = ?
+			        AND NOT EXISTS (
+			            SELECT 1
+			            FROM middleman_stacks AS target
+			            WHERE target.repo_id = ?
+			              AND target.base_number = middleman_stacks.base_number
+			        )`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "drop duplicate stacks",
+			sql:  `DELETE FROM middleman_stacks WHERE repo_id = ?`,
+			args: []any{fromRepoID},
+		},
+		{
+			name: "move repo overview",
+			sql: `UPDATE middleman_repo_overviews
+			      SET repo_id = ?
+			      WHERE repo_id = ?
+			        AND NOT EXISTS (
+			            SELECT 1
+			            FROM middleman_repo_overviews AS target
+			            WHERE target.repo_id = ?
+			        )`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "drop duplicate repo overview",
+			sql:  `DELETE FROM middleman_repo_overviews WHERE repo_id = ?`,
+			args: []any{fromRepoID},
+		},
+		{
+			name: "delete source repo",
+			sql:  `DELETE FROM middleman_repos WHERE id = ?`,
+			args: []any{fromRepoID},
+		},
+	}
+
+	for _, step := range steps {
+		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
+	}
+	return nil
+}
+
 // ListRepos returns all repos ordered by owner, name.
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := d.ro.QueryContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
+		`SELECT id, platform, platform_host, platform_repo_id,
+		        owner, name, repo_path,
+		        owner_key, name_key, repo_path_key,
+		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge,
@@ -421,7 +914,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
 		        created_at
-		 FROM middleman_repos ORDER BY owner, name`,
+		 FROM middleman_repos ORDER BY owner, name, platform, platform_host`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -432,7 +925,10 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	for rows.Next() {
 		var r Repo
 		if err := rows.Scan(
-			&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+			&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+			&r.Owner, &r.Name, &r.RepoPath,
+			&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
+			&r.WebURL, &r.CloneURL, &r.DefaultBranch,
 			&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 			&r.LastSyncError,
 			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
@@ -475,6 +971,30 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 	return nil
 }
 
+func (d *DB) UpdateRepoProviderMetadata(
+	ctx context.Context,
+	repoID int64,
+	metadata RepoProviderMetadata,
+) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_repos
+		 SET platform_repo_id = ?,
+		     web_url = ?,
+		     clone_url = ?,
+		     default_branch = ?
+		 WHERE id = ?`,
+		metadata.PlatformRepoID,
+		metadata.WebURL,
+		metadata.CloneURL,
+		metadata.DefaultBranch,
+		repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update repo provider metadata: %w", err)
+	}
+	return nil
+}
+
 // GetRepoByOwnerName returns the repo for the given owner/name, or nil if not found.
 // Config validation rejects duplicate owner/name across hosts, so this should
 // always be unambiguous. The ORDER BY provides deterministic results as a
@@ -483,7 +1003,10 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 	_, owner, name = canonicalRepoIdentifier("", owner, name)
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
+		`SELECT id, platform, platform_host, platform_repo_id,
+		        owner, name, repo_path,
+		        owner_key, name_key, repo_path_key,
+		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge,
@@ -492,10 +1015,13 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
 		        created_at
-		 FROM middleman_repos WHERE owner = ? AND name = ?
+		 FROM middleman_repos WHERE owner_key = ? AND name_key = ?
 		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
 	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+		&r.Owner, &r.Name, &r.RepoPath,
+		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
+		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
@@ -519,7 +1045,10 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
+		`SELECT id, platform, platform_host, platform_repo_id,
+		        owner, name, repo_path,
+		        owner_key, name_key, repo_path_key,
+		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge,
@@ -530,7 +1059,10 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        created_at
 		 FROM middleman_repos WHERE id = ?`, id,
 	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+		&r.Owner, &r.Name, &r.RepoPath,
+		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
+		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
@@ -2283,7 +2815,10 @@ func (d *DB) GetRepoByHostOwnerName(
 	host, owner, name = canonicalRepoIdentifier(host, owner, name)
 	var r Repo
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, owner, name,
+		`SELECT id, platform, platform_host, platform_repo_id,
+		        owner, name, repo_path,
+		        owner_key, name_key, repo_path_key,
+		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
 		        allow_rebase_merge,
@@ -2293,10 +2828,14 @@ func (d *DB) GetRepoByHostOwnerName(
 		        backfill_issue_completed_at,
 		        created_at
 		 FROM middleman_repos
-		 WHERE platform_host = ? AND owner = ? AND name = ?`,
+		 WHERE platform_host = ? AND owner_key = ? AND name_key = ?
+		 ORDER BY platform ASC LIMIT 1`,
 		host, owner, name,
 	).Scan(
-		&r.ID, &r.Platform, &r.PlatformHost, &r.Owner, &r.Name,
+		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+		&r.Owner, &r.Name, &r.RepoPath,
+		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
+		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,

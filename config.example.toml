@@ -7,6 +7,11 @@ default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
 
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "MIDDLEMAN_GITLAB_TOKEN"
+
 [[repos]]
 owner = "apache"
 name = "arrow"
@@ -14,3 +19,9 @@ name = "arrow"
 [[repos]]
 owner = "ibis-project"
 name = "ibis"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "my-group/subgroup"
+name = "my-project"

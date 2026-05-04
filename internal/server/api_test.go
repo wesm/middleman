@@ -7657,10 +7657,20 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 		WHEN NEW.platform_host <> lower(NEW.platform_host)
 		  OR NEW.repo_owner <> lower(NEW.repo_owner)
 		  OR NEW.repo_name <> lower(NEW.repo_name)
-		BEGIN
-		    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
-		END;
-	`)
+			BEGIN
+			    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
+			END;
+
+			DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+			ALTER TABLE middleman_repos DROP COLUMN default_branch;
+			ALTER TABLE middleman_repos DROP COLUMN clone_url;
+			ALTER TABLE middleman_repos DROP COLUMN web_url;
+			ALTER TABLE middleman_repos DROP COLUMN repo_path_key;
+			ALTER TABLE middleman_repos DROP COLUMN name_key;
+			ALTER TABLE middleman_repos DROP COLUMN owner_key;
+			ALTER TABLE middleman_repos DROP COLUMN repo_path;
+			ALTER TABLE middleman_repos DROP COLUMN platform_repo_id;
+		`)
 	require.NoError(err)
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,

@@ -11,6 +11,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -966,6 +967,53 @@ func testRejectsUnsupportedLegacySchemaVersion(t *testing.T, version int) {
 	require.Contains(err.Error(), "newer than this binary")
 }
 
+func TestOpenBackfillsRepoIdentityColumns(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "repo-identity.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 16))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (16, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, owner, name,
+			created_at, backfill_pr_page, backfill_pr_complete,
+			backfill_issue_page, backfill_issue_complete
+		) VALUES (
+			1, 'github', 'github.com', 'acme', 'widget',
+			datetime('now'), 0, 0, 0, 0
+		)`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	repo, err := d.GetRepoByID(t.Context(), 1)
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Equal("github", repo.Platform)
+	assert.Equal("github.com", repo.PlatformHost)
+	assert.Equal("acme", repo.Owner)
+	assert.Equal("widget", repo.Name)
+	assert.Equal("acme/widget", repo.RepoPath)
+	assert.Equal("acme", repo.OwnerKey)
+	assert.Equal("widget", repo.NameKey)
+	assert.Equal("acme/widget", repo.RepoPathKey)
+	assert.Empty(repo.PlatformRepoID)
+	assert.Empty(repo.WebURL)
+	assert.Empty(repo.CloneURL)
+	assert.Empty(repo.DefaultBranch)
+}
+
 func legacySchemaSQLForTest(t *testing.T, version int) string {
 	t.Helper()
 	parts := make([]string, 0, version)
@@ -996,6 +1044,24 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000006_add_stacks.up.sql"
 	case 7:
 		return "000007_add_workspaces.up.sql"
+	case 8:
+		return "000008_casefold_repo_identifiers.up.sql"
+	case 9:
+		return "000009_casefold_identifier_triggers.up.sql"
+	case 10:
+		return "000010_timestamp_repair_gate.up.sql"
+	case 11:
+		return "000011_add_workspace_setup_events.up.sql"
+	case 12:
+		return "000012_workspace_item_types.up.sql"
+	case 13:
+		return "000013_workspace_tmux_sessions.up.sql"
+	case 14:
+		return "000014_repo_overviews.up.sql"
+	case 15:
+		return "000015_repo_overview_releases.up.sql"
+	case 16:
+		return "000016_workspace_associated_pr.up.sql"
 	default:
 		return ""
 	}
@@ -1101,6 +1167,16 @@ func rewriteWorkspacesToVersion11ForTest(raw *sql.DB) error {
 
 		CREATE INDEX middleman_workspace_setup_events_workspace_id_idx
 		    ON middleman_workspace_setup_events (workspace_id, id);
+
+		DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+		ALTER TABLE middleman_repos DROP COLUMN default_branch;
+		ALTER TABLE middleman_repos DROP COLUMN clone_url;
+		ALTER TABLE middleman_repos DROP COLUMN web_url;
+		ALTER TABLE middleman_repos DROP COLUMN repo_path_key;
+		ALTER TABLE middleman_repos DROP COLUMN name_key;
+		ALTER TABLE middleman_repos DROP COLUMN owner_key;
+		ALTER TABLE middleman_repos DROP COLUMN repo_path;
+		ALTER TABLE middleman_repos DROP COLUMN platform_repo_id;
 	`)
 	return err
 }
@@ -1164,6 +1240,16 @@ func rewriteWorkspacesToVersion9ForTest(raw *sql.DB) error {
 		BEGIN
 		    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
 		END;
+
+		DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+		ALTER TABLE middleman_repos DROP COLUMN default_branch;
+		ALTER TABLE middleman_repos DROP COLUMN clone_url;
+		ALTER TABLE middleman_repos DROP COLUMN web_url;
+		ALTER TABLE middleman_repos DROP COLUMN repo_path_key;
+		ALTER TABLE middleman_repos DROP COLUMN name_key;
+		ALTER TABLE middleman_repos DROP COLUMN owner_key;
+		ALTER TABLE middleman_repos DROP COLUMN repo_path;
+		ALTER TABLE middleman_repos DROP COLUMN platform_repo_id;
 	`)
 	return err
 }

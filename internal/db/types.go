@@ -21,8 +21,16 @@ type Repo struct {
 	ID                       int64
 	Platform                 string
 	PlatformHost             string
+	PlatformRepoID           string `json:"-"`
 	Owner                    string
 	Name                     string
+	RepoPath                 string `json:"-"`
+	OwnerKey                 string `json:"-"`
+	NameKey                  string `json:"-"`
+	RepoPathKey              string `json:"-"`
+	WebURL                   string `json:"-"`
+	CloneURL                 string `json:"-"`
+	DefaultBranch            string `json:"-"`
 	LastSyncStartedAt        *time.Time
 	LastSyncCompletedAt      *time.Time
 	LastSyncError            string
@@ -40,6 +48,25 @@ type Repo struct {
 
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
+}
+
+type RepoIdentity struct {
+	Platform       string
+	PlatformHost   string
+	PlatformRepoID string
+	Owner          string
+	Name           string
+	RepoPath       string
+	OwnerKey       string
+	NameKey        string
+	RepoPathKey    string
+}
+
+type RepoProviderMetadata struct {
+	PlatformRepoID string
+	WebURL         string
+	CloneURL       string
+	DefaultBranch  string
 }
 
 type RepoSummary struct {
