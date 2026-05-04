@@ -39,7 +39,7 @@
   mainEmpty={selectedIssue === null}
 >
   {#snippet sidebar()}
-    <IssueList />
+    <IssueList {sidebarWidth} />
   {/snippet}
 
   {#if selectedIssue !== null}

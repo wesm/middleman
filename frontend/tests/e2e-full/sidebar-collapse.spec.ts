@@ -70,6 +70,37 @@ async function expectResizedSidebar(
   ).toBe(420);
 }
 
+async function expectCompactFiltersAtMinimumWidth(
+  page: Page,
+  path: string,
+  waitForList: (page: Page) => Promise<void>,
+): Promise<void> {
+  await page.goto(path);
+  await waitForList(page);
+
+  const sidebar = page.locator(".sidebar").first();
+  const handle = page.locator(".resize-handle");
+
+  await dragResizeHandle(page, handle, -220);
+  await expect.poll(async () => sidebarWidth(sidebar)).toBe(200);
+
+  const filterBar = sidebar.locator(".filter-bar").first();
+  const compactFilters = filterBar.getByRole("button", {
+    name: "Filters",
+  });
+  await expect(compactFilters).toBeVisible();
+  await expect(filterBar.locator(".state-toggle")).toBeHidden();
+  await expect(filterBar.locator(".group-toggle")).toBeHidden();
+
+  const filterMetrics = await filterBar.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(
+    filterMetrics.clientWidth,
+  );
+}
+
 test.describe("collapsible sidebar", () => {
   test("collapse and expand via strip on pulls", async ({ page }) => {
     await page.goto("/pulls");
@@ -156,5 +187,21 @@ test.describe("collapsible sidebar", () => {
 
   test("sidebar can be resized on issues and keeps the new width after reload", async ({ page }) => {
     await expectResizedSidebar(page, "/issues", waitForIssueList);
+  });
+
+  test("pull filters collapse into a compact menu when sidebar is tight", async ({ page }) => {
+    await expectCompactFiltersAtMinimumWidth(
+      page,
+      "/pulls",
+      waitForPRList,
+    );
+  });
+
+  test("issue filters collapse into a compact menu when sidebar is tight", async ({ page }) => {
+    await expectCompactFiltersAtMinimumWidth(
+      page,
+      "/issues",
+      waitForIssueList,
+    );
   });
 });

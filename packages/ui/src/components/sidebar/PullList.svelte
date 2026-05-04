@@ -4,8 +4,10 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import PullItem from "./PullItem.svelte";
   import Chip from "../shared/Chip.svelte";
+  import FilterDropdown from "../shared/FilterDropdown.svelte";
   import LeftSidebarToggle from "../shared/LeftSidebarToggle.svelte";
   import type { PullRequest } from "../../api/types.js";
+  import type { GroupingMode } from "../../stores/grouping.svelte.js";
   import {
     buildPullRequestFilesRoute,
     buildPullRequestRoute,
@@ -32,14 +34,25 @@
   const workflowGroups = $derived(
     groupByWorkflow(pulls.getPulls(), activeWorktreeKey),
   );
+  const pullStateOptions = ["open", "closed", "all"] as const;
+  const groupingOptions: {
+    value: GroupingMode;
+    label: string;
+  }[] = [
+    { value: "byRepo", label: "Repo" },
+    { value: "byWorkflow", label: "Status" },
+    { value: "flat", label: "All" },
+  ];
 
   interface Props {
     getDetailTab?: () => string;
     showSelectedDiffSidebar?: boolean;
+    sidebarWidth?: number;
   }
   const {
     getDetailTab: _getDetailTab = () => "conversation",
     showSelectedDiffSidebar = true,
+    sidebarWidth = 340,
   }: Props = $props();
 
   let searchInput = $state(pulls.getSearchQuery() ?? "");
@@ -73,6 +86,45 @@
       void pulls.loadPulls();
     }, 300);
   }
+
+  function pullStateLabel(state: string): string {
+    if (state === "open") return "Open";
+    if (state === "closed") return "Closed";
+    return "All";
+  }
+
+  function setPullState(state: string): void {
+    pulls.setFilterState(state);
+    void pulls.loadPulls();
+  }
+
+  const compactFilterSections = $derived.by(() => [
+    {
+      title: "State",
+      items: pullStateOptions.map((state) => ({
+        id: `state-${state}`,
+        label: pullStateLabel(state),
+        active: pulls.getFilterState() === state,
+        closeOnSelect: true,
+        onSelect: () => setPullState(state),
+      })),
+    },
+    {
+      title: "Group",
+      items: groupingOptions.map((option) => ({
+        id: `group-${option.value}`,
+        label: option.label,
+        active: groupingMode === option.value,
+        closeOnSelect: true,
+        onSelect: () => grouping.setGroupingMode(option.value),
+      })),
+    },
+  ]);
+
+  const hasCompactFilterChanges = $derived(
+    pulls.getFilterState() !== "open" || groupingMode !== "byRepo",
+  );
+  const useCompactFilters = $derived(sidebarWidth <= 280);
 
   function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
     return {
@@ -143,35 +195,38 @@
 </script>
 
 <div class="pull-list">
-  <div class="filter-bar">
+  <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="sm" uppercase={false} class="chip--muted list-count-chip">
       {pulls.getPulls().length} PRs
     </Chip>
     <div class="state-toggle">
-      {#each ["open", "closed", "all"] as s (s)}
+      {#each pullStateOptions as s (s)}
         <button
           class="state-btn"
           class:state-btn--active={pulls.getFilterState() === s}
-          onclick={() => { pulls.setFilterState(s); void pulls.loadPulls(); }}
-        >{s === "open" ? "Open" : s === "closed" ? "Closed" : "All"}</button>
+          onclick={() => setPullState(s)}
+        >{pullStateLabel(s)}</button>
       {/each}
     </div>
     <div class="group-toggle">
-      <button
-        class="group-btn"
-        class:group-btn--active={groupingMode === "byRepo"}
-        onclick={() => grouping.setGroupingMode("byRepo")}
-      >Repo</button>
-      <button
-        class="group-btn"
-        class:group-btn--active={groupingMode === "byWorkflow"}
-        onclick={() => grouping.setGroupingMode("byWorkflow")}
-      >Status</button>
-      <button
-        class="group-btn"
-        class:group-btn--active={groupingMode === "flat"}
-        onclick={() => grouping.setGroupingMode("flat")}
-      >All</button>
+      {#each groupingOptions as option (option.value)}
+        <button
+          class="group-btn"
+          class:group-btn--active={groupingMode === option.value}
+          onclick={() => grouping.setGroupingMode(option.value)}
+        >{option.label}</button>
+      {/each}
+    </div>
+    <div class="compact-filter-menu">
+      <FilterDropdown
+        label="Filters"
+        title="Filters"
+        icon="more"
+        active={hasCompactFilterChanges}
+        showBadge={false}
+        sections={compactFilterSections}
+        minWidth="160px"
+      />
     </div>
     {#if isSidebarToggleEnabled()}
       <LeftSidebarToggle
@@ -354,6 +409,7 @@
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
     background: var(--bg-surface);
+    overflow: hidden;
   }
 
   .search-bar {
@@ -583,6 +639,23 @@
     border-radius: 6px;
     padding: 2px;
   }
+
+  .compact-filter-menu {
+    display: none;
+    flex-shrink: 0;
+  }
+
+  .compact-filter-menu :global(.filter-btn) {
+    width: 26px;
+    justify-content: center;
+    padding: 3px;
+  }
+
+  .compact-filter-menu :global(.filter-trigger-label),
+  .compact-filter-menu :global(.filter-trigger-detail) {
+    display: none;
+  }
+
   .state-btn {
     font-size: 11px;
     padding: 2px 8px;
@@ -626,6 +699,15 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .filter-bar--compact .state-toggle,
+  .filter-bar--compact .group-toggle {
+    display: none;
+  }
+
+  .filter-bar--compact .compact-filter-menu {
+    display: block;
   }
 
   .diff-files-wrap {
