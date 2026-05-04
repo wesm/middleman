@@ -427,7 +427,10 @@ type gitHubClientProvider struct {
 }
 
 func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
-	registry, _ := platform.NewRegistry()
+	registry, err := platform.NewRegistry()
+	if err != nil {
+		panic(fmt.Sprintf("create empty provider registry: %v", err))
+	}
 	for host, client := range clients {
 		if client == nil {
 			continue
