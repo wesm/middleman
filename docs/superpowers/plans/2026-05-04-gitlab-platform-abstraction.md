@@ -57,8 +57,9 @@ This split keeps the first release useful and testable without dragging every pl
 - Modify `internal/db/queries.go`: replace hard-coded GitHub repo upserts with platform-aware upserts.
 - Create migration `internal/db/migrations/000017_platform_repo_identity.up.sql`: add stable provider repo fields, provider-aware lookup keys, and external id uniqueness needed for GitLab nested namespaces and future providers.
 - Create migration `internal/db/migrations/000017_platform_repo_identity.down.sql`.
-- Create migration `internal/db/migrations/000018_provider_scoped_items.up.sql`: add provider-aware workspace/activity/rate-limit/item external id fields where the existing schema still assumes GitHub-shaped repository identity.
-- Create migration `internal/db/migrations/000018_provider_scoped_items.down.sql`.
+- Create migration `internal/db/migrations/000018_provider_canonicalization.up.sql`: replace GitHub-only lower-case repo/workspace triggers with provider-aware lookup keys.
+- Create migration `internal/db/migrations/000018_provider_canonicalization.down.sql`.
+- Create follow-on provider-scoped migrations for workspace/list refs, external item/event ids, and rate-limit buckets. Keep them split so each persistence contract can be reviewed independently.
 - Modify `internal/config/config.go`: add explicit `platform`, `platform_host`, and platform token config while preserving `github_token_env` and old repo entries.
 - Modify `cmd/middleman/main.go`, `middleman.go`, and `cmd/e2e-server/main.go`: build a provider registry instead of `map[string]ghclient.Client`.
 - Create or modify `internal/server/repo_ref.go`: parse and validate provider-aware repository references from query/body payloads.
@@ -372,6 +373,17 @@ Comments and event sync start with:
 - MR commits: store commit events from the MR commits endpoint.
 - Discussions: do not attempt full threaded discussion parity in the first milestone. If the API endpoint returns discussions, flatten resolvable notes only when they map cleanly to existing event rows; otherwise leave the review/discussion parity follow-up intact.
 
+Preview/import must also be bounded for large GitLab instances:
+
+- Use request context cancellation all the way into provider pagination. If the browser cancels or the server deadline expires, stop fetching more pages.
+- Default preview limit: return at most 200 rows. Hard cap: 1000 rows, even if a caller asks for more.
+- Fetch GitLab pages with `per_page=100` when supported, and stop once the return limit is reached. Do not keep scanning pages only to discard extra rows.
+- Add a foreground preview timeout of 20 seconds unless the server already has a stricter request deadline.
+- Preview responses include `returned_count`, `scanned_count`, `truncated`, and `partial_errors`. `partial_errors` should include provider error codes and namespace/page context without leaking tokens.
+- If the first provider request fails, return the typed platform error and no preview rows.
+- If later pages fail after at least one successful page, return the successful rows with `truncated = true` and `partial_errors` populated.
+- Exact repository add is not a partial operation: project lookup must either resolve one project and add it, or fail with a typed platform error.
+
 ### GitLab CI Mapping
 
 Middleman stores one aggregate `ci_status` plus a JSON list of checks. GitLab starts with a single synthesized check for the MR head pipeline.
@@ -408,6 +420,28 @@ Rules:
 - Migrate rate-limit rows to key by `(platform, platform_host, api_type)` where `api_type` is a provider-local bucket such as `rest`, `graphql`, or `gitlab-rest`.
 - Existing GitHub rows backfill to `platform = 'github'`.
 - Add tests proving GitHub REST and GitLab REST rate-limit rows do not overwrite each other on the same host string.
+
+### Provider-Scoped Schema Impact Matrix
+
+The provider migration work should use this table as the implementation checklist. Tables not listed here should either be unaffected because they already point through a provider-aware parent row, or be added to the table before implementation starts.
+
+| Table or API surface | Change | Backfill and cleanup | Indexes/query helpers |
+| --- | --- | --- | --- |
+| `middleman_repos` | Add `repo_path`, lookup keys, `platform_repo_id`, `web_url`, `clone_url`, `default_branch` | Existing rows backfill to `platform = 'github'`, `repo_path = owner || '/' || name`, GitHub case-folded keys, empty provider metadata | Unique `(platform, platform_host, owner_key, name_key)` or equivalent helper; partial unique `(platform, platform_host, platform_repo_id)` where non-empty; `UpsertRepoByProviderID` |
+| `middleman_merge_requests` | Add `platform_external_id`; keep numeric `platform_id` | Existing rows keep empty external id because GitHub numeric ids remain valid | Keep unique `(repo_id, number)` and `(repo_id, platform_id)`; add partial unique `(repo_id, platform_external_id)` where non-empty |
+| `middleman_issues` | Add `platform_external_id`; keep numeric `platform_id` | Existing rows keep empty external id | Keep unique `(repo_id, number)` and `(repo_id, platform_id)`; add partial unique `(repo_id, platform_external_id)` where non-empty |
+| `middleman_mr_events` | Add `platform_external_id`; rebuild new event dedupe keys only for newly synced rows | Historical rows remain tied to provider through `merge_request_id -> repo_id`; no destructive cleanup required | New dedupe helper includes provider, host, repo, parent item kind/id, event kind, and provider event id/external id |
+| `middleman_issue_events` | Add `platform_external_id`; rebuild new event dedupe keys only for newly synced rows | Historical rows remain tied to provider through `issue_id -> repo_id`; no destructive cleanup required | Same provider-scoped dedupe helper as MR events |
+| `middleman_labels` | Add `platform_external_id`; keep name uniqueness per repo | Existing rows keep empty external id; label display remains `(repo_id, name)` | Keep unique `(repo_id, name)`; add partial unique `(repo_id, platform_external_id)` where non-empty |
+| `middleman_merge_request_labels`, `middleman_issue_labels` | No schema change | Parent item and label rows carry provider identity | Query helpers join through item/label parents |
+| `middleman_repo_overviews` | No repo identity columns needed; review `releases_json` for provider external ids before GitLab releases land | Rows are keyed by `repo_id`, so historical data already inherits provider identity | Release/tag persistence helpers should include provider external ids inside JSON or move to normalized tables before non-numeric ids are needed |
+| `middleman_workspaces` | Add `platform`, `repo_path`, and preferably nullable `repo_id`; keep old denormalized fields as compatibility columns during migration | Existing rows backfill `platform = 'github'`; resolve `repo_id` by current host/owner/name where possible. If no repo exists, preserve old fields and leave `repo_id` null until the workspace is re-associated | Unique workspace identity becomes `(platform, platform_host, repo_path_key, item_type, item_number)` or `(repo_id, item_type, item_number)` when `repo_id` is known; replace lower-case workspace triggers with provider-aware keys |
+| `middleman_workspace_setup_events`, `middleman_workspace_tmux_sessions` | No schema change | Inherit provider identity through `workspace_id` | No new indexes |
+| `middleman_starred_items` | No schema change | Already keyed by `repo_id`, `item_type`, `number` | API/list helpers must return `RepoRefResponse` from joined repo rows |
+| `middleman_stacks`, `middleman_stack_members` | No schema change | Already keyed by `repo_id` or `merge_request_id` | Stack queries must join repos when returning route refs |
+| `middleman_kanban_state`, `middleman_mr_worktree_links` | No schema change | Inherit provider identity through `merge_request_id` | API/list helpers must join repos when returning route refs |
+| `middleman_rate_limits` | Add `platform`; keep `platform_host` and `api_type` | Existing rows backfill `platform = 'github'`; preserve bucket values | Unique `(platform, platform_host, api_type)` |
+| List/search/dashboard/activity/settings API responses | Response-shape change, not necessarily table change | Historical rows tied through `repo_id` need no cleanup; unresolved historical workspace rows return their preserved GitHub-compatible ref | Use one `RepoRefResponse` helper rather than ad hoc owner/name reconstruction |
 
 ### Self-Hosted GitLab URLs
 
@@ -446,18 +480,16 @@ Standing rule for API work: every task that changes Huma routes, request schemas
 - [ ] Run `go test ./internal/platform -shuffle=on`.
 - [ ] Commit: `feat: define provider-neutral platform contracts`.
 
-### Task 2: Make Repository Storage Platform-Aware
+### Task 2: Persist Repository Identity And Provider Metadata
 
 **Files:**
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
 - Create: `internal/db/migrations/000017_platform_repo_identity.up.sql`
 - Create: `internal/db/migrations/000017_platform_repo_identity.down.sql`
-- Create: `internal/db/migrations/000018_provider_scoped_items.up.sql`
-- Create: `internal/db/migrations/000018_provider_scoped_items.down.sql`
 - Test: `internal/db/queries_test.go`
 
-- [ ] Add migration:
+- [ ] Add only the repo identity and provider metadata migration in this task:
 
 ```sql
 ALTER TABLE middleman_repos ADD COLUMN platform_repo_id TEXT NOT NULL DEFAULT '';
@@ -476,7 +508,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repos_platform_repo_id
 - [ ] Replace `UpsertRepo(ctx, host, owner, name)` with `UpsertRepo(ctx, identity db.RepoIdentity)`.
 - [ ] Add `UpsertRepoByProviderID(ctx, identity db.RepoIdentity)` or equivalent reconciliation that updates owner/name/repo_path on provider rename instead of creating a new row.
 - [ ] Add `UpdateRepoProviderMetadata(ctx, repoID, metadata)` for `platform_repo_id`, `web_url`, `clone_url`, and `default_branch`.
-- [ ] Replace or supersede existing lower-case repo triggers with provider-aware canonicalization. GitHub keys are case-folded; GitLab display fields preserve canonical provider spelling while lookup keys are derived from provider-canonical paths.
 - [ ] Keep a small compatibility helper for GitHub-heavy tests:
 
 ```go
@@ -487,14 +518,70 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 
 - [ ] Update queries to select and scan new repo fields.
 - [ ] Add migration tests proving existing rows keep `platform = 'github'`, new metadata fields default to empty strings, GitHub upserts still use `platform = 'github'`, GitLab upserts use `platform = 'gitlab'`, and the same host/owner/name on different platforms creates different rows.
-- [ ] Add migration and query tests proving GitHub rows still case-fold, GitLab rows preserve canonical `path_with_namespace`, lookup keys prevent duplicates, and `platform_repo_id` uniqueness updates renamed repos.
 - [ ] Add query tests proving provider metadata can be filled after the initial upsert without changing the repo identity.
-- [ ] Add provider-aware workspace/activity/list/rate-limit migration work in `000018`: workspace associations must use `repo_id` or full provider refs; activity filters and dedupe keys must include provider identity; rate-limit rows must key by `(platform, platform_host, api_type)`.
-- [ ] Add `platform_external_id` fields where future providers may expose string ids for item/event/label/release/tag/check identity, while keeping existing numeric `platform_id` columns for GitHub and GitLab.
-- [ ] Add collision tests for same numeric event id across providers, same GitLab note id across projects, and same note id on MR versus issue events.
-- [ ] Add tests proving GitHub REST, GitHub GraphQL, and GitLab REST rate-limit buckets do not overwrite each other.
 - [ ] Run `go test ./internal/db -shuffle=on`.
 - [ ] Commit: `feat: persist provider-aware repository identity`.
+
+### Task 2A: Replace Repo And Workspace Canonicalization
+
+**Files:**
+- Modify: `internal/db/queries.go`
+- Create or modify: `internal/db/migrations/000018_provider_canonicalization.up.sql`
+- Create or modify: `internal/db/migrations/000018_provider_canonicalization.down.sql`
+- Test: `internal/db/queries_test.go`
+
+- [ ] Replace or supersede existing lower-case repo and workspace triggers with provider-aware canonicalization. GitHub keys are case-folded; GitLab display fields preserve canonical provider spelling while lookup keys are derived from provider-canonical paths.
+- [ ] Backfill `repo_path`, `owner_key`, `name_key`, and `repo_path_key` for existing GitHub repos and workspaces.
+- [ ] Add migration and query tests proving GitHub rows still case-fold, GitLab rows preserve canonical `path_with_namespace`, lookup keys prevent duplicates, and `platform_repo_id` uniqueness updates renamed repos.
+- [ ] Add historical cleanup tests for workspace rows that cannot be tied to a repo id: they should be preserved as GitHub-compatible refs rather than deleted.
+- [ ] Run `go test ./internal/db -run 'Test.*Canonical|Test.*Repo.*Identity|Test.*Workspace' -shuffle=on`.
+- [ ] Commit: `refactor: make repository canonicalization provider-aware`.
+
+### Task 2B: Make Workspace And List Refs Provider-Aware
+
+**Files:**
+- Modify: `internal/db/types.go`
+- Modify: `internal/db/queries.go`
+- Create or modify: next provider-scoped migration after Task 2A
+- Test: `internal/db/queries_test.go`
+- Test: affected server API tests that return workspace, starred, activity, list, search, dashboard, or settings rows
+
+- [ ] Apply the `middleman_workspaces`, `middleman_starred_items`, stack, kanban, worktree-link, and API response rows from the Provider-Scoped Schema Impact Matrix.
+- [ ] Prefer `repo_id` for persisted associations; keep denormalized provider refs only where the existing workflow needs them before a repo row exists.
+- [ ] Return `RepoRefResponse` from list/search/dashboard/workspace/starred/activity/settings query helpers.
+- [ ] Add tests proving historical rows joined through `repo_id` need no cleanup, and unresolved historical workspace rows still return their preserved GitHub-compatible ref.
+- [ ] Run `go test ./internal/db ./internal/server -run 'Test.*Workspace|Test.*Activity|Test.*Search|Test.*Dashboard|Test.*Settings' -shuffle=on`.
+- [ ] Commit: `refactor: carry provider refs through workspace and list data`.
+
+### Task 2C: Scope External Item And Event IDs
+
+**Files:**
+- Modify: `internal/db/types.go`
+- Modify: `internal/db/queries.go`
+- Create or modify: next provider-scoped migration after Task 2B
+- Test: `internal/db/queries_test.go`
+
+- [ ] Apply the `platform_external_id` rows from the Provider-Scoped Schema Impact Matrix for merge requests, issues, events, labels, releases/tags if normalized, and CI checks if normalized.
+- [ ] Keep existing numeric `platform_id` columns for GitHub and GitLab numeric ids.
+- [ ] Update event dedupe helpers to include provider, host, repo, parent item kind/id, event kind, and provider event id/external id.
+- [ ] Add collision tests for same numeric event id across providers, same GitLab note id across projects, and same note id on MR versus issue events.
+- [ ] Run `go test ./internal/db -run 'Test.*ExternalID|Test.*Event.*Dedupe|Test.*Label' -shuffle=on`.
+- [ ] Commit: `refactor: scope provider item event identity`.
+
+### Task 2D: Key Rate Limits By Provider
+
+**Files:**
+- Modify: `internal/db/types.go`
+- Modify: `internal/db/queries.go`
+- Create or modify: next provider-scoped migration after Task 2C
+- Test: `internal/db/queries_test.go`
+
+- [ ] Add `platform` to `middleman_rate_limits` and backfill existing rows to `github`.
+- [ ] Change the rate-limit unique key to `(platform, platform_host, api_type)`.
+- [ ] Update rate-limit query helpers to require platform, host, and provider-local API type.
+- [ ] Add tests proving GitHub REST, GitHub GraphQL, and GitLab REST buckets do not overwrite each other.
+- [ ] Run `go test ./internal/db -run 'Test.*RateLimit' -shuffle=on`.
+- [ ] Commit: `refactor: scope rate limits by provider`.
 
 ### Task 3: Generalize Config And Token Resolution
 
@@ -627,13 +714,14 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Add a constructor option for test-only base URL injection or provider registry injection so e2e tests can point the GitLab client at `httptest.Server` without weakening production host validation.
 - [ ] Implement exact project lookup using raw `path_with_namespace` when calling client-go methods, not pre-escaped strings. Use numeric project ids for later project-scoped calls after lookup succeeds.
 - [ ] Add tests proving raw `group/subgroup/project` produces the expected GitLab request and already escaped `group%2Fsubgroup%2Fproject` is rejected or normalized before it can double-escape.
-- [ ] Implement namespace listing for repo preview. For groups, use group project listing with subgroups when available; for users, fall back to project search/listing filtered by namespace path; paginate all pages and exclude archived projects by default.
+- [ ] Implement namespace listing for repo preview. For groups, use group project listing with subgroups when available; for users, fall back to project search/listing filtered by namespace path; paginate only until the preview limit is reached and exclude archived projects by default.
+- [ ] Respect preview context cancellation, the 20 second foreground deadline, default 200 row return limit, and hard 1000 row cap.
 - [ ] Implement MR list/detail pagination with project `id` when known and raw `path_with_namespace` when not.
 - [ ] Implement issues, MR notes, issue notes, MR commits, releases, tags, and basic pipeline status reads.
 - [ ] Store non-system notes as comments/events, exclude system notes unless explicitly mapped to a known middleman event kind, and keep full threaded discussion parity out of the first milestone.
 - [ ] Normalize GitLab `iid` as middleman `number`; never use the global MR id as `number`.
 - [ ] Implement the GitLab CI mapping table exactly: pending/running statuses become `pending`, success and skipped become `success`, failed/canceled become `failure`, manual/scheduled become `pending`, unknown statuses become `neutral`, and missing pipelines leave CI empty.
-- [ ] Add httptest fixtures for paginated GitLab responses, namespace group/user fallback, archived project filtering, non-system/system note handling, pipeline status mapping, missing pipeline fallback, and self-hosted base URL construction.
+- [ ] Add httptest fixtures for paginated GitLab responses, namespace group/user fallback, preview timeout/cancellation, truncated preview metadata, partial page failure metadata, archived project filtering, non-system/system note handling, pipeline status mapping, missing pipeline fallback, and self-hosted base URL construction.
 - [ ] Run `go test ./internal/platform/gitlab -shuffle=on`.
 - [ ] Commit: `feat: add GitLab read client`.
 
@@ -671,12 +759,15 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
   "provider": "gitlab",
   "platform_host": "gitlab.com",
   "owner": "my-group/subgroup",
-  "pattern": "service-*"
+  "pattern": "service-*",
+  "limit": 200
 }
 ```
 
 - [ ] Default omitted `provider` to `github` and omitted `platform_host` to the provider default.
 - [ ] Return provider and host on preview rows.
+- [ ] Add preview response metadata: `returned_count`, `scanned_count`, `truncated`, and `partial_errors`.
+- [ ] Enforce default preview limit 200, hard cap 1000, and 20 second foreground timeout for GitLab namespace previews.
 - [ ] Return a full `RepoRefResponse` on preview, settings, workspace, starred/activity, list, and search rows so generated clients never have to reconstruct provider identity from owner/name alone.
 - [ ] Update bulk add request rows to include provider, host, and `repo_path`.
 - [ ] Validate exact rows through the matching provider registry client.
@@ -684,6 +775,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Store the provider-canonical `repo_path` returned by lookup. GitHub paths continue to case-fold; GitLab paths preserve `path_with_namespace`.
 - [ ] Keep old GitHub-only requests working.
 - [ ] Add full-stack e2e coverage using a fake GitLab API server and real SQLite through test-only provider registry or base URL injection: preview GitLab repos, add one exact repo, trigger syncer tracked repo update.
+- [ ] Add e2e coverage for a truncated GitLab preview and a partial page failure after at least one successful page.
 - [ ] Run `make api-generate` immediately after changing preview or bulk request/response contracts.
 - [ ] Run `go test ./internal/server -run 'Test.*Repo.*' -shuffle=on`.
 - [ ] Commit: `feat: import repositories from configured platforms`.
@@ -748,13 +840,14 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 Run these before declaring the implementation complete:
 
 ```bash
-go test ./... -shuffle=on
 make api-generate
+git diff --exit-code -- frontend/openapi/openapi.yaml internal/apiclient/generated packages/ui/src/api/generated frontend/src/lib/api/generated
+go test ./... -shuffle=on
 make frontend
 make test-short
 ```
 
-If frontend action gating or route behavior changes are visible, also run the relevant Playwright e2e tests rather than relying only on unit tests.
+If `make api-generate` changes files, commit the generated artifacts and rerun the affected Go/frontend tests after generation. If frontend action gating or route behavior changes are visible, also run the relevant Playwright e2e tests rather than relying only on unit tests.
 
 Do not run `npm` commands; use Bun for frontend work.
 
