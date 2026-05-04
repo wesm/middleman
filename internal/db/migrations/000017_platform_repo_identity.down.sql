@@ -3,6 +3,54 @@ DROP TRIGGER IF EXISTS middleman_workspaces_key_fill_insert;
 DROP TRIGGER IF EXISTS middleman_workspaces_casefold_insert;
 DROP INDEX IF EXISTS idx_workspaces_provider_item_key;
 
+DROP INDEX IF EXISTS idx_issue_events_platform_external_id;
+DROP INDEX IF EXISTS idx_mr_events_platform_external_id;
+DROP INDEX IF EXISTS idx_labels_repo_platform_external_id;
+DROP INDEX IF EXISTS idx_issues_repo_platform_external_id;
+DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
+
+DROP INDEX IF EXISTS idx_issue_events_created;
+
+CREATE TABLE middleman_issue_events_v16 (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id      INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
+    platform_id   INTEGER,
+    event_type    TEXT NOT NULL,
+    author        TEXT NOT NULL DEFAULT '',
+    summary       TEXT NOT NULL DEFAULT '',
+    body          TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL,
+    dedupe_key    TEXT NOT NULL,
+    UNIQUE(dedupe_key)
+);
+
+INSERT INTO middleman_issue_events_v16 (
+    id, issue_id, platform_id, event_type,
+    author, summary, body, metadata_json, created_at, dedupe_key
+)
+SELECT
+    id, issue_id, platform_id, event_type,
+    COALESCE(author, ''), COALESCE(summary, ''), COALESCE(body, ''),
+    COALESCE(metadata_json, ''), created_at, dedupe_key
+FROM middleman_issue_events
+WHERE id IN (
+    SELECT MIN(id)
+    FROM middleman_issue_events
+    GROUP BY dedupe_key
+);
+
+DROP TABLE middleman_issue_events;
+ALTER TABLE middleman_issue_events_v16 RENAME TO middleman_issue_events;
+
+CREATE INDEX IF NOT EXISTS idx_issue_events_created
+    ON middleman_issue_events(issue_id, created_at DESC);
+
+ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
+ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
+ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
+ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
+
 DELETE FROM middleman_workspaces
 WHERE rowid NOT IN (
     SELECT MIN(rowid)

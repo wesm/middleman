@@ -42,29 +42,30 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		return nil, err
 	}
 	mr := &db.MergeRequest{
-		RepoID:            repoID,
-		PlatformID:        platformMR.PlatformID,
-		Number:            platformMR.Number,
-		URL:               platformMR.URL,
-		Title:             platformMR.Title,
-		Author:            platformMR.Author,
-		AuthorDisplayName: platformMR.AuthorDisplayName,
-		State:             platformMR.State,
-		IsDraft:           platformMR.IsDraft,
-		Body:              platformMR.Body,
-		HeadBranch:        platformMR.HeadBranch,
-		BaseBranch:        platformMR.BaseBranch,
-		PlatformHeadSHA:   platformMR.HeadSHA,
-		PlatformBaseSHA:   platformMR.BaseSHA,
-		Additions:         platformMR.Additions,
-		Deletions:         platformMR.Deletions,
-		ReviewDecision:    platformMR.ReviewDecision,
-		CIStatus:          platformMR.CIStatus,
-		CreatedAt:         platformMR.CreatedAt,
-		UpdatedAt:         platformMR.UpdatedAt,
-		LastActivityAt:    platformMR.LastActivityAt,
-		MergedAt:          platformMR.MergedAt,
-		ClosedAt:          platformMR.ClosedAt,
+		RepoID:             repoID,
+		PlatformID:         platformMR.PlatformID,
+		PlatformExternalID: platformMR.PlatformExternalID,
+		Number:             platformMR.Number,
+		URL:                platformMR.URL,
+		Title:              platformMR.Title,
+		Author:             platformMR.Author,
+		AuthorDisplayName:  platformMR.AuthorDisplayName,
+		State:              platformMR.State,
+		IsDraft:            platformMR.IsDraft,
+		Body:               platformMR.Body,
+		HeadBranch:         platformMR.HeadBranch,
+		BaseBranch:         platformMR.BaseBranch,
+		PlatformHeadSHA:    platformMR.HeadSHA,
+		PlatformBaseSHA:    platformMR.BaseSHA,
+		Additions:          platformMR.Additions,
+		Deletions:          platformMR.Deletions,
+		ReviewDecision:     platformMR.ReviewDecision,
+		CIStatus:           platformMR.CIStatus,
+		CreatedAt:          platformMR.CreatedAt,
+		UpdatedAt:          platformMR.UpdatedAt,
+		LastActivityAt:     platformMR.LastActivityAt,
+		MergedAt:           platformMR.MergedAt,
+		ClosedAt:           platformMR.ClosedAt,
 	}
 
 	if ghPR.GetHead() != nil {
@@ -245,19 +246,20 @@ func NormalizeIssue(repoID int64, ghIssue *gh.Issue) (*db.Issue, error) {
 		return nil, err
 	}
 	issue := &db.Issue{
-		RepoID:         repoID,
-		PlatformID:     platformIssue.PlatformID,
-		Number:         platformIssue.Number,
-		URL:            platformIssue.URL,
-		Title:          platformIssue.Title,
-		Author:         platformIssue.Author,
-		State:          platformIssue.State,
-		Body:           platformIssue.Body,
-		CommentCount:   platformIssue.CommentCount,
-		CreatedAt:      platformIssue.CreatedAt,
-		UpdatedAt:      platformIssue.UpdatedAt,
-		LastActivityAt: platformIssue.LastActivityAt,
-		ClosedAt:       platformIssue.ClosedAt,
+		RepoID:             repoID,
+		PlatformID:         platformIssue.PlatformID,
+		PlatformExternalID: platformIssue.PlatformExternalID,
+		Number:             platformIssue.Number,
+		URL:                platformIssue.URL,
+		Title:              platformIssue.Title,
+		Author:             platformIssue.Author,
+		State:              platformIssue.State,
+		Body:               platformIssue.Body,
+		CommentCount:       platformIssue.CommentCount,
+		CreatedAt:          platformIssue.CreatedAt,
+		UpdatedAt:          platformIssue.UpdatedAt,
+		LastActivityAt:     platformIssue.LastActivityAt,
+		ClosedAt:           platformIssue.ClosedAt,
 	}
 	issue.Labels = dbLabels(platformIssue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return issue, nil
@@ -272,14 +274,15 @@ func itemLabelUpdatedAt(updatedAt, createdAt time.Time) time.Time {
 
 func dbMREvent(mrID int64, event platform.MergeRequestEvent) db.MREvent {
 	dbEvent := db.MREvent{
-		MergeRequestID: mrID,
-		EventType:      event.EventType,
-		Author:         event.Author,
-		Summary:        event.Summary,
-		Body:           event.Body,
-		MetadataJSON:   event.MetadataJSON,
-		CreatedAt:      event.CreatedAt,
-		DedupeKey:      event.DedupeKey,
+		MergeRequestID:     mrID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" || event.EventType == "review" {
 		platformID := event.PlatformID
@@ -290,14 +293,15 @@ func dbMREvent(mrID int64, event platform.MergeRequestEvent) db.MREvent {
 
 func dbIssueEvent(issueID int64, event platform.IssueEvent) db.IssueEvent {
 	dbEvent := db.IssueEvent{
-		IssueID:      issueID,
-		EventType:    event.EventType,
-		Author:       event.Author,
-		Summary:      event.Summary,
-		Body:         event.Body,
-		MetadataJSON: event.MetadataJSON,
-		CreatedAt:    event.CreatedAt,
-		DedupeKey:    event.DedupeKey,
+		IssueID:            issueID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" {
 		platformID := event.PlatformID
@@ -313,12 +317,13 @@ func dbLabels(labels []platform.Label, updatedAt time.Time) []db.Label {
 	out := make([]db.Label, 0, len(labels))
 	for _, label := range labels {
 		out = append(out, db.Label{
-			PlatformID:  label.PlatformID,
-			Name:        label.Name,
-			Description: label.Description,
-			Color:       label.Color,
-			IsDefault:   label.IsDefault,
-			UpdatedAt:   updatedAt,
+			PlatformID:         label.PlatformID,
+			PlatformExternalID: label.PlatformExternalID,
+			Name:               label.Name,
+			Description:        label.Description,
+			Color:              label.Color,
+			IsDefault:          label.IsDefault,
+			UpdatedAt:          updatedAt,
 		})
 	}
 	return out

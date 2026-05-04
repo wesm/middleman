@@ -7996,8 +7996,17 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 
 			DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
 			DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+			DROP INDEX IF EXISTS idx_issue_events_platform_external_id;
+			DROP INDEX IF EXISTS idx_mr_events_platform_external_id;
+			DROP INDEX IF EXISTS idx_labels_repo_platform_external_id;
+			DROP INDEX IF EXISTS idx_issues_repo_platform_external_id;
+			DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
 			DROP INDEX IF EXISTS idx_repos_provider_path_key;
 			DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+			ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
+			ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
+			ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
+			ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_repos DROP COLUMN default_branch;
 			ALTER TABLE middleman_repos DROP COLUMN clone_url;
 			ALTER TABLE middleman_repos DROP COLUMN web_url;

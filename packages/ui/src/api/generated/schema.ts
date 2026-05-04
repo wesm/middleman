@@ -1209,6 +1209,7 @@ export interface components {
             LastActivityAt: string;
             /** Format: int64 */
             Number: number;
+            PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number;
             /** Format: int64 */
@@ -1256,6 +1257,7 @@ export interface components {
             /** Format: int64 */
             IssueID: number;
             MetadataJSON: string;
+            PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number | null;
             Summary: string;
@@ -1281,6 +1283,7 @@ export interface components {
             LastActivityAt: string;
             /** Format: int64 */
             Number: number;
+            PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number;
             /** Format: int64 */
@@ -1359,6 +1362,7 @@ export interface components {
             /** Format: int64 */
             MergeRequestID: number;
             MetadataJSON: string;
+            PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number | null;
             Summary: string;
@@ -1418,6 +1422,7 @@ export interface components {
             MergedAt: string | null;
             /** Format: int64 */
             Number: number;
+            PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number;
             /** Format: int64 */
@@ -1486,6 +1491,7 @@ export interface components {
             MergedAt: string | null;
             /** Format: int64 */
             Number: number;
+            PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number;
             /** Format: int64 */

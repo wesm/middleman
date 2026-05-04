@@ -652,6 +652,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -679,6 +681,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -763,6 +766,8 @@ components:
           type: integer
         MetadataJSON:
           type: string
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type:
@@ -774,6 +779,7 @@ components:
         - ID
         - IssueID
         - PlatformID
+        - PlatformExternalID
         - EventType
         - Author
         - Summary
@@ -816,6 +822,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -860,6 +868,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -999,6 +1008,8 @@ components:
           type: integer
         MetadataJSON:
           type: string
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type:
@@ -1010,6 +1021,7 @@ components:
         - ID
         - MergeRequestID
         - PlatformID
+        - PlatformExternalID
         - EventType
         - Author
         - Summary
@@ -1123,6 +1135,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -1152,6 +1166,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -1307,6 +1322,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -1360,6 +1377,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title

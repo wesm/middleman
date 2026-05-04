@@ -190,7 +190,34 @@ func lookupLabelIDByPlatformIDTx(ctx context.Context, tx *sql.Tx, repoID, platfo
 	return id, true, nil
 }
 
+func lookupLabelIDByPlatformExternalIDTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	platformExternalID string,
+) (int64, bool, error) {
+	if platformExternalID == "" {
+		return 0, false, nil
+	}
+	var id int64
+	err := tx.QueryRowContext(ctx,
+		`SELECT id FROM middleman_labels WHERE repo_id = ? AND platform_external_id = ?`,
+		repoID, platformExternalID,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
 func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Label) (int64, bool, error) {
+	externalID, foundByExternalID, err := lookupLabelIDByPlatformExternalIDTx(ctx, tx, repoID, label.PlatformExternalID)
+	if err != nil {
+		return 0, false, fmt.Errorf("lookup label %s by platform external id: %w", label.Name, err)
+	}
 	platformID, foundByPlatform, err := lookupLabelIDByPlatformIDTx(ctx, tx, repoID, label.PlatformID)
 	if err != nil {
 		return 0, false, fmt.Errorf("lookup label %s by platform id: %w", label.Name, err)
@@ -198,6 +225,25 @@ func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Lab
 	nameID, foundByName, err := lookupLabelIDByNameTx(ctx, tx, repoID, label.Name)
 	if err != nil {
 		return 0, false, fmt.Errorf("lookup label %s by name: %w", label.Name, err)
+	}
+	if foundByExternalID {
+		if foundByPlatform && externalID != platformID {
+			return 0, false, fmt.Errorf("label %s in repo %d matches different rows by external id and platform id", label.Name, repoID)
+		}
+		if foundByName && externalID != nameID {
+			namePlatformID, err := labelPlatformIDTx(ctx, tx, nameID)
+			if err != nil {
+				return 0, false, fmt.Errorf("lookup label %s platform id: %w", label.Name, err)
+			}
+			if !namePlatformID.Valid {
+				if err := mergeLabelRowAssociationsTx(ctx, tx, nameID, externalID); err != nil {
+					return 0, false, fmt.Errorf("merge stale label %s into external id row: %w", label.Name, err)
+				}
+			} else {
+				return 0, false, fmt.Errorf("label %s in repo %d matches different rows by name and external id", label.Name, repoID)
+			}
+		}
+		return externalID, true, nil
 	}
 	if foundByPlatform && foundByName && platformID != nameID {
 		namePlatformID, err := labelPlatformIDTx(ctx, tx, nameID)
@@ -260,9 +306,13 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 		}
 		if !found {
 			result, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_labels (repo_id, platform_id, name, description, color, is_default, updated_at)
-				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?)`,
-				repoID, label.PlatformID, label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
+				INSERT INTO middleman_labels (
+					repo_id, platform_id, platform_external_id,
+					name, description, color, is_default, updated_at
+				)
+				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?)`,
+				repoID, label.PlatformID, label.PlatformExternalID,
+				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("insert label %s: %w", label.Name, err)
@@ -275,13 +325,15 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 			_, err = tx.ExecContext(ctx, `
 				UPDATE middleman_labels
 				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
+				    platform_external_id = COALESCE(NULLIF(?, ''), platform_external_id),
 				    name = ?,
 				    description = ?,
 				    color = ?,
 				    is_default = ?,
 				    updated_at = ?
 				WHERE id = ?`,
-				label.PlatformID, label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt, id,
+				label.PlatformID, label.PlatformExternalID,
+				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt, id,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
@@ -378,7 +430,8 @@ func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[i
 		args[i] = id
 	}
 	query := fmt.Sprintf(`
-		SELECT ml.merge_request_id, l.id, l.repo_id, COALESCE(l.platform_id, 0), l.name, l.description, l.color, l.is_default, l.updated_at
+		SELECT ml.merge_request_id, l.id, l.repo_id, COALESCE(l.platform_id, 0),
+		       l.platform_external_id, l.name, l.description, l.color, l.is_default, l.updated_at
 		FROM middleman_merge_request_labels ml
 		JOIN middleman_labels l ON l.id = ml.label_id
 		WHERE ml.merge_request_id IN (%s)
@@ -393,7 +446,7 @@ func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[i
 	for rows.Next() {
 		var ownerID int64
 		var label Label
-		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
+		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.PlatformExternalID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan merge request label: %w", err)
 		}
 		out[ownerID] = append(out[ownerID], label)
@@ -413,7 +466,8 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 		args[i] = id
 	}
 	query := fmt.Sprintf(`
-		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0), l.name, l.description, l.color, l.is_default, l.updated_at
+		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0),
+		       l.platform_external_id, l.name, l.description, l.color, l.is_default, l.updated_at
 		FROM middleman_issue_labels il
 		JOIN middleman_labels l ON l.id = il.label_id
 		WHERE il.issue_id IN (%s)
@@ -428,7 +482,7 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 	for rows.Next() {
 		var ownerID int64
 		var label Label
-		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
+		if err := rows.Scan(&ownerID, &label.ID, &label.RepoID, &label.PlatformID, &label.PlatformExternalID, &label.Name, &label.Description, &label.Color, &label.IsDefault, &label.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan issue label: %w", err)
 		}
 		out[ownerID] = append(out[ownerID], label)
@@ -1389,7 +1443,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 	canonicalizeMergeRequestTimestamps(mr)
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_merge_requests
-		    (repo_id, platform_id, number, url, title, author, author_display_name,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha,
 		     head_repo_clone_url,
@@ -1398,9 +1452,10 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		     detail_fetched_at, ci_had_pending,
 		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
+		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
@@ -1427,7 +1482,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    closed_at            = excluded.closed_at,
 		    mergeable_state      = excluded.mergeable_state
 		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
-		mr.RepoID, mr.PlatformID, mr.Number, mr.URL, mr.Title,
+		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA,
@@ -1457,7 +1512,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var mr MergeRequest
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
+		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
 		       p.platform_head_sha, p.platform_base_sha,
@@ -1478,7 +1533,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
 		owner, name, number,
 	).Scan(
-		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
+		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
@@ -1509,7 +1564,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*MergeRequest, error) {
 	var mr MergeRequest
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
+		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
 		       p.platform_head_sha, p.platform_base_sha,
@@ -1529,7 +1584,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		WHERE p.repo_id = ? AND p.number = ?`,
 		repoID, number,
 	).Scan(
-		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
+		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 		&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
@@ -1607,7 +1662,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 
 	query := fmt.Sprintf(`
-		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
+		SELECT p.id, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft,
 		       p.body, p.head_branch, p.base_branch,
 		       p.platform_head_sha, p.platform_base_sha,
@@ -1639,7 +1694,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	for rows.Next() {
 		var mr MergeRequest
 		if err := rows.Scan(
-			&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
+			&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.PlatformExternalID, &mr.Number, &mr.URL, &mr.Title,
 			&mr.Author, &mr.AuthorDisplayName, &mr.State, &mr.IsDraft,
 			&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
 			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
@@ -1683,11 +1738,12 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_mr_events
-			    (merge_request_id, platform_id, event_type, author, summary, body,
+			    (merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
+			    platform_external_id = excluded.platform_external_id,
 			    event_type    = excluded.event_type,
 			    author        = excluded.author,
 			    summary       = excluded.summary,
@@ -1703,7 +1759,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			e := &events[i]
 			canonicalizeMREventTimestamps(e)
 			if _, err := stmt.ExecContext(ctx,
-				e.MergeRequestID, e.PlatformID, e.EventType, e.Author, e.Summary, e.Body,
+				e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.Summary, e.Body,
 				e.MetadataJSON, e.CreatedAt, e.DedupeKey,
 			); err != nil {
 				return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
@@ -1786,7 +1842,7 @@ func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (ti
 // ListMREvents returns all events for a merge request ordered by created_at DESC.
 func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, merge_request_id, platform_id, event_type, author, summary, body,
+		SELECT id, merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key
 		FROM middleman_mr_events
 		WHERE merge_request_id = ?
@@ -1802,7 +1858,7 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 		var e MREvent
 		var createdAtStr string
 		if err := rows.Scan(
-			&e.ID, &e.MergeRequestID, &e.PlatformID, &e.EventType, &e.Author, &e.Summary,
+			&e.ID, &e.MergeRequestID, &e.PlatformID, &e.PlatformExternalID, &e.EventType, &e.Author, &e.Summary,
 			&e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
 		); err != nil {
 			return nil, fmt.Errorf("scan mr event: %w", err)
@@ -2186,12 +2242,13 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	canonicalizeIssueTimestamps(issue)
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
-		    (repo_id, platform_id, number, url, title, author, state,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
 		     body, comment_count, labels_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
+		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_issues.platform_external_id),
 		    url               = excluded.url,
 		    title             = excluded.title,
 		    author            = excluded.author,
@@ -2204,7 +2261,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    last_activity_at  = excluded.last_activity_at,
 		    closed_at         = excluded.closed_at
 		WHERE excluded.updated_at >= middleman_issues.updated_at`,
-		issue.RepoID, issue.PlatformID, issue.Number, issue.URL,
+		issue.RepoID, issue.PlatformID, issue.PlatformExternalID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
 		issue.Body, issue.CommentCount, issue.LabelsJSON,
 		issue.DetailFetchedAt,
@@ -2231,7 +2288,7 @@ func (d *DB) GetIssue(
 	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
+		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
@@ -2243,7 +2300,7 @@ func (d *DB) GetIssue(
 		WHERE r.owner_key = ? AND r.name_key = ? AND i.number = ?`,
 		owner, name, number,
 	).Scan(
-		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
+		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
 		&issue.DetailFetchedAt,
@@ -2268,7 +2325,7 @@ func (d *DB) GetIssue(
 func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number int) (*Issue, error) {
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
+		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
@@ -2279,7 +2336,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 		WHERE i.repo_id = ? AND i.number = ?`,
 		repoID, number,
 	).Scan(
-		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
+		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
 		&issue.DetailFetchedAt,
@@ -2345,7 +2402,7 @@ func (d *DB) ListIssues(
 	}
 
 	query := fmt.Sprintf(`
-		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
+		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
@@ -2368,7 +2425,7 @@ func (d *DB) ListIssues(
 	for rows.Next() {
 		var issue Issue
 		if err := rows.Scan(
-			&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
+			&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 			&issue.URL, &issue.Title, &issue.Author, &issue.State,
 			&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
 			&issue.DetailFetchedAt,
@@ -2631,12 +2688,13 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_issue_events
-			    (issue_id, platform_id, event_type, author, summary, body,
+			    (issue_id, platform_id, platform_external_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(dedupe_key) DO UPDATE SET
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(issue_id, dedupe_key) DO UPDATE SET
 			    issue_id       = excluded.issue_id,
 			    platform_id    = excluded.platform_id,
+			    platform_external_id = excluded.platform_external_id,
 			    event_type     = excluded.event_type,
 			    author         = excluded.author,
 			    summary        = excluded.summary,
@@ -2652,7 +2710,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			e := &events[i]
 			canonicalizeIssueEventTimestamps(e)
 			if _, err := stmt.ExecContext(ctx,
-				e.IssueID, e.PlatformID, e.EventType, e.Author,
+				e.IssueID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author,
 				e.Summary, e.Body, e.MetadataJSON, e.CreatedAt,
 				e.DedupeKey,
 			); err != nil {
@@ -2711,7 +2769,7 @@ func (d *DB) DeleteMissingIssueCommentEvents(
 // ListIssueEvents returns all events for an issue ordered by created_at DESC.
 func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, issue_id, platform_id, event_type, author, summary, body,
+		SELECT id, issue_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key
 		FROM middleman_issue_events
 		WHERE issue_id = ?
@@ -2727,7 +2785,7 @@ func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, 
 		var e IssueEvent
 		var createdAtStr string
 		if err := rows.Scan(
-			&e.ID, &e.IssueID, &e.PlatformID, &e.EventType, &e.Author,
+			&e.ID, &e.IssueID, &e.PlatformID, &e.PlatformExternalID, &e.EventType, &e.Author,
 			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue event: %w", err)

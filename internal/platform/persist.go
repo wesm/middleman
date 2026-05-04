@@ -27,31 +27,32 @@ func DBRepositoryIdentity(repo Repository) db.RepoIdentity {
 
 func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 	out := &db.MergeRequest{
-		RepoID:            repoID,
-		PlatformID:        mr.PlatformID,
-		Number:            mr.Number,
-		URL:               mr.URL,
-		Title:             mr.Title,
-		Author:            mr.Author,
-		AuthorDisplayName: mr.AuthorDisplayName,
-		State:             mr.State,
-		IsDraft:           mr.IsDraft,
-		Body:              mr.Body,
-		HeadBranch:        mr.HeadBranch,
-		BaseBranch:        mr.BaseBranch,
-		PlatformHeadSHA:   mr.HeadSHA,
-		PlatformBaseSHA:   mr.BaseSHA,
-		HeadRepoCloneURL:  mr.HeadRepoCloneURL,
-		Additions:         mr.Additions,
-		Deletions:         mr.Deletions,
-		CommentCount:      mr.CommentCount,
-		ReviewDecision:    mr.ReviewDecision,
-		CIStatus:          mr.CIStatus,
-		CreatedAt:         mr.CreatedAt,
-		UpdatedAt:         mr.UpdatedAt,
-		LastActivityAt:    mr.LastActivityAt,
-		MergedAt:          mr.MergedAt,
-		ClosedAt:          mr.ClosedAt,
+		RepoID:             repoID,
+		PlatformID:         mr.PlatformID,
+		PlatformExternalID: mr.PlatformExternalID,
+		Number:             mr.Number,
+		URL:                mr.URL,
+		Title:              mr.Title,
+		Author:             mr.Author,
+		AuthorDisplayName:  mr.AuthorDisplayName,
+		State:              mr.State,
+		IsDraft:            mr.IsDraft,
+		Body:               mr.Body,
+		HeadBranch:         mr.HeadBranch,
+		BaseBranch:         mr.BaseBranch,
+		PlatformHeadSHA:    mr.HeadSHA,
+		PlatformBaseSHA:    mr.BaseSHA,
+		HeadRepoCloneURL:   mr.HeadRepoCloneURL,
+		Additions:          mr.Additions,
+		Deletions:          mr.Deletions,
+		CommentCount:       mr.CommentCount,
+		ReviewDecision:     mr.ReviewDecision,
+		CIStatus:           mr.CIStatus,
+		CreatedAt:          mr.CreatedAt,
+		UpdatedAt:          mr.UpdatedAt,
+		LastActivityAt:     mr.LastActivityAt,
+		MergedAt:           mr.MergedAt,
+		ClosedAt:           mr.ClosedAt,
 	}
 	out.Labels = DBLabels(mr.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
 	return out
@@ -59,19 +60,20 @@ func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 
 func DBIssue(repoID int64, issue Issue) *db.Issue {
 	out := &db.Issue{
-		RepoID:         repoID,
-		PlatformID:     issue.PlatformID,
-		Number:         issue.Number,
-		URL:            issue.URL,
-		Title:          issue.Title,
-		Author:         issue.Author,
-		State:          issue.State,
-		Body:           issue.Body,
-		CommentCount:   issue.CommentCount,
-		CreatedAt:      issue.CreatedAt,
-		UpdatedAt:      issue.UpdatedAt,
-		LastActivityAt: issue.LastActivityAt,
-		ClosedAt:       issue.ClosedAt,
+		RepoID:             repoID,
+		PlatformID:         issue.PlatformID,
+		PlatformExternalID: issue.PlatformExternalID,
+		Number:             issue.Number,
+		URL:                issue.URL,
+		Title:              issue.Title,
+		Author:             issue.Author,
+		State:              issue.State,
+		Body:               issue.Body,
+		CommentCount:       issue.CommentCount,
+		CreatedAt:          issue.CreatedAt,
+		UpdatedAt:          issue.UpdatedAt,
+		LastActivityAt:     issue.LastActivityAt,
+		ClosedAt:           issue.ClosedAt,
 	}
 	out.Labels = DBLabels(issue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return out
@@ -79,14 +81,15 @@ func DBIssue(repoID int64, issue Issue) *db.Issue {
 
 func DBMREvent(mrID int64, event MergeRequestEvent) db.MREvent {
 	out := db.MREvent{
-		MergeRequestID: mrID,
-		EventType:      event.EventType,
-		Author:         event.Author,
-		Summary:        event.Summary,
-		Body:           event.Body,
-		MetadataJSON:   event.MetadataJSON,
-		CreatedAt:      event.CreatedAt,
-		DedupeKey:      event.DedupeKey,
+		MergeRequestID:     mrID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" || event.EventType == "review" {
 		platformID := event.PlatformID
@@ -97,14 +100,15 @@ func DBMREvent(mrID int64, event MergeRequestEvent) db.MREvent {
 
 func DBIssueEvent(issueID int64, event IssueEvent) db.IssueEvent {
 	out := db.IssueEvent{
-		IssueID:      issueID,
-		EventType:    event.EventType,
-		Author:       event.Author,
-		Summary:      event.Summary,
-		Body:         event.Body,
-		MetadataJSON: event.MetadataJSON,
-		CreatedAt:    event.CreatedAt,
-		DedupeKey:    event.DedupeKey,
+		IssueID:            issueID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" {
 		platformID := event.PlatformID
@@ -120,12 +124,13 @@ func DBLabels(labels []Label, updatedAt time.Time) []db.Label {
 	out := make([]db.Label, 0, len(labels))
 	for _, label := range labels {
 		out = append(out, db.Label{
-			PlatformID:  label.PlatformID,
-			Name:        label.Name,
-			Description: label.Description,
-			Color:       label.Color,
-			IsDefault:   label.IsDefault,
-			UpdatedAt:   updatedAt,
+			PlatformID:         label.PlatformID,
+			PlatformExternalID: label.PlatformExternalID,
+			Name:               label.Name,
+			Description:        label.Description,
+			Color:              label.Color,
+			IsDefault:          label.IsDefault,
+			UpdatedAt:          updatedAt,
 		})
 	}
 	return out

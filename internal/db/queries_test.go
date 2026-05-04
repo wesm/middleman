@@ -427,6 +427,102 @@ func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
 	assert.Equal("edited body", events[0].Body)
 }
 
+func TestIssueEventsDedupeIsScopedToIssue(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	firstIssueID := insertTestIssue(t, d, repoID, 1, "issue one", base)
+	secondIssueID := insertTestIssue(t, d, repoID, 2, "issue two", base.Add(time.Minute))
+	firstPlatformID := int64(5001)
+	secondPlatformID := int64(5002)
+
+	sharedDedupeKey := "gitlab:gitlab.example.com:o/r:issue:note:shared"
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
+		{
+			IssueID:            firstIssueID,
+			PlatformID:         &firstPlatformID,
+			PlatformExternalID: "gid://gitlab/Note/5001",
+			EventType:          "issue_comment",
+			Author:             "alice",
+			CreatedAt:          base,
+			DedupeKey:          sharedDedupeKey,
+		},
+		{
+			IssueID:            secondIssueID,
+			PlatformID:         &secondPlatformID,
+			PlatformExternalID: "gid://gitlab/Note/5002",
+			EventType:          "issue_comment",
+			Author:             "bob",
+			CreatedAt:          base.Add(time.Minute),
+			DedupeKey:          sharedDedupeKey,
+		},
+	}))
+
+	firstEvents, err := d.ListIssueEvents(ctx, firstIssueID)
+	require.NoError(err)
+	require.Len(firstEvents, 1)
+	assert.Equal(sharedDedupeKey, firstEvents[0].DedupeKey)
+	assert.Equal("gid://gitlab/Note/5001", firstEvents[0].PlatformExternalID)
+
+	secondEvents, err := d.ListIssueEvents(ctx, secondIssueID)
+	require.NoError(err)
+	require.Len(secondEvents, 1)
+	assert.Equal(sharedDedupeKey, secondEvents[0].DedupeKey)
+	assert.Equal("gid://gitlab/Note/5002", secondEvents[0].PlatformExternalID)
+}
+
+func TestItemsPersistPlatformExternalID(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:             repoID,
+		PlatformID:         1001,
+		PlatformExternalID: "gid://gitlab/MergeRequest/1001",
+		Number:             1,
+		URL:                "https://gitlab.example.com/acme/widget/-/merge_requests/1",
+		Title:              "external mr",
+		Author:             "alice",
+		State:              "open",
+		CreatedAt:          base,
+		UpdatedAt:          base,
+		LastActivityAt:     base,
+	})
+	require.NoError(err)
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:             repoID,
+		PlatformID:         2001,
+		PlatformExternalID: "gid://gitlab/Issue/2001",
+		Number:             2,
+		URL:                "https://gitlab.example.com/acme/widget/-/issues/2",
+		Title:              "external issue",
+		Author:             "bob",
+		State:              "open",
+		CreatedAt:          base,
+		UpdatedAt:          base,
+		LastActivityAt:     base,
+	})
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("gid://gitlab/MergeRequest/1001", mr.PlatformExternalID)
+
+	issue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 2)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("gid://gitlab/Issue/2001", issue.PlatformExternalID)
+}
+
 func TestUpsertAndListRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1570,6 +1666,49 @@ func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
 	require.True(updatedAt.Equal(now.Add(time.Minute)))
 }
 
+func TestUpsertLabels_UsesPlatformExternalIDForRename(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformExternalID: "gid://gitlab/Label/bug",
+		Name:               "old-name",
+		Description:        "before rename",
+		Color:              "111111",
+		UpdatedAt:          now,
+	}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformExternalID: "gid://gitlab/Label/bug",
+		Name:               "new-name",
+		Description:        "after rename",
+		Color:              "222222",
+		IsDefault:          true,
+		UpdatedAt:          now.Add(time.Minute),
+	}}))
+
+	var count int
+	err := d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		repoID,
+	).Scan(&count)
+	require.NoError(err)
+	require.Equal(1, count)
+
+	var name, externalID string
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT name, platform_external_id
+		 FROM middleman_labels
+		 WHERE repo_id = ? AND platform_external_id = ?`,
+		repoID, "gid://gitlab/Label/bug",
+	).Scan(&name, &externalID)
+	require.NoError(err)
+	require.Equal("new-name", name)
+	require.Equal("gid://gitlab/Label/bug", externalID)
+}
+
 func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1814,6 +1953,32 @@ func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 	).Scan(&total)
 	require.NoError(err)
 	assert.Equal(2, total)
+}
+
+func TestMREventsPersistPlatformExternalID(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "o", "r")
+	mrID := insertTestMR(t, d, repoID, 1, "pr one", base)
+	platformID := int64(5001)
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID:     mrID,
+		PlatformID:         &platformID,
+		PlatformExternalID: "gid://gitlab/Note/5001",
+		EventType:          "issue_comment",
+		Author:             "alice",
+		CreatedAt:          base,
+		DedupeKey:          "gitlab:gitlab.example.com:o/r:mr:1:note:5001",
+	}}))
+
+	got, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(got, 1)
+	assert.Equal("gid://gitlab/Note/5001", got[0].PlatformExternalID)
 }
 
 func TestListMREventsHandlesNonUTCTimes(t *testing.T) {

@@ -298,9 +298,12 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 		CREATE TABLE middleman_issue_events (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			issue_id     INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
+			platform_id  INTEGER,
 			event_type   TEXT NOT NULL,
 			author       TEXT NOT NULL,
+			summary      TEXT NOT NULL DEFAULT '',
 			body         TEXT,
+			metadata_json TEXT NOT NULL DEFAULT '',
 			created_at   TEXT NOT NULL,
 			dedupe_key   TEXT NOT NULL,
 			UNIQUE(issue_id, dedupe_key)
@@ -1175,8 +1178,17 @@ func removeProviderIdentityColumnsForTest(raw *sql.DB) error {
 	_, err := raw.Exec(`
 		DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
 		DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+		DROP INDEX IF EXISTS idx_issue_events_platform_external_id;
+		DROP INDEX IF EXISTS idx_mr_events_platform_external_id;
+		DROP INDEX IF EXISTS idx_labels_repo_platform_external_id;
+		DROP INDEX IF EXISTS idx_issues_repo_platform_external_id;
+		DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
 		DROP INDEX IF EXISTS idx_repos_provider_path_key;
 		DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+		ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
 		ALTER TABLE middleman_repos DROP COLUMN default_branch;
 		ALTER TABLE middleman_repos DROP COLUMN clone_url;
 		ALTER TABLE middleman_repos DROP COLUMN web_url;

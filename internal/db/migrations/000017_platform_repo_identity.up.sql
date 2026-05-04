@@ -39,6 +39,64 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repos_provider_path_key
     ON middleman_repos(platform, platform_host, repo_path_key)
     WHERE repo_path_key <> '';
 
+ALTER TABLE middleman_merge_requests ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_issues ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_labels ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE middleman_mr_events ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_requests_repo_platform_external_id
+    ON middleman_merge_requests(repo_id, platform_external_id)
+    WHERE platform_external_id <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_issues_repo_platform_external_id
+    ON middleman_issues(repo_id, platform_external_id)
+    WHERE platform_external_id <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_repo_platform_external_id
+    ON middleman_labels(repo_id, platform_external_id)
+    WHERE platform_external_id <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mr_events_platform_external_id
+    ON middleman_mr_events(merge_request_id, event_type, platform_external_id)
+    WHERE platform_external_id <> '';
+
+DROP INDEX IF EXISTS idx_issue_events_created;
+
+CREATE TABLE middleman_issue_events_v17 (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id             INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
+    platform_id          INTEGER,
+    platform_external_id TEXT NOT NULL DEFAULT '',
+    event_type           TEXT NOT NULL,
+    author               TEXT NOT NULL DEFAULT '',
+    summary              TEXT NOT NULL DEFAULT '',
+    body                 TEXT NOT NULL DEFAULT '',
+    metadata_json        TEXT NOT NULL DEFAULT '',
+    created_at           DATETIME NOT NULL,
+    dedupe_key           TEXT NOT NULL,
+    UNIQUE(issue_id, dedupe_key)
+);
+
+INSERT INTO middleman_issue_events_v17 (
+    id, issue_id, platform_id, platform_external_id, event_type,
+    author, summary, body, metadata_json, created_at, dedupe_key
+)
+SELECT
+    id, issue_id, platform_id, '', event_type,
+    COALESCE(author, ''), COALESCE(summary, ''), COALESCE(body, ''),
+    COALESCE(metadata_json, ''), created_at, dedupe_key
+FROM middleman_issue_events;
+
+DROP TABLE middleman_issue_events;
+ALTER TABLE middleman_issue_events_v17 RENAME TO middleman_issue_events;
+
+CREATE INDEX IF NOT EXISTS idx_issue_events_created
+    ON middleman_issue_events(issue_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_events_platform_external_id
+    ON middleman_issue_events(issue_id, event_type, platform_external_id)
+    WHERE platform_external_id <> '';
+
 DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
 DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
 
