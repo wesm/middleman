@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
@@ -73,7 +75,154 @@ type e2eServerInfo struct {
 	PID     int    `json:"pid"`
 }
 
+type e2eStaticProvider struct {
+	kind        platform.Kind
+	host        string
+	caps        platform.Capabilities
+	issue       platform.Issue
+	issueEvents []platform.IssueEvent
+}
+
+func (p e2eStaticProvider) Platform() platform.Kind {
+	return p.kind
+}
+
+func (p e2eStaticProvider) Host() string {
+	return p.host
+}
+
+func (p e2eStaticProvider) Capabilities() platform.Capabilities {
+	return p.caps
+}
+
+func (p e2eStaticProvider) ListOpenIssues(
+	_ context.Context,
+	ref platform.RepoRef,
+) ([]platform.Issue, error) {
+	if ref.RepoPath != p.issue.Repo.RepoPath {
+		return nil, nil
+	}
+	if p.issue.State != "open" {
+		return nil, nil
+	}
+	return []platform.Issue{p.issue}, nil
+}
+
+func (p e2eStaticProvider) GetIssue(
+	_ context.Context,
+	ref platform.RepoRef,
+	number int,
+) (platform.Issue, error) {
+	if ref.RepoPath == p.issue.Repo.RepoPath && number == p.issue.Number {
+		return p.issue, nil
+	}
+	return platform.Issue{}, fmt.Errorf("e2e static provider: issue %s#%d not found", ref.RepoPath, number)
+}
+
+func (p e2eStaticProvider) ListIssueEvents(
+	_ context.Context,
+	ref platform.RepoRef,
+	number int,
+) ([]platform.IssueEvent, error) {
+	if ref.RepoPath == p.issue.Repo.RepoPath && number == p.issue.Number {
+		return slices.Clone(p.issueEvents), nil
+	}
+	return nil, nil
+}
+
 type globRefreshContextKey struct{}
+
+func gitLabReadOnlyRepoRef() platform.RepoRef {
+	return platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
+	}
+}
+
+func gitLabReadOnlyIssueFixture(now time.Time) (platform.Issue, []platform.IssueEvent) {
+	ref := gitLabReadOnlyRepoRef()
+	issue := platform.Issue{
+		Repo:         ref,
+		PlatformID:   7101,
+		Number:       11,
+		URL:          "https://gitlab.example.com/group/project/-/issues/11",
+		Title:        "GitLab read-only issue",
+		Author:       "ada",
+		State:        "open",
+		Body:         "GitLab issue body",
+		CommentCount: 1,
+		CreatedAt:    now.Add(-48 * time.Hour),
+		UpdatedAt:    now,
+	}
+	events := []platform.IssueEvent{
+		{
+			Repo:        ref,
+			PlatformID:  7201,
+			IssueNumber: 11,
+			EventType:   "issue_comment",
+			Author:      "ada",
+			Body:        "GitLab read-only timeline comment",
+			CreatedAt:   now,
+			DedupeKey:   "gitlab-read-only-issue-comment",
+		},
+	}
+	return issue, events
+}
+
+func seedGitLabReadOnlyCapabilityFixture(ctx context.Context, database *db.DB) error {
+	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	issue, events := gitLabReadOnlyIssueFixture(now)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "7001",
+		Owner:          issue.Repo.Owner,
+		Name:           issue.Repo.Name,
+		RepoPath:       issue.Repo.RepoPath,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert gitlab repo: %w", err)
+	}
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      issue.PlatformID,
+		Number:          issue.Number,
+		URL:             issue.URL,
+		Title:           issue.Title,
+		Author:          issue.Author,
+		State:           issue.State,
+		Body:            issue.Body,
+		CommentCount:    issue.CommentCount,
+		CreatedAt:       issue.CreatedAt,
+		UpdatedAt:       issue.UpdatedAt,
+		LastActivityAt:  now,
+		DetailFetchedAt: &now,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert gitlab issue: %w", err)
+	}
+	commentID := events[0].PlatformID
+	if err := database.UpsertIssueEvents(ctx, []db.IssueEvent{
+		{
+			IssueID:    issueID,
+			PlatformID: &commentID,
+			EventType:  events[0].EventType,
+			Author:     events[0].Author,
+			Body:       events[0].Body,
+			CreatedAt:  events[0].CreatedAt,
+			DedupeKey:  events[0].DedupeKey,
+		},
+	}); err != nil {
+		return fmt.Errorf("upsert gitlab issue event: %w", err)
+	}
+	return nil
+}
 
 // run starts the e2e server and blocks until ctx is canceled or the
 // HTTP server errors out. Tests call it directly with a cancellable
@@ -102,6 +251,9 @@ func run(
 	result, err := testutil.SeedFixtures(ctx, database)
 	if err != nil {
 		return fmt.Errorf("seed fixtures: %w", err)
+	}
+	if err := seedGitLabReadOnlyCapabilityFixture(ctx, database); err != nil {
+		return fmt.Errorf("seed gitlab capability fixture: %w", err)
 	}
 
 	// Run stack detection so seeded stacked chains are discoverable
@@ -286,9 +438,45 @@ func run(
 	budget := ghclient.NewSyncBudget(500)
 	budget.Spend(75)
 
-	syncer := ghclient.NewSyncer(
+	gitLabIssue, gitLabIssueEvents := gitLabReadOnlyIssueFixture(
+		time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
+	)
+	registry, err := ghclient.NewProviderRegistry(
 		fixtureClients,
-		database, diffRepo.Manager, startupResolved.Expanded, time.Hour,
+		e2eStaticProvider{
+			kind:        platform.KindGitLab,
+			host:        "gitlab.example.com",
+			issue:       gitLabIssue,
+			issueEvents: gitLabIssueEvents,
+			caps: platform.Capabilities{
+				ReadRepositories:  true,
+				ReadMergeRequests: true,
+				ReadIssues:        true,
+				ReadComments:      true,
+				ReadReleases:      true,
+				ReadCI:            true,
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("create e2e provider registry: %w", err)
+	}
+	trackedRepos := append(
+		slices.Clone(startupResolved.Expanded),
+		ghclient.RepoRef{
+			Platform:      platform.KindGitLab,
+			PlatformHost:  gitLabIssue.Repo.Host,
+			Owner:         gitLabIssue.Repo.Owner,
+			Name:          gitLabIssue.Repo.Name,
+			RepoPath:      gitLabIssue.Repo.RepoPath,
+			WebURL:        gitLabIssue.Repo.WebURL,
+			CloneURL:      gitLabIssue.Repo.CloneURL,
+			DefaultBranch: gitLabIssue.Repo.DefaultBranch,
+		},
+	)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database, diffRepo.Manager, trackedRepos, time.Hour,
 		map[string]*ghclient.RateTracker{
 			"github.com":        rt,
 			defaultPlatformHost: rt,
