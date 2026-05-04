@@ -9,6 +9,13 @@
   // the Files tab inside the activity/kanban drawers).
   const { diff, pulls } = getStores();
 
+  interface Props {
+    showCommits?: boolean;
+    resetKey?: string;
+  }
+
+  const { showCommits = true, resetKey = "" }: Props = $props();
+
   function filename(path: string): string {
     const i = path.lastIndexOf("/");
     return i >= 0 ? path.slice(i + 1) : path;
@@ -61,7 +68,11 @@
   // Reset filter whenever selected PR changes so stale filter text
   // does not silently hide files in the next PR.
   $effect(() => {
-    pulls.getSelectedPR();
+    const key = resetKey;
+    if (showCommits) {
+      pulls.getSelectedPR();
+    }
+    if (key === "\0") return;
     fileFilterText = "";
   });
   const showFileFilter = $derived(
@@ -79,7 +90,9 @@
   });
 </script>
 
-<CommitListSection />
+{#if showCommits}
+  <CommitListSection />
+{/if}
 <div class="diff-files">
   {#if diff.isFileListLoading() && !diff.getFileList()}
     <div class="diff-files-state diff-files-state--loading">Loading files</div>

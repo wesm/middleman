@@ -10,9 +10,10 @@ import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import DiffToolbar from "./DiffToolbar.svelte";
 
-function renderToolbar() {
+function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean } = {}) {
   const diff = createDiffStore();
   render(DiffToolbar, {
+    props: options,
     context: new Map([[STORES_KEY, { diff }]]),
   });
   return { diff };
@@ -67,5 +68,49 @@ describe("DiffToolbar", () => {
     expect(diff.getWordWrap()).toBe(true);
     expect(wordWrap.getAttribute("aria-checked")).toBe("true");
     expect(localStorage.getItem("diff-word-wrap")).toBe("true");
+  });
+
+  it("hides rich preview controls when disabled", async () => {
+    renderToolbar({ compact: true, showRichPreview: false });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "More diff filters" }),
+    );
+
+    expect(screen.queryByRole("switch", { name: "Rich preview" })).toBeNull();
+  });
+
+  it("collapses diff filters behind a more button in compact mode", async () => {
+    const { diff } = renderToolbar({ compact: true });
+
+    expect(screen.getByText("All")).toBeTruthy();
+    expect(screen.getByText("Tab 4")).toBeTruthy();
+    expect(screen.queryByRole("group", {
+      name: "Filter changed files",
+    })).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "More diff filters" }),
+    );
+
+    const fileFilters = screen.getByRole("group", {
+      name: "Filter changed files",
+    });
+    await fireEvent.click(
+      within(fileFilters).getByRole("button", { name: "Code (0)" }),
+    );
+
+    expect(diff.getFileCategoryFilter()).toBe("code");
+    expect(screen.getAllByText("Code").length).toBeGreaterThan(0);
+
+    const tabWidth = screen.getByRole("group", { name: "Tab width" });
+    await fireEvent.click(within(tabWidth).getByRole("button", { name: "8" }));
+
+    expect(diff.getTabWidth()).toBe(8);
+
+    const wordWrap = screen.getByRole("switch", { name: "Word wrap" });
+    await fireEvent.click(wordWrap);
+
+    expect(diff.getWordWrap()).toBe(true);
   });
 });

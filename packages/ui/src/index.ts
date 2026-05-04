@@ -156,3 +156,15 @@ export {
 export {
   default as WorkspaceRightSidebar,
 } from "./components/workspace/WorkspaceRightSidebar.svelte";
+export {
+  default as WorkspaceDiffPanel,
+} from "./components/workspace/WorkspaceDiffPanel.svelte";
+export {
+  default as DiffSidebar,
+} from "./components/diff/DiffSidebar.svelte";
+export {
+  default as DiffToolbar,
+} from "./components/diff/DiffToolbar.svelte";
+export {
+  default as DiffView,
+} from "./components/diff/DiffView.svelte";

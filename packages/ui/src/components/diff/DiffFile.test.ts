@@ -90,10 +90,23 @@ function uniqueOwner(): string {
   return `test-owner-${++testCounter}`;
 }
 
-function renderDiffFile(file: DiffFileType) {
+function renderDiffFile(
+  file: DiffFileType,
+  options: { richPreview?: boolean; richPreviewEnabled?: boolean } = {},
+) {
+  const diff = createDiffStore();
+  if (options.richPreview) diff.setRichPreview(true);
   return render(DiffFile, {
-    props: { file, owner: uniqueOwner(), name: "n", number: 1 },
-    context: new Map([[STORES_KEY, { diff: createDiffStore() }]]),
+    props: {
+      file,
+      owner: uniqueOwner(),
+      name: "n",
+      number: 1,
+      ...(options.richPreviewEnabled !== undefined && {
+        richPreviewEnabled: options.richPreviewEnabled,
+      }),
+    },
+    context: new Map([[STORES_KEY, { diff }]]),
   });
 }
 
@@ -106,6 +119,16 @@ describe("DiffFile", () => {
     renderDiffFile(makeFile());
 
     expect(screen.getByText("src/foo.ts")).toBeTruthy();
+    expect(screen.getByText(/@@ -1,3 \+1,5 @@/)).toBeTruthy();
+  });
+
+  it("shows unified diff content when rich preview is disabled", () => {
+    renderDiffFile(makeFile({ path: "README.md", old_path: "README.md" }), {
+      richPreview: true,
+      richPreviewEnabled: false,
+    });
+
+    expect(screen.queryByLabelText("Before markdown preview")).toBeNull();
     expect(screen.getByText(/@@ -1,3 \+1,5 @@/)).toBeTruthy();
   });
 

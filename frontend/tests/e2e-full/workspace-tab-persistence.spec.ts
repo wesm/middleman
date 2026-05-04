@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import {
   startIsolatedWorkspaceE2EServer,
@@ -8,6 +10,7 @@ import {
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
+  worktree_path?: string;
 };
 
 const lockedWorkspaceTestTimeoutMs = 120_000;
@@ -60,7 +63,10 @@ async function createIssueWorkspace(
 }
 
 test.describe("workspace tab persistence", () => {
-  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
+  test.describe.configure({
+    mode: "serial",
+    timeout: lockedWorkspaceTestTimeoutMs,
+  });
 
   test("opening tmux tab keeps Home pane mounted across tab switches", async ({ page }) => {
     test.skip(
@@ -186,6 +192,112 @@ test.describe("workspace tab persistence", () => {
         `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
       );
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("shows workspace diff in the right sidebar without adding a stage pane", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    await page.setViewportSize({ width: 1100, height: 720 });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const workspace = await createIssueWorkspace(api, 12);
+      const workspaceResponse = await api.get(
+        `/api/v1/workspaces/${workspace.id}`,
+      );
+      expect(workspaceResponse.ok()).toBe(true);
+      const workspaceDetail = await workspaceResponse.json() as WorkspaceStatusResponse;
+      expect(workspaceDetail.worktree_path).toBeTruthy();
+      await writeFile(
+        join(workspaceDetail.worktree_path!, "alpha.ts"),
+        "alpha\n",
+      );
+      await writeFile(
+        join(workspaceDetail.worktree_path!, "beta_test.go"),
+        "beta\n",
+      );
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${workspace.id}`,
+      );
+
+      const stage = page.locator(".workspace-stage");
+      const panes = stage.locator(":scope > .stage-pane");
+      const homeTab = page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "Home",
+      });
+
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "Diff",
+      })).toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+
+      const diffResponse = page.waitForResponse((response) =>
+        response
+          .url()
+          .includes(`/api/v1/workspaces/${workspace.id}/diff`) &&
+        response.request().method() === "GET",
+      );
+      await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
+      expect((await diffResponse).ok()).toBe(true);
+      const activeDiffFile = page.locator(
+        ".right-sidebar .diff-file-row--active",
+      );
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
+      await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
+      await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
+      const toolbarMetrics = await diffToolbar.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }));
+      expect(toolbarMetrics.scrollWidth).toBeLessThanOrEqual(
+        toolbarMetrics.clientWidth,
+      );
+      await diffToolbar.locator(".compact-more-btn").click();
+      const compactMenu = page.locator(".right-sidebar .compact-menu");
+      await expect(compactMenu).toBeVisible();
+      await compactMenu.getByRole("button", { name: "Code (1)" }).click();
+      await expect(diffToolbar).toContainText("Code");
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      await expect(page.locator('.right-sidebar .diff-file-row[title="beta_test.go"]'))
+        .toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+
+      await page.locator(".launch-trigger").click();
+      await page.locator(".launch-option", { hasText: "tmux" }).click();
+      await expect(page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "tmux",
+      })).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
+      await expect(panes).toHaveCount(2);
+
+      await page.locator(".stage-pane.active .terminal-container").click();
+      for (const key of ["j", "k", "[", "]"]) {
+        await page.keyboard.press(key);
+      }
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${workspace.id}$`),
+      );
+      await expect(page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "tmux",
+      })).toHaveAttribute("aria-selected", "true");
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

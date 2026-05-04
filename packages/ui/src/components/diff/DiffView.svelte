@@ -9,15 +9,27 @@
     owner: string;
     name: string;
     number: number;
+    loadOnMount?: boolean;
+    keyboardActive?: boolean;
+    richPreviewEnabled?: boolean;
   }
 
-  const { owner, name, number }: Props = $props();
+  const {
+    owner,
+    name,
+    number,
+    loadOnMount = true,
+    keyboardActive = true,
+    richPreviewEnabled = true,
+  }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
   let scrollRaf = 0;
 
   onMount(() => {
-    void diffStore.loadDiff(owner, name, number);
+    if (loadOnMount) {
+      void diffStore.loadDiff(owner, name, number);
+    }
 
     return () => {
       cancelAnimationFrame(scrollRaf);
@@ -109,6 +121,7 @@
   }
 
   $effect(() => {
+    if (!keyboardActive) return;
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
   });
@@ -154,6 +167,7 @@
               {owner}
               {name}
               {number}
+              {richPreviewEnabled}
             />
           {/each}
         </div>

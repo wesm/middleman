@@ -992,6 +992,24 @@ type DeleteWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
 }
 
+// GetWorkspacesByIdDiffParams defines parameters for GetWorkspacesByIdDiff.
+type GetWorkspacesByIdDiffParams struct {
+	// Base Diff base: head or origin
+	Base *string `form:"base,omitempty" json:"base,omitempty"`
+
+	// Whitespace Set to hide to ignore whitespace-only changes
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+}
+
+// GetWorkspacesByIdFilesParams defines parameters for GetWorkspacesByIdFiles.
+type GetWorkspacesByIdFilesParams struct {
+	// Base Diff base: head or origin
+	Base *string `form:"base,omitempty" json:"base,omitempty"`
+
+	// Whitespace Set to hide to ignore whitespace-only changes
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+}
+
 // AddRepoJSONRequestBody defines body for AddRepo for application/json ContentType.
 type AddRepoJSONRequestBody = AddRepoInputBody
 
@@ -1324,6 +1342,12 @@ type ClientInterface interface {
 
 	// GetWorkspacesById request
 	GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesByIdDiff request
+	GetWorkspacesByIdDiff(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesByIdFiles request
+	GetWorkspacesByIdFiles(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RetryWorkspace request
 	RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2209,6 +2233,30 @@ func (c *Client) DeleteWorkspace(ctx context.Context, id string, params *DeleteW
 
 func (c *Client) GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspacesByIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspacesByIdDiff(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesByIdDiffRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkspacesByIdFiles(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesByIdFilesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5266,6 +5314,150 @@ func NewGetWorkspacesByIdRequest(server string, id string) (*http.Request, error
 	return req, nil
 }
 
+// NewGetWorkspacesByIdDiffRequest generates requests for GetWorkspacesByIdDiff
+func NewGetWorkspacesByIdDiffRequest(server string, id string, params *GetWorkspacesByIdDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/diff", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Base != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "base", *params.Base, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesByIdFilesRequest generates requests for GetWorkspacesByIdFiles
+func NewGetWorkspacesByIdFilesRequest(server string, id string, params *GetWorkspacesByIdFilesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/files", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Base != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "base", *params.Base, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRetryWorkspaceRequest generates requests for RetryWorkspace
 func NewRetryWorkspaceRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -5695,6 +5887,12 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspacesByIdWithResponse request
 	GetWorkspacesByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdResponse, error)
+
+	// GetWorkspacesByIdDiffWithResponse request
+	GetWorkspacesByIdDiffWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdDiffResponse, error)
+
+	// GetWorkspacesByIdFilesWithResponse request
+	GetWorkspacesByIdFilesWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdFilesResponse, error)
 
 	// RetryWorkspaceWithResponse request
 	RetryWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RetryWorkspaceResponse, error)
@@ -6925,6 +7123,52 @@ func (r GetWorkspacesByIdResponse) StatusCode() int {
 	return 0
 }
 
+type GetWorkspacesByIdDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesByIdDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesByIdDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWorkspacesByIdFilesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilesResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesByIdFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesByIdFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RetryWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -7666,6 +7910,24 @@ func (c *ClientWithResponses) GetWorkspacesByIdWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetWorkspacesByIdResponse(rsp)
+}
+
+// GetWorkspacesByIdDiffWithResponse request returning *GetWorkspacesByIdDiffResponse
+func (c *ClientWithResponses) GetWorkspacesByIdDiffWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdDiffResponse, error) {
+	rsp, err := c.GetWorkspacesByIdDiff(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesByIdDiffResponse(rsp)
+}
+
+// GetWorkspacesByIdFilesWithResponse request returning *GetWorkspacesByIdFilesResponse
+func (c *ClientWithResponses) GetWorkspacesByIdFilesWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdFilesResponse, error) {
+	rsp, err := c.GetWorkspacesByIdFiles(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesByIdFilesResponse(rsp)
 }
 
 // RetryWorkspaceWithResponse request returning *RetryWorkspaceResponse
@@ -9397,6 +9659,72 @@ func ParseGetWorkspacesByIdResponse(rsp *http.Response) (*GetWorkspacesByIdRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesByIdDiffResponse parses an HTTP response from a GetWorkspacesByIdDiffWithResponse call
+func ParseGetWorkspacesByIdDiffResponse(rsp *http.Response) (*GetWorkspacesByIdDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesByIdDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesByIdFilesResponse parses an HTTP response from a GetWorkspacesByIdFilesWithResponse call
+func ParseGetWorkspacesByIdFilesResponse(rsp *http.Response) (*GetWorkspacesByIdFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesByIdFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

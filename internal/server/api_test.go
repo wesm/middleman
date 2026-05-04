@@ -10364,6 +10364,211 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	assert.Equal(int64(0), *found.CommitsBehind)
 }
 
+func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "committed.go"),
+		[]byte("package committed\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dirty.go"),
+		[]byte("package dirty\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "z-blank.txt"),
+		[]byte(" \t\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "z-empty.txt"),
+		nil,
+		0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "base.txt"),
+		[]byte("base  \n"), 0o644,
+	))
+
+	headFiles := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	require.NotNil(headFiles.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*headFiles.Files,
+		[]string{"base.txt", "dirty.go", "z-blank.txt", "z-empty.txt"},
+	)
+
+	headFilesHideWhitespace := requestWorkspaceFiles(
+		t, srv, ws.Id, "head", "hide",
+	)
+	require.NotNil(headFilesHideWhitespace.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*headFilesHideWhitespace.Files,
+		[]string{"dirty.go", "z-empty.txt"},
+	)
+
+	headDiffHideWhitespace := requestWorkspaceDiff(
+		t, srv, ws.Id, "head", "hide",
+	)
+	require.NotNil(headDiffHideWhitespace.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*headDiffHideWhitespace.Files,
+		[]string{"dirty.go", "z-empty.txt"},
+	)
+
+	originDiff := requestWorkspaceDiff(t, srv, ws.Id, "origin")
+	require.NotNil(originDiff.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*originDiff.Files,
+		[]string{"base.txt", "committed.go", "dirty.go", "z-blank.txt", "z-empty.txt"},
+	)
+	assert.Equal(int64(1), originDiff.WhitespaceOnlyCount)
+}
+
+func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	secretDir := t.TempDir()
+	secretPath := filepath.Join(secretDir, "secret.txt")
+	require.NoError(os.WriteFile(secretPath, []byte("do not expose\n"), 0o644))
+	require.NoError(os.Symlink(
+		secretPath,
+		filepath.Join(ws.WorktreePath, "secret-link"),
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "large.txt"),
+		bytes.Repeat([]byte("x"), 2<<20),
+		0o644,
+	))
+
+	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	require.NotNil(diff.Files)
+
+	symlink := requireWorkspaceDiffFile(t, *diff.Files, "secret-link")
+	assert.Equal("added", symlink.Status)
+	assert.False(symlink.IsBinary)
+	assert.Equal(int64(1), symlink.Additions)
+	require.NotNil(symlink.Hunks)
+	require.Len(*symlink.Hunks, 1)
+	require.NotNil((*symlink.Hunks)[0].Lines)
+	require.Len(*(*symlink.Hunks)[0].Lines, 1)
+	line := (*(*symlink.Hunks)[0].Lines)[0]
+	assert.Equal(secretPath, line.Content)
+	assert.NotContains(line.Content, "do not expose")
+
+	large := requireWorkspaceDiffFile(t, *diff.Files, "large.txt")
+	assert.Equal("added", large.Status)
+	assert.True(large.IsBinary)
+	assert.Zero(large.Additions)
+	require.NotNil(large.Hunks)
+	assert.Empty(*large.Hunks)
+}
+
+func requestWorkspaceFiles(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	base string,
+	whitespace ...string,
+) generated.FilesResponse {
+	t.Helper()
+
+	query := "/api/v1/workspaces/" + workspaceID + "/files?base=" + base
+	if len(whitespace) > 0 {
+		query += "&whitespace=" + whitespace[0]
+	}
+	req := httptest.NewRequest(
+		http.MethodGet,
+		query,
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body generated.FilesResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func requestWorkspaceDiff(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	base string,
+	whitespace ...string,
+) generated.DiffResponse {
+	t.Helper()
+
+	query := "/api/v1/workspaces/" + workspaceID + "/diff?base=" + base
+	if len(whitespace) > 0 {
+		query += "&whitespace=" + whitespace[0]
+	}
+	req := httptest.NewRequest(
+		http.MethodGet,
+		query,
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body generated.DiffResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func requireWorkspaceDiffFile(
+	t *testing.T,
+	files []generated.DiffFile,
+	path string,
+) generated.DiffFile {
+	t.Helper()
+
+	for _, file := range files {
+		if file.Path == path {
+			return file
+		}
+	}
+	require.Failf(t, "workspace diff file not found", "path %q", path)
+	return generated.DiffFile{}
+}
+
+func assertWorkspaceDiffPaths(
+	t *testing.T,
+	files []generated.DiffFile,
+	want []string,
+) {
+	t.Helper()
+
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+	Assert.Equal(t, want, paths)
+}
+
 func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

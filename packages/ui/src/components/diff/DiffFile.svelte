@@ -14,15 +14,24 @@
     owner: string;
     name: string;
     number: number;
+    richPreviewEnabled?: boolean;
   }
 
-  const { file, owner, name, number }: Props = $props();
+  const {
+    file,
+    owner,
+    name,
+    number,
+    richPreviewEnabled = true,
+  }: Props = $props();
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
   const richPreview = $derived(diffStore.getRichPreview());
   const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
-  const showRichPreview = $derived(richPreview && supportsRichPreview(file.path));
+  const showRichPreview = $derived(
+    richPreviewEnabled && richPreview && supportsRichPreview(file.path),
+  );
   const richPreviewKey = $derived(`${file.path}:${filePreviewGeneration}`);
 
   // Track viewport visibility so off-screen files skip expensive tokenization
