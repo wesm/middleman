@@ -14,18 +14,25 @@
   const { file, owner, name, number, active }: Props = $props();
   const { diff: diffStore } = getStores();
 
+  interface MarkdownDiffBlock {
+    type: "context" | "add" | "delete";
+    html: string;
+  }
+
   let loading = $state(false);
   let error = $state<string | null>(null);
   let preview = $state<FilePreview | null>(null);
   let requestVersion = 0;
 
+  const isMarkdownFile = $derived(isMarkdownPath(file.path));
+  const markdownBlocks = $derived.by(() => buildMarkdownDiff(file));
   const text = $derived(preview ? decodeText(preview.content) : "");
   const dataURL = $derived(preview ? `data:${preview.media_type};base64,${preview.content}` : "");
   const kind = $derived(previewKind(file.path, preview?.media_type ?? ""));
   const displayText = $derived(formatText(file.path, text));
 
   $effect(() => {
-    if (!active) return;
+    if (!active || isMarkdownFile) return;
     const version = ++requestVersion;
     loading = true;
     error = null;
@@ -51,6 +58,10 @@
       bytes[i] = binary.charCodeAt(i);
     }
     return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+
+  function isMarkdownPath(path: string): boolean {
+    return [".md", ".markdown", ".mdown", ".mkd"].includes(extension(path));
   }
 
   function extension(path: string): string {
@@ -87,10 +98,52 @@
       return value;
     }
   }
+
+  function buildMarkdownDiff(source: DiffFile): MarkdownDiffBlock[] {
+    const blocks: MarkdownDiffBlock[] = [];
+    let currentType: MarkdownDiffBlock["type"] | null = null;
+    let currentLines: string[] = [];
+
+    function flush(): void {
+      if (!currentType || currentLines.length === 0) return;
+      const markdown = `${currentLines.join("\n")}\n`;
+      blocks.push({
+        type: currentType,
+        html: renderMarkdown(markdown, { owner, name }),
+      });
+      currentType = null;
+      currentLines = [];
+    }
+
+    for (const hunk of source.hunks) {
+      for (const line of hunk.lines) {
+        if (line.type !== currentType) {
+          flush();
+          currentType = line.type;
+        }
+        currentLines.push(line.content);
+      }
+    }
+    flush();
+    return blocks;
+  }
 </script>
 
 <div class="preview-shell">
-  {#if loading}
+  {#if isMarkdownFile}
+    <div class="diff-rich-preview markdown-body markdown-rich-diff">
+      {#each markdownBlocks as block, index (`${index}:${block.type}`)}
+        <div
+          class={[
+            "markdown-rich-diff__block",
+            `markdown-rich-diff__block--${block.type}`,
+          ]}
+        >
+          {@html block.html}
+        </div>
+      {/each}
+    </div>
+  {:else if loading}
     <div class="preview-state">Loading preview</div>
   {:else if error}
     <div class="preview-state preview-state--error">{error}</div>
@@ -144,6 +197,46 @@
     max-width: 920px;
     padding: 24px 32px 36px;
     color: var(--text-primary);
+  }
+
+  .markdown-rich-diff {
+    max-width: 980px;
+  }
+
+  .markdown-rich-diff__block {
+    position: relative;
+    padding: 1px 12px;
+    border-left: 3px solid transparent;
+  }
+
+  .markdown-rich-diff__block--add {
+    background: color-mix(in srgb, var(--diff-add-bg) 76%, transparent);
+    border-left-color: var(--diff-add-text);
+  }
+
+  .markdown-rich-diff__block--delete {
+    background: color-mix(in srgb, var(--diff-del-bg) 78%, transparent);
+    border-left-color: var(--diff-del-text);
+  }
+
+  .markdown-rich-diff__block--add :global(*) {
+    color: var(--text-primary);
+  }
+
+  .markdown-rich-diff__block--delete :global(*) {
+    color: var(--text-primary);
+  }
+
+  .markdown-rich-diff__block--delete :global(p),
+  .markdown-rich-diff__block--delete :global(li),
+  .markdown-rich-diff__block--delete :global(h1),
+  .markdown-rich-diff__block--delete :global(h2),
+  .markdown-rich-diff__block--delete :global(h3),
+  .markdown-rich-diff__block--delete :global(h4),
+  .markdown-rich-diff__block--delete :global(h5),
+  .markdown-rich-diff__block--delete :global(h6) {
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--diff-del-text) 70%, transparent);
   }
 
   .diff-image-preview {

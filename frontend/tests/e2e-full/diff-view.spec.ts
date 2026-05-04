@@ -162,21 +162,25 @@ const previewDiff: DiffResult = {
     {
       path: "docs/preview.md",
       old_path: "docs/preview.md",
-      status: "added",
+      status: "modified",
       is_binary: false,
       is_whitespace_only: false,
-      additions: 3,
-      deletions: 0,
+      additions: 4,
+      deletions: 3,
       hunks: [
         {
-          old_start: 0,
-          old_count: 0,
+          old_start: 1,
+          old_count: 5,
           new_start: 1,
-          new_count: 3,
+          new_count: 6,
           lines: [
-            { type: "add", content: "# Rendered preview", new_num: 1 },
-            { type: "add", content: "", new_num: 2 },
-            { type: "add", content: "- [x] Markdown task", new_num: 3 },
+            { type: "context", content: "# Rendered preview", old_num: 1, new_num: 1 },
+            { type: "context", content: "", old_num: 2, new_num: 2 },
+            { type: "delete", content: "Old paragraph that should be highlighted.", old_num: 3 },
+            { type: "add", content: "New paragraph that should be highlighted.", new_num: 3 },
+            { type: "context", content: "", old_num: 4, new_num: 4 },
+            { type: "delete", content: "- [ ] Markdown task", old_num: 5 },
+            { type: "add", content: "- [x] Markdown task", new_num: 5 },
           ],
         },
       ],
@@ -458,6 +462,14 @@ test.describe("diff view", () => {
       .toBeVisible();
     await expect(page.locator(".diff-rich-preview.markdown-body"))
       .toContainText("Markdown task");
+    await expect(page.locator(".markdown-rich-diff__block--delete", {
+      hasText: "Old paragraph that should be highlighted.",
+    }))
+      .toContainText("Old paragraph that should be highlighted.");
+    await expect(page.locator(".markdown-rich-diff__block--add", {
+      hasText: "New paragraph that should be highlighted.",
+    }))
+      .toContainText("New paragraph that should be highlighted.");
 
     await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
     await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']"))
