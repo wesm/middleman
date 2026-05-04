@@ -68,14 +68,18 @@ func TestWorktreeDiffFilesHidesWhitespaceOnlyUntrackedFiles(t *testing.T) {
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "z-blank.txt"), []byte(" \t\n"), 0o644,
 	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "z-empty.txt"), nil, 0o644,
+	))
 
 	files, ok, err := WorktreeDiffFiles(
 		t.Context(), work, WorktreeDiffBaseHead, true,
 	)
 	require.NoError(err)
 	require.True(ok)
-	require.Len(files, 1)
+	require.Len(files, 2)
 	assert.Equal("dirty-test.txt", files[0].Path)
+	assert.Equal("z-empty.txt", files[1].Path)
 }
 
 func TestWorktreeDiffAgainstUpstreamIncludesLocalCommitsAndDirtyChanges(t *testing.T) {

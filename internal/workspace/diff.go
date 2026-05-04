@@ -181,7 +181,8 @@ func worktreeUntrackedFiles(
 			files = append(files, file)
 			continue
 		}
-		if hideWhitespace && !bytes.Contains(content, []byte{0}) &&
+		if hideWhitespace && len(content) > 0 &&
+			!bytes.Contains(content, []byte{0}) &&
 			len(bytes.TrimSpace(content)) == 0 {
 			continue
 		}
