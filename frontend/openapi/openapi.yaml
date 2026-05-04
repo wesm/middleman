@@ -1497,6 +1497,10 @@ components:
           type: string
         known:
           type: boolean
+        platform_host:
+          type: string
+        provider:
+          type: string
         rate_limit:
           format: int64
           type: integer
@@ -1517,6 +1521,8 @@ components:
           format: int64
           type: integer
       required:
+        - provider
+        - platform_host
         - requests_hour
         - rate_remaining
         - rate_limit

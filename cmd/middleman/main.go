@@ -334,14 +334,15 @@ func run(configPath string) error {
 	githubTokens := make(map[string]string, len(providerTokens))
 	for key, token := range providerTokens {
 		platformName, host := splitProviderHostKey(key)
-		if _, ok := rateTrackers[host]; !ok {
-			rateTrackers[host] = ghclient.NewRateTracker(
-				database, host, "rest",
+		rateKey := ghclient.RateBucketKey(platformName, host)
+		if _, ok := rateTrackers[rateKey]; !ok {
+			rateTrackers[rateKey] = ghclient.NewPlatformRateTracker(
+				database, platformName, host, "rest",
 			)
 		}
 		if budgetPerHour > 0 {
-			if _, ok := budgets[host]; !ok {
-				budgets[host] = ghclient.NewSyncBudget(
+			if _, ok := budgets[rateKey]; !ok {
+				budgets[rateKey] = ghclient.NewSyncBudget(
 					budgetPerHour,
 				)
 			}
@@ -349,7 +350,7 @@ func run(configPath string) error {
 		switch platformName {
 		case "github":
 			c, err := ghclient.NewClient(
-				token, host, rateTrackers[host], budgets[host],
+				token, host, rateTrackers[rateKey], budgets[rateKey],
 			)
 			if err != nil {
 				return fmt.Errorf(
@@ -359,7 +360,10 @@ func run(configPath string) error {
 			clients[host] = c
 			githubTokens[host] = token
 		case "gitlab":
-			c, err := gitlabclient.NewClient(host, token)
+			c, err := gitlabclient.NewClient(
+				host, token,
+				gitlabclient.WithRateTracker(rateTrackers[rateKey]),
+			)
 			if err != nil {
 				return fmt.Errorf(
 					"create GitLab client for %s: %w", host, err,
@@ -397,9 +401,10 @@ func run(configPath string) error {
 		map[string]*ghclient.GraphQLFetcher, len(githubTokens),
 	)
 	for host, token := range githubTokens {
-		gqlRT := ghclient.NewRateTracker(database, host, "graphql")
+		rateKey := ghclient.RateBucketKey("github", host)
+		gqlRT := ghclient.NewPlatformRateTracker(database, "github", host, "graphql")
 		fetchers[host] = ghclient.NewGraphQLFetcher(
-			token, host, gqlRT, budgets[host],
+			token, host, gqlRT, budgets[rateKey],
 		)
 	}
 	syncer.SetFetchers(fetchers)
@@ -541,17 +546,6 @@ func splitProviderHostKey(key string) (string, string) {
 }
 
 func validateProviderHostKeys(providerTokens map[string]string) error {
-	hostPlatforms := make(map[string]string, len(providerTokens))
-	for key := range providerTokens {
-		platformName, host := splitProviderHostKey(key)
-		if existing, ok := hostPlatforms[host]; ok && existing != platformName {
-			return fmt.Errorf(
-				"host %s is configured for both %s and %s; use one provider type per host",
-				host, existing, platformName,
-			)
-		}
-		hostPlatforms[host] = platformName
-	}
 	return nil
 }
 

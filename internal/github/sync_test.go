@@ -3968,12 +3968,13 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
+	rateKey := RateBucketKey("gitlab", "gitlab.com")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		"gitlab.com": NewSyncBudget(100),
+		rateKey: NewSyncBudget(100),
 	})
 	syncer.clients = registry
 
-	syncer.drainDetailQueue(ctx, map[string]bool{"gitlab.com": true})
+	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true})
 
 	assert.Equal(int32(1), provider.getMRCalls.Load())
 	assert.Equal(int32(1), provider.getIssueCalls.Load())
@@ -4064,15 +4065,16 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		gitlabProvider,
 	)
 	require.NoError(err)
+	rateKey := RateBucketKey("gitlab", host)
 	syncer := NewSyncer(nil, d, nil, []RepoRef{
 		githubRepo,
 		gitlabRepo,
 	}, time.Minute, nil, map[string]*SyncBudget{
-		host: NewSyncBudget(100),
+		rateKey: NewSyncBudget(100),
 	})
 	syncer.clients = registry
 
-	syncer.drainDetailQueue(ctx, map[string]bool{host: true})
+	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true})
 
 	assert.Equal(int32(1), gitlabProvider.getMRCalls.Load())
 	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, gitlabRepoID, 7)

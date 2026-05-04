@@ -39,6 +39,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repos_provider_path_key
     ON middleman_repos(platform, platform_host, repo_path_key)
     WHERE repo_path_key <> '';
 
+CREATE TABLE middleman_rate_limits_v17 (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform       TEXT NOT NULL DEFAULT 'github',
+    platform_host  TEXT NOT NULL,
+    api_type       TEXT NOT NULL DEFAULT 'rest',
+    requests_hour  INTEGER NOT NULL DEFAULT 0,
+    hour_start     DATETIME NOT NULL,
+    rate_remaining INTEGER NOT NULL DEFAULT -1,
+    rate_limit     INTEGER NOT NULL DEFAULT -1,
+    rate_reset_at  DATETIME,
+    updated_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(platform, platform_host, api_type)
+);
+
+INSERT INTO middleman_rate_limits_v17
+    (id, platform, platform_host, api_type, requests_hour, hour_start,
+     rate_remaining, rate_limit, rate_reset_at, updated_at)
+SELECT id, 'github', platform_host, api_type, requests_hour, hour_start,
+       rate_remaining, rate_limit, rate_reset_at, updated_at
+FROM middleman_rate_limits;
+
+DROP TABLE middleman_rate_limits;
+ALTER TABLE middleman_rate_limits_v17 RENAME TO middleman_rate_limits;
+
 ALTER TABLE middleman_merge_requests ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE middleman_issues ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE middleman_labels ADD COLUMN platform_external_id TEXT NOT NULL DEFAULT '';

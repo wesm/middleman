@@ -1562,6 +1562,8 @@ export interface components {
             gql_reset_at: string;
             hour_start: string;
             known: boolean;
+            platform_host: string;
+            provider: string;
             /** Format: int64 */
             rate_limit: number;
             /** Format: int64 */

@@ -3,6 +3,30 @@ DROP TRIGGER IF EXISTS middleman_workspaces_key_fill_insert;
 DROP TRIGGER IF EXISTS middleman_workspaces_casefold_insert;
 DROP INDEX IF EXISTS idx_workspaces_provider_item_key;
 
+CREATE TABLE middleman_rate_limits_v16 (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform_host  TEXT NOT NULL,
+    api_type       TEXT NOT NULL DEFAULT 'rest',
+    requests_hour  INTEGER NOT NULL DEFAULT 0,
+    hour_start     DATETIME NOT NULL,
+    rate_remaining INTEGER NOT NULL DEFAULT -1,
+    rate_limit     INTEGER NOT NULL DEFAULT -1,
+    rate_reset_at  DATETIME,
+    updated_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(platform_host, api_type)
+);
+
+INSERT INTO middleman_rate_limits_v16
+    (id, platform_host, api_type, requests_hour, hour_start,
+     rate_remaining, rate_limit, rate_reset_at, updated_at)
+SELECT id, platform_host, api_type, requests_hour, hour_start,
+       rate_remaining, rate_limit, rate_reset_at, updated_at
+FROM middleman_rate_limits
+WHERE platform = 'github';
+
+DROP TABLE middleman_rate_limits;
+ALTER TABLE middleman_rate_limits_v16 RENAME TO middleman_rate_limits;
+
 DROP INDEX IF EXISTS idx_issue_events_platform_external_id;
 DROP INDEX IF EXISTS idx_mr_events_platform_external_id;
 DROP INDEX IF EXISTS idx_labels_repo_platform_external_id;

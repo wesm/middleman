@@ -2992,8 +2992,26 @@ func (d *DB) IsStarred(
 
 // --- Rate Limits ---
 
-// UpsertRateLimit inserts or updates a rate limit row by (platform_host, api_type).
+// UpsertRateLimit inserts or updates a GitHub rate limit row by (platform_host, api_type).
 func (d *DB) UpsertRateLimit(
+	platformHost string,
+	apiType string,
+	requestsHour int,
+	hourStart time.Time,
+	rateRemaining int,
+	rateLimit int,
+	rateResetAt *time.Time,
+) error {
+	return d.UpsertPlatformRateLimit(
+		"github", platformHost, apiType, requestsHour, hourStart,
+		rateRemaining, rateLimit, rateResetAt,
+	)
+}
+
+// UpsertPlatformRateLimit inserts or updates a rate limit row by
+// (platform, platform_host, api_type).
+func (d *DB) UpsertPlatformRateLimit(
+	platform string,
 	platformHost string,
 	apiType string,
 	requestsHour int,
@@ -3004,17 +3022,17 @@ func (d *DB) UpsertRateLimit(
 ) error {
 	_, err := d.rw.Exec(`
 		INSERT INTO middleman_rate_limits
-		    (platform_host, api_type, requests_hour, hour_start,
+		    (platform, platform_host, api_type, requests_hour, hour_start,
 		     rate_remaining, rate_limit, rate_reset_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-		ON CONFLICT(platform_host, api_type) DO UPDATE SET
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		ON CONFLICT(platform, platform_host, api_type) DO UPDATE SET
 		    requests_hour  = excluded.requests_hour,
 		    hour_start     = excluded.hour_start,
 		    rate_remaining = excluded.rate_remaining,
 		    rate_limit     = excluded.rate_limit,
 		    rate_reset_at  = excluded.rate_reset_at,
 		    updated_at     = datetime('now')`,
-		platformHost, apiType, requestsHour, hourStart,
+		platform, platformHost, apiType, requestsHour, hourStart,
 		rateRemaining, rateLimit, rateResetAt,
 	)
 	if err != nil {
@@ -3023,21 +3041,31 @@ func (d *DB) UpsertRateLimit(
 	return nil
 }
 
-// GetRateLimit returns the rate limit row for a (platform_host, api_type) pair,
+// GetRateLimit returns the GitHub rate limit row for a (platform_host, api_type) pair,
 // or nil,nil if not found.
 func (d *DB) GetRateLimit(
 	platformHost string,
 	apiType string,
 ) (*RateLimit, error) {
+	return d.GetPlatformRateLimit("github", platformHost, apiType)
+}
+
+// GetPlatformRateLimit returns the rate limit row for a
+// (platform, platform_host, api_type) tuple, or nil,nil if not found.
+func (d *DB) GetPlatformRateLimit(
+	platform string,
+	platformHost string,
+	apiType string,
+) (*RateLimit, error) {
 	var r RateLimit
 	err := d.ro.QueryRow(`
-		SELECT id, platform_host, api_type, requests_hour, hour_start,
+		SELECT id, platform, platform_host, api_type, requests_hour, hour_start,
 		       rate_remaining, rate_limit, rate_reset_at, updated_at
 		FROM middleman_rate_limits
-		WHERE platform_host = ? AND api_type = ?`,
-		platformHost, apiType,
+		WHERE platform = ? AND platform_host = ? AND api_type = ?`,
+		platform, platformHost, apiType,
 	).Scan(
-		&r.ID, &r.PlatformHost, &r.APIType, &r.RequestsHour, &r.HourStart,
+		&r.ID, &r.Platform, &r.PlatformHost, &r.APIType, &r.RequestsHour, &r.HourStart,
 		&r.RateRemaining, &r.RateLimit, &r.RateResetAt, &r.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

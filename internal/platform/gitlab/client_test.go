@@ -7,12 +7,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 )
 
@@ -61,6 +64,48 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 		"/api/v4/projects/group%2Fsubgroup%2Fproject",
 		"/api/v4/projects/42/merge_requests",
 	}, paths)
+}
+
+func TestClientRecordsRateLimitRequests(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	resetAt := time.Now().Add(30 * time.Minute).Unix()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("RateLimit-Limit", "600")
+		w.Header().Set("RateLimit-Remaining", "599")
+		w.Header().Set("RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+		writeJSON(w, `{
+			"id": 42,
+			"path": "project",
+			"path_with_namespace": "group/project",
+			"name": "Project"
+		}`)
+	}))
+	defer server.Close()
+
+	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	client := newTestClient(t, server.URL, WithRateTracker(rt))
+	_, err = client.GetRepository(context.Background(), platform.RepoRef{
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+	})
+	require.NoError(err)
+
+	row, err := database.GetPlatformRateLimit("gitlab", "gitlab.example.com", "rest")
+	require.NoError(err)
+	require.NotNil(row)
+	assert.Equal("gitlab", row.Platform)
+	assert.Equal(1, row.RequestsHour)
+	assert.Equal(600, row.RateLimit)
+	assert.Equal(599, row.RateRemaining)
+	require.NotNil(row.RateResetAt)
+	assert.Equal(resetAt, row.RateResetAt.Unix())
 }
 
 func TestClientRejectsAlreadyEscapedProjectPathBeforeDoubleEscaping(t *testing.T) {

@@ -2,6 +2,7 @@ package github
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ var throttleSteps = []throttleStep{
 type RateTracker struct {
 	mu            sync.Mutex
 	db            *db.DB
+	platform      string
 	platformHost  string
 	apiType       string
 	count         int
@@ -44,8 +46,18 @@ type RateTracker struct {
 func NewRateTracker(
 	database *db.DB, platformHost string, apiType string,
 ) *RateTracker {
+	return NewPlatformRateTracker(database, "github", platformHost, apiType)
+}
+
+// NewPlatformRateTracker creates a tracker for the given provider, host, and API type.
+// It hydrates from DB if a row exists for the current hour.
+func NewPlatformRateTracker(
+	database *db.DB, platformName string, platformHost string, apiType string,
+) *RateTracker {
+	platformName = normalizedRatePlatform(platformName)
 	rt := &RateTracker{
 		db:           database,
+		platform:     platformName,
 		platformHost: platformHost,
 		apiType:      apiType,
 		remaining:    -1,
@@ -57,7 +69,7 @@ func NewRateTracker(
 }
 
 func (rt *RateTracker) hydrate() {
-	row, err := rt.db.GetRateLimit(rt.platformHost, rt.apiType)
+	row, err := rt.db.GetPlatformRateLimit(rt.platform, rt.platformHost, rt.apiType)
 	if err != nil || row == nil {
 		return
 	}
@@ -76,6 +88,34 @@ func (rt *RateTracker) hydrate() {
 	rt.remaining = row.RateRemaining
 	rt.limit = row.RateLimit
 	rt.resetAt = row.RateResetAt
+}
+
+// Provider returns the provider name this tracker is scoped to.
+func (rt *RateTracker) Provider() string {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.platform
+}
+
+// PlatformHost returns the provider host this tracker is scoped to.
+func (rt *RateTracker) PlatformHost() string {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.platformHost
+}
+
+// APIType returns the API bucket type this tracker is scoped to.
+func (rt *RateTracker) APIType() string {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.apiType
+}
+
+// BucketKey returns the process-local map key for this provider/host bucket.
+func (rt *RateTracker) BucketKey() string {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return RateBucketKey(rt.platform, rt.platformHost)
 }
 
 // RecordRequest increments the hourly request counter and
@@ -264,7 +304,8 @@ func (rt *RateTracker) rollIfNeeded() {
 
 // persist writes current state to DB. Must be called with mu held.
 func (rt *RateTracker) persist() {
-	err := rt.db.UpsertRateLimit(
+	err := rt.db.UpsertPlatformRateLimit(
+		rt.platform,
 		rt.platformHost,
 		rt.apiType,
 		rt.count,
@@ -283,4 +324,22 @@ func (rt *RateTracker) persist() {
 // truncateHour returns t truncated to the start of its hour.
 func truncateHour(t time.Time) time.Time {
 	return t.Truncate(time.Hour)
+}
+
+func normalizedRatePlatform(platformName string) string {
+	platformName = strings.ToLower(strings.TrimSpace(platformName))
+	if platformName == "" {
+		return "github"
+	}
+	return platformName
+}
+
+// RateBucketKey returns the process-local map key for provider/host rate buckets.
+func RateBucketKey(platformName, platformHost string) string {
+	platformName = normalizedRatePlatform(platformName)
+	platformHost = strings.ToLower(strings.TrimSpace(platformHost))
+	if platformName == "github" {
+		return platformHost
+	}
+	return platformName + ":" + platformHost
 }

@@ -288,6 +288,7 @@ type WorktreeLink struct {
 // RateLimit tracks per-host API rate limit state.
 type RateLimit struct {
 	ID            int64
+	Platform      string
 	PlatformHost  string
 	APIType       string
 	RequestsHour  int

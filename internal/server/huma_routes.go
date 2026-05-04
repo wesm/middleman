@@ -1945,12 +1945,14 @@ func (s *Server) getRateLimits(
 	gqlTrackers := s.syncer.GQLRateTrackers()
 	budgets := s.syncer.Budgets()
 	hosts := make(map[string]rateLimitHostStatus, len(trackers))
-	for host, rt := range trackers {
+	for key, rt := range trackers {
 		resetStr := ""
 		if resetAt := rt.ResetAt(); resetAt != nil {
 			resetStr = formatUTCRFC3339(*resetAt)
 		}
 		status := rateLimitHostStatus{
+			Provider:           rt.Provider(),
+			PlatformHost:       rt.PlatformHost(),
 			RequestsHour:       rt.RequestsThisHour(),
 			RateRemaining:      rt.Remaining(),
 			RateLimit:          rt.RateLimit(),
@@ -1963,7 +1965,7 @@ func (s *Server) getRateLimits(
 			GQLRemaining:       -1,
 			GQLLimit:           -1,
 		}
-		if gqlRT := gqlTrackers[host]; gqlRT != nil {
+		if gqlRT := gqlTrackers[key]; gqlRT != nil {
 			status.GQLRemaining = gqlRT.Remaining()
 			status.GQLLimit = gqlRT.RateLimit()
 			status.GQLKnown = gqlRT.Known()
@@ -1971,12 +1973,12 @@ func (s *Server) getRateLimits(
 				status.GQLResetAt = resetAt.UTC().Format(time.RFC3339)
 			}
 		}
-		if b := budgets[host]; b != nil {
+		if b := budgets[key]; b != nil {
 			status.BudgetLimit = b.Limit()
 			status.BudgetSpent = b.Spent()
 			status.BudgetRemaining = b.Remaining()
 		}
-		hosts[host] = status
+		hosts[key] = status
 	}
 	return &rateLimitsOutput{
 		Body: rateLimitsResponse{Hosts: hosts},

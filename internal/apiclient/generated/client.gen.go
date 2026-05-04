@@ -589,6 +589,8 @@ type RateLimitHostStatus struct {
 	GqlResetAt         string `json:"gql_reset_at"`
 	HourStart          string `json:"hour_start"`
 	Known              bool   `json:"known"`
+	PlatformHost       string `json:"platform_host"`
+	Provider           string `json:"provider"`
 	RateLimit          int64  `json:"rate_limit"`
 	RateRemaining      int64  `json:"rate_remaining"`
 	RateResetAt        string `json:"rate_reset_at"`

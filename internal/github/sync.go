@@ -145,8 +145,8 @@ type Syncer struct {
 	clients       *platform.Registry
 	db            *db.DB
 	clones        *gitclone.Manager
-	rateTrackers  map[string]*RateTracker    // host -> tracker
-	budgets       map[string]*SyncBudget     // host -> budget
+	rateTrackers  map[string]*RateTracker    // provider/host bucket -> tracker
+	budgets       map[string]*SyncBudget     // provider/host bucket -> budget
 	fetchers      map[string]*GraphQLFetcher // host -> GraphQL fetcher
 	repos         []RepoRef
 	reposMu       sync.Mutex
@@ -164,8 +164,8 @@ type Syncer struct {
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
 	stopped            bool                 // guarded by lifecycleMu
-	nextSyncAfter      map[string]time.Time // host -> next eligible background sync time
-	nextWatchSyncAfter map[string]time.Time // host -> next eligible watch-sync time
+	nextSyncAfter      map[string]time.Time // provider/host bucket -> next eligible background sync time
+	nextWatchSyncAfter map[string]time.Time // provider/host bucket -> next eligible watch-sync time
 	// displayNames is a bounded TTL + LRU cache for resolved
 	// GitHub display names. It spans the Syncer's lifetime so
 	// cache hits survive across sync runs; per-entry TTL
@@ -793,6 +793,18 @@ func repoHost(repo RepoRef) string {
 	return "github.com"
 }
 
+func rateBucketKeyFor(kind platform.Kind, host string) string {
+	return RateBucketKey(string(kind), host)
+}
+
+func repoRateBucketKey(repo RepoRef) string {
+	return rateBucketKeyFor(repoPlatform(repo), repoHost(repo))
+}
+
+func watchedMRRateBucketKey(mr WatchedMR) string {
+	return rateBucketKeyFor(watchedMRPlatform(mr), watchedMRHost(mr))
+}
+
 func platformRepoRef(repo RepoRef) platform.RepoRef {
 	repoPath := repo.RepoPath
 	if repoPath == "" {
@@ -1135,43 +1147,34 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	if watchInt <= 0 {
 		watchInt = 30 * time.Second
 	}
-	watchHosts := make([]string, len(mrs))
+	watchBuckets := make([]string, len(mrs))
 	for i, mr := range mrs {
-		host := mr.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		watchHosts[i] = host
+		watchBuckets[i] = watchedMRRateBucketKey(mr)
 	}
-	eligibleHosts := s.hostEligibility(
-		watchHosts, s.nextWatchSyncAfter,
+	eligibleBuckets := s.hostEligibility(
+		watchBuckets, s.nextWatchSyncAfter,
 	)
 
-	// Check backoff once per host to avoid redundant checks.
-	blockedHosts := make(map[string]bool)
+	// Check backoff once per provider/host bucket to avoid redundant checks.
+	blockedBuckets := make(map[string]bool)
 	for _, mr := range mrs {
-		host := mr.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		if _, checked := blockedHosts[host]; checked {
+		bucket := watchedMRRateBucketKey(mr)
+		if _, checked := blockedBuckets[bucket]; checked {
 			continue
 		}
-		if rt := s.rateTrackers[host]; rt != nil {
+		if rt := s.rateTrackers[bucket]; rt != nil {
 			if backoff, _ := rt.ShouldBackoff(); backoff {
-				blockedHosts[host] = true
+				blockedBuckets[bucket] = true
 				continue
 			}
 		}
-		blockedHosts[host] = false
+		blockedBuckets[bucket] = false
 	}
 
 	for _, mr := range mrs {
-		host := mr.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		if !eligibleHosts[host] {
+		host := watchedMRHost(mr)
+		bucket := watchedMRRateBucketKey(mr)
+		if !eligibleBuckets[bucket] {
 			slog.Debug("skipping fast-sync for throttled host",
 				"host", host,
 				"owner", mr.Owner,
@@ -1180,7 +1183,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		if blockedHosts[host] {
+		if blockedBuckets[bucket] {
 			slog.Debug("skipping fast-sync for rate-limited host",
 				"host", host,
 				"owner", mr.Owner,
@@ -1200,7 +1203,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	s.advanceNextSync(
-		eligibleHosts, s.nextWatchSyncAfter, watchInt,
+		eligibleBuckets, s.nextWatchSyncAfter, watchInt,
 	)
 }
 
@@ -1211,9 +1214,16 @@ func watchedMRPlatform(mr WatchedMR) platform.Kind {
 	return platform.KindGitHub
 }
 
+func watchedMRHost(mr WatchedMR) string {
+	return repoHost(RepoRef{
+		Platform:     watchedMRPlatform(mr),
+		PlatformHost: mr.PlatformHost,
+	})
+}
+
 func watchedMRKey(mr WatchedMR) string {
 	return detailRepoKey(
-		watchedMRPlatform(mr), mr.PlatformHost, mr.Owner, mr.Name,
+		watchedMRPlatform(mr), watchedMRHost(mr), mr.Owner, mr.Name,
 	) + fmt.Sprintf("#%d", mr.Number)
 }
 
@@ -1273,17 +1283,17 @@ func (s *Syncer) Budgets() map[string]*SyncBudget {
 	return s.budgets
 }
 
-// GQLRateTrackers returns per-host GraphQL rate trackers
+// GQLRateTrackers returns per-provider/host GraphQL rate trackers
 // extracted from the registered GraphQL fetchers. Hosts with
 // nil fetchers or trackers are skipped.
 func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
 	result := make(map[string]*RateTracker, len(s.fetchers))
-	for host, f := range s.fetchers {
+	for _, f := range s.fetchers {
 		if f == nil {
 			continue
 		}
 		if rt := f.RateTracker(); rt != nil {
-			result[host] = rt
+			result[rt.BucketKey()] = rt
 		}
 	}
 	return result
@@ -1345,11 +1355,7 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		if rt := s.rateTrackers[host]; rt != nil {
+		if rt := s.rateTrackers[repoRateBucketKey(repo)]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
 				s.publishStatus(&SyncStatus{
 					Running: true,
@@ -1486,19 +1492,15 @@ func (s *Syncer) runOnce(
 		}
 	}
 
-	repoHosts := make([]string, len(repos))
+	repoBuckets := make([]string, len(repos))
 	for i, r := range repos {
-		host := r.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		repoHosts[i] = host
+		repoBuckets[i] = repoRateBucketKey(r)
 	}
 	nextAfter := s.nextSyncAfter
 	if bypassNextSyncAfter {
 		nextAfter = nil
 	}
-	eligibleHosts := s.hostEligibility(repoHosts, nextAfter)
+	eligibleBuckets := s.hostEligibility(repoBuckets, nextAfter)
 
 	var (
 		completed atomic.Int32
@@ -1526,11 +1528,8 @@ func (s *Syncer) runOnce(
 
 dispatch:
 	for i, r := range repos {
-		host := r.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
-		if !eligibleHosts[host] {
+		bucket := repoRateBucketKey(r)
+		if !eligibleBuckets[bucket] {
 			results[i].Error = "skipped: rate limit throttled"
 			done := completed.Add(1)
 			s.publishMonotonicProgress(state, done)
@@ -1558,27 +1557,27 @@ dispatch:
 	wg.Wait()
 
 	s.advanceNextSync(
-		eligibleHosts, s.nextSyncAfter, s.interval,
+		eligibleBuckets, s.nextSyncAfter, s.interval,
 	)
 
 	// Detail drain: fetch full details for highest-priority items
 	// within the per-host budget. Runs after index scan completes.
 	if !canceled.Load() && ctx.Err() == nil {
-		s.drainDetailQueue(ctx, eligibleHosts)
+		s.drainDetailQueue(ctx, eligibleBuckets)
 	}
 
 	// Backfill discovery: fetch closed items if budget allows.
 	if !canceled.Load() && ctx.Err() == nil {
-		for host, ok := range eligibleHosts {
+		for bucket, ok := range eligibleBuckets {
 			if !ok {
 				continue
 			}
-			s.runBackfillDiscovery(ctx, host, repos)
+			s.runBackfillDiscovery(ctx, bucket, repos)
 		}
 	}
 
 	if !canceled.Load() && ctx.Err() == nil {
-		s.drainPendingCommentSyncs(ctx, eligibleHosts)
+		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 
 	// Use a latched flag (set by the dispatch loop and workers at
@@ -2287,7 +2286,7 @@ func (s *Syncer) refreshPRCommentsForItem(
 	if pr == nil || pr.DetailFetchedAt == nil {
 		return
 	}
-	if !s.canSpendCommentRefresh(repo.PlatformHost) {
+	if !s.canSpendCommentRefresh(repo) {
 		return
 	}
 
@@ -2324,7 +2323,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	if issue == nil || issue.DetailFetchedAt == nil {
 		return
 	}
-	if !s.canSpendCommentRefresh(repo.PlatformHost) {
+	if !s.canSpendCommentRefresh(repo) {
 		return
 	}
 
@@ -2392,8 +2391,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
-		host := repoHost(item.repo)
-		if !eligibleHosts[host] {
+		bucket := repoRateBucketKey(item.repo)
+		if !eligibleHosts[bucket] {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -2434,8 +2433,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
-		host := repoHost(item.repo)
-		if !eligibleHosts[host] {
+		bucket := repoRateBucketKey(item.repo)
+		if !eligibleHosts[bucket] {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -4032,12 +4031,8 @@ func (s *Syncer) refreshRepoIssueComments(
 	}
 }
 
-func (s *Syncer) canSpendCommentRefresh(platformHost string) bool {
-	host := platformHost
-	if host == "" {
-		host = "github.com"
-	}
-	budget := s.budgets[host]
+func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
+	budget := s.budgets[repoRateBucketKey(repo)]
 	return budget == nil || budget.CanSpend(1)
 }
 
@@ -4148,10 +4143,10 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 // --- Detail Drain ---
 
 // drainDetailQueue builds a priority queue of items needing detail
-// fetches and processes them within the per-host budget.
+// fetches and processes them within the per-provider/host budget.
 func (s *Syncer) drainDetailQueue(
 	ctx context.Context,
-	eligibleHosts map[string]bool,
+	eligibleBuckets map[string]bool,
 ) {
 	if len(s.budgets) == 0 {
 		return
@@ -4179,15 +4174,16 @@ func (s *Syncer) drainDetailQueue(
 		if host == "" {
 			host = "github.com"
 		}
+		bucket := rateBucketKeyFor(qi.Platform, host)
 
-		if !eligibleHosts[host] {
+		if !eligibleBuckets[bucket] {
 			continue
 		}
-		if exhausted[host] {
+		if exhausted[bucket] {
 			continue
 		}
 
-		budget := s.budgets[host]
+		budget := s.budgets[bucket]
 		if budget == nil {
 			continue
 		}
@@ -4198,7 +4194,7 @@ func (s *Syncer) drainDetailQueue(
 		// work we almost certainly can't afford.
 		worstCase := qi.WorstCaseCost()
 		if !budget.CanSpend(worstCase) {
-			exhausted[host] = true
+			exhausted[bucket] = true
 			continue
 		}
 
@@ -4370,15 +4366,15 @@ func (s *Syncer) buildDetailQueueItems(
 // we fetch per repo per cycle to stay gentle on the API.
 const backfillMaxPagesPerRepo = 2
 
-// runBackfillDiscovery fetches closed PRs/issues for repos on
-// the given host, advancing backfill cursors stored in the DB.
-// Only runs when >50% of the host's budget remains.
+// runBackfillDiscovery fetches closed PRs/issues for repos in
+// the given provider/host bucket, advancing backfill cursors stored in the DB.
+// Only runs when >50% of the bucket's budget remains.
 func (s *Syncer) runBackfillDiscovery(
 	ctx context.Context,
-	host string,
+	bucket string,
 	repos []RepoRef,
 ) {
-	budget := s.budgets[host]
+	budget := s.budgets[bucket]
 	if budget == nil {
 		return
 	}
@@ -4390,8 +4386,7 @@ func (s *Syncer) runBackfillDiscovery(
 		if ctx.Err() != nil {
 			return
 		}
-		rHost := repoHost(repo)
-		if rHost != host {
+		if repoRateBucketKey(repo) != bucket {
 			continue
 		}
 

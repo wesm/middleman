@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	gh "github.com/google/go-github/v84/github"
+	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
@@ -24,6 +26,7 @@ type ClientOption func(*clientOptions)
 type clientOptions struct {
 	baseURL           string
 	foregroundTimeout time.Duration
+	rateTracker       *ghclient.RateTracker
 }
 
 type Client struct {
@@ -64,6 +67,12 @@ func WithForegroundTimeoutForTesting(timeout time.Duration) ClientOption {
 	}
 }
 
+func WithRateTracker(rateTracker *ghclient.RateTracker) ClientOption {
+	return func(opts *clientOptions) {
+		opts.rateTracker = rateTracker
+	}
+}
+
 func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	opts := clientOptions{
 		baseURL:           "https://" + strings.TrimRight(host, "/") + "/api/v4",
@@ -73,7 +82,17 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		option(&opts)
 	}
 
-	api, err := gitlab.NewClient(token, gitlab.WithBaseURL(opts.baseURL))
+	clientOptions := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(opts.baseURL)}
+	if opts.rateTracker != nil {
+		clientOptions = append(clientOptions, gitlab.WithHTTPClient(&http.Client{
+			Transport: &rateTrackingTransport{
+				base:        http.DefaultTransport,
+				rateTracker: opts.rateTracker,
+			},
+		}))
+	}
+
+	api, err := gitlab.NewClient(token, clientOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +102,72 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		api:               api,
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
+}
+
+type rateTrackingTransport struct {
+	base        http.RoundTripper
+	rateTracker *ghclient.RateTracker
+}
+
+func (t *rateTrackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	resp, err := base.RoundTrip(req)
+	if resp == nil || t.rateTracker == nil {
+		return resp, err
+	}
+	t.rateTracker.RecordRequest()
+	if rate, ok := parseRateLimitHeaders(resp); ok {
+		t.rateTracker.UpdateFromRate(rate)
+	}
+	return resp, err
+}
+
+func parseRateLimitHeaders(resp *http.Response) (gh.Rate, bool) {
+	remaining, remainingOK := parseHeaderInt(resp, "RateLimit-Remaining", "X-RateLimit-Remaining")
+	if !remainingOK {
+		return gh.Rate{}, false
+	}
+	limit, _ := parseHeaderInt(resp, "RateLimit-Limit", "X-RateLimit-Limit")
+	resetAt := time.Now().UTC().Add(time.Minute)
+	if resetUnix, ok := parseHeaderInt64(resp, "RateLimit-Reset", "X-RateLimit-Reset"); ok {
+		resetAt = time.Unix(resetUnix, 0).UTC()
+	}
+	return gh.Rate{
+		Limit:     limit,
+		Remaining: remaining,
+		Reset:     gh.Timestamp{Time: resetAt},
+	}, true
+}
+
+func parseHeaderInt(resp *http.Response, names ...string) (int, bool) {
+	for _, name := range names {
+		raw := strings.TrimSpace(resp.Header.Get(name))
+		if raw == "" {
+			continue
+		}
+		value, err := strconv.Atoi(raw)
+		if err == nil {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+func parseHeaderInt64(resp *http.Response, names ...string) (int64, bool) {
+	for _, name := range names {
+		raw := strings.TrimSpace(resp.Header.Get(name))
+		if raw == "" {
+			continue
+		}
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil {
+			return value, true
+		}
+	}
+	return 0, false
 }
 
 func (c *Client) Platform() platform.Kind {

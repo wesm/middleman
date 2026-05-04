@@ -7725,6 +7725,63 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	assert.False(gheHost.GQLKnown)
 }
 
+func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	host := "code.example.com"
+	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "rest")
+	glRT := ghclient.NewPlatformRateTracker(database, "gitlab", host, "rest")
+	ghRT.RecordRequest()
+	glRT.RecordRequest()
+	glRT.RecordRequest()
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{host: &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{
+			{Platform: platform.KindGitHub, Owner: "acme", Name: "widget", PlatformHost: host},
+			{Platform: platform.KindGitLab, Owner: "acme", Name: "widget", PlatformHost: host},
+		},
+		time.Minute,
+		map[string]*ghclient.RateTracker{
+			ghclient.RateBucketKey("github", host): ghRT,
+			ghclient.RateBucketKey("gitlab", host): glRT,
+		},
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	ghStatus, ok := body.Hosts[host]
+	assert.True(ok)
+	assert.Equal("github", ghStatus.Provider)
+	assert.Equal(host, ghStatus.PlatformHost)
+	assert.Equal(1, ghStatus.RequestsHour)
+
+	glStatus, ok := body.Hosts["gitlab:"+host]
+	assert.True(ok)
+	assert.Equal("gitlab", glStatus.Provider)
+	assert.Equal(host, glStatus.PlatformHost)
+	assert.Equal(2, glStatus.RequestsHour)
+}
+
 func TestAPIGetPullDetailLoaded(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

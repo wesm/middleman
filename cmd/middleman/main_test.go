@@ -134,17 +134,13 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 	}}, repos)
 }
 
-func TestValidateProviderHostKeysRejectsMixedProvidersOnSameHost(t *testing.T) {
+func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHost(t *testing.T) {
 	err := validateProviderHostKeys(map[string]string{
 		providerHostKey("github", "code.example.com"): "github-token",
 		providerHostKey("gitlab", "code.example.com"): "gitlab-token",
 	})
 
-	require.Error(t, err)
-	Assert.ErrorContains(
-		t, err,
-		"host code.example.com is configured for both",
-	)
+	require.NoError(t, err)
 }
 
 func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {

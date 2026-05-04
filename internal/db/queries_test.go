@@ -2218,6 +2218,50 @@ func TestRateLimitCRUD(t *testing.T) {
 	assert.Nil(missing)
 }
 
+func TestRateLimitCRUDScopesByPlatform(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	host := "gitlab.example.com"
+	hourStart := baseTime()
+
+	require.NoError(d.UpsertPlatformRateLimit("github", host, "rest", 1, hourStart, 4999, 5000, nil))
+	require.NoError(d.UpsertPlatformRateLimit("github", host, "graphql", 2, hourStart, 4998, 5000, nil))
+	require.NoError(d.UpsertPlatformRateLimit("gitlab", host, "rest", 3, hourStart, 599, 600, nil))
+
+	ghRest, err := d.GetPlatformRateLimit("github", host, "rest")
+	require.NoError(err)
+	require.NotNil(ghRest)
+	assert.Equal("github", ghRest.Platform)
+	assert.Equal("rest", ghRest.APIType)
+	assert.Equal(1, ghRest.RequestsHour)
+
+	ghGraphQL, err := d.GetPlatformRateLimit("github", host, "graphql")
+	require.NoError(err)
+	require.NotNil(ghGraphQL)
+	assert.Equal("github", ghGraphQL.Platform)
+	assert.Equal("graphql", ghGraphQL.APIType)
+	assert.Equal(2, ghGraphQL.RequestsHour)
+
+	glRest, err := d.GetPlatformRateLimit("gitlab", host, "rest")
+	require.NoError(err)
+	require.NotNil(glRest)
+	assert.Equal("gitlab", glRest.Platform)
+	assert.Equal("rest", glRest.APIType)
+	assert.Equal(3, glRest.RequestsHour)
+
+	require.NoError(d.UpsertPlatformRateLimit("gitlab", host, "rest", 7, hourStart.Add(time.Hour), 593, 600, nil))
+	ghRest, err = d.GetPlatformRateLimit("github", host, "rest")
+	require.NoError(err)
+	require.NotNil(ghRest)
+	assert.Equal(1, ghRest.RequestsHour)
+	glRest, err = d.GetPlatformRateLimit("gitlab", host, "rest")
+	require.NoError(err)
+	require.NotNil(glRest)
+	assert.Equal(7, glRest.RequestsHour)
+}
+
 func TestUpdatePRState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

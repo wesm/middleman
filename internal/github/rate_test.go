@@ -34,6 +34,36 @@ func TestRateTrackerCounting(t *testing.T) {
 	assert.Equal(-1, rl.RateRemaining)
 }
 
+func TestRateTrackerScopesPersistenceByPlatform(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	host := "gitlab.example.com"
+	ghRT := NewPlatformRateTracker(d, "github", host, "rest")
+	glRT := NewPlatformRateTracker(d, "gitlab", host, "rest")
+
+	ghRT.RecordRequest()
+	glRT.RecordRequest()
+	glRT.RecordRequest()
+
+	ghRow, err := d.GetPlatformRateLimit("github", host, "rest")
+	require.NoError(err)
+	require.NotNil(ghRow)
+	assert.Equal("github", ghRow.Platform)
+	assert.Equal(1, ghRow.RequestsHour)
+
+	glRow, err := d.GetPlatformRateLimit("gitlab", host, "rest")
+	require.NoError(err)
+	require.NotNil(glRow)
+	assert.Equal("gitlab", glRow.Platform)
+	assert.Equal(2, glRow.RequestsHour)
+
+	reopenedGitLab := NewPlatformRateTracker(d, "gitlab", host, "rest")
+	assert.Equal(2, reopenedGitLab.RequestsThisHour())
+	assert.Equal("gitlab:"+host, reopenedGitLab.BucketKey())
+}
+
 func TestRateTrackerBackoff(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
