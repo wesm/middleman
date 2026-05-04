@@ -58,7 +58,7 @@ func WorktreeDiffFiles(
 		return nil, false, fmt.Errorf("git diff --numstat: %w", err)
 	}
 	applyWorktreeNumstat(files, parseWorktreeNumstatZ(numstatOut))
-	files = append(files, worktreeUntrackedFiles(ctx, dir, false)...)
+	files = append(files, worktreeUntrackedFiles(ctx, dir, false, hideWhitespace)...)
 	return files, true, nil
 }
 
@@ -108,7 +108,7 @@ func WorktreeDiff(
 			}
 		}
 	}
-	files = append(files, worktreeUntrackedFiles(ctx, dir, true)...)
+	files = append(files, worktreeUntrackedFiles(ctx, dir, true, hideWhitespace)...)
 
 	return &gitclone.DiffResult{
 		WhitespaceOnlyCount: wsCount,
@@ -149,6 +149,7 @@ func worktreeUntrackedFiles(
 	ctx context.Context,
 	dir string,
 	withHunks bool,
+	hideWhitespace bool,
 ) []gitclone.DiffFile {
 	out, err := worktreeGitOutput(
 		ctx, dir, "ls-files", "--others", "--exclude-standard", "-z",
@@ -178,6 +179,10 @@ func worktreeUntrackedFiles(
 		if content == nil {
 			file.IsBinary = true
 			files = append(files, file)
+			continue
+		}
+		if hideWhitespace && !bytes.Contains(content, []byte{0}) &&
+			len(bytes.TrimSpace(content)) == 0 {
 			continue
 		}
 		file.Additions = countAddedLines(content)

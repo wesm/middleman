@@ -57,6 +57,27 @@ func TestWorktreeDiffFilesHidesWhitespaceOnlyChanges(t *testing.T) {
 	assert.Equal("dirty-test.txt", files[0].Path)
 }
 
+func TestWorktreeDiffFilesHidesWhitespaceOnlyUntrackedFiles(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "dirty-test.txt"), []byte("test\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "z-blank.txt"), []byte(" \t\n"), 0o644,
+	))
+
+	files, ok, err := WorktreeDiffFiles(
+		t.Context(), work, WorktreeDiffBaseHead, true,
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.Len(files, 1)
+	assert.Equal("dirty-test.txt", files[0].Path)
+}
+
 func TestWorktreeDiffAgainstUpstreamIncludesLocalCommitsAndDirtyChanges(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

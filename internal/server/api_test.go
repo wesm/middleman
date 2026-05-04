@@ -10242,13 +10242,21 @@ func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
 		[]byte("package dirty\n"), 0o644,
 	))
 	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "z-blank.txt"),
+		[]byte(" \t\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "base.txt"),
 		[]byte("base  \n"), 0o644,
 	))
 
 	headFiles := requestWorkspaceFiles(t, srv, ws.Id, "head")
 	require.NotNil(headFiles.Files)
-	assertWorkspaceDiffPaths(t, *headFiles.Files, []string{"base.txt", "dirty.go"})
+	assertWorkspaceDiffPaths(
+		t,
+		*headFiles.Files,
+		[]string{"base.txt", "dirty.go", "z-blank.txt"},
+	)
 
 	headFilesHideWhitespace := requestWorkspaceFiles(
 		t, srv, ws.Id, "head", "hide",
@@ -10260,12 +10268,22 @@ func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
 		[]string{"dirty.go"},
 	)
 
+	headDiffHideWhitespace := requestWorkspaceDiff(
+		t, srv, ws.Id, "head", "hide",
+	)
+	require.NotNil(headDiffHideWhitespace.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*headDiffHideWhitespace.Files,
+		[]string{"dirty.go"},
+	)
+
 	originDiff := requestWorkspaceDiff(t, srv, ws.Id, "origin")
 	require.NotNil(originDiff.Files)
 	assertWorkspaceDiffPaths(
 		t,
 		*originDiff.Files,
-		[]string{"base.txt", "committed.go", "dirty.go"},
+		[]string{"base.txt", "committed.go", "dirty.go", "z-blank.txt"},
 	)
 	assert.Equal(int64(1), originDiff.WhitespaceOnlyCount)
 }
@@ -10348,12 +10366,17 @@ func requestWorkspaceDiff(
 	srv *Server,
 	workspaceID string,
 	base string,
+	whitespace ...string,
 ) generated.DiffResponse {
 	t.Helper()
 
+	query := "/api/v1/workspaces/" + workspaceID + "/diff?base=" + base
+	if len(whitespace) > 0 {
+		query += "&whitespace=" + whitespace[0]
+	}
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/v1/workspaces/"+workspaceID+"/diff?base="+base,
+		query,
 		nil,
 	)
 	rr := httptest.NewRecorder()
