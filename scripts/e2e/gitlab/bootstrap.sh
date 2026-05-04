@@ -11,6 +11,7 @@ fi
 : "${GITLAB_ROOT_PASSWORD:?GITLAB_ROOT_PASSWORD is required}"
 
 python3 - "$MANIFEST_PATH" <<'PY'
+import base64
 import json
 import os
 import sys
@@ -180,9 +181,14 @@ def ensure_branch_and_file(token, project):
         "commit_message": "Add GitLab fixture file",
     }
     try:
-        request("GET", f"/projects/{pid}/repository/files/{file_path}?ref=feature%2Fgitlab", token=token)
+        existing = request("GET", f"/projects/{pid}/repository/files/{file_path}?ref=feature%2Fgitlab", token=token)
+        encoded_content = "".join(existing.get("content", "").split())
+        if base64.b64decode(encoded_content).decode() == payload["content"]:
+            return
         request("PUT", f"/projects/{pid}/repository/files/{file_path}", token=token, data=payload)
-    except Exception:
+    except Exception as exc:
+        if " returned 404:" not in str(exc):
+            raise
         request("POST", f"/projects/{pid}/repository/files/{file_path}", token=token, data=payload)
 
 
