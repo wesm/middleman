@@ -23,6 +23,8 @@ const (
 	WorktreeDiffBaseUpstream WorktreeDiffBase = "origin"
 )
 
+const maxUntrackedTextFileBytes = 1 << 20
+
 func WorktreeDiffFiles(
 	ctx context.Context,
 	dir string,
@@ -173,6 +175,11 @@ func worktreeUntrackedFiles(
 		if !ok {
 			continue
 		}
+		if content == nil {
+			file.IsBinary = true
+			files = append(files, file)
+			continue
+		}
 		file.Additions = countAddedLines(content)
 		if bytes.Contains(content, []byte{0}) {
 			file.IsBinary = true
@@ -200,6 +207,9 @@ func readUntrackedFileContent(path string) ([]byte, bool) {
 	}
 	if !info.Mode().IsRegular() {
 		return nil, false
+	}
+	if info.Size() > maxUntrackedTextFileBytes {
+		return nil, true
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {

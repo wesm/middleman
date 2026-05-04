@@ -10270,6 +10270,50 @@ func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
 	assert.Equal(int64(1), originDiff.WhitespaceOnlyCount)
 }
 
+func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	secretDir := t.TempDir()
+	secretPath := filepath.Join(secretDir, "secret.txt")
+	require.NoError(os.WriteFile(secretPath, []byte("do not expose\n"), 0o644))
+	require.NoError(os.Symlink(
+		secretPath,
+		filepath.Join(ws.WorktreePath, "secret-link"),
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "large.txt"),
+		bytes.Repeat([]byte("x"), 2<<20),
+		0o644,
+	))
+
+	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	require.NotNil(diff.Files)
+
+	symlink := requireWorkspaceDiffFile(t, *diff.Files, "secret-link")
+	assert.Equal("added", symlink.Status)
+	assert.False(symlink.IsBinary)
+	assert.Equal(int64(1), symlink.Additions)
+	require.NotNil(symlink.Hunks)
+	require.Len(*symlink.Hunks, 1)
+	require.NotNil((*symlink.Hunks)[0].Lines)
+	require.Len(*(*symlink.Hunks)[0].Lines, 1)
+	line := (*(*symlink.Hunks)[0].Lines)[0]
+	assert.Equal(secretPath, line.Content)
+	assert.NotContains(line.Content, "do not expose")
+
+	large := requireWorkspaceDiffFile(t, *diff.Files, "large.txt")
+	assert.Equal("added", large.Status)
+	assert.True(large.IsBinary)
+	assert.Zero(large.Additions)
+	require.NotNil(large.Hunks)
+	assert.Empty(*large.Hunks)
+}
+
 func requestWorkspaceFiles(
 	t *testing.T,
 	srv *Server,
@@ -10321,6 +10365,22 @@ func requestWorkspaceDiff(
 	var body generated.DiffResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
+}
+
+func requireWorkspaceDiffFile(
+	t *testing.T,
+	files []generated.DiffFile,
+	path string,
+) generated.DiffFile {
+	t.Helper()
+
+	for _, file := range files {
+		if file.Path == path {
+			return file
+		}
+	}
+	require.Failf(t, "workspace diff file not found", "path %q", path)
+	return generated.DiffFile{}
 }
 
 func assertWorkspaceDiffPaths(

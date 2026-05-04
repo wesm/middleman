@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -142,4 +143,29 @@ func TestWorktreeDiffRendersUntrackedSymlinkTarget(t *testing.T) {
 	assert.Equal(secret, file.Hunks[0].Lines[0].Content)
 	assert.True(file.Hunks[0].Lines[0].NoNewline)
 	assert.NotContains(file.Hunks[0].Lines[0].Content, "do not expose")
+}
+
+func TestWorktreeDiffMarksLargeUntrackedFileBinary(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "large.txt"),
+		bytes.Repeat([]byte("x"), maxUntrackedTextFileBytes+1),
+		0o644,
+	))
+
+	diff, ok, err := WorktreeDiff(
+		t.Context(), work, WorktreeDiffBaseHead, false,
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+	require.Len(diff.Files, 1)
+
+	file := diff.Files[0]
+	assert.Equal("large.txt", file.Path)
+	assert.True(file.IsBinary)
+	assert.Zero(file.Additions)
+	assert.Empty(file.Hunks)
 }
