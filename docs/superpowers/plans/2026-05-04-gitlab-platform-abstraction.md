@@ -287,6 +287,11 @@ Only one route family should be implemented for new provider-aware clients after
 - Generated clients and frontend route refs must carry `provider`, `platform_host`, `repo_path`, and `number`; helper methods can split `repo_path` into `owner/name` only at DB and provider boundaries. For GitHub UI URLs, `provider` and default `github.com` host may remain omitted in the visible route only when the route helper can reconstruct the full repo ref.
 - Add e2e coverage for `group/subgroup/project` detail load and refresh through the Task 5 route shape before GitLab sync is considered complete.
 - The route proof must exercise the checked-in generated Go API client and frontend route helpers, not only the server handler. Tests should prove exactly one encode/decode cycle for `repo_path = "group/subgroup/project"`, including base path middleware and a `platform_host` that contains a port.
+- The route proof examples must include at least these repo refs:
+  - `gitlab.com`, `group/subgroup/project`
+  - `gitlab.example.com:8443`, `group/subgroup/subgroup2/project`
+  - `gitlab.com`, `Group/SubGroup/Project` after provider lookup returns that canonical spelling
+  - `gitlab.com`, `group/subgroup/my-project_v2`
 
 ### Error Taxonomy
 
@@ -652,8 +657,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Test: `internal/server/api_test.go`
 - Test: `packages/ui/src/routes.test.ts`
 
-- [ ] Write the first server integration test before adding the final route contract. It must issue a real HTTP request with `group%2Fsubgroup%2Fproject` and assert the handler receives one `repo_path` value, not split path segments.
-- [ ] Extend the route proof through the generated Go API client and frontend route helper, including base path middleware and a `platform_host` with a port. The test must prove exactly one encode/decode cycle for `repo_path = "group/subgroup/project"`.
+- [ ] Write the first server integration test before adding the final route contract. It must issue real HTTP requests with `group%2Fsubgroup%2Fproject`, `group%2Fsubgroup%2Fsubgroup2%2Fproject`, `Group%2FSubGroup%2FProject`, and `group%2Fsubgroup%2Fmy-project_v2`, then assert the handler receives one `repo_path` value, not split path segments.
+- [ ] Extend the route proof through the generated Go API client and frontend route helper, including base path middleware and `platform_host = "gitlab.example.com:8443"`. The test must prove exactly one encode/decode cycle for every route proof repo ref from the API Repository Identity section.
 - [ ] If Huma/server routing cannot preserve `%2F` as one parameter, switch this task to the query/body fallback route shape from the API Repository Identity section before proceeding.
 - [ ] Add `RepoRefInput`/`RepoRefResponse` API shapes with `provider`, `platform_host`, and `repo_path`.
 - [ ] Add parser tests for `repo_path = "owner/repo"` and `repo_path = "group/subgroup/project"`.
