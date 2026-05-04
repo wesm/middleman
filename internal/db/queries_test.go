@@ -2955,6 +2955,96 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 	})
 }
 
+func TestWorkspaceUniqueConstraintIncludesPlatform(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	_, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	_, err = d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "github-workspace",
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature",
+		WorktreePath: "/tmp/github-workspace",
+		TmuxSession:  "github-workspace",
+	}))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "gitlab-workspace",
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature",
+		WorktreePath: "/tmp/gitlab-workspace",
+		TmuxSession:  "gitlab-workspace",
+	}))
+}
+
+func TestWorkspaceSummariesDoNotJoinAcrossProviders(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	githubRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	gitlabRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	insertTestMRWithOptions(t, d, testMR(githubRepoID, 7, withMRTitle("github PR")))
+	insertTestMRWithOptions(t, d, testMR(gitlabRepoID, 7, withMRTitle("gitlab MR")))
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "gitlab-workspace",
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature",
+		WorktreePath: "/tmp/gitlab-workspace",
+		TmuxSession:  "gitlab-workspace",
+	}))
+
+	summary, err := d.GetWorkspaceSummary(ctx, "gitlab-workspace")
+	require.NoError(err)
+	require.NotNil(summary)
+	assert.Equal("gitlab", summary.Platform)
+	require.NotNil(summary.MRTitle)
+	assert.Equal("gitlab MR", *summary.MRTitle)
+}
+
 func TestWorkspaceSummaries(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

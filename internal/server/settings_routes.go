@@ -14,14 +14,18 @@ type updateSettingsInput struct {
 
 type addRepoInput struct {
 	Body struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
+		Provider     string `json:"provider,omitempty"`
+		PlatformHost string `json:"platform_host,omitempty"`
+		Owner        string `json:"owner"`
+		Name         string `json:"name"`
 	}
 }
 
 type repoConfigInput struct {
-	Owner string `path:"owner"`
-	Name  string `path:"name"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Provider     string `query:"provider"`
+	PlatformHost string `query:"platform_host"`
 }
 
 type settingsOutput = bodyOutput[settingsResponse]

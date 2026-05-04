@@ -216,6 +216,7 @@ func toRepoSummaryResponse(
 	defaultPlatformHost string,
 ) repoSummaryResponse {
 	resp := repoSummaryResponse{
+		Repo:                repoRefFromRepo(summary.Repo),
 		PlatformHost:        summary.Repo.PlatformHost,
 		DefaultPlatformHost: defaultPlatformHost,
 		Owner:               summary.Repo.Owner,

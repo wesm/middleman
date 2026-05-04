@@ -61,8 +61,11 @@ func canonicalRepoPattern(pattern string) string {
 }
 
 type ConfiguredRepoStatus struct {
+	Provider         string `json:"provider"`
+	PlatformHost     string `json:"platform_host"`
 	Owner            string `json:"owner"`
 	Name             string `json:"name"`
+	RepoPath         string `json:"repo_path"`
 	IsGlob           bool   `json:"is_glob"`
 	MatchedRepoCount int    `json:"matched_repo_count"`
 }
@@ -194,9 +197,12 @@ func resolveConfiguredRepo(
 	raw config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
 	status := ConfiguredRepoStatus{
-		Owner:  raw.Owner,
-		Name:   raw.Name,
-		IsGlob: raw.HasNameGlob(),
+		Provider:     raw.PlatformOrDefault(),
+		PlatformHost: raw.PlatformHostOrDefault(),
+		Owner:        raw.Owner,
+		Name:         raw.Name,
+		RepoPath:     raw.Owner + "/" + raw.Name,
+		IsGlob:       raw.HasNameGlob(),
 	}
 	kind := platform.Kind(raw.PlatformOrDefault())
 	host := raw.PlatformHostOrDefault()

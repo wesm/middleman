@@ -3174,29 +3174,39 @@ func (d *DB) GetRepoByHostOwnerName(
 
 // --- Workspaces ---
 
+func canonicalWorkspacePlatform(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		return "github"
+	}
+	return provider
+}
+
 func (d *DB) canonicalizeWorkspaceRepo(
 	ctx context.Context,
-	platformHost, owner, name string,
-) (string, string, string, string, string, string, error) {
+	provider, platformHost, owner, name string,
+) (string, string, string, string, string, string, string, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
 	host, ownerKey, nameKey := canonicalRepoLookupIdentifier(platformHost, owner, name)
 	pathKey := ownerKey + "/" + nameKey
 
-	var displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
+	var matchedProvider, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT owner, name, owner_key, name_key, repo_path_key
+		SELECT platform, owner, name, owner_key, name_key, repo_path_key
 		FROM middleman_repos
 		WHERE platform_host = ? AND repo_path_key = ?
+		  AND (? = '' OR platform = ?)
 		ORDER BY CASE WHEN platform <> 'github' THEN 0 ELSE 1 END, id
 		LIMIT 1`,
-		host, pathKey,
-	).Scan(&displayOwner, &displayName, &repoOwnerKey, &repoNameKey, &repoPathKey)
+		host, pathKey, provider, provider,
+	).Scan(&matchedProvider, &displayOwner, &displayName, &repoOwnerKey, &repoNameKey, &repoPathKey)
 	if errors.Is(err, sql.ErrNoRows) {
-		return host, ownerKey, nameKey, ownerKey, nameKey, pathKey, nil
+		return canonicalWorkspacePlatform(provider), host, ownerKey, nameKey, ownerKey, nameKey, pathKey, nil
 	}
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("lookup workspace repo identity: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("lookup workspace repo identity: %w", err)
 	}
-	return host, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey, nil
+	return matchedProvider, host, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey, nil
 }
 
 // InsertWorkspace inserts a new workspace row.
@@ -3205,24 +3215,24 @@ func (d *DB) InsertWorkspace(
 ) error {
 	var repoOwnerKey, repoNameKey, repoPathKey string
 	var err error
-	ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		repoOwnerKey, repoNameKey, repoPathKey, err = d.canonicalizeWorkspaceRepo(
 		ctx,
-		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
 		return err
 	}
 	_, err = d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
-		    (id, platform_host, repo_owner, repo_name,
+		    (id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, status,
 		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		repoOwnerKey, repoNameKey, repoPathKey,
 		ws.ItemType, ws.ItemNumber, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
@@ -3241,14 +3251,14 @@ func (d *DB) GetWorkspace(
 ) (*Workspace, error) {
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
+		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces WHERE id = ?`, id,
 	).Scan(
-		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
@@ -3274,7 +3284,7 @@ func (d *DB) GetWorkspaceByMR(
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
+		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
@@ -3284,7 +3294,7 @@ func (d *DB) GetWorkspaceByMR(
 		  AND repo_name_key = ? AND item_type = ? AND item_number = ?`,
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 	).Scan(
-		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
@@ -3310,7 +3320,7 @@ func (d *DB) GetWorkspaceByIssue(
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
+		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
@@ -3320,7 +3330,7 @@ func (d *DB) GetWorkspaceByIssue(
 		  AND repo_name_key = ? AND item_type = ? AND item_number = ?`,
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
 	).Scan(
-		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
@@ -3342,7 +3352,7 @@ func (d *DB) ListWorkspaces(
 	ctx context.Context,
 ) ([]Workspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, platform_host, repo_owner, repo_name,
+		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, status,
@@ -3359,7 +3369,7 @@ func (d *DB) ListWorkspaces(
 	for rows.Next() {
 		var ws Workspace
 		if err := rows.Scan(
-			&ws.ID, &ws.PlatformHost, &ws.RepoOwner,
+			&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner,
 			&ws.RepoName, &ws.ItemType, &ws.ItemNumber,
 			&ws.AssociatedPRNumber,
 			&ws.GitHeadRef, &ws.MRHeadRepo,
@@ -3679,7 +3689,7 @@ func (d *DB) DeleteWorkspace(
 // workspaceSummaryColumns is the SELECT list shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
-	w.id, w.platform_host, w.repo_owner, w.repo_name,
+	w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
 	w.item_type, w.item_number, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.status,
@@ -3700,7 +3710,8 @@ const workspaceSummaryColumns = `
 const workspaceSummaryJoins = `
 	FROM middleman_workspaces w
 	LEFT JOIN middleman_repos r
-	    ON r.platform_host = w.platform_host
+	    ON r.platform = w.platform
+	   AND r.platform_host = w.platform_host
 	   AND r.owner_key = w.repo_owner_key
 	   AND r.name_key = w.repo_name_key
 	LEFT JOIN middleman_merge_requests m
@@ -3717,7 +3728,7 @@ func scanWorkspaceSummary(
 ) (*WorkspaceSummary, error) {
 	var s WorkspaceSummary
 	err := scanner.Scan(
-		&s.ID, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
+		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.ItemType, &s.ItemNumber, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.Status,

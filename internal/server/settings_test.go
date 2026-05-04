@@ -776,6 +776,40 @@ name = "tools"
 	Assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
 }
 
+func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+
+	rr := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/repos/acme/widget?provider=gitlab&platform_host=gitlab.com", nil,
+	)
+	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
+
+	settingsRR := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, settingsRR.Code, settingsRR.Body.String())
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(settingsRR.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	Assert.Equal(t, "github", resp.Repos[0].Provider)
+	Assert.Equal(t, "github.com", resp.Repos[0].PlatformHost)
+}
+
 func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

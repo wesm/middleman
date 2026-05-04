@@ -16,6 +16,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -599,6 +600,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		}
 		resp := mergeRequestResponse{
 			MergeRequest:  mr,
+			Repo:          repoRefFromRepo(rp),
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
 			PlatformHost:  rp.PlatformHost,
@@ -660,6 +662,7 @@ func (s *Server) buildPullDetailResponse(
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
 		Events:           events,
+		Repo:             repoRefFromRepo(*repo),
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,
 		PlatformHost:     repo.PlatformHost,
@@ -1039,6 +1042,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		}
 		resp := issueResponse{
 			Issue:        issue,
+			Repo:         repoRefFromRepo(rp),
 			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
 			RepoName:     rp.Name,
@@ -1139,6 +1143,7 @@ func (s *Server) createIssue(
 
 	out := issueResponse{
 		Issue:        *savedIssue,
+		Repo:         repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1179,6 +1184,7 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 	issueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
+		Repo:         repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1969,6 +1975,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	syncIssueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
+		Repo:         repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -2055,9 +2062,19 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 
 	if s.cfg != nil {
+		tracked := make(map[string]struct{})
+		for _, repo := range s.syncer.TrackedRepos() {
+			tracked[trackedRepoKey(repo)] = struct{}{}
+		}
 		filtered := make([]db.ActivityItem, 0, len(items))
 		for _, it := range items {
-			if s.syncer.IsTrackedRepo(it.RepoOwner, it.RepoName) {
+			key := trackedRepoKey(ghclient.RepoRef{
+				Platform:     platform.Kind(it.Platform),
+				PlatformHost: it.PlatformHost,
+				Owner:        it.RepoOwner,
+				Name:         it.RepoName,
+			})
+			if _, ok := tracked[key]; ok {
 				filtered = append(filtered, it)
 			}
 		}
@@ -2075,6 +2092,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
+			Repo:         repoRefFromParts(it.Platform, it.PlatformHost, it.RepoOwner, it.RepoName),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,

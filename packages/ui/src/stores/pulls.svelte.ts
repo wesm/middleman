@@ -319,7 +319,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
         status: "found",
         pull: {
           ...mr,
-          platform_host: "",
+          repo: data.repo,
+          platform_host: data.platform_host,
           repo_owner: data.repo_owner,
           repo_name: data.repo_name,
           detail_loaded: data.detail_loaded,

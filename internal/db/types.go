@@ -298,6 +298,7 @@ type ActivityItem struct {
 	ActivityType string // new_pr, new_issue, comment, review, commit
 	Source       string // pr, issue, pre, ise
 	SourceID     int64  // PK from the source table
+	Platform     string
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
@@ -358,6 +359,7 @@ const (
 // pull request or issue.
 type Workspace struct {
 	ID                 string
+	Platform           string
 	PlatformHost       string
 	RepoOwner          string
 	RepoName           string

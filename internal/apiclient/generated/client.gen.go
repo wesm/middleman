@@ -35,20 +35,21 @@ type Activity struct {
 
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
-	ActivityType string `json:"activity_type"`
-	Author       string `json:"author"`
-	BodyPreview  string `json:"body_preview"`
-	CreatedAt    string `json:"created_at"`
-	Cursor       string `json:"cursor"`
-	Id           string `json:"id"`
-	ItemNumber   int64  `json:"item_number"`
-	ItemState    string `json:"item_state"`
-	ItemTitle    string `json:"item_title"`
-	ItemType     string `json:"item_type"`
-	ItemUrl      string `json:"item_url"`
-	PlatformHost string `json:"platform_host"`
-	RepoName     string `json:"repo_name"`
-	RepoOwner    string `json:"repo_owner"`
+	ActivityType string          `json:"activity_type"`
+	Author       string          `json:"author"`
+	BodyPreview  string          `json:"body_preview"`
+	CreatedAt    string          `json:"created_at"`
+	Cursor       string          `json:"cursor"`
+	Id           string          `json:"id"`
+	ItemNumber   int64           `json:"item_number"`
+	ItemState    string          `json:"item_state"`
+	ItemTitle    string          `json:"item_title"`
+	ItemType     string          `json:"item_type"`
+	ItemUrl      string          `json:"item_url"`
+	PlatformHost string          `json:"platform_host"`
+	Repo         RepoRefResponse `json:"repo"`
+	RepoName     string          `json:"repo_name"`
+	RepoOwner    string          `json:"repo_owner"`
 }
 
 // ActivityResponse defines model for ActivityResponse.
@@ -62,9 +63,11 @@ type ActivityResponse struct {
 // AddRepoInputBody defines model for AddRepoInputBody.
 type AddRepoInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Name   string  `json:"name"`
-	Owner  string  `json:"owner"`
+	Schema       *string `json:"$schema,omitempty"`
+	Name         string  `json:"name"`
+	Owner        string  `json:"owner"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Provider     *string `json:"provider,omitempty"`
 }
 
 // Agent defines model for Agent.
@@ -141,6 +144,9 @@ type ConfiguredRepoStatus struct {
 	MatchedRepoCount int64  `json:"matched_repo_count"`
 	Name             string `json:"name"`
 	Owner            string `json:"owner"`
+	PlatformHost     string `json:"platform_host"`
+	Provider         string `json:"provider"`
+	RepoPath         string `json:"repo_path"`
 }
 
 // CreateIssueInputBody defines model for CreateIssueInputBody.
@@ -308,15 +314,16 @@ type Issue struct {
 // IssueDetailResponse defines model for IssueDetailResponse.
 type IssueDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string       `json:"$schema,omitempty"`
-	DetailFetchedAt *string       `json:"detail_fetched_at,omitempty"`
-	DetailLoaded    bool          `json:"detail_loaded"`
-	Events          *[]IssueEvent `json:"events"`
-	Issue           Issue         `json:"issue"`
-	PlatformHost    string        `json:"platform_host"`
-	RepoName        string        `json:"repo_name"`
-	RepoOwner       string        `json:"repo_owner"`
-	Workspace       *WorkspaceRef `json:"workspace,omitempty"`
+	Schema          *string         `json:"$schema,omitempty"`
+	DetailFetchedAt *string         `json:"detail_fetched_at,omitempty"`
+	DetailLoaded    bool            `json:"detail_loaded"`
+	Events          *[]IssueEvent   `json:"events"`
+	Issue           Issue           `json:"issue"`
+	PlatformHost    string          `json:"platform_host"`
+	Repo            RepoRefResponse `json:"repo"`
+	RepoName        string          `json:"repo_name"`
+	RepoOwner       string          `json:"repo_owner"`
+	Workspace       *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 // IssueEvent defines model for IssueEvent.
@@ -338,28 +345,29 @@ type IssueEvent struct {
 // IssueResponse defines model for IssueResponse.
 type IssueResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string    `json:"$schema,omitempty"`
-	Author          string     `json:"Author"`
-	Body            string     `json:"Body"`
-	ClosedAt        *time.Time `json:"ClosedAt"`
-	CommentCount    int64      `json:"CommentCount"`
-	CreatedAt       time.Time  `json:"CreatedAt"`
-	ID              int64      `json:"ID"`
-	LastActivityAt  time.Time  `json:"LastActivityAt"`
-	Number          int64      `json:"Number"`
-	PlatformID      int64      `json:"PlatformID"`
-	RepoID          int64      `json:"RepoID"`
-	Starred         bool       `json:"Starred"`
-	State           string     `json:"State"`
-	Title           string     `json:"Title"`
-	URL             string     `json:"URL"`
-	UpdatedAt       time.Time  `json:"UpdatedAt"`
-	DetailFetchedAt *string    `json:"detail_fetched_at,omitempty"`
-	DetailLoaded    bool       `json:"detail_loaded"`
-	Labels          *[]Label   `json:"labels,omitempty"`
-	PlatformHost    string     `json:"platform_host"`
-	RepoName        string     `json:"repo_name"`
-	RepoOwner       string     `json:"repo_owner"`
+	Schema          *string         `json:"$schema,omitempty"`
+	Author          string          `json:"Author"`
+	Body            string          `json:"Body"`
+	ClosedAt        *time.Time      `json:"ClosedAt"`
+	CommentCount    int64           `json:"CommentCount"`
+	CreatedAt       time.Time       `json:"CreatedAt"`
+	ID              int64           `json:"ID"`
+	LastActivityAt  time.Time       `json:"LastActivityAt"`
+	Number          int64           `json:"Number"`
+	PlatformID      int64           `json:"PlatformID"`
+	RepoID          int64           `json:"RepoID"`
+	Starred         bool            `json:"Starred"`
+	State           string          `json:"State"`
+	Title           string          `json:"Title"`
+	URL             string          `json:"URL"`
+	UpdatedAt       time.Time       `json:"UpdatedAt"`
+	DetailFetchedAt *string         `json:"detail_fetched_at,omitempty"`
+	DetailLoaded    bool            `json:"detail_loaded"`
+	Labels          *[]Label        `json:"labels,omitempty"`
+	PlatformHost    string          `json:"platform_host"`
+	Repo            RepoRefResponse `json:"repo"`
+	RepoName        string          `json:"repo_name"`
+	RepoOwner       string          `json:"repo_owner"`
 }
 
 // Label defines model for Label.
@@ -486,6 +494,7 @@ type MergeRequestDetailResponse struct {
 	PlatformBaseSha  string                   `json:"platform_base_sha"`
 	PlatformHeadSha  string                   `json:"platform_head_sha"`
 	PlatformHost     string                   `json:"platform_host"`
+	Repo             RepoRefResponse          `json:"repo"`
 	RepoName         string                   `json:"repo_name"`
 	RepoOwner        string                   `json:"repo_owner"`
 	Warnings         *[]string                `json:"warnings,omitempty"`
@@ -529,6 +538,7 @@ type MergeRequestResponse struct {
 	DetailLoaded      bool                    `json:"detail_loaded"`
 	Labels            *[]Label                `json:"labels,omitempty"`
 	PlatformHost      string                  `json:"platform_host"`
+	Repo              RepoRefResponse         `json:"repo"`
 	RepoName          string                  `json:"repo_name"`
 	RepoOwner         string                  `json:"repo_owner"`
 	WorktreeLinks     *[]WorktreeLinkResponse `json:"worktree_links"`
@@ -641,6 +651,15 @@ type RepoPreviewRow struct {
 	PushedAt          *string `json:"pushed_at"`
 }
 
+// RepoRefResponse defines model for RepoRefResponse.
+type RepoRefResponse struct {
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+	Provider     string `json:"provider"`
+	RepoPath     string `json:"repo_path"`
+}
+
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
 type RepoSummaryAuthorResponse struct {
 	ItemCount int64  `json:"item_count"`
@@ -695,6 +714,7 @@ type RepoSummaryResponse struct {
 	PlatformHost         string                            `json:"platform_host"`
 	RecentIssues         *[]RepoSummaryIssueResponse       `json:"recent_issues"`
 	Releases             *[]RepoSummaryReleaseResponse     `json:"releases"`
+	Repo                 RepoRefResponse                   `json:"repo"`
 	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
 }
 
@@ -844,33 +864,34 @@ type WorkspaceRef struct {
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string `json:"$schema,omitempty"`
-	AssociatedPrNumber *int64  `json:"associated_pr_number,omitempty"`
-	CommitsAhead       *int64  `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int64  `json:"commits_behind,omitempty"`
-	CreatedAt          string  `json:"created_at"`
-	ErrorMessage       *string `json:"error_message,omitempty"`
-	GitHeadRef         string  `json:"git_head_ref"`
-	Id                 string  `json:"id"`
-	ItemNumber         int64   `json:"item_number"`
-	ItemType           string  `json:"item_type"`
-	MrAdditions        *int64  `json:"mr_additions,omitempty"`
-	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
-	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
-	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
-	MrState            *string `json:"mr_state,omitempty"`
-	MrTitle            *string `json:"mr_title,omitempty"`
-	PlatformHost       string  `json:"platform_host"`
-	RepoName           string  `json:"repo_name"`
-	RepoOwner          string  `json:"repo_owner"`
-	Status             string  `json:"status"`
-	TmuxActivitySource string  `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
-	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
-	TmuxSession        string  `json:"tmux_session"`
-	TmuxWorking        bool    `json:"tmux_working"`
-	WorktreePath       string  `json:"worktree_path"`
+	Schema             *string         `json:"$schema,omitempty"`
+	AssociatedPrNumber *int64          `json:"associated_pr_number,omitempty"`
+	CommitsAhead       *int64          `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int64          `json:"commits_behind,omitempty"`
+	CreatedAt          string          `json:"created_at"`
+	ErrorMessage       *string         `json:"error_message,omitempty"`
+	GitHeadRef         string          `json:"git_head_ref"`
+	Id                 string          `json:"id"`
+	ItemNumber         int64           `json:"item_number"`
+	ItemType           string          `json:"item_type"`
+	MrAdditions        *int64          `json:"mr_additions,omitempty"`
+	MrCiStatus         *string         `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64          `json:"mr_deletions,omitempty"`
+	MrIsDraft          *bool           `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string         `json:"mr_review_decision,omitempty"`
+	MrState            *string         `json:"mr_state,omitempty"`
+	MrTitle            *string         `json:"mr_title,omitempty"`
+	PlatformHost       string          `json:"platform_host"`
+	Repo               RepoRefResponse `json:"repo"`
+	RepoName           string          `json:"repo_name"`
+	RepoOwner          string          `json:"repo_owner"`
+	Status             string          `json:"status"`
+	TmuxActivitySource string          `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string         `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string         `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string          `json:"tmux_session"`
+	TmuxWorking        bool            `json:"tmux_working"`
+	WorktreePath       string          `json:"worktree_path"`
 }
 
 // WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.
@@ -919,6 +940,12 @@ type ListPullsParams struct {
 	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// DeleteRepoParams defines parameters for DeleteRepo.
+type DeleteRepoParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
+}
+
 // GetReposByOwnerByNameCommentAutocompleteParams defines parameters for GetReposByOwnerByNameCommentAutocomplete.
 type GetReposByOwnerByNameCommentAutocompleteParams struct {
 	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
@@ -954,6 +981,12 @@ type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// RefreshRepoParams defines parameters for RefreshRepo.
+type RefreshRepoParams struct {
+	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
+	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
 }
 
 // ListStacksParams defines parameters for ListStacks.
@@ -1136,7 +1169,7 @@ type ClientInterface interface {
 	ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteRepo request
-	DeleteRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteRepo(ctx context.Context, owner string, name string, params *DeleteRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReposByOwnerByName request
 	GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1247,7 +1280,7 @@ type ClientInterface interface {
 	EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RefreshRepo request
-	RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RefreshRepo(ctx context.Context, owner string, name string, params *RefreshRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetRoborevStatus request
 	GetRoborevStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1470,8 +1503,8 @@ func (c *Client) ListRepoSummaries(ctx context.Context, reqEditors ...RequestEdi
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteRepoRequest(c.Server, owner, name)
+func (c *Client) DeleteRepo(ctx context.Context, owner string, name string, params *DeleteRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteRepoRequest(c.Server, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1962,8 +1995,8 @@ func (c *Client) EnqueuePrSync(ctx context.Context, owner string, name string, n
 	return c.Client.Do(req)
 }
 
-func (c *Client) RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRefreshRepoRequest(c.Server, owner, name)
+func (c *Client) RefreshRepo(ctx context.Context, owner string, name string, params *RefreshRepoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshRepoRequest(c.Server, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2866,7 +2899,7 @@ func NewListRepoSummariesRequest(server string) (*http.Request, error) {
 }
 
 // NewDeleteRepoRequest generates requests for DeleteRepo
-func NewDeleteRepoRequest(server string, owner string, name string) (*http.Request, error) {
+func NewDeleteRepoRequest(server string, owner string, name string, params *DeleteRepoParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2896,6 +2929,44 @@ func NewDeleteRepoRequest(server string, owner string, name string) (*http.Reque
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
@@ -4606,7 +4677,7 @@ func NewEnqueuePrSyncRequest(server string, owner string, name string, number in
 }
 
 // NewRefreshRepoRequest generates requests for RefreshRepo
-func NewRefreshRepoRequest(server string, owner string, name string) (*http.Request, error) {
+func NewRefreshRepoRequest(server string, owner string, name string, params *RefreshRepoParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4636,6 +4707,44 @@ func NewRefreshRepoRequest(server string, owner string, name string) (*http.Requ
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PlatformHost != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -5374,7 +5483,7 @@ type ClientWithResponsesInterface interface {
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error)
 
 	// DeleteRepoWithResponse request
-	DeleteRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error)
+	DeleteRepoWithResponse(ctx context.Context, owner string, name string, params *DeleteRepoParams, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error)
 
 	// GetReposByOwnerByNameWithResponse request
 	GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error)
@@ -5485,7 +5594,7 @@ type ClientWithResponsesInterface interface {
 	EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
 
 	// RefreshRepoWithResponse request
-	RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
+	RefreshRepoWithResponse(ctx context.Context, owner string, name string, params *RefreshRepoParams, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
 
 	// GetRoborevStatusWithResponse request
 	GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoborevStatusResponse, error)
@@ -6960,8 +7069,8 @@ func (c *ClientWithResponses) ListRepoSummariesWithResponse(ctx context.Context,
 }
 
 // DeleteRepoWithResponse request returning *DeleteRepoResponse
-func (c *ClientWithResponses) DeleteRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error) {
-	rsp, err := c.DeleteRepo(ctx, owner, name, reqEditors...)
+func (c *ClientWithResponses) DeleteRepoWithResponse(ctx context.Context, owner string, name string, params *DeleteRepoParams, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error) {
+	rsp, err := c.DeleteRepo(ctx, owner, name, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7317,8 +7426,8 @@ func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, own
 }
 
 // RefreshRepoWithResponse request returning *RefreshRepoResponse
-func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error) {
-	rsp, err := c.RefreshRepo(ctx, owner, name, reqEditors...)
+func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, owner string, name string, params *RefreshRepoParams, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error) {
+	rsp, err := c.RefreshRepo(ctx, owner, name, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

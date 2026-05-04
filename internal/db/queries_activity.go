@@ -85,7 +85,7 @@ func (d *DB) ListActivity(
 	}
 
 	query := fmt.Sprintf(`
-		SELECT activity_type, source, source_id, platform_host,
+		SELECT activity_type, source, source_id, platform, platform_host,
 		       repo_owner, repo_name,
 		       item_type, item_number, item_title,
 		       item_url, item_state, author,
@@ -93,7 +93,7 @@ func (d *DB) ListActivity(
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
-			       r.platform_host, r.owner AS repo_owner, r.name AS repo_name,
+			       r.platform, r.platform_host, r.owner AS repo_owner, r.name AS repo_name,
 			       r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number,
 			       p.title AS item_title,
@@ -104,7 +104,7 @@ func (d *DB) ListActivity(
 			JOIN middleman_repos r ON p.repo_id = r.id
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id,
-			       r.platform_host, r.owner, r.name, r.repo_path_key,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
 			       i.author, i.created_at,
@@ -117,7 +117,7 @@ func (d *DB) ListActivity(
 			           ELSE e.event_type
 			       END,
 			       'pre', e.id,
-			       r.platform_host, r.owner, r.name, r.repo_path_key,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'pr', p.number, p.title,
 			       p.url, p.state,
 			       e.author, e.created_at,
@@ -129,7 +129,7 @@ func (d *DB) ListActivity(
 				'issue_comment', 'review', 'commit', 'force_push')
 			UNION ALL
 			SELECT 'comment', 'ise', e.id,
-			       r.platform_host, r.owner, r.name, r.repo_path_key,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
 			       e.author, e.created_at,
@@ -157,7 +157,7 @@ func (d *DB) ListActivity(
 		var createdAtStr string
 		if err := rows.Scan(
 			&it.ActivityType, &it.Source, &it.SourceID,
-			&it.PlatformHost, &it.RepoOwner, &it.RepoName,
+			&it.Platform, &it.PlatformHost, &it.RepoOwner, &it.RepoName,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
 			&it.ItemURL, &it.ItemState, &it.Author,
 			&createdAtStr, &it.BodyPreview,

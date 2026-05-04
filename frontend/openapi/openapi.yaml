@@ -63,6 +63,8 @@ components:
           type: string
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -71,6 +73,7 @@ components:
         - id
         - cursor
         - activity_type
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -118,6 +121,10 @@ components:
         name:
           type: string
         owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
           type: string
       required:
         - owner
@@ -283,9 +290,18 @@ components:
           type: string
         owner:
           type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
       required:
+        - provider
+        - platform_host
         - owner
         - name
+        - repo_path
         - is_glob
         - matched_repo_count
       type: object
@@ -701,6 +717,8 @@ components:
           $ref: "#/components/schemas/Issue"
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -710,6 +728,7 @@ components:
       required:
         - issue
         - events
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -826,11 +845,14 @@ components:
             - "null"
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
           type: string
       required:
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -1190,6 +1212,8 @@ components:
           type: string
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -1213,6 +1237,7 @@ components:
       required:
         - merge_request
         - events
+        - repo
         - repo_owner
         - repo_name
         - platform_host
@@ -1313,6 +1338,8 @@ components:
             - "null"
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -1324,6 +1351,7 @@ components:
             - array
             - "null"
       required:
+        - repo
         - repo_owner
         - repo_name
         - platform_host
@@ -1660,6 +1688,26 @@ components:
         - pushed_at
         - already_configured
       type: object
+    RepoRefResponse:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - repo_path
+        - owner
+        - name
+      type: object
     RepoSummaryAuthorResponse:
       additionalProperties: false
       properties:
@@ -1795,9 +1843,12 @@ components:
           type:
             - array
             - "null"
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         timeline_updated_at:
           type: string
       required:
+        - repo
         - platform_host
         - default_platform_host
         - owner
@@ -2214,6 +2265,8 @@ components:
           type: string
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -2236,6 +2289,7 @@ components:
           type: string
       required:
         - id
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -2604,6 +2658,16 @@ paths:
         - in: path
           name: name
           required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
           schema:
             type: string
       responses:
@@ -3681,6 +3745,16 @@ paths:
         - in: path
           name: name
           required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: provider
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_host
           schema:
             type: string
       responses:

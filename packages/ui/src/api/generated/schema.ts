@@ -880,6 +880,7 @@ export interface components {
             item_type: string;
             item_url: string;
             platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
         };
@@ -902,6 +903,8 @@ export interface components {
             readonly $schema?: string;
             name: string;
             owner: string;
+            platform_host?: string;
+            provider?: string;
         };
         Agent: {
             command: string[] | null;
@@ -977,6 +980,9 @@ export interface components {
             matched_repo_count: number;
             name: string;
             owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
         };
         CreateIssueInputBody: {
             /**
@@ -1195,6 +1201,7 @@ export interface components {
             events: components["schemas"]["IssueEvent"][] | null;
             issue: components["schemas"]["Issue"];
             platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
@@ -1256,6 +1263,7 @@ export interface components {
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
             platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
         };
@@ -1407,6 +1415,7 @@ export interface components {
             platform_base_sha: string;
             platform_head_sha: string;
             platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             warnings?: string[] | null;
@@ -1460,6 +1469,7 @@ export interface components {
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
             platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
@@ -1602,6 +1612,13 @@ export interface components {
             private: boolean;
             pushed_at: string | null;
         };
+        RepoRefResponse: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
+        };
         RepoSummaryAuthorResponse: {
             /** Format: int64 */
             item_count: number;
@@ -1655,6 +1672,7 @@ export interface components {
             platform_host: string;
             recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;
             releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
+            repo: components["schemas"]["RepoRefResponse"];
             timeline_updated_at?: string;
         };
         ResolveItemResponse: {
@@ -1853,6 +1871,7 @@ export interface components {
             mr_state?: string;
             mr_title?: string;
             platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
             status: string;
@@ -2245,7 +2264,10 @@ export interface operations {
     };
     "delete-repo": {
         parameters: {
-            query?: never;
+            query?: {
+                provider?: string;
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;
@@ -3227,7 +3249,10 @@ export interface operations {
     };
     "refresh-repo": {
         parameters: {
-            query?: never;
+            query?: {
+                provider?: string;
+                platform_host?: string;
+            };
             header?: never;
             path: {
                 owner: string;

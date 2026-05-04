@@ -915,6 +915,17 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
 	assert.Equal("github.com", (*resp.JSON200)[0].PlatformHost)
+
+	raw := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, raw.Code)
+	var body []struct {
+		Repo repoRefResponse `json:"repo"`
+	}
+	require.NoError(json.Unmarshal(raw.Body.Bytes(), &body))
+	require.Len(body, 1)
+	assert.Equal("github", body[0].Repo.Provider)
+	assert.Equal("github.com", body[0].Repo.PlatformHost)
+	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
 func TestAPIListPullsIncludesLabels(t *testing.T) {
@@ -8232,6 +8243,27 @@ func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	require.NotEmpty(*resp.JSON200.Items)
 	for _, item := range *resp.JSON200.Items {
 		assert.Equal("ghe.example.com", item.PlatformHost)
+		assert.Equal("acme", item.RepoOwner)
+		assert.Equal("widget", item.RepoName)
+	}
+}
+
+func TestAPIListActivityFiltersConfiguredReposByHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfig(t)
+
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var body activityResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.NotEmpty(body.Items)
+	for _, item := range body.Items {
+		assert.Equal("github.com", item.PlatformHost)
 		assert.Equal("acme", item.RepoOwner)
 		assert.Equal("widget", item.RepoName)
 	}
