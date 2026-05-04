@@ -182,13 +182,22 @@ GitLab nested namespaces make the existing `/repos/{owner}/{name}` route family 
 Rules:
 
 - Keep existing GitHub-compatible routes such as `/repos/{owner}/{name}/pulls/{number}` working for GitHub and GitHub Enterprise.
-- Add canonical platform-aware routes for every repo-scoped read, refresh, and mutation path before exposing GitLab rows. These routes use `repo_path` as one escaped path parameter:
+- Before committing to an escaped path-param route, prove Huma and the server middleware preserve `group%2Fsubgroup%2Fproject` as one handler parameter. If that test fails, keep the same `provider`, `platform_host`, and `repo_path` JSON shape but use the fallback route shape below.
+- Preferred route shape, if the router-level proof passes, uses `repo_path` as one escaped path parameter:
 
 ```text
 GET  /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/pull-requests/12
 POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/pull-requests/12/refresh
 POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/issues/7/refresh
 POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/pull-requests/12/actions
+```
+
+- Fallback route shape, if normal path params cannot preserve encoded slashes, uses query/body repo refs and does not rely on `%2F` surviving route matching:
+
+```text
+GET  /api/v1/items/pull-request?provider=gitlab&platform_host=gitlab.com&repo_path=group%2Fsubgroup%2Fproject&number=12
+POST /api/v1/items/pull-request/refresh
+POST /api/v1/items/issue/refresh
 ```
 
 - Request-body routes may use the same escaped repo path or the structured repo ref shape when the action already has a JSON body:
@@ -205,8 +214,9 @@ POST /api/v1/providers/gitlab/hosts/gitlab.com/repos/group%2Fsubgroup%2Fproject/
 ```
 
 - JSON request and response bodies use `provider` as the client-facing discriminator. Server internals can map `provider` to the existing `platform` storage field. New route path segments should also use `providers/{provider}` so generated clients expose `Provider` consistently.
+- Legacy GitHub routes should return the new `provider`, `platform_host`, and `repo_path` fields in response bodies as soon as the response types change. Compatibility is route-level, not response-shape-level, because frontend stores need one item identity shape.
 - Generated clients and frontend route refs must carry `provider`, `platform_host`, `repo_path`, and `number`; helper methods can split `repo_path` into `owner/name` only at DB and provider boundaries. For GitHub UI URLs, `provider` and default `github.com` host may remain omitted in the visible route only when the route helper can reconstruct the full repo ref.
-- Add e2e coverage for `group/subgroup/project` detail load and refresh through the escaped route shape before GitLab sync is considered complete.
+- Add e2e coverage for `group/subgroup/project` detail load and refresh through the Task 5 route shape before GitLab sync is considered complete.
 
 ### Error Taxonomy
 
@@ -227,6 +237,18 @@ const (
 ```
 
 Server handlers should return these codes in JSON error details for platform-aware routes. GitHub legacy routes may keep their current text messages until they are migrated, but new GitLab paths must use the coded errors from the start.
+
+| Source error | Platform code | HTTP status | Response detail |
+| --- | --- | --- | --- |
+| Provider registry miss | `provider_not_configured` | `502 Bad Gateway` | `{ "code": "provider_not_configured", "provider": "...", "platform_host": "..." }` |
+| Missing token during startup/client creation | `missing_token` | startup error or `502 Bad Gateway` in settings flows | `{ "code": "missing_token", "provider": "...", "token_env": "..." }` |
+| Config or request repo ref validation failure | `invalid_repo_ref` | `400 Bad Request` | `{ "code": "invalid_repo_ref", "field": "repo_path" }` |
+| Provider optional interface/capability absent | `unsupported_capability` | `501 Not Implemented` for route families, `409 Conflict` for item-specific actions | `{ "code": "unsupported_capability", "capability": "merge_mutation" }` |
+| GitHub/GitLab 401 or 403 | `permission_denied` | `502 Bad Gateway` for background/preview flows, provider status stored on sync rows | `{ "code": "permission_denied" }` |
+| GitHub/GitLab 404 | `not_found` | `404 Not Found` for direct user refresh/detail, `502 Bad Gateway` for startup/import validation | `{ "code": "not_found" }` |
+| GitHub/GitLab rate-limit response | `rate_limited` | `429 Too Many Requests` for foreground actions, sync backoff for background | `{ "code": "rate_limited", "reset_at": "..." }` |
+
+Provider clients should wrap raw GitHub/GitLab errors into typed platform errors at the transport boundary when status codes are known. HTTP handlers should only map typed platform errors to response codes and should avoid parsing raw provider error strings.
 
 ### GitLab Mapping
 
@@ -280,11 +302,20 @@ Migration `000017` must be safe for existing databases:
 GitLab host configuration is host-only in the first milestone:
 
 - `platform_host = "gitlab.example.com"` maps to API base URL `https://gitlab.example.com/api/v4`.
+- `platform_host = "gitlab.example.com:8443"` is valid and maps to `https://gitlab.example.com:8443/api/v4`.
 - A host value with `https://` or a trailing slash is normalized to the hostname and rejected if it includes a non-root path.
 - GitLab installations under a subpath, such as `https://example.com/gitlab`, are explicitly unsupported in this milestone and should fail validation with `invalid_repo_ref`.
 - Custom CA and insecure TLS settings are out of scope. Users must rely on the host OS trust store.
 
+### Repo Path Canonicalization
+
+- GitHub repo paths are case-folded to match current behavior.
+- GitLab repo paths are stored using the canonical `path_with_namespace` returned by GitLab. User input can be normalized after a successful project lookup, but duplicate detection should compare the provider-canonical path rather than lowercasing arbitrary input.
+- UI search can remain case-insensitive, but provider lookups and persisted identity should preserve GitLab's canonical path spelling.
+
 ## Implementation Tasks
+
+Standing rule for API work: every task that changes Huma routes, request schemas, response schemas, or OpenAPI-visible error details must run `make api-generate` in that same task and commit the regenerated artifacts with the contract change.
 
 ### Task 1: Add Neutral Platform Types
 
@@ -351,8 +382,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - [ ] Keep `GitHubToken()` and add `TokenForPlatformHost(platform, host, repoTokenEnv string)`.
 - [ ] Teach URL parsing to accept GitLab HTTP/SSH URLs, including nested namespace paths.
 - [ ] Reject ambiguous GitLab URLs with fewer than two path segments.
-- [ ] Normalize `https://gitlab.example.com/` to `gitlab.example.com`; reject `https://example.com/gitlab` subpath installs with `invalid_repo_ref`.
-- [ ] Add tests for old GitHub config, GitHub Enterprise config, GitLab env token config, nested GitLab namespace config, self-hosted GitLab host normalization, subpath rejection, duplicate detection across platform/host, and token env conflicts scoped to `(platform, host)`.
+- [ ] Normalize `https://gitlab.example.com/` to `gitlab.example.com`; preserve valid host ports such as `gitlab.example.com:8443`; reject `https://example.com/gitlab` subpath installs with `invalid_repo_ref`.
+- [ ] Add tests for old GitHub config, GitHub Enterprise config, GitLab env token config, nested GitLab namespace config, self-hosted GitLab host normalization, host port preservation, subpath rejection, duplicate detection across platform/host, and token env conflicts scoped to `(platform, host)`.
 - [ ] Run `go test ./internal/config -shuffle=on`.
 - [ ] Commit: `feat: configure repositories by platform`.
 
@@ -382,6 +413,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 - Test: `internal/server/api_test.go`
 - Test: `packages/ui/src/routes.test.ts`
 
+- [ ] Write the first server integration test before adding the final route contract. It must issue a real HTTP request with `group%2Fsubgroup%2Fproject` and assert the handler receives one `repo_path` value, not split path segments.
+- [ ] If Huma/server routing cannot preserve `%2F` as one parameter, switch this task to the query/body fallback route shape from the API Repository Identity section before proceeding.
 - [ ] Add `RepoRefInput`/`RepoRefResponse` API shapes with `provider`, `platform_host`, and `repo_path`.
 - [ ] Add parser tests for `repo_path = "owner/repo"` and `repo_path = "group/subgroup/project"`.
 - [ ] Add platform-aware routes using escaped `repo_path` as one route parameter:
@@ -394,6 +427,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 ```
 
 - [ ] Keep existing GitHub routes as compatibility wrappers that build a full repo ref and call the same handler internals.
+- [ ] Ensure legacy GitHub route responses include `provider`, `platform_host`, and `repo_path` once the shared response types change.
 - [ ] Return coded platform errors from new routes for invalid repo refs, missing provider clients, and unsupported capabilities.
 - [ ] Run `make api-generate` immediately after the route contract changes.
 - [ ] Run `go test ./internal/server -run 'Test.*RepoRef|Test.*Pull.*Route|Test.*Issue.*Route' -shuffle=on`.
@@ -509,6 +543,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Return provider and host on preview rows.
 - [ ] Update bulk add request rows to include provider, host, and `repo_path`.
 - [ ] Validate exact rows through the matching provider registry client.
+- [ ] Store the provider-canonical `repo_path` returned by lookup. GitHub paths continue to case-fold; GitLab paths preserve `path_with_namespace`.
 - [ ] Keep old GitHub-only requests working.
 - [ ] Add full-stack e2e coverage using a fake GitLab API server and real SQLite: preview GitLab repos, add one exact repo, trigger syncer tracked repo update.
 - [ ] Run `make api-generate` immediately after changing preview or bulk request/response contracts.
@@ -548,7 +583,7 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Assert repo row has `platform = 'gitlab'`, GitLab host, namespace path, project id, web URL, clone URL, and default branch.
 - [ ] Assert MR row has `number = iid`, `platform_id = id`, draft/state/branches/labels/CI status populated.
 - [ ] Assert issue row and comments/events are populated.
-- [ ] Assert nested namespace detail and refresh calls work through `/repos/group%2Fsubgroup%2Fproject/...` style platform-aware routes.
+- [ ] Assert nested namespace detail and refresh calls work through the Task 5 route shape selected by the router proof: escaped `repo_path` path parameter when supported, otherwise the query/body fallback.
 - [ ] Assert GitHub rows remain absent.
 - [ ] Run `go test ./internal/server -run TestGitLabSync -shuffle=on`.
 - [ ] Commit: `test: cover GitLab repository sync end to end`.
@@ -585,7 +620,7 @@ Do not run `npm` commands; use Bun for frontend work.
 
 ## Risk Notes
 
-- GitLab nested namespaces are the main identity wrinkle. The plan stores the full namespace in `owner`; new routes must carry a single escaped `repo_path` parameter and generated JSON types must thread `provider`, `platform_host`, and `repo_path` everywhere they address a repo-scoped item.
+- GitLab nested namespaces are the main identity wrinkle. The plan stores the full namespace in `owner`; Task 5 must prove the server can preserve a single escaped `repo_path` route parameter before using that route shape. If the proof fails, the implementation must use the query/body fallback while still threading `provider`, `platform_host`, and `repo_path` everywhere it addresses a repo-scoped item.
 - GitHub GraphQL bulk sync should stay GitHub-specific. Trying to model GitLab through the GitHub GraphQL bulk fetcher will make the abstraction brittle.
 - Mutation parity is intentionally not part of the first GitLab milestone. Capability flags make this visible and prevent GitLab rows from showing buttons that cannot work.
 - Rate limits are not identical across providers. The DB can keep `api_type`, but provider clients should name buckets as `rest`, `graphql`, or `gitlab-rest` as needed.
