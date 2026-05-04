@@ -37,6 +37,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
 	"github.com/wesm/middleman/internal/workspace"
@@ -381,6 +382,110 @@ func (m *mockGH) ListIssuesPage(
 // InvalidateListETagsForRepo is a no-op for the server test mock,
 // which has no underlying HTTP cache.
 func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
+
+type apiTestGitLabProvider struct {
+	ref           platform.RepoRef
+	mergeRequests []platform.MergeRequest
+	issues        []platform.Issue
+}
+
+func (p *apiTestGitLabProvider) Platform() platform.Kind {
+	return platform.KindGitLab
+}
+
+func (p *apiTestGitLabProvider) Host() string {
+	return p.ref.Host
+}
+
+func (p *apiTestGitLabProvider) Capabilities() platform.Capabilities {
+	return platform.Capabilities{
+		ReadRepositories:  true,
+		ReadMergeRequests: true,
+		ReadIssues:        true,
+	}
+}
+
+func (p *apiTestGitLabProvider) GetRepository(
+	context.Context,
+	platform.RepoRef,
+) (platform.Repository, error) {
+	return platform.Repository{
+		Ref:                p.ref,
+		PlatformID:         p.ref.PlatformID,
+		PlatformExternalID: p.ref.PlatformExternalID,
+		DefaultBranch:      p.ref.DefaultBranch,
+		WebURL:             p.ref.WebURL,
+		CloneURL:           p.ref.CloneURL,
+	}, nil
+}
+
+func (p *apiTestGitLabProvider) ListRepositories(
+	context.Context,
+	string,
+	platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	repo, err := p.GetRepository(context.Background(), p.ref)
+	if err != nil {
+		return nil, err
+	}
+	return []platform.Repository{repo}, nil
+}
+
+func (p *apiTestGitLabProvider) ListOpenMergeRequests(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.MergeRequest, error) {
+	return p.mergeRequests, nil
+}
+
+func (p *apiTestGitLabProvider) GetMergeRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	for _, mr := range p.mergeRequests {
+		if mr.Number == number {
+			return mr, nil
+		}
+	}
+	return platform.MergeRequest{}, fmt.Errorf("missing merge request %d", number)
+}
+
+func (p *apiTestGitLabProvider) ListMergeRequestEvents(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.MergeRequestEvent, error) {
+	return nil, nil
+}
+
+func (p *apiTestGitLabProvider) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+) ([]platform.Issue, error) {
+	return p.issues, nil
+}
+
+func (p *apiTestGitLabProvider) GetIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (platform.Issue, error) {
+	for _, issue := range p.issues {
+		if issue.Number == number {
+			return issue, nil
+		}
+	}
+	return platform.Issue{}, fmt.Errorf("missing issue %d", number)
+}
+
+func (p *apiTestGitLabProvider) ListIssueEvents(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.IssueEvent, error) {
+	return nil, nil
+}
 
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB) {
@@ -2146,6 +2251,115 @@ func TestAPIListRepos(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].Owner)
 	require.Equal("widget", (*resp.JSON200)[0].Name)
+}
+
+func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group/subgroup",
+		Name:               "project",
+		RepoPath:           "group/subgroup/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/subgroup/project",
+		CloneURL:           "https://gitlab.example.com/group/subgroup/project.git",
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               ref,
+			PlatformID:         7001,
+			PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+			Number:             7,
+			URL:                "https://gitlab.example.com/group/subgroup/project/-/merge_requests/7",
+			Title:              "GitLab provider MR",
+			Author:             "ada",
+			State:              "open",
+			HeadBranch:         "feature/gitlab",
+			BaseBranch:         "main",
+			HeadSHA:            "abc123",
+			BaseSHA:            "def456",
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	cfg := &config.Config{
+		BasePath: "/",
+		Repos: []config.Repo{{
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			Owner:        "group/subgroup",
+			Name:         "project",
+		}},
+	}
+	_, repos, err := ghclient.ResolveConfiguredRepoWithRegistry(
+		ctx, registry, cfg.Repos[0],
+	)
+	require.NoError(err)
+	require.Equal([]ghclient.RepoRef{{
+		Platform:     platform.KindGitLab,
+		Owner:        "group/subgroup",
+		Name:         "project",
+		PlatformHost: "gitlab.example.com",
+	}}, repos)
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(
+		database, syncer, nil, nil, cfg,
+		filepath.Join(dir, "config.toml"), ServerOptions{},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+
+	repoRow, err := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repoRow)
+	require.NotNil(repoRow.LastSyncCompletedAt)
+	assert.Equal("gitlab", repoRow.Platform)
+	assert.Equal("gitlab.example.com", repoRow.PlatformHost)
+
+	reposResp, err := client.HTTP.ListReposWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, reposResp.StatusCode())
+	require.NotNil(reposResp.JSON200)
+	require.Len(*reposResp.JSON200, 1)
+	assert.Equal("gitlab", (*reposResp.JSON200)[0].Platform)
+	assert.Equal("gitlab.example.com", (*reposResp.JSON200)[0].PlatformHost)
+	assert.Equal("group/subgroup", (*reposResp.JSON200)[0].Owner)
+	assert.Equal("project", (*reposResp.JSON200)[0].Name)
+
+	pullsResp, err := client.HTTP.ListPullsWithResponse(
+		ctx, &generated.ListPullsParams{},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullsResp.StatusCode())
+	require.NotNil(pullsResp.JSON200)
+	require.Len(*pullsResp.JSON200, 1)
+	assert.Equal("gitlab.example.com", (*pullsResp.JSON200)[0].PlatformHost)
+	assert.Equal("group/subgroup", (*pullsResp.JSON200)[0].RepoOwner)
+	assert.Equal("project", (*pullsResp.JSON200)[0].RepoName)
+	assert.Equal("GitLab provider MR", (*pullsResp.JSON200)[0].Title)
 }
 
 func TestAPIListRepoSummaries(t *testing.T) {

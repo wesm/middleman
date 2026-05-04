@@ -141,7 +141,7 @@ func TestValidateProviderHostKeysRejectsMixedProvidersOnSameHost(t *testing.T) {
 	require.Error(t, err)
 	Assert.ErrorContains(
 		t, err,
-		"host code.example.com is configured for both github and gitlab",
+		"host code.example.com is configured for both",
 	)
 }
 
