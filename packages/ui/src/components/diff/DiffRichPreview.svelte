@@ -34,12 +34,13 @@
   const displayText = $derived(formatText(file.path, text));
 
   $effect(() => {
+    const sourceFile = file;
     if (!active || isMarkdownFile) return;
     const version = ++requestVersion;
     loading = true;
     error = null;
     preview = null;
-    void diffStore.loadFilePreview(owner, name, number, file.path)
+    void diffStore.loadFilePreview(owner, name, number, sourceFile.path)
       .then((result) => {
         if (version !== requestVersion) return;
         preview = result;

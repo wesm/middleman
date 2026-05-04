@@ -482,6 +482,65 @@ test.describe("diff view", () => {
       .toBeVisible();
   });
 
+  test("rich preview refetches blob content after a same-PR diff reload", async ({ page }) => {
+    const firstLogo =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8AARQAFAAH/Adf2d8wAAAAASUVORK5CYII=";
+    const secondLogo =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+    const logoResponses = [firstLogo, secondLogo];
+    let diffFetchCount = 0;
+    let previewFetchCount = 0;
+
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(smallDiff)),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+      diffFetchCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(smallDiff),
+      });
+    });
+    await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+      const content = logoResponses[Math.min(previewFetchCount, logoResponses.length - 1)]!;
+      previewFetchCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "assets/logo.png",
+          media_type: "image/png",
+          encoding: "base64",
+          content,
+        }),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await page.getByRole("switch", { name: "Rich preview" }).click();
+    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+
+    const image = page.locator(".diff-image-preview img[alt='assets/logo.png']");
+    await expect(image).toHaveAttribute("src", `data:image/png;base64,${firstLogo}`);
+    expect(previewFetchCount).toBe(1);
+
+    const initialDiffFetchCount = diffFetchCount;
+    await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
+    await expect.poll(() => diffFetchCount).toBeGreaterThan(initialDiffFetchCount);
+    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+
+    await expect.poll(() => previewFetchCount).toBe(2);
+    await expect(image).toHaveAttribute("src", `data:image/png;base64,${secondLogo}`);
+  });
+
   test("changed file category filter narrows the sidebar and rendered diff", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

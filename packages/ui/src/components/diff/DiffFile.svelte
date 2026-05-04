@@ -21,7 +21,9 @@
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
   const richPreview = $derived(diffStore.getRichPreview());
+  const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
   const showRichPreview = $derived(richPreview && supportsRichPreview(file.path));
+  const richPreviewKey = $derived(`${file.path}:${filePreviewGeneration}`);
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -212,13 +214,15 @@
   {#if !collapsed}
     <div class="file-content">
       {#if showRichPreview}
-        <DiffRichPreview
-          {file}
-          {owner}
-          {name}
-          {number}
-          active={inViewport}
-        />
+        {#key richPreviewKey}
+          <DiffRichPreview
+            {file}
+            {owner}
+            {name}
+            {number}
+            active={inViewport}
+          />
+        {/key}
       {:else if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
