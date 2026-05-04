@@ -2,6 +2,7 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import WorkspaceDiffTab from "./WorkspaceDiffTab.svelte";
   import WorkspaceHome from "./WorkspaceHome.svelte";
   import WorkspaceTabs from "./WorkspaceTabs.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
@@ -1020,6 +1021,9 @@
                   onSelectHome={() => {
                     selectWorkspaceTab("home");
                   }}
+                  onSelectDiff={() => {
+                    selectWorkspaceTab("diff");
+                  }}
                   onSelectTmux={() => {
                     tmuxTerminalMounted = true;
                     selectWorkspaceTab("tmux");
@@ -1073,6 +1077,15 @@
                       {launchingKey}
                       onLaunch={(key) => void handleLaunch(key)}
                       onOpenSession={openSession}
+                    />
+                  </div>
+                  <div
+                    class="stage-pane"
+                    class:active={activeTabKey === "diff"}
+                  >
+                    <WorkspaceDiffTab
+                      {workspace}
+                      active={activeTabKey === "diff"}
                     />
                   </div>
                   {#if tmuxTabOpen}

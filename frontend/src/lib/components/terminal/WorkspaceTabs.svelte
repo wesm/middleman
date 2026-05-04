@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import XIcon from "@lucide/svelte/icons/x";
+  import FileDiffIcon from "@lucide/svelte/icons/file-diff";
   import HouseIcon from "@lucide/svelte/icons/house";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
@@ -10,6 +11,7 @@
     sessions: RuntimeSession[];
     tmuxOpen?: boolean;
     onSelectHome?: () => void;
+    onSelectDiff?: () => void;
     onSelectTmux?: () => void;
     onSelectSession?: (sessionKey: string) => void;
     onCloseTmux?: () => void;
@@ -21,6 +23,7 @@
     sessions,
     tmuxOpen = false,
     onSelectHome,
+    onSelectDiff,
     onSelectTmux,
     onSelectSession,
     onCloseTmux,
@@ -45,6 +48,18 @@
       <HouseIcon size="13" strokeWidth="2" />
     </span>
     <span class="tab-label">Home</span>
+  </button>
+
+  <button
+    role="tab"
+    aria-selected={activeKey === "diff"}
+    class={["tab", "tab-home", { active: activeKey === "diff" }]}
+    onclick={() => onSelectDiff?.()}
+  >
+    <span class="tab-icon" aria-hidden="true">
+      <FileDiffIcon size="13" strokeWidth="2" />
+    </span>
+    <span class="tab-label">Diff</span>
   </button>
 
   {#if tmuxOpen}

@@ -271,6 +271,12 @@ type getWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
+type getWorkspaceDiffInput struct {
+	ID         string `path:"id"`
+	Base       string `query:"base"      doc:"Diff base: head or origin"`
+	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
+}
+
 type retryWorkspaceInput struct {
 	ID string `path:"id"`
 }
@@ -303,6 +309,9 @@ type listWorkspacesOutputBody struct {
 type listWorkspacesOutput = bodyOutput[listWorkspacesOutputBody]
 
 type getWorkspaceOutput = bodyOutput[workspaceResponse]
+
+type getWorkspaceDiffOutput = bodyOutput[diffResponse]
+type getWorkspaceFilesOutput = bodyOutput[filesResponse]
 
 type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
 
@@ -502,6 +511,8 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.createIssueWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces)
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
+	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff)
+	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles)
 	huma.Register(api, huma.Operation{
 		OperationID:   "retry-workspace",
 		Method:        http.MethodPost,
@@ -2967,6 +2978,113 @@ func (s *Server) getWorkspace(
 	return &getWorkspaceOutput{
 		Body: s.toWorkspaceResponse(ctx, summary),
 	}, nil
+}
+
+func (s *Server) getWorkspaceFiles(
+	ctx context.Context, input *getWorkspaceDiffInput,
+) (*getWorkspaceFilesOutput, error) {
+	summary, base, err := s.workspaceDiffRequest(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	files, ok, diffErr := workspace.WorktreeDiffFiles(
+		ctx, summary.WorktreePath, base,
+	)
+	if diffErr != nil {
+		slog.Error(
+			"failed to list workspace diff files",
+			"workspace_id", input.ID,
+			"base", base,
+			"err", diffErr,
+		)
+		return nil, huma.Error502BadGateway(
+			"failed to list workspace files",
+		)
+	}
+	if !ok {
+		return nil, huma.Error404NotFound(
+			"workspace origin branch not available",
+		)
+	}
+	return &getWorkspaceFilesOutput{Body: filesResponse{
+		Stale: false,
+		Files: files,
+	}}, nil
+}
+
+func (s *Server) getWorkspaceDiff(
+	ctx context.Context, input *getWorkspaceDiffInput,
+) (*getWorkspaceDiffOutput, error) {
+	summary, base, err := s.workspaceDiffRequest(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	hideWhitespace := input.Whitespace == "hide"
+	result, ok, diffErr := workspace.WorktreeDiff(
+		ctx, summary.WorktreePath, base, hideWhitespace,
+	)
+	if diffErr != nil {
+		slog.Error(
+			"failed to compute workspace diff",
+			"workspace_id", input.ID,
+			"base", base,
+			"err", diffErr,
+		)
+		return nil, huma.Error502BadGateway(
+			"failed to compute workspace diff",
+		)
+	}
+	if !ok {
+		return nil, huma.Error404NotFound(
+			"workspace origin branch not available",
+		)
+	}
+	return &getWorkspaceDiffOutput{Body: diffResponse{
+		Stale:               false,
+		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
+		Files:               result.Files,
+	}}, nil
+}
+
+func (s *Server) workspaceDiffRequest(
+	ctx context.Context,
+	input *getWorkspaceDiffInput,
+) (*db.WorkspaceSummary, workspace.WorktreeDiffBase, error) {
+	if s.workspaces == nil {
+		return nil, "", huma.Error503ServiceUnavailable(
+			"workspace manager not configured",
+		)
+	}
+
+	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	if err != nil {
+		return nil, "", huma.Error500InternalServerError(
+			"get workspace failed",
+		)
+	}
+	if summary == nil {
+		return nil, "", huma.Error404NotFound("workspace not found")
+	}
+	if summary.Status != "ready" {
+		return nil, "", huma.Error409Conflict(
+			"workspace is not ready",
+		)
+	}
+
+	base := workspace.WorktreeDiffBase(input.Base)
+	if base == "" {
+		base = workspace.WorktreeDiffBaseHead
+	}
+	switch base {
+	case workspace.WorktreeDiffBaseHead, workspace.WorktreeDiffBaseUpstream:
+		return summary, base, nil
+	default:
+		return nil, "", huma.Error400BadRequest(
+			"base must be head or origin",
+		)
+	}
 }
 
 func (s *Server) retryWorkspace(

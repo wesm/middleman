@@ -4029,6 +4029,80 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get workspaces by ID
+  /workspaces/{id}/diff:
+    get:
+      operationId: get-workspaces-by-id-diff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "Diff base: head or origin"
+          explode: false
+          in: query
+          name: base
+          schema:
+            description: "Diff base: head or origin"
+            type: string
+        - description: Set to hide to ignore whitespace-only changes
+          explode: false
+          in: query
+          name: whitespace
+          schema:
+            description: Set to hide to ignore whitespace-only changes
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get workspaces by ID diff
+  /workspaces/{id}/files:
+    get:
+      operationId: get-workspaces-by-id-files
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "Diff base: head or origin"
+          explode: false
+          in: query
+          name: base
+          schema:
+            description: "Diff base: head or origin"
+            type: string
+        - description: Set to hide to ignore whitespace-only changes
+          explode: false
+          in: query
+          name: whitespace
+          schema:
+            description: Set to hide to ignore whitespace-only changes
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get workspaces by ID files
   /workspaces/{id}/retry:
     post:
       operationId: retry-workspace

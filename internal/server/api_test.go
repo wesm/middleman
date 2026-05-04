@@ -10220,6 +10220,104 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	assert.Equal(int64(0), *found.CommitsBehind)
 }
 
+func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "committed.go"),
+		[]byte("package committed\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dirty.go"),
+		[]byte("package dirty\n"), 0o644,
+	))
+
+	headFiles := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	require.NotNil(headFiles.Files)
+	assertWorkspaceDiffPaths(t, *headFiles.Files, []string{"dirty.go"})
+
+	originDiff := requestWorkspaceDiff(t, srv, ws.Id, "origin")
+	require.NotNil(originDiff.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*originDiff.Files,
+		[]string{"committed.go", "dirty.go"},
+	)
+	assert.Equal(int64(0), originDiff.WhitespaceOnlyCount)
+}
+
+func requestWorkspaceFiles(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	base string,
+) generated.FilesResponse {
+	t.Helper()
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/workspaces/"+workspaceID+"/files?base="+base,
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body generated.FilesResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func requestWorkspaceDiff(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	base string,
+) generated.DiffResponse {
+	t.Helper()
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/workspaces/"+workspaceID+"/diff?base="+base,
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body generated.DiffResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func assertWorkspaceDiffPaths(
+	t *testing.T,
+	files []generated.DiffFile,
+	want []string,
+) {
+	t.Helper()
+
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+	Assert.Equal(t, want, paths)
+}
+
 func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

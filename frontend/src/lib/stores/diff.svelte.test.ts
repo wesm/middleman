@@ -96,6 +96,53 @@ afterEach(() => {
 });
 
 describe("createDiffStore loadDiff", () => {
+  it("loads workspace diffs with the selected base", async () => {
+    const calls: string[] = [];
+    const files = makeFilesResult([
+      "src/app.go",
+      "src/app_test.go",
+      "docs/plan.md",
+    ]);
+    const diff = makeDiffResult([
+      "src/app.go",
+      "src/app_test.go",
+      "docs/plan.md",
+    ]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        calls.push(url);
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(files);
+        }
+        if (url.includes("/workspaces/ws-1/diff")) {
+          return Response.json(diff);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+
+    await store.loadWorkspaceDiff("ws-1", "origin");
+
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=origin");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=origin");
+    expect(store.getFileCategoryCounts()).toEqual({
+      all: 3,
+      plansDocs: 1,
+      code: 1,
+      tests: 1,
+      other: 0,
+    });
+  });
+
   it("clears stale data when switching PRs", async () => {
     const filesA = makeFilesResult(["a.ts"]);
     const diffA = makeDiffResult(["a.ts"]);
