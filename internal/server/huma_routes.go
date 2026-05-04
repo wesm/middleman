@@ -1549,11 +1549,13 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	if err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
-			slog.Warn("github merge failed",
+			message := githubErrorResponseMessage(err, ghErr)
+			slog.Error("github merge failed",
 				"owner", input.Owner, "repo", input.Name,
 				"number", input.Number, "method", input.Body.Method,
 				"status", ghErr.Response.StatusCode,
-				"message", ghErr.Message)
+				"message", message,
+				"err", err)
 
 			if ghErr.Response.StatusCode == http.StatusMethodNotAllowed ||
 				ghErr.Response.StatusCode == http.StatusConflict {
@@ -1564,17 +1566,17 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 						slog.Warn("background sync after merge failure", "err", syncErr)
 					}
 				})
-				return nil, huma.Error409Conflict(ghErr.Message)
+				return nil, huma.Error409Conflict(message)
 			}
 
 			// Forward 4xx GitHub errors as-is so the user sees the real cause
 			// (e.g. 422 validation, 403 forbidden). 5xx becomes 502.
 			if ghErr.Response.StatusCode >= 400 && ghErr.Response.StatusCode < 500 {
-				return nil, huma.NewError(ghErr.Response.StatusCode, ghErr.Message)
+				return nil, huma.NewError(ghErr.Response.StatusCode, message)
 			}
-			return nil, huma.Error502BadGateway("GitHub: " + ghErr.Message)
+			return nil, huma.Error502BadGateway("GitHub: " + message)
 		}
-		slog.Warn("github merge transport error",
+		slog.Error("github merge transport error",
 			"owner", input.Owner, "repo", input.Name,
 			"number", input.Number, "method", input.Body.Method,
 			"err", err)
@@ -1594,6 +1596,48 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 			Message: result.GetMessage(),
 		},
 	}, nil
+}
+
+func githubErrorResponseMessage(err error, ghErr *gh.ErrorResponse) string {
+	message := strings.TrimSpace(ghErr.Message)
+	details := make([]string, 0, len(ghErr.Errors))
+	seen := make(map[string]bool, len(ghErr.Errors)+1)
+	if message != "" {
+		seen[message] = true
+	}
+	for _, apiErr := range ghErr.Errors {
+		detail := strings.TrimSpace(apiErr.Message)
+		if detail == "" && strings.TrimSpace(apiErr.Code) != "" {
+			detail = strings.TrimSpace(apiErr.Error())
+		}
+		if detail == "" || seen[detail] {
+			continue
+		}
+		seen[detail] = true
+		details = append(details, detail)
+	}
+
+	if len(details) > 0 {
+		joined := strings.Join(details, "; ")
+		if message == "" || isGenericGitHubErrorMessage(message, ghErr.Response.StatusCode) {
+			return joined
+		}
+		return message + ": " + joined
+	}
+	if message != "" {
+		return message
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return "GitHub API error"
+}
+
+func isGenericGitHubErrorMessage(message string, status int) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return normalized == "github server error" ||
+		normalized == "server error" ||
+		normalized == strings.ToLower(http.StatusText(status))
 }
 
 func (s *Server) setPRGitHubState(

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -768,6 +769,59 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 	require.Contains(string(resp.Body), "Service unavailable")
+}
+
+func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	var logBuf bytes.Buffer
+	origLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})))
+	t.Cleanup(func() { slog.SetDefault(origLogger) })
+
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusInternalServerError},
+				Message:  "GitHub Server Error",
+				Errors: []gh.Error{{
+					Resource: "PullRequest",
+					Field:    "merge",
+					Code:     "custom",
+					Message:  "Required status check \"build\" is failing",
+				}},
+			}
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		t.Context(), "acme", "widget", 1,
+		generated.MergePRInputBody{
+			CommitTitle:   "title",
+			CommitMessage: "msg",
+			Method:        "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	var body generated.ErrorModel
+	require.NoError(json.Unmarshal(resp.Body, &body))
+	require.NotNil(body.Detail)
+	assert.Contains(*body.Detail, "Required status check \"build\" is failing")
+	assert.NotEqual("GitHub Server Error", *body.Detail)
+
+	logText := logBuf.String()
+	assert.Contains(logText, "level=ERROR")
+	assert.Contains(logText, "github merge failed")
+	assert.Contains(logText, "Required status check")
 }
 
 func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
