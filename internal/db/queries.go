@@ -24,6 +24,39 @@ func canonicalRepoIdentifier(host, owner, name string) (string, string, string) 
 	return strings.ToLower(host), strings.ToLower(owner), strings.ToLower(name)
 }
 
+func canonicalRepoLookupIdentifier(host, owner, name string) (string, string, string) {
+	if host == "" {
+		host = "github.com"
+	}
+	return strings.ToLower(strings.TrimSpace(host)),
+		strings.ToLower(strings.TrimSpace(owner)),
+		strings.ToLower(strings.TrimSpace(name))
+}
+
+func canonicalRepoPathKey(path string) string {
+	parts := strings.Split(strings.Trim(path, "/ "), "/")
+	kept := parts[:0]
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			kept = append(kept, strings.ToLower(trimmed))
+		}
+	}
+	return strings.Join(kept, "/")
+}
+
+func repoFilterHostAndPathKey(filter string) (string, string) {
+	filter = strings.Trim(filter, "/ ")
+	if filter == "" {
+		return "", ""
+	}
+	parts := strings.Split(filter, "/")
+	if len(parts) >= 3 && strings.ContainsAny(parts[0], ".:") {
+		return strings.ToLower(strings.TrimSpace(parts[0])),
+			canonicalRepoPathKey(strings.Join(parts[1:], "/"))
+	}
+	return "", canonicalRepoPathKey(filter)
+}
+
 func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 	return canonicalRepoIdentity(RepoIdentity{
 		Platform:     "github",
@@ -548,10 +581,24 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 		}
 
 		if sourceFound && targetFound && sourceID != targetID {
+			sourceIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, sourceID)
+			if err != nil {
+				return err
+			}
+			targetIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, targetID)
+			if err != nil {
+				return err
+			}
 			if err := mergeRepoRowsTx(ctx, tx, sourceID, targetID); err != nil {
 				return err
 			}
 			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
+				return err
+			}
+			if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
+				return err
+			}
+			if err := updateWorkspaceRepoIdentityTx(ctx, tx, targetIdentity, identity); err != nil {
 				return err
 			}
 			id = targetID
@@ -559,10 +606,32 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 		}
 
 		if sourceFound {
+			sourceIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, sourceID)
+			if err != nil {
+				return err
+			}
 			if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
 				return err
 			}
+			if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
+				return err
+			}
 			id = sourceID
+			return nil
+		}
+
+		if targetFound {
+			targetIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, targetID)
+			if err != nil {
+				return err
+			}
+			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
+				return err
+			}
+			if err := updateWorkspaceRepoIdentityTx(ctx, tx, targetIdentity, identity); err != nil {
+				return err
+			}
+			id = targetID
 			return nil
 		}
 
@@ -622,6 +691,30 @@ func lookupRepoIDByIdentityTx(
 	return id, true, nil
 }
 
+func lookupRepoIdentityByIDTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+) (RepoIdentity, error) {
+	var identity RepoIdentity
+	err := tx.QueryRowContext(ctx,
+		`SELECT platform, platform_host, platform_repo_id,
+		        owner, name, repo_path,
+		        owner_key, name_key, repo_path_key
+		 FROM middleman_repos
+		 WHERE id = ?`,
+		repoID,
+	).Scan(
+		&identity.Platform, &identity.PlatformHost, &identity.PlatformRepoID,
+		&identity.Owner, &identity.Name, &identity.RepoPath,
+		&identity.OwnerKey, &identity.NameKey, &identity.RepoPathKey,
+	)
+	if err != nil {
+		return RepoIdentity{}, fmt.Errorf("lookup repo identity by id: %w", err)
+	}
+	return canonicalRepoIdentity(identity), nil
+}
+
 func updateRepoIdentityTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -655,6 +748,127 @@ func updateRepoIdentityTx(
 	if err != nil {
 		return fmt.Errorf("update repo identity: %w", err)
 	}
+	return nil
+}
+
+func updateWorkspaceRepoIdentityTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	from, to RepoIdentity,
+) error {
+	from = canonicalRepoIdentity(from)
+	to = canonicalRepoIdentity(to)
+	if from.PlatformHost == to.PlatformHost &&
+		from.RepoPathKey == to.RepoPathKey &&
+		from.Owner == to.Owner &&
+		from.Name == to.Name &&
+		from.OwnerKey == to.OwnerKey &&
+		from.NameKey == to.NameKey {
+		return nil
+	}
+
+	if err := mergeWorkspaceRowsForIdentityChangeTx(ctx, tx, from, to); err != nil {
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx,
+		`UPDATE middleman_workspaces
+		 SET platform_host = ?,
+		     repo_owner = ?,
+		     repo_name = ?,
+		     repo_owner_key = ?,
+		     repo_name_key = ?,
+		     repo_path_key = ?
+		 WHERE platform_host = ?
+		   AND repo_path_key = ?`,
+		to.PlatformHost,
+		to.Owner,
+		to.Name,
+		to.OwnerKey,
+		to.NameKey,
+		to.RepoPathKey,
+		from.PlatformHost,
+		from.RepoPathKey,
+	)
+	if err != nil {
+		return fmt.Errorf("update workspace repo identity: %w", err)
+	}
+	return nil
+}
+
+func mergeWorkspaceRowsForIdentityChangeTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	from, to RepoIdentity,
+) error {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT source.id, target.id
+		 FROM middleman_workspaces AS source
+		 JOIN middleman_workspaces AS target
+		   ON target.platform_host = ?
+		  AND target.repo_path_key = ?
+		  AND target.item_type = source.item_type
+		  AND target.item_number = source.item_number
+		 WHERE source.platform_host = ?
+		   AND source.repo_path_key = ?
+		   AND source.id <> target.id`,
+		to.PlatformHost,
+		to.RepoPathKey,
+		from.PlatformHost,
+		from.RepoPathKey,
+	)
+	if err != nil {
+		return fmt.Errorf("list workspace identity merge targets: %w", err)
+	}
+
+	type workspaceMerge struct {
+		sourceID string
+		targetID string
+	}
+	var merges []workspaceMerge
+	for rows.Next() {
+		var merge workspaceMerge
+		if err := rows.Scan(&merge.sourceID, &merge.targetID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan workspace identity merge target: %w", err)
+		}
+		merges = append(merges, merge)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close workspace identity merge targets: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate workspace identity merge targets: %w", err)
+	}
+
+	for _, merge := range merges {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE middleman_workspace_setup_events
+			 SET workspace_id = ?
+			 WHERE workspace_id = ?`,
+			merge.targetID,
+			merge.sourceID,
+		); err != nil {
+			return fmt.Errorf("move workspace setup events: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE middleman_workspace_tmux_sessions
+			 SET workspace_id = ?
+			 WHERE workspace_id = ?`,
+			merge.targetID,
+			merge.sourceID,
+		); err != nil {
+			return fmt.Errorf("move workspace tmux sessions: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM middleman_workspaces
+			 WHERE id = ?`,
+			merge.sourceID,
+		); err != nil {
+			return fmt.Errorf("delete merged workspace row: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1041,6 +1255,53 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 	return &r, nil
 }
 
+// GetRepoByIdentity returns the repo for the provider-qualified identity,
+// or nil if not found.
+func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Repo, error) {
+	identity = canonicalRepoIdentity(identity)
+	var r Repo
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT id, platform, platform_host, platform_repo_id,
+		        owner, name, repo_path,
+		        owner_key, name_key, repo_path_key,
+		        web_url, clone_url, default_branch,
+		        last_sync_started_at, last_sync_completed_at,
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge,
+		        backfill_pr_page, backfill_pr_complete,
+		        backfill_pr_completed_at,
+		        backfill_issue_page, backfill_issue_complete,
+		        backfill_issue_completed_at,
+		        created_at
+		 FROM middleman_repos
+		 WHERE platform = ?
+		   AND platform_host = ?
+		   AND repo_path_key = ?`,
+		identity.Platform, identity.PlatformHost, identity.RepoPathKey,
+	).Scan(
+		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+		&r.Owner, &r.Name, &r.RepoPath,
+		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
+		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
+		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
+		&r.LastSyncError,
+		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.BackfillPRPage, &r.BackfillPRComplete,
+		&r.BackfillPRCompletedAt,
+		&r.BackfillIssuePage, &r.BackfillIssueComplete,
+		&r.BackfillIssueCompletedAt,
+		&r.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get repo by identity: %w", err)
+	}
+	normalizeRepoTimestamps(&r)
+	return &r, nil
+}
+
 // GetRepoByID returns the repo with the given ID, or nil if not found.
 func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 	var r Repo
@@ -1193,7 +1454,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 
 // GetMergeRequest returns a merge request by repo owner/name and MR number, or nil if not found.
 func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int) (*MergeRequest, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var mr MergeRequest
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id, p.repo_id, p.platform_id, p.number, p.url, p.title,
@@ -1214,7 +1475,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		LEFT JOIN middleman_kanban_state k ON k.merge_request_id = p.id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
+		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
 		owner, name, number,
 	).Scan(
 		&mr.ID, &mr.RepoID, &mr.PlatformID, &mr.Number, &mr.URL, &mr.Title,
@@ -1316,15 +1577,15 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		_, owner, name := canonicalRepoIdentifier(
+		_, owner, name := canonicalRepoLookupIdentifier(
 			"", opts.RepoOwner, opts.RepoName,
 		)
 		if opts.PlatformHost != "" {
-			host, _, _ := canonicalRepoIdentifier(opts.PlatformHost, "", "")
+			host, _, _ := canonicalRepoLookupIdentifier(opts.PlatformHost, "", "")
 			conds = append(conds, "r.platform_host = ?")
 			args = append(args, host)
 		}
-		conds = append(conds, "r.owner = ? AND r.name = ?")
+		conds = append(conds, "r.owner_key = ? AND r.name_key = ?")
 		args = append(args, owner, name)
 	}
 	if opts.KanbanState != "" {
@@ -1608,12 +1869,12 @@ func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, erro
 
 // GetMRIDByRepoAndNumber returns the internal MR ID for a given repo+number.
 func (d *DB) GetMRIDByRepoAndNumber(ctx context.Context, owner, name string, number int) (int64, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var id int64
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.id FROM middleman_merge_requests p
 		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
+		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
 		owner, name, number,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1857,7 +2118,7 @@ func (s *DiffSHAs) Stale() bool {
 
 // GetDiffSHAs returns the diff-related SHAs for a merge request.
 func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*DiffSHAs, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var s DiffSHAs
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT p.platform_head_sha, p.platform_base_sha,
@@ -1865,7 +2126,7 @@ func (d *DB) GetDiffSHAs(ctx context.Context, owner, name string, number int) (*
 		       p.state
 		FROM middleman_merge_requests p
 		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
+		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
 		owner, name, number,
 	).Scan(&s.PlatformHeadSHA, &s.PlatformBaseSHA,
 		&s.DiffHeadSHA, &s.DiffBaseSHA, &s.MergeBaseSHA,
@@ -1953,7 +2214,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 func (d *DB) GetIssue(
 	ctx context.Context, owner, name string, number int,
 ) (*Issue, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.number, i.url, i.title,
@@ -1965,7 +2226,7 @@ func (d *DB) GetIssue(
 		JOIN middleman_repos r ON r.id = i.repo_id
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		WHERE r.owner = ? AND r.name = ? AND i.number = ?`,
+		WHERE r.owner_key = ? AND r.name_key = ? AND i.number = ?`,
 		owner, name, number,
 	).Scan(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.Number,
@@ -2047,12 +2308,12 @@ func (d *DB) ListIssues(
 	}
 
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		host, owner, name := canonicalRepoIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
+		host, owner, name := canonicalRepoLookupIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
 		if host != "" {
 			conds = append(conds, "r.platform_host = ?")
 			args = append(args, host)
 		}
-		conds = append(conds, "r.owner = ? AND r.name = ?")
+		conds = append(conds, "r.owner_key = ? AND r.name_key = ?")
 		args = append(args, owner, name)
 	}
 	if opts.Starred {
@@ -2122,12 +2383,12 @@ func (d *DB) ListIssues(
 func (d *DB) GetIssueIDByRepoAndNumber(
 	ctx context.Context, owner, name string, number int,
 ) (int64, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
 	var id int64
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id FROM middleman_issues i
 		JOIN middleman_repos r ON r.id = i.repo_id
-		WHERE r.owner = ? AND r.name = ? AND i.number = ?`,
+		WHERE r.owner_key = ? AND r.name_key = ? AND i.number = ?`,
 		owner, name, number,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2230,7 +2491,7 @@ func (d *DB) UpdateMRDetailFetched(
 	platformHost, repoOwner, repoName string,
 	number int, ciHadPending bool,
 ) error {
-	platformHost, repoOwner, repoName = canonicalRepoIdentifier(
+	platformHost, repoOwner, repoName = canonicalRepoLookupIdentifier(
 		platformHost, repoOwner, repoName,
 	)
 	_, err := d.rw.ExecContext(ctx, `
@@ -2239,12 +2500,33 @@ func (d *DB) UpdateMRDetailFetched(
 		    ci_had_pending = ?
 		WHERE repo_id = (
 		    SELECT id FROM middleman_repos
-		    WHERE platform_host = ? AND owner = ? AND name = ?
+		    WHERE platform_host = ? AND owner_key = ? AND name_key = ?
 		) AND number = ?`,
 		ciHadPending, platformHost, repoOwner, repoName, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update mr detail fetched: %w", err)
+	}
+	return nil
+}
+
+// UpdateMRDetailFetchedByRepoID marks a merge request as having had its
+// detail fetched for an already resolved provider-qualified repo row.
+func (d *DB) UpdateMRDetailFetchedByRepoID(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	ciHadPending bool,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET detail_fetched_at = datetime('now'),
+		    ci_had_pending = ?
+		WHERE repo_id = ? AND number = ?`,
+		ciHadPending, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr detail fetched by repo id: %w", err)
 	}
 	return nil
 }
@@ -2255,7 +2537,7 @@ func (d *DB) UpdateIssueDetailFetched(
 	ctx context.Context,
 	platformHost, repoOwner, repoName string, number int,
 ) error {
-	platformHost, repoOwner, repoName = canonicalRepoIdentifier(
+	platformHost, repoOwner, repoName = canonicalRepoLookupIdentifier(
 		platformHost, repoOwner, repoName,
 	)
 	_, err := d.rw.ExecContext(ctx, `
@@ -2263,12 +2545,31 @@ func (d *DB) UpdateIssueDetailFetched(
 		SET detail_fetched_at = datetime('now')
 		WHERE repo_id = (
 		    SELECT id FROM middleman_repos
-		    WHERE platform_host = ? AND owner = ? AND name = ?
+		    WHERE platform_host = ? AND owner_key = ? AND name_key = ?
 		) AND number = ?`,
 		platformHost, repoOwner, repoName, number,
 	)
 	if err != nil {
 		return fmt.Errorf("update issue detail fetched: %w", err)
+	}
+	return nil
+}
+
+// UpdateIssueDetailFetchedByRepoID marks an issue as having had its
+// detail fetched for an already resolved provider-qualified repo row.
+func (d *DB) UpdateIssueDetailFetchedByRepoID(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET detail_fetched_at = datetime('now')
+		WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue detail fetched by repo id: %w", err)
 	}
 	return nil
 }
@@ -2435,7 +2736,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 	platformHost, owner, name, query string,
 	limit int,
 ) ([]string, error) {
-	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	if limit <= 0 {
 		limit = 10
 	}
@@ -2447,7 +2748,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 		WITH repo AS (
 			SELECT id
 			FROM middleman_repos
-			WHERE platform_host = ? AND owner = ? AND name = ?
+			WHERE platform_host = ? AND owner_key = ? AND name_key = ?
 		), candidates AS (
 			SELECT mr.author AS login, mr.last_activity_at AS last_seen
 			FROM middleman_merge_requests mr
@@ -2510,7 +2811,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 	platformHost, owner, name, query string,
 	limit int,
 ) ([]CommentAutocompleteReference, error) {
-	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	if limit <= 0 {
 		limit = 10
 	}
@@ -2522,7 +2823,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 		WITH repo AS (
 			SELECT id
 			FROM middleman_repos
-			WHERE platform_host = ? AND owner = ? AND name = ?
+			WHERE platform_host = ? AND owner_key = ? AND name_key = ?
 		), candidates AS (
 			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
 			FROM middleman_merge_requests mr
@@ -2859,22 +3160,56 @@ func (d *DB) GetRepoByHostOwnerName(
 
 // --- Workspaces ---
 
+func (d *DB) canonicalizeWorkspaceRepo(
+	ctx context.Context,
+	platformHost, owner, name string,
+) (string, string, string, string, string, string, error) {
+	host, ownerKey, nameKey := canonicalRepoLookupIdentifier(platformHost, owner, name)
+	pathKey := ownerKey + "/" + nameKey
+
+	var displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT owner, name, owner_key, name_key, repo_path_key
+		FROM middleman_repos
+		WHERE platform_host = ? AND repo_path_key = ?
+		ORDER BY CASE WHEN platform <> 'github' THEN 0 ELSE 1 END, id
+		LIMIT 1`,
+		host, pathKey,
+	).Scan(&displayOwner, &displayName, &repoOwnerKey, &repoNameKey, &repoPathKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return host, ownerKey, nameKey, ownerKey, nameKey, pathKey, nil
+	}
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("lookup workspace repo identity: %w", err)
+	}
+	return host, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey, nil
+}
+
 // InsertWorkspace inserts a new workspace row.
 func (d *DB) InsertWorkspace(
 	ctx context.Context, ws *Workspace,
 ) error {
-	ws.PlatformHost, ws.RepoOwner, ws.RepoName = canonicalRepoIdentifier(
+	var repoOwnerKey, repoNameKey, repoPathKey string
+	var err error
+	ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		repoOwnerKey, repoNameKey, repoPathKey, err = d.canonicalizeWorkspaceRepo(
+		ctx,
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	_, err := d.rw.ExecContext(ctx, `
+	if err != nil {
+		return err
+	}
+	_, err = d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform_host, repo_owner, repo_name,
+		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, status,
 		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		repoOwnerKey, repoNameKey, repoPathKey,
 		ws.ItemType, ws.ItemNumber, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.Status,
@@ -2922,7 +3257,7 @@ func (d *DB) GetWorkspaceByMR(
 	platformHost, owner, name string,
 	mrNumber int,
 ) (*Workspace, error) {
-	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
@@ -2931,8 +3266,8 @@ func (d *DB) GetWorkspaceByMR(
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
-		WHERE platform_host = ? AND repo_owner = ?
-		  AND repo_name = ? AND item_type = ? AND item_number = ?`,
+		WHERE platform_host = ? AND repo_owner_key = ?
+		  AND repo_name_key = ? AND item_type = ? AND item_number = ?`,
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
@@ -2958,7 +3293,7 @@ func (d *DB) GetWorkspaceByIssue(
 	platformHost, owner, name string,
 	issueNumber int,
 ) (*Workspace, error) {
-	platformHost, owner, name = canonicalRepoIdentifier(platformHost, owner, name)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, platform_host, repo_owner, repo_name,
@@ -2967,8 +3302,8 @@ func (d *DB) GetWorkspaceByIssue(
 		       worktree_path, tmux_session, status,
 		       error_message, created_at
 		FROM middleman_workspaces
-		WHERE platform_host = ? AND repo_owner = ?
-		  AND repo_name = ? AND item_type = ? AND item_number = ?`,
+		WHERE platform_host = ? AND repo_owner_key = ?
+		  AND repo_name_key = ? AND item_type = ? AND item_number = ?`,
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
 	).Scan(
 		&ws.ID, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
@@ -3352,8 +3687,8 @@ const workspaceSummaryJoins = `
 	FROM middleman_workspaces w
 	LEFT JOIN middleman_repos r
 	    ON r.platform_host = w.platform_host
-	   AND r.owner = w.repo_owner
-	   AND r.name = w.repo_name
+	   AND r.owner_key = w.repo_owner_key
+	   AND r.name_key = w.repo_name_key
 	LEFT JOIN middleman_merge_requests m
 	    ON m.repo_id = r.id
 	   AND m.number = w.item_number

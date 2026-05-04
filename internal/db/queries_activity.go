@@ -25,22 +25,14 @@ func (d *DB) ListActivity(
 	var args []any
 
 	if opts.Repo != "" {
-		parts := strings.Split(opts.Repo, "/")
-		switch len(parts) {
-		case 2:
-			_, owner, name := canonicalRepoIdentifier("", parts[0], parts[1])
-			whereClauses = append(whereClauses,
-				"repo_owner || '/' || repo_name = ?")
-			args = append(args, owner+"/"+name)
-		case 3:
-			host, owner, name := canonicalRepoIdentifier(parts[0], parts[1], parts[2])
-			whereClauses = append(whereClauses,
-				"platform_host = ? AND repo_owner = ? AND repo_name = ?")
-			args = append(args, host, owner, name)
-		default:
-			whereClauses = append(whereClauses,
-				"repo_owner || '/' || repo_name = ?")
-			args = append(args, opts.Repo)
+		host, pathKey := repoFilterHostAndPathKey(opts.Repo)
+		if pathKey != "" {
+			if host != "" {
+				whereClauses = append(whereClauses, "platform_host = ?")
+				args = append(args, host)
+			}
+			whereClauses = append(whereClauses, "repo_path_key = ?")
+			args = append(args, pathKey)
 		}
 	}
 
@@ -102,6 +94,7 @@ func (d *DB) ListActivity(
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
 			       r.platform_host, r.owner AS repo_owner, r.name AS repo_name,
+			       r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number,
 			       p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state,
@@ -111,7 +104,7 @@ func (d *DB) ListActivity(
 			JOIN middleman_repos r ON p.repo_id = r.id
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id,
-			       r.platform_host, r.owner, r.name,
+			       r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
 			       i.author, i.created_at,
@@ -124,7 +117,7 @@ func (d *DB) ListActivity(
 			           ELSE e.event_type
 			       END,
 			       'pre', e.id,
-			       r.platform_host, r.owner, r.name,
+			       r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'pr', p.number, p.title,
 			       p.url, p.state,
 			       e.author, e.created_at,
@@ -136,7 +129,7 @@ func (d *DB) ListActivity(
 				'issue_comment', 'review', 'commit', 'force_push')
 			UNION ALL
 			SELECT 'comment', 'ise', e.id,
-			       r.platform_host, r.owner, r.name,
+			       r.platform_host, r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
 			       e.author, e.created_at,

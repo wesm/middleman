@@ -65,6 +65,7 @@ type MergeRequest struct {
 	BaseBranch         string
 	HeadSHA            string
 	BaseSHA            string
+	HeadRepoCloneURL   string
 	Additions          int
 	Deletions          int
 	CommentCount       int

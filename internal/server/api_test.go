@@ -7661,6 +7661,9 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
 			END;
 
+			DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
+			DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+			DROP INDEX IF EXISTS idx_repos_provider_path_key;
 			DROP INDEX IF EXISTS idx_repos_platform_repo_id;
 			ALTER TABLE middleman_repos DROP COLUMN default_branch;
 			ALTER TABLE middleman_repos DROP COLUMN clone_url;

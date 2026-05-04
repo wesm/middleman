@@ -55,6 +55,9 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 	if ghPR.GetHead() != nil {
 		mr.HeadBranch = ghPR.GetHead().GetRef()
 		mr.HeadSHA = ghPR.GetHead().GetSHA()
+		if ghPR.GetHead().GetRepo() != nil {
+			mr.HeadRepoCloneURL = ghPR.GetHead().GetRepo().GetCloneURL()
+		}
 	}
 	if ghPR.GetBase() != nil {
 		mr.BaseBranch = ghPR.GetBase().GetRef()

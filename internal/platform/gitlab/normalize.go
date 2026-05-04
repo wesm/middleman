@@ -1,0 +1,450 @@
+package gitlab
+
+import (
+	"fmt"
+	"path"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/wesm/middleman/internal/platform"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
+)
+
+func NormalizeProject(host string, p *gitlab.Project) platform.Repository {
+	if p == nil {
+		return platform.Repository{}
+	}
+
+	repoPath := strings.Trim(p.PathWithNamespace, "/")
+	owner := path.Dir(repoPath)
+	if owner == "." {
+		owner = ""
+	}
+	name := p.Path
+	if name == "" {
+		name = path.Base(repoPath)
+	}
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               host,
+		Owner:              owner,
+		Name:               name,
+		RepoPath:           repoPath,
+		PlatformID:         p.ID,
+		PlatformExternalID: strconv.FormatInt(p.ID, 10),
+		WebURL:             p.WebURL,
+		CloneURL:           p.HTTPURLToRepo,
+		DefaultBranch:      p.DefaultBranch,
+	}
+	return platform.Repository{
+		Ref:                ref,
+		PlatformID:         p.ID,
+		PlatformExternalID: strconv.FormatInt(p.ID, 10),
+		Description:        p.Description,
+		Private:            p.Visibility == gitlab.PrivateVisibility,
+		Archived:           p.Archived,
+		DefaultBranch:      p.DefaultBranch,
+		WebURL:             p.WebURL,
+		CloneURL:           p.HTTPURLToRepo,
+		CreatedAt:          timeValue(p.CreatedAt),
+		UpdatedAt:          timeValue(p.UpdatedAt),
+	}
+}
+
+func NormalizeMergeRequest(
+	repo platform.RepoRef,
+	mr *gitlab.BasicMergeRequest,
+	pipeline *gitlab.PipelineInfo,
+) platform.MergeRequest {
+	return normalizeMergeRequest(repo, mr, pipeline, false)
+}
+
+func NormalizeDetailedMergeRequest(repo platform.RepoRef, mr *gitlab.MergeRequest) platform.MergeRequest {
+	if mr == nil {
+		return platform.MergeRequest{}
+	}
+	return normalizeMergeRequest(repo, &mr.BasicMergeRequest, pipelineInfo(mr), detailedMRWorkInProgress(mr))
+}
+
+func detailedMRWorkInProgress(mr *gitlab.MergeRequest) bool {
+	if mr == nil {
+		return false
+	}
+	field := reflect.ValueOf(mr).Elem().FieldByName("WorkInProgress")
+	return field.IsValid() && field.Kind() == reflect.Bool && field.Bool()
+}
+
+func normalizeMergeRequest(
+	repo platform.RepoRef,
+	mr *gitlab.BasicMergeRequest,
+	pipeline *gitlab.PipelineInfo,
+	workInProgress bool,
+) platform.MergeRequest {
+	if mr == nil {
+		return platform.MergeRequest{}
+	}
+	out := platform.MergeRequest{
+		Repo:               repo,
+		PlatformID:         mr.ID,
+		PlatformExternalID: strconv.FormatInt(mr.ID, 10),
+		Number:             int(mr.IID),
+		URL:                mr.WebURL,
+		Title:              mr.Title,
+		Author:             basicUsername(mr.Author),
+		AuthorDisplayName:  sanitizeDisplayName(basicName(mr.Author)),
+		State:              normalizeMergeRequestState(mr.State),
+		IsDraft:            mr.Draft || workInProgress,
+		Body:               mr.Description,
+		HeadBranch:         mr.SourceBranch,
+		BaseBranch:         mr.TargetBranch,
+		HeadSHA:            mr.SHA,
+		CommentCount:       int(mr.UserNotesCount),
+		ReviewDecision:     mr.DetailedMergeStatus,
+		CIStatus:           pipelineStatusFromInfo(pipeline),
+		CreatedAt:          timeValue(mr.CreatedAt),
+		UpdatedAt:          timeValue(mr.UpdatedAt),
+		LastActivityAt:     timeValue(mr.UpdatedAt),
+		Labels:             normalizeLabelNames(repo, mr.Labels),
+	}
+	if mr.MergedAt != nil {
+		t := mr.MergedAt.UTC()
+		out.MergedAt = &t
+	}
+	if mr.ClosedAt != nil {
+		t := mr.ClosedAt.UTC()
+		out.ClosedAt = &t
+	}
+	return out
+}
+
+func NormalizeIssue(repo platform.RepoRef, issue *gitlab.Issue) platform.Issue {
+	if issue == nil {
+		return platform.Issue{}
+	}
+	out := platform.Issue{
+		Repo:               repo,
+		PlatformID:         issue.ID,
+		PlatformExternalID: strconv.FormatInt(issue.ID, 10),
+		Number:             int(issue.IID),
+		URL:                issue.WebURL,
+		Title:              issue.Title,
+		Author:             issueUsername(issue.Author),
+		State:              normalizeIssueState(issue.State),
+		Body:               issue.Description,
+		CommentCount:       int(issue.UserNotesCount),
+		CreatedAt:          timeValue(issue.CreatedAt),
+		UpdatedAt:          timeValue(issue.UpdatedAt),
+		LastActivityAt:     timeValue(issue.UpdatedAt),
+		Labels:             normalizeLabelNames(repo, issue.Labels),
+	}
+	if issue.ClosedAt != nil {
+		t := issue.ClosedAt.UTC()
+		out.ClosedAt = &t
+	}
+	return out
+}
+
+func normalizeMergeRequestState(state string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "opened":
+		return "open"
+	case "closed":
+		return "closed"
+	case "merged":
+		return "merged"
+	default:
+		return strings.TrimSpace(state)
+	}
+}
+
+func normalizeIssueState(state string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "opened":
+		return "open"
+	case "closed":
+		return "closed"
+	default:
+		return strings.TrimSpace(state)
+	}
+}
+
+func NormalizeMergeRequestNotes(
+	repo platform.RepoRef,
+	mrNumber int,
+	notes []*gitlab.Note,
+) []platform.MergeRequestEvent {
+	events := make([]platform.MergeRequestEvent, 0, len(notes))
+	for _, note := range notes {
+		if note == nil || note.System {
+			continue
+		}
+		events = append(events, platform.MergeRequestEvent{
+			Repo:               repo,
+			PlatformID:         note.ID,
+			PlatformExternalID: strconv.FormatInt(note.ID, 10),
+			MergeRequestNumber: mrNumber,
+			EventType:          "note",
+			Author:             note.Author.Username,
+			Body:               note.Body,
+			CreatedAt:          timeValue(note.CreatedAt),
+			DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "note", strconv.FormatInt(note.ID, 10)),
+		})
+	}
+	return events
+}
+
+func NormalizeIssueNotes(
+	repo platform.RepoRef,
+	issueNumber int,
+	notes []*gitlab.Note,
+) []platform.IssueEvent {
+	events := make([]platform.IssueEvent, 0, len(notes))
+	for _, note := range notes {
+		if note == nil || note.System {
+			continue
+		}
+		events = append(events, platform.IssueEvent{
+			Repo:               repo,
+			PlatformID:         note.ID,
+			PlatformExternalID: strconv.FormatInt(note.ID, 10),
+			IssueNumber:        issueNumber,
+			EventType:          "note",
+			Author:             note.Author.Username,
+			Body:               note.Body,
+			CreatedAt:          timeValue(note.CreatedAt),
+			DedupeKey:          noteDedupeKey(repo, "issue", issueNumber, "note", strconv.FormatInt(note.ID, 10)),
+		})
+	}
+	return events
+}
+
+func noteDedupeKey(
+	repo platform.RepoRef,
+	parentKind string,
+	parentNumber int,
+	eventKind string,
+	externalID string,
+) string {
+	return fmt.Sprintf(
+		"%s:%s:%s:%s:%d:%s:%s",
+		platform.KindGitLab,
+		repo.Host,
+		repo.DisplayName(),
+		parentKind,
+		parentNumber,
+		eventKind,
+		externalID,
+	)
+}
+
+func NormalizeCommitEvent(
+	repo platform.RepoRef,
+	mrNumber int,
+	commit *gitlab.Commit,
+) platform.MergeRequestEvent {
+	if commit == nil {
+		return platform.MergeRequestEvent{}
+	}
+	return platform.MergeRequestEvent{
+		Repo:               repo,
+		MergeRequestNumber: mrNumber,
+		EventType:          "commit",
+		Author:             commit.AuthorName,
+		Summary:            commit.ID,
+		Body:               commit.Message,
+		CreatedAt:          commitTime(commit),
+		DedupeKey:          "gitlab-commit-" + commit.ID,
+	}
+}
+
+func NormalizeRelease(repo platform.RepoRef, release *gitlab.Release) platform.Release {
+	if release == nil {
+		return platform.Release{}
+	}
+	out := platform.Release{
+		Repo:               repo,
+		PlatformExternalID: release.TagName,
+		TagName:            release.TagName,
+		Name:               release.Name,
+		TargetCommitish:    release.Commit.ID,
+		CreatedAt:          timeValue(release.CreatedAt),
+	}
+	if release.ReleasedAt != nil {
+		t := release.ReleasedAt.UTC()
+		out.PublishedAt = &t
+	}
+	return out
+}
+
+func NormalizeTag(repo platform.RepoRef, tag *gitlab.Tag) platform.Tag {
+	if tag == nil {
+		return platform.Tag{}
+	}
+	out := platform.Tag{
+		Repo:               repo,
+		PlatformExternalID: tag.Name,
+		Name:               tag.Name,
+		SHA:                tag.Target,
+	}
+	if tag.Commit != nil {
+		if out.SHA == "" {
+			out.SHA = tag.Commit.ID
+		}
+		out.URL = tag.Commit.WebURL
+	}
+	return out
+}
+
+func NormalizePipeline(repo platform.RepoRef, pipeline *gitlab.PipelineInfo) platform.CICheck {
+	if pipeline == nil {
+		return platform.CICheck{}
+	}
+	status, conclusion := NormalizePipelineCheckState(pipeline.Status)
+	return platform.CICheck{
+		Repo:               repo,
+		PlatformID:         pipeline.ID,
+		PlatformExternalID: strconv.FormatInt(pipeline.ID, 10),
+		Name:               "GitLab Pipeline",
+		Status:             status,
+		Conclusion:         conclusion,
+		URL:                pipeline.WebURL,
+		App:                "gitlab",
+		StartedAt:          timePtr(timeValue(pipeline.CreatedAt)),
+		CompletedAt:        completedAtForPipeline(pipeline),
+	}
+}
+
+func NormalizePipelineStatus(status string) string {
+	switch normalizePipelineStatus(status) {
+	case "created", "waiting_for_resource", "preparing", "pending", "running", "manual", "scheduled":
+		return "pending"
+	case "success", "skipped":
+		return "success"
+	case "failed", "canceled", "cancelled":
+		return "failure"
+	case "":
+		return ""
+	default:
+		return "neutral"
+	}
+}
+
+func NormalizePipelineCheckState(status string) (string, string) {
+	switch normalizePipelineStatus(status) {
+	case "created", "waiting_for_resource", "preparing", "pending", "running":
+		return "in_progress", ""
+	case "manual", "scheduled":
+		return "queued", ""
+	case "success":
+		return "completed", "success"
+	case "failed":
+		return "completed", "failure"
+	case "canceled", "cancelled":
+		return "completed", "cancelled"
+	case "skipped":
+		return "completed", "skipped"
+	case "":
+		return "", ""
+	default:
+		return "completed", "neutral"
+	}
+}
+
+func normalizePipelineStatus(status string) string {
+	return strings.ToLower(strings.TrimSpace(status))
+}
+
+func pipelineStatusFromInfo(pipeline *gitlab.PipelineInfo) string {
+	if pipeline == nil {
+		return ""
+	}
+	return NormalizePipelineStatus(pipeline.Status)
+}
+
+func normalizeLabelNames(repo platform.RepoRef, labels gitlab.Labels) []platform.Label {
+	out := make([]platform.Label, 0, len(labels))
+	for _, name := range labels {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out = append(out, platform.Label{
+			Repo:               repo,
+			PlatformExternalID: name,
+			Name:               name,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func timeValue(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.UTC()
+}
+
+func timePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+func completedAtForPipeline(pipeline *gitlab.PipelineInfo) *time.Time {
+	switch NormalizePipelineStatus(pipeline.Status) {
+	case "success", "failure", "neutral":
+		return timePtr(timeValue(pipeline.UpdatedAt))
+	default:
+		return nil
+	}
+}
+
+func commitTime(commit *gitlab.Commit) time.Time {
+	if t := timeValue(commit.CreatedAt); !t.IsZero() {
+		return t
+	}
+	if t := timeValue(commit.CommittedDate); !t.IsZero() {
+		return t
+	}
+	return timeValue(commit.AuthoredDate)
+}
+
+func basicUsername(user *gitlab.BasicUser) string {
+	if user == nil {
+		return ""
+	}
+	return user.Username
+}
+
+func basicName(user *gitlab.BasicUser) string {
+	if user == nil {
+		return ""
+	}
+	return user.Name
+}
+
+func issueUsername(user *gitlab.IssueAuthor) string {
+	if user == nil {
+		return ""
+	}
+	return user.Username
+}
+
+func sanitizeDisplayName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch r {
+		case '\n', '\r', '<', '>':
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}

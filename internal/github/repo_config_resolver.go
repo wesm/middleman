@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/config"
+	"github.com/wesm/middleman/internal/platform"
 )
 
 var ErrConfiguredRepoArchived = errors.New("configured repo archived")
@@ -29,11 +29,15 @@ func canonicalRepoHost(host string) string {
 }
 
 func canonicalRepoRef(repo RepoRef) RepoRef {
-	return RepoRef{
+	out := RepoRef{
 		Owner:        canonicalRepoOwner(repo.Owner),
 		Name:         canonicalRepoName(repo.Name),
 		PlatformHost: canonicalRepoHost(repo.PlatformHost),
 	}
+	if kind := repoPlatform(repo); kind != platform.KindGitHub {
+		out.Platform = kind
+	}
+	return out
 }
 
 func canonicalRepoPattern(pattern string) string {
@@ -57,25 +61,24 @@ func FallbackConfiguredRepoRefs(
 	previous []RepoRef,
 	raw config.Repo,
 ) []RepoRef {
+	kind := platform.Kind(raw.PlatformOrDefault())
 	host := raw.PlatformHostOrDefault()
 	if !raw.HasNameGlob() {
 		for _, repo := range previous {
-			if sameConfiguredRepoHost(repo.PlatformHost, host) &&
+			if repoPlatform(repo) == kind &&
+				sameConfiguredRepoHost(repoHost(repo), host) &&
 				strings.EqualFold(repo.Owner, raw.Owner) &&
 				strings.EqualFold(repo.Name, raw.Name) {
 				return []RepoRef{repo}
 			}
 		}
-		return []RepoRef{{
-			Owner:        canonicalRepoOwner(raw.Owner),
-			Name:         canonicalRepoName(raw.Name),
-			PlatformHost: canonicalRepoHost(host),
-		}}
+		return []RepoRef{fallbackRepoRef(raw, kind, host)}
 	}
 
 	fallback := make([]RepoRef, 0)
 	for _, repo := range previous {
-		if !sameConfiguredRepoHost(repo.PlatformHost, host) ||
+		if repoPlatform(repo) != kind ||
+			!sameConfiguredRepoHost(repoHost(repo), host) ||
 			!strings.EqualFold(repo.Owner, raw.Owner) {
 			continue
 		}
@@ -91,9 +94,44 @@ func FallbackConfiguredRepoRefs(
 	return fallback
 }
 
+func fallbackRepoRef(raw config.Repo, kind platform.Kind, host string) RepoRef {
+	repo := RepoRef{
+		Owner:        strings.TrimSpace(raw.Owner),
+		Name:         strings.TrimSpace(raw.Name),
+		PlatformHost: strings.ToLower(strings.TrimSpace(host)),
+	}
+	if kind == "" {
+		kind = platform.KindGitHub
+	}
+	if kind == platform.KindGitHub {
+		repo.Owner = canonicalRepoOwner(repo.Owner)
+		repo.Name = canonicalRepoName(repo.Name)
+		repo.PlatformHost = canonicalRepoHost(repo.PlatformHost)
+		return repo
+	}
+	repo.Platform = kind
+	return repo
+}
+
 func ResolveConfiguredRepos(
 	ctx context.Context,
 	clients map[string]Client,
+	repos []config.Repo,
+) ResolveConfiguredReposResult {
+	return resolveConfiguredRepos(ctx, registryFromGitHubClients(clients), repos)
+}
+
+func ResolveConfiguredReposWithRegistry(
+	ctx context.Context,
+	registry *platform.Registry,
+	repos []config.Repo,
+) ResolveConfiguredReposResult {
+	return resolveConfiguredRepos(ctx, registry, repos)
+}
+
+func resolveConfiguredRepos(
+	ctx context.Context,
+	registry *platform.Registry,
 	repos []config.Repo,
 ) ResolveConfiguredReposResult {
 	seen := make(map[string]struct{})
@@ -103,7 +141,7 @@ func ResolveConfiguredRepos(
 
 	for _, raw := range repos {
 		status, expanded, err := resolveConfiguredRepo(
-			ctx, clients, raw,
+			ctx, registry, raw,
 		)
 		if err != nil {
 			status.MatchedRepoCount = 0
@@ -123,12 +161,20 @@ func ResolveConfiguredRepo(
 	clients map[string]Client,
 	repo config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
-	return resolveConfiguredRepo(ctx, clients, repo)
+	return resolveConfiguredRepo(ctx, registryFromGitHubClients(clients), repo)
+}
+
+func ResolveConfiguredRepoWithRegistry(
+	ctx context.Context,
+	registry *platform.Registry,
+	repo config.Repo,
+) (ConfiguredRepoStatus, []RepoRef, error) {
+	return resolveConfiguredRepo(ctx, registry, repo)
 }
 
 func resolveConfiguredRepo(
 	ctx context.Context,
-	clients map[string]Client,
+	registry *platform.Registry,
 	raw config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
 	status := ConfiguredRepoStatus{
@@ -136,33 +182,38 @@ func resolveConfiguredRepo(
 		Name:   raw.Name,
 		IsGlob: raw.HasNameGlob(),
 	}
+	kind := platform.Kind(raw.PlatformOrDefault())
 	host := raw.PlatformHostOrDefault()
-	client, ok := clients[host]
-	if !ok {
-		return status, nil, fmt.Errorf(
-			"no client configured for host %s", host,
-		)
+	reader, err := registry.RepositoryReader(kind, host)
+	if err != nil {
+		return status, nil, err
 	}
 
 	if !status.IsGlob {
-		repo, err := client.GetRepository(ctx, raw.Owner, raw.Name)
+		repo, err := reader.GetRepository(ctx, platform.RepoRef{
+			Platform: kind,
+			Host:     host,
+			Owner:    raw.Owner,
+			Name:     raw.Name,
+			RepoPath: raw.Owner + "/" + raw.Name,
+		})
 		if err != nil {
 			return status, nil, fmt.Errorf(
 				"resolve configured repo %s/%s: %w",
 				raw.Owner, raw.Name, err,
 			)
 		}
-		if repo.GetArchived() {
+		if repo.Archived {
 			return status, nil, fmt.Errorf(
 				"%w: %s/%s",
 				ErrConfiguredRepoArchived, raw.Owner, raw.Name,
 			)
 		}
 		status.MatchedRepoCount = 1
-		return status, []RepoRef{repoRefFromRepository(raw, host, repo)}, nil
+		return status, []RepoRef{repoRefFromRepository(raw, kind, host, repo)}, nil
 	}
 
-	repos, err := client.ListRepositoriesByOwner(ctx, raw.Owner)
+	repos, err := reader.ListRepositories(ctx, raw.Owner, platform.RepositoryListOptions{})
 	if err != nil {
 		return status, nil, fmt.Errorf(
 			"resolve configured repo glob %s/%s: %w",
@@ -172,12 +223,16 @@ func resolveConfiguredRepo(
 
 	matches := make([]RepoRef, 0, len(repos))
 	for _, repo := range repos {
-		if repo.GetArchived() {
+		if repo.Archived {
 			continue
+		}
+		repoName := repo.Ref.Name
+		if repoName == "" {
+			repoName = repo.Ref.DisplayName()
 		}
 		matched, err := path.Match(
 			canonicalRepoName(raw.Name),
-			canonicalRepoName(repo.GetName()),
+			canonicalRepoName(repoName),
 		)
 		if err != nil {
 			return status, nil, fmt.Errorf(
@@ -188,21 +243,39 @@ func resolveConfiguredRepo(
 		if !matched {
 			continue
 		}
-		matches = append(matches, repoRefFromRepository(raw, host, repo))
+		matches = append(matches, repoRefFromRepository(raw, kind, host, repo))
 	}
 	status.MatchedRepoCount = len(matches)
 	return status, matches, nil
 }
 
-func repoRefFromRepository(raw config.Repo, host string, repo *gh.Repository) RepoRef {
-	owner := repo.GetOwner().GetLogin()
+func repoRefFromRepository(
+	raw config.Repo,
+	kind platform.Kind,
+	host string,
+	repo platform.Repository,
+) RepoRef {
+	owner := repo.Ref.Owner
 	if owner == "" {
 		owner = raw.Owner
 	}
-	return RepoRef{
+	name := repo.Ref.Name
+	if name == "" {
+		name = raw.Name
+	}
+	ref := RepoRef{
 		Owner:        canonicalRepoOwner(owner),
-		Name:         canonicalRepoName(repo.GetName()),
+		Name:         canonicalRepoName(name),
 		PlatformHost: canonicalRepoHost(host),
+	}
+	if kind != platform.KindGitHub {
+		ref.Platform = kind
+	}
+	return RepoRef{
+		Platform:     ref.Platform,
+		Owner:        ref.Owner,
+		Name:         ref.Name,
+		PlatformHost: ref.PlatformHost,
 	}
 }
 
@@ -212,7 +285,7 @@ func appendExpandedRepo(
 	repo RepoRef,
 ) {
 	repo = canonicalRepoRef(repo)
-	key := repo.PlatformHost + "\x00" + repo.Owner + "\x00" + repo.Name
+	key := string(repoPlatform(repo)) + "\x00" + repo.PlatformHost + "\x00" + repo.Owner + "\x00" + repo.Name
 	if _, ok := seen[key]; ok {
 		return
 	}

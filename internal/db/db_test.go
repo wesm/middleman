@@ -1014,6 +1014,327 @@ func TestOpenBackfillsRepoIdentityColumns(t *testing.T) {
 	assert.Empty(repo.DefaultBranch)
 }
 
+func TestOpenBackfillsProviderCanonicalRepoAndWorkspaceIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "provider-canonical.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 17))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (17, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			created_at, backfill_pr_page, backfill_pr_complete,
+			backfill_issue_page, backfill_issue_complete
+		) VALUES (
+			1, 'gitlab', 'gitlab.com', 'gid://gitlab/Project/42',
+			'Group/SubGroup', 'ProjectName', '', '', '', '',
+			datetime('now'), 0, 0, 0, 0
+		)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_workspaces (
+			id, platform_host, repo_owner, repo_name,
+			item_type, item_number, git_head_ref,
+			worktree_path, tmux_session
+		) VALUES (
+			'gitlab-ws', 'gitlab.com', 'group/subgroup', 'projectname',
+			'pull_request', 7, 'feature', '/tmp/gitlab-ws', 'gitlab-ws'
+		)`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	repo, err := d.GetRepoByID(t.Context(), 1)
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Equal("Group/SubGroup/ProjectName", repo.RepoPath)
+	assert.Equal("group/subgroup", repo.OwnerKey)
+	assert.Equal("projectname", repo.NameKey)
+	assert.Equal("group/subgroup/projectname", repo.RepoPathKey)
+
+	workspace, err := d.GetWorkspace(t.Context(), "gitlab-ws")
+	require.NoError(err)
+	require.NotNil(workspace)
+	assert.Equal("gitlab.com", workspace.PlatformHost)
+	assert.Equal("Group/SubGroup", workspace.RepoOwner)
+	assert.Equal("ProjectName", workspace.RepoName)
+
+	var workspacePathKey string
+	err = d.ReadDB().QueryRow(`
+		SELECT repo_path_key
+		FROM middleman_workspaces
+		WHERE id = 'gitlab-ws'`,
+	).Scan(&workspacePathKey)
+	require.NoError(err)
+	assert.Equal("group/subgroup/projectname", workspacePathKey)
+}
+
+func TestOpenMergesProviderCanonicalRepoDuplicates(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "provider-canonical-duplicates.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 17))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (17, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			created_at, backfill_pr_page, backfill_pr_complete,
+			backfill_issue_page, backfill_issue_complete
+		) VALUES
+		(
+			1, 'gitlab', 'gitlab.com', 'gid://gitlab/Project/42',
+			'Group', 'Project', 'Group/Project', '', '', '',
+			datetime('now'), 0, 0, 0, 0
+		),
+		(
+			2, 'gitlab', 'gitlab.com', 'gid://gitlab/Project/43',
+			'group', 'project', 'group/project', '', '', '',
+			datetime('now'), 0, 0, 0, 0
+		)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_merge_requests (
+			repo_id, platform_id, number, title, created_at,
+			updated_at, last_activity_at
+		) VALUES (
+			2, 8007, 7, 'duplicate repo PR',
+			datetime('now'), datetime('now'), datetime('now')
+		);
+		INSERT INTO middleman_issues (
+			repo_id, platform_id, number, title, created_at,
+			updated_at, last_activity_at
+		) VALUES (
+			1, 9008, 8, 'canonical repo issue',
+			datetime('now'), datetime('now'), datetime('now')
+		);
+		INSERT INTO middleman_labels (
+			repo_id, platform_id, name, color, updated_at
+		) VALUES (
+			2, 300, 'bug', 'd73a4a', datetime('now')
+		);
+		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
+		SELECT mr.id, l.id
+		FROM middleman_merge_requests mr, middleman_labels l
+		WHERE mr.repo_id = 2 AND l.repo_id = 2;
+		INSERT INTO middleman_workspaces (
+			id, platform_host, repo_owner, repo_name,
+			item_type, item_number, git_head_ref,
+			worktree_path, tmux_session
+		) VALUES (
+			'duplicate-ws', 'gitlab.com', 'group', 'project',
+			'pull_request', 7, 'feature',
+			'/tmp/duplicate-ws', 'duplicate-ws'
+		)`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("gitlab.com", repos[0].PlatformHost)
+	assert.Equal("Group", repos[0].Owner)
+	assert.Equal("Project", repos[0].Name)
+	assert.Equal("group/project", repos[0].RepoPathKey)
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repos[0].ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("duplicate repo PR", mr.Title)
+	require.Len(mr.Labels, 1)
+	assert.Equal("bug", mr.Labels[0].Name)
+
+	issue, err := d.GetIssueByRepoIDAndNumber(t.Context(), repos[0].ID, 8)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Equal("canonical repo issue", issue.Title)
+
+	workspace, err := d.GetWorkspaceByMR(t.Context(), "gitlab.com", "group", "project", 7)
+	require.NoError(err)
+	require.NotNil(workspace)
+	assert.Equal("duplicate-ws", workspace.ID)
+	assert.Equal("Group", workspace.RepoOwner)
+	assert.Equal("Project", workspace.RepoName)
+}
+
+func TestOpenMergesProviderCanonicalCaseOnlyWorkspaceDuplicates(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "provider-canonical-workspace-duplicates.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 17))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (17, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		DROP TRIGGER middleman_workspaces_casefold_insert;
+		DROP TRIGGER middleman_workspaces_casefold_update;`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			created_at, backfill_pr_page, backfill_pr_complete,
+			backfill_issue_page, backfill_issue_complete
+		) VALUES (
+			1, 'gitlab', 'gitlab.com', 'gid://gitlab/Project/42',
+			'Group', 'Project', 'Group/Project', '', '', '',
+			datetime('now'), 0, 0, 0, 0
+		);
+
+		INSERT INTO middleman_workspaces (
+			id, platform_host, repo_owner, repo_name,
+			item_type, item_number, git_head_ref,
+			worktree_path, tmux_session, created_at
+		) VALUES
+		(
+			'display-ws', 'gitlab.com', 'Group', 'Project',
+			'pull_request', 7, 'feature',
+			'/tmp/display-ws', 'display-ws', datetime('now', '-1 minute')
+		),
+		(
+			'lower-ws', 'gitlab.com', 'group', 'project',
+			'pull_request', 7, 'feature',
+			'/tmp/lower-ws', 'lower-ws', datetime('now')
+		);
+
+		INSERT INTO middleman_workspace_setup_events (
+			workspace_id, stage, outcome, message, created_at
+		) VALUES
+		(
+			'display-ws', 'clone', 'ok', 'display event', datetime('now', '-1 minute')
+		),
+		(
+			'lower-ws', 'deps', 'ok', 'lower event', datetime('now')
+		);
+
+		INSERT INTO middleman_workspace_tmux_sessions (
+			workspace_id, session_name, target_key
+		) VALUES
+		(
+			'display-ws', 'display-session', 'display'
+		),
+		(
+			'lower-ws', 'lower-session', 'lower'
+		);`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	workspace, err := d.GetWorkspaceByMR(t.Context(), "gitlab.com", "group", "project", 7)
+	require.NoError(err)
+	require.NotNil(workspace)
+	assert.Equal("display-ws", workspace.ID)
+	assert.Equal("Group", workspace.RepoOwner)
+	assert.Equal("Project", workspace.RepoName)
+
+	var workspaceCount int
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_workspaces`).Scan(&workspaceCount)
+	require.NoError(err)
+	assert.Equal(1, workspaceCount)
+
+	var eventCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_workspace_setup_events
+		WHERE workspace_id = 'display-ws'`,
+	).Scan(&eventCount)
+	require.NoError(err)
+	assert.Equal(2, eventCount)
+
+	var sessionCount int
+	err = d.ReadDB().QueryRow(`
+		SELECT COUNT(*)
+		FROM middleman_workspace_tmux_sessions
+		WHERE workspace_id = 'display-ws'`,
+	).Scan(&sessionCount)
+	require.NoError(err)
+	assert.Equal(2, sessionCount)
+}
+
+func TestOpenPreservesCanonicalWorkspaceRowsWithoutRepoMatch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "orphan-workspace.db")
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(legacySchemaSQLForTest(t, 17))
+	require.NoError(err)
+	_, err = raw.Exec(`CREATE TABLE schema_migrations (version uint64, dirty bool)`)
+	require.NoError(err)
+	_, err = raw.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (17, FALSE)`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		DROP TRIGGER middleman_workspaces_casefold_insert;
+		DROP TRIGGER middleman_workspaces_casefold_update;`)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		INSERT INTO middleman_workspaces (
+			id, platform_host, repo_owner, repo_name,
+			item_type, item_number, git_head_ref,
+			worktree_path, tmux_session
+		) VALUES (
+			'orphan-ws', 'GitHub.COM', 'LegacyOrg', 'LegacyRepo',
+			'pull_request', 12, 'feature', '/tmp/orphan-ws', 'orphan-ws'
+		)`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+
+	workspace, err := d.GetWorkspace(t.Context(), "orphan-ws")
+	require.NoError(err)
+	require.NotNil(workspace)
+	assert.Equal("github.com", workspace.PlatformHost)
+	assert.Equal("legacyorg", workspace.RepoOwner)
+	assert.Equal("legacyrepo", workspace.RepoName)
+
+	var workspacePathKey string
+	err = d.ReadDB().QueryRow(`
+		SELECT repo_path_key
+		FROM middleman_workspaces
+		WHERE id = 'orphan-ws'`,
+	).Scan(&workspacePathKey)
+	require.NoError(err)
+	assert.Equal("legacyorg/legacyrepo", workspacePathKey)
+}
+
 func legacySchemaSQLForTest(t *testing.T, version int) string {
 	t.Helper()
 	parts := make([]string, 0, version)
@@ -1062,6 +1383,8 @@ func legacyMigrationFilenameForTest(version int) string {
 		return "000015_repo_overview_releases.up.sql"
 	case 16:
 		return "000016_workspace_associated_pr.up.sql"
+	case 17:
+		return "000017_platform_repo_identity.up.sql"
 	default:
 		return ""
 	}
@@ -1168,6 +1491,9 @@ func rewriteWorkspacesToVersion11ForTest(raw *sql.DB) error {
 		CREATE INDEX middleman_workspace_setup_events_workspace_id_idx
 		    ON middleman_workspace_setup_events (workspace_id, id);
 
+		DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
+		DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+		DROP INDEX IF EXISTS idx_repos_provider_path_key;
 		DROP INDEX IF EXISTS idx_repos_platform_repo_id;
 		ALTER TABLE middleman_repos DROP COLUMN default_branch;
 		ALTER TABLE middleman_repos DROP COLUMN clone_url;
@@ -1241,6 +1567,9 @@ func rewriteWorkspacesToVersion9ForTest(raw *sql.DB) error {
 		    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
 		END;
 
+		DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
+		DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+		DROP INDEX IF EXISTS idx_repos_provider_path_key;
 		DROP INDEX IF EXISTS idx_repos_platform_repo_id;
 		ALTER TABLE middleman_repos DROP COLUMN default_branch;
 		ALTER TABLE middleman_repos DROP COLUMN clone_url;
