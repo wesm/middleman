@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import {
   startIsolatedWorkspaceE2EServer,
@@ -8,6 +10,7 @@ import {
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
+  worktree_path?: string;
 };
 
 const lockedWorkspaceTestTimeoutMs = 120_000;
@@ -210,6 +213,20 @@ test.describe("workspace tab persistence", () => {
       });
 
       const workspace = await createIssueWorkspace(api, 12);
+      const workspaceResponse = await api.get(
+        `/api/v1/workspaces/${workspace.id}`,
+      );
+      expect(workspaceResponse.ok()).toBe(true);
+      const workspaceDetail = await workspaceResponse.json() as WorkspaceStatusResponse;
+      expect(workspaceDetail.worktree_path).toBeTruthy();
+      await writeFile(
+        join(workspaceDetail.worktree_path!, "alpha.txt"),
+        "alpha\n",
+      );
+      await writeFile(
+        join(workspaceDetail.worktree_path!, "beta.txt"),
+        "beta\n",
+      );
 
       await page.goto(
         `${isolatedServer.info.base_url}/terminal/${workspace.id}`,
@@ -236,6 +253,10 @@ test.describe("workspace tab persistence", () => {
       await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       expect((await diffResponse).ok()).toBe(true);
+      const activeDiffFile = page.locator(
+        ".right-sidebar .diff-file-row--active",
+      );
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.txt");
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
@@ -246,6 +267,18 @@ test.describe("workspace tab persistence", () => {
       })).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       await expect(panes).toHaveCount(2);
+
+      await page.locator(".stage-pane.active .terminal-container").click();
+      for (const key of ["j", "k", "[", "]"]) {
+        await page.keyboard.press(key);
+      }
+      await expect(page).toHaveURL(
+        new RegExp(`/terminal/${workspace.id}$`),
+      );
+      await expect(page.locator('.workspace-tabs [role="tab"]', {
+        hasText: "tmux",
+      })).toHaveAttribute("aria-selected", "true");
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.txt");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
