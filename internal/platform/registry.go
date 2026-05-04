@@ -93,3 +93,42 @@ func (r *Registry) IssueReader(kind Kind, host string) (IssueReader, error) {
 	}
 	return reader, nil
 }
+
+func (r *Registry) ReleaseReader(kind Kind, host string) (ReleaseReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(ReleaseReader)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "read_releases")
+	}
+	return reader, nil
+}
+
+func (r *Registry) TagReader(kind Kind, host string) (TagReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(TagReader)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "read_tags")
+	}
+	return reader, nil
+}
+
+func (r *Registry) CIReader(kind Kind, host string) (CIReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(CIReader)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "read_ci")
+	}
+	return reader, nil
+}

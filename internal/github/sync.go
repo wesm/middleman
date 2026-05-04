@@ -869,6 +869,18 @@ func (s *Syncer) issueReaderFor(repo RepoRef) (platform.IssueReader, error) {
 	return s.clients.IssueReader(repoPlatform(repo), repoHost(repo))
 }
 
+func (s *Syncer) releaseReaderFor(repo RepoRef) (platform.ReleaseReader, error) {
+	return s.clients.ReleaseReader(repoPlatform(repo), repoHost(repo))
+}
+
+func (s *Syncer) tagReaderFor(repo RepoRef) (platform.TagReader, error) {
+	return s.clients.TagReader(repoPlatform(repo), repoHost(repo))
+}
+
+func (s *Syncer) ciReaderFor(repo RepoRef) (platform.CIReader, error) {
+	return s.clients.CIReader(repoPlatform(repo), repoHost(repo))
+}
+
 // ClientForRepo returns the Client for a tracked repo by
 // owner/name, or an error if the repo is not tracked.
 func (s *Syncer) ClientForRepo(
@@ -1703,6 +1715,8 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 
 	if client, ok := s.optionalGitHubClientFor(repo); ok {
 		s.syncRepoOverview(ctx, client, repo, repoID, cloneFetchOK)
+	} else {
+		s.syncProviderRepoOverview(ctx, repo, repoID, cloneFetchOK)
 	}
 
 	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
@@ -1772,6 +1786,80 @@ func (s *Syncer) syncRepoOverview(
 	} else {
 		for _, release := range selectedReleases {
 			timelineTags = append(timelineTags, release.GetTagName())
+		}
+	}
+
+	s.addRepoOverviewTimeline(ctx, repo, cloneFetchOK, timelineTags, &overview)
+
+	if err := s.db.UpsertRepoOverview(ctx, repoID, overview); err != nil {
+		slog.Warn("store repo overview failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+	}
+}
+
+func (s *Syncer) syncProviderRepoOverview(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	cloneFetchOK bool,
+) {
+	releaseReader, err := s.releaseReaderFor(repo)
+	if err != nil {
+		if !errors.Is(err, platform.ErrUnsupportedCapability) {
+			slog.Warn("resolve repo release reader failed",
+				"repo", repo.Owner+"/"+repo.Name, "err", err,
+			)
+		}
+		return
+	}
+
+	releases, err := releaseReader.ListReleases(ctx, platformRepoRef(repo))
+	if err != nil {
+		slog.Warn("list repo releases failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+		return
+	}
+
+	selectedReleases := displayPlatformReleases(releases, 3)
+	overview := db.RepoOverview{}
+	for _, release := range selectedReleases {
+		overview.Releases = append(overview.Releases, repoReleaseFromPlatform(release))
+	}
+	if len(overview.Releases) > 0 {
+		overview.LatestRelease = &overview.Releases[0]
+	}
+
+	timelineTags := make([]string, 0, len(selectedReleases))
+	if len(selectedReleases) == 0 {
+		tagReader, tagErr := s.tagReaderFor(repo)
+		if tagErr != nil {
+			if !errors.Is(tagErr, platform.ErrUnsupportedCapability) {
+				slog.Warn("resolve repo tag reader failed",
+					"repo", repo.Owner+"/"+repo.Name, "err", tagErr,
+				)
+			}
+		} else {
+			tags, tagErr := tagReader.ListTags(ctx, platformRepoRef(repo))
+			if tagErr != nil {
+				slog.Warn("list repo tags failed",
+					"repo", repo.Owner+"/"+repo.Name, "err", tagErr,
+				)
+			} else {
+				selectedTags := displayPlatformTags(tags, 3)
+				for _, tag := range selectedTags {
+					overview.Releases = append(overview.Releases, repoReleaseFromPlatformTag(tag))
+					timelineTags = append(timelineTags, tag.Name)
+				}
+				if len(overview.Releases) > 0 {
+					overview.LatestRelease = &overview.Releases[0]
+				}
+			}
+		}
+	} else {
+		for _, release := range selectedReleases {
+			timelineTags = append(timelineTags, release.TagName)
 		}
 	}
 
@@ -1875,6 +1963,40 @@ func displayTags(
 	return out
 }
 
+func displayPlatformReleases(releases []platform.Release, limit int) []platform.Release {
+	if limit < 1 {
+		limit = 1
+	}
+	out := make([]platform.Release, 0, limit)
+	for _, release := range releases {
+		if release.TagName == "" {
+			continue
+		}
+		out = append(out, release)
+		if len(out) == limit {
+			return out
+		}
+	}
+	return out
+}
+
+func displayPlatformTags(tags []platform.Tag, limit int) []platform.Tag {
+	if limit < 1 {
+		limit = 1
+	}
+	out := make([]platform.Tag, 0, limit)
+	for _, tag := range tags {
+		if tag.Name == "" {
+			continue
+		}
+		out = append(out, tag)
+		if len(out) == limit {
+			return out
+		}
+	}
+	return out
+}
+
 func repoReleaseFromGitHub(release *gh.RepositoryRelease) db.RepoRelease {
 	out := db.RepoRelease{
 		TagName:         release.GetTagName(),
@@ -1891,6 +2013,21 @@ func repoReleaseFromGitHub(release *gh.RepositoryRelease) db.RepoRelease {
 	return out
 }
 
+func repoReleaseFromPlatform(release platform.Release) db.RepoRelease {
+	out := db.RepoRelease{
+		TagName:         release.TagName,
+		Name:            release.Name,
+		URL:             release.URL,
+		TargetCommitish: release.TargetCommitish,
+		Prerelease:      release.Prerelease,
+	}
+	if release.PublishedAt != nil && !release.PublishedAt.IsZero() {
+		publishedAt := release.PublishedAt.UTC()
+		out.PublishedAt = &publishedAt
+	}
+	return out
+}
+
 func repoReleaseFromTag(platformHost, owner, repo string, tag *gh.RepositoryTag) db.RepoRelease {
 	host := platformHost
 	if host == "" {
@@ -1902,6 +2039,15 @@ func repoReleaseFromTag(platformHost, owner, repo string, tag *gh.RepositoryTag)
 		Name:            tagName,
 		URL:             "https://" + host + "/" + owner + "/" + repo + "/tree/" + url.PathEscape(tagName),
 		TargetCommitish: tag.GetCommit().GetSHA(),
+	}
+}
+
+func repoReleaseFromPlatformTag(tag platform.Tag) db.RepoRelease {
+	return db.RepoRelease{
+		TagName:         tag.Name,
+		Name:            tag.Name,
+		URL:             tag.URL,
+		TargetCommitish: tag.SHA,
 	}
 }
 
@@ -3241,27 +3387,16 @@ func (s *Syncer) fetchProviderMRDetail(
 		)
 	}
 
-	events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
-	calls++
-	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
-		return calls, fmt.Errorf("list MR events for #%d: %w", number, err)
-	}
-	if err == nil {
-		dbEvents := make([]db.MREvent, 0, len(events))
-		for _, event := range events {
-			dbEvents = append(dbEvents, platform.DBMREvent(mrID, event))
-		}
-		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
-			return calls, fmt.Errorf("upsert events for MR #%d: %w", number, err)
-		}
+	detailCalls, pending, err := s.syncProviderMRDetailExtras(
+		ctx, reader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
+	)
+	calls += detailCalls
+	if err != nil {
+		return calls, err
 	}
 
-	if err := s.updateMRDetailFetchedByRepoID(
-		ctx, repoID, number, false,
-	); err != nil {
-		return calls, fmt.Errorf(
-			"mark detail fetched for MR #%d: %w", number, err,
-		)
+	if err := s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending); err != nil {
+		return calls, fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
 	}
 
 	if s.onMRSynced != nil {
@@ -3277,6 +3412,63 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 
 	return calls, nil
+}
+
+func (s *Syncer) syncProviderMRDetailExtras(
+	ctx context.Context,
+	reader platform.MergeRequestReader,
+	repo RepoRef,
+	repoID int64,
+	mrID int64,
+	number int,
+	headSHA string,
+) (int, bool, error) {
+	calls := 0
+	events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
+	calls++
+	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
+		return calls, false, fmt.Errorf("list MR events for #%d: %w", number, err)
+	}
+	if err == nil {
+		dbEvents := make([]db.MREvent, 0, len(events))
+		for _, event := range events {
+			dbEvents = append(dbEvents, platform.DBMREvent(mrID, event))
+		}
+		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
+			return calls, false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
+		}
+	}
+
+	pending := false
+	if headSHA == "" {
+		return calls, pending, nil
+	}
+	ciReader, err := s.ciReaderFor(repo)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			return calls, pending, nil
+		}
+		return calls, false, fmt.Errorf("resolve CI reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	checks, err := ciReader.ListCIChecks(ctx, platformRepoRef(repo), headSHA)
+	calls++
+	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
+		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
+	}
+	if err != nil {
+		return calls, pending, nil
+	}
+	dbChecks := platform.DBCIChecks(checks)
+	if dbChecks == nil {
+		dbChecks = []db.CICheck{}
+	}
+	ciJSON, _ := json.Marshal(dbChecks)
+	ciStatus := deriveCIStatusFromChecks(dbChecks)
+	if err := s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, string(ciJSON)); err != nil {
+		return calls, false, fmt.Errorf("update CI status for MR #%d: %w", number, err)
+	}
+	pending = ciHasPending(string(ciJSON))
+	return calls, pending, nil
 }
 
 // fetchIssueDetail performs a full detail fetch for a single
@@ -4841,7 +5033,16 @@ func (s *Syncer) syncMRForRepo(
 			_ = s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending)
 		}
 	} else {
-		_ = s.updateMRDetailFetchedByRepoID(ctx, repoID, number, false)
+		pending := false
+		_, pending, err = s.syncProviderMRDetailExtras(
+			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
+		)
+		if err != nil {
+			return err
+		}
+		if err := s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending); err != nil {
+			return fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
+		}
 	}
 
 	if s.onMRSynced != nil {
