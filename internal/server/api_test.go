@@ -3224,6 +3224,77 @@ func TestAPICreateIssue(t *testing.T) {
 	assert.Equal("a2eeef", issue.Labels[0].Color)
 }
 
+func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		createIssueFn: func(context.Context, string, string, string, string) (*gh.Issue, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(
+		t,
+		mock,
+		[]ghclient.RepoRef{
+			{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		},
+	)
+	client := setupTestClient(t, srv)
+
+	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widgets")
+	require.NoError(err)
+
+	resp, err := client.HTTP.CreateIssueWithResponse(
+		t.Context(),
+		"acme",
+		"widgets",
+		generated.CreateIssueJSONRequestBody{Title: "Empty payload"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 0)
+	require.NoError(err)
+	require.Nil(issue)
+}
+
+func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	mock := &mockGH{
+		editPullRequestFn: func(
+			context.Context,
+			string,
+			string,
+			int,
+			ghclient.EditPullRequestOpts,
+		) (*gh.PullRequest, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	title := "Updated title"
+	resp, err := client.HTTP.EditPrContentWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		1,
+		generated.EditPrContentJSONRequestBody{Title: &title},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	mr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("Test PR #1", mr.Title)
+	assert.Equal("test body", mr.Body)
+}
+
 func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
