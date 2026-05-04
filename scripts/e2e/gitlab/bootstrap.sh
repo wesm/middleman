@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import time
+from datetime import date, timedelta
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -93,6 +94,20 @@ def root_token():
             last_error = exc
             time.sleep(5)
     raise RuntimeError(f"could not obtain root OAuth token: {last_error}")
+
+
+def create_personal_access_token(admin_token):
+    token = request(
+        "POST",
+        "/users/1/personal_access_tokens",
+        token=admin_token,
+        form={
+            "name": f"middleman-e2e-{int(time.time())}",
+            "scopes[]": "api",
+            "expires_at": (date.today() + timedelta(days=30)).isoformat(),
+        },
+    )
+    return token["token"]
 
 
 def get_or_create_group(token, name, path, parent_id=None):
@@ -257,13 +272,14 @@ issue = ensure_issue(token, project, label["name"])
 mr_note = ensure_note(token, project, mr, "mr", "MR note from GitLab container")
 issue_note = ensure_note(token, project, issue, "issue", "Issue note from GitLab container")
 release = ensure_tag_and_release(token, project)
+api_token = create_personal_access_token(token)
 
 parsed = urllib.parse.urlparse(base_url)
 manifest = {
     "base_url": base_url,
     "api_url": api_url,
     "host": parsed.netloc,
-    "token": token,
+    "token": api_token,
     "owner": "middleman-fixture/nested",
     "name": "project-special",
     "repo_path": "middleman-fixture/nested/project-special",

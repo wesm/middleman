@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
@@ -52,48 +55,48 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	image := envOrDefault("MIDDLEMAN_GITLAB_IMAGE", "gitlab/gitlab-ce:18.9.5-ce.0")
 	rootPassword := envOrDefault("GITLAB_ROOT_PASSWORD", "V9q!T3m#R7p-L2x@N6s")
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        image,
-			ExposedPorts: []string{"80/tcp"},
-			Env: map[string]string{
-				"GITLAB_ROOT_PASSWORD": rootPassword,
-				"GITLAB_OMNIBUS_CONFIG": "" +
-					"external_url 'http://localhost'\n" +
-					"gitlab_rails['initial_root_password'] = '" + rootPassword + "'\n" +
-					"letsencrypt['enable'] = false\n" +
-					"prometheus_monitoring['enable'] = false\n" +
-					"puma['worker_processes'] = 0\n" +
-					"sidekiq['concurrency'] = 5\n",
-			},
-			WaitingFor: wait.ForHTTP("/users/sign_in").
-				WithPort("80/tcp").
-				WithStartupTimeout(20 * time.Minute).
-				WithStatusCodeMatcher(func(status int) bool {
-					return status == 200
-				}),
-		},
-		Started: true,
-	})
+	httpPort := envOrDefault("GITLAB_HTTP_PORT", freeLoopbackPort(t))
+	stackID := compose.StackIdentifier(envOrDefault("MIDDLEMAN_GITLAB_COMPOSE_PROJECT", "middleman-gitlab-e2e"))
+	stack, err := compose.NewDockerComposeWith(
+		compose.WithStackFiles(filepath.Join(repoRoot(t), "scripts/e2e/gitlab/docker-compose.yml")),
+		stackID,
+	)
+	require.NoError(err)
+
+	composeStack := stack.
+		WithEnv(map[string]string{
+			"MIDDLEMAN_GITLAB_IMAGE": image,
+			"GITLAB_ROOT_PASSWORD":   rootPassword,
+			"GITLAB_HTTP_PORT":       httpPort,
+		}).
+		WaitForService("gitlab", wait.ForHTTP("/users/sign_in").
+			WithPort("80/tcp").
+			WithStartupTimeout(20*time.Minute).
+			WithStatusCodeMatcher(func(status int) bool {
+				return status == http.StatusOK
+			}).
+			WithResponseHeadersMatcher(func(headers http.Header) bool {
+				return headers.Get("X-Gitlab-Meta") != ""
+			}))
+	err = composeStack.Up(ctx, compose.Wait(true))
+	container, containerErr := composeStack.ServiceContainer(ctx, "gitlab")
 	if err != nil {
-		if container != nil {
+		if containerErr == nil {
 			require.NoError(err, containerLogs(ctx, container))
 		}
 		require.NoError(err)
 	}
+	require.NoError(containerErr)
 	if os.Getenv("MIDDLEMAN_KEEP_GITLAB_FIXTURE") == "1" {
-		t.Logf("keeping GitLab container %s", container.GetContainerID())
+		t.Logf("keeping GitLab Compose stack %s at http://127.0.0.1:%s", stackID, httpPort)
 	} else {
 		t.Cleanup(func() {
-			assert.NoError(container.Terminate(context.Background()))
+			assert.NoError(composeStack.Down(context.Background(), compose.RemoveOrphans(true)))
 		})
 	}
 
-	host, err := container.Host(ctx)
+	baseURL, err := container.PortEndpoint(ctx, "80/tcp", "http")
 	require.NoError(err)
-	port, err := container.MappedPort(ctx, "80/tcp")
-	require.NoError(err)
-	baseURL := fmt.Sprintf("http://%s:%s", host, port.Port())
 
 	manifestPath := filepath.Join(t.TempDir(), "gitlab-manifest.json")
 	cmd := exec.CommandContext(
@@ -193,6 +196,16 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func freeLoopbackPort(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	return fmt.Sprint(addr.Port)
 }
 
 func repoRoot(t *testing.T) string {

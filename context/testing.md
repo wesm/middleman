@@ -16,6 +16,9 @@ CI runs the live GraphQL validation as a separate Go test step using the workflo
 
 ## Related context
 
+- [`context/platform-sync-invariants.md`](./platform-sync-invariants.md)
+  documents provider identity and capability rules for GitHub, GitLab, and
+  future providers.
 - [`context/github-sync-invariants.md`](./github-sync-invariants.md) documents
-  the host-aware identity, timeline freshness, SHA-sensitive CI, and fallback
-  rules that usually determine which tests belong on a GitHub-sync change.
+  timeline freshness, SHA-sensitive CI, and fallback rules that usually
+  determine which tests belong on a GitHub-specific sync change.

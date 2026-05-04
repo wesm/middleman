@@ -8,7 +8,9 @@ Run the Go e2e test:
 MIDDLEMAN_GITLAB_CONTAINER_E2E=1 make test-gitlab-container
 ```
 
-The test starts `gitlab/gitlab-ce:18.9.5-ce.0` through testcontainers, waits for GitLab Rails to serve the sign-in page, runs `bootstrap.sh`, and syncs the seeded project into a real SQLite database. Override the image with `MIDDLEMAN_GITLAB_IMAGE` when checking a different GitLab release.
+The test starts `gitlab/gitlab-ce:18.9.5-ce.0` through testcontainers' Docker Compose module, waits for GitLab Rails to serve the sign-in page, runs `bootstrap.sh`, and syncs the seeded project into a real SQLite database. Override the image with `MIDDLEMAN_GITLAB_IMAGE` when checking a different GitLab release.
+
+By default the Go test uses the Compose project `middleman-gitlab-e2e`, maps GitLab to a free loopback port, and runs `docker compose down` without `-v` during cleanup. The named GitLab volumes are kept so repeated local runs do not pay the full database initialization cost. Set `MIDDLEMAN_GITLAB_COMPOSE_PROJECT` or `GITLAB_HTTP_PORT` if you need a specific project name or port.
 
 The test expects a working Docker runtime with Ryuk enabled. CI jobs that run this target must provide Docker access to the test process. Only set `TESTCONTAINERS_HOST_OVERRIDE` when the Go test itself runs inside another container and mapped ports are reachable through a non-default host.
 
@@ -20,8 +22,10 @@ GITLAB_URL=http://127.0.0.1:${GITLAB_HTTP_PORT:-18080} scripts/e2e/gitlab/wait.s
 GITLAB_URL=http://127.0.0.1:${GITLAB_HTTP_PORT:-18080} \
   GITLAB_ROOT_PASSWORD=${GITLAB_ROOT_PASSWORD:-V9q!T3m#R7p-L2x@N6s} \
   scripts/e2e/gitlab/bootstrap.sh /tmp/middleman-gitlab-manifest.json
-docker compose -f scripts/e2e/gitlab/docker-compose.yml down -v
+docker compose -f scripts/e2e/gitlab/docker-compose.yml down
 ```
+
+Use `docker compose -f scripts/e2e/gitlab/docker-compose.yml down -v` only when you intentionally want to discard the GitLab database/config volumes and force a cold initialization.
 
 With Colima, prefer the Docker context first:
 
@@ -37,7 +41,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 MIDDLEMAN_GITLAB_CONTAINER_E2E=1 make test-gitlab-container
 ```
 
-Set `MIDDLEMAN_KEEP_GITLAB_FIXTURE=1` only when you want to skip the test's explicit `Terminate` call while debugging a live run. Ryuk remains enabled and may still reap containers for the test session. For after-run inspection, use the Docker Compose fixture instead.
+Set `MIDDLEMAN_KEEP_GITLAB_FIXTURE=1` only when you want to leave the test's Compose stack running after the Go test exits.
 
 The bootstrap manifest contains the dynamically assigned project id, MR iid, issue iid, token, provider host, nested repo path, and release tag. Tests consume the manifest instead of hard-coding GitLab-assigned ids.
 
