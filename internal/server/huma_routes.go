@@ -2988,8 +2988,9 @@ func (s *Server) getWorkspaceFiles(
 		return nil, err
 	}
 
+	hideWhitespace := input.Whitespace == "hide"
 	files, ok, diffErr := workspace.WorktreeDiffFiles(
-		ctx, summary.WorktreePath, base,
+		ctx, summary.WorktreePath, base, hideWhitespace,
 	)
 	if diffErr != nil {
 		slog.Error(

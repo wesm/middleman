@@ -349,45 +349,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
 
   async function reloadWorkspaceDiffOnly(): Promise<void> {
-    abortController?.abort();
-    fileListAbortController?.abort();
-    fileListAbortController = null;
-    fileListLoading = false;
-    const ac = new AbortController();
-    abortController = ac;
-    fileList = null;
-
-    loading = true;
-    storeError = null;
-    try {
-      const { data, error, response } = await apiClient.GET(
-        "/workspaces/{id}/diff",
-        {
-          params: {
-            path: { id: currentWorkspaceID },
-            query: workspaceDiffQuery(currentWorkspaceBase),
-          },
-          signal: ac.signal,
-        },
-      );
-      if (abortController !== ac) return;
-      if (!data) {
-        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-      }
-      const result = normalizeDiffResult(data);
-      diff = result;
-      setActiveIfNeeded(getVisibleDiffFiles());
-    } catch (err) {
-      if (ac.signal.aborted) return;
-      if (abortController !== ac) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
-      diff = null;
-    } finally {
-      if (!ac.signal.aborted && abortController === ac) {
-        loading = false;
-      }
-    }
+    await loadWorkspaceDiff(currentWorkspaceID, currentWorkspaceBase);
   }
 
   function toggleFileCollapsed(

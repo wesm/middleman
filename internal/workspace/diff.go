@@ -27,16 +27,18 @@ func WorktreeDiffFiles(
 	ctx context.Context,
 	dir string,
 	base WorktreeDiffBase,
+	hideWhitespace bool,
 ) ([]gitclone.DiffFile, bool, error) {
 	baseRef, ok, err := worktreeDiffBaseRef(ctx, dir, base)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
 
-	rawOut, err := worktreeGitOutput(ctx, dir,
+	rawArgs := addWorktreeWhitespaceFlag([]string{
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	)
+	}, hideWhitespace)
+	rawOut, err := worktreeGitOutput(ctx, dir, rawArgs...)
 	if err != nil {
 		return nil, false, fmt.Errorf("git diff --raw: %w", err)
 	}
@@ -45,10 +47,11 @@ func WorktreeDiffFiles(
 		files = []gitclone.DiffFile{}
 	}
 
-	numstatOut, err := worktreeGitOutput(ctx, dir,
+	numstatArgs := addWorktreeWhitespaceFlag([]string{
 		"diff", "--numstat", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	)
+	}, hideWhitespace)
+	numstatOut, err := worktreeGitOutput(ctx, dir, numstatArgs...)
 	if err != nil {
 		return nil, false, fmt.Errorf("git diff --numstat: %w", err)
 	}

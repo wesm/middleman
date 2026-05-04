@@ -2,7 +2,6 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
-  import WorkspaceDiffTab from "./WorkspaceDiffTab.svelte";
   import WorkspaceHome from "./WorkspaceHome.svelte";
   import WorkspaceTabs from "./WorkspaceTabs.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
@@ -112,7 +111,7 @@
   const ACTIVE_WORKSPACE_TAB_KEY_PREFIX =
     "middleman-workspace-active-tab:";
 
-  type SidebarTab = "pr" | "issue" | "reviews";
+  type SidebarTab = "diff" | "pr" | "issue" | "reviews";
 
   const MIN_WORKSPACE_LIST_WIDTH = 220;
   const DEFAULT_WORKSPACE_LIST_WIDTH = 260;
@@ -142,8 +141,10 @@
 
   function loadSidebarTab(): SidebarTab {
     const v = localStorage.getItem(SIDEBAR_TAB_KEY);
+    if (v === "diff") return "diff";
     if (v === "issue") return "issue";
-    return v === "reviews" ? "reviews" : "pr";
+    if (v === "reviews") return "reviews";
+    return "diff";
   }
 
   function loadSidebarOpen(): boolean {
@@ -474,19 +475,19 @@
     const remembered = localStorage.getItem(
       `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${id}`,
     );
+    if (remembered === "diff") return "home";
     return remembered ?? "home";
   }
 
-  function defaultSidebarTab(
-    ws: Workspace,
-  ): SidebarTab {
-    return ws.item_type === "issue" ? "issue" : "pr";
+  function defaultSidebarTab(): SidebarTab {
+    return "diff";
   }
 
   function isSidebarTabSupported(
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
+    if (tab === "diff") return true;
     if (tab === "issue") {
       return ws.item_type === "issue";
     }
@@ -498,7 +499,7 @@
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
     if (!isSidebarTabSupported(ws, sidebarTab)) {
-      sidebarTab = defaultSidebarTab(ws);
+      sidebarTab = defaultSidebarTab();
     }
   }
 
@@ -787,7 +788,7 @@
   $effect(() => {
     if (!workspace) return;
     if (!isSidebarTabSupported(workspace, sidebarTab)) {
-      sidebarTab = defaultSidebarTab(workspace);
+      sidebarTab = defaultSidebarTab();
     }
   });
 
@@ -973,6 +974,13 @@
           </div>
           <div class="header-right">
             <div class="seg-control">
+              <button
+                class="seg-btn"
+                class:active={sidebarOpen && sidebarTab === "diff"}
+                onclick={() => handleSegmentClick("diff")}
+              >
+                Diff
+              </button>
               {#if workspace.item_type === "issue"}
                 <button
                   class="seg-btn"
@@ -1020,9 +1028,6 @@
                   tmuxOpen={tmuxTabOpen}
                   onSelectHome={() => {
                     selectWorkspaceTab("home");
-                  }}
-                  onSelectDiff={() => {
-                    selectWorkspaceTab("diff");
                   }}
                   onSelectTmux={() => {
                     tmuxTerminalMounted = true;
@@ -1077,15 +1082,6 @@
                       {launchingKey}
                       onLaunch={(key) => void handleLaunch(key)}
                       onOpenSession={openSession}
-                    />
-                  </div>
-                  <div
-                    class="stage-pane"
-                    class:active={activeTabKey === "diff"}
-                  >
-                    <WorkspaceDiffTab
-                      {workspace}
-                      active={activeTabKey === "diff"}
                     />
                   </div>
                   {#if tmuxTabOpen}
@@ -1148,6 +1144,7 @@
             >
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
+                workspaceID={workspace.id}
                 platformHost={workspace.platform_host}
                 repoOwner={workspace.repo_owner}
                 repoName={workspace.repo_name}

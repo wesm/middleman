@@ -1,33 +1,33 @@
 <script lang="ts">
-  import {
-    DiffSidebar,
-    DiffToolbar,
-    DiffView,
-    getStores,
-  } from "@middleman/ui";
-  import type { WorkspaceDiffBase } from "@middleman/ui/stores/diff";
-
-  interface WorkspaceDiffWorkspace {
-    id: string;
-    repo_owner: string;
-    repo_name: string;
-    item_number: number;
-  }
+  import DiffSidebar from "../diff/DiffSidebar.svelte";
+  import DiffToolbar from "../diff/DiffToolbar.svelte";
+  import DiffView from "../diff/DiffView.svelte";
+  import { getStores } from "../../context.js";
+  import type { WorkspaceDiffBase } from "../../stores/diff.svelte.js";
 
   interface Props {
-    workspace: WorkspaceDiffWorkspace;
+    workspaceID: string;
+    repoOwner: string;
+    repoName: string;
+    itemNumber: number;
     active?: boolean;
   }
 
-  const { workspace, active = false }: Props = $props();
+  const {
+    workspaceID,
+    repoOwner,
+    repoName,
+    itemNumber,
+    active = false,
+  }: Props = $props();
   const { diff } = getStores();
 
   let base = $state<WorkspaceDiffBase>("head");
-  const resetKey = $derived(`${workspace.id}:${base}`);
+  const resetKey = $derived(`${workspaceID}:${base}`);
 
   $effect(() => {
     if (!active) return;
-    void diff.loadWorkspaceDiff(workspace.id, base);
+    void diff.loadWorkspaceDiff(workspaceID, base);
   });
 
   function selectBase(nextBase: WorkspaceDiffBase): void {
@@ -64,9 +64,9 @@
     </aside>
     <div class="workspace-diff-main">
       <DiffView
-        owner={workspace.repo_owner}
-        name={workspace.repo_name}
-        number={workspace.item_number}
+        owner={repoOwner}
+        name={repoName}
+        number={itemNumber}
         loadOnMount={false}
       />
     </div>

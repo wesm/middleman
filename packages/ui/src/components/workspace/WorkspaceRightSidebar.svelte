@@ -31,12 +31,15 @@
     from "../roborev/JobTable.svelte";
   import ReviewDrawer
     from "../roborev/ReviewDrawer.svelte";
+  import WorkspaceDiffPanel
+    from "./WorkspaceDiffPanel.svelte";
 
   type RepoWithCount =
     components["schemas"]["RepoWithCount"];
 
   interface Props {
-    activeTab: "pr" | "issue" | "reviews";
+    activeTab: "diff" | "pr" | "issue" | "reviews";
+    workspaceID: string;
     platformHost: string;
     repoOwner: string;
     repoName: string;
@@ -49,6 +52,7 @@
 
   let {
     activeTab,
+    workspaceID,
     platformHost,
     repoOwner,
     repoName,
@@ -269,7 +273,15 @@
 </script>
 
 <div class="right-sidebar-content">
-  {#if activeTab === "pr"}
+  {#if activeTab === "diff"}
+    <WorkspaceDiffPanel
+      {workspaceID}
+      {repoOwner}
+      {repoName}
+      itemNumber={ownerItemNumber}
+      active={activeTab === "diff"}
+    />
+  {:else if activeTab === "pr"}
     {#if hasPR}
       <div class="pr-scroll">
         <PullDetail
