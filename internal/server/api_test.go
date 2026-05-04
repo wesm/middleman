@@ -11777,13 +11777,30 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 	require.Equal(http.StatusOK, launchResp.StatusCode())
 	require.NotNil(launchResp.JSON200)
 	session := launchResp.JSON200
-	time.Sleep(100 * time.Millisecond)
 
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.Id +
 		"/runtime/sessions/" + session.Key + "/terminal"
+
+	primingConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	var primed strings.Builder
+	primingCtx, primingCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer primingCancel()
+	for {
+		typ, data, readErr := primingConn.Read(primingCtx)
+		require.NoError(readErr)
+		if typ == websocket.MessageBinary {
+			primed.WriteString(string(data))
+		}
+		if strings.Contains(primed.String(), "codex screen") {
+			break
+		}
+	}
+	require.NoError(primingConn.Close(websocket.StatusNormalClosure, "primed"))
+
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
