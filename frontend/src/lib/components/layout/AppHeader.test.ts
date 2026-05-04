@@ -184,6 +184,20 @@ describe("AppHeader", () => {
     ).toBeTruthy();
   });
 
+  it("renders the app icon next to the wordmark", () => {
+    initTheme();
+    const { container } = render(AppHeader);
+
+    const brand = container.querySelector(".brand");
+    const appIcon = brand?.querySelector("img.app-icon");
+    const wordmark = brand?.querySelector(".logo");
+
+    expect(appIcon?.getAttribute("src")).toBe("/favicon.svg");
+    expect(appIcon?.getAttribute("alt")).toBe("");
+    expect(appIcon?.nextElementSibling).toBe(wordmark);
+    expect(wordmark?.textContent).toBe("middleman");
+  });
+
   it("changes the theme toggle SVG when toggled", async () => {
     initTheme();
     render(AppHeader);

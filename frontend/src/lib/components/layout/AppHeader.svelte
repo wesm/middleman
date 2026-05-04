@@ -1,6 +1,11 @@
 <script lang="ts">
   import { getStores } from "@middleman/ui";
-  import { getPage, getView, navigate } from "../../stores/router.svelte.ts";
+  import {
+    getBasePath,
+    getPage,
+    getView,
+    navigate,
+  } from "../../stores/router.svelte.ts";
   import {
     activitySelectionToRoute,
     parseActivitySelection,
@@ -24,6 +29,8 @@
     toggleSidebar,
     isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
+
+  const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
 
   const hasSidebarStrip = $derived(
     getPage() === "issues"
@@ -90,7 +97,10 @@
         />
       </HeaderIconButton>
     {/if}
-    <span class="logo">middleman</span>
+    <span class="brand">
+      <img class="app-icon" src={appIconSrc} alt="" aria-hidden="true" />
+      <span class="logo">middleman</span>
+    </span>
     {#if !getUIConfig().hideRepoSelector}
       <RepoTypeahead
         selected={getGlobalRepo()}
@@ -215,6 +225,19 @@
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+
+  .app-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
   }
 
   .logo {
