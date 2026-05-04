@@ -23,6 +23,7 @@ export type IsolatedE2EServer = {
 
 export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
+  gitLabReadOnlyFixture?: boolean;
 };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -292,6 +293,9 @@ async function spawnServer(
   ];
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
+  }
+  if (options.gitLabReadOnlyFixture) {
+    args.push("-gitlab-read-only-fixture");
   }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
