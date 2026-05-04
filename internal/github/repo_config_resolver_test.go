@@ -360,6 +360,7 @@ func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {
 		PlatformHost: "gitlab.com",
 		Owner:        "Acme/SubGroup",
 		Name:         "Widget",
+		RepoPath:     "Acme/SubGroup/Widget",
 	}}, got)
 }
 

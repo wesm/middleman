@@ -44,8 +44,11 @@ describe("RepoSettings", () => {
     render(RepoSettings, {
       props: {
         repos: [{
+          provider: "github",
+          platform_host: "github.com",
           owner: "roborev-dev",
           name: "*",
+          repo_path: "roborev-dev/*",
           is_glob: true,
           matched_repo_count: 2,
         }],
@@ -103,18 +106,26 @@ describe("RepoSettings", () => {
 
   it("updates repos and refreshes sync status after import", async () => {
     const importedRepos = [{
+      provider: "github",
+      platform_host: "github.com",
       owner: "acme",
       name: "api",
+      repo_path: "acme/api",
       is_glob: false,
       matched_repo_count: 1,
     }];
     const onUpdate = vi.fn();
     mockPreviewRepos.mockResolvedValue({
+      provider: "github",
+      platform_host: "github.com",
       owner: "acme",
       pattern: "*",
       repos: [{
+        provider: "github",
+        platform_host: "github.com",
         owner: "acme",
         name: "api",
+        repo_path: "acme/api",
         description: "HTTP API",
         private: false,
         fork: false,

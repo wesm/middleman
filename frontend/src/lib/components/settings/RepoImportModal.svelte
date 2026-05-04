@@ -24,6 +24,8 @@
   let { open, onClose, onImported }: Props = $props();
 
   let patternInput = $state("");
+  let provider = $state<"github" | "gitlab">("github");
+  let hostInput = $state("github.com");
   let rows = $state.raw<RepoPreviewRow[]>([]);
   let selected = $state<Set<string>>(new Set());
   let filterText = $state("");
@@ -66,6 +68,8 @@
 
   function resetAll(): void {
     patternInput = "";
+    provider = "github";
+    hostInput = "github.com";
     resetPreviewState();
     error = null;
     loading = false;
@@ -81,11 +85,20 @@
     loading = false;
   }
 
+  function handleProviderChange(value: "github" | "gitlab"): void {
+    provider = value;
+    hostInput = value === "gitlab" ? "gitlab.com" : "github.com";
+    requestToken += 1;
+    resetPreviewState();
+    error = null;
+    loading = false;
+  }
+
   async function handlePreview(): Promise<void> {
     if (loading) return;
     let parsed: { owner: string; pattern: string };
     try {
-      parsed = parseImportPattern(patternInput);
+      parsed = parseImportPattern(patternInput, provider === "gitlab");
     } catch (err) {
       resetPreviewState();
       error = err instanceof Error ? err.message : String(err);
@@ -96,7 +109,10 @@
     error = null;
     resetPreviewState();
     try {
-      const resp = await previewRepos(parsed.owner, parsed.pattern);
+      const resp = await previewRepos(parsed.owner, parsed.pattern, {
+        provider,
+        host: hostInput.trim(),
+      });
       if (token !== requestToken) return;
       rows = resp.repos;
       selected = new Set(resp.repos.filter((row) => !row.already_configured).map(rowKey));
@@ -114,7 +130,13 @@
     submitting = true;
     error = null;
     try {
-      const settings = await bulkAddRepos(submitRows.map((row) => ({ owner: row.owner, name: row.name })));
+      const settings = await bulkAddRepos(submitRows.map((row) => ({
+        provider: row.provider,
+        host: row.platform_host,
+        owner: row.owner,
+        name: row.name,
+        repo_path: row.repo_path,
+      })));
       onImported(settings);
       onClose();
     } catch (err) {
@@ -190,12 +212,30 @@
       </header>
 
       <div class="preview-form">
+        <label class="provider-field">
+          <span>Provider</span>
+          <select
+            value={provider}
+            onchange={(event) => handleProviderChange(event.currentTarget.value as "github" | "gitlab")}
+          >
+            <option value="github">GitHub</option>
+            <option value="gitlab">GitLab</option>
+          </select>
+        </label>
+        <label class="host-field">
+          <span>Host</span>
+          <input
+            value={hostInput}
+            placeholder={provider === "gitlab" ? "gitlab.com" : "github.com"}
+            oninput={(event) => { hostInput = event.currentTarget.value; }}
+          />
+        </label>
         <label>
           <span>Repository pattern</span>
           <input
             bind:this={inputEl}
             value={patternInput}
-            placeholder="owner/pattern"
+            placeholder={provider === "gitlab" ? "group/subgroup/pattern" : "owner/pattern"}
             oninput={(event) => handlePatternInput(event.currentTarget.value)}
             onkeydown={(event) => { if (event.key === "Enter" && !loading) void handlePreview(); }}
           />
@@ -253,7 +293,9 @@
   .close-btn { color: var(--text-muted); font-size: 20px; }
   .preview-form { display: flex; gap: 10px; align-items: end; }
   label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-secondary); }
-  input { font-size: 13px; padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  .provider-field { flex: 0 0 120px; }
+  .host-field { flex: 0 0 190px; }
+  input, select { font-size: 13px; padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   .preview-btn, .submit-btn { padding: 7px 14px; font-size: 13px; font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
   .secondary-btn { padding: 7px 14px; font-size: 13px; color: var(--text-secondary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }

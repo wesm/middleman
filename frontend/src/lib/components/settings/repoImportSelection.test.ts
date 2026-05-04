@@ -11,21 +11,41 @@ import {
 } from "./repoImportSelection.js";
 
 const rows: RepoImportRow[] = [
-  { owner: "acme", name: "worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "api", description: "HTTP API", private: true, fork: false, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "empty", description: null, private: false, fork: false, pushed_at: null, already_configured: false },
-  { owner: "acme", name: "widget", description: "Configured", private: false, fork: true, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "worker", repo_path: "acme/worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "api", repo_path: "acme/api", description: "HTTP API", private: true, fork: false, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "empty", repo_path: "acme/empty", description: null, private: false, fork: false, pushed_at: null, already_configured: false },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "widget", repo_path: "acme/widget", description: "Configured", private: false, fork: true, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
 ];
+
+const githubKey = (name: string) => `github/github.com/acme/${name}`;
 
 describe("repo import selection helpers", () => {
   it("parses owner/pattern and trims whitespace", () => {
     expect(parseImportPattern(" acme / widget-* ")).toEqual({ owner: "acme", pattern: "widget-*" });
   });
 
+  it("parses nested namespace patterns when slashes are allowed", () => {
+    expect(parseImportPattern(" group/subgroup / project-* ", true)).toEqual({
+      owner: "group/subgroup",
+      pattern: "project-*",
+    });
+  });
+
   it("rejects malformed patterns before the API call", () => {
     expect(() => parseImportPattern("acme/widgets/extra")).toThrow("Format: owner/pattern");
+    expect(() => parseImportPattern("acme/widgets/extra", true)).not.toThrow();
     expect(() => parseImportPattern("acme*/widgets")).toThrow("glob syntax in owner is not supported");
     expect(() => parseImportPattern("acme/")).toThrow("pattern is required");
+  });
+
+  it("keys rows by provider host and canonical path", () => {
+    expect(rowKey({
+      provider: "gitlab",
+      platform_host: "gitlab.example.com",
+      owner: "Group/Subgroup",
+      name: "Project",
+      repo_path: "Group/Subgroup/Project",
+    })).toBe("gitlab/gitlab.example.com/group/subgroup/project");
   });
 
   it("filters by owner/name, name, description, and status", () => {
@@ -51,8 +71,8 @@ describe("repo import selection helpers", () => {
 
   it("selects and deselects all visible selectable rows", () => {
     const selected = setAllVisible(new Set<string>(), rows, true);
-    expect([...selected].sort()).toEqual(["acme/api", "acme/empty", "acme/worker"]);
-    expect([...setAllVisible(selected, [rows[0]!, rows[3]!], false)].sort()).toEqual(["acme/api", "acme/empty"]);
+    expect([...selected].sort()).toEqual([githubKey("api"), githubKey("empty"), githubKey("worker")]);
+    expect([...setAllVisible(selected, [rows[0]!, rows[3]!], false)].sort()).toEqual([githubKey("api"), githubKey("empty")]);
   });
 
   it("applies shift-click ranges with visible anchors", () => {
@@ -60,29 +80,29 @@ describe("repo import selection helpers", () => {
     const result = applyRangeSelection({
       selected: new Set<string>(),
       visibleRows: visible,
-      anchorKey: "acme/api",
-      clickedKey: "acme/worker",
+      anchorKey: githubKey("api"),
+      clickedKey: githubKey("worker"),
       checked: true,
     });
-    expect([...result.selected].sort()).toEqual(["acme/api", "acme/empty", "acme/worker"]);
-    expect(result.anchorKey).toBe("acme/worker");
+    expect([...result.selected].sort()).toEqual([githubKey("api"), githubKey("empty"), githubKey("worker")]);
+    expect(result.anchorKey).toBe(githubKey("worker"));
   });
 
   it("treats hidden anchors as normal clicks", () => {
     const result = applyRangeSelection({
       selected: new Set<string>(),
       visibleRows: [rows[1]!],
-      anchorKey: "acme/worker",
-      clickedKey: "acme/api",
+      anchorKey: githubKey("worker"),
+      clickedKey: githubKey("api"),
       checked: true,
     });
-    expect([...result.selected]).toEqual(["acme/api"]);
-    expect(result.anchorKey).toBe("acme/api");
+    expect([...result.selected]).toEqual([githubKey("api")]);
+    expect(result.anchorKey).toBe(githubKey("api"));
   });
 
   it("returns selected rows for submit in full sorted order", () => {
     const sorted = sortRows(rows, { field: "name", direction: "asc" });
-    const selected = new Set(["acme/worker", "acme/api"]);
+    const selected = new Set([githubKey("worker"), githubKey("api")]);
     expect(selectedRowsForSubmit(sorted, selected).map((row) => row.name)).toEqual(["api", "worker"]);
     expect(selectedRowsForSubmit(sorted, selected, { hidePrivate: true }).map((row) => row.name)).toEqual(["worker"]);
   });

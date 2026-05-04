@@ -118,6 +118,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        host:
+          type: string
         name:
           type: string
         owner:
@@ -168,13 +170,18 @@ components:
     BulkAddRepoRequest:
       additionalProperties: false
       properties:
+        host:
+          type: string
         name:
           type: string
         owner:
           type: string
-      required:
-        - owner
-        - name
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
       type: object
     BulkAddReposRequest:
       additionalProperties: false
@@ -1649,9 +1656,15 @@ components:
           format: uri
           readOnly: true
           type: string
+        host:
+          type: string
         owner:
           type: string
         pattern:
+          type: string
+        platform_host:
+          type: string
+        provider:
           type: string
       required:
         - owner
@@ -1671,6 +1684,10 @@ components:
           type: string
         pattern:
           type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
         repos:
           items:
             $ref: "#/components/schemas/RepoPreviewRow"
@@ -1678,6 +1695,8 @@ components:
             - array
             - "null"
       required:
+        - provider
+        - platform_host
         - owner
         - pattern
         - repos
@@ -1697,15 +1716,24 @@ components:
           type: string
         owner:
           type: string
+        platform_host:
+          type: string
         private:
           type: boolean
+        provider:
+          type: string
         pushed_at:
           type:
             - string
             - "null"
+        repo_path:
+          type: string
       required:
+        - provider
+        - platform_host
         - owner
         - name
+        - repo_path
         - description
         - private
         - fork

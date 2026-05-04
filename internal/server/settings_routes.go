@@ -15,6 +15,7 @@ type updateSettingsInput struct {
 type addRepoInput struct {
 	Body struct {
 		Provider     string `json:"provider,omitempty"`
+		Host         string `json:"host,omitempty"`
 		PlatformHost string `json:"platform_host,omitempty"`
 		Owner        string `json:"owner"`
 		Name         string `json:"name"`

@@ -933,6 +933,7 @@ export interface components {
              * @example /api/v1/schemas/AddRepoInputBody.json
              */
             readonly $schema?: string;
+            host?: string;
             name: string;
             owner: string;
             platform_host?: string;
@@ -954,8 +955,12 @@ export interface components {
             body: string;
         };
         BulkAddRepoRequest: {
-            name: string;
-            owner: string;
+            host?: string;
+            name?: string;
+            owner?: string;
+            platform_host?: string;
+            provider?: string;
+            repo_path?: string;
         };
         BulkAddReposRequest: {
             /**
@@ -1629,8 +1634,11 @@ export interface components {
              * @example /api/v1/schemas/RepoPreviewRequest.json
              */
             readonly $schema?: string;
+            host?: string;
             owner: string;
             pattern: string;
+            platform_host?: string;
+            provider?: string;
         };
         RepoPreviewResponse: {
             /**
@@ -1641,6 +1649,8 @@ export interface components {
             readonly $schema?: string;
             owner: string;
             pattern: string;
+            platform_host: string;
+            provider: string;
             repos: components["schemas"]["RepoPreviewRow"][] | null;
         };
         RepoPreviewRow: {
@@ -1649,8 +1659,11 @@ export interface components {
             fork: boolean;
             name: string;
             owner: string;
+            platform_host: string;
             private: boolean;
+            provider: string;
             pushed_at: string | null;
+            repo_path: string;
         };
         RepoRefResponse: {
             name: string;

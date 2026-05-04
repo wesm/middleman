@@ -12,10 +12,10 @@ const preview = vi.mocked(previewRepos);
 const bulk = vi.mocked(bulkAddRepos);
 
 const rows = [
-  { owner: "acme", name: "worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "api", description: "HTTP API", private: true, fork: false, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
-  { owner: "acme", name: "widget", description: "Configured", private: false, fork: true, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
-  { owner: "acme", name: "empty", description: null, private: false, fork: false, pushed_at: null, already_configured: false },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "worker", repo_path: "acme/worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "api", repo_path: "acme/api", description: "HTTP API", private: true, fork: false, pushed_at: "2026-04-22T00:00:00Z", already_configured: false },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "widget", repo_path: "acme/widget", description: "Configured", private: false, fork: true, pushed_at: "2026-04-21T00:00:00Z", already_configured: true },
+  { provider: "github", platform_host: "github.com", owner: "acme", name: "empty", repo_path: "acme/empty", description: null, private: false, fork: false, pushed_at: null, already_configured: false },
 ];
 
 describe("RepoImportModal", () => {
@@ -26,7 +26,7 @@ describe("RepoImportModal", () => {
   });
 
   it("previews rows and defaults selectable rows to selected", async () => {
-    preview.mockResolvedValue({ owner: "acme", pattern: "*", repos: rows });
+    preview.mockResolvedValue({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
@@ -40,7 +40,7 @@ describe("RepoImportModal", () => {
 
   it("filters, deselects visible rows, and submits remaining selected rows", async () => {
     const onImported = vi.fn();
-    preview.mockResolvedValue({ owner: "acme", pattern: "*", repos: rows });
+    preview.mockResolvedValue({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
     bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "" }, agents: [] });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported } });
 
@@ -54,14 +54,14 @@ describe("RepoImportModal", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
 
     await waitFor(() => expect(bulk).toHaveBeenCalledWith([
-      { owner: "acme", name: "api" },
-      { owner: "acme", name: "empty" },
+      { provider: "github", host: "github.com", owner: "acme", name: "api", repo_path: "acme/api" },
+      { provider: "github", host: "github.com", owner: "acme", name: "empty", repo_path: "acme/empty" },
     ]));
     expect(onImported).toHaveBeenCalled();
   });
 
   it("hides private repositories and forks from preview selection", async () => {
-    preview.mockResolvedValue({ owner: "acme", pattern: "*", repos: rows });
+    preview.mockResolvedValue({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
     bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "" }, agents: [] });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
 
@@ -78,8 +78,8 @@ describe("RepoImportModal", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
 
     await waitFor(() => expect(bulk).toHaveBeenCalledWith([
-      { owner: "acme", name: "worker" },
-      { owner: "acme", name: "empty" },
+      { provider: "github", host: "github.com", owner: "acme", name: "worker", repo_path: "acme/worker" },
+      { provider: "github", host: "github.com", owner: "acme", name: "empty", repo_path: "acme/empty" },
     ]));
   });
 
@@ -115,14 +115,14 @@ describe("RepoImportModal", () => {
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/api-*" } });
-    resolveFirst({ owner: "acme", pattern: "*", repos: rows });
+    resolveFirst({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
 
     await waitFor(() => expect(screen.queryByText("acme/api")).toBeNull());
     expect(screen.getByText("Selected 0 of 0")).toBeTruthy();
   });
 
   it("clears stale rows on failed preview", async () => {
-    preview.mockResolvedValueOnce({ owner: "acme", pattern: "*", repos: rows });
+    preview.mockResolvedValueOnce({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
     preview.mockRejectedValueOnce(new Error("GitHub API error: boom"));
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
 

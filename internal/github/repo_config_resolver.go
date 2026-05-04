@@ -82,12 +82,12 @@ func FallbackConfiguredRepoRefs(
 ) []RepoRef {
 	kind := platform.Kind(raw.PlatformOrDefault())
 	host := raw.PlatformHostOrDefault()
+	repoPath := configuredRepoPath(raw)
 	if !raw.HasNameGlob() {
 		for _, repo := range previous {
 			if repoPlatform(repo) == kind &&
 				sameConfiguredRepoHost(repoHost(repo), host) &&
-				strings.EqualFold(repo.Owner, raw.Owner) &&
-				strings.EqualFold(repo.Name, raw.Name) {
+				strings.EqualFold(repoPathOrFullName(repo), repoPath) {
 				return []RepoRef{repo}
 			}
 		}
@@ -118,6 +118,7 @@ func fallbackRepoRef(raw config.Repo, kind platform.Kind, host string) RepoRef {
 		Owner:        strings.TrimSpace(raw.Owner),
 		Name:         strings.TrimSpace(raw.Name),
 		PlatformHost: strings.ToLower(strings.TrimSpace(host)),
+		RepoPath:     strings.TrimSpace(configuredRepoPath(raw)),
 	}
 	if kind == "" {
 		kind = platform.KindGitHub
@@ -201,11 +202,12 @@ func resolveConfiguredRepo(
 		PlatformHost: raw.PlatformHostOrDefault(),
 		Owner:        raw.Owner,
 		Name:         raw.Name,
-		RepoPath:     raw.Owner + "/" + raw.Name,
+		RepoPath:     configuredRepoPath(raw),
 		IsGlob:       raw.HasNameGlob(),
 	}
 	kind := platform.Kind(raw.PlatformOrDefault())
 	host := raw.PlatformHostOrDefault()
+	repoPath := configuredRepoPath(raw)
 	reader, err := registry.RepositoryReader(kind, host)
 	if err != nil {
 		return status, nil, err
@@ -217,7 +219,7 @@ func resolveConfiguredRepo(
 			Host:     host,
 			Owner:    raw.Owner,
 			Name:     raw.Name,
-			RepoPath: raw.Owner + "/" + raw.Name,
+			RepoPath: repoPath,
 		})
 		if err != nil {
 			return status, nil, fmt.Errorf(
@@ -269,6 +271,20 @@ func resolveConfiguredRepo(
 	}
 	status.MatchedRepoCount = len(matches)
 	return status, matches, nil
+}
+
+func configuredRepoPath(raw config.Repo) string {
+	if strings.TrimSpace(raw.RepoPath) != "" {
+		return strings.TrimSpace(raw.RepoPath)
+	}
+	return raw.Owner + "/" + raw.Name
+}
+
+func repoPathOrFullName(repo RepoRef) string {
+	if strings.TrimSpace(repo.RepoPath) != "" {
+		return strings.TrimSpace(repo.RepoPath)
+	}
+	return repo.Owner + "/" + repo.Name
 }
 
 func repoRefFromRepository(

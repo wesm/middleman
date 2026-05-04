@@ -34,6 +34,7 @@ const (
 type Repo struct {
 	Owner        string `toml:"owner" json:"owner"`
 	Name         string `toml:"name" json:"name"`
+	RepoPath     string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
 	Platform     string `toml:"platform,omitempty" json:"platform,omitempty"`
 	PlatformHost string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
 	TokenEnv     string `toml:"token_env,omitempty" json:"token_env,omitempty"`
@@ -110,10 +111,30 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 			hadPlatformHost = true
 			r.Owner = ref.owner
 			r.Name = ref.name
+			r.RepoPath = ref.owner + "/" + ref.name
 			break
 		}
 	}
 
+	r.RepoPath = cleanPath(strings.TrimSpace(r.RepoPath))
+	if r.RepoPath != "" && (strings.TrimSpace(r.Owner) == "" || strings.TrimSpace(r.Name) == "") {
+		switch r.Platform {
+		case "gitlab":
+			owner, name, err := splitGitLabPath("repo_path", r.RepoPath)
+			if err != nil {
+				return err
+			}
+			r.Owner = owner
+			r.Name = name
+		default:
+			owner, name, err := splitGitHubPath("repo_path", r.RepoPath)
+			if err != nil {
+				return err
+			}
+			r.Owner = owner
+			r.Name = name
+		}
+	}
 	r.Name = strings.TrimSuffix(r.Name, ".git")
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
@@ -121,6 +142,9 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	if r.Platform == defaultPlatform {
 		r.Owner = strings.ToLower(r.Owner)
 		r.Name = strings.ToLower(r.Name)
+		if r.RepoPath != "" {
+			r.RepoPath = strings.ToLower(r.RepoPath)
+		}
 	}
 	r.PlatformHost, err = normalizePlatformHost(r.Platform, r.PlatformHost)
 	if err != nil {
@@ -785,8 +809,7 @@ func repoIdentityKey(r Repo) string {
 	return strings.Join([]string{
 		r.PlatformOrDefault(),
 		r.PlatformHostOrDefault(),
-		strings.ToLower(r.Owner),
-		strings.ToLower(r.Name),
+		strings.ToLower(repoPathOrFullName(r)),
 	}, "\x00")
 }
 
@@ -794,9 +817,16 @@ func repoIdentityDisplay(r Repo) string {
 	platform := r.PlatformOrDefault()
 	host := r.PlatformHostOrDefault()
 	if platform == defaultPlatform && host == defaultPlatformHost {
-		return r.Owner + "/" + r.Name
+		return repoPathOrFullName(r)
 	}
-	return platform + "/" + host + "/" + r.Owner + "/" + r.Name
+	return platform + "/" + host + "/" + repoPathOrFullName(r)
+}
+
+func repoPathOrFullName(r Repo) string {
+	if strings.TrimSpace(r.RepoPath) != "" {
+		return strings.TrimSpace(r.RepoPath)
+	}
+	return r.Owner + "/" + r.Name
 }
 
 var reservedSystemLaunchTargetKeys = map[string]bool{

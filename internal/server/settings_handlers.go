@@ -67,7 +67,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 			PlatformHost:     raw.PlatformHostOrDefault(),
 			Owner:            raw.Owner,
 			Name:             raw.Name,
-			RepoPath:         raw.Owner + "/" + raw.Name,
+			RepoPath:         configRepoPath(raw),
 			IsGlob:           raw.HasNameGlob(),
 			MatchedRepoCount: matchedRepoCount(raw, tracked),
 		}
@@ -100,7 +100,8 @@ func matchedRepoCount(
 			if matched {
 				count++
 			}
-		} else if strings.EqualFold(repo.Name, raw.Name) {
+		} else if strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
+			strings.EqualFold(repo.Name, raw.Name) {
 			count++
 		}
 	}
@@ -190,8 +191,7 @@ func sameConfiguredRepo(left, right config.Repo) bool {
 			left.PlatformHostOrDefault(),
 			right.PlatformHostOrDefault(),
 		) &&
-		strings.EqualFold(left.Owner, right.Owner) &&
-		strings.EqualFold(left.Name, right.Name)
+		strings.EqualFold(configRepoPath(left), configRepoPath(right))
 }
 
 func repoMatchesConfig(
@@ -210,7 +210,22 @@ func repoMatchesConfig(
 		)
 		return matched
 	}
-	return strings.EqualFold(repo.Name, raw.Name)
+	return strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
+		strings.EqualFold(repo.Name, raw.Name)
+}
+
+func configRepoPath(raw config.Repo) string {
+	if strings.TrimSpace(raw.RepoPath) != "" {
+		return strings.TrimSpace(raw.RepoPath)
+	}
+	return raw.Owner + "/" + raw.Name
+}
+
+func trackedRepoPath(repo ghclient.RepoRef) string {
+	if strings.TrimSpace(repo.RepoPath) != "" {
+		return strings.TrimSpace(repo.RepoPath)
+	}
+	return repo.Owner + "/" + repo.Name
 }
 
 func appendTrackedRepo(
@@ -388,7 +403,7 @@ func (s *Server) addConfiguredRepo(
 
 	newRepo := config.Repo{
 		Platform:     input.Body.Provider,
-		PlatformHost: input.Body.PlatformHost,
+		PlatformHost: importRequestHost(input.Body.Host, input.Body.PlatformHost),
 		Owner:        input.Body.Owner,
 		Name:         input.Body.Name,
 	}

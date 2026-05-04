@@ -74,6 +74,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 		Owner:        "roborev-dev",
 		Name:         "middleman",
 		PlatformHost: "github.com",
+		RepoPath:     "roborev-dev/middleman",
 	}}, repos)
 }
 

@@ -64,6 +64,7 @@ type ActivityResponse struct {
 type AddRepoInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string `json:"$schema,omitempty"`
+	Host         *string `json:"host,omitempty"`
 	Name         string  `json:"name"`
 	Owner        string  `json:"owner"`
 	PlatformHost *string `json:"platform_host,omitempty"`
@@ -87,8 +88,12 @@ type ApprovePRInputBody struct {
 
 // BulkAddRepoRequest defines model for BulkAddRepoRequest.
 type BulkAddRepoRequest struct {
-	Name  string `json:"name"`
-	Owner string `json:"owner"`
+	Host         *string `json:"host,omitempty"`
+	Name         *string `json:"name,omitempty"`
+	Owner        *string `json:"owner,omitempty"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Provider     *string `json:"provider,omitempty"`
+	RepoPath     *string `json:"repo_path,omitempty"`
 }
 
 // BulkAddReposRequest defines model for BulkAddReposRequest.
@@ -634,18 +639,23 @@ type Repo struct {
 // RepoPreviewRequest defines model for RepoPreviewRequest.
 type RepoPreviewRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string `json:"$schema,omitempty"`
-	Owner   string  `json:"owner"`
-	Pattern string  `json:"pattern"`
+	Schema       *string `json:"$schema,omitempty"`
+	Host         *string `json:"host,omitempty"`
+	Owner        string  `json:"owner"`
+	Pattern      string  `json:"pattern"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Provider     *string `json:"provider,omitempty"`
 }
 
 // RepoPreviewResponse defines model for RepoPreviewResponse.
 type RepoPreviewResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string           `json:"$schema,omitempty"`
-	Owner   string            `json:"owner"`
-	Pattern string            `json:"pattern"`
-	Repos   *[]RepoPreviewRow `json:"repos"`
+	Schema       *string           `json:"$schema,omitempty"`
+	Owner        string            `json:"owner"`
+	Pattern      string            `json:"pattern"`
+	PlatformHost string            `json:"platform_host"`
+	Provider     string            `json:"provider"`
+	Repos        *[]RepoPreviewRow `json:"repos"`
 }
 
 // RepoPreviewRow defines model for RepoPreviewRow.
@@ -655,8 +665,11 @@ type RepoPreviewRow struct {
 	Fork              bool    `json:"fork"`
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
+	PlatformHost      string  `json:"platform_host"`
 	Private           bool    `json:"private"`
+	Provider          string  `json:"provider"`
 	PushedAt          *string `json:"pushed_at"`
+	RepoPath          string  `json:"repo_path"`
 }
 
 // RepoRefResponse defines model for RepoRefResponse.

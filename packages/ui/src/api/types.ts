@@ -74,8 +74,11 @@ export interface AgentSettings {
 }
 
 export interface ConfigRepo {
+  provider: string;
+  platform_host: string;
   owner: string;
   name: string;
+  repo_path: string;
   is_glob: boolean;
   matched_repo_count: number;
 }

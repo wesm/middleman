@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/platform"
@@ -890,6 +891,20 @@ func (s *Syncer) ClientForHost(
 	host string,
 ) (Client, error) {
 	return s.clientFor(RepoRef{PlatformHost: host})
+}
+
+func (s *Syncer) RepositoryReader(
+	kind platform.Kind,
+	host string,
+) (platform.RepositoryReader, error) {
+	return s.clients.RepositoryReader(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) ResolveConfiguredRepo(
+	ctx context.Context,
+	repo config.Repo,
+) (ConfiguredRepoStatus, []RepoRef, error) {
+	return ResolveConfiguredRepoWithRegistry(ctx, s.clients, repo)
 }
 
 func (s *Syncer) trackedRepoOnHost(owner, name, host string) (RepoRef, bool) {
