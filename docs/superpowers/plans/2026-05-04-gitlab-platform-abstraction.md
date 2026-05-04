@@ -61,18 +61,15 @@ This split keeps the first release useful and testable without dragging every pl
 - Modify `internal/github/repo_config_resolver.go` or move to `internal/platform/config_resolver.go`: resolve configured repos through provider repository discovery.
 - Modify `internal/db/types.go`: add explicit `RepoIdentity` and preserve `db.MergeRequest` as the local change request row.
 - Modify `internal/db/queries.go`: replace hard-coded GitHub repo upserts with platform-aware upserts.
-- Create migration `internal/db/migrations/000017_platform_repo_identity.up.sql`: add stable provider repo fields, provider-aware lookup keys, and external id uniqueness needed for GitLab nested namespaces and future providers.
-- Create migration `internal/db/migrations/000017_platform_repo_identity.down.sql`.
-- Create migration `internal/db/migrations/000018_provider_canonicalization.up.sql`: replace GitHub-only lower-case repo/workspace triggers with provider-aware lookup keys.
-- Create migration `internal/db/migrations/000018_provider_canonicalization.down.sql`.
-- Create follow-on provider-scoped migrations for workspace/list refs, external item/event ids, and rate-limit buckets. Keep them split so each persistence contract can be reviewed independently.
+- Create or update migration `internal/db/migrations/000017_platform_repo_identity.up.sql`: add stable provider repo fields, provider-aware lookup keys, external id uniqueness, workspace/list refs, external item/event ids, and rate-limit bucket scoping needed for GitLab nested namespaces and future providers.
+- Create or update migration `internal/db/migrations/000017_platform_repo_identity.down.sql`.
 - Modify `internal/config/config.go`: add explicit `platform`, `platform_host`, and platform token config while preserving `github_token_env` and old repo entries.
 - Modify `cmd/middleman/main.go`, `middleman.go`, and `cmd/e2e-server/main.go`: build a provider registry instead of `map[string]ghclient.Client`.
 - Create or modify `internal/server/repo_ref.go`: parse and validate provider-aware repository references from query/body payloads.
 - Modify `internal/server/repo_import_handlers.go`: accept provider/host in preview and bulk add requests.
 - Modify `internal/server/settings_handlers.go`: expose configured repo statuses with platform and host.
 - Modify `internal/server/api_types.go` and `internal/server/huma_routes.go`: add provider/host fields, platform-aware repo-reference routes, stable error codes, and capability-gated actions.
-- Regenerate `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.gen.go`, `packages/ui/src/api/generated/*`, and `frontend/src/lib/api/generated/*` with `make api-generate`.
+- Regenerate `frontend/openapi/openapi.yaml`, `internal/apiclient/generated/client.gen.go`, and `packages/ui/src/api/generated/*` with `make api-generate`.
 - Modify `packages/ui/src/api/types.ts` and affected stores/components only where generated types require provider/host threading.
 - Modify `context/github-sync-invariants.md`: generalize identity rules to platform sync invariants and leave a GitHub-specific section for GraphQL-only behavior.
 - Add `context/platform-sync-invariants.md`: provider identity, capability, normalization, and test rules.
@@ -125,7 +122,7 @@ Rules:
 - GitHub keeps the current case-folded lookup behavior.
 - GitLab stores display identity using the canonical `path_with_namespace` returned by GitLab and preserves spelling in `owner`, `name`, and `repo_path`.
 - Provider lookup keys may be separate normalized columns, such as `owner_key`, `name_key`, and `repo_path_key`, or centralized query helpers, but the behavior must be covered by migration and query tests.
-- Existing case-fold triggers from earlier migrations must be superseded by a new migration that only applies GitHub-style case-folding where appropriate. Do not edit already-landed migration files.
+- Existing case-fold triggers from earlier migrations must be superseded in the branch-local provider migration so GitHub-style case-folding only applies where appropriate. Do not edit already-landed migrations 1-16.
 - `platform_repo_id` must have a partial unique index on `(platform, platform_host, platform_repo_id)` where the value is not empty.
 - Add an `UpsertRepoByProviderID` or equivalent reconciliation query. When a provider returns a stable repo id, sync should prefer that identity, update `owner/name/repo_path` on rename, and avoid creating a duplicate row.
 - The old `(platform, platform_host, owner, name)` uniqueness remains as the fallback before a provider id is known.
@@ -556,12 +553,13 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 
 **Files:**
 - Modify: `internal/db/queries.go`
-- Create or modify: `internal/db/migrations/000018_provider_canonicalization.up.sql`
-- Create or modify: `internal/db/migrations/000018_provider_canonicalization.down.sql`
+- Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
+- Modify: `internal/db/migrations/000017_platform_repo_identity.down.sql`
 - Test: `internal/db/queries_test.go`
 
 - [ ] Replace or supersede existing lower-case repo and workspace triggers with provider-aware canonicalization. GitHub keys are case-folded; GitLab display fields preserve canonical provider spelling while lookup keys are derived from provider-canonical paths.
 - [ ] Backfill `repo_path`, `owner_key`, `name_key`, and `repo_path_key` for existing GitHub repos and workspaces.
+- [ ] Keep this schema work folded into `000017_platform_repo_identity` while the branch is in flight; do not add `000018` for this feature.
 - [ ] Add migration and query tests proving GitHub rows still case-fold, GitLab rows preserve canonical `path_with_namespace`, lookup keys prevent duplicates, and `platform_repo_id` uniqueness updates renamed repos.
 - [ ] Add historical cleanup tests for workspace rows that cannot be tied to a repo id: they should be preserved as GitHub-compatible refs rather than deleted.
 - [ ] Run `go test ./internal/db -run 'Test.*Canonical|Test.*Repo.*Identity|Test.*Workspace' -shuffle=on`.
@@ -572,7 +570,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 **Files:**
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
-- Create or modify: next provider-scoped migration after Task 2A
+- Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
+- Modify: `internal/db/migrations/000017_platform_repo_identity.down.sql`
 - Test: `internal/db/queries_test.go`
 - Test: affected server API tests that return workspace, starred, activity, list, search, dashboard, or settings rows
 
@@ -588,7 +587,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 **Files:**
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
-- Create or modify: next provider-scoped migration after Task 2B
+- Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
+- Modify: `internal/db/migrations/000017_platform_repo_identity.down.sql`
 - Test: `internal/db/queries_test.go`
 
 - [ ] Apply the `platform_external_id` rows from the Provider-Scoped Schema Impact Matrix for merge requests, issues, events, labels, releases/tags if normalized, and CI checks if normalized.
@@ -603,7 +603,8 @@ func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 **Files:**
 - Modify: `internal/db/types.go`
 - Modify: `internal/db/queries.go`
-- Create or modify: next provider-scoped migration after Task 2C
+- Modify: `internal/db/migrations/000017_platform_repo_identity.up.sql`
+- Modify: `internal/db/migrations/000017_platform_repo_identity.down.sql`
 - Test: `internal/db/queries_test.go`
 
 - [ ] Add `platform` to `middleman_rate_limits` and backfill existing rows to `github`.
@@ -910,7 +911,8 @@ This plan has been converted into kata issues in project `github.com/wesm/middle
 - `#17` Expose and gate provider action capabilities. Blocked by `#10` and `#15`.
 - `#18` Cover GitLab repository sync end to end. Blocked by `#12`, `#14`, `#15`, `#16`, and `#17`.
 - `#19` Add optional GitLab CE container e2e fixture. Blocked by `#14` and `#18`.
-- `#20` Document platform sync invariants. Blocked by `#17` and `#18`.
+- `#20` Document platform sync invariants. Blocked by `#17`, `#18`, and `#21`.
+- `#21` Review provider abstraction extensibility. Blocked by `#1` progress and currently blocks final documentation.
 
 Use `kata ready --json` to find the next unblocked task. At creation time, the first implementation-ready issue is `#2`.
 
@@ -920,7 +922,7 @@ Run these before declaring the implementation complete:
 
 ```bash
 make api-generate
-git diff --exit-code -- frontend/openapi/openapi.yaml internal/apiclient/generated packages/ui/src/api/generated frontend/src/lib/api/generated
+git diff --exit-code -- frontend/openapi/openapi.yaml internal/apiclient/generated packages/ui/src/api/generated
 go test ./... -shuffle=on
 make frontend
 make test-short
