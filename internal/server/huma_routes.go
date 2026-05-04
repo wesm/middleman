@@ -2294,7 +2294,9 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
-			Repo:         repoRefFromParts(it.Platform, it.PlatformHost, it.RepoOwner, it.RepoName),
+			Repo: s.repoRefFromParts(
+				it.Platform, it.PlatformHost, it.RepoOwner, it.RepoName,
+			),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
@@ -2791,7 +2793,7 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 				if summary != nil {
 					s.hub.Broadcast(Event{
 						Type: "workspace_status",
-						Data: toWorkspaceResponse(summary),
+						Data: s.toWorkspaceResponse(bgCtx, summary),
 					})
 				}
 				return
@@ -3094,6 +3096,9 @@ func (s *Server) toWorkspaceResponse(
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
 	resp := toWorkspaceResponse(summary)
+	resp.Repo = s.repoRefFromParts(
+		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+	)
 	if s.workspaces == nil ||
 		summary.Status != "ready" {
 		return resp

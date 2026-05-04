@@ -595,7 +595,9 @@
             events={detail.events ?? []}
             repoOwner={owner}
             repoName={name}
-            onEditComment={editTimelineComment}
+            onEditComment={capabilities.comment_mutation
+              ? editTimelineComment
+              : undefined}
           />
         {:else if issues.isIssueDetailSyncing()}
           <div class="loading-placeholder">

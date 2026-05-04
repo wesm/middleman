@@ -276,4 +276,23 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("button", { name: /save/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
   });
+
+  it("hides inline edit controls when comment editing is unavailable", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            Body: "Original comment",
+            EventType: "issue_comment",
+            PlatformID: 44,
+          }),
+        ],
+        repoOwner: "acme",
+        repoName: "widget",
+        onEditComment: undefined,
+      },
+    });
+
+    expect(screen.queryByRole("button", { name: "Edit comment" })).toBeNull();
+  });
 });

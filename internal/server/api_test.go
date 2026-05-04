@@ -7926,7 +7926,8 @@ func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
 func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	srv, _ := setupGitLabCapabilityServer(t)
+	srv, database := setupGitLabCapabilityServer(t)
+	ctx := t.Context()
 
 	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
 	require.Equal(http.StatusOK, rawPulls.Code, rawPulls.Body.String())
@@ -7978,6 +7979,69 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	repoCaps := repos[0]["capabilities"].(map[string]any)
 	assert.Equal(true, repoCaps["read_repositories"])
 	assert.Equal(false, repoCaps["comment_mutation"])
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: mr.ID,
+			EventType:      "issue_comment",
+			Author:         "ada",
+			Body:           "GitLab activity comment",
+			CreatedAt:      time.Now().UTC(),
+			DedupeKey:      "gitlab-activity-comment",
+		},
+	}))
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	rawActivity := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	require.Equal(http.StatusOK, rawActivity.Code, rawActivity.Body.String())
+	var activity map[string]any
+	require.NoError(json.NewDecoder(rawActivity.Body).Decode(&activity))
+	activityItems := activity["items"].([]any)
+	require.NotEmpty(activityItems)
+	activityRepo := activityItems[0].(map[string]any)["repo"].(map[string]any)
+	activityCaps := activityRepo["capabilities"].(map[string]any)
+	assert.Equal("gitlab", activityRepo["provider"])
+	assert.Equal(true, activityCaps["read_merge_requests"])
+	assert.Equal(false, activityCaps["comment_mutation"])
+
+	srv.workspaces = workspace.NewManager(
+		database, filepath.Join(t.TempDir(), "worktrees"),
+	)
+	srv.workspaces.SetTmuxCommand([]string{"sh", "-c", "exit 0"})
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "gitlabcap0000001",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoOwner:    "group",
+		RepoName:     "project",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature/gitlab",
+		WorktreePath: filepath.Join(t.TempDir(), "workspace"),
+		TmuxSession:  "middleman-gitlabcap0000001",
+		Status:       "creating",
+	}))
+	rawWorkspaces := doJSON(t, srv, http.MethodGet, "/api/v1/workspaces", nil)
+	require.Equal(http.StatusOK, rawWorkspaces.Code, rawWorkspaces.Body.String())
+	var workspaces map[string]any
+	require.NoError(json.NewDecoder(rawWorkspaces.Body).Decode(&workspaces))
+	workspaceItems := workspaces["workspaces"].([]any)
+	require.Len(workspaceItems, 1)
+	workspaceRepo := workspaceItems[0].(map[string]any)["repo"].(map[string]any)
+	workspaceCaps := workspaceRepo["capabilities"].(map[string]any)
+	assert.Equal("gitlab", workspaceRepo["provider"])
+	assert.Equal(true, workspaceCaps["read_repositories"])
+	assert.Equal(false, workspaceCaps["merge_mutation"])
 }
 
 func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) {

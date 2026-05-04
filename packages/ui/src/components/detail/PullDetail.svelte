@@ -1137,7 +1137,9 @@
             repoName={name}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
-            onEditComment={editTimelineComment}
+            onEditComment={capabilities.comment_mutation
+              ? editTimelineComment
+              : undefined}
           />
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">

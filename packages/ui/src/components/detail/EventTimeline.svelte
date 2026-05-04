@@ -16,7 +16,7 @@
     repoName?: string;
     filtered?: boolean;
     showCommitDetails?: boolean;
-    onEditComment?: (event: PREvent | IssueEvent, body: string) => Promise<boolean>;
+    onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
   }
 
   const {

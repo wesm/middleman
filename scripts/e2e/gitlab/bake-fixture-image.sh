@@ -42,6 +42,8 @@ export GITLAB_READY_TIMEOUT_SECONDS="${GITLAB_READY_TIMEOUT_SECONDS:-1200}"
 "$ROOT_DIR/scripts/e2e/gitlab/wait.sh"
 "$ROOT_DIR/scripts/e2e/gitlab/bootstrap.sh" "$MANIFEST_PATH"
 
+docker exec "$CONTAINER_NAME" gitlab-ctl stop >/dev/null
+
 docker run --rm --volumes-from "$CONTAINER_NAME" -v "$DATA_DIR:/out" alpine:3.22 \
   sh -c 'tar -C /etc/gitlab -czf /out/etc-gitlab.tgz . && tar -C /var/opt/gitlab -czf /out/var-opt-gitlab.tgz .'
 

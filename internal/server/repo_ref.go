@@ -125,6 +125,14 @@ func repoRefFromParts(provider, host, owner, name string) repoRefResponse {
 	}
 }
 
+func (s *Server) repoRefFromParts(
+	provider, host, owner, name string,
+) repoRefResponse {
+	resp := repoRefFromParts(provider, host, owner, name)
+	resp.Capabilities = s.capabilitiesForProvider(provider, host)
+	return resp
+}
+
 func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabilitiesResponse {
 	return providerCapabilitiesResponse{
 		ReadRepositories:  caps.ReadRepositories,
@@ -197,8 +205,26 @@ func platformRepoRefFromDB(repo db.Repo) platform.RepoRef {
 }
 
 func (s *Server) capabilitiesForRepo(repo db.Repo) providerCapabilitiesResponse {
-	kind := repoProviderKind(repo)
-	host := repoProviderHost(repo)
+	return s.capabilitiesForProvider(
+		string(repoProviderKind(repo)), repoProviderHost(repo),
+	)
+}
+
+func (s *Server) capabilitiesForProvider(
+	provider, host string,
+) providerCapabilitiesResponse {
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return providerCapabilitiesResponse{}
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		var ok bool
+		host, ok = platform.DefaultHost(kind)
+		if !ok {
+			return providerCapabilitiesResponse{}
+		}
+	}
 	if s != nil && s.syncer != nil {
 		caps, err := s.syncer.ProviderCapabilities(kind, host)
 		if err == nil {
