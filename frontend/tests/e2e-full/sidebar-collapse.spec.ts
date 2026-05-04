@@ -148,6 +148,13 @@ async function expectCompactFilterBar(
   );
 }
 
+async function openCompactFilters(filterBar: Locator): Promise<Locator> {
+  await filterBar.getByRole("button", { name: "Filters" }).click();
+  const dropdown = filterBar.page().locator(".filter-dropdown");
+  await expect(dropdown).toBeVisible();
+  return dropdown;
+}
+
 async function expectExpandedFilterBar(
   filterBar: Locator,
 ): Promise<void> {
@@ -339,5 +346,52 @@ test.describe("collapsible sidebar", () => {
         waitForIssueList,
       ),
     );
+  });
+
+  test("pull compact filters update state and grouping", async ({ page }) => {
+    const filterBar = await setPersistedSidebarWidth(
+      page,
+      "/pulls",
+      395,
+      waitForPRList,
+    );
+    await expectCompactFilterBar(filterBar);
+
+    let dropdown = await openCompactFilters(filterBar);
+    await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
+    await expect(filterBar.locator(".list-count-chip")).toHaveText(/^4 PRs$/, {
+      timeout: 5_000,
+    });
+
+    dropdown = await openCompactFilters(filterBar);
+    await dropdown.locator(".filter-item", { hasText: "All" }).last().click();
+    await expect(page.locator(".repo-header")).toHaveCount(0, {
+      timeout: 5_000,
+    });
+    await expect(page.locator(".repo-chip").first()).toBeVisible();
+  });
+
+  test("issue compact filters update state and grouping", async ({ page }) => {
+    const filterBar = await setPersistedSidebarWidth(
+      page,
+      "/issues",
+      372,
+      waitForIssueList,
+    );
+    await expectCompactFilterBar(filterBar);
+
+    let dropdown = await openCompactFilters(filterBar);
+    await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
+    await expect(filterBar.locator(".list-count-chip")).toHaveText(
+      /^1 issues?$/,
+      { timeout: 5_000 },
+    );
+
+    dropdown = await openCompactFilters(filterBar);
+    await dropdown.locator(".filter-item", { hasText: "All" }).last().click();
+    await expect(page.locator(".repo-header")).toHaveCount(0, {
+      timeout: 5_000,
+    });
+    await expect(page.locator(".repo-chip").first()).toBeVisible();
   });
 });

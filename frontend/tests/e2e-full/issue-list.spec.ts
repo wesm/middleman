@@ -14,6 +14,32 @@ async function waitForIssueList(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function selectIssueState(page: Page, label: string): Promise<void> {
+  const stateButton = page.locator(".state-btn", { hasText: label });
+  if (await stateButton.isVisible()) {
+    await stateButton.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+    .first()
+    .click();
+}
+
+async function selectIssueGrouping(page: Page, label: string): Promise<void> {
+  const groupButton = page.locator(".group-btn", { hasText: label });
+  if (await groupButton.isVisible()) {
+    await groupButton.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+    .last()
+    .click();
+}
+
 test.describe("issue list view", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/issues");
@@ -32,14 +58,14 @@ test.describe("issue list view", () => {
       /^4 issues$/,
     );
 
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectIssueGrouping(page, "All");
     const firstItem = page.locator(".issue-item").first();
     await expect(firstItem.locator(".repo-chip")).toBeVisible();
     await expect(firstItem.locator(".state-chip")).toBeVisible();
   });
 
   test("closed state shows closed issues", async ({ page }) => {
-    await page.locator(".state-btn", { hasText: "Closed" }).click();
+    await selectIssueState(page, "Closed");
 
     const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^1 issues?$/, { timeout: 5_000 });

@@ -12,6 +12,32 @@ async function waitForPullList(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function selectPullState(page: Page, label: string): Promise<void> {
+  const stateButton = page.locator(".state-btn", { hasText: label });
+  if (await stateButton.isVisible()) {
+    await stateButton.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+    .first()
+    .click();
+}
+
+async function selectPullGrouping(page: Page, label: string): Promise<void> {
+  const groupButton = page.locator(".group-btn", { hasText: label });
+  if (await groupButton.isVisible()) {
+    await groupButton.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+    .last()
+    .click();
+}
+
 test.describe("PR list view", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/pulls");
@@ -41,7 +67,7 @@ test.describe("PR list view", () => {
     await page.goto("/pulls");
     await waitForPullList(page);
 
-    await page.locator(".group-btn", { hasText: "All" }).click();
+    await selectPullGrouping(page, "All");
     const firstItem = page.locator(".pull-item").first();
     await expect(firstItem.locator(".repo-chip")).toBeVisible();
     await expect(firstItem.locator(".status-chip")).toBeVisible();
@@ -50,7 +76,7 @@ test.describe("PR list view", () => {
   test("closed state shows closed and merged PRs with correct count", async ({
     page,
   }) => {
-    await page.locator(".state-btn", { hasText: "Closed" }).click();
+    await selectPullState(page, "Closed");
 
     const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^4 PRs$/, { timeout: 5_000 });
