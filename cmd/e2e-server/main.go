@@ -47,10 +47,6 @@ func main() {
 		"default-platform-host", "github.com",
 		"default platform host for seeded config",
 	)
-	gitLabReadOnlyFixture := flag.Bool(
-		"gitlab-read-only-fixture", false,
-		"seed an opt-in GitLab read-only issue fixture for provider capability e2e tests",
-	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -70,7 +66,6 @@ func main() {
 		*roborev,
 		*serverInfoFile,
 		*defaultPlatformHost,
-		*gitLabReadOnlyFixture,
 	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -240,7 +235,6 @@ func run(
 	ctx context.Context,
 	port int,
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
-	gitLabReadOnlyFixture bool,
 ) error {
 	defaultPlatformHost = strings.TrimSpace(defaultPlatformHost)
 	if defaultPlatformHost == "" {
@@ -262,10 +256,8 @@ func run(
 	if err != nil {
 		return fmt.Errorf("seed fixtures: %w", err)
 	}
-	if gitLabReadOnlyFixture {
-		if err := seedGitLabReadOnlyCapabilityFixture(ctx, database); err != nil {
-			return fmt.Errorf("seed gitlab capability fixture: %w", err)
-		}
+	if err := seedGitLabReadOnlyCapabilityFixture(ctx, database); err != nil {
+		return fmt.Errorf("seed gitlab capability fixture: %w", err)
 	}
 
 	// Run stack detection so seeded stacked chains are discoverable
@@ -450,13 +442,12 @@ func run(
 	budget := ghclient.NewSyncBudget(500)
 	budget.Spend(75)
 
-	providers := make([]platform.Provider, 0, 1)
-	trackedRepos := slices.Clone(startupResolved.Expanded)
-	if gitLabReadOnlyFixture {
-		gitLabIssue, gitLabIssueEvents := gitLabReadOnlyIssueFixture(
-			time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
-		)
-		providers = append(providers, e2eStaticProvider{
+	gitLabIssue, gitLabIssueEvents := gitLabReadOnlyIssueFixture(
+		time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
+	)
+	registry, err := ghclient.NewProviderRegistry(
+		fixtureClients,
+		e2eStaticProvider{
 			kind:        platform.KindGitLab,
 			host:        "gitlab.example.com",
 			issue:       gitLabIssue,
@@ -469,8 +460,14 @@ func run(
 				ReadReleases:      true,
 				ReadCI:            true,
 			},
-		})
-		trackedRepos = append(trackedRepos, ghclient.RepoRef{
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("create e2e provider registry: %w", err)
+	}
+	trackedRepos := append(
+		slices.Clone(startupResolved.Expanded),
+		ghclient.RepoRef{
 			Platform:      platform.KindGitLab,
 			PlatformHost:  gitLabIssue.Repo.Host,
 			Owner:         gitLabIssue.Repo.Owner,
@@ -479,15 +476,8 @@ func run(
 			WebURL:        gitLabIssue.Repo.WebURL,
 			CloneURL:      gitLabIssue.Repo.CloneURL,
 			DefaultBranch: gitLabIssue.Repo.DefaultBranch,
-		})
-	}
-	registry, err := ghclient.NewProviderRegistry(
-		fixtureClients,
-		providers...,
+		},
 	)
-	if err != nil {
-		return fmt.Errorf("create e2e provider registry: %w", err)
-	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
 		database, diffRepo.Manager, trackedRepos, time.Hour,
