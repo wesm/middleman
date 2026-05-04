@@ -8,6 +8,7 @@ function makeStores(): StoreInstances {
     settings: {
       setConfiguredRepos: vi.fn(),
       setTerminalFontFamily: vi.fn(),
+      setTerminalRenderer: vi.fn(),
     },
     activity: {
       hydrateDefaults: vi.fn(),
@@ -42,6 +43,7 @@ function makeSettings(): Settings {
     },
     terminal: {
       font_family: "\"Fira Code\", monospace",
+      renderer: "xterm",
     },
     agents: [],
   };
@@ -75,6 +77,9 @@ describe("runAppStartup", () => {
     );
     expect(stores.settings.setTerminalFontFamily).toHaveBeenCalledWith(
       settings.terminal.font_family,
+    );
+    expect(stores.settings.setTerminalRenderer).toHaveBeenCalledWith(
+      settings.terminal.renderer,
     );
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(
       settings.activity,

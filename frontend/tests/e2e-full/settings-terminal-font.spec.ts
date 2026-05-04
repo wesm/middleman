@@ -24,7 +24,7 @@ test.afterAll(async () => {
   await isolatedServer?.stop();
 });
 
-test("settings saves and reloads the workspace terminal font family", async ({
+test("settings saves and reloads workspace terminal options", async ({
   page,
 }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
@@ -32,9 +32,12 @@ test("settings saves and reloads the workspace terminal font family", async ({
     .waitFor({ state: "visible", timeout: 10_000 });
 
   const input = page.getByLabel("Monospace font family");
+  const renderer = page.getByLabel("Terminal renderer");
   const saveButton = page.getByRole("button", { name: "Save", exact: true });
   await expect(input).toHaveValue("");
+  await expect(renderer).toHaveValue("xterm");
 
+  await renderer.selectOption("ghostty-web");
   await input.click();
   await input.pressSequentially(
     "\"Iosevka Term\", monospace",
@@ -58,14 +61,19 @@ test("settings saves and reloads the workspace terminal font family", async ({
     }
     const response = await api.get("/api/v1/settings");
     const settings = await response.json() as {
-      terminal: { font_family: string };
+      terminal: { font_family: string; renderer: string };
     };
-    return settings.terminal.font_family;
-  }).toBe("\"Iosevka Term\", monospace");
+    return settings.terminal;
+  }).toEqual({
+    font_family: "\"Iosevka Term\", monospace",
+    renderer: "ghostty-web",
+  });
 
   await page.reload();
   await page.locator(".settings-page")
     .waitFor({ state: "visible", timeout: 10_000 });
   await expect(page.getByLabel("Monospace font family"))
     .toHaveValue("\"Iosevka Term\", monospace");
+  await expect(page.getByLabel("Terminal renderer"))
+    .toHaveValue("ghostty-web");
 });

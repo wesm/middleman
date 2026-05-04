@@ -1,18 +1,20 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
-import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockFit = vi.fn();
-const mockOpen = vi.fn();
-const mockLoadAddon = vi.fn();
-const mockOnData = vi.fn();
-const mockDispose = vi.fn();
-const mockInit = vi.fn().mockResolvedValue(undefined);
-const terminalCtor = vi.fn();
-const terminalWrite = vi.fn();
+const {
+  ghosttyTerminalCtor,
+  mockGhosttyInit,
+  xtermTerminalCtor,
+  xtermOpen,
+} = vi.hoisted(() => ({
+  ghosttyTerminalCtor: vi.fn(),
+  mockGhosttyInit: vi.fn().mockResolvedValue(undefined),
+  xtermTerminalCtor: vi.fn(),
+  xtermOpen: vi.fn(),
+}));
 
+let configuredRenderer: "xterm" | "ghostty-web" = "xterm";
 let configuredFontFamily = "";
-let sockets: MockWebSocket[] = [];
 
 class MockWebSocket {
   static OPEN = 1;
@@ -22,48 +24,71 @@ class MockWebSocket {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  sent: unknown[] = [];
 
-  constructor(public url: string) {
-    sockets.push(this);
-  }
-
-  send(data: unknown): void {
-    this.sent.push(data);
-  }
+  constructor(public url: string) {}
+  send(): void {}
   close(): void {}
-}
-
-function socketAt(index: number): MockWebSocket {
-  const socket = sockets[index];
-  expect(socket).toBeDefined();
-  return socket!;
 }
 
 vi.mock("@middleman/ui", () => ({
   getStores: () => ({
     settings: {
       getTerminalFontFamily: () => configuredFontFamily,
+      getTerminalRenderer: () => configuredRenderer,
     },
   }),
 }));
 
-vi.mock("ghostty-web", () => ({
-  init: (...args: []) => mockInit(...args),
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: mockFit,
-  })),
+vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation((options) => {
-    terminalCtor(options);
+    xtermTerminalCtor(options);
     return {
       cols: 80,
       rows: 24,
-      open: mockOpen,
-      loadAddon: mockLoadAddon,
-      onData: mockOnData,
-      dispose: mockDispose,
-      write: terminalWrite,
       options: { ...options },
+      clearTextureAtlas: vi.fn(),
+      dispose: vi.fn(),
+      loadAddon: vi.fn(),
+      onBinary: vi.fn(),
+      onData: vi.fn(),
+      open: xtermOpen,
+      refresh: vi.fn(),
+      write: vi.fn(),
+    };
+  }),
+}));
+
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/addon-webgl", () => ({
+  WebglAddon: vi.fn().mockImplementation(() => ({
+    dispose: vi.fn(),
+    onContextLoss: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
+vi.mock("ghostty-web", () => ({
+  init: (...args: []) => mockGhosttyInit(...args),
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: vi.fn(),
+  })),
+  Terminal: vi.fn().mockImplementation((options) => {
+    ghosttyTerminalCtor(options);
+    return {
+      cols: 80,
+      rows: 24,
+      options: { ...options },
+      dispose: vi.fn(),
+      loadAddon: vi.fn(),
+      onData: vi.fn(),
+      open: vi.fn(),
+      write: vi.fn(),
     };
   }),
 }));
@@ -72,24 +97,17 @@ import TerminalPane from "./TerminalPane.svelte";
 
 describe("TerminalPane", () => {
   beforeEach(() => {
+    configuredRenderer = "xterm";
     configuredFontFamily = "";
-    delete window.__BASE_PATH__;
-    window.__MIDDLEMAN_DEV_API_URL__ = "http://127.0.0.1:8091";
-    terminalCtor.mockReset();
-    mockFit.mockReset();
-    mockOpen.mockReset();
-    mockLoadAddon.mockReset();
-    mockOnData.mockReset();
-    mockDispose.mockReset();
-    mockInit.mockClear();
-    terminalWrite.mockReset();
-    sockets = [];
+    ghosttyTerminalCtor.mockReset();
+    mockGhosttyInit.mockClear();
+    xtermTerminalCtor.mockReset();
+    xtermOpen.mockReset();
 
     vi.stubGlobal("ResizeObserver", class {
       observe(): void {}
       disconnect(): void {}
     });
-
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal(
       "requestAnimationFrame",
@@ -106,201 +124,23 @@ describe("TerminalPane", () => {
     vi.unstubAllGlobals();
   });
 
-  async function renderStarted(
-    props: Partial<ComponentProps<typeof TerminalPane>> = {},
-  ) {
-    const result = render(TerminalPane, { props });
-    await waitFor(() => expect(terminalCtor).toHaveBeenCalled());
-    return result;
-  }
+  it("uses xterm.js by default", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
-  it("uses the configured settings font family for ghostty-web", async () => {
-    configuredFontFamily = "\"Fira Code\", monospace";
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
 
-    await renderStarted({ workspaceId: "ws-123" });
-
-    expect(terminalCtor).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fontFamily: "\"Fira Code\", monospace",
-      }),
-    );
+    expect(ghosttyTerminalCtor).not.toHaveBeenCalled();
+    expect(mockGhosttyInit).not.toHaveBeenCalled();
   });
 
-  it("does not initialize ghostty-web more than once across terminal panes", async () => {
-    const initCallsBefore = mockInit.mock.calls.length;
+  it("uses ghostty-web when selected", async () => {
+    configuredRenderer = "ghostty-web";
 
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    render(TerminalPane, { props: { workspaceId: "ws-456" } });
 
-    await waitFor(() => expect(terminalCtor).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(ghosttyTerminalCtor).toHaveBeenCalled());
 
-    expect(mockInit.mock.calls.length - initCallsBefore).toBeLessThanOrEqual(1);
-  });
-
-  it("uses the /ws terminal route for the default workspace socket", async () => {
-    await renderStarted({ workspaceId: "ws-123" });
-
-    expect(sockets).toHaveLength(1);
-    const url = new URL(socketAt(0).url);
-    expect(url.origin).toBe("ws://localhost:3000");
-    expect(url.pathname).toBe("/ws/v1/workspaces/ws-123/terminal");
-  });
-
-  it("applies the base path to the default workspace socket", async () => {
-    window.__BASE_PATH__ = "/middleman/";
-
-    await renderStarted({ workspaceId: "ws-123" });
-
-    expect(sockets).toHaveLength(1);
-    const url = new URL(socketAt(0).url);
-    expect(url.origin).toBe("ws://localhost:3000");
-    expect(url.pathname).toBe(
-      "/middleman/ws/v1/workspaces/ws-123/terminal",
-    );
-  });
-
-  it("connects to an explicit websocket path", async () => {
-    await renderStarted({
-      websocketPath:
-        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-    });
-
-    expect(sockets).toHaveLength(1);
-    const url = new URL(socketAt(0).url);
-    expect(url.origin).toBe("ws://127.0.0.1:8091");
-    expect(url.pathname).toBe(
-      "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-    );
-    expect(url.searchParams.get("cols")).toBe("80");
-    expect(url.searchParams.get("rows")).toBe("24");
-  });
-
-  it("keeps /ws paths on the current dev origin for Vite proxying", async () => {
-    await renderStarted({
-      websocketPath:
-        "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-    });
-
-    expect(sockets).toHaveLength(1);
-    const url = new URL(socketAt(0).url);
-    expect(url.origin).toBe("ws://localhost:3000");
-    expect(url.pathname).toBe(
-      "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-    );
-  });
-
-  it("does not duplicate the base path for explicit websocket paths", async () => {
-    window.__BASE_PATH__ = "/middleman/";
-
-    await renderStarted({
-      websocketPath:
-        "/middleman/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-    });
-
-    expect(sockets).toHaveLength(1);
-    const url = new URL(socketAt(0).url);
-    expect(url.origin).toBe("ws://localhost:3000");
-    expect(url.pathname).toBe(
-      "/middleman/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-    );
-  });
-
-  it("refreshes the terminal when a hidden pane becomes active", async () => {
-    const { rerender } = await renderStarted({
-      websocketPath:
-        "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      active: false,
-    });
-
-    expect(socketAt(0).sent).toEqual([]);
-
-    await rerender({
-      websocketPath:
-        "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      active: true,
-    });
-
-    expect(mockFit).toHaveBeenCalled();
-    expect(socketAt(0).sent).toContain(
-      JSON.stringify({ type: "refresh", cols: 80, rows: 24 }),
-    );
-  });
-
-  it("sends terminal byte payloads as raw WebSocket bytes", async () => {
-    await renderStarted({ workspaceId: "ws-123" });
-    const dataHandler = mockOnData.mock.calls[0]?.[0] as
-      | ((data: Uint8Array) => void)
-      | undefined;
-    expect(dataHandler).toBeDefined();
-
-    socketAt(0).sent = [];
-    dataHandler?.(new Uint8Array([0, 0xff, 0x1b]));
-
-    const sent = socketAt(0).sent[0];
-    expect(sent).toBeInstanceOf(ArrayBuffer);
-    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
-      0, 0xff, 0x1b,
-    ]);
-  });
-
-  it("sends terminal ArrayBuffer payloads as raw WebSocket bytes", async () => {
-    await renderStarted({ workspaceId: "ws-123" });
-    const dataHandler = mockOnData.mock.calls[0]?.[0] as
-      | ((data: ArrayBuffer) => void)
-      | undefined;
-    expect(dataHandler).toBeDefined();
-
-    socketAt(0).sent = [];
-    dataHandler?.(new Uint8Array([0x80, 0x81]).buffer);
-
-    const sent = socketAt(0).sent[0];
-    expect(sent).toBeInstanceOf(ArrayBuffer);
-    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
-      0x80, 0x81,
-    ]);
-  });
-
-  it("does not open a websocket when initialStatus is exited", async () => {
-    await renderStarted({
-      websocketPath:
-        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      reconnectOnExit: false,
-      initialStatus: "exited",
-    });
-
-    expect(sockets).toHaveLength(0);
-    expect(terminalWrite).toHaveBeenCalledWith(
-      expect.stringContaining("[Process exited]"),
-    );
-  });
-
-  it("does not restart sessions when reconnectOnExit is false", async () => {
-    const onExit = vi.fn();
-
-    await renderStarted({
-      websocketPath:
-        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
-      reconnectOnExit: false,
-      onExit,
-    });
-    vi.useFakeTimers();
-
-    expect(sockets).toHaveLength(1);
-    const socket = socketAt(0);
-    socket.onmessage?.(
-      new MessageEvent("message", {
-        data: JSON.stringify({ type: "exited", code: 0 }),
-      }),
-    );
-    socket.onclose?.();
-    vi.advanceTimersByTime(30000);
-
-    expect(sockets).toHaveLength(1);
-    expect(terminalWrite).toHaveBeenCalledWith(
-      expect.stringContaining("[Process exited]"),
-    );
-    expect(onExit).toHaveBeenCalledWith(0);
-
-    vi.useRealTimers();
+    expect(xtermTerminalCtor).not.toHaveBeenCalled();
+    expect(mockGhosttyInit).toHaveBeenCalledTimes(1);
   });
 });

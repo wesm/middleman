@@ -39,6 +39,37 @@ class MockWebSocket {
   close(): void {}
 }
 
+vi.mock("@xterm/xterm", () => ({
+  Terminal: vi.fn().mockImplementation((options) => ({
+    cols: 80,
+    rows: 24,
+    clearTextureAtlas: vi.fn(),
+    dispose: mocks.mockDispose,
+    loadAddon: mocks.mockLoadAddon,
+    onBinary: vi.fn(),
+    onData: mocks.mockOnData,
+    open: mocks.mockOpen,
+    refresh: vi.fn(),
+    write: mocks.terminalWrite,
+    options: { ...options },
+  })),
+}));
+
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: mocks.mockFit,
+  })),
+}));
+
+vi.mock("@xterm/addon-webgl", () => ({
+  WebglAddon: vi.fn().mockImplementation(() => ({
+    dispose: vi.fn(),
+    onContextLoss: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
 vi.mock("ghostty-web", () => ({
   init: vi.fn().mockResolvedValue(undefined),
   FitAddon: vi.fn().mockImplementation(() => ({
@@ -63,6 +94,7 @@ vi.mock("@middleman/ui", async (importOriginal) => {
     getStores: () => ({
       settings: {
         getTerminalFontFamily: () => "",
+        getTerminalRenderer: () => "ghostty-web",
       },
     }),
   };

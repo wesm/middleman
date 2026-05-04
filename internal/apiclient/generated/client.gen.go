@@ -810,6 +810,7 @@ type SyncStatus struct {
 // Terminal defines model for Terminal.
 type Terminal struct {
 	FontFamily string `json:"font_family"`
+	Renderer   string `json:"renderer"`
 }
 
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.

@@ -7,6 +7,10 @@ default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
 
+[terminal]
+# Terminal renderer: "xterm" (default) or "ghostty-web"
+renderer = "xterm"
+
 [[repos]]
 owner = "apache"
 name = "arrow"

@@ -141,7 +141,7 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
-  test("shell terminal paints output and accepts browser keyboard input", async ({ page }) => {
+  test("ghostty shell terminal paints output and accepts browser keyboard input", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
@@ -149,6 +149,15 @@ test.describe("workspace sidebar full-stack", () => {
       api = await playwrightRequest.newContext({
         baseURL: isolatedServer.info.base_url,
       });
+      const settingsResponse = await api.put("/api/v1/settings", {
+        data: {
+          terminal: {
+            font_family: "",
+            renderer: "ghostty-web",
+          },
+        },
+      });
+      expect(settingsResponse.status()).toBe(200);
 
       const createResponse = await api.post(
         "/api/v1/repos/acme/widgets/issues/10/workspace",

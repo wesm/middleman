@@ -167,8 +167,14 @@ type Activity struct {
 	HideBots   bool   `toml:"hide_bots" json:"hide_bots"`
 }
 
+const (
+	TerminalRendererXterm   = "xterm"
+	TerminalRendererGhostty = "ghostty-web"
+)
+
 type Terminal struct {
 	FontFamily string `toml:"font_family,omitempty" json:"font_family"`
+	Renderer   string `toml:"renderer,omitempty" json:"renderer"`
 }
 
 type Agent struct {
@@ -270,6 +276,9 @@ port = 8091
 [activity]
 view_mode = "threaded"
 time_range = "7d"
+
+[terminal]
+renderer = "xterm"
 
 [tmux]
 agent_sessions = true
@@ -482,6 +491,19 @@ func (c *Config) Validate() error {
 	}
 
 	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
+	c.Terminal.Renderer = strings.TrimSpace(c.Terminal.Renderer)
+	if c.Terminal.Renderer == "" {
+		c.Terminal.Renderer = TerminalRendererXterm
+	}
+	if c.Terminal.Renderer != TerminalRendererXterm &&
+		c.Terminal.Renderer != TerminalRendererGhostty {
+		return fmt.Errorf(
+			"config: invalid terminal.renderer %q: must be %q or %q",
+			c.Terminal.Renderer,
+			TerminalRendererXterm,
+			TerminalRendererGhostty,
+		)
+	}
 
 	if err := c.validateAgents(); err != nil {
 		return err

@@ -850,10 +850,12 @@ name = "b"
 
 [terminal]
 font_family = '  "Iosevka Term", monospace  '
+renderer = "ghostty-web"
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.Equal("\"Iosevka Term\", monospace", cfg.Terminal.FontFamily)
+	assert.Equal("ghostty-web", cfg.Terminal.Renderer)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(t, cfg.Save(savePath))
@@ -861,6 +863,33 @@ font_family = '  "Iosevka Term", monospace  '
 	cfg2, err := Load(savePath)
 	require.NoError(t, err)
 	assert.Equal("\"Iosevka Term\", monospace", cfg2.Terminal.FontFamily)
+	assert.Equal("ghostty-web", cfg2.Terminal.Renderer)
+}
+
+func TestTerminalRendererDefaultsToXterm(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	Assert.Equal(t, "xterm", cfg.Terminal.Renderer)
+}
+
+func TestTerminalRendererRejectsInvalidValue(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[terminal]
+renderer = "vt100"
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "invalid terminal.renderer")
 }
 
 func TestSyncBudgetPerHour(t *testing.T) {

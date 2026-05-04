@@ -15,9 +15,11 @@ import {
 
 const {
   mockSetTerminalFontFamily,
+  mockSetTerminalRenderer,
   mockUpdateSettings,
 } = vi.hoisted(() => ({
   mockSetTerminalFontFamily: vi.fn(),
+  mockSetTerminalRenderer: vi.fn(),
   mockUpdateSettings: vi.fn(),
 }));
 
@@ -25,6 +27,7 @@ vi.mock("@middleman/ui", () => ({
   getStores: () => ({
     settings: {
       setTerminalFontFamily: mockSetTerminalFontFamily,
+      setTerminalRenderer: mockSetTerminalRenderer,
     },
   }),
 }));
@@ -43,6 +46,7 @@ describe("TerminalSettings", () => {
   afterEach(() => {
     cleanup();
     mockSetTerminalFontFamily.mockReset();
+    mockSetTerminalRenderer.mockReset();
     mockUpdateSettings.mockReset();
   });
 
@@ -50,13 +54,14 @@ describe("TerminalSettings", () => {
     mockUpdateSettings.mockResolvedValue({
       terminal: {
         font_family: "\"Iosevka Term\", monospace",
+        renderer: "xterm",
       },
     });
     const onUpdate = vi.fn();
 
     render(TerminalSettings, {
       props: {
-        terminal: { font_family: "" },
+        terminal: { font_family: "", renderer: "xterm" },
         onUpdate,
       },
     });
@@ -80,14 +85,53 @@ describe("TerminalSettings", () => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({
         terminal: {
           font_family: "\"Iosevka Term\", monospace",
+          renderer: "xterm",
         },
       });
     });
     expect(onUpdate).toHaveBeenCalledWith({
       font_family: "\"Iosevka Term\", monospace",
+      renderer: "xterm",
     });
     expect(mockSetTerminalFontFamily).toHaveBeenCalledWith(
       "\"Iosevka Term\", monospace",
     );
+    expect(mockSetTerminalRenderer).toHaveBeenCalledWith("xterm");
+  });
+
+  it("persists the selected terminal renderer", async () => {
+    mockUpdateSettings.mockResolvedValue({
+      terminal: {
+        font_family: "",
+        renderer: "ghostty-web",
+      },
+    });
+    const onUpdate = vi.fn();
+
+    render(TerminalSettings, {
+      props: {
+        terminal: { font_family: "", renderer: "xterm" },
+        onUpdate,
+      },
+    });
+
+    await fireEvent.change(screen.getByLabelText("Terminal renderer"), {
+      target: { value: "ghostty-web" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: {
+          font_family: "",
+          renderer: "ghostty-web",
+        },
+      });
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      font_family: "",
+      renderer: "ghostty-web",
+    });
+    expect(mockSetTerminalRenderer).toHaveBeenCalledWith("ghostty-web");
   });
 });

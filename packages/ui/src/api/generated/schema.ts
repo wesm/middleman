@@ -1792,6 +1792,7 @@ export interface components {
         };
         Terminal: {
             font_family: string;
+            renderer: string;
         };
         UpdateSettingsRequest: {
             /**

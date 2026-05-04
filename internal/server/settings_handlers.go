@@ -53,6 +53,9 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
 	terminal := s.cfg.Terminal
+	if terminal.Renderer == "" {
+		terminal.Renderer = config.TerminalRendererXterm
+	}
 	agents := cloneConfigAgents(s.cfg.Agents)
 	s.cfgMu.Unlock()
 
