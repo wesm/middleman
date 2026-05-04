@@ -76,7 +76,9 @@ type mockGH struct {
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
+	createIssueCommentFn      func(context.Context, string, string, int, string) (*gh.IssueComment, error)
 	editIssueCommentFn        func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
+	createReviewFn            func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
 	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
 	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn      func(context.Context, string, string, int64) error
@@ -264,8 +266,11 @@ func (m *mockGH) ApproveWorkflowRun(
 }
 
 func (m *mockGH) CreateIssueComment(
-	_ context.Context, _, _ string, _ int, body string,
+	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
+	if m.createIssueCommentFn != nil {
+		return m.createIssueCommentFn(ctx, owner, repo, number, body)
+	}
 	id := int64(42)
 	return &gh.IssueComment{
 		ID:   &id,
@@ -304,8 +309,11 @@ func (m *mockGH) GetRepository(
 }
 
 func (m *mockGH) CreateReview(
-	_ context.Context, _, _ string, _ int, _ string, _ string,
+	ctx context.Context, owner, repo string, number int, event string, body string,
 ) (*gh.PullRequestReview, error) {
+	if m.createReviewFn != nil {
+		return m.createReviewFn(ctx, owner, repo, number, event, body)
+	}
 	id := int64(99)
 	state := "APPROVED"
 	return &gh.PullRequestReview{ID: &id, State: &state}, nil
@@ -3293,6 +3301,100 @@ func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
 	require.NotNil(mr)
 	assert.Equal("Test PR #1", mr.Title)
 	assert.Equal("test body", mr.Body)
+}
+
+func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		createIssueCommentFn: func(context.Context, string, string, int, string) (*gh.IssueComment, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostPrCommentWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		1,
+		generated.PostPrCommentJSONRequestBody{Body: "Looks good"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	events, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	require.Empty(events)
+}
+
+func TestAPIApprovePRRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+
+	mock := &mockGH{
+		createReviewFn: func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberApproveWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		1,
+		generated.PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody{},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	events, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	require.Empty(events)
+}
+
+func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			context.Context,
+			string,
+			string,
+			int,
+			string,
+			string,
+			string,
+		) (*gh.PullRequestMergeResult, error) {
+			return nil, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostReposByOwnerByNamePullsByNumberMergeWithResponse(
+		t.Context(),
+		"acme",
+		"widget",
+		1,
+		generated.PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody{
+			Method: "squash",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadGateway, resp.StatusCode())
+
+	mr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("open", mr.State)
+	assert.Nil(mr.MergedAt)
 }
 
 func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
