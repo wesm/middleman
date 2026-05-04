@@ -61,7 +61,7 @@
       </button>
     </div>
   </div>
-  <DiffToolbar compact />
+  <DiffToolbar compact showRichPreview={false} />
   <div class="workspace-diff-layout">
     <aside class="workspace-diff-sidebar">
       <DiffSidebar showCommits={false} {resetKey} />
@@ -73,6 +73,7 @@
         number={itemNumber}
         loadOnMount={false}
         keyboardActive={false}
+        richPreviewEnabled={false}
       />
     </div>
   </div>

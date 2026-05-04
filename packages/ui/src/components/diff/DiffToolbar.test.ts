@@ -10,7 +10,7 @@ import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import DiffToolbar from "./DiffToolbar.svelte";
 
-function renderToolbar(options: { compact?: boolean } = {}) {
+function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean } = {}) {
   const diff = createDiffStore();
   render(DiffToolbar, {
     props: options,
@@ -68,6 +68,16 @@ describe("DiffToolbar", () => {
     expect(diff.getWordWrap()).toBe(true);
     expect(wordWrap.getAttribute("aria-checked")).toBe("true");
     expect(localStorage.getItem("diff-word-wrap")).toBe("true");
+  });
+
+  it("hides rich preview controls when disabled", async () => {
+    renderToolbar({ compact: true, showRichPreview: false });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "More diff filters" }),
+    );
+
+    expect(screen.queryByRole("switch", { name: "Rich preview" })).toBeNull();
   });
 
   it("collapses diff filters behind a more button in compact mode", async () => {

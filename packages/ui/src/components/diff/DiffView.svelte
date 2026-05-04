@@ -11,6 +11,7 @@
     number: number;
     loadOnMount?: boolean;
     keyboardActive?: boolean;
+    richPreviewEnabled?: boolean;
   }
 
   const {
@@ -19,6 +20,7 @@
     number,
     loadOnMount = true,
     keyboardActive = true,
+    richPreviewEnabled = true,
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
@@ -165,6 +167,7 @@
               {owner}
               {name}
               {number}
+              {richPreviewEnabled}
             />
           {/each}
         </div>

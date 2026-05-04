@@ -8,9 +8,10 @@
 
   interface Props {
     compact?: boolean;
+    showRichPreview?: boolean;
   }
 
-  let { compact = false }: Props = $props();
+  let { compact = false, showRichPreview = true }: Props = $props();
 
   const { diff } = getStores();
   const tabOptions = [1, 2, 4, 8] as const;
@@ -137,22 +138,24 @@
                 <span class="toggle-knob"></span>
               </span>
             </button>
-            <button
-              class="compact-switch-row"
-              type="button"
-              role="switch"
-              aria-checked={diff.getRichPreview()}
-              onclick={() => diff.setRichPreview(!diff.getRichPreview())}
-            >
-              <span>Rich preview</span>
-              <span
-                class="toggle-switch"
-                class:toggle-switch--on={diff.getRichPreview()}
-                aria-hidden="true"
+            {#if showRichPreview}
+              <button
+                class="compact-switch-row"
+                type="button"
+                role="switch"
+                aria-checked={diff.getRichPreview()}
+                onclick={() => diff.setRichPreview(!diff.getRichPreview())}
               >
-                <span class="toggle-knob"></span>
-              </span>
-            </button>
+                <span>Rich preview</span>
+                <span
+                  class="toggle-switch"
+                  class:toggle-switch--on={diff.getRichPreview()}
+                  aria-hidden="true"
+                >
+                  <span class="toggle-knob"></span>
+                </span>
+              </button>
+            {/if}
           </div>
         </div>
       {/if}
@@ -215,20 +218,22 @@
           <span class="toggle-knob"></span>
         </button>
       </div>
-      <div class="toolbar-group">
-        <span class="toolbar-label">Rich preview</span>
-        <button
-          class="toggle-switch"
-          class:toggle-switch--on={diff.getRichPreview()}
-          role="switch"
-          aria-label="Rich preview"
-          aria-checked={diff.getRichPreview()}
-          title={diff.getRichPreview() ? "Show unified diff" : "Show rich file previews"}
-          onclick={() => diff.setRichPreview(!diff.getRichPreview())}
-        >
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
+      {#if showRichPreview}
+        <div class="toolbar-group">
+          <span class="toolbar-label">Rich preview</span>
+          <button
+            class="toggle-switch"
+            class:toggle-switch--on={diff.getRichPreview()}
+            role="switch"
+            aria-label="Rich preview"
+            aria-checked={diff.getRichPreview()}
+            title={diff.getRichPreview() ? "Show unified diff" : "Show rich file previews"}
+            onclick={() => diff.setRichPreview(!diff.getRichPreview())}
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
