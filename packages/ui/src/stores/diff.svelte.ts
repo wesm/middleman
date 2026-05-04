@@ -445,13 +445,13 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentOwner = owner;
     currentName = name;
     currentNumber = number;
+    filePreviewCache.clear();
     if (prChanged) {
       scope = { kind: "head" };
       fileCategoryFilter = "all";
       commits = null;
       commitsLoading = false;
       commitsError = null;
-      filePreviewCache.clear();
     }
 
     abortController?.abort();

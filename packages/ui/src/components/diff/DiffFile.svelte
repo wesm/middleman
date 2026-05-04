@@ -21,6 +21,7 @@
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const lang = $derived(langFromPath(file.path));
   const richPreview = $derived(diffStore.getRichPreview());
+  const showRichPreview = $derived(richPreview && supportsRichPreview(file.path));
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -174,6 +175,25 @@
     }
     return f.path;
   }
+
+  function supportsRichPreview(path: string): boolean {
+    const idx = path.lastIndexOf(".");
+    const ext = idx >= 0 ? path.slice(idx).toLowerCase() : "";
+    return [
+      ".avif",
+      ".gif",
+      ".jpeg",
+      ".jpg",
+      ".markdown",
+      ".md",
+      ".mdown",
+      ".mkd",
+      ".pdf",
+      ".png",
+      ".svg",
+      ".webp",
+    ].includes(ext);
+  }
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
@@ -191,7 +211,7 @@
   </button>
   {#if !collapsed}
     <div class="file-content">
-      {#if richPreview}
+      {#if showRichPreview}
         <DiffRichPreview
           {file}
           {owner}

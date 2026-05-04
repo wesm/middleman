@@ -14,9 +14,9 @@
   const { file, owner, name, number, active }: Props = $props();
   const { diff: diffStore } = getStores();
 
-  interface MarkdownDiffBlock {
-    type: "context" | "add" | "delete";
-    html: string;
+  interface MarkdownComparison {
+    oldHtml: string;
+    newHtml: string;
   }
 
   let loading = $state(false);
@@ -25,7 +25,9 @@
   let requestVersion = 0;
 
   const isMarkdownFile = $derived(isMarkdownPath(file.path));
-  const markdownBlocks = $derived.by(() => buildMarkdownDiff(file));
+  const markdownComparison = $derived.by(() =>
+    active && isMarkdownFile ? buildMarkdownComparison(file) : null,
+  );
   const text = $derived(preview ? decodeText(preview.content) : "");
   const dataURL = $derived(preview ? `data:${preview.media_type};base64,${preview.content}` : "");
   const kind = $derived(previewKind(file.path, preview?.media_type ?? ""));
@@ -99,50 +101,52 @@
     }
   }
 
-  function buildMarkdownDiff(source: DiffFile): MarkdownDiffBlock[] {
-    const blocks: MarkdownDiffBlock[] = [];
-    let currentType: MarkdownDiffBlock["type"] | null = null;
-    let currentLines: string[] = [];
-
-    function flush(): void {
-      if (!currentType || currentLines.length === 0) return;
-      const markdown = `${currentLines.join("\n")}\n`;
-      blocks.push({
-        type: currentType,
-        html: renderMarkdown(markdown, { owner, name }),
-      });
-      currentType = null;
-      currentLines = [];
-    }
-
+  function buildMarkdownComparison(source: DiffFile): MarkdownComparison {
+    const oldLines: string[] = [];
+    const newLines: string[] = [];
     for (const hunk of source.hunks) {
+      if (oldLines.length > 0 || newLines.length > 0) {
+        oldLines.push("", "---", "");
+        newLines.push("", "---", "");
+      }
       for (const line of hunk.lines) {
-        if (line.type !== currentType) {
-          flush();
-          currentType = line.type;
-        }
-        currentLines.push(line.content);
+        if (line.type !== "add") oldLines.push(line.content);
+        if (line.type !== "delete") newLines.push(line.content);
       }
     }
-    flush();
-    return blocks;
+    return {
+      oldHtml: renderMarkdown(`${oldLines.join("\n")}\n`, { owner, name }),
+      newHtml: renderMarkdown(`${newLines.join("\n")}\n`, { owner, name }),
+    };
   }
 </script>
 
 <div class="preview-shell">
   {#if isMarkdownFile}
-    <div class="diff-rich-preview markdown-body markdown-rich-diff">
-      {#each markdownBlocks as block, index (`${index}:${block.type}`)}
+    {#if markdownComparison}
+      <div class="diff-rich-preview markdown-rich-diff">
         <div
-          class={[
-            "markdown-rich-diff__block",
-            `markdown-rich-diff__block--${block.type}`,
-          ]}
+          class="markdown-rich-diff__pane markdown-rich-diff__block--delete"
+          aria-label="Before markdown preview"
         >
-          {@html block.html}
+          <div class="markdown-rich-diff__label">Before</div>
+          <div class="markdown-body">
+            {@html markdownComparison.oldHtml}
+          </div>
         </div>
-      {/each}
-    </div>
+        <div
+          class="markdown-rich-diff__pane markdown-rich-diff__block--add"
+          aria-label="After markdown preview"
+        >
+          <div class="markdown-rich-diff__label">After</div>
+          <div class="markdown-body">
+            {@html markdownComparison.newHtml}
+          </div>
+        </div>
+      </div>
+    {:else}
+      <div class="preview-state">Loading preview</div>
+    {/if}
   {:else if loading}
     <div class="preview-state">Loading preview</div>
   {:else if error}
@@ -200,23 +204,35 @@
   }
 
   .markdown-rich-diff {
-    max-width: 980px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    max-width: 1180px;
   }
 
-  .markdown-rich-diff__block {
-    position: relative;
-    padding: 1px 12px;
-    border-left: 3px solid transparent;
+  .markdown-rich-diff__pane {
+    min-width: 0;
+    padding: 12px 14px 18px;
+    border: 1px solid var(--diff-border);
+    border-radius: 6px;
+  }
+
+  .markdown-rich-diff__label {
+    margin-bottom: 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
   }
 
   .markdown-rich-diff__block--add {
     background: color-mix(in srgb, var(--diff-add-bg) 76%, transparent);
-    border-left-color: var(--diff-add-text);
+    border-color: color-mix(in srgb, var(--diff-add-text) 42%, var(--diff-border));
   }
 
   .markdown-rich-diff__block--delete {
     background: color-mix(in srgb, var(--diff-del-bg) 78%, transparent);
-    border-left-color: var(--diff-del-text);
+    border-color: color-mix(in srgb, var(--diff-del-text) 42%, var(--diff-border));
   }
 
   .markdown-rich-diff__block--add :global(*) {
@@ -237,6 +253,12 @@
   .markdown-rich-diff__block--delete :global(h6) {
     text-decoration: line-through;
     text-decoration-color: color-mix(in srgb, var(--diff-del-text) 70%, transparent);
+  }
+
+  @media (max-width: 760px) {
+    .markdown-rich-diff {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   .diff-image-preview {

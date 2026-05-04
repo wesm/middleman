@@ -458,9 +458,10 @@ test.describe("diff view", () => {
 
     await previewToggle.click();
     await expect(previewToggle).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByRole("heading", { name: "Rendered preview" }))
+    await expect(page.getByLabel("After markdown preview")
+      .getByRole("heading", { name: "Rendered preview" }))
       .toBeVisible();
-    await expect(page.locator(".diff-rich-preview.markdown-body"))
+    await expect(page.locator(".markdown-rich-diff"))
       .toContainText("Markdown task");
     await expect(page.locator(".markdown-rich-diff__block--delete", {
       hasText: "Old paragraph that should be highlighted.",
@@ -470,6 +471,11 @@ test.describe("diff view", () => {
       hasText: "New paragraph that should be highlighted.",
     }))
       .toContainText("New paragraph that should be highlighted.");
+
+    const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await expect(handlerFile.locator(".diff-line--del").first()).toBeVisible();
+    await expect(handlerFile.locator(".diff-line--add").first()).toBeVisible();
+    await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
     await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
     await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']"))
@@ -952,6 +958,7 @@ test.describe("diff view (git-backed)", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-rich-preview");
       localStorage.removeItem("diff-collapsed-files");
     });
   });
@@ -1030,6 +1037,49 @@ test.describe("diff view (git-backed)", () => {
         .toBeVisible();
       await expect(page.locator('[data-file-path="internal/cache_test.go"]'))
         .toHaveCount(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("rich preview uses real diff data for markdown and keeps source diffs", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const advanceResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-diff-summary/advance-head`,
+      );
+      expect(advanceResponse.ok()).toBe(true);
+
+      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await waitForSidebarFilesLoaded(page);
+
+      await page.getByRole("switch", { name: "Rich preview" }).click();
+
+      const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
+      await expect(handlerFile.locator(".diff-line--del").first()).toBeVisible();
+      await expect(handlerFile.locator(".diff-line--add").first()).toBeVisible();
+      await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
+
+      const categoryFilter = page.getByRole("group", {
+        name: "Filter changed files",
+      });
+      await categoryFilter.getByRole("button", { name: "Plans/docs (2)" })
+        .click();
+
+      const planFile = page.locator('[data-file-path="docs/cache-plan.md"]');
+      await expect(planFile.locator(".markdown-rich-diff__block--add"))
+        .toContainText("Cache refresh plan");
+      await expect(planFile.locator(".markdown-rich-diff__block--add"))
+        .toContainText("Verify changed-file summaries refresh");
+
+      const previewResponse = await page.request.get(
+        `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/1/file-preview?path=internal/cache.go`,
+      );
+      expect(previewResponse.ok()).toBe(true);
+      const previewBody = await previewResponse.json();
+      expect(previewBody.media_type).toContain("text/");
+      expect(previewBody.content.length).toBeGreaterThan(0);
     } finally {
       await server.stop();
     }
