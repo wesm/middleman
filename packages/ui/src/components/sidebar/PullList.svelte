@@ -43,6 +43,8 @@
     { value: "byWorkflow", label: "Status" },
     { value: "flat", label: "All" },
   ];
+  // Playwright-measured: the full PR filter row first fits at 382px.
+  const COMPACT_FILTER_MAX_WIDTH = 381;
 
   interface Props {
     getDetailTab?: () => string;
@@ -124,7 +126,9 @@
   const hasCompactFilterChanges = $derived(
     pulls.getFilterState() !== "open" || groupingMode !== "byRepo",
   );
-  const useCompactFilters = $derived(sidebarWidth <= 280);
+  const useCompactFilters = $derived(
+    sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
+  );
 
   function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
     return {

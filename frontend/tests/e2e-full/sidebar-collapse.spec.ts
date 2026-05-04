@@ -101,6 +101,67 @@ async function expectCompactFiltersAtMinimumWidth(
   );
 }
 
+async function expectCompactFiltersInNarrowViewport(
+  page: Page,
+  path: string,
+  waitForList: (page: Page) => Promise<void>,
+): Promise<void> {
+  await page.setViewportSize({ width: 545, height: 954 });
+  await page.goto(path);
+  await waitForList(page);
+
+  const sidebar = page.locator(".sidebar").first();
+  const filterBar = sidebar.locator(".filter-bar").first();
+  await expect(
+    filterBar.getByRole("button", { name: "Filters" }),
+  ).toBeVisible();
+  await expect(filterBar.locator(".state-toggle")).toBeHidden();
+  await expect(filterBar.locator(".group-toggle")).toBeHidden();
+}
+
+async function setPersistedSidebarWidth(
+  page: Page,
+  path: string,
+  width: number,
+  waitForList: (page: Page) => Promise<void>,
+): Promise<Locator> {
+  await page.goto(path);
+  await page.evaluate((value) => {
+    localStorage.setItem("middleman-sidebar-width", String(value));
+    localStorage.removeItem("middleman-sidebar");
+  }, width);
+  await page.reload();
+  await waitForList(page);
+  return page.locator(".sidebar").first().locator(".filter-bar").first();
+}
+
+async function expectCompactFilterBar(
+  filterBar: Locator,
+): Promise<void> {
+  await expect(
+    filterBar.getByRole("button", { name: "Filters" }),
+  ).toBeVisible();
+  await expect(filterBar.locator(".state-toggle")).toBeHidden();
+  await expect(filterBar.locator(".group-toggle")).toBeHidden();
+}
+
+async function expectExpandedFilterBar(
+  filterBar: Locator,
+): Promise<void> {
+  await expect(
+    filterBar.getByRole("button", { name: "Filters" }),
+  ).toBeHidden();
+  await expect(filterBar.locator(".state-toggle")).toBeVisible();
+  await expect(filterBar.locator(".group-toggle")).toBeVisible();
+  const filterMetrics = await filterBar.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(
+    filterMetrics.clientWidth,
+  );
+}
+
 test.describe("collapsible sidebar", () => {
   test("collapse and expand via strip on pulls", async ({ page }) => {
     await page.goto("/pulls");
@@ -202,6 +263,60 @@ test.describe("collapsible sidebar", () => {
       page,
       "/issues",
       waitForIssueList,
+    );
+  });
+
+  test("pull filters stay compact when a narrow viewport sidebar is opened", async ({ page }) => {
+    await expectCompactFiltersInNarrowViewport(
+      page,
+      "/pulls",
+      waitForPRList,
+    );
+  });
+
+  test("issue filters stay compact when a narrow viewport sidebar is opened", async ({ page }) => {
+    await expectCompactFiltersInNarrowViewport(
+      page,
+      "/issues",
+      waitForIssueList,
+    );
+  });
+
+  test("pull filters switch at the measured 382px fit point", async ({ page }) => {
+    await expectCompactFilterBar(
+      await setPersistedSidebarWidth(
+        page,
+        "/pulls",
+        381,
+        waitForPRList,
+      ),
+    );
+    await expectExpandedFilterBar(
+      await setPersistedSidebarWidth(
+        page,
+        "/pulls",
+        382,
+        waitForPRList,
+      ),
+    );
+  });
+
+  test("issue filters switch at the measured 363px fit point", async ({ page }) => {
+    await expectCompactFilterBar(
+      await setPersistedSidebarWidth(
+        page,
+        "/issues",
+        362,
+        waitForIssueList,
+      ),
+    );
+    await expectExpandedFilterBar(
+      await setPersistedSidebarWidth(
+        page,
+        "/issues",
+        363,
+        waitForIssueList,
+      ),
     );
   });
 });

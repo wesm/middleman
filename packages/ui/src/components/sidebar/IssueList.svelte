@@ -25,6 +25,8 @@
     { byRepo: true, label: "By Repo" },
     { byRepo: false, label: "All" },
   ];
+  // Playwright-measured: the full issue filter row first fits at 363px.
+  const COMPACT_FILTER_MAX_WIDTH = 362;
 
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
   let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -94,7 +96,9 @@
   const hasCompactFilterChanges = $derived(
     issues.getIssueFilterState() !== "open" || !grouping.getGroupByRepo(),
   );
-  const useCompactFilters = $derived(sidebarWidth <= 280);
+  const useCompactFilters = $derived(
+    sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
+  );
 
   function routeRefForIssue(issue: Issue): IssueRouteRef {
     return {
