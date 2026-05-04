@@ -170,6 +170,19 @@ func TestWorktreeDiffRendersUntrackedSymlinkTarget(t *testing.T) {
 	assert.NotContains(file.Hunks[0].Lines[0].Content, "do not expose")
 }
 
+func TestOpenRegularUntrackedFileRejectsSymlinks(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	secret := filepath.Join(root, "secret.txt")
+	link := filepath.Join(root, "secret-link")
+	require.NoError(os.WriteFile(secret, []byte("do not expose\n"), 0o644))
+	require.NoError(os.Symlink(secret, link))
+
+	file, _, err := openRegularUntrackedFile(link)
+	require.Error(err)
+	require.Nil(file)
+}
+
 func TestWorktreeDiffMarksLargeUntrackedFileBinary(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

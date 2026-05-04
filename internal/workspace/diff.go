@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -214,12 +215,20 @@ func readUntrackedFileContent(path string) ([]byte, bool) {
 	if !info.Mode().IsRegular() {
 		return nil, false
 	}
+	file, info, err := openRegularUntrackedFile(path)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
 	if info.Size() > maxUntrackedTextFileBytes {
 		return nil, true
 	}
-	content, err := os.ReadFile(path)
+	content, err := io.ReadAll(io.LimitReader(file, maxUntrackedTextFileBytes+1))
 	if err != nil {
 		return nil, false
+	}
+	if len(content) > maxUntrackedTextFileBytes {
+		return nil, true
 	}
 	return content, true
 }
