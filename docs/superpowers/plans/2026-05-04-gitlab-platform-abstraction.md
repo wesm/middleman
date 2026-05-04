@@ -887,6 +887,33 @@ POST /api/v1/providers/{provider}/hosts/{platform_host}/repos/{repo_path}/issues
 - [ ] Run `go test ./... -shuffle=on`.
 - [ ] Commit: `docs: describe platform sync invariants`.
 
+## Kata Task Graph
+
+This plan has been converted into kata issues in project `github.com/wesm/middleman`.
+
+- Epic: `#1` GitLab platform abstraction implementation.
+- `#2` Add neutral platform contracts. Ready first; no implementation blockers.
+- `#3` Persist provider-aware repository identity. Blocked by `#2`.
+- `#4` Replace repo and workspace canonicalization. Blocked by `#3`.
+- `#5` Carry provider refs through workspace and list data. Blocked by `#4`.
+- `#6` Scope provider item and event identity. Blocked by `#5`.
+- `#7` Scope rate limits by provider. Blocked by `#6`.
+- `#8` Configure repositories by provider. Blocked by `#2`.
+- `#9` Adapt GitHub data through platform models. Blocked by `#2`.
+- `#10` Add platform-aware repository routes. Blocked by `#5`.
+- `#11` Resolve sync clients through provider registry. Blocked by `#2`, `#3`, `#8`, and `#9`.
+- `#12` Thread full repository refs through sync. Blocked by `#11`.
+- `#13` Keep GitHub sync optimizations optional. Blocked by `#12`.
+- `#14` Add GitLab read client and normalization. Blocked by `#2` and `#8`.
+- `#15` Wire platform registry at startup. Blocked by `#8`, `#9`, and `#14`.
+- `#16` Import repositories from configured providers. Blocked by `#10`, `#14`, and `#15`.
+- `#17` Expose and gate provider action capabilities. Blocked by `#10` and `#15`.
+- `#18` Cover GitLab repository sync end to end. Blocked by `#12`, `#14`, `#15`, `#16`, and `#17`.
+- `#19` Add optional GitLab CE container e2e fixture. Blocked by `#14` and `#18`.
+- `#20` Document platform sync invariants. Blocked by `#17` and `#18`.
+
+Use `kata ready --json` to find the next unblocked task. At creation time, the first implementation-ready issue is `#2`.
+
 ## Verification
 
 Run these before declaring the implementation complete:
