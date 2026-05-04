@@ -166,7 +166,7 @@ func parseRepoRef(raw, configuredPlatform string) (parsedRepoRef, error) {
 		if err != nil {
 			return parsedRepoRef{}, fmt.Errorf("invalid SSH URI %q: %w", raw, err)
 		}
-		host = strings.ToLower(u.Hostname())
+		host = strings.ToLower(u.Host)
 		path = strings.TrimPrefix(u.Path, "/")
 	case strings.HasPrefix(raw, "http://") ||
 		strings.HasPrefix(raw, "https://"):
@@ -622,15 +622,16 @@ func (c *Config) Validate() error {
 	}
 
 	// Reject duplicate repository identities.
-	seen := make(map[string]bool, len(c.Repos))
+	seen := make(map[string]string, len(c.Repos))
 	for _, r := range c.Repos {
 		key := repoIdentityKey(r)
-		if seen[key] {
+		display := repoIdentityDisplay(r)
+		if prev, ok := seen[key]; ok {
 			return fmt.Errorf(
-				"config: duplicate repo %q", repoIdentityDisplay(r),
+				"config: duplicate repo %q", prev,
 			)
 		}
-		seen[key] = true
+		seen[key] = display
 	}
 
 	// Reject conflicting token_env for the same host. Compare
@@ -784,8 +785,8 @@ func repoIdentityKey(r Repo) string {
 	return strings.Join([]string{
 		r.PlatformOrDefault(),
 		r.PlatformHostOrDefault(),
-		r.Owner,
-		r.Name,
+		strings.ToLower(r.Owner),
+		strings.ToLower(r.Name),
 	}, "\x00")
 }
 
