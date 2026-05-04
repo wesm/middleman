@@ -167,20 +167,45 @@ func worktreeUntrackedFiles(
 			Status:  "added",
 			Hunks:   []gitclone.Hunk{},
 		}
-		content, readErr := os.ReadFile(filepath.Join(dir, path))
-		if readErr == nil {
-			file.Additions = countAddedLines(content)
-			if bytes.Contains(content, []byte{0}) {
-				file.IsBinary = true
-			} else if withHunks {
-				file.Hunks = []gitclone.Hunk{
-					untrackedFileHunk(content),
-				}
+		content, ok := readUntrackedFileContent(
+			filepath.Join(dir, path),
+		)
+		if !ok {
+			continue
+		}
+		file.Additions = countAddedLines(content)
+		if bytes.Contains(content, []byte{0}) {
+			file.IsBinary = true
+		} else if withHunks {
+			file.Hunks = []gitclone.Hunk{
+				untrackedFileHunk(content),
 			}
 		}
 		files = append(files, file)
 	}
 	return files
+}
+
+func readUntrackedFileContent(path string) ([]byte, bool) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err != nil {
+			return nil, false
+		}
+		return []byte(target), true
+	}
+	if !info.Mode().IsRegular() {
+		return nil, false
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	return content, true
 }
 
 func countAddedLines(content []byte) int {

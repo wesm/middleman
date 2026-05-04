@@ -203,6 +203,7 @@ test.describe("workspace tab persistence", () => {
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
     );
+    await page.setViewportSize({ width: 1100, height: 720 });
 
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
@@ -220,11 +221,11 @@ test.describe("workspace tab persistence", () => {
       const workspaceDetail = await workspaceResponse.json() as WorkspaceStatusResponse;
       expect(workspaceDetail.worktree_path).toBeTruthy();
       await writeFile(
-        join(workspaceDetail.worktree_path!, "alpha.txt"),
+        join(workspaceDetail.worktree_path!, "alpha.ts"),
         "alpha\n",
       );
       await writeFile(
-        join(workspaceDetail.worktree_path!, "beta.txt"),
+        join(workspaceDetail.worktree_path!, "beta_test.go"),
         "beta\n",
       );
 
@@ -256,7 +257,25 @@ test.describe("workspace tab persistence", () => {
       const activeDiffFile = page.locator(
         ".right-sidebar .diff-file-row--active",
       );
-      await expect(activeDiffFile).toHaveAttribute("title", "alpha.txt");
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
+      await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
+      await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
+      const toolbarMetrics = await diffToolbar.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }));
+      expect(toolbarMetrics.scrollWidth).toBeLessThanOrEqual(
+        toolbarMetrics.clientWidth,
+      );
+      await diffToolbar.locator(".compact-more-btn").click();
+      const compactMenu = page.locator(".right-sidebar .compact-menu");
+      await expect(compactMenu).toBeVisible();
+      await compactMenu.getByRole("button", { name: "Code (1)" }).click();
+      await expect(diffToolbar).toContainText("Code");
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      await expect(page.locator('.right-sidebar .diff-file-row[title="beta_test.go"]'))
+        .toHaveCount(0);
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
@@ -278,7 +297,7 @@ test.describe("workspace tab persistence", () => {
       await expect(page.locator('.workspace-tabs [role="tab"]', {
         hasText: "tmux",
       })).toHaveAttribute("aria-selected", "true");
-      await expect(activeDiffFile).toHaveAttribute("title", "alpha.txt");
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

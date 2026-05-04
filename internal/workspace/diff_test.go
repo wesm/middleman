@@ -106,3 +106,40 @@ func TestWorktreeDiffAgainstUpstreamWithoutTrackingBranch(t *testing.T) {
 	require.False(ok)
 	require.Nil(diff)
 }
+
+func TestWorktreeDiffRendersUntrackedSymlinkTarget(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	secret := filepath.Join(root, "secret.txt")
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", work)
+	runWorkspaceTestGit(t, work, "config", "user.email", "t@test.com")
+	runWorkspaceTestGit(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "tracked.txt"), []byte("tracked\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "init")
+	require.NoError(os.WriteFile(secret, []byte("do not expose\n"), 0o644))
+	require.NoError(os.Symlink(secret, filepath.Join(work, "secret-link")))
+
+	diff, ok, err := WorktreeDiff(
+		t.Context(), work, WorktreeDiffBaseHead, false,
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+	require.Len(diff.Files, 1)
+	require.Len(diff.Files[0].Hunks, 1)
+
+	file := diff.Files[0]
+	assert.Equal("secret-link", file.Path)
+	assert.Equal("added", file.Status)
+	assert.Equal(1, file.Additions)
+	assert.False(file.IsBinary)
+	require.Len(file.Hunks[0].Lines, 1)
+	assert.Equal(secret, file.Hunks[0].Lines[0].Content)
+	assert.True(file.Hunks[0].Lines[0].NoNewline)
+	assert.NotContains(file.Hunks[0].Lines[0].Content, "do not expose")
+}
